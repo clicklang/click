@@ -7,10 +7,7 @@ use super::*;
 #[test]
 fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
     use crate::kernel::{AggregateField, AggregateLayout};
-    let slot = OldAddress {
-        base: "local:frame:0:input".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let slot = Address::new("local:frame:0:input".into(), AddressOffset::constant(0));
     let layout = AggregateLayout::new(
         4,
         4,

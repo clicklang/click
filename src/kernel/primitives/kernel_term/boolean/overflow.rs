@@ -161,7 +161,7 @@ mod tests {
                         format!("{:?}", KernelTermExport::condition(&actual).unwrap()),
                         format!("{expected:?}")
                     );
-                    let target = OldAddress::null();
+                    let target = Address::null();
                     let expected =
                         crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
                             &Proposition::condition_is(source.clone(), true),
@@ -254,7 +254,7 @@ mod tests {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: Box::new(OldMachineTerm::IntegerAddress(
-                Box::new(OldAddress::symbolic(Variable(999210))),
+                Box::new(Address::symbolic(Variable(999210))),
                 AddressObjectClass::NONE,
             )),
             right: Box::new(OldMachineTerm::uint64_constant(0)),
@@ -270,7 +270,7 @@ mod tests {
             let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
                 &Proposition::condition_is(source.clone(), true),
                 Variable(999210),
-                &OldAddress::null(),
+                &Address::null(),
             );
             let Proposition::ConditionIs(expected, true) = expected else {
                 panic!("condition");
@@ -278,7 +278,7 @@ mod tests {
             let actual = crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                 &root,
                 Variable(999210),
-                &OldAddress::null(),
+                &Address::null(),
             )
             .unwrap();
             assert_eq!(

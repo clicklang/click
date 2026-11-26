@@ -208,13 +208,11 @@ impl SharedPointer {
             .chain(value.array.owner())
             .chain(value.array.bounds().map(|bounds| &bounds.start))
     }
+    /// The pointer's addresses are already kernel handles: their blocks were
+    /// admitted, and charged, where each address was built
+    /// ([`Address::new`]).
     pub(crate) fn import(value: &OldPointer) -> Self {
-        Self::import_addresses(value, SharedAddress::import)
-    }
-    pub(crate) fn import_produced(value: &OldPointer) -> Self {
-        Self::import_addresses(value, SharedAddress::import_produced)
-    }
-    fn import_addresses(value: &OldPointer, address: fn(&OldAddress) -> SharedAddress) -> Self {
+        let address = |address: &Address| address.shared().clone();
         Self::new(KernelPointer {
             address: address(&value.address),
             provenance: address(&value.provenance),
@@ -348,9 +346,9 @@ impl KernelTerm {
         // only tell otherwise equal arguments apart. It is formed at no state.
         // Read the retained address in place; no native copy is made.
         let null = pointer.pointer_payload().is_some_and(|value| {
-            let address = value.node().address.node();
-            address.base.native_atom() == &OldAddress::null().base
-                && matches!(address.offset.node(), KernelAddressOffset::Constant(0))
+            let address = &value.node().address;
+            matches!(address.atom(), AddressBase::Concrete(name) if name == "null")
+                && matches!(address.offset().node(), KernelAddressOffset::Constant(0))
         });
         let point = if null {
             ProgramPoint::of_memory(&crate::kernel::SymbolicMemory::new())
@@ -382,7 +380,7 @@ impl KernelTerm {
                 *element_type,
             );
         }
-        self.with_pointer_payload(SharedPointer::import_produced(pointer))
+        self.with_pointer_payload(SharedPointer::import(pointer))
     }
 
     pub(crate) fn with_pointer_payload(&self, value: SharedPointer) -> Self {
@@ -423,15 +421,15 @@ mod tests {
     pub(super) fn complete_source() -> OldPointer {
         let class = CAccessClass::Scalar(CScalarClass::Int);
         OldPointer {
-            address: OldAddress::symbolic(Variable(1000001)),
-            provenance: Arc::new(OldAddress::symbolic(Variable(1000002))),
+            address: Address::symbolic(Variable(1000001)),
+            provenance: Arc::new(Address::symbolic(Variable(1000002))),
             array: ArrayObject::from_parts(
                 true,
                 Some(SubobjectBounds {
-                    start: OldAddress::symbolic(Variable(1000004)),
+                    start: Address::symbolic(Variable(1000004)),
                     width: OldMachineTerm::Variable(Variable(1000005)),
                 }),
-                Some(Arc::new(OldAddress::symbolic(Variable(1000003)))),
+                Some(Arc::new(Address::symbolic(Variable(1000003)))),
             ),
             program_type: ProgramType::VoidPointer,
             qualifiers: Some(Arc::new(PointerQualifiers {

@@ -29,10 +29,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
         vec![],
     )]);
     let interface = boxed.contract_interface();
-    let heap = |id: u64| OldAddress {
-        base: AddressBase::Heap(id),
-        offset: AddressOffset::constant(0),
-    };
+    let heap = |id: u64| Address::new(AddressBase::Heap(id), AddressOffset::constant(0));
     let bytes = OldMachineTerm::constant(4);
     let samples = [16, 64, 256]
         .into_iter()
@@ -119,10 +116,7 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
         vec![],
     )]);
     let interface = function.contract_interface();
-    let heap = |id| OldAddress {
-        base: AddressBase::Heap(id),
-        offset: AddressOffset::constant(0),
-    };
+    let heap = |id| Address::new(AddressBase::Heap(id), AddressOffset::constant(0));
     let consumed = heap(933_000);
     let bytes = OldMachineTerm::constant(4);
     let input = ResourceContext::new().unchecked_with_fact(ResourceFact::own_allocation(
@@ -278,19 +272,19 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
                 facts = facts.assume_condition(
                     OldConditionTerm::address_equal(
                         base.clone(),
-                        OldAddress::symbolic(Variable(10_000_000 + id)),
+                        Address::symbolic(Variable(10_000_000 + id)),
                     ),
                     true,
                 );
                 facts = facts.assume_condition(
                     OldConditionTerm::address_equal(
-                        OldAddress::symbolic(Variable(20_000_000 + id)),
-                        OldAddress::symbolic(Variable(30_000_000 + id)),
+                        Address::symbolic(Variable(20_000_000 + id)),
+                        Address::symbolic(Variable(30_000_000 + id)),
                     ),
                     true,
                 );
             }
-            let alias = OldAddress::symbolic(Variable(if hit {
+            let alias = Address::symbolic(Variable(if hit {
                 10_000_000 + size - 1
             } else {
                 40_000_000

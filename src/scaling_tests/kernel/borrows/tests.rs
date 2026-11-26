@@ -416,10 +416,10 @@ fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
         for extra in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                 crate::kernel::MemoryRange::new(
-                    OldAddress {
-                        base: format!("unrelated-view-carrier-{extra}").into(),
-                        offset: AddressOffset::constant(0),
-                    },
+                    Address::new(
+                        format!("unrelated-view-carrier-{extra}").into(),
+                        AddressOffset::constant(0),
+                    ),
                     0u32.into(),
                     4u32.into(),
                 ),
@@ -454,10 +454,10 @@ fn partial_borrow_carrier_return_ignores_unrelated_owners() {
         let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
         for extra in 0..size {
             let range = crate::kernel::MemoryRange::new(
-                OldAddress {
-                    base: format!("unrelated-carrier-{extra}").into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    format!("unrelated-carrier-{extra}").into(),
+                    AddressOffset::constant(0),
+                ),
                 0u32.into(),
                 4u32.into(),
             );
@@ -500,7 +500,7 @@ fn mutex_contract_input_checks_ignore_unrelated_roots_at_multiple_sizes() {
                 .borrowed_mutex_use_input(
                     holder,
                     backing(&owned("unrelated")),
-                    OldAddress::symbolic(Variable(1000 + index)),
+                    Address::symbolic(Variable(1000 + index)),
                 )
                 .unwrap();
             ledger = next;
@@ -800,10 +800,10 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
         let mut chain_requirements = Vec::with_capacity(size * 3);
         let mut equal_requirements = Vec::with_capacity(size * 3);
         for index in 0..size {
-            let base = crate::kernel::OldAddress {
-                base: crate::kernel::AddressBase::Concrete(format!("overlap-{index}")),
-                offset: AddressOffset::constant(0),
-            };
+            let base = Address::new(
+                crate::kernel::AddressBase::Concrete(format!("overlap-{index}")),
+                AddressOffset::constant(0),
+            );
             let owner = ResourceFact::own_memory(MemoryRange::new(
                 base.clone(),
                 OldMachineTerm::constant(0),
@@ -979,15 +979,12 @@ fn borrow_certificate_recheck_scales_with_explicit_transition_delta() {
 
 #[test]
 fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
-    use crate::kernel::{AddressOffset, OldAddress, OldConditionTerm};
-    let p = OldAddress {
-        base: "overlap".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let q = OldAddress {
-        base: p.base.clone(),
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(600)), 1),
-    };
+    use crate::kernel::{Address, AddressOffset, OldConditionTerm};
+    let p = Address::new("overlap".into(), AddressOffset::constant(0));
+    let q = p.with_offset(AddressOffset::scale_int32(
+        OldMachineTerm::Variable(Variable(600)),
+        1,
+    ));
     let protected = MemoryRange::new_with_element_width(
         p.clone(),
         OldMachineTerm::constant(0),
@@ -1145,10 +1142,7 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
     let (ledger, caller, callee) = participants();
     let piece = |start: u32, end: u32, width: u32| {
         ResourceFact::own_memory(crate::kernel::MemoryRange::new_with_element_width(
-            crate::kernel::OldAddress {
-                base: "buffer".into(),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new("buffer".into(), AddressOffset::constant(0)),
             crate::kernel::OldMachineTerm::constant(start),
             crate::kernel::OldMachineTerm::constant(end),
             width,
@@ -1439,13 +1433,13 @@ fn writes_without_active_memory_borrows_do_not_walk_pointer_aliases() {
         for symbolic_bound in [false, true] {
             let mut samples = Vec::new();
             for count in [4, 16, 64, 256] {
-                let base = OldAddress::symbolic(Variable(980_000));
+                let base = Address::symbolic(Variable(980_000));
                 let mut facts = PureFactContext::new();
                 for index in 0..count {
                     facts = facts.assume_condition(
                         OldConditionTerm::address_equal(
                             base.clone(),
-                            OldAddress::symbolic(Variable(980_001 + index as u64)),
+                            Address::symbolic(Variable(980_001 + index as u64)),
                         ),
                         true,
                     );
@@ -1556,7 +1550,7 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
                     assumptions = assumptions.assume_condition(
                         OldConditionTerm::address_equal(
                             base.clone(),
-                            OldAddress::symbolic(Variable(8_799_000 + u64::from(index))),
+                            Address::symbolic(Variable(8_799_000 + u64::from(index))),
                         ),
                         true,
                     );
@@ -1619,7 +1613,7 @@ fn escrow_restoration_ignores_unrelated_frame_owners() {
         for index in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                 crate::kernel::MemoryRange::new(
-                    OldAddress::symbolic(Variable(9_870_000 + index as u64)),
+                    Address::symbolic(Variable(9_870_000 + index as u64)),
                     0u32.into(),
                     8u32.into(),
                 ),

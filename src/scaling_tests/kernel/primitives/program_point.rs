@@ -3,21 +3,15 @@ use super::*;
 #[test]
 fn external_displacements_and_heap_indexes_use_only_their_selected_storage() {
     let _session = crate::kernel::VerificationSession::enter();
-    let parameter = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(38_151)),
-    };
-    let other_parameter = OldAddress {
-        offset: AddressOffset::variable(Variable(38_152)),
-        ..parameter.clone()
-    };
-    let heap = OldAddress {
-        base: AddressBase::Heap(38_153),
-        offset: AddressOffset::constant(0),
-    };
+    let parameter = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(38_151)),
+    );
+    let other_parameter = parameter.with_offset(AddressOffset::variable(Variable(38_152)));
+    let heap = Address::new(AddressBase::Heap(38_153), AddressOffset::constant(0));
     let start =
         ExecutionState::new().with_memory(SymbolicMemory::new().with_block(heap.base.clone(), 8));
-    let store = |state: &ExecutionState, address: &OldAddress, bits| {
+    let store = |state: &ExecutionState, address: &Address, bits| {
         state.clone().with_memory(state.memory().clone().store(
             address.clone(),
             ProgramValue::Int32(OldMachineTerm::constant(bits)),
@@ -69,10 +63,7 @@ fn external_displacements_and_heap_indexes_use_only_their_selected_storage() {
             .is_some()
     );
 
-    let symbolic_heap = OldAddress {
-        base: heap.base.clone(),
-        offset: parameter.offset.clone(),
-    };
+    let symbolic_heap = heap.with_offset(parameter.offset.clone());
     let indexed = store(&h_written, &symbolic_heap, 4);
     let point = indexed.program_point();
     assert!(
@@ -198,10 +189,7 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
     for count in [16, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = slot();
-        let target = OldAddress {
-            base: "local:target".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let target = Address::new("local:target".into(), AddressOffset::constant(0));
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
                 .with_block(slot.base.clone(), 4 * count)
@@ -261,11 +249,11 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
 #[test]
 fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(38_154)),
-    };
-    let target = OldAddress::symbolic(Variable(38_155));
+    let cell = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(38_154)),
+    );
+    let target = Address::symbolic(Variable(38_155));
     let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
         .with_bounds(Some(SubobjectBounds::constant(target, 4)));
     let state = ExecutionState::new();
@@ -322,11 +310,11 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
     let object = flag.offset_by_bytes(8);
     let callback = flag.offset_by_bytes(16);
     let sibling = flag.offset_by_bytes(24);
-    let target = OldAddress::symbolic(Variable(38_143));
+    let target = Address::symbolic(Variable(38_143));
     let pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
         .with_bounds(Some(SubobjectBounds::constant(target, 4)));
     let function = OldPointer::new(
-        OldAddress::function("callback_target"),
+        Address::function("callback_target"),
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     );
     let start =
@@ -521,21 +509,18 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
 
     let _session = crate::kernel::VerificationSession::enter();
     let entry = ExecutionState::new().begin_function_entry_memory();
-    let cell = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(4),
-    };
+    let cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(4));
     let local = slot();
     let declared = entry
         .clone()
         .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
     let accumulator = Variable(38_231);
     let item = Variable(38_232);
-    let symbolic_cell = OldAddress {
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(item), 4),
-        ..cell.clone()
-    };
-    let read = |source: &ProgramPoint, address: &OldAddress| {
+    let symbolic_cell = cell.with_offset(AddressOffset::scale_int32(
+        OldMachineTerm::Variable(item),
+        4,
+    ));
+    let read = |source: &ProgramPoint, address: &Address| {
         let point = source
             .entry_integer_version(address, LoadKind::Int32)
             .unwrap();
@@ -591,10 +576,7 @@ fn generic_entry_cells_and_compact_runs_keep_the_same_version_across_local_store
     let _session = crate::kernel::VerificationSession::enter();
     let parameter = crate::kernel::TypeParameterName::intern("PointNamedCell");
     let ty = ProgramType::Parameter(parameter);
-    let base = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let cell = base.offset_by_bytes(ty.byte_width());
     let entry = ExecutionState::new().begin_function_entry_memory();
     let source = entry.program_point();
@@ -794,12 +776,9 @@ fn a_static_scalar_entry_version_ignores_disjoint_call_ranges_in_its_block() {
 #[test]
 fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let entry = ExecutionState::new().begin_function_entry_memory();
-    let store = |state: &ExecutionState, address: OldAddress, bits| {
+    let store = |state: &ExecutionState, address: Address, bits| {
         state.clone().with_memory(
             state
                 .memory()
@@ -807,7 +786,7 @@ fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
                 .store(address, ProgramValue::Int32(OldMachineTerm::constant(bits))),
         )
     };
-    let read = |state: &ExecutionState, address: &OldAddress| {
+    let read = |state: &ExecutionState, address: &Address| {
         state
             .program_point()
             .entry_integer_version(address, LoadKind::Int32)
@@ -833,15 +812,15 @@ fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
         assert!(read(&store(&state, cell.offset_by_bytes(2), 0), &cell).is_none());
         assert!(read(&store(&state, cell.clone(), 0), &cell).is_none());
         // A write from another parameter origin may alias the cell.
-        let other_origin = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::variable(Variable(38_901)),
-        };
+        let other_origin = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::variable(Variable(38_901)),
+        );
         assert!(read(&store(&state, other_origin, 0), &cell).is_none());
         // A write through a pointer of unknown storage may too.
         assert!(
             read(
-                &store(&state, OldAddress::symbolic(Variable(38_902)), 0),
+                &store(&state, Address::symbolic(Variable(38_902)), 0),
                 &cell
             )
             .is_none()

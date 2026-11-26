@@ -915,7 +915,7 @@ mod tests {
         let goal = defined(word.clone(), ProgramType::UInt32);
         for count in [0, 16, 256] {
             let mut premises = (0..count)
-                .map(|index| defined(OldAddress::symbolic(Variable(index)), ProgramType::UInt8))
+                .map(|index| defined(Address::symbolic(Variable(index)), ProgramType::UInt8))
                 .collect::<Vec<_>>();
             for offset in 0..4 {
                 let facts = PureFactStore::from_ordered(&premises);
@@ -937,7 +937,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let cell = |n| {
             Resource::Memory(MemoryRange::new_with_element_width(
-                OldAddress::symbolic(Variable(n)),
+                Address::symbolic(Variable(n)),
                 0u32.into(),
                 1u32.into(),
                 4,
@@ -988,7 +988,7 @@ mod tests {
     #[test]
     fn adjacent_footprint_needs_order_and_the_exact_boundary() {
         let _session = VerificationSession::enter();
-        let base = OldAddress::symbolic(Variable(997400));
+        let base = Address::symbolic(Variable(997400));
         let endpoint = OldMachineTerm::Variable(Variable(997401));
         let memory = |base, end| {
             Resource::Memory(MemoryRange::new_with_element_width(
@@ -1016,13 +1016,10 @@ mod tests {
             let goal = Proposition::ResourceSeparate {
                 left: Box::new(footprint.clone()),
                 right: Box::new(memory(
-                    OldAddress {
-                        base: boundary.base.clone(),
-                        offset: AddressOffset::add(
-                            boundary.offset.clone(),
-                            AddressOffset::constant(offset),
-                        ),
-                    },
+                    boundary.with_offset(AddressOffset::add(
+                        boundary.offset.clone(),
+                        AddressOffset::constant(offset),
+                    )),
                     1u32.into(),
                 )),
             };

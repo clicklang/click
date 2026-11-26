@@ -1972,10 +1972,7 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         "#,
     )
     .expect("struct pointer parameter should parse");
-    let pool = OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pool = Address::new("arg-memory".into(), AddressOffset::constant(0));
     let proposition = Proposition::Predicate {
         name: "valid_pool".to_string(),
         arguments: vec![
@@ -2009,10 +2006,7 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
 fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     let function =
         syntax::parse_function("void lock(int32* m) {}").expect("parameter should parse");
-    let mutex = OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let mutex = Address::new("arg-memory".into(), AddressOffset::constant(0));
     let synthesize = |name: String, arguments: Vec<Term>| {
         synthesize_surface_proposition(
             &Proposition::Predicate { name, arguments },
@@ -2032,7 +2026,7 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
             vec![
                 state.clone(),
                 Term::ProgramValue(
-                    (ProgramValue::pointer(OldAddress::function("compare".to_string()))).into()
+                    (ProgramValue::pointer(Address::function("compare".to_string()))).into()
                 ),
             ],
         ),
@@ -2071,10 +2065,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         "#,
     )
     .expect("struct parameter layout should parse");
-    let owner = OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let owner = Address::new("arg-memory".into(), AddressOffset::constant(0));
     let proposition = Proposition::condition_is(
         OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -2115,10 +2106,10 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
     );
-    let first_data_cell = OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(data_pointer, 4),
-    };
+    let first_data_cell = Address::new(
+        "arg-memory".into(),
+        AddressOffset::scaled_int32_node(data_pointer, 4),
+    );
     let proposition = Proposition::condition_is(
         OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -4501,16 +4492,15 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        AddressBase, AddressOffset, MemoryRange, OldAddress, OldMachineTerm, OldPointer,
-        ProgramType,
+        Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm, OldPointer, ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
     let parameters = functions[0].parameters();
-    let base = OldAddress {
-        base: AddressBase::Concrete("range_base".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("range_base".into()),
+        AddressOffset::constant(0),
+    );
     let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
         OldPointer::new(base.clone(), ProgramType::Int32Pointer),
     ))];

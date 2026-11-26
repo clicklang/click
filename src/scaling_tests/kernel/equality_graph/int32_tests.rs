@@ -62,10 +62,7 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
 fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let pointer = OldAddress {
-            base: "resolved-int32-scale".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("resolved-int32-scale".into(), AddressOffset::constant(0));
         let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let memory = intern_memory(
             SymbolicMemory::new()
@@ -99,9 +96,11 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
 fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let pointer = |offset| OldAddress {
-            base: "two-resolved-int32-scale".into(),
-            offset: AddressOffset::constant(offset),
+        let pointer = |offset| {
+            Address::new(
+                "two-resolved-int32-scale".into(),
+                AddressOffset::constant(offset),
+            )
         };
         let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let memory = intern_memory(
@@ -342,10 +341,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
     fn sample(size: usize) -> (PureFactContext, usize) {
         std::thread::spawn(move || {
             let _session = VerificationSession::enter();
-            let address = OldAddress {
-                base: "selected".into(),
-                offset: AddressOffset::constant(0),
-            };
+            let address = Address::new("selected".into(), AddressOffset::constant(0));
             let mut memory = SymbolicMemory::new().with_block("selected", 4);
             for i in 0..size {
                 memory = memory.with_block(format!("unrelated-{i}"), 4);
@@ -464,15 +460,15 @@ fn exact_alias_enumeration_ignores_unrelated_sources() {
     let mut previous = None;
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let a = OldAddress::symbolic(Variable(960_000));
-        let b = OldAddress::symbolic(Variable(960_001));
+        let a = Address::symbolic(Variable(960_000));
+        let b = Address::symbolic(Variable(960_001));
         let mut context = PureFactContext::new()
             .assume_condition(OldConditionTerm::address_equal(a.clone(), b.clone()), true);
         for i in 0..size {
             context = context.assume_condition(
                 OldConditionTerm::address_equal(
-                    OldAddress::symbolic(Variable(970_000 + 2 * i)),
-                    OldAddress::symbolic(Variable(970_001 + 2 * i)),
+                    Address::symbolic(Variable(970_000 + 2 * i)),
+                    Address::symbolic(Variable(970_001 + 2 * i)),
                 ),
                 true,
             );
@@ -528,9 +524,11 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
     let mut baseline = None;
     for size in [4u64, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let parameter = |i| OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(var(i), 4),
+        let parameter = |i| {
+            Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::scale_int32(var(i), 4),
+            )
         };
         let write = parameter(990_000);
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
@@ -572,10 +570,10 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
         }
         let pointer = |id| {
             OldPointer::new(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(var(id), 4),
-                },
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    AddressOffset::scale_int32(var(id), 4),
+                ),
                 ProgramType::Int32Pointer,
             )
         };
@@ -602,10 +600,7 @@ fn constant_queries_ignore_other_state_candidates() {
         let mut samples = Vec::new();
         for size in [4u64, 8, 16, 32] {
             let _session = VerificationSession::enter();
-            let pointer = OldAddress {
-                base: "constant-bridge-scale".into(),
-                offset: AddressOffset::constant(0),
-            };
+            let pointer = Address::new("constant-bridge-scale".into(), AddressOffset::constant(0));
             let query = var(880_000);
             let mut context = PureFactContext::new();
             let mut memory =
@@ -617,7 +612,7 @@ fn constant_queries_ignore_other_state_candidates() {
             for index in 0..2 * size {
                 let mut address = pointer.clone();
                 if !same_address && index >= size {
-                    address.offset = AddressOffset::constant(4 * (index - size + 1) as i64);
+                    address.set_offset(AddressOffset::constant(4 * (index - size + 1) as i64));
                 }
                 memory = memory.with_call_memory_havoc(
                     Variable(881_000 + index),
@@ -683,10 +678,10 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let write = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(var(990_000), 4),
-        };
+        let write = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(var(990_000), 4),
+        );
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new(write.clone(), 0u32.into(), 1u32.into()),
         ));
@@ -696,7 +691,7 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         for i in 0..size {
             let read = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(OldAddress::symbolic(Variable(920_000 + i))),
+                Box::new(Address::symbolic(Variable(920_000 + i))),
                 LoadKind::Int32,
             );
             context = context.assume_condition(eq(&read, &var(930_000 + i)), true);
@@ -709,7 +704,7 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         // explicitly mentions it, even though unrelated reads are harmless.
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(OldAddress::symbolic(Variable(940_000))),
+            Box::new(Address::symbolic(Variable(940_000))),
             LoadKind::Int32,
         );
         let relevant = context

@@ -185,10 +185,10 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::MemoryLoad {
                 point: crate::kernel::ProgramPoint::at(&memory.clone()),
-                pointer: Box::new(OldAddress {
-                    base: AddressBase::Heap(992_000),
-                    offset: AddressOffset::constant(0),
-                }),
+                pointer: Box::new(Address::new(
+                    AddressBase::Heap(992_000),
+                    AddressOffset::constant(0),
+                )),
             },
         };
         let len = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
@@ -211,10 +211,10 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
         let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.store(
-                OldAddress {
-                    base: AddressBase::Heap(993_000 + index),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    AddressBase::Heap(993_000 + index),
+                    AddressOffset::constant(0),
+                ),
                 ProgramValue::Int32(0u32.into()),
             );
         }

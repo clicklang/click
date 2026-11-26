@@ -364,7 +364,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
         let variable = budget.allocate_kernel_variable().ok()?;
         argument_values.push(
             symbolic_call_result(parameter.program_type(), variable)
-                .complete_word(OldAddress::symbolic(variable))
+                .complete_word(Address::symbolic(variable))
                 .with_pointer_object_class(
                     contract
                         .interface()
@@ -395,10 +395,10 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
         function_interface: function_interface.clone(),
         function_name: function_name.to_string(),
         pointer: OldPointer::new(
-            OldAddress {
-                base: AddressBase::Function(function_name.to_string()),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(
+                AddressBase::Function(function_name.to_string()),
+                AddressOffset::constant(0),
+            ),
             pointer_type,
         ),
         source_contract: None,

@@ -211,11 +211,8 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
         "PointerModel",
         AlgebraicValueType::Program(ProgramType::Int32Pointer),
     );
-    let pointer = |name: &str| OldAddress {
-        base: name.into(),
-        offset: AddressOffset::constant(0),
-    };
-    let node = |p: OldAddress| {
+    let pointer = |name: &str| Address::new(name.into(), AddressOffset::constant(0));
+    let node = |p: Address| {
         constructor(
             &ty,
             "Node",
@@ -315,10 +312,7 @@ fn scalar_constant_conflicts_preserve_machine_widths() {
 #[test]
 fn scalar_read_conflicts_require_the_same_state() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = OldAddress {
-        base: "cell".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let p = Address::new("cell".into(), AddressOffset::constant(0));
     let before = SymbolicMemory::new().with_block("cell", 4).store(
         p.clone(),
         ProgramValue::Int32(OldMachineTerm::Variable(Variable(500))),
@@ -507,10 +501,10 @@ fn constructor_injectivity_splits_pointer_fields() {
         AlgebraicValueType::Program(ProgramType::Int32Pointer),
     );
     let (p, q) = (
-        OldAddress::symbolic(Variable(94)),
-        OldAddress::symbolic(Variable(95)),
+        Address::symbolic(Variable(94)),
+        Address::symbolic(Variable(95)),
     );
-    let node = |address: &OldAddress| {
+    let node = |address: &Address| {
         constructor(
             &ty,
             "Node",

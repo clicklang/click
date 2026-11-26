@@ -113,14 +113,14 @@ fn algebraic_read_construction_keeps_growing_shared_addresses_without_exports() 
                 [index.clone(), index],
             );
         }
-        let pointer = OldAddress {
-            base: AddressBase::Symbolic(Variable(999748)),
-            offset: AddressOffset::int32_scaled(
+        let pointer = Address::new(
+            AddressBase::Symbolic(Variable(999748)),
+            AddressOffset::int32_scaled(
                 SharedMachineIntegerTerm::from_shared(format, index).unwrap(),
                 4,
             ),
-        };
-        let address = SharedAddress::import(&pointer);
+        );
+        let address = pointer.shared().clone();
         let ty = TypeParameterName::intern("ReadScaleT").algebraic_type();
         let memory = intern_memory(SymbolicMemory::new());
         let exports = KernelTermExport::machine_export_count();

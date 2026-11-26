@@ -6,17 +6,14 @@ fn function_pointer_read_query_does_not_scan_aliases_or_cells() {
         let mut samples = Vec::new();
         for size in [16u64, 64, 256, 1024] {
             let _session = crate::kernel::VerificationSession::enter();
-            let cell = |i| OldAddress {
-                base: "callbacks".into(),
-                offset: AddressOffset::constant(i * 8),
-            };
+            let cell = |i| Address::new("callbacks".into(), AddressOffset::constant(i * 8));
             let mut memory = SymbolicMemory::new();
             let mut facts = PureFactContext::new();
             for i in 1..=size {
                 memory = memory.store(cell(i as i64), callback_value("other"));
                 facts = facts.assume_condition(
                     OldConditionTerm::address_equal(
-                        OldAddress::symbolic(Variable(993000 + i)),
+                        Address::symbolic(Variable(993000 + i)),
                         if related { cell(0) } else { cell(i as i64) },
                     ),
                     true,
@@ -25,7 +22,7 @@ fn function_pointer_read_query_does_not_scan_aliases_or_cells() {
             let value = callback_value("callback");
             memory = memory.store(cell(0), value);
             let memory = intern_memory(memory);
-            let query = OldAddress::symbolic(Variable(999000));
+            let query = Address::symbolic(Variable(999000));
             facts = facts.assume_condition(
                 OldConditionTerm::address_equal(query.clone(), cell(0)),
                 true,
@@ -33,7 +30,7 @@ fn function_pointer_read_query_does_not_scan_aliases_or_cells() {
             // Measure a cold miss: no producer equation has been admitted.
             let read = function_read(&memory, &query);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.pointers_known_equal(&read, &OldAddress::function("absent"))
+                facts.pointers_known_equal(&read, &Address::function("absent"))
             });
             samples.push(work);
         }

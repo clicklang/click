@@ -437,10 +437,10 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                     before: memory.clone(),
                     after: memory.clone(),
                     writes: vec![(
-                        crate::kernel::OldAddress {
-                            base: crate::kernel::AddressBase::ExternalArgument,
-                            offset: AddressOffset::constant(index as i64 * 4),
-                        },
+                        Address::new(
+                            crate::kernel::AddressBase::ExternalArgument,
+                            AddressOffset::constant(index as i64 * 4),
+                        ),
                         crate::kernel::AccessExtent::from(4),
                     )],
                 })
@@ -502,10 +502,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
 }
 
 fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
-    let pointer = OldAddress {
-        base: "sum".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("sum".into(), AddressOffset::constant(0));
     let loadable = crate::kernel::quantifiers::test_forall(
         Default::default(),
         Variable(30),
@@ -653,10 +650,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             let predicates = PredicateEnvironment::new(&[]);
             let functions = ClickFunctionEnvironment::new(&[]);
             let theorems = TheoremEnvironment::new(&[]);
-            let pointer = OldAddress {
-                base: "atomic-extract-cell".into(),
-                offset: AddressOffset::constant(0),
-            };
+            let pointer = Address::new("atomic-extract-cell".into(), AddressOffset::constant(0));
             let old_memory = SymbolicMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(OldMachineTerm::Variable(Variable(8_000_100))),
@@ -1060,10 +1054,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let pointer = OldAddress {
-        base: "cell".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("cell".into(), AddressOffset::constant(0));
     let memory = SymbolicMemory::new().with_block("cell", 4).store(
         pointer.clone(),
         ProgramValue::Int32(OldMachineTerm::Variable(Variable(11))),
@@ -5252,10 +5243,10 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
     ));
     let base = ProgramValue::typed_pointer(
-        OldAddress {
-            base: AddressBase::Concrete(block.into()),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new(
+            AddressBase::Concrete(block.into()),
+            AddressOffset::constant(0),
+        ),
         ProgramType::Int32Pointer,
     );
     let mut surface_propositions = SurfacePropositionMap::default();
@@ -9916,7 +9907,7 @@ fn observe_composite_keeps_the_defined_read_at_the_selected_point() {
                 .unwrap(),
         );
     let environment = ExecutionEnvironment::new();
-    let pointer = OldAddress::symbolic(Variable(88_022));
+    let pointer = Address::symbolic(Variable(88_022));
     let arguments = [ProgramExpression::Value(ProgramValue::typed_pointer(
         pointer.clone(),
         ProgramType::Int32Pointer,
@@ -11777,10 +11768,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let pointer = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
@@ -11942,10 +11930,10 @@ fn generated_load_source_event_fixture(
     occurrence: u32,
     pointer_offset: u32,
 ) -> crate::kernel::GeneratedLoadSourceEvent {
-    let pointer = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(pointer_offset.into()),
-    };
+    let pointer = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::constant(pointer_offset.into()),
+    );
     crate::kernel::GeneratedLoadSourceEvent::new(
         crate::kernel::LoadSourceId {
             owner: crate::kernel::LoadSourceOwnerId {
@@ -14464,15 +14452,12 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     }
     let (interface_type, read_local) =
         load_type(function.body()).expect("callback field is a typed load");
-    let argument = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(210_520)), 4),
-    };
-    let table = OldAddress {
-        base: "global:callback-table".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let target = OldAddress::function("callback");
+    let argument = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(210_520)), 4),
+    );
+    let table = Address::new("global:callback-table".into(), AddressOffset::constant(0));
+    let target = Address::function("callback");
     let memory = SymbolicMemory::new().store(
         table.clone(),
         ProgramValue::typed_pointer(target.clone(), interface_type),
@@ -15081,10 +15066,7 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
 fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
     let cell = |name: &str| {
         Resource::Memory(MemoryRange::new(
-            OldAddress {
-                base: name.into(),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(name.into(), AddressOffset::constant(0)),
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
         ))
@@ -15143,7 +15125,7 @@ fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
 fn proof_binding_name_index_tracks_aliases_scopes_and_forks() {
     let value = |variable| {
         SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
-            OldAddress::symbolic(Variable(variable)),
+            Address::symbolic(Variable(variable)),
             ProgramType::Int32Pointer,
         )))
     };
@@ -15264,7 +15246,7 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::OldPointer::new(OldAddress::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = SyntaxTerm::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));
@@ -15272,7 +15254,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
     locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
     let goal = Proposition::condition_is(
-        OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null()),
+        OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         false,
     );
     let synthesize = || {
@@ -15293,7 +15275,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
         let shadows = PersistentBinderMap::default().with_inserted(
             "identity",
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
-                OldAddress::symbolic(Variable(981_021)),
+                Address::symbolic(Variable(981_021)),
                 ProgramType::Int32Pointer,
             ))),
         );

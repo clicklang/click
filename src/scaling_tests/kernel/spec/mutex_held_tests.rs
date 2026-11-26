@@ -38,10 +38,10 @@ fn typed_held_observation_does_not_search_a_growing_alias_class() {
             .unwrap();
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
-            let alias = OldAddress {
-                base: AddressBase::Symbolic(Variable(810000 + index as u64)),
-                offset: AddressOffset::constant(0),
-            };
+            let alias = Address::new(
+                AddressBase::Symbolic(Variable(810000 + index as u64)),
+                AddressOffset::constant(0),
+            );
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
                 OldConditionTerm::AddressEqual(Box::new(address(0)), Box::new(alias)),
                 true,

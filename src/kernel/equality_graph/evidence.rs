@@ -245,7 +245,7 @@ impl EqualityGraph {
     /// equalities, excluding `pointer` itself: the pointer counterpart of
     /// [`Self::scalar_evidence_class`]. The edges are symmetric, so the walk
     /// costs the equalities in this one component.
-    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &OldAddress) -> Vec<OldAddress> {
+    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &Address) -> Vec<Address> {
         let aliases = &self.admitted.address_base_aliases;
         if !aliases.contains_key(pointer) {
             return Vec::new();

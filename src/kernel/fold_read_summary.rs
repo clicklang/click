@@ -172,7 +172,7 @@ impl std::fmt::Display for FoldReadDecline {
 #[derive(Clone, Debug)]
 pub(crate) struct FoldReadInterval {
     pub(crate) memory: SymbolicMemory,
-    pub(crate) base: OldAddress,
+    pub(crate) base: Address,
     pub(crate) start: SharedMachineIntegerTerm,
     pub(crate) end: SharedMachineIntegerTerm,
     pub(crate) element_width: u32,

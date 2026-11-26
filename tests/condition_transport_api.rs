@@ -52,14 +52,8 @@ fn consistent_context_retains_its_symbolic_premise() {
 #[test]
 fn context_free_disjoint_store_transport_stays_closed() {
     let before = SymbolicMemory::new();
-    let written = OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let preserved = OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::constant(4),
-    };
+    let written = Address::new("arg-memory".into(), AddressOffset::constant(0));
+    let preserved = Address::new("arg-memory".into(), AddressOffset::constant(4));
     let after = before.clone().store(written, int32(7));
     let old_load = OldMachineTerm::memory_read(
         click::kernel::intern_memory(before),

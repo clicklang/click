@@ -666,7 +666,7 @@ mod tests {
             .map(|class| {
                 AddressOffset::scaled_int64_node(
                     OldMachineTerm::IntegerAddress(
-                        Box::new(OldAddress::symbolic(Variable(994105))),
+                        Box::new(Address::symbolic(Variable(994105))),
                         crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
                     1,
@@ -731,7 +731,7 @@ mod tests {
                     AddressOffset::variable(Variable(994106)),
                     AddressOffset::scaled_int64_node(
                         OldMachineTerm::IntegerAddress(
-                            Box::new(OldAddress::symbolic(Variable(994107))),
+                            Box::new(Address::symbolic(Variable(994107))),
                             crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(
                                 class,
                             ))),
@@ -816,7 +816,7 @@ mod tests {
             let expected = Some(CAccessClass::Scalar(class));
             let source = AddressOffset::scaled_int64_node(
                 OldMachineTerm::IntegerAddress(
-                    Box::new(OldAddress::symbolic(Variable(994004))),
+                    Box::new(Address::symbolic(Variable(994004))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
                 1,

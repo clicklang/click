@@ -7,9 +7,12 @@ fn scalar_declaration_and_retirement_do_not_reindex_heap_blocks() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
-            memory = memory.with_block(OldAddress::symbolic(Variable(9_393_000 + index)).base, 16);
+            memory = memory.with_block(
+                Address::symbolic(Variable(9_393_000 + index)).base.clone(),
+                16,
+            );
         }
-        let scalar = OldAddress::symbolic(Variable(9_394_000)).base;
+        let scalar = Address::symbolic(Variable(9_394_000)).base.clone();
         let mut samples = Vec::new();
         for _ in 0..3 {
             let (((declared, retired), work), maps) =

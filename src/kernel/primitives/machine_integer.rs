@@ -527,7 +527,7 @@ impl OldMachineTerm {
     #[cfg_attr(test, track_caller)]
     pub fn memory_read(
         memory: crate::kernel::SharedMemory,
-        pointer: crate::kernel::OldAddress,
+        pointer: crate::kernel::Address,
         kind: crate::kernel::LoadKind,
     ) -> Self {
         Self::read_named(
@@ -543,7 +543,7 @@ impl OldMachineTerm {
     pub(in crate::kernel) fn is_memory_named_read_of(
         &self,
         memory: &crate::kernel::SharedMemory,
-        pointer: &crate::kernel::OldAddress,
+        pointer: &crate::kernel::Address,
         kind: crate::kernel::LoadKind,
     ) -> bool {
         matches!(self, Self::MemoryLoad(_, cell, read_kind)
@@ -561,7 +561,7 @@ impl OldMachineTerm {
     #[cfg_attr(test, track_caller)]
     pub(crate) fn read_named(
         point: impl Into<crate::kernel::ProgramPoint>,
-        pointer: impl Into<Box<crate::kernel::OldAddress>>,
+        pointer: impl Into<Box<crate::kernel::Address>>,
         kind: crate::kernel::LoadKind,
     ) -> Self {
         let point = point.into();
@@ -882,15 +882,15 @@ mod tests {
     #[test]
     fn an_integer_read_is_its_load_and_kind_whatever_selection_built_it() {
         use crate::kernel::{
-            AddressBase, AddressOffset, ExecutionState, LoadKind, OldAddress, ProgramType,
+            Address, AddressBase, AddressOffset, ExecutionState, LoadKind, ProgramType,
             ProgramValue, SymbolicMemory,
         };
         use std::hash::{Hash, Hasher};
         let _session = crate::kernel::VerificationSession::enter();
-        let slot = OldAddress {
-            base: AddressBase::Concrete("local:read-identity-slot".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let slot = Address::new(
+            AddressBase::Concrete("local:read-identity-slot".into()),
+            AddressOffset::constant(0),
+        );
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
         let written = start.clone().with_memory(start.memory().clone().store(
@@ -953,16 +953,16 @@ mod tests {
     #[test]
     fn an_algebraic_read_is_its_load_decoded_at_its_algebraic_type() {
         use crate::kernel::{
-            AccessExtent, AddressBase, AddressOffset, AlgebraicTermNode, AlgebraicType, LoadKind,
-            OldAddress, ProgramPoint, ProgramValue, SymbolicMemory, TypeParameterName,
+            AccessExtent, Address, AddressBase, AddressOffset, AlgebraicTermNode, AlgebraicType,
+            LoadKind, ProgramPoint, ProgramValue, SymbolicMemory, TypeParameterName,
         };
         use std::cmp::Ordering;
         use std::hash::{Hash, Hasher};
         let _session = crate::kernel::VerificationSession::enter();
-        let slot = OldAddress {
-            base: AddressBase::Concrete("local:algebraic-read-slot".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let slot = Address::new(
+            AddressBase::Concrete("local:algebraic-read-slot".into()),
+            AddressOffset::constant(0),
+        );
         let memory =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block(slot.base.clone(), 16));
         let point = ProgramPoint::at(&memory);
@@ -1040,15 +1040,12 @@ mod tests {
     #[test]
     fn integer_reads_order_and_hash_the_same_whatever_was_interned_before() {
         use crate::kernel::{
-            AddressBase, AddressOffset, LoadKind, OldAddress, ProgramPoint, ProgramValue,
+            Address, AddressBase, AddressOffset, LoadKind, ProgramPoint, ProgramValue,
             SymbolicMemory,
         };
         use std::hash::{Hash, Hasher};
         let block = AddressBase::Concrete("local:read-order-slot".into());
-        let cell = |offset| OldAddress {
-            base: block.clone(),
-            offset: AddressOffset::constant(offset),
-        };
+        let cell = |offset| Address::new(block.clone(), AddressOffset::constant(offset));
         let reads = || {
             let empty = SymbolicMemory::new().with_block(block.clone(), 8);
             [

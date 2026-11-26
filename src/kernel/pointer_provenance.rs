@@ -1,4 +1,4 @@
-//! Value-origin equality. OldAddress congruence must never enter this index.
+//! Value-origin equality. Address congruence must never enter this index.
 use super::OldPointer;
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 
@@ -126,10 +126,7 @@ mod tests {
     }
 
     fn value(id: u64) -> OldPointer {
-        OldPointer::new(
-            OldAddress::symbolic(Variable(id)),
-            ProgramType::Int32Pointer,
-        )
+        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equality(a: &OldPointer, b: &OldPointer) -> Proposition {
         Proposition::condition_is(
@@ -143,10 +140,10 @@ mod tests {
         let b = OldMachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
             OldPointer::new(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(index, 4),
-                },
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    AddressOffset::scale_int32(index, 4),
+                ),
                 ProgramType::Int32Pointer,
             )
         };
@@ -163,11 +160,11 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer);
+        let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
-            OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null()),
+            OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
             true,
         );
         assert!(context.pointer_provenance_match(&pointer, &null));
@@ -305,8 +302,8 @@ mod tests {
             width: 4u32.into(),
         }));
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
-        let cell = OldAddress::symbolic(Variable(824_002));
-        let read_address = OldAddress::symbolic(Variable(824_003));
+        let cell = Address::symbolic(Variable(824_002));
+        let read_address = Address::symbolic(Variable(824_003));
         let read = OldPointer::from_read(
             read_address,
             ProgramType::Int32Pointer,
@@ -329,13 +326,13 @@ mod tests {
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let x = OldPointer::from_read(
-            OldAddress::symbolic(Variable(825_003)),
+            Address::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,
             &retained_state,
             a.address(),
         );
         let y = OldPointer::from_read(
-            OldAddress::symbolic(Variable(825_004)),
+            Address::symbolic(Variable(825_004)),
             ProgramType::Int32Pointer,
             &retained_state,
             b.address(),

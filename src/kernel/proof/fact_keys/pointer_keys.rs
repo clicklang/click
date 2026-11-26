@@ -284,15 +284,14 @@ pub(super) fn alpha_offset<const ALLOW_LOADS: bool>(
 pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedAddressKey {
     let depth = POINTER_READ_KEY_DEPTH.with(|depth| depth.replace(depth.get() + 1));
     let _restore = PointerReadKeyDepth(depth);
-    let block = pointer.node().base.native_atom();
+    let block = pointer.atom();
     // Existing depth bound and registry authority; never export the offset.
     let read = match block {
-        AddressBase::Load(_) if depth < 3 => OldAddress {
-            base: block.clone(),
-            offset: AddressOffset::constant(0),
+        AddressBase::Load(_) if depth < 3 => {
+            Address::new(block.clone(), AddressOffset::constant(0))
+                .as_loaded_value()
+                .map(|read| read.defining_address)
         }
-        .as_loaded_value()
-        .map(|read| read.defining_address),
         AddressBase::Symbolic(variable) if depth < 3 => {
             crate::kernel::registered_load_for_variable(variable).map(|(_, source)| source)
         }
@@ -304,7 +303,7 @@ pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedAddressKey {
                 MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_address_key(&source)))
             })
             .unwrap_or_else(|| MemoryErasedAddressBaseKey::Exact(block.clone())),
-        offset: Box::new(state_offset(&pointer.node().offset)),
+        offset: Box::new(state_offset(pointer.offset())),
     }
 }
 #[allow(dead_code)]
@@ -315,12 +314,8 @@ pub(super) fn alpha_address<const ALLOW_LOADS: bool>(
 ) -> Option<AlphaAddressKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(AlphaAddressKey {
-        base: alpha_address_base_key::<ALLOW_LOADS>(
-            pointer.node().base.native_atom(),
-            bindings,
-            next,
-        )?,
-        offset: alpha_offset::<ALLOW_LOADS>(&pointer.node().offset, bindings, next)?,
+        base: alpha_address_base_key::<ALLOW_LOADS>(pointer.atom(), bindings, next)?,
+        offset: alpha_offset::<ALLOW_LOADS>(pointer.offset(), bindings, next)?,
     })
 }
 #[allow(dead_code)]
@@ -375,10 +370,7 @@ mod tests {
         VerificationSession,
     };
     fn pointer(offset: AddressOffset) -> OldPointer {
-        let address = OldAddress {
-            base: AddressBase::Concrete("shared-key".into()),
-            offset,
-        };
+        let address = Address::new(AddressBase::Concrete("shared-key".into()), offset);
         OldPointer::new(address.clone(), ProgramType::VoidPointer)
             .with_provenance(Arc::new(address.clone()))
             .with_bounds(Some(SubobjectBounds {
@@ -390,7 +382,7 @@ mod tests {
                     right: OldMachineTerm::constant(4).into(),
                 },
             }))
-            .with_bounds_owner(Some(Arc::new(OldAddress::symbolic(Variable(1010001)))))
+            .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1010001)))))
     }
 
     #[test]
@@ -466,10 +458,10 @@ mod tests {
     fn shared_address_keys_preserve_load_depth_and_logical_call_identity() {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
-        let mut source = OldAddress::symbolic(Variable(1010200));
+        let mut source = Address::symbolic(Variable(1010200));
         for _ in 0..6 {
-            source = OldAddress::loaded_value(&memory, &source);
-            let shared = SharedAddress::import(&source);
+            source = Address::loaded_value(&memory, &source);
+            let shared = source.shared().clone();
             assert_eq!(state_address(&shared), memory_erased_address_key(&source));
             assert_eq!(
                 alpha_address::<true>(&shared, &mut fold_keys::bindings(), &mut 0),
@@ -481,12 +473,15 @@ mod tests {
             );
         }
         let make = || {
-            SharedAddress::import(&OldAddress {
-                base: AddressBase::PureFunctionApplication(
-                    crate::kernel::SharedPureApplication::intern("pointer-key-call".into(), vec![]),
-                ),
-                offset: AddressOffset::constant(0),
-            })
+            Address::new(
+                AddressBase::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
+                    "pointer-key-call".into(),
+                    vec![],
+                )),
+                AddressOffset::constant(0),
+            )
+            .shared()
+            .clone()
         };
         let a = make();
         let b = make();

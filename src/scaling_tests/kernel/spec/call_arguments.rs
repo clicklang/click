@@ -69,10 +69,8 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
 
         // The declared pointer origin selects only argument 1. Determining a
         // null result must not materialize the unrelated exponential DAG.
-        let null = ProgramValue::Pointer(OldPointer::new(
-            OldAddress::null(),
-            ProgramType::Int32Pointer,
-        ));
+        let null =
+            ProgramValue::Pointer(OldPointer::new(Address::null(), ProgramType::Int32Pointer));
         let arguments = [
             argument,
             SpecPureFunctionArgument::Value(SpecExpression::Value(null.clone())),

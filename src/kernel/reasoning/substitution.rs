@@ -23,9 +23,9 @@ trait VariableSubstitution {
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
     fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm;
 
-    fn pointer(&self, pointer: &OldAddress) -> OldAddress;
+    fn pointer(&self, pointer: &Address) -> Address;
     /// The address of a local's storage slot.
-    fn local_slot(&self, pointer: &OldAddress) -> OldAddress;
+    fn local_slot(&self, pointer: &Address) -> Address;
     fn term(&self, term: &Term) -> Term;
     fn condition(&self, condition: &OldConditionTerm) -> OldConditionTerm;
     fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm>;
@@ -120,10 +120,10 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
         let value = self.integer(root.integer_native_compat().expect("Integer field"));
         KernelTermImport::for_exact_field_inputs().integer(&value.into())
     }
-    fn pointer(&self, pointer: &OldAddress) -> OldAddress {
+    fn pointer(&self, pointer: &Address) -> Address {
         substitute_bitvector_variable_in_pointer(pointer, self.from, self.to)
     }
-    fn local_slot(&self, pointer: &OldAddress) -> OldAddress {
+    fn local_slot(&self, pointer: &Address) -> Address {
         pointer.clone()
     }
     fn term(&self, term: &Term) -> Term {
@@ -177,7 +177,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
 
 struct PointerSubstitution<'a> {
     from: Variable,
-    to: &'a OldAddress,
+    to: &'a Address,
 }
 
 impl VariableSubstitution for PointerSubstitution<'_> {
@@ -195,10 +195,10 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm {
         root
     }
-    fn pointer(&self, pointer: &OldAddress) -> OldAddress {
+    fn pointer(&self, pointer: &Address) -> Address {
         substitute_pointer_variable_in_pointer(pointer, self.from, self.to)
     }
-    fn local_slot(&self, pointer: &OldAddress) -> OldAddress {
+    fn local_slot(&self, pointer: &Address) -> Address {
         self.pointer(pointer)
     }
     fn term(&self, term: &Term) -> Term {
@@ -344,7 +344,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
 pub(crate) fn substitute_pointer_variable_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> Proposition {
     walk_proposition(proposition, &PointerSubstitution { from, to })
 }
@@ -374,7 +374,7 @@ pub(crate) fn substitute_pointer_value_in_proposition(
 fn substitute_pointer_variable_in_algebraic_value(
     value: &AlgebraicValue,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> AlgebraicValue {
     walk_algebraic_value(value, &PointerSubstitution { from, to })
 }
@@ -382,7 +382,7 @@ fn substitute_pointer_variable_in_algebraic_value(
 fn substitute_pointer_variable_in_pure_function_argument(
     argument: &PureFunctionArgument,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> PureFunctionArgument {
     walk_pure_function_argument(argument, &PointerSubstitution { from, to })
 }
@@ -390,7 +390,7 @@ fn substitute_pointer_variable_in_pure_function_argument(
 fn substitute_pointer_variable_in_sequence(
     sequence: &SequenceTerm,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SequenceTerm {
     walk_sequence(sequence, &PointerSubstitution { from, to })
 }
@@ -399,7 +399,7 @@ fn substitute_pointer_variable_in_sequence(
 fn substitute_pointer_variable_in_execution_statement(
     statement: &ProgramStatement,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> ProgramStatement {
     walk_execution_statement(statement, &PointerSubstitution { from, to })
 }
@@ -407,7 +407,7 @@ fn substitute_pointer_variable_in_execution_statement(
 fn substitute_pointer_variable_in_execution_state(
     state: &ExecutionState,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> ExecutionState {
     walk_execution_state(state, &PointerSubstitution { from, to })
 }
@@ -416,7 +416,7 @@ fn substitute_pointer_variable_in_execution_state(
 fn substitute_pointer_variable_in_resource(
     resource: &Resource,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> Resource {
     walk_resource(resource, &PointerSubstitution { from, to })
 }
@@ -425,7 +425,7 @@ fn substitute_pointer_variable_in_resource(
 fn substitute_pointer_variable_in_program_function(
     function: &ProgramFunction,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> ProgramFunction {
     walk_program_function(function, &PointerSubstitution { from, to })
 }
@@ -1843,8 +1843,8 @@ mod resource_frame_substitution_tests {
     #[test]
     fn guard_substitution_renames_abstract_authority_but_preserves_concrete_acquisition() {
         let variable = Variable(71_900);
-        let address = OldAddress::symbolic(variable);
-        let replacement = OldAddress::symbolic(Variable(71_901));
+        let address = Address::symbolic(variable);
+        let replacement = Address::symbolic(Variable(71_901));
         let abstract_guard = Resource::MutexGuard(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
@@ -1869,8 +1869,8 @@ mod resource_frame_substitution_tests {
     #[test]
     fn lifetime_substitution_renames_abstract_authority_but_preserves_concrete_initialization() {
         let variable = Variable(71_900);
-        let address = OldAddress::symbolic(variable);
-        let replacement = OldAddress::symbolic(Variable(71_901));
+        let address = Address::symbolic(variable);
+        let replacement = Address::symbolic(Variable(71_901));
         let abstract_guard = Resource::MutexLive(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
@@ -1895,10 +1895,10 @@ mod resource_frame_substitution_tests {
     #[test]
     fn use_substitution_preserves_exact_share_and_diagnostic_address() {
         let variable = Variable(71_900);
-        let address = OldAddress {
-            base: AddressBase::Symbolic(variable),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 1),
-        };
+        let address = Address::new(
+            AddressBase::Symbolic(variable),
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 1),
+        );
         let live = ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(123),
             mutex: address,
@@ -1920,7 +1920,7 @@ mod resource_frame_substitution_tests {
             substitute_pointer_variable_in_resource(
                 resource,
                 variable,
-                &OldAddress::symbolic(Variable(71_901))
+                &Address::symbolic(Variable(71_901))
             ),
             *resource
         );
@@ -1937,9 +1937,9 @@ mod resource_frame_substitution_tests {
     #[test]
     fn unrelated_binder_preserves_nested_offset_state() {
         let base = SymbolicMemory::new();
-        let metadata = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::raw_add(
+        let metadata = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::raw_add(
                 AddressOffset::raw_add(
                     AddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(100_000)),
@@ -1949,7 +1949,7 @@ mod resource_frame_substitution_tests {
                 ),
                 AddressOffset::constant(4),
             ),
-        };
+        );
         let retained_state = crate::kernel::intern_memory(
             base.store(metadata, ProgramValue::Int32(OldMachineTerm::constant(7))),
         );
@@ -1977,7 +1977,7 @@ mod resource_frame_substitution_tests {
         let pointer_substituted = substitute_pointer_variable_in_execution_state(
             &state,
             Variable(71_100),
-            &OldAddress::symbolic(Variable(71_101)),
+            &Address::symbolic(Variable(71_101)),
         );
 
         let original = state.borrow_ledger().expect("state has ledger");
@@ -2016,10 +2016,10 @@ mod resource_frame_substitution_tests {
     fn bitvector_substitution_rewrites_validated_inherited_ranges() {
         let from = Variable(71_001);
         let range = MemoryRange::new(
-            OldAddress {
-                base: AddressBase::Concrete("substitution:range".into()),
-                offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
-            },
+            Address::new(
+                AddressBase::Concrete("substitution:range".into()),
+                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
+            ),
             OldMachineTerm::Variable(from),
             binary_node!(
                 Int32,
@@ -2063,15 +2063,12 @@ mod resource_frame_substitution_tests {
     #[test]
     fn pointer_substitution_rewrites_validated_ranges_and_derived_interface() {
         let from = Variable(71_002);
-        let replacement = OldAddress {
-            base: AddressBase::Concrete("substitution:replacement".into()),
-            offset: AddressOffset::constant(2),
-        };
+        let replacement = Address::new(
+            AddressBase::Concrete("substitution:replacement".into()),
+            AddressOffset::constant(2),
+        );
         let range = MemoryRange::new(
-            OldAddress {
-                base: AddressBase::Symbolic(from),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(AddressBase::Symbolic(from), AddressOffset::constant(0)),
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
         );
@@ -2102,10 +2099,10 @@ mod resource_frame_substitution_tests {
         );
 
         let derived_segment = MemorySegment::new(
-            ProgramExpression::Value(ProgramValue::pointer(OldAddress {
-                base: AddressBase::Symbolic(from),
-                offset: AddressOffset::constant(0),
-            })),
+            ProgramExpression::Value(ProgramValue::pointer(Address::new(
+                AddressBase::Symbolic(from),
+                AddressOffset::constant(0),
+            ))),
             ProgramExpression::Value(int32(0)),
             ProgramExpression::Value(int32(1)),
         );
@@ -3053,7 +3050,7 @@ fn collect_expression_outcome_bound_variables(
     }
 }
 
-fn collect_pointer_bound_variables(pointer: &OldAddress, variables: &mut BTreeSet<Variable>) {
+fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<Variable>) {
     match &pointer.base {
         AddressBase::PureFunctionApplication(_) => {
             collect_proposition_capture_variables(
@@ -5425,7 +5422,7 @@ mod machine_integer_substitution_tests {
     fn instantiating_an_exact_read_index_keeps_its_program_point() {
         let _session = crate::kernel::VerificationSession::enter();
         let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
-        let base = OldAddress::symbolic(Variable(38_551));
+        let base = Address::symbolic(Variable(38_551));
         let index = Variable(38_552);
         let value = OldMachineTerm::Variable(Variable(38_553));
         let read = |pointer| {
@@ -5442,10 +5439,10 @@ mod machine_integer_substitution_tests {
                 true,
             )
         };
-        let before = OldAddress {
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(index), 4),
-            ..base.clone()
-        };
+        let before = base.with_offset(AddressOffset::scale_int32(
+            OldMachineTerm::Variable(index),
+            4,
+        ));
         let after = base.offset_by_bytes(28);
         let replacement = OldMachineTerm::constant(7);
         assert_eq!(
@@ -5644,7 +5641,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
             }
             let mut map_address = |address: &crate::kernel::SharedAddress| {
                 if matches!(
-                    address.node().base.native_atom(),
+                    address.atom(),
                     AddressBase::PureFunctionApplication(_)
                 ) {
                     crate::kernel::proof::term_rewrite::substitute_application_address_bits(
@@ -5652,13 +5649,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     )
                     .ok_or(())
                 } else {
-                    let offset = &address.node().offset;
+                    let offset = address.offset();
                     let offsets = map_common_substitution_offsets(
                         &[offset.clone(), offset.clone()],
                         &mut map_machine,
                     )?;
                     Ok(crate::kernel::SharedAddress::new(
-                        address.node().base.clone(),
+                        address.block(),
                         offsets[0].clone(),
                     ))
                 }
@@ -5688,7 +5685,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
 pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
     condition: &KernelTerm,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> Option<KernelTerm> {
     if crate::kernel::BooleanOperandView::Shared(condition).is_bool_value_form()
         || matches!(
@@ -5701,10 +5698,10 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
         );
     }
     if let crate::kernel::KernelTermNode::AddressEqual { arguments } = condition.node() {
-        use crate::kernel::{SharedAddress as A, SharedAddressBase, SharedAddressOffset as S};
+        use crate::kernel::{SharedAddress as A, SharedAddressOffset as S};
         let mut mapped = Vec::with_capacity(2);
         for address in arguments {
-            let block = address.node().base.native_atom();
+            let block = address.atom();
             if matches!(block, AddressBase::PureFunctionApplication(_)) {
                 mapped.push(
                     crate::kernel::proof::term_rewrite::substitute_application_address_pointer(
@@ -5726,10 +5723,10 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
             };
             mapped.push(match replacement {
                 Some(replacement) => A::new(
-                    SharedAddressBase::import(&replacement.base),
+                    replacement.block(),
                     S::add(
                         replacement.offset.shared().clone(),
-                        address.node().offset.clone(),
+                        address.offset().clone(),
                     ),
                 ),
                 None => address.clone(),
@@ -5932,10 +5929,11 @@ fn substitute_through_load_variable(
     let (registered, pointer) = crate::kernel::eval::registered_load_point_for_variable(&variable)?;
     let memory = registered.shared_memory().clone();
     let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
-    let substituted_pointer = OldAddress {
-        base: pointer.base.clone(),
-        offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
-    };
+    let substituted_pointer = pointer.with_offset(substitute_bitvector_variable_in_pointer_offset(
+        &pointer.offset,
+        from,
+        to,
+    ));
     // Deciding that this load variable is untouched means rewriting the
     // state it was minted against, whose own cells hold further load
     // variables. Going through the interned-state memo makes the common
@@ -6360,10 +6358,10 @@ fn substitute_bitvector_variable_in_stored_offset(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
-    pointer: &OldAddress,
+    pointer: &Address,
     from: Variable,
     to: &OldMachineTerm,
-) -> OldAddress {
+) -> Address {
     if matches!(pointer.base, AddressBase::PureFunctionApplication(_)) {
         let source = OldMachineTerm::Variable(from);
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
@@ -6376,10 +6374,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
         };
         return result.into_pointer();
     }
-    OldAddress {
-        base: pointer.base.clone(),
-        offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
-    }
+    pointer.with_offset(substitute_bitvector_variable_in_pointer_offset(
+        &pointer.offset,
+        from,
+        to,
+    ))
 }
 
 /// One in-flight `(from, to)` substitution's already-rewritten states.
@@ -6908,7 +6907,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
     }
 }
 
-fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &OldAddress) -> Term {
+fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address) -> Term {
     match term {
         Term::Condition(condition) => Term::Condition(
             substitute_pointer_variable_in_condition(condition.old_form(), from, to).into(),
@@ -6945,7 +6944,7 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &OldAddr
 fn substitute_pointer_variable_in_algebraic_term_node(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> AlgebraicTermNode {
     match &term.node {
         AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
@@ -7034,7 +7033,7 @@ fn substitute_pointer_variable_in_algebraic_term_node(
 fn substitute_pointer_variable_in_algebraic_term(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: term.algebraic_type.clone(),
@@ -7045,7 +7044,7 @@ fn substitute_pointer_variable_in_algebraic_term(
 fn substitute_pointer_variable_in_condition(
     condition: &OldConditionTerm,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> OldConditionTerm {
     match condition {
         OldConditionTerm::IntegerLessThan(..)
@@ -7085,7 +7084,7 @@ fn substitute_pointer_variable_in_condition(
 fn substitute_pointer_variable_in_program_value(
     value: &ProgramValue,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> ProgramValue {
     let Term::ProgramValue(value) =
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
@@ -7097,10 +7096,10 @@ fn substitute_pointer_variable_in_program_value(
 }
 
 fn substitute_pointer_variable_in_pointer(
-    pointer: &OldAddress,
+    pointer: &Address,
     from: Variable,
-    to: &OldAddress,
-) -> OldAddress {
+    to: &Address,
+) -> Address {
     if matches!(&pointer.base, AddressBase::PureFunctionApplication(_)) {
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
         let Some(ProgramValue::Pointer(result)) =
@@ -7114,10 +7113,10 @@ fn substitute_pointer_variable_in_pointer(
     }
     if matches!(pointer.base, AddressBase::ExternalObject(variable) if variable == from) {
         let identity = to.object_identity();
-        return OldAddress {
-            base: identity.base,
-            offset: AddressOffset::add(identity.offset, pointer.offset.clone()),
-        };
+        return identity.with_offset(AddressOffset::add(
+            identity.offset.clone(),
+            pointer.offset.clone(),
+        ));
     }
     let replaces_block = matches!(
         (&pointer.base, &to.base),
@@ -7126,10 +7125,7 @@ fn substitute_pointer_variable_in_pointer(
     );
     let offset = pointer.offset.clone();
     if replaces_block {
-        OldAddress {
-            base: to.base.clone(),
-            offset: AddressOffset::add(to.offset.clone(), offset),
-        }
+        to.with_offset(AddressOffset::add(to.offset.clone(), offset))
     } else {
         pointer.clone()
     }
@@ -7138,7 +7134,7 @@ fn substitute_pointer_variable_in_pointer(
 fn substitute_pointer_variable_in_program_expression(
     expression: &ProgramExpression,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> ProgramExpression {
     match expression {
         ProgramExpression::Value(value) => ProgramExpression::Value(
@@ -7328,7 +7324,7 @@ fn substitute_pointer_variable_in_program_expression(
 pub(crate) fn substitute_pointer_variable_in_memory(
     memory: &SymbolicMemory,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SymbolicMemory {
     let mut result = SymbolicMemory {
         construction: None,
@@ -7529,7 +7525,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
         "substitute pointer variable",
         vec![memory.clone()],
         vec![
-            ProgramValue::pointer(OldAddress::symbolic(from)),
+            ProgramValue::pointer(Address::symbolic(from)),
             ProgramValue::pointer(to.clone()),
         ],
     );
@@ -7539,21 +7535,19 @@ pub(crate) fn substitute_pointer_variable_in_memory(
 fn substitute_pointer_variable_in_block(
     block: &AddressBase,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> AddressBase {
     match block {
-        AddressBase::PureFunctionApplication(_) => {
-            substitute_pointer_variable_in_pointer(
-                &OldAddress {
-                    base: block.clone(),
-                    offset: AddressOffset::constant(0),
-                },
-                from,
-                to,
-            )
-            .base
+        AddressBase::PureFunctionApplication(_) => substitute_pointer_variable_in_pointer(
+            &Address::new(block.clone(), AddressOffset::constant(0)),
+            from,
+            to,
+        )
+        .base
+        .clone(),
+        AddressBase::ExternalObject(variable) if *variable == from => {
+            to.object_identity().base.clone()
         }
-        AddressBase::ExternalObject(variable) if *variable == from => to.object_identity().base,
         AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable)
             if *variable == from =>
         {
@@ -7566,7 +7560,7 @@ fn substitute_pointer_variable_in_block(
 fn substitute_pointer_variable_in_spec_point(
     spec_point: &SpecPoint,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecPoint {
     match spec_point {
         SpecPoint::Current => SpecPoint::Current,
@@ -7583,7 +7577,7 @@ fn substitute_pointer_variable_in_spec_point(
 fn substitute_pointer_variable_in_spec_algebraic_expression(
     expression: &SpecAlgebraicExpression,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecAlgebraicExpression {
     let node = match &expression.node {
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
@@ -7680,7 +7674,7 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
 fn substitute_pointer_variable_in_spec_expression(
     expression: &SpecExpression,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecExpression {
     match expression {
         SpecExpression::ObjectAddress(address) => {
@@ -7908,7 +7902,7 @@ fn substitute_pointer_variable_in_spec_expression(
 fn substitute_pointer_variable_in_spec_function_argument(
     argument: &SpecPureFunctionArgument,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecPureFunctionArgument {
     match argument {
         SpecPureFunctionArgument::ObjectPointer {
@@ -7944,7 +7938,7 @@ fn substitute_pointer_variable_in_spec_function_argument(
 fn substitute_pointer_variable_in_spec_integer(
     expression: &SpecIntegerExpression,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecIntegerExpression {
     match expression {
         SpecIntegerExpression::ResourceField(_) => expression.clone(),
@@ -8089,7 +8083,7 @@ fn substitute_pointer_variable_in_spec_integer(
 fn substitute_pointer_variable_in_spec_proposition(
     proposition: &SpecProposition,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecProposition {
     match proposition {
         SpecProposition::Truth(value) => SpecProposition::Truth(*value),
@@ -8353,7 +8347,7 @@ fn substitute_pointer_variable_in_spec_proposition(
 fn substitute_pointer_variable_in_spec_sequence(
     sequence: &SpecSequenceExpression,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecSequenceExpression {
     match sequence {
         SpecSequenceExpression::Literal(elements) => SpecSequenceExpression::Literal(
@@ -8374,7 +8368,7 @@ fn substitute_pointer_variable_in_spec_sequence(
 fn substitute_pointer_variable_in_spec_resource(
     resource: &SpecResource,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> SpecResource {
     match resource {
         SpecResource::Star(a, b) => SpecResource::Star(
@@ -8417,7 +8411,7 @@ mod pointee_const_return_tests {
     #[test]
     fn pointee_const_return_value_substitution_preserves_qualifiers_and_identity() {
         let value = ProgramValue::typed_pointer(
-            OldAddress::symbolic(Variable(918)),
+            Address::symbolic(Variable(918)),
             ProgramType::Int32Pointer,
         );
         assert_eq!(
@@ -8429,18 +8423,11 @@ mod pointee_const_return_tests {
             value
         );
         assert_eq!(
-            substitute_pointer_variable_in_program_value(
-                &value,
-                Variable(919),
-                &OldAddress::null()
-            ),
+            substitute_pointer_variable_in_program_value(&value, Variable(919), &Address::null()),
             value
         );
-        let replaced = substitute_pointer_variable_in_program_value(
-            &value,
-            Variable(918),
-            &OldAddress::null(),
-        );
+        let replaced =
+            substitute_pointer_variable_in_program_value(&value, Variable(918), &Address::null());
         assert!(matches!(replaced, ProgramValue::Pointer(pointer)
             if pointer.is_null()));
     }
@@ -8466,7 +8453,7 @@ mod pointee_const_return_tests {
             substitute_pointer_variable_in_program_function(
                 &function,
                 Variable(914),
-                &OldAddress::symbolic(Variable(915)),
+                &Address::symbolic(Variable(915)),
             )
             .return_pointee_is_constant()
         );
@@ -8526,18 +8513,12 @@ mod machine_integer_pointer_substitution_tests {
     #[test]
     fn pointer_substitution_reaches_integer_observations_and_composes_offsets() {
         let binder = Variable(610);
-        let source = OldAddress {
-            base: AddressBase::Symbolic(binder),
-            offset: AddressOffset::constant(8),
-        };
-        let replacement = OldAddress {
-            base: AddressBase::Symbolic(Variable(611)),
-            offset: AddressOffset::constant(4),
-        };
-        let expected = OldAddress {
-            base: replacement.base.clone(),
-            offset: AddressOffset::constant(12),
-        };
+        let source = Address::new(AddressBase::Symbolic(binder), AddressOffset::constant(8));
+        let replacement = Address::new(
+            AddressBase::Symbolic(Variable(611)),
+            AddressOffset::constant(4),
+        );
+        let expected = replacement.with_offset(AddressOffset::constant(12));
         let bits = OldMachineTerm::IntegerAddress(
             Box::new(source),
             crate::kernel::AddressObjectClass::NONE,
@@ -8989,16 +8970,16 @@ mod integer_mixed_quantifier_tests {
         let free_index = Variable(9_101);
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
-            &OldAddress {
-                base: AddressBase::Concrete("integer-witness-capture".into()),
-                offset: AddressOffset::scaled_int32_node(
+            &Address::new(
+                AddressBase::Concrete("integer-witness-capture".into()),
+                AddressOffset::scaled_int32_node(
                     OldMachineTerm::IntegerToMachine {
                         value: IntegerTerm::var(free_index).into(),
                         destination: MachineIntegerType::Int32,
                     },
                     4,
                 ),
-            },
+            ),
             crate::kernel::LoadKind::Int32,
             4,
         );
@@ -9148,7 +9129,7 @@ mod integer_mixed_quantifier_tests {
         let replacement = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
             OldMachineTerm::IntegerAddress(
-                Box::new(OldAddress::symbolic(inner_pointer)),
+                Box::new(Address::symbolic(inner_pointer)),
                 crate::kernel::AddressObjectClass::NONE,
             ),
         )
@@ -9156,7 +9137,7 @@ mod integer_mixed_quantifier_tests {
         let pointer_value = |variable| {
             Term::ProgramValue(
                 ProgramValue::Pointer(OldPointer::new(
-                    OldAddress::symbolic(variable),
+                    Address::symbolic(variable),
                     ProgramType::Int32Pointer,
                 ))
                 .into(),
@@ -9668,16 +9649,16 @@ mod integer_range_fold_substitution_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let binder = Variable(70_190);
         let renamed = Variable(70_191);
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
-        };
+        let pointer = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
+        );
         let source =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("unrelated", 4).store(
-                OldAddress {
-                    base: AddressBase::Concrete("unrelated".into()),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    AddressBase::Concrete("unrelated".into()),
+                    AddressOffset::constant(0),
+                ),
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
@@ -9726,10 +9707,10 @@ mod integer_range_fold_substitution_tests {
         for bytes in [4, 8] {
             let memory = crate::kernel::intern_memory(SymbolicMemory::new());
             let binder = Variable(70_156 + u64::from(bytes));
-            let pointer = OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
-            };
+            let pointer = Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
+            );
             let original = crate::kernel::eval::scalar_read_for_exact_cell(
                 &memory,
                 &pointer,
@@ -9750,13 +9731,13 @@ mod integer_range_fold_substitution_tests {
             let renamed_pointer = observed.pointer;
             assert_eq!(
                 renamed_pointer,
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    AddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
                         4
                     )
-                }
+                )
             );
         }
     }
@@ -9765,10 +9746,10 @@ mod integer_range_fold_substitution_tests {
     fn int32_fold_substitution_rewrites_registered_load_address_only() {
         let item = Variable(70_056);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
-        let pointer = OldAddress {
-            base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(item), 4),
-        };
+        let pointer = Address::new(
+            AddressBase::Concrete("array".into()),
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(item), 4),
+        );
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
@@ -9809,13 +9790,13 @@ mod integer_range_fold_substitution_tests {
     fn int32_fold_substitution_canonicalizes_nonzero_load_base() {
         let item = Variable(70_058);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
-        let pointer = OldAddress {
-            base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::raw_add(
+        let pointer = Address::new(
+            AddressBase::Concrete("array".into()),
+            AddressOffset::raw_add(
                 AddressOffset::constant(4),
                 AddressOffset::scaled_int32_node(OldMachineTerm::Variable(item), 4),
             ),
-        };
+        );
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
@@ -9924,7 +9905,7 @@ mod resource_reference_substitution_tests {
                 AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
                     100,
                 )))),
-                AlgebraicValue::Program(ProgramValue::pointer(OldAddress::symbolic(Variable(101)))),
+                AlgebraicValue::Program(ProgramValue::pointer(Address::symbolic(Variable(101)))),
             ]
             .into(),
             schema.clone(),
@@ -9964,7 +9945,7 @@ mod resource_reference_substitution_tests {
             Variable(100),
             &OldMachineTerm::constant(7),
         );
-        let pointer = OldAddress::symbolic(Variable(103));
+        let pointer = Address::symbolic(Variable(103));
         let replaced = substitute_pointer_variable_in_resource(&replaced, Variable(101), &pointer);
         let Resource::Instance(instance) = replaced else {
             unreachable!()
@@ -10016,7 +9997,7 @@ mod checked_singleton_substitution_tests {
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
     fn pointer_value(variable: Variable) -> OldPointer {
-        OldPointer::new(OldAddress::symbolic(variable), ProgramType::Int32Pointer)
+        OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
     }
 
     fn pointer_term(variable: Variable) -> Term {

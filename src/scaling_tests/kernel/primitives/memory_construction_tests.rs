@@ -12,10 +12,7 @@ fn construction_recording_cost_is_independent_of_state_size() {
         let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(
-                OldAddress {
-                    base: "local:scale".into(),
-                    offset: AddressOffset::constant(i * 4),
-                },
+                Address::new("local:scale".into(), AddressOffset::constant(i * 4)),
                 ProgramValue::Int32((i as u32).into()),
             );
         }

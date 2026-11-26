@@ -277,7 +277,7 @@ mod tests {
         let (execution, _) = fixture();
         let seed = execution.published_outcome(0);
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(996901)),
+            Address::symbolic(Variable(996901)),
             ProgramType::Int32Pointer,
         );
         let roots = [

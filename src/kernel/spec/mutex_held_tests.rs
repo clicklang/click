@@ -1,11 +1,11 @@
 use super::*;
 use crate::kernel::mutexes::MutexContext;
 
-fn address(index: usize) -> OldAddress {
-    OldAddress {
-        base: format!("typed-held-{index}").into(),
-        offset: AddressOffset::constant(0),
-    }
+fn address(index: usize) -> Address {
+    Address::new(
+        format!("typed-held-{index}").into(),
+        AddressOffset::constant(0),
+    )
 }
 fn observe(state: &ExecutionState, assumptions: &PureFactContext) -> SpecPropositionPath {
     let spec = SpecProposition::MutexHeld(Box::new(SpecExpression::Value(ProgramValue::pointer(

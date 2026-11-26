@@ -18,7 +18,7 @@ fn protocol_descriptors_keep_growing_shared_values_and_condition_dags() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let observed = StoredProgramValue::from(ExecutionValue::Shared(word.clone()));
             let held = StoredConditionTerm::from_root(condition.clone()).unwrap();
-            let address = OldAddress::symbolic(Variable(10993647));
+            let address = Address::symbolic(Variable(10993647));
             let mut right = PublicationRight::new(
                 PublicationSide::Subscriber,
                 address.clone(),
@@ -77,7 +77,7 @@ fn proposition_outcome_handoffs_retain_growing_machine_and_float_operands() {
             float = KernelTerm::float_negate(KernelFloatType::Float32, float).unwrap();
         }
         let state = ExecutionState::new().with_retained_local("result", word.clone().into());
-        let pointer = OldAddress::symbolic(Variable(10993666));
+        let pointer = Address::symbolic(Variable(10993666));
         let memory = SymbolicMemory::new().store_retained(pointer.clone(), float.clone().into());
         let exports = (
             KernelTermExport::machine_export_count(),
@@ -144,7 +144,7 @@ fn loadability_count_storage_shares_growing_machine_operands() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let fact = Proposition::MemoryLoadable {
                     memory: SymbolicMemory::new(),
-                    base: OldAddress::symbolic(Variable(10993684)),
+                    base: Address::symbolic(Variable(10993684)),
                     bytes: StoredMachineTerm::from_value(root.clone().into()).unwrap(),
                     wide: format == MachineIntegerType::UInt64,
                 };

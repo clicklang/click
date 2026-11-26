@@ -52,7 +52,7 @@ fn statement_completion_ignores_unrelated_blocks_and_string_literals() {
             for i in 0..size {
                 let block = if with_literals {
                     let identity = StringLiteralId::new("statement_completion", i);
-                    SymbolicMemory::string_literal_pointer(&identity, b"ok\0").base
+                    SymbolicMemory::string_literal_pointer(&identity, b"ok\0").base.clone()
                 } else {
                     AddressBase::Heap(u64::from(i))
                 };

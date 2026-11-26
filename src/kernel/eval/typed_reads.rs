@@ -33,7 +33,7 @@ impl ReadType {
 
 use crate::kernel::program_point::ReadKey;
 
-type Read = (ReadKey, OldAddress, ReadType);
+type Read = (ReadKey, Address, ReadType);
 type Reads = imbl::HashMap<Read, ProgramValue>;
 thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
@@ -58,7 +58,7 @@ pub(in crate::kernel) fn is_active() -> bool {
 }
 
 #[cfg(test)]
-pub(super) fn record(memory: &SymbolicMemory, address: &OldAddress, value: &ProgramValue) {
+pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &ProgramValue) {
     if is_active() {
         record_read(
             ReadKey::Memory(crate::kernel::intern_memory_ref(memory).arena_id()),
@@ -68,17 +68,13 @@ pub(super) fn record(memory: &SymbolicMemory, address: &OldAddress, value: &Prog
     }
 }
 
-pub(in crate::kernel) fn record_at(
-    point: &ProgramPoint,
-    address: &OldAddress,
-    value: &ProgramValue,
-) {
+pub(in crate::kernel) fn record_at(point: &ProgramPoint, address: &Address, value: &ProgramValue) {
     if is_active() {
         record_read(point.observation_key(), address, value);
     }
 }
 
-fn record_read(point: ReadKey, address: &OldAddress, value: &ProgramValue) {
+fn record_read(point: ReadKey, address: &Address, value: &ProgramValue) {
     let value = value.numeric_value();
     let kind = match value {
         ProgramValue::Pointer(p) => ReadType::Pointer(p.program_type()),
@@ -117,7 +113,7 @@ fn record_read(point: ReadKey, address: &OldAddress, value: &ProgramValue) {
 #[cfg(test)]
 pub(in crate::kernel) fn get(
     memory: &SymbolicMemory,
-    address: &OldAddress,
+    address: &Address,
     kind: ReadType,
 ) -> Option<ProgramValue> {
     get_read(
@@ -129,13 +125,13 @@ pub(in crate::kernel) fn get(
 
 pub(in crate::kernel) fn get_at(
     point: &ProgramPoint,
-    address: &OldAddress,
+    address: &Address,
     kind: ReadType,
 ) -> Option<ProgramValue> {
     get_read(point.observation_key(), address, kind)
 }
 
-fn get_read(point: ReadKey, address: &OldAddress, kind: ReadType) -> Option<ProgramValue> {
+fn get_read(point: ReadKey, address: &Address, kind: ReadType) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);
     READS.with(|reads| {
         reads

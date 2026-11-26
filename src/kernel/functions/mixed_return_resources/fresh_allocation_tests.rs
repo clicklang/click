@@ -3,8 +3,8 @@ use crate::kernel::program_expression::{int32_literal, variable};
 
 pub(super) fn allocated_call(
     bytes: u32,
-) -> (ExecutionState, ExecutionState, ExecutionState, OldAddress) {
-    let held = OldAddress::symbolic(Variable(8_930_000));
+) -> (ExecutionState, ExecutionState, ExecutionState, Address) {
+    let held = Address::symbolic(Variable(8_930_000));
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
@@ -17,7 +17,7 @@ pub(super) fn allocated_call(
         ));
     let mut entry = caller
         .clone()
-        .with_local("p", ProgramValue::pointer(OldAddress::null()))
+        .with_local("p", ProgramValue::pointer(Address::null()))
         .with_resource_context(ResourceContext::new());
     Arc::make_mut(&mut entry.population_effects).creation = caller
         .population_effects
@@ -80,7 +80,7 @@ fn returned_specs(base: impl Into<BindingName>, cells: u32) -> Vec<ResourceSpec>
     ]
 }
 
-pub(super) fn fresh_return_facts(pointer: &OldAddress, cells: u32) -> [ResourceFact; 2] {
+pub(super) fn fresh_return_facts(pointer: &Address, cells: u32) -> [ResourceFact; 2] {
     [
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), cells.into())),
         ResourceFact::own_allocation(pointer.clone(), 16),
@@ -316,12 +316,9 @@ fn an_allocation_claim_pending_result_and_an_older_call_are_not_fresh_returns() 
         let retired = events.retired(&pointer.base).unwrap();
         assert!(FreshAllocationReturn::from_created_owner(&fact, &creator, &retired).is_none());
     }
-    let pending = OldAddress::symbolic(Variable(8_930_010));
+    let pending = Address::symbolic(Variable(8_930_010));
     let pending_events = creator.pending_creation(pending.base.clone());
-    let predicted = OldAddress {
-        base: AddressBase::Heap(8_930_010),
-        offset: AddressOffset::constant(0),
-    };
+    let predicted = Address::new(AddressBase::Heap(8_930_010), AddressOffset::constant(0));
     assert!(
         FreshAllocationReturn::from_created_owner(
             &ResourceFact::own_allocation(predicted, 16),
@@ -420,7 +417,7 @@ fn composite_children_use_only_actual_allocation_origin() {
 fn one_composite_can_mix_selected_consumed_and_fresh_children() {
     let facts = PureFactContext::new();
     let (_, entry, post, fresh) = allocated_call(16);
-    let old = OldAddress::symbolic(Variable(8_819_300));
+    let old = Address::symbolic(Variable(8_819_300));
     let mut definition = super::tests::nested_transfer_function(1)
         .contract_interface()
         .composite_resource_definitions()[0]

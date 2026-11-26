@@ -1,29 +1,29 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn pointer(id: u64) -> OldAddress {
-    OldAddress::symbolic(Variable(990_000 + id))
+fn pointer(id: u64) -> Address {
+    Address::symbolic(Variable(990_000 + id))
 }
-fn range(p: &OldAddress, start: u32, end: u32) -> MemoryRange {
+fn range(p: &Address, start: u32, end: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(p.clone(), start.into(), end.into(), 8)
 }
-fn separate(a: &OldAddress, b: &OldAddress) -> Proposition {
+fn separate(a: &Address, b: &Address) -> Proposition {
     Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(range(a, 0, 1))),
         right: Box::new(Resource::Memory(range(b, 0, 1))),
     }
 }
 
-fn numeric(a: &OldAddress, b: &OldAddress) -> OldConditionTerm {
+fn numeric(a: &Address, b: &Address) -> OldConditionTerm {
     OldConditionTerm::uint64_equal(
         OldMachineTerm::integer_address(a.clone()),
         OldMachineTerm::integer_address(b.clone()),
     )
 }
-fn different(a: &OldAddress, b: &OldAddress) -> Proposition {
+fn different(a: &Address, b: &Address) -> Proposition {
     Proposition::condition_is(numeric(a, b), false)
 }
-fn alias(a: &OldAddress, b: &OldAddress) -> Proposition {
+fn alias(a: &Address, b: &Address) -> Proposition {
     Proposition::condition_is(OldConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 
@@ -156,7 +156,7 @@ mod scaling_tests {
 #[test]
 fn constant_anchor_comparisons_do_not_require_an_application_node() {
     let _session = VerificationSession::enter();
-    let p = OldAddress::null();
+    let p = Address::null();
     let context = PureFactContext::new().assume_proposition(separate(&p, &p));
     assert!(!context.addresses_separated_by_class(&numeric(&p, &p)));
 }

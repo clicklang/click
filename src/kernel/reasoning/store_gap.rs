@@ -61,7 +61,7 @@
 
 #[cfg(test)]
 use crate::kernel::OldMachineTerm;
-use crate::kernel::{AddressOffset, OffsetTree, OffsetView, OldAddress, PureFactContext};
+use crate::kernel::{Address, AddressOffset, OffsetTree, OffsetView, PureFactContext};
 
 /// The widest cell there is: no `ProgramValue` is wider, and a cell holding
 /// `Void` stands in this width too.
@@ -101,10 +101,10 @@ pub(in crate::kernel) fn store_gap_skip_disabled() -> bool {
 /// normalized) keeps by its constant byte gap alone. Empty whenever the
 /// store's shape is not one the module comment covers.
 pub(in crate::kernel) fn store_gap_kept_ranges(
-    store: &OldAddress,
+    store: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Vec<(OldAddress, OldAddress)> {
+) -> Vec<(Address, Address)> {
     if bytes == 0
         || store_gap_skip_disabled()
         || crate::kernel::assumptions::implicit_consulted_premises_capturing()
@@ -113,10 +113,7 @@ pub(in crate::kernel) fn store_gap_kept_ranges(
         return Vec::new();
     }
     let bytes = i64::from(bytes);
-    let key = |offset: AddressOffset| OldAddress {
-        base: store.base.clone(),
-        offset,
-    };
+    let key = |offset: AddressOffset| store.with_offset(offset);
     let offset = &store.offset;
     match offset.view() {
         OffsetView::Constant(k) => kept_shifts(k, bytes, false)
@@ -282,10 +279,8 @@ mod tests {
             crate::kernel::AddressBase::Symbolic(Variable(958_000)),
             crate::kernel::AddressBase::ExternalArgument,
         ] {
-            let pointer = |id| OldAddress {
-                base: block.clone(),
-                offset: AddressOffset::scale_int32(variable(id), 4),
-            };
+            let pointer =
+                |id| Address::new(block.clone(), AddressOffset::scale_int32(variable(id), 4));
             let store = pointer(958_001);
             let other = pointer(958_002);
             let field = store.offset_by_bytes(8);
@@ -427,7 +422,7 @@ mod tests {
 
     fn store(
         memory: SymbolicMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
         value: ProgramValue,
         context: &PureFactContext,
     ) -> SymbolicMemory {
@@ -437,14 +432,14 @@ mod tests {
     }
 
     /// Cells of `memory` inside the ranges a store would skip.
-    fn skipped_cells(memory: &SymbolicMemory, ranges: &[(OldAddress, OldAddress)]) -> usize {
+    fn skipped_cells(memory: &SymbolicMemory, ranges: &[(Address, Address)]) -> usize {
         ranges
             .iter()
             .map(|(low, high)| {
                 memory
                     .cells
                     .concrete()
-                    .range::<_, OldAddress>(low..=high)
+                    .range::<_, Address>(low..=high)
                     .count()
             })
             .sum()
@@ -459,10 +454,7 @@ mod tests {
         let mut full = fast.clone();
         let mut skipped = 0;
         for (offset, value) in stores {
-            let pointer = OldAddress {
-                base: "store-gap".into(),
-                offset: offset.clone(),
-            };
+            let pointer = Address::new("store-gap".into(), offset.clone());
             skipped += skipped_cells(
                 &fast,
                 &store_gap_kept_ranges(&pointer, value.byte_width(), &context),
@@ -477,11 +469,8 @@ mod tests {
         (fast, skipped)
     }
 
-    fn at(offset: &AddressOffset) -> OldAddress {
-        OldAddress {
-            base: "store-gap".into(),
-            offset: offset.clone(),
-        }
+    fn at(offset: &AddressOffset) -> Address {
+        Address::new("store-gap".into(), offset.clone())
     }
 
     /// The byte-level cases the store drop has been wrong about before, each
@@ -653,10 +642,10 @@ mod tests {
             let mut fast = SymbolicMemory::new().with_block("store-gap", 64);
             let mut full = fast.clone();
             for step in 0..48 {
-                let pointer = OldAddress {
-                    base: "store-gap".into(),
-                    offset: generated_offset(&mut generator, anchor, &anchors),
-                };
+                let pointer = Address::new(
+                    "store-gap".into(),
+                    generated_offset(&mut generator, anchor, &anchors),
+                );
                 let width = [1, 2, 4, 8, 16][usize::try_from(generator.below(5)).expect("small")];
                 let value =
                     value_of_width(width, u32::try_from(generator.below(1000)).expect("small"));

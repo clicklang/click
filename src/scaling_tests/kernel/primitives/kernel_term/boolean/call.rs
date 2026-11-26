@@ -49,7 +49,7 @@ fn boolean_calls_keep_shared_arguments_across_selected_native_readings() {
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
                     Variable(999411),
-                    &OldAddress::null()
+                    &Address::null()
                 ),
                 Some(root)
             );

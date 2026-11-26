@@ -8,13 +8,10 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
         let (p, position, facts, mut resources, _) = split_formation_fixture();
         for i in 0..size {
             let other = OldPointer::new(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(
-                        OldMachineTerm::Variable(Variable(932_000 + i)),
-                        4,
-                    ),
-                },
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(932_000 + i)), 4),
+                ),
                 ProgramType::Int32Pointer,
             );
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
@@ -90,7 +87,7 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let before = crate::persistent::persistent_node_allocations();
         let result = pointer_offset_by_elements_paths(
             &ExecutionState::new(),
-            OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer),
+            OldPointer::new(Address::null(), ProgramType::Int32Pointer),
             OldMachineTerm::Variable(Variable(934_001)),
             4,
             false,

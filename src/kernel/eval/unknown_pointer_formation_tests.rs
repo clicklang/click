@@ -1,10 +1,7 @@
 use super::*;
 
 fn pointer(id: u64) -> OldPointer {
-    OldPointer::new(
-        OldAddress::symbolic(Variable(id)),
-        ProgramType::Int32Pointer,
-    )
+    OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
 fn view(value: &OldPointer, start: u32, end: u32) -> ResourceFact {
@@ -32,7 +29,7 @@ fn permits(
 
 fn permits_at(
     value: &OldPointer,
-    position: &OldAddress,
+    position: &Address,
     facts: &PureFactContext,
     resources: &ResourceContext,
 ) -> bool {
@@ -178,7 +175,7 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
             ProgramExpression::Value(ProgramValue::Pointer(p.clone())),
             ProgramExpression::Value(
                 ProgramValue::UInt64(OldMachineTerm::uint64_constant(2))
-                    .complete_word(OldAddress::symbolic(Variable(930_451))),
+                    .complete_word(Address::symbolic(Variable(930_451))),
             ),
         ],
     )
@@ -288,16 +285,16 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
 
 fn split_formation_fixture() -> (
     OldPointer,
-    OldAddress,
+    Address,
     PureFactContext,
     ResourceContext,
     ResourceFact,
 ) {
     let p = OldPointer::new(
-        OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4),
-        },
+        Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4),
+        ),
         ProgramType::Int32Pointer,
     );
     let from = OldMachineTerm::Variable(Variable(930_601));
@@ -407,7 +404,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         for (facts, expected_zero) in cases {
             let result = pointer_offset_by_elements_paths(
                 &ExecutionState::new(),
-                OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer),
+                OldPointer::new(Address::null(), ProgramType::Int32Pointer),
                 offset.clone(),
                 4,
                 unsigned,
@@ -423,7 +420,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
                 assert!(matches!(&result[0].outcome,
                     ExpressionOutcome::Value(ProgramValue::Pointer(value))
                         if value.address().is_in_null_block()
-                            && value.address() != &OldAddress::null()));
+                            && value.address() != &Address::null()));
             } else {
                 assert!(matches!(
                     &result[0].outcome,
@@ -438,7 +435,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
 fn a_registered_zero_index_permits_null_pointer_formation() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let address = OldAddress::symbolic(Variable(933_100));
+    let address = Address::symbolic(Variable(933_100));
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);
     let facts = PureFactContext::new().assume_condition(
@@ -447,7 +444,7 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
     );
     let result = pointer_offset_by_elements_paths(
         &ExecutionState::new(),
-        OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer),
+        OldPointer::new(Address::null(), ProgramType::Int32Pointer),
         OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),

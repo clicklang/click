@@ -13,7 +13,7 @@ fn evaluated_iterated_guard_retains_the_existing_common_producer() {
     let value =
         |bits| ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(bits)));
     let pointer =
-        |id| ProgramExpression::Value(ProgramValue::pointer(OldAddress::symbolic(Variable(id))));
+        |id| ProgramExpression::Value(ProgramValue::pointer(Address::symbolic(Variable(id))));
     let spec = crate::kernel::IteratedSpec {
         owner: "CommonGuard".into(),
         element: MemorySegment::new(pointer(10993622), value(0), value(0)),

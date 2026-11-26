@@ -41,7 +41,7 @@ renamed to "old". Renamed so far:
 | `old_form()` (was `native_compat()`), `old_term()` (was `legacy_term()`) | the retained kernel value |
 | `OldConditionTerm` | `KernelTerm` Boolean nodes |
 | `OldAddressOffset` | Done: deleted. `AddressOffset`, the written view of `SharedAddressOffset` (node `KernelAddressOffset`) |
-| `OldAddress` | `SharedAddress` |
+| `OldAddress` | Done: deleted. `Address`, the written view of the kernel handle `SharedAddress` (interned block identity, producer atom, shared offset) |
 | `old_condition`, `old_boolean_value`, `old_boolean_argument`, `old_boolean_call` (were `*_native`) | the retained Boolean `KernelTerm` |
 
 ## Closure checklist

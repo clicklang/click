@@ -21,7 +21,7 @@ use super::functions::CheckedResourceFact;
 #[cfg(test)]
 use super::primitives::memory_ranges_proven_overlapping;
 use super::primitives::{
-    AddressBase, MemorySplitOrigins, OldAddress, OwnedMemberKey, ResourceMemoryIntervalNode,
+    Address, AddressBase, MemorySplitOrigins, OwnedMemberKey, ResourceMemoryIntervalNode,
     memory_interval_ancestors, memory_interval_nodes, memory_range_covers,
     memory_range_is_proven_empty,
 };
@@ -344,7 +344,7 @@ pub(crate) struct BorrowBindings {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum BoundViewKey {
-    Memory(OldAddress),
+    Memory(Address),
     Other(OwnedMemberKey),
 }
 
@@ -1118,11 +1118,11 @@ struct BorrowLedgerStorage {
 }
 
 type CacheProtectionIndex =
-    PersistentMap<(OldAddress, ResourceMemoryIntervalNode), PersistentSet<BorrowId>>;
+    PersistentMap<(Address, ResourceMemoryIntervalNode), PersistentSet<BorrowId>>;
 
 fn cache_protection_nodes(
     range: &MemoryRange,
-) -> Option<(OldAddress, Vec<ResourceMemoryIntervalNode>)> {
+) -> Option<(Address, Vec<ResourceMemoryIntervalNode>)> {
     let (origin, start, end) = super::primitives::constant_memory_coordinates(range)?;
     let nodes = super::primitives::memory_interval_nodes_for_coordinates(
         &origin.base,
@@ -1134,7 +1134,7 @@ fn cache_protection_nodes(
 
 fn update_cache_protection_bucket(
     index: &mut CacheProtectionIndex,
-    key: (OldAddress, ResourceMemoryIntervalNode),
+    key: (Address, ResourceMemoryIntervalNode),
     borrow: BorrowId,
     insert: bool,
 ) {
@@ -1749,7 +1749,7 @@ enum BorrowTransitionEvidence {
     BorrowedMutexUseRoot {
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::OldAddress,
+        mutex: super::Address,
         protected: Option<ResourceDescription>,
         initialization: super::mutexes::MutexInitializationId,
         scope: BorrowScopeId,
@@ -2022,10 +2022,7 @@ impl LocalViewBacking {
         }
         let bytes = memory.block_size(&range.base().base)?.clone();
         let entire = MemoryRange::new_with_element_width(
-            super::OldAddress {
-                base: range.base().base.clone(),
-                offset: super::AddressOffset::constant(0),
-            },
+            range.base().with_offset(super::AddressOffset::constant(0)),
             0.into(),
             bytes,
             1,
@@ -2061,10 +2058,7 @@ impl LocalViewBacking {
             return Ok(());
         };
         let data = &ledger.storage.data;
-        let origin = OldAddress {
-            base: self.block.clone(),
-            offset: super::AddressOffset::constant(0),
-        };
+        let origin = Address::new(self.block.clone(), super::AddressOffset::constant(0));
         let has_possible_symbolic_overlap =
             data.automatic_storage_borrows.contains_key(&self.block)
                 && !data.unindexed_memory.is_empty();
@@ -5302,7 +5296,7 @@ impl BorrowLedger {
         &self,
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::OldAddress,
+        mutex: super::Address,
     ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         self.borrowed_mutex_use_input_with_protected(holder, support, mutex, None)
     }
@@ -5311,7 +5305,7 @@ impl BorrowLedger {
         &self,
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::OldAddress,
+        mutex: super::Address,
         protected: Option<ResourceDescription>,
     ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         let arena = self.storage.data.arena;
@@ -6627,10 +6621,7 @@ impl BorrowLedger {
         let (borrow, protected) = data.automatic_storage_borrows.get(block)?.iter().next()?;
         let record = data.borrows.get(borrow).expect("indexed live borrow");
         let attempted = MemoryRange::new_with_element_width(
-            OldAddress {
-                base: block.clone(),
-                offset: super::AddressOffset::constant(0),
-            },
+            Address::new(block.clone(), super::AddressOffset::constant(0)),
             0u32.into(),
             size.clone(),
             1,

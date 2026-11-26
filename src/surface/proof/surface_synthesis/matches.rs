@@ -80,11 +80,11 @@ fn shared_declaration_variable(term: &KernelTerm) -> Option<(BindingCarrier, Var
         | N::PointerRead { value, .. }
         | N::PointerArithmetic { value, .. }
         | N::PointerCall { value, .. } => {
-            let address = value.node().address.node();
-            if !matches!(address.offset.node(), KernelAddressOffset::Constant(0)) {
+            let address = &value.node().address;
+            if !matches!(address.offset().node(), KernelAddressOffset::Constant(0)) {
                 return None;
             }
-            match address.base.native_atom() {
+            match address.atom() {
                 AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                     *variable
                 }
@@ -229,7 +229,7 @@ mod tests {
             ProgramValue::Int128(word.clone()),
             ProgramValue::Float32(word.clone()),
             ProgramValue::Bool(word.clone()),
-            ProgramValue::typed_pointer(OldAddress::symbolic(variable), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(Address::symbolic(variable), ProgramType::Int32Pointer),
             ProgramValue::Int32(OldMachineTerm::constant(0)),
         ];
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {

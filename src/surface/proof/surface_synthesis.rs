@@ -112,7 +112,7 @@ pub(in crate::surface) struct SynthesisStructOwners {
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
     storage_arrays: BTreeMap<crate::kernel::BindingName, (crate::kernel::BindingName, Vec<u32>)>,
-    storage_scalars: BTreeMap<OldAddress, (crate::kernel::BindingName, ProgramType)>,
+    storage_scalars: BTreeMap<Address, (crate::kernel::BindingName, ProgramType)>,
     /// Declaration spellings for kernel identifiers in retained C arguments.
     storage_source_names: BTreeMap<String, SyntaxTerm>,
 }
@@ -421,7 +421,7 @@ fn range_struct_owners(
 /// shorter span excludes the field's padding, so it needs an explicit byte
 /// pointer instead; a range on the struct pointer would count whole structs.
 fn synthesize_struct_loadable_segment(
-    base: &OldAddress,
+    base: &Address,
     bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -541,7 +541,7 @@ fn field_pointer_bases(
                 // pointer-width load of the field: the pointer it names is
                 // that read.
                 ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
-                    let Some(pointer) = OldAddress::loaded(&value) else {
+                    let Some(pointer) = Address::loaded(&value) else {
                         continue;
                     };
                     let ProgramValue::Pointer(loaded) =
@@ -749,7 +749,7 @@ fn recorded_point_of_load(
 fn synthesize_point_held_value(
     ty: &crate::kernel::AlgebraicType,
     point: &crate::kernel::ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
     let raise = |selected: &ExecutionState| {
@@ -773,7 +773,7 @@ fn synthesize_point_held_value(
 fn synthesize_point_algebraic_read(
     ty: &crate::kernel::AlgebraicType,
     point: &crate::kernel::ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -799,7 +799,7 @@ fn synthesize_point_algebraic_read(
 /// ([`ExecutionState::held_local_value`]), so it spells exactly that read.
 fn synthesize_held_value_local(
     term: &crate::kernel::AlgebraicTerm,
-    pointer: &OldAddress,
+    pointer: &Address,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
     let (name, _, _) = state.locals().held_value_locals().find(|(_, _, slot)| {
@@ -814,7 +814,7 @@ fn synthesize_held_value_local(
 /// state names: the recorded point whose memory reads that version.
 fn synthesize_recorded_held_value_local(
     term: &crate::kernel::AlgebraicTerm,
-    pointer: &OldAddress,
+    pointer: &Address,
 ) -> Option<SyntaxTerm> {
     let crate::kernel::AlgebraicTermNode::MemoryLoad {
         point: memory,
@@ -994,7 +994,7 @@ struct SurfaceSynthesisFrame {
 // Reject that candidate edge; another local can still name the pointer.
 #[derive(Clone, Eq, PartialEq, Hash)]
 struct PointerSynthesisKey {
-    pointer: OldAddress,
+    pointer: Address,
     state: usize,
     parameters: usize,
     arguments: usize,
@@ -1005,7 +1005,7 @@ struct SurfacePointerFrame(PointerSynthesisKey);
 
 impl SurfacePointerFrame {
     fn enter(
-        pointer: &OldAddress,
+        pointer: &Address,
         parameter_binding: ParameterBinding<'_>,
         state: &ExecutionState,
         bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -1807,7 +1807,7 @@ fn quantifier_name_is_free(
 /// multiple of the `int32` cell the segment counts in. The start index is
 /// zero, so the pointer's own offset is folded into the printed base.
 fn synthesize_zero_based_loadable_segment(
-    base: &OldAddress,
+    base: &Address,
     bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -1922,7 +1922,7 @@ fn synthesize_zero_based_loadable_segment(
 /// unique exact parameter match: an aliased parameter is not enough source
 /// information to choose one spelling over another.
 fn synthesize_exact_external_zero_based_byte_range(
-    base: &OldAddress,
+    base: &Address,
     bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -1991,7 +1991,7 @@ fn synthesize_exact_external_zero_based_byte_range(
 /// A spelling whose ends differ re-lowers to a different byte count, which
 /// is exactly what the caller's round-trip check rejects.
 fn synthesize_named_range_loadable_segment(
-    base: &OldAddress,
+    base: &Address,
     bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -2122,13 +2122,13 @@ fn synthesize_named_range_loadable_segment(
 
 /// Recover the written range for a one-element byte load emitted by
 /// `loadable(bytes[index..index + 1])`. This is deliberately narrower than
-/// `OldAddress::element_index_from_base_with_width`: only a declared external
+/// `Address::element_index_from_base_with_width`: only a declared external
 /// parameter, an exact direct displacement from that parameter's pointer, and
 /// a one-byte element are authoritative enough to reconstruct the spelling.
 /// The producer may retain either the exact constant `1` or the unreduced
 /// `(index + 1) - index` form.
 fn synthesize_external_symbolic_element_range(
-    base: &OldAddress,
+    base: &Address,
     bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -2314,7 +2314,7 @@ fn named_pointer_bases<'a>(
 fn synthesize_load_defining_equation(
     variable: &Variable,
     memory: &crate::kernel::SharedMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -4018,7 +4018,7 @@ fn raise_call_argument(
         Node::Pointer(_) | Node::PointerRead { .. } | Node::PointerArithmetic { .. }
             if matches!(
                 term.old_pointer_value(),
-                Some(ProgramValue::Pointer(pointer)) if pointer.address() == &OldAddress::null()
+                Some(ProgramValue::Pointer(pointer)) if pointer.address() == &Address::null()
             ) =>
         {
             Some(SyntaxTerm::IntegerLiteral("0".into()))
@@ -4187,7 +4187,7 @@ pub(super) fn raise_kernel_term(
 }
 
 // Pointer-value equality can name full pointers even when their addresses
-// coincide. OldAddress and offset comparisons retain their own operand types.
+// coincide. Address and offset comparisons retain their own operand types.
 fn raise_pointer_comparison(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -4318,7 +4318,7 @@ fn raise_algebraic_read(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
-    use crate::kernel::{AlgebraicTermNode, KernelTermNode, KernelType, SharedAddress};
+    use crate::kernel::{AlgebraicTermNode, KernelTermNode, KernelType};
     let (KernelType::Algebraic(ty), KernelTermNode::AlgebraicRead(read)) = (term.ty(), term.node())
     else {
         return None;
@@ -4335,7 +4335,7 @@ fn raise_algebraic_read(
         );
     }
     let memory = point.shared_memory();
-    let same_address = |pointer: &OldAddress| address.syntax_equal(&SharedAddress::import(pointer));
+    let same_address = |pointer: &Address| address.syntax_equal(&pointer.shared().clone());
     if let Some((parameter, _)) = parameter_binding
         .parameters
         .iter()
@@ -4856,7 +4856,7 @@ fn raise_kernel_term_dispatch(
         Node::ArrayReference { pointer, .. }
             if matches!(
                 pointer.old_pointer_value(),
-                Some(ProgramValue::Pointer(value)) if value.address() == &OldAddress::null()
+                Some(ProgramValue::Pointer(value)) if value.address() == &Address::null()
             ) =>
         {
             SyntaxTerm::IntegerLiteral("0".into())
@@ -5748,7 +5748,7 @@ fn synthesis_states_share_program_point(entry: &ExecutionState, state: &Executio
 /// current or entry state can name it; otherwise use the version's selector.
 fn synthesize_point_read(
     version: &crate::kernel::ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -5827,7 +5827,7 @@ fn declared_pointee_of_named_pointer(
 /// pointer cell is spelled at its declaration's type, or as
 /// `load<Pointer>(address)` where no declaration names it.
 fn synthesize_cell_place(
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -5885,7 +5885,7 @@ fn synthesize_cell_place(
 /// load no place names spells as `load<Pointer>(address)`.
 fn synthesize_spelled_point_read(
     version: &crate::kernel::ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -6635,7 +6635,7 @@ fn synthesize_surface_bitvector(
                     bound_variables,
                 );
             }
-            // OldAddress-only names are valid only after selecting this read's
+            // Address-only names are valid only after selecting this read's
             // epoch. A qualified object or owned field names current memory
             // unless the entry/recorded route above supplies Old or At.
             if *kind == crate::kernel::LoadKind::Int32
@@ -7219,7 +7219,7 @@ fn synthesize_legacy_call_argument(
         crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(pointer)) => {
             if let Some(name) = pointer_names::native_name(value) {
                 SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.into()))
-            } else if pointer.address() == &OldAddress::null() {
+            } else if pointer.address() == &Address::null() {
                 SyntaxTerm::IntegerLiteral("0".into())
             } else {
                 synthesize_surface_value(value, parameter_binding, state)?
@@ -7277,7 +7277,7 @@ fn synthesize_legacy_call_argument(
 }
 
 fn synthesize_parameter_field_indexed_int32_load(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -7501,13 +7501,10 @@ fn synthesize_local_aggregate_field(
                     let pointer = if element_offset == 0 {
                         slot.clone()
                     } else {
-                        OldAddress {
-                            base: slot.base.clone(),
-                            offset: crate::kernel::AddressOffset::add(
-                                slot.offset.clone(),
-                                crate::kernel::AddressOffset::constant(i64::from(element_offset)),
-                            ),
-                        }
+                        slot.with_offset(crate::kernel::AddressOffset::add(
+                            slot.offset.clone(),
+                            crate::kernel::AddressOffset::constant(i64::from(element_offset)),
+                        ))
                     };
                     let ExpressionOutcome::Value(value) = state.memory().load(&pointer) else {
                         return None;
@@ -7606,7 +7603,7 @@ pub(super) fn bitvector_term_is_load_free(term: &OldMachineTerm) -> bool {
 }
 
 fn synthesize_local_indexed_load(
-    pointer: &OldAddress,
+    pointer: &Address,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -7664,7 +7661,7 @@ fn synthesize_local_indexed_load(
 /// shape from the function's declarations. A multidimensional element needs
 /// a constant index to split into subscripts.
 fn synthesize_static_storage_array_element_load(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -7725,7 +7722,7 @@ fn synthesize_static_storage_array_element_load(
 }
 
 fn synthesize_parameter_field_load(
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<SyntaxTerm> {
@@ -7733,7 +7730,7 @@ fn synthesize_parameter_field_load(
 }
 
 fn synthesize_parameter_field_load_matching(
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: Option<ProgramType>,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<SyntaxTerm> {
@@ -7802,7 +7799,7 @@ fn synthesize_parameter_field_load_matching(
 /// `local->field`, when the installed local layout scope knows the local's
 /// struct and this state holds the local's pointer value.
 fn synthesize_local_field_load(
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -7811,7 +7808,7 @@ fn synthesize_local_field_load(
 }
 
 fn synthesize_local_field_load_matching(
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: Option<ProgramType>,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -7856,7 +7853,7 @@ fn synthesize_local_field_load_matching(
 /// A field read spelled through a struct-pointer parameter or, failing
 /// that, through a struct-pointer local of the function under proof.
 fn synthesize_struct_field_load(
-    pointer: &OldAddress,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -7869,7 +7866,7 @@ fn synthesize_struct_field_load(
 /// result a call returned into `state`, or one the proof's recorded points
 /// name.
 fn call_result_pointer_expression(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -7896,10 +7893,7 @@ fn call_result_pointer_expression(
     }
     // Keep the call as the base and use the index at its original machine
     // width. An exact lookup suffices for a call that introduced this base.
-    let base = OldAddress {
-        base: pointer.base.clone(),
-        offset: AddressOffset::constant(0),
-    };
+    let base = pointer.with_offset(AddressOffset::constant(0));
     let (region, width) = SYNTHESIS_RECORDED_POINTS.with(|points| {
         let points = points.borrow();
         let points = points.as_ref()?;
@@ -7980,7 +7974,7 @@ fn typed_load_expression(pointer: ProgramExpression, value_type: ProgramType) ->
 /// aggregate field. Offset-based synthesis cannot name its distinct block.
 /// This is a candidate spelling; callers must re-lower it to the exact fact.
 fn synthesize_owned_field_at_address(
-    address: &OldAddress,
+    address: &Address,
     value_type: ProgramType,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
@@ -8025,10 +8019,7 @@ fn synthesize_owned_field_at_address(
 /// that read: a legacy load variable whose canonical load in `state` is
 /// itself, or a loaded pointer at displacement zero that `state`'s canonical
 /// read of its defining address reproduces.
-fn pointer_read_address_in_state(
-    pointer: &OldAddress,
-    state: &ExecutionState,
-) -> Option<OldAddress> {
+fn pointer_read_address_in_state(pointer: &Address, state: &ExecutionState) -> Option<Address> {
     if !matches!(pointer.offset.view(), OffsetView::Constant(0)) {
         return None;
     }
@@ -8043,17 +8034,14 @@ fn pointer_read_address_in_state(
             // A retained read always names its exact defining state,
             // including a post-store read whose canonical value is now known.
             (memory == read.defining_memory
-                || OldAddress::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
+                || Address::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
                 .then_some(read.defining_address)
         }
         _ => None,
     }
 }
 
-fn synthesize_owned_pointer_field(
-    pointer: &OldAddress,
-    state: &ExecutionState,
-) -> Option<SyntaxTerm> {
+fn synthesize_owned_pointer_field(pointer: &Address, state: &ExecutionState) -> Option<SyntaxTerm> {
     let address = pointer_read_address_in_state(pointer, state)?;
     let name: crate::kernel::BindingName = match &address.base {
         AddressBase::AutomaticLocal { binding, .. } => binding.clone().into(),
@@ -8093,8 +8081,8 @@ fn synthesize_owned_pointer_field(
 /// its own 64-bit value: spelled back, it lowers to the same displacement,
 /// and every synthesized candidate is re-lowered and compared before use.
 fn synthesis_element_index(
-    pointer: &OldAddress,
-    base: &OldAddress,
+    pointer: &Address,
+    base: &Address,
     element_width: u32,
 ) -> Option<pointer_indices::SourceIndex> {
     // Legacy-only offsets already have a native source reader. Retain that
@@ -8134,7 +8122,7 @@ fn synthesis_element_index(
 }
 
 fn synthesize_surface_pointer(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -8142,7 +8130,7 @@ fn synthesize_surface_pointer(
     let _pointer_frame =
         SurfacePointerFrame::enter(pointer, parameter_binding, state, bound_variables)?;
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
-    if pointer == &OldAddress::null() {
+    if pointer == &Address::null() {
         return Some(ProgramExpression::Value(int32(0)));
     }
     if is_materialized_address(pointer) {
@@ -8316,10 +8304,9 @@ fn synthesize_surface_pointer(
     if pointer.base.is_static_storage_block()
         && let OffsetView::Constant(bytes) = pointer.offset.view()
         && let Ok(bytes) = u32::try_from(bytes)
-        && let Some(name) = state.locals().name_for_slot(&OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(0),
-        })
+        && let Some(name) = state
+            .locals()
+            .name_for_slot(&pointer.with_offset(AddressOffset::constant(0)))
         && (state.locals().aggregate_layout(name).is_some()
             || state.locals().scalar_object_type(name).is_some())
     {
@@ -8377,10 +8364,7 @@ fn synthesize_surface_pointer(
         if let OffsetView::Constant(bytes) = read.displacement.view()
             && bytes != 0
         {
-            let base = OldAddress {
-                base: pointer.base.clone(),
-                offset: AddressOffset::constant(0),
-            };
+            let base = pointer.with_offset(AddressOffset::constant(0));
             return Some(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(synthesize_surface_pointer(
                     &base,
@@ -8645,7 +8629,7 @@ fn synthesize_pointer_equality_operand(
 }
 
 fn synthesize_pointer_equality_address(
-    pointer: &OldAddress,
+    pointer: &Address,
     program_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -8669,11 +8653,11 @@ fn synthesize_pointer_equality_address(
     }
 }
 
-fn is_materialized_address(pointer: &OldAddress) -> bool {
+fn is_materialized_address(pointer: &Address) -> bool {
     matches!(&pointer.base, AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary())
 }
 
-fn synthesize_materialized_result(pointer: &OldAddress) -> Option<SyntaxTerm> {
+fn synthesize_materialized_result(pointer: &Address) -> Option<SyntaxTerm> {
     SYNTHESIS_RECORDED_POINTS.with(|points| {
         points
             .borrow()
@@ -8707,7 +8691,7 @@ fn synthesize_byte_offset(expression: SyntaxTerm, bytes: u32) -> Option<SyntaxTe
 }
 
 fn synthesize_surface_pointer_expression(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -8773,7 +8757,7 @@ fn synthesize_surface_pointer_expression(
 }
 
 fn synthesize_surface_pointer_expression_routes(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -8802,10 +8786,7 @@ fn synthesize_surface_pointer_expression_routes(
         if matches!(read.displacement.view(), OffsetView::Constant(0)) {
             return Some(base);
         }
-        let origin = OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let origin = pointer.with_offset(AddressOffset::constant(0));
         let width = value_type.pointee_type()?.byte_width();
         let index = synthesis_element_index(pointer, &origin, width)?;
         let index = pointer_indices::raise(
@@ -8834,10 +8815,7 @@ fn synthesize_surface_pointer_expression_routes(
         if matches!(read.displacement.view(), OffsetView::Constant(0)) {
             return Some(base);
         }
-        let origin = OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let origin = pointer.with_offset(AddressOffset::constant(0));
         // Element arithmetic at the declaration's pointee width.
         if let Some(width) = spelled_type
             .pointee_type()
@@ -8885,10 +8863,7 @@ fn synthesize_surface_pointer_expression_routes(
     {
         // The raw read's address carrier has no pointee type. Its stored
         // displacement is in bytes, so reproduce it with a byte pointer.
-        let origin = OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let origin = pointer.with_offset(AddressOffset::constant(0));
         let cell = pointer_read_address_in_state(&origin, state)?;
         let cell = synthesize_surface_pointer_expression(
             &cell,
@@ -8992,10 +8967,7 @@ fn synthesize_surface_pointer_expression_routes(
                 return None;
             };
             let bytes = u32::try_from(bytes).ok().filter(|bytes| *bytes != 0)?;
-            let origin = OldAddress {
-                base: pointer.base.clone(),
-                offset: AddressOffset::constant(0),
-            };
+            let origin = pointer.with_offset(AddressOffset::constant(0));
             let base = synthesize_surface_pointer_expression(
                 &origin,
                 parameter_binding,
@@ -9035,10 +9007,9 @@ fn synthesize_copied_parameter_pointer(
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let points = slot.borrow();
         let points = points.as_ref()?;
-        let object = OldAddress {
-            base: read.defining_address.base.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let object = read
+            .defining_address
+            .with_offset(AddressOffset::constant(0));
         let name =
             crate::kernel::BindingName::from(object.base.prepared_argument_binding()?.clone());
         let (region, parameter, layout) = points.prepared_parameter(&name)?;
@@ -9081,7 +9052,7 @@ fn synthesize_copied_parameter_pointer(
 /// where a local held a pointer into its block: the point that introduced
 /// the value, found by the block in one index range.
 fn synthesize_recorded_pointer_expression(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
@@ -9119,7 +9090,7 @@ fn synthesize_recorded_pointer_expression(
 /// `old(e)` for a pointer the entry state names and this state does not.
 /// The entry scope is cleared for the inner synthesis, so it never nests.
 fn synthesize_entry_pointer_expression(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -9168,7 +9139,7 @@ fn synthesize_loaded_pointer_value(
 /// when `state` does not read it. The read is checked there with the
 /// kernel's naming law, as [`pointer_read_address_in_state`] decides it.
 fn recorded_point_of_pointer_read(
-    pointer: &OldAddress,
+    pointer: &Address,
     state: &ExecutionState,
 ) -> Option<(ProgramPointSelector, ExecutionState)> {
     if !matches!(pointer.offset.view(), OffsetView::Constant(0)) {
@@ -9269,7 +9240,7 @@ fn synthesize_scalar_model_field(variable: Variable, state: &ExecutionState) -> 
 /// that call's entry. The state scope is cleared for the inner synthesis,
 /// so the state spelling never nests.
 fn synthesize_state_pointer_expression(
-    pointer: &OldAddress,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
@@ -9363,7 +9334,7 @@ fn raise_float_read_place(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
     let pointer = synthesize_surface_pointer(
-        address.exact_cell_key(),
+        address.written().expect("retained read address"),
         parameter_binding,
         state,
         bound_variables,
@@ -9593,7 +9564,7 @@ fn surface_algebraic_type(
 
 /// A call's prepared parameter object, by its address: the call's
 /// `R.parameter(name)`, which lowers to the object as a local does.
-fn prepared_parameter_object(slot: &OldAddress) -> Option<SyntaxTerm> {
+fn prepared_parameter_object(slot: &Address) -> Option<SyntaxTerm> {
     if !matches!(slot.offset.view(), OffsetView::Constant(0)) {
         return None;
     }

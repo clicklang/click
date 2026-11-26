@@ -102,10 +102,10 @@ fn quantified_loadable_alpha_query_ignores_unrelated_state_size() {
                 source_memory.with_block(format!("quantified-viewable-work-{index}"), 8);
         }
         source_memory = source_memory.store(
-            OldAddress {
-                base: "quantified-viewable-work-0".into(),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(
+                "quantified-viewable-work-0".into(),
+                AddressOffset::constant(0),
+            ),
             // A value the binder does not name, as the alpha query compares
             // the retained state exactly.
             ProgramValue::Int32(OldMachineTerm::Variable(Variable(209_900))),
@@ -441,10 +441,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         let base = SymbolicMemory::new().with_block("same-bucket-facts", 8);
         for value in 0..=size {
             let memory = base.clone().store(
-                OldAddress {
-                    base: "same-bucket-facts".into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new("same-bucket-facts".into(), AddressOffset::constant(0)),
                 // Distinct states without contradictory literal
                 // premises: each read may consistently equal zero.
                 ProgramValue::Int32(OldMachineTerm::Variable(Variable(986_000 + value as u64))),
@@ -454,10 +451,10 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         let load = |memory: &crate::kernel::SharedMemory| {
             OldMachineTerm::read_named(
                 ProgramPoint::at(memory),
-                Box::new(OldAddress {
-                    base: "same-bucket-facts".into(),
-                    offset: AddressOffset::constant(0),
-                }),
+                Box::new(Address::new(
+                    "same-bucket-facts".into(),
+                    AddressOffset::constant(0),
+                )),
                 crate::kernel::LoadKind::Int32,
             )
         };

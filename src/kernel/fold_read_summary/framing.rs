@@ -553,8 +553,8 @@ impl LinearOffset {
 /// `element_width * sext(index) + constant` for `pointer` relative to `base`,
 /// when both are in one block and the delta has that exact form.
 fn scaled_index_from(
-    pointer: &OldAddress,
-    base: &OldAddress,
+    pointer: &Address,
+    base: &Address,
     element_width: u32,
 ) -> Option<(SharedMachineIntegerTerm, i128)> {
     if pointer.base != base.base {
@@ -637,7 +637,7 @@ fn interval_proven_empty(interval: &FoldReadInterval, assumptions: &PureFactCont
 
 /// Whether the `bytes` bytes at `pointer` miss every cell of the interval.
 fn access_misses_interval(
-    pointer: &OldAddress,
+    pointer: &Address,
     bytes: u32,
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
@@ -778,7 +778,7 @@ fn range_contains_interval(
 /// The `bytes` bytes at `pointer` lie inside one cell of `range`.
 fn range_contains_access(
     range: &MemoryRange,
-    pointer: &OldAddress,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {

@@ -5,12 +5,9 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
-fn anchor(range: &MemoryRange) -> Option<OldAddress> {
+fn anchor(range: &MemoryRange) -> Option<Address> {
     let offset = crate::kernel::assumptions::memory_range_anchor(range)?;
-    Some(OldAddress {
-        base: range.base().base.clone(),
-        offset,
-    })
+    Some(range.base().with_offset(offset))
 }
 
 impl EqualityGraph {

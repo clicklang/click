@@ -2,12 +2,9 @@ use super::*;
 
 #[test]
 fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
-    let first = OldAddress::symbolic(Variable(896_000));
-    let second = OldAddress::symbolic(Variable(896_001));
-    let storage = OldAddress {
-        base: "local:mutex".into(),
-        offset: AddressOffset::constant(8),
-    };
+    let first = Address::symbolic(Variable(896_000));
+    let second = Address::symbolic(Variable(896_001));
+    let storage = Address::new("local:mutex".into(), AddressOffset::constant(8));
     let empty = PureFactContext::new();
     let joined = empty
         .clone()
@@ -26,10 +23,7 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
         storage.offset_by_bytes(16)
     );
     assert_eq!(empty.equality_graph.storage_address(&first), first);
-    let other = OldAddress {
-        base: "local:other".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let other = Address::new("local:other".into(), AddressOffset::constant(0));
     let ambiguous = joined
         .clone()
         .assume_condition(OldConditionTerm::address_equal(first.clone(), other), true);
@@ -39,22 +33,16 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
 
 #[test]
 fn external_addresses_select_their_own_concrete_storage_anchor() {
-    let first = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(896_010)),
-    };
-    let second = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(896_011)),
-    };
-    let one = OldAddress {
-        base: "global:first".into(),
-        offset: AddressOffset::constant(8),
-    };
-    let two = OldAddress {
-        base: "global:second".into(),
-        offset: AddressOffset::constant(16),
-    };
+    let first = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(896_010)),
+    );
+    let second = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(896_011)),
+    );
+    let one = Address::new("global:first".into(), AddressOffset::constant(8));
+    let two = Address::new("global:second".into(), AddressOffset::constant(16));
     let facts = PureFactContext::new()
         .assume_condition(
             OldConditionTerm::address_equal(first.clone(), one.clone()),
@@ -82,12 +70,9 @@ fn external_addresses_select_their_own_concrete_storage_anchor() {
 
 #[test]
 fn alignment_uses_the_checked_storage_anchor_through_transitive_equality() {
-    let first = OldAddress::symbolic(Variable(896_900));
-    let last = OldAddress::symbolic(Variable(896_901));
-    let storage = OldAddress {
-        base: AddressBase::Heap(896_990),
-        offset: AddressOffset::constant(0),
-    };
+    let first = Address::symbolic(Variable(896_900));
+    let last = Address::symbolic(Variable(896_901));
+    let storage = Address::new(AddressBase::Heap(896_990), AddressOffset::constant(0));
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
@@ -118,9 +103,9 @@ fn alignment_uses_the_checked_storage_anchor_through_transitive_equality() {
 
 #[test]
 fn declared_alignment_follows_late_transitive_address_equality() {
-    let base = OldAddress::symbolic(Variable(898_100));
-    let middle = OldAddress::symbolic(Variable(898_101));
-    let alias = OldAddress::symbolic(Variable(898_102));
+    let base = Address::symbolic(Variable(898_100));
+    let middle = Address::symbolic(Variable(898_101));
+    let alias = Address::symbolic(Variable(898_102));
     let original = PureFactContext::new()
         .assume_condition(OldConditionTerm::pointer_aligned(base.clone(), 8), true);
     let facts = original
@@ -157,14 +142,14 @@ fn automatic_declaration_storage_is_an_anchor_and_an_indexed_local_alias() {
         0,
         Some("x".into()),
     );
-    let storage = OldAddress {
-        base: AddressBase::AutomaticLocal {
+    let storage = Address::new(
+        AddressBase::AutomaticLocal {
             binding,
             instance: crate::kernel::LocalStorageInstance::Frame(3),
         },
-        offset: AddressOffset::constant(0),
-    };
-    let alias = OldAddress::symbolic(Variable(896_999));
+        AddressOffset::constant(0),
+    );
+    let alias = Address::symbolic(Variable(896_999));
     let facts = PureFactContext::new().assume_condition(
         OldConditionTerm::address_equal(alias.clone(), storage.clone()),
         true,

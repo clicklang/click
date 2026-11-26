@@ -10,14 +10,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
             let mut preparation = Vec::new();
             for count in [4_u64, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let base = OldAddress {
-                    base: AddressBase::Heap(9_970_000),
-                    offset: AddressOffset::constant(0),
-                };
-                let guards = OldAddress {
-                    base: "local:iterated-exposure-guards".into(),
-                    offset: AddressOffset::constant(0),
-                };
+                let base = Address::new(AddressBase::Heap(9_970_000), AddressOffset::constant(0));
+                let guards = Address::new(
+                    "local:iterated-exposure-guards".into(),
+                    AddressOffset::constant(0),
+                );
                 let template = IteratedMemory::new(
                     "cells",
                     base.clone(),
@@ -41,12 +38,9 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         )));
                     } else if axis != "range premises" {
                         let alias = if axis == "aliases" {
-                            OldAddress::symbolic(Variable(9_980_000 + index))
+                            Address::symbolic(Variable(9_980_000 + index))
                         } else {
-                            OldAddress {
-                                base: base.base.clone(),
-                                offset: AddressOffset::variable(Variable(9_980_000 + index)),
-                            }
+                            base.with_offset(AddressOffset::variable(Variable(9_980_000 + index)))
                         };
                         facts = facts.assume_condition(
                             OldConditionTerm::address_equal(base.clone(), alias),
@@ -239,7 +233,7 @@ fn indexed_slot_selection_ignores_other_clauses_at_the_same_base() {
     let template = |lower: u32| {
         IteratedMemory::new(
             "slots",
-            OldAddress::symbolic(Variable(8_000)),
+            Address::symbolic(Variable(8_000)),
             4,
             2,
             0,
@@ -247,7 +241,7 @@ fn indexed_slot_selection_ignores_other_clauses_at_the_same_base() {
             lower.into(),
             (lower + 2).into(),
             IteratedGuard::new(
-                OldAddress::symbolic(Variable(8_001)),
+                Address::symbolic(Variable(8_001)),
                 ProgramType::Int32,
                 4,
                 true,

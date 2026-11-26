@@ -212,7 +212,7 @@ impl PureFactContext {
         &self,
         left: &SymbolicMemory,
         right: &SymbolicMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
     ) -> bool {
         // Memories match up to the load's pointer, not exactly, so every
         // effect fact is a candidate; other proposition facts are not.
@@ -359,7 +359,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn resolve_memory_load_value(
         &self,
         point: &crate::kernel::ProgramPoint,
-        pointer: &OldAddress,
+        pointer: &Address,
         kind: LoadKind,
     ) -> Option<ProgramValue> {
         let memory = point.memory();
@@ -373,26 +373,25 @@ impl PureFactContext {
         // load unresolved. Runs use compact slot selection even for symbolic
         // indexes: an unresolved alias is not a reason to enumerate the array.
         let mut unresolved_alias = false;
-        let mut first_equal: Option<(OldAddress, ProgramValue)> = None;
+        let mut first_equal: Option<(Address, ProgramValue)> = None;
         let normalized = std::cell::OnceCell::new();
-        let consider =
-            |cell_pointer: &OldAddress,
-             value: &ProgramValue,
-             first_equal: &mut Option<(OldAddress, ProgramValue)>| {
-                if pointers_proven_distinct_for_memory_resolution(cell_pointer, pointer, self) {
-                    return false;
+        let consider = |cell_pointer: &Address,
+                        value: &ProgramValue,
+                        first_equal: &mut Option<(Address, ProgramValue)>| {
+            if pointers_proven_distinct_for_memory_resolution(cell_pointer, pointer, self) {
+                return false;
+            }
+            if pointers_proven_equal_for_memory_resolution(cell_pointer, pointer, self) {
+                if first_equal
+                    .as_ref()
+                    .is_none_or(|(earlier, _)| cell_pointer < earlier)
+                {
+                    *first_equal = Some((cell_pointer.clone(), value.clone()));
                 }
-                if pointers_proven_equal_for_memory_resolution(cell_pointer, pointer, self) {
-                    if first_equal
-                        .as_ref()
-                        .is_none_or(|(earlier, _)| cell_pointer < earlier)
-                    {
-                        *first_equal = Some((cell_pointer.clone(), value.clone()));
-                    }
-                    return true;
-                }
-                true
-            };
+                return true;
+            }
+            true
+        };
         // A cell or run outside the load's alias candidates is in a block
         // proven distinct from it, which `consider` and
         // `run_slots_resolving_load` answer as elsewhere, so only the
@@ -560,10 +559,7 @@ mod tests {
                 .with_block("held-read-right", 4),
         );
         let read = |block: &str| {
-            let pointer = OldAddress {
-                base: block.into(),
-                offset: AddressOffset::constant(0),
-            };
+            let pointer = Address::new(block.into(), AddressOffset::constant(0));
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 &pointer,

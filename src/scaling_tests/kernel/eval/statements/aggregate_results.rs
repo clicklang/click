@@ -131,7 +131,7 @@ fn aggregate_copy_builds_one_borrow_obligation_without_visiting_aliases_or_borro
                     assumptions = assumptions.assume_condition(
                         OldConditionTerm::address_equal(
                             target.clone(),
-                            OldAddress::symbolic(Variable(9_831_000 + i)),
+                            Address::symbolic(Variable(9_831_000 + i)),
                         ),
                         true,
                     );
@@ -140,7 +140,7 @@ fn aggregate_copy_builds_one_borrow_obligation_without_visiting_aliases_or_borro
             let mut last = None;
             for i in 0..if grow_aliases { 1 } else { size } {
                 let owner = ResourceFact::own_memory(MemoryRange::new(
-                    OldAddress::symbolic(Variable(9_832_000 + i)),
+                    Address::symbolic(Variable(9_832_000 + i)),
                     0u32.into(),
                     1u32.into(),
                 ));

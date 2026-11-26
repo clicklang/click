@@ -214,13 +214,13 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::FloatRead(read) => {
                     let (_, address) = read.parts();
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatRead(read.observe(
-                        crate::kernel::SharedAddress::new(address.node().base.observation(), normalize_offset(&address.node().offset)),
+                        crate::kernel::SharedAddress::new(address.block().observation(), normalize_offset(address.offset())),
                     )))
                 }
                 KernelTermNode::AlgebraicRead(read) => {
                     let (_, address) = read.parts();
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::AlgebraicRead(read.observe(
-                        crate::kernel::SharedAddress::new(address.node().base.observation(), normalize_offset(&address.node().offset)),
+                        crate::kernel::SharedAddress::new(address.block().observation(), normalize_offset(address.offset())),
                     )))
                 }
                 KernelTermNode::PointerEqual(pair) => KernelTerm::intern(
@@ -228,8 +228,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelTermNode::PointerEqual(pair.observe(
                         |address| {
                             crate::kernel::SharedAddress::new(
-                                address.node().base.observation(),
-                                normalize_offset(&address.node().offset),
+                                address.block().observation(),
+                                normalize_offset(address.offset()),
                             )
                         },
                         normalize,
@@ -238,8 +238,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::AddressEqual { arguments } => {
                     KernelTerm::address_equal_raw(arguments.each_ref().map(|address| {
                         crate::kernel::SharedAddress::new(
-                            address.node().base.observation(),
-                            normalize_offset(&address.node().offset),
+                            address.block().observation(),
+                            normalize_offset(address.offset()),
                         )
                     }))
                 }

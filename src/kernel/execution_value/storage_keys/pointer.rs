@@ -26,7 +26,7 @@ pub(in crate::kernel) struct AddressKey {
     offset: OffsetKey,
 }
 impl AddressKey {
-    pub(in crate::kernel) fn native(pointer: &OldAddress) -> Self {
+    pub(in crate::kernel) fn native(pointer: &Address) -> Self {
         Self {
             block: pointer.base.clone(),
             offset: OffsetKey::native(&pointer.offset),
@@ -34,8 +34,8 @@ impl AddressKey {
     }
     pub(in crate::kernel) fn shared(pointer: &SharedAddress) -> Self {
         Self {
-            block: pointer.node().base.native_atom().clone(),
-            offset: offset_for_root(&pointer.node().offset),
+            block: pointer.atom().clone(),
+            offset: offset_for_root(pointer.offset()),
         }
     }
 }

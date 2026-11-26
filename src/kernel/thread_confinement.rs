@@ -214,13 +214,13 @@ mod tests {
     #[test]
     fn guard_ingredient_confines_its_transitive_wrappers() {
         use crate::kernel::{
-            OldAddress, ProgramExpression, ProgramValue, ResourceQuantity, ResourceStateSource,
+            Address, ProgramExpression, ProgramValue, ResourceQuantity, ResourceStateSource,
             ResourceTerm, ResourceTransferRole,
         };
         let guard = ResourceSpec::new(
             ResourceTerm::MutexGuard {
                 mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(
-                    OldAddress::null(),
+                    Address::null(),
                 ))),
                 state_source: ResourceStateSource::Current,
             },

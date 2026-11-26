@@ -267,7 +267,7 @@ impl<'a> BooleanOperandView<'a> {
         let OldConditionTerm::AddressEqual(a, b) = self.native_leaf()? else {
             return None;
         };
-        Some([SharedAddress::import(a), SharedAddress::import(b)])
+        Some([a.shared().clone(), b.shared().clone()])
     }
 
     pub(crate) fn pointer_offsets(self) -> Option<[SharedAddressOffset; 2]> {
@@ -576,7 +576,7 @@ impl KernelTermImport {
                 ]);
             }
             Old::AddressEqual(a, b) => Node::AddressEqual {
-                arguments: [SharedAddress::import(a), SharedAddress::import(b)],
+                arguments: [a.shared().clone(), b.shared().clone()],
             },
             Old::AddressOffsetEqual(a, b) => Node::AddressOffsetEqual {
                 arguments: [a.shared().clone(), b.shared().clone()],
@@ -849,12 +849,12 @@ mod tests {
     fn common_boolean_pointer_substitution_keeps_native_folding_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = Variable(971_020);
-        let pointer = OldAddress::null();
+        let pointer = Address::null();
         let atom = OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::IntegerAddress(
-                Box::new(OldAddress::symbolic(from)),
+                Box::new(Address::symbolic(from)),
                 crate::kernel::AddressObjectClass::NONE,
             )),
             right: Box::new(OldMachineTerm::uint64_constant(0)),
@@ -894,12 +894,12 @@ mod tests {
         let source = OldConditionTerm::BoolEqual(
             Box::new(OldConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&memory.clone()),
-                OldAddress::symbolic(from),
+                Address::symbolic(from),
             )),
             Box::new(OldConditionTerm::Constant(true)),
         );
         let root = KernelTermImport::default().condition(&source);
-        let pointer = OldAddress::symbolic(Variable(971_011));
+        let pointer = Address::symbolic(Variable(971_011));
         let actual = crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
             &root, from, &pointer,
         )

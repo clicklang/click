@@ -95,7 +95,7 @@ meaning depend on how the text was produced. `exact` composes instead:
   evaluation uses for that state, and does not call the version walk.
 - For an integer cell this is `OldMachineTerm::MemoryLoad(ProgramPoint::unplaced(state),
   address, kind)`. Lowering skips `canonical_scalar_read`.
-- For a pointer cell this is `OldAddress::loaded_value(state.unchanged_bytes_source(), address)`.
+- For a pointer cell this is `Address::loaded_value(state.unchanged_bytes_source(), address)`.
   An exact pointer read is named by the state's unchanged-bytes source, as
   `Pointer::from_read` already names provenance: a step that changes only
   cached knowledge, not bytes, keeps the read's identity. The

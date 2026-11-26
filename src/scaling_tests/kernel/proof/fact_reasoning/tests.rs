@@ -286,7 +286,7 @@ fn check_footprint_normalization_scaling(sizes: [u64; 4]) {
         let _session = crate::kernel::VerificationSession::enter();
         let (goal, separation, alias) = footprint_alias_fixture();
         let mut facts = PureFactStore::from_ordered(&[separation.clone(), alias]);
-        let pointer = |id| OldAddress::symbolic(Variable(id));
+        let pointer = |id| Address::symbolic(Variable(id));
         for i in 0..size {
             // Grow the selected address class and a related separation bucket.
             facts = facts.with_fact(Proposition::condition_is(

@@ -426,10 +426,7 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
 /// it instead of proving a vacuous body under it.
 #[test]
 fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
-    let pointer = crate::kernel::OldAddress {
-        base: "buffer".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("buffer".into(), AddressOffset::constant(0));
     let viewed = ResourceFact::view_memory(MemoryRange::new(
         pointer.clone(),
         OldMachineTerm::constant(0),
@@ -526,14 +523,8 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
 /// aggregate case in docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
-    let target = OldAddress {
-        base: "target".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let source = OldAddress {
-        base: "source".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let target = Address::new("target".into(), AddressOffset::constant(0));
+    let source = Address::new("source".into(), AddressOffset::constant(0));
     let owned_target = own_memory_fact(target.clone(), 0, 2);
     let owned_source = own_memory_fact(source.clone(), 0, 2);
     let viewed = view_memory_fact(target.clone(), 1, 2);
@@ -621,10 +612,7 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
 /// check now runs first.
 #[test]
 fn owner_authorized_write_into_a_lent_range_is_refused() {
-    let pointer = OldAddress {
-        base: "block".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
     let resources = ResourceContext::new().unchecked_with_facts([owned, viewed.clone()]);
@@ -701,10 +689,7 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
 /// would change nothing (R01's same-value negative; docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
-    let pointer = OldAddress {
-        base: "block".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
     let resources = ResourceContext::new().unchecked_with_facts([owned, viewed.clone()]);
@@ -780,10 +765,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
 
 #[test]
 fn local_declaration_allocates_stack_object_for_address_of() {
-    let local_pointer = OldAddress {
-        base: "local:x".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let local_pointer = Address::new("local:x".into(), AddressOffset::constant(0));
     let state = ExecutionState::new();
     let statement = program_seq(
         program_declare("x", ProgramType::Int32),
@@ -1289,10 +1271,10 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
 
 #[test]
 fn signed_addition_matches_interval_facts_across_unchanged_states() {
-    let cell = OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(660)), 4),
-    };
+    let cell = Address::new(
+        "arg-memory".into(),
+        AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(660)), 4),
+    );
     let before = SymbolicMemory::new();
     let after = before.clone().with_block("local:temporary", 4);
     let before_load = OldMachineTerm::read_named(
@@ -1326,10 +1308,7 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
 
 #[test]
 fn pointer_store_through_local_address_updates_named_lvalue() {
-    let local_pointer = OldAddress {
-        base: "local:x".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let local_pointer = Address::new("local:x".into(), AddressOffset::constant(0));
     let statement = program_seq(
         program_declare("x", ProgramType::Int32),
         program_seq(
@@ -1389,10 +1368,7 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
 
 #[test]
 fn memory_load_store_are_native_theorems() {
-    let pointer = OldAddress {
-        base: "block".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let value = int32(7);
     let theorem =
         prove_memory_load_after_store_same(SymbolicMemory::new(), pointer.clone(), value.clone());
@@ -1409,14 +1385,8 @@ fn memory_load_store_are_native_theorems() {
 
 #[test]
 fn store_preserves_distinct_memory_cell_frame() {
-    let stored_pointer = OldAddress {
-        base: "left".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let loaded_pointer = OldAddress {
-        base: "right".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let stored_pointer = Address::new("left".into(), AddressOffset::constant(0));
+    let loaded_pointer = Address::new("right".into(), AddressOffset::constant(0));
     let memory = SymbolicMemory::new().store(loaded_pointer.clone(), int32(42));
     let theorem = prove_memory_load_after_store_other(
         memory.clone(),
@@ -1438,10 +1408,7 @@ fn store_preserves_distinct_memory_cell_frame() {
 
 #[test]
 fn missing_memory_load_is_native_undefined_behavior() {
-    let pointer = OldAddress {
-        base: "block".into(),
-        offset: AddressOffset::constant(4),
-    };
+    let pointer = Address::new("block".into(), AddressOffset::constant(4));
     let theorem = prove_memory_load(SymbolicMemory::new(), pointer.clone());
 
     assert_eq!(
@@ -1697,14 +1664,8 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
 
 #[test]
 fn verified_function_rule_does_not_publish_one_spec_alias_path() {
-    let stored = OldAddress {
-        base: "heap".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let queried = OldAddress {
-        base: stored.base.clone(),
-        offset: AddressOffset::variable(Variable(900_002)),
-    };
+    let stored = Address::new("heap".into(), AddressOffset::constant(0));
+    let queried = stored.with_offset(AddressOffset::variable(Variable(900_002)));
     let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
     let reflexive_load = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
@@ -1780,10 +1741,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
 
 #[test]
 fn opaque_pointer_result_can_alias_its_argument() {
-    let argument = OldAddress {
-        base: "heap".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let argument = Address::new("heap".into(), AddressOffset::constant(0));
     let helper = program_function(
         ProgramType::Int32Pointer,
         "opaque_identity_pointer",
@@ -1819,7 +1777,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_local("result", ProgramValue::pointer(OldAddress::null())),
+            .with_local("result", ProgramValue::pointer(Address::null())),
         program_call_then_assign(
             3,
             "result",
@@ -2453,10 +2411,7 @@ fn exceptional_direct_rule_boundary_excludes_resource_transitions() {
 
 #[test]
 fn effect_endpoint_comparison_ignores_function_local_cells() {
-    let local = OldAddress {
-        base: "local:temporary".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let local = Address::new("local:temporary".into(), AddressOffset::constant(0));
     let before = SymbolicMemory::new().with_block("local:temporary", 4);
     let after = before.clone().store(local, int32(7));
 
@@ -2468,10 +2423,7 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
         )
     );
 
-    let external = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let external = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let changed_external = after.store(external, int32(9));
     assert!(
         !crate::kernel::api::program_effect_memories_definitionally_equal(
@@ -2484,10 +2436,7 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
 
 #[test]
 fn effect_endpoint_allows_resource_allocation_bookkeeping() {
-    let allocation = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(64),
-    };
+    let allocation = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(64));
     let before = SymbolicMemory::new();
     let after = before
         .clone()
@@ -4061,10 +4010,7 @@ fn a_recursion_anchor_is_part_of_the_environment_identity() {
 /// and the caller's would be one block, one allocation size and one cell map.
 #[test]
 fn a_called_frames_declaration_does_not_take_the_callers_block() {
-    let callers = OldAddress {
-        base: "local:x".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let callers = Address::new("local:x".into(), AddressOffset::constant(0));
     let state = ExecutionState::new()
         .with_memory(
             SymbolicMemory::new()
@@ -4433,10 +4379,10 @@ fn path_exists_at_program_point(
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
                             point: crate::kernel::ProgramPoint::of_memory(&memory),
-                            pointer: ProgramValue::pointer(OldAddress {
-                                base: "graph".into(),
-                                offset: AddressOffset::constant(0),
-                            }),
+                            pointer: ProgramValue::pointer(Address::new(
+                                "graph".into(),
+                                AddressOffset::constant(0),
+                            )),
                             element_type: ProgramType::Int32,
                         },
                         PureFunctionArgument::Algebraic(AlgebraicTerm {
@@ -4458,10 +4404,7 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
     let ty = AlgebraicType::parameter("Path".into());
     let before = SymbolicMemory::new().with_block("graph", 4);
     let after = before.clone().store(
-        OldAddress {
-            base: "graph".into(),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new("graph".into(), AddressOffset::constant(0)),
         int32(1),
     );
     let fact = path_exists_at_program_point(&ty, 100, 100, before.clone(), 0);
@@ -4633,10 +4576,7 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
         0,
     )));
     let after = memory.store(
-        OldAddress {
-            base: "graph".into(),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new("graph".into(), AddressOffset::constant(0)),
         int32(1),
     );
     assert!(!proves(&conditional_path_universal(&ty, 200, after, 0)));
@@ -4644,14 +4584,8 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
 
 #[test]
 fn aggregate_copy_requires_write_authority_for_each_destination_field() {
-    let target = OldAddress {
-        base: "target".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let source = OldAddress {
-        base: "source".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let target = Address::new("target".into(), AddressOffset::constant(0));
+    let source = Address::new("source".into(), AddressOffset::constant(0));
     let layout = AggregateLayout::new(
         8,
         4,

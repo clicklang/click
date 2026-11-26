@@ -6,7 +6,7 @@ fn match_dependencies_visit_shared_arm_bodies_once() {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new();
-        let pointer = OldAddress::symbolic(Variable(991930));
+        let pointer = Address::symbolic(Variable(991930));
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory_ref(&current))),
             Box::new(pointer.clone()),

@@ -232,7 +232,7 @@ its fields' equalities; `lower_surface_proposition` reads the kind and
 inspects no operand.
 
 `Native` stands for the shapes listed above as `Machine(format)`, `Pointer`,
-`OldAddress`, `Bool` and `Float`. Which of these a native comparison is, and its
+`Address`, `Bool` and `Float`. Which of these a native comparison is, and its
 format, is the C type of its operands, built bottom-up from them; that is
 compositional, so lowering may compute it. It becomes a recorded field once
 program expressions are typed Surface (stage 3). The kind elaboration records

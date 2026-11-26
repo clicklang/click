@@ -2,10 +2,10 @@ use super::*;
 
 fn range(block: &str) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        OldAddress {
-            base: AddressBase::Concrete(block.to_string()),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new(
+            AddressBase::Concrete(block.to_string()),
+            AddressOffset::constant(0),
+        ),
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(1),
         4,

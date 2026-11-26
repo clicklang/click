@@ -259,7 +259,7 @@ pub(in crate::surface) enum SourceStatementKind {
 }
 
 // Inspect only expressions owned by this statement, never descendant bodies.
-// OldAddress-of computes an lvalue address without reading its designated cell;
+// Address-of computes an lvalue address without reading its designated cell;
 // nested loads in the pointer/index expressions still count.
 fn expression_reads(expression: &ProgramExpression) -> bool {
     let mut pending = vec![(expression, true)];

@@ -326,7 +326,7 @@ fn scalar_array_write_borrow_requirement_ignores_alias_and_borrow_counts() {
                     assumptions = assumptions.assume_condition(
                         OldConditionTerm::address_equal(
                             source.clone(),
-                            OldAddress::symbolic(Variable(913_000 + i)),
+                            Address::symbolic(Variable(913_000 + i)),
                         ),
                         true,
                     );
@@ -337,7 +337,7 @@ fn scalar_array_write_borrow_requirement_ignores_alias_and_borrow_counts() {
             let reader = ledger.fresh_participant().unwrap();
             for i in 0..if grow_aliases { 1 } else { count } {
                 let backing = ResourceFact::own_memory(MemoryRange::new(
-                    OldAddress::symbolic(Variable(914_000 + i)),
+                    Address::symbolic(Variable(914_000 + i)),
                     0u32.into(),
                     1u32.into(),
                 ));

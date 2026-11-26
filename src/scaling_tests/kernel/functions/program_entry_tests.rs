@@ -8,7 +8,7 @@ use super::*;
 /// cell at function entry, so the read is its load there.
 fn program_read(
     memory: &SymbolicMemory,
-    pointer: OldAddress,
+    pointer: Address,
     value_type: ProgramType,
 ) -> ExpressionOutcome {
     let mut paths = crate::kernel::eval::evaluate_memory_load_paths(
@@ -100,10 +100,7 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
             });
             let entry_named = registered() - before_entry;
             let base = SymbolicMemory::global_pointer("buf");
-            let element = |index: i64| OldAddress {
-                base: base.base.clone(),
-                offset: AddressOffset::constant(index * width),
-            };
+            let element = |index: i64| base.with_offset(AddressOffset::constant(index * width));
             let before_statement = registered();
             let (read, statement_work) = crate::instrumentation::measure_deterministic_work(|| {
                 let stored = entry
@@ -281,7 +278,7 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
                 value(int32(7)),
                 value(int32(0)),
                 value(ProgramValue::typed_pointer(
-                    OldAddress::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer
                 )),
                 value(int32(3)),

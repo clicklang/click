@@ -281,10 +281,7 @@ fn reservation_index_queries_same_object_in_logarithmic_work() {
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn initialization_storage_lookup_is_indexed_within_one_object() {
     use super::super::super::*;
-    let base = OldAddress {
-        base: AddressBase::Heap(91_001),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(AddressBase::Heap(91_001), AddressOffset::constant(0));
     let mut samples = vec![];
     for size in [16usize, 64, 256, 1024] {
         let assumptions = PureFactContext::new();
@@ -352,42 +349,25 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
                 AddressBase::Concrete(format!("local:{index}")),
             ] {
                 context = context
-                    .initialize_empty(
-                        OldAddress {
-                            base: block,
-                            offset: AddressOffset::constant(0),
-                        },
-                        40,
-                    )
+                    .initialize_empty(Address::new(block, AddressOffset::constant(0)), 40)
                     .unwrap();
             }
         }
         let queries = [AddressBase::Heap(90_000), AddressBase::ExternalArgument];
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for block in &queries {
-                let range = allocation_range(
-                    OldAddress {
-                        base: block.clone(),
-                        offset: AddressOffset::constant(0),
-                    },
-                    48,
-                );
+                let range =
+                    allocation_range(Address::new(block.clone(), AddressOffset::constant(0)), 48);
                 assert!(
                     storage_retirement_refusal(context.state(), &range, &assumptions).is_none()
                 );
             }
         });
-        let symbolic = OldAddress::symbolic(Variable(90_001));
+        let symbolic = Address::symbolic(Variable(90_001));
         let context = context.initialize_empty(symbolic, 40).unwrap();
         let (_, ambiguous_work) = crate::instrumentation::measure_deterministic_work(|| {
             for block in queries {
-                let range = allocation_range(
-                    OldAddress {
-                        base: block,
-                        offset: AddressOffset::constant(0),
-                    },
-                    48,
-                );
+                let range = allocation_range(Address::new(block, AddressOffset::constant(0)), 48);
                 assert!(matches!(
                     storage_retirement_refusal(context.state(), &range, &assumptions),
                     Some(RuntimeError::MutexStorageSeparationRequired { .. })

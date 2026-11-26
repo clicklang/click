@@ -370,10 +370,10 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
             ResourceDescription::new(
                 "reference".into(),
                 vec![
-                    ProgramValue::pointer(OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::variable(Variable(950_000 + id)),
-                    })
+                    ProgramValue::pointer(Address::new(
+                        AddressBase::ExternalArgument,
+                        AddressOffset::variable(Variable(950_000 + id)),
+                    ))
                     .into(),
                 ]
                 .into(),
@@ -425,10 +425,10 @@ fn opaque_transfer_and_finish_index_scale_with_selected_population() {
             ResourceDescription::new(
                 "reference".into(),
                 vec![
-                    ProgramValue::pointer(OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::variable(Variable(970_000 + id)),
-                    })
+                    ProgramValue::pointer(Address::new(
+                        AddressBase::ExternalArgument,
+                        AddressOffset::variable(Variable(970_000 + id)),
+                    ))
                     .into(),
                 ]
                 .into(),
@@ -883,10 +883,10 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
 
 #[test]
 fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
-    let anchor = ProgramValue::pointer(OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    });
+    let anchor = ProgramValue::pointer(Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::constant(0),
+    ));
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
         ResourceFieldType::Program(ProgramType::Int32),
@@ -983,10 +983,10 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
 #[test]
 fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports() {
     for wildcard in [false, true] {
-        let anchor = ProgramValue::pointer(OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        });
+        let anchor = ProgramValue::pointer(Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::constant(0),
+        ));
         let schema = ResourceFieldSchema::new(vec![(
             "serial".into(),
             ResourceFieldType::Program(ProgramType::Int32),
@@ -1117,10 +1117,10 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
 
 #[test]
 fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
-    let anchor = ProgramValue::pointer(OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    });
+    let anchor = ProgramValue::pointer(Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::constant(0),
+    ));
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
         ResourceFieldType::Program(ProgramType::Int32),

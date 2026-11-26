@@ -5,7 +5,7 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
     let _session = VerificationSession::enter();
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
-            .map(|i| SharedAddress::import(&OldAddress::symbolic(Variable(1013000 + i))))
+            .map(|i| Address::symbolic(Variable(1013000 + i)).shared().clone())
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let cell = SymbolicMemory::global_pointer("shared-check-scaling");
@@ -15,9 +15,9 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                 ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
             let make = |memory| {
-                let native = OldAddress {
-                    base: AddressBase::Concrete("shared-check-array".into()),
-                    offset: AddressOffset::int32_scaled(
+                let native = Address::new(
+                    AddressBase::Concrete("shared-check-array".into()),
+                    AddressOffset::int32_scaled(
                         SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             OldMachineTerm::read_named(
@@ -28,13 +28,13 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                         ),
                         4,
                     ),
-                };
-                let initial = SharedAddress::import(&native);
-                let mut offset = initial.node().offset.clone();
+                );
+                let initial = native.shared().clone();
+                let mut offset = initial.offset().clone();
                 for _ in 0..size {
                     offset = O::Add([offset.clone(), offset]).into_shared().unwrap();
                 }
-                SharedAddress::new(initial.node().base.clone(), offset)
+                SharedAddress::new(initial.block(), offset)
             };
             let a = make(before);
             let b = make(after);

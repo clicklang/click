@@ -287,11 +287,8 @@ mod cached_read_completion_tests {
     use crate::kernel::proof::ProofObligation;
     use crate::kernel::proof::*;
 
-    fn pointer(block: &str, offset: i32) -> OldAddress {
-        OldAddress {
-            base: block.into(),
-            offset: AddressOffset::constant(i64::from(offset)),
-        }
+    fn pointer(block: &str, offset: i32) -> Address {
+        Address::new(block.into(), AddressOffset::constant(i64::from(offset)))
     }
 
     fn cache(
@@ -690,7 +687,7 @@ pub(crate) fn matching_recomputed_call_havoc_views(
     /// must be the base itself (by interned identity), no proving.
     fn store_is_self_materialization(
         base: &SharedMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
         value: &ProgramValue,
     ) -> bool {
         let (ProgramValue::Int8(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
@@ -887,10 +884,8 @@ mod range_list_equality_graph_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let before =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("range-list", 8));
-        let pointer = |index| OldAddress {
-            base: "range-list".into(),
-            offset: AddressOffset::scale_int32(index, 4),
-        };
+        let pointer =
+            |index| Address::new("range-list".into(), AddressOffset::scale_int32(index, 4));
         let load = |memory: &SharedMemory, index| {
             OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
@@ -905,7 +900,7 @@ mod range_list_equality_graph_tests {
             pointer(b.clone()),
             ProgramValue::Int32(OldMachineTerm::constant(9)),
         ));
-        let base = OldAddress::symbolic(Variable(9100));
+        let base = Address::symbolic(Variable(9100));
         let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let range = |start| MemoryRange::new(base.clone(), start, OldMachineTerm::constant(16));
         let left = range(sum(load(&before, a.clone())));
@@ -1070,7 +1065,7 @@ fn memory_cells_definitionally_contained(
 fn materialized_load_is_unchanged(
     value: &ProgramValue,
     symbolic_memory: &SymbolicMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     // Materialized cells retain their structural read. Legacy scalar names
@@ -1091,10 +1086,11 @@ fn materialized_load_is_unchanged(
         {
             crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.address())
         }
-        ProgramValue::Pointer(pointer_value) => match pointer_value.address() {
-            OldAddress {
+        ProgramValue::Pointer(pointer_value) => match &**pointer_value.address() {
+            AddressParts {
                 base: AddressBase::FunctionSymbolic(variable),
                 offset,
+                ..
             } if matches!(offset.view(), OffsetView::Constant(0))
                 && matches!(
                     pointer_value.program_type(),
@@ -1103,7 +1099,7 @@ fn materialized_load_is_unchanged(
             {
                 load_of(&OldMachineTerm::Variable(*variable))
             }
-            OldAddress { offset, .. } => match offset.view() {
+            AddressParts { offset, .. } => match offset.view() {
                 OffsetView::Int32Scaled { index: bits, .. } => bits
                     .operand_view()
                     .read_source()
@@ -2166,7 +2162,7 @@ fn check_effect_on_prepared_path(
         .any(crate::kernel::MemoryRange::is_unnamed_footprint);
     let mut effect_memory = caller_state.memory().clone();
     let mut seen_transitions = Vec::<(SymbolicMemory, SymbolicMemory)>::new();
-    let is_function_fresh_heap_pointer = |pointer: &OldAddress, current: &SymbolicMemory| {
+    let is_function_fresh_heap_pointer = |pointer: &Address, current: &SymbolicMemory| {
         let matches_allocation = |memory: &SymbolicMemory| {
             memory.heap.live_allocations.keys().any(|base| {
                 // Freshness is a property of the allocation, not of
@@ -2458,7 +2454,7 @@ pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state
 fn heap_free_effect_is_valid(
     before: &SymbolicMemory,
     after: &SymbolicMemory,
-    allocation_base: &OldAddress,
+    allocation_base: &Address,
     bytes: &AllocationSize,
 ) -> bool {
     // The effect states the freed size with its format, so the claim it
@@ -3294,10 +3290,7 @@ mod heap_free_effect_tests {
     /// a 32-bit reading of the same byte term is not that block's free.
     #[test]
     fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
-        let base = OldAddress {
-            base: AddressBase::Heap(940_100),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new(AddressBase::Heap(940_100), AddressOffset::constant(0));
         let bytes = OldMachineTerm::uint64_multiply(
             OldMachineTerm::Variable(Variable(940_101)),
             OldMachineTerm::uint64_constant(4),
@@ -3363,10 +3356,10 @@ mod checked_proposition_index_tests {
     fn read_equations_follow_a_selected_route_without_selecting_one() {
         let route = route(71_030, true);
         let context = PureFactContext::new().assume_proposition(route.clone());
-        let pointer = OldAddress::symbolic(Variable(71_031));
+        let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
             OldPointer::new(pointer.clone(), ProgramType::Int32Pointer),
-            OldAddress::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
+            Address::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
         );
         let mut paths = vec![
             lowering_candidate(false, vec![]),
@@ -3539,10 +3532,7 @@ mod heap_status_equality_tests {
     /// initialization state changes what a later load can return.
     #[test]
     fn outcome_equality_distinguishes_heap_statuses() {
-        let block = OldAddress {
-            base: AddressBase::Heap(424_242),
-            offset: AddressOffset::constant(0),
-        };
+        let block = Address::new(AddressBase::Heap(424_242), AddressOffset::constant(0));
         let mut base = SymbolicMemory::new().with_block(block.base.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
             .live_allocations
@@ -3620,7 +3610,7 @@ mod wide_range_reader_tests {
     // Claim framing compares the declared domain as well as endpoint bits.
     #[test]
     fn wide_claim_range_lists_do_not_use_signed_equalities() {
-        let base = OldAddress::symbolic(Variable(984_400));
+        let base = Address::symbolic(Variable(984_400));
         let wide = MemoryRange::new_wide(
             base.clone(),
             OldMachineTerm::uint64_constant(0),
@@ -3646,11 +3636,7 @@ mod wide_range_reader_tests {
 mod materialized_function_load_tests {
     use super::*;
 
-    fn callback_load(
-        memory: &SymbolicMemory,
-        address: &OldAddress,
-        kind: LoadKind,
-    ) -> ProgramValue {
+    fn callback_load(memory: &SymbolicMemory, address: &Address, kind: LoadKind) -> ProgramValue {
         let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             address.clone(),
@@ -3658,17 +3644,14 @@ mod materialized_function_load_tests {
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
         ProgramValue::typed_pointer(
-            OldAddress::symbolic_function(variable),
+            Address::symbolic_function(variable),
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         )
     }
 
     #[test]
     fn canonical_function_pointer_cache_preserves_memory() {
-        let address = OldAddress {
-            base: "callback-cache".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let address = Address::new("callback-cache".into(), AddressOffset::constant(0));
         let memory = SymbolicMemory::new().with_block("callback-cache", 16);
         let value = callback_load(
             &memory,
@@ -3687,10 +3670,7 @@ mod materialized_function_load_tests {
 
     #[test]
     fn function_pointer_cache_requires_the_exact_cell_and_pointer_load() {
-        let address = OldAddress {
-            base: "callback-cache-controls".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let address = Address::new("callback-cache-controls".into(), AddressOffset::constant(0));
         let memory = SymbolicMemory::new().with_block("callback-cache-controls", 16);
         let facts = PureFactContext::new();
         let value = callback_load(
@@ -3710,7 +3690,7 @@ mod materialized_function_load_tests {
             &narrow, &memory, &address, &facts
         ));
         let arbitrary = ProgramValue::typed_pointer(
-            OldAddress::symbolic_function(Variable(97_555_001)),
+            Address::symbolic_function(Variable(97_555_001)),
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         );
         assert!(!materialized_load_is_unchanged(
@@ -3943,7 +3923,7 @@ mod retained_contract_input_tests {
     fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(996801)),
+            Address::symbolic(Variable(996801)),
             ProgramType::Int32Pointer,
         );
         let roots = vec![
@@ -4002,12 +3982,12 @@ mod retained_contract_input_tests {
 #[cfg(test)]
 mod completion_operand_tests {
     use super::*;
-    use crate::kernel::{KernelTerm, KernelTermImport, OldAddress, StoredConditionTerm, Variable};
+    use crate::kernel::{Address, KernelTerm, KernelTermImport, StoredConditionTerm, Variable};
 
     #[test]
     fn completion_uses_retained_condition_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = OldAddress::symbolic(Variable(100_295));
+        let address = Address::symbolic(Variable(100_295));
         let variable = OldMachineTerm::Variable(Variable(100_296));
         let other_variable = OldMachineTerm::Variable(Variable(100_297));
         let compare = |format, right| OldConditionTerm::Compare {

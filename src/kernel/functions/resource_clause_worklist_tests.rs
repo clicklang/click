@@ -2,10 +2,7 @@ use super::*;
 
 #[test]
 fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
-    let base = OldAddress {
-        base: AddressBase::Heap(8_991_700),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(AddressBase::Heap(8_991_700), AddressOffset::constant(0));
     let range = MemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
     let facts = PureFactContext::new();
     for (quantity, readable) in [
@@ -25,10 +22,10 @@ fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
 
 #[test]
 fn memory_waiter_requires_a_whole_range_supplier() {
-    let base = OldAddress {
-        base: AddressBase::Concrete("resource-clause-adjacent".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("resource-clause-adjacent".to_string()),
+        AddressOffset::constant(0),
+    );
     let wide = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
         OldMachineTerm::constant(0),
@@ -102,10 +99,10 @@ fn memory_waiter_requires_a_whole_range_supplier() {
 /// `MemoryBlock` index would produce `size * size` visits here.
 #[test]
 fn same_block_disjoint_waiters_use_interval_candidates() {
-    let base = OldAddress {
-        base: AddressBase::Concrete("resource-clause-disjoint".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("resource-clause-disjoint".to_string()),
+        AddressOffset::constant(0),
+    );
     let samples = [4_usize, 8, 16, 32]
             .into_iter()
             .map(|size| {
@@ -154,14 +151,8 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
 #[test]
 fn comparable_constant_bases_share_interval_space() {
     let block = AddressBase::Concrete("resource-clause-base-aware".to_string());
-    let dependency_base = OldAddress {
-        base: block.clone(),
-        offset: AddressOffset::constant(0),
-    };
-    let supplied_base = OldAddress {
-        base: block,
-        offset: AddressOffset::constant(8),
-    };
+    let dependency_base = Address::new(block.clone(), AddressOffset::constant(0));
+    let supplied_base = Address::new(block, AddressOffset::constant(8));
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         dependency_base,
         OldMachineTerm::constant(2),
@@ -183,10 +174,10 @@ fn comparable_constant_bases_share_interval_space() {
 
 #[test]
 fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
-    let base = OldAddress {
-        base: AddressBase::Concrete("resource-clause-byte-space".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("resource-clause-byte-space".to_string()),
+        AddressOffset::constant(0),
+    );
     let dependency = ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base.clone(),
         OldMachineTerm::constant(8),
@@ -210,10 +201,10 @@ fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
 
 #[test]
 fn symbolic_memory_waiters_keep_conservative_block_fallback() {
-    let base = OldAddress {
-        base: AddressBase::Concrete("resource-clause-symbolic".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("resource-clause-symbolic".to_string()),
+        AddressOffset::constant(0),
+    );
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
         OldMachineTerm::constant(0),
@@ -235,10 +226,10 @@ fn symbolic_memory_waiters_keep_conservative_block_fallback() {
 
 #[test]
 fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
-    let base = OldAddress {
-        base: AddressBase::Concrete("resource-clause-fallback-lifetime".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("resource-clause-fallback-lifetime".to_string()),
+        AddressOffset::constant(0),
+    );
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
         OldMachineTerm::constant(0),
@@ -270,7 +261,7 @@ fn retrying_a_composite_clause_keeps_the_point_of_its_nested_bound_read() {
 
     let _session = crate::kernel::VerificationSession::enter();
     let slot = SymbolicMemory::global_pointer("retry_bound");
-    let target = OldAddress::symbolic(Variable(8_991_709));
+    let target = Address::symbolic(Variable(8_991_709));
     let ty = ProgramType::Int32Pointer;
     let definitions = [
         CompositeResourceDefinition::new(

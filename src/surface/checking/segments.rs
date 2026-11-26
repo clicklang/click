@@ -5,7 +5,7 @@ use crate::kernel::{OffsetTree as _, OffsetView};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct EvaluatedContractSegment {
     pub(in crate::surface) source: ContractSegment,
-    pub(in crate::surface) base: OldAddress,
+    pub(in crate::surface) base: Address,
     pub(in crate::surface) start: OldMachineTerm,
     pub(in crate::surface) end: OldMachineTerm,
     pub(in crate::surface) element_width: u32,
@@ -48,7 +48,7 @@ pub(in crate::surface) fn evaluate_requirement_segment_base(
     parameter_binding: ParameterBinding<'_>,
     entry_state: &ExecutionState,
     segment: &ContractSegment,
-) -> Result<OldAddress, String> {
+) -> Result<Address, String> {
     let parameter_values = parameter_values_named(
         parameter_binding,
         &crate::surface::lowering::contract_segment_referenced_names(segment),
@@ -112,7 +112,7 @@ fn evaluate_segment_bounds(
 
 pub(in crate::surface) fn segment_contains_pointer(
     segment: &EvaluatedContractSegment,
-    pointer: &OldAddress,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     let Some(index) = pointer_element_index_from_base_with_width(
@@ -136,16 +136,16 @@ pub(in crate::surface) fn segment_contains_pointer(
 }
 #[cfg(test)]
 pub(in crate::surface) fn pointer_element_index_from_base(
-    pointer: &OldAddress,
-    base: &OldAddress,
+    pointer: &Address,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> Option<OldMachineTerm> {
     pointer_element_index_from_base_with_width(pointer, base, 4, assumptions)
 }
 
 fn pointer_element_index_from_base_with_width(
-    pointer: &OldAddress,
-    base: &OldAddress,
+    pointer: &Address,
+    base: &Address,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<OldMachineTerm> {

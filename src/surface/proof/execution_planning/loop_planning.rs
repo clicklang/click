@@ -451,7 +451,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
     );
     let phase_site = phase.site().clone();
     for (source_index, helper) in &layout.helpers {
-        // OldAddress the helper, and so every tactic written in its body, by
+        // Address the helper, and so every tactic written in its body, by
         // its source position, as the other phases address theirs.
         phase = phase.at_source_tactic(*source_index);
         let checkpoint = phase.checkpoint();
@@ -861,10 +861,7 @@ pub(super) fn scoped_loop_exit_facts(
                     && [&context.state, state].into_iter().all(|visible| {
                         visible
                             .locals()
-                            .name_for_slot(&OldAddress {
-                                base: address.base.clone(),
-                                offset: AddressOffset::constant(0),
-                            })
+                            .name_for_slot(&address.with_offset(AddressOffset::constant(0)))
                             .is_none()
                     })
             })

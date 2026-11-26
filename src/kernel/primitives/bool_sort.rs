@@ -237,7 +237,7 @@ impl crate::kernel::OldMachineTerm {
 
 impl OldConditionTerm {
     /// The Boolean value of an already selected one-byte cell read.
-    pub fn boolean_cell_read(point: super::ProgramPoint, address: super::OldAddress) -> Self {
+    pub fn boolean_cell_read(point: super::ProgramPoint, address: super::Address) -> Self {
         Self::nonzero_bool_word(&crate::kernel::OldMachineTerm::read_named(
             point,
             address,

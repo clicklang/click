@@ -5071,14 +5071,11 @@ impl AnnotationLowerer<'_> {
                     program_type if program_type.is_pointer() => {
                         if matches!(program_type, ProgramType::FunctionPointer(_)) {
                             ProgramValue::typed_pointer(
-                                OldAddress::symbolic_function(variable),
+                                Address::symbolic_function(variable),
                                 program_type,
                             )
                         } else {
-                            ProgramValue::typed_pointer(
-                                OldAddress::symbolic(variable),
-                                program_type,
-                            )
+                            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
                         }
                     }
                     _ => {
@@ -5209,14 +5206,11 @@ impl AnnotationLowerer<'_> {
                     program_type if program_type.is_pointer() => {
                         if matches!(program_type, ProgramType::FunctionPointer(_)) {
                             ProgramValue::typed_pointer(
-                                OldAddress::symbolic_function(variable),
+                                Address::symbolic_function(variable),
                                 program_type,
                             )
                         } else {
-                            ProgramValue::typed_pointer(
-                                OldAddress::symbolic(variable),
-                                program_type,
-                            )
+                            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
                         }
                     }
                     _ => {
@@ -5528,7 +5522,7 @@ impl AnnotationLowerer<'_> {
                     let function = match contract_expression_function_address(function) {
                         Some(target) => SpecExpression::ProgramExpression(
                             ProgramExpression::Value(ProgramValue::typed_pointer(
-                                OldAddress::function(
+                                Address::function(
                                     self.spec_definitions
                                         .predicates
                                         .function_execution_name(target)
@@ -7598,7 +7592,7 @@ impl AnnotationLowerer<'_> {
                         {
                             Ok(SpecAlgebraicValue::Program(SpecExpression::Value(
                                 crate::kernel::ProgramValue::typed_pointer(
-                                    crate::kernel::OldAddress::null(),
+                                    crate::kernel::Address::null(),
                                     *interface_type,
                                 ),
                             )))
@@ -8017,7 +8011,7 @@ impl AnnotationLowerer<'_> {
                         ) =>
                     {
                         let pointer = SpecExpression::Value(ProgramValue::typed_pointer(
-                            crate::kernel::OldAddress::null(),
+                            crate::kernel::Address::null(),
                             interface_type.to_kernel_type(),
                         ));
                         Ok(match click_array_element_type(*interface_type) {
@@ -10652,7 +10646,7 @@ impl AnnotationLowerer<'_> {
     }
 }
 
-/// Only direct object projections qualify. OldAddress-taking, casts and loaded
+/// Only direct object projections qualify. Address-taking, casts and loaded
 /// pointers keep ordinary C memory semantics.
 fn aggregate_projection_root(
     expression: &ProgramExpression,
@@ -10947,16 +10941,13 @@ mod integer_source_quantifier_tests {
     #[test]
     fn captured_integer_freshness_ignores_unrelated_heap_state() {
         use crate::kernel::{
-            AddressBase, AddressOffset, OldAddress, OldMachineTerm, ProgramType, ProgramValue,
+            Address, AddressBase, AddressOffset, OldMachineTerm, ProgramType, ProgramValue,
             SpecExpression, SpecPoint, SpecPureFunctionArgument, SymbolicMemory,
         };
 
         let explicit = Variable::produced(crate::kernel::Producer::ProofQuantifier, 2_001);
         let unrelated_heap_variable = Variable(9_000_001);
-        let heap_pointer = OldAddress {
-            base: AddressBase::Heap(77),
-            offset: AddressOffset::constant(0),
-        };
+        let heap_pointer = Address::new(AddressBase::Heap(77), AddressOffset::constant(0));
         let memory = SymbolicMemory::new()
             .with_block(heap_pointer.base.clone(), 4)
             .store(
@@ -10967,16 +10958,16 @@ mod integer_source_quantifier_tests {
             name: "captured_array_value".to_string(),
             arguments: vec![SpecPureFunctionArgument::ArrayRef {
                 point: SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&memory)),
-                pointer: SpecExpression::Value(ProgramValue::pointer(OldAddress::null())),
+                pointer: SpecExpression::Value(ProgramValue::pointer(Address::null())),
                 element_type: ProgramType::Int32,
             }],
         };
         let captured_from_machine_load =
             SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
                 point: SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&memory)),
-                pointer: Box::new(SpecExpression::Value(ProgramValue::pointer(
-                    OldAddress::null(),
-                ))),
+                pointer: Box::new(SpecExpression::Value(
+                    ProgramValue::pointer(Address::null()),
+                )),
                 value_type: ProgramType::Int32,
                 exact: false,
             }));

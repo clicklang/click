@@ -291,7 +291,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_borrow_refusals() {
         &program_declare("p", ProgramType::UInt8Pointer),
     ));
     let value = ProgramValue::typed_pointer(
-        OldAddress::symbolic(Variable(93_700)),
+        Address::symbolic(Variable(93_700)),
         ProgramType::UInt8Pointer,
     );
     let copy = program_assign("p", ProgramExpression::Value(value.clone()));
@@ -468,10 +468,7 @@ fn scalar_local_updates_share_memory_and_resource_state() {
 
 #[test]
 fn loop_back_edge_rejects_heap_and_resource_state_changes() {
-    let allocation = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let allocation = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(allocation.clone(), AllocationSize::int32(16))
         .expect("test allocation claim should be fresh");
@@ -489,10 +486,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     let freed = execute_execution_statement_paths(
         &top,
         &program_heap_free(ProgramExpression::Value(ProgramValue::pointer(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
         ))),
         &PureFactContext::new(),
         ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
@@ -567,10 +561,7 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
 #[test]
 fn join_state_forgets_changed_scalars_and_memory() {
     let stable_x = int32(OldMachineTerm::Variable(Variable(7)));
-    let pointer = OldAddress {
-        base: "heap".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("heap".into(), AddressOffset::constant(0));
     let state_zero = ExecutionState::new()
         .with_local("x", stable_x.clone())
         .with_local("y", int32(0))
@@ -613,14 +604,8 @@ fn join_state_forgets_changed_scalars_and_memory() {
 
 #[test]
 fn join_state_abstracts_changed_pointer_locals() {
-    let left = OldAddress {
-        base: "left".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let right = OldAddress {
-        base: "right".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let left = Address::new("left".into(), AddressOffset::constant(0));
+    let right = Address::new("right".into(), AddressOffset::constant(0));
     let abstract_left = abstract_execution_state_for_join(
         &ExecutionState::new().with_local("selected", ProgramValue::pointer(left)),
         &BTreeMap::new(),
@@ -646,7 +631,7 @@ fn join_state_abstracts_changed_pointer_locals() {
 fn join_state_fresh_variables_do_not_collide_with_symbolic_address_bases() {
     let state = ExecutionState::new().with_local(
         "selected",
-        ProgramValue::pointer(OldAddress::symbolic(Variable(1_000_000))),
+        ProgramValue::pointer(Address::symbolic(Variable(1_000_000))),
     );
     let abstract_state = abstract_execution_state_for_join(&state, &BTreeMap::new(), 0)
         .expect("pointer join abstraction");
@@ -713,11 +698,8 @@ fn sibling_join_abstraction_is_deterministic_after_a_nested_join() {
 
 #[test]
 fn symbolic_address_bases_do_not_imply_non_aliasing() {
-    let symbolic = OldAddress::symbolic(Variable(21_000));
-    let concrete = OldAddress {
-        base: "heap".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let symbolic = Address::symbolic(Variable(21_000));
+    let concrete = Address::new("heap".into(), AddressOffset::constant(0));
 
     assert_eq!(
         PureFactContext::new().decide(&OldConditionTerm::address_equal(symbolic, concrete)),
@@ -727,14 +709,8 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
 
 #[test]
 fn concrete_address_base_names_cannot_create_symbolic_identity() {
-    let misleading_name = OldAddress {
-        base: "symbolic-pointer:21000".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let heap = OldAddress {
-        base: "heap".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let misleading_name = Address::new("symbolic-pointer:21000".into(), AddressOffset::constant(0));
+    let heap = Address::new("heap".into(), AddressOffset::constant(0));
 
     assert!(!misleading_name.has_symbolic_block());
     assert!(misleading_name.blocks_proven_distinct(&heap));
@@ -923,10 +899,7 @@ fn execution_derivation_matches_only_equivalent_call_havoc() {
 
 #[test]
 fn function_call_threads_memory_but_discards_callee_locals() {
-    let pointer = OldAddress {
-        base: "block".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
         .with_local("caller", int32(42))
@@ -1347,7 +1320,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     let theorem = prove_symbolic_program_execution(
         ExecutionState::new(),
         ProgramStatement::Throw(crate::kernel::program_expression::pointer_value(
-            OldAddress::null(),
+            Address::null(),
         )),
         PureFactContext::new(),
     )
@@ -1855,10 +1828,7 @@ fn unknown_call_assign_is_runtime_error() {
 /// `result == 0` for a function that can return a nonzero `a`.
 #[test]
 fn unreadable_guard_operand_leaves_the_condition_undecided() {
-    let pointer = OldAddress {
-        base: "external".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("external".into(), AddressOffset::constant(0));
     let state = ExecutionState::new()
         .with_local("a", int32(OldMachineTerm::Variable(Variable(1))))
         .with_local(
@@ -2113,10 +2083,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
 
 #[test]
 fn while_invariant_is_proof_obligation() {
-    let pointer = OldAddress {
-        base: "block".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let invariant = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base: pointer,
@@ -2326,10 +2293,7 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
 /// (laws 4 and 5; docs/internals/stable-views.md).
 #[test]
 fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
-    let pointer = OldAddress {
-        base: "block".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let viewed = view_memory_fact(pointer, 0, 1);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let support = resources.occurrences_for_fact(&viewed)[0];
@@ -3380,7 +3344,7 @@ fn loop_join_reports_the_local_and_both_object_classes() {
     let pointer = |class| {
         ProgramValue::Pointer(
             OldPointer::new(
-                OldAddress::symbolic(Variable(987_001)),
+                Address::symbolic(Variable(987_001)),
                 ProgramType::Int32Pointer,
             )
             .with_object_class(class),
@@ -3409,19 +3373,19 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     let node = CAccessClass::Struct(CStructClass::opaque("node"));
     let head_pointer = OldPointer::new(
-        OldAddress::symbolic(Variable(987_010)),
+        Address::symbolic(Variable(987_010)),
         ProgramType::Int32Pointer,
     )
     .with_object_class(Some(node));
     let head = ExecutionState::new().with_local("parent", ProgramValue::Pointer(head_pointer));
     let unknown = OldPointer::new(
-        OldAddress::symbolic(Variable(987_011)),
+        Address::symbolic(Variable(987_011)),
         ProgramType::Int32Pointer,
     );
-    let null = OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer);
+    let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
-        OldConditionTerm::address_equal(unknown.address().clone(), OldAddress::null()),
+        OldConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
@@ -3434,7 +3398,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
-        OldConditionTerm::address_equal(unknown.address().clone(), OldAddress::null()),
+        OldConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         false,
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());

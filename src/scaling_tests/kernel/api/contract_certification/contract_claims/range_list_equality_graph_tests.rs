@@ -8,7 +8,7 @@ use super::*;
 fn certified_range_list_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = OldAddress::symbolic(Variable(9200));
+        let base = Address::symbolic(Variable(9200));
         let range = |value| {
             MemoryRange::new(
                 base.clone(),

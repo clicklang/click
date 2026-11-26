@@ -93,9 +93,11 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let fact = Proposition::condition_is(equality(&value, ty, &OldMachineTerm::constant(7)), true);
     let parent = PureFactContext::new();
     let context = parent.clone().assume_proposition(fact.clone());
-    let pointer = |width| OldAddress {
-        base: "retained-exact-index".into(),
-        offset: AddressOffset::int32_scaled(value.clone(), width),
+    let pointer = |width| {
+        Address::new(
+            "retained-exact-index".into(),
+            AddressOffset::int32_scaled(value.clone(), width),
+        )
     };
     let address = pointer(4);
     let native_source = OldConditionTerm::equal(

@@ -915,16 +915,16 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 InterfaceType::VoidPointer
                 | InterfaceType::VoidPointerPointer
                 | InterfaceType::Pointer => ProgramValue::typed_pointer(
-                    OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: scale_int32_offset(
+                    Address::new(
+                        AddressBase::ExternalArgument,
+                        scale_int32_offset(
                             OldMachineTerm::Variable(Variable::produced(
                                 crate::kernel::Producer::PointerArgument,
                                 index as u64,
                             )),
                             1,
                         ),
-                    },
+                    ),
                     interface_type.to_kernel_type(),
                 ),
                 InterfaceType::Int8 => {
@@ -965,61 +965,61 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int8Pointer | InterfaceType::Int8Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 1,
                             ),
-                        },
+                        ),
                         ProgramType::Int8Pointer,
                     )
                 }
                 InterfaceType::Int16Pointer | InterfaceType::Int16Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 2,
                             ),
-                        },
+                        ),
                         ProgramType::Int16Pointer,
                     )
                 }
                 InterfaceType::UInt16Pointer | InterfaceType::UInt16Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 2,
                             ),
-                        },
+                        ),
                         ProgramType::UInt16Pointer,
                     )
                 }
                 InterfaceType::Int32Pointer | InterfaceType::Int32Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 4,
                             ),
-                        },
+                        ),
                         ProgramType::Int32Pointer,
                     )
                 }
@@ -1027,120 +1027,120 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 | InterfaceType::CharArray(_, _)
                 | InterfaceType::UInt8Pointer
                 | InterfaceType::UInt8Array(_) => ProgramValue::typed_pointer(
-                    OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: scale_int32_offset(
+                    Address::new(
+                        AddressBase::ExternalArgument,
+                        scale_int32_offset(
                             OldMachineTerm::Variable(Variable::produced(
                                 crate::kernel::Producer::PointerArgument,
                                 index as u64,
                             )),
                             1,
                         ),
-                    },
+                    ),
                     ProgramType::UInt8Pointer,
                 ),
                 InterfaceType::UInt32Pointer | InterfaceType::UInt32Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 4,
                             ),
-                        },
+                        ),
                         ProgramType::UInt32Pointer,
                     )
                 }
                 InterfaceType::Int64Pointer(_) | InterfaceType::Int64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 8,
                             ),
-                        },
+                        ),
                         ProgramType::Int64Pointer,
                     )
                 }
                 InterfaceType::Int128Pointer | InterfaceType::Int128Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 16,
                             ),
-                        },
+                        ),
                         ProgramType::Int128Pointer,
                     )
                 }
                 InterfaceType::UInt64Pointer(_) | InterfaceType::UInt64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 8,
                             ),
-                        },
+                        ),
                         ProgramType::UInt64Pointer,
                     )
                 }
                 InterfaceType::UInt128Pointer | InterfaceType::UInt128Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 16,
                             ),
-                        },
+                        ),
                         ProgramType::UInt128Pointer,
                     )
                 }
                 InterfaceType::Float32Pointer | InterfaceType::Float32Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 4,
                             ),
-                        },
+                        ),
                         ProgramType::Float32Pointer,
                     )
                 }
                 InterfaceType::Float64Pointer | InterfaceType::Float64Array(_) => {
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 8,
                             ),
-                        },
+                        ),
                         ProgramType::Float64Pointer,
                     )
                 }
@@ -1151,16 +1151,16 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 i64::from(element_width),
                             ),
-                        },
+                        ),
                         interface_type.to_kernel_type(),
                     )
                 }
@@ -1182,34 +1182,34 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        OldAddress {
-                            base: AddressBase::ExternalArgument,
-                            offset: scale_int32_offset(
+                        Address::new(
+                            AddressBase::ExternalArgument,
+                            scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
                                 i64::from(element_width),
                             ),
-                        },
+                        ),
                         interface_type.to_kernel_type(),
                     )
                 }
                 InterfaceType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                    OldAddress::symbolic_function(Variable(index as u64)),
+                    Address::symbolic_function(Variable(index as u64)),
                     interface_type.to_kernel_type(),
                 ),
                 InterfaceType::PointerArray(_, _, _) => ProgramValue::typed_pointer(
-                    OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: scale_int32_offset(
+                    Address::new(
+                        AddressBase::ExternalArgument,
+                        scale_int32_offset(
                             OldMachineTerm::Variable(Variable::produced(
                                 crate::kernel::Producer::PointerArgument,
                                 index as u64,
                             )),
                             8,
                         ),
-                    },
+                    ),
                     interface_type.to_kernel_type(),
                 ),
             };

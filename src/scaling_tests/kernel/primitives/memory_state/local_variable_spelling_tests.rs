@@ -41,10 +41,7 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
             )
         });
         let state = scalar(ExecutionState::new(), "noise", ProgramValue::Int32(nested));
-        let base = OldAddress {
-            base: "unrelated-heap".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new("unrelated-heap".into(), AddressOffset::constant(0));
         let memory = state.memory().clone().with_seeded_cells(
             base,
             4,

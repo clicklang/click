@@ -8,7 +8,7 @@ fn pointer_readers_visit_shared_offset_and_index_dags_once() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(1002000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let source = SharedAddress::import(&OldAddress::symbolic(Variable(1003000)));
+            let source = Address::symbolic(Variable(1003000)).shared().clone();
             let mut index =
                 KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1003001));
             for _ in 0..size {
@@ -29,7 +29,7 @@ fn pointer_readers_visit_shared_offset_and_index_dags_once() {
                     .into_shared()
                     .unwrap();
             }
-            let address = SharedAddress::new(source.node().base.clone(), offset);
+            let address = SharedAddress::new(source.block(), offset);
             let exports = KernelTermExport::machine_export_count();
             let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut variables = BTreeSet::new();

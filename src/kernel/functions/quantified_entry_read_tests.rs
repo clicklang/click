@@ -9,10 +9,10 @@ fn fixture(
     Vec<ResourceSpec>,
     Vec<CompositeResourceDefinition>,
 ) {
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("quantity-pool".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("quantity-pool".into()),
+        AddressOffset::constant(0),
+    );
     let state = ExecutionState::new()
         .with_local("pool", ProgramValue::pointer(pointer.clone()))
         .with_memory(
@@ -186,10 +186,10 @@ fn quantity_read_projection_ignores_unrelated_definitions() {
 #[test]
 fn symbolic_quantity_keeps_the_entry_field_read_through_materialization() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pool = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(38_500)), 4),
-    };
+    let pool = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(38_500)), 4),
+    );
     let capacity = pool.offset_by_bytes(4);
     let view = ResourceFact::view_memory(MemoryRange::new(
         pool.clone(),

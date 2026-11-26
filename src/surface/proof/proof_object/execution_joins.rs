@@ -4100,7 +4100,7 @@ mod progress_tests {
         let read = Proposition::MemoryReadDefined {
             at: None,
             memory: SymbolicMemory::new(),
-            pointer: OldAddress::symbolic(Variable(71_001)),
+            pointer: Address::symbolic(Variable(71_001)),
             value_type: ProgramType::Int32,
         };
         for arm in [0, 1, 2] {

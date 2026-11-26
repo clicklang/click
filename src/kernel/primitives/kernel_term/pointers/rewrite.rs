@@ -141,19 +141,19 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         {
             replacement
         } else {
-            let source = value.node();
-            let block = if let Some(block) = self.blocks.get(&source.base) {
+            let source = value.block();
+            let block = if let Some(block) = self.blocks.get(&source) {
                 block.clone()
             } else {
                 let block = self
                     .selected
-                    .block(&source.base)
+                    .block(&source)
                     .map_err(PointerRewriteError::Callback)?;
-                self.blocks.insert(source.base.clone(), block.clone());
+                self.blocks.insert(source, block.clone());
                 block
             };
-            let offset = self.offset(&source.offset)?;
-            if block == source.base && offset == source.offset {
+            let offset = self.offset(value.offset())?;
+            if value.has_block(&block) && &offset == value.offset() {
                 value.clone()
             } else {
                 SharedAddress::new(block, offset)
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn selected_address_replacements_are_simultaneous_and_keep_metadata() {
         let source = SharedPointer::import(&super::super::tests::complete_source());
-        let replacement = SharedAddress::import(&OldAddress::symbolic(Variable(1004000)));
+        let replacement = Address::symbolic(Variable(1004000)).shared().clone();
         struct Selected {
             from: SharedAddress,
             to: SharedAddress,
@@ -289,7 +289,7 @@ mod tests {
         }
         .into_shared()
         .unwrap();
-        let block = SharedAddressBase::import(&AddressBase::Symbolic(Variable(1004013)));
+        let block = SharedAddressBase::new(AddressBase::Symbolic(Variable(1004013)));
         let address = SharedAddress::new(block, offset);
         struct Scoped<'a, 'b>(&'a mut TermRewrite<'b>);
         impl PointerRewrite for Scoped<'_, '_> {
@@ -308,8 +308,7 @@ mod tests {
         let exports = KernelTermExport::machine_export_count();
         let output = address.try_rewrite(&mut Scoped(&mut scoped)).unwrap();
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        let KernelAddressOffset::Int32Scaled { value, byte_width } = output.node().offset.node()
-        else {
+        let KernelAddressOffset::Int32Scaled { value, byte_width } = output.offset().node() else {
             panic!("scaled fold")
         };
         assert_eq!(*byte_width, -4);

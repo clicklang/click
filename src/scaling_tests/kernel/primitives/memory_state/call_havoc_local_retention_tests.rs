@@ -6,10 +6,7 @@ use super::*;
 
 #[test]
 fn local_initialization_havoc_checks_scale_with_changed_cells() {
-    let target = OldAddress {
-        base: "local:target".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let target = Address::new("local:target".into(), AddressOffset::constant(0));
     let range = MemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
     let facts = PureFactContext::new();
     let mut samples = Vec::new();
@@ -21,10 +18,10 @@ fn local_initialization_havoc_checks_scale_with_changed_cells() {
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         for index in 0..count {
-            let pointer = OldAddress {
-                base: format!("local:ambient-{index}").into(),
-                offset: AddressOffset::constant(0),
-            };
+            let pointer = Address::new(
+                format!("local:ambient-{index}").into(),
+                AddressOffset::constant(0),
+            );
             std::sync::Arc::make_mut(&mut before.heap)
                 .initialized
                 .record(&pointer, 4);
@@ -63,10 +60,7 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
                 &facts,
             )
         });
-        let at = |offset| OldAddress {
-            base: "local:byte-havoc".into(),
-            offset: AddressOffset::constant(offset),
-        };
+        let at = |offset| Address::new("local:byte-havoc".into(), AddressOffset::constant(offset));
         // The call writes byte 33. The cached word at byte 32 overlaps even
         // though its starting address lies before the write range.
         let range = MemoryRange::new_with_element_width(at(4), 29u32.into(), 30u32.into(), 1);
@@ -77,7 +71,7 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
         for count in [4, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut before = SymbolicMemory::new()
-                .with_block(at(0).base, 2048)
+                .with_block(at(0).base.clone(), 2048)
                 .store(at(0), value.clone())
                 .store(at(32), value.clone())
                 .store(at(36), value.clone());
@@ -123,9 +117,11 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
 
 #[test]
 fn exact_call_havoc_ignores_disjoint_run_slots_and_holes() {
-    let at = |offset: u32| OldAddress {
-        base: "local:call-run-havoc".into(),
-        offset: AddressOffset::constant(i64::from(offset)),
+    let at = |offset: u32| {
+        Address::new(
+            "local:call-run-havoc".into(),
+            AddressOffset::constant(i64::from(offset)),
+        )
     };
     let value = ProgramValue::Int32(OldMachineTerm::constant(7));
     let facts = PureFactContext::new();

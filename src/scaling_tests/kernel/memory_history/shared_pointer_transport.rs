@@ -40,7 +40,7 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
                     .unwrap();
             }
             let source = SharedAddress::new(
-                SharedAddressBase::import(&AddressBase::Symbolic(Variable(1009000))),
+                SharedAddressBase::new(AddressBase::Symbolic(Variable(1009000))),
                 offset,
             );
             let exports = KernelTermExport::machine_export_count();
@@ -53,7 +53,7 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
                 .unwrap()
             });
             assert!(matches!(
-                output.node().offset.node(),
+                output.offset().node(),
                 KernelAddressOffset::Add(_)
             ));
             assert!(

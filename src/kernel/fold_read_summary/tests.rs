@@ -386,25 +386,25 @@ fn bv(variable: u32) -> OldMachineTerm {
 }
 
 /// An `int32` array parameter's base, spelled as the kernel spells one.
-fn parameter_base(variable: u32) -> OldAddress {
-    OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(bv(variable), 4),
-    }
+fn parameter_base(variable: u32) -> Address {
+    Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(bv(variable), 4),
+    )
 }
 
-fn element(base: &OldAddress, index: OldMachineTerm) -> OldAddress {
-    OldAddress {
-        base: base.base.clone(),
-        offset: AddressOffset::add(base.offset.clone(), AddressOffset::scale_int32(index, 4)),
-    }
+fn element(base: &Address, index: OldMachineTerm) -> Address {
+    base.with_offset(AddressOffset::add(
+        base.offset.clone(),
+        AddressOffset::scale_int32(index, 4),
+    ))
 }
 
-fn byte_offset(pointer: &OldAddress, bytes: i64) -> OldAddress {
-    OldAddress {
-        base: pointer.base.clone(),
-        offset: AddressOffset::add(pointer.offset.clone(), AddressOffset::constant(bytes)),
-    }
+fn byte_offset(pointer: &Address, bytes: i64) -> Address {
+    pointer.with_offset(AddressOffset::add(
+        pointer.offset.clone(),
+        AddressOffset::constant(bytes),
+    ))
 }
 
 fn one() -> ProgramValue {
@@ -413,7 +413,7 @@ fn one() -> ProgramValue {
 
 fn application(
     memory: &SymbolicMemory,
-    base: &OldAddress,
+    base: &Address,
     start: OldMachineTerm,
     end: OldMachineTerm,
 ) -> SharedPureApplication {
@@ -681,10 +681,7 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
     let _session = enter_fold_read_test();
     register_unmarked();
     let block = AddressBase::from("local:f:buffer");
-    let base = OldAddress {
-        base: block.clone(),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(block.clone(), AddressOffset::constant(0));
     let declared = SymbolicMemory::new().with_block(block.clone(), 16);
     let ended = declared.without_local_block(&block);
     let old = application(
@@ -777,10 +774,10 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     let base = SymbolicMemory::new();
     let left = base.clone().store(element(&v, bv(HI)), one());
     let right = base.clone().store(
-        OldAddress {
-            base: AddressBase::from("local:f:other"),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new(
+            AddressBase::from("local:f:other"),
+            AddressOffset::constant(0),
+        ),
         one(),
     );
     let old = application(&left, &v, OldMachineTerm::constant(0), bv(HI));
@@ -1000,10 +997,10 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             SpecIntegerExpression::FromMachine(Box::new(read)),
         ),
     ));
-    let base = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(bv(V), 1),
-    };
+    let base = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(bv(V), 1),
+    );
     let at = |memory: &SymbolicMemory, element_type| {
         SharedPureApplication::intern(
             "byte_sum".into(),
@@ -1079,7 +1076,7 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
 // Native write sets and separation ranges must not enter signed fold arithmetic.
 #[test]
 fn wide_ranges_refuse_signed_fold_framing_rules() {
-    let base = OldAddress::symbolic(Variable(984_100));
+    let base = Address::symbolic(Variable(984_100));
     let wide = MemoryRange::new_wide(
         base.clone(),
         OldMachineTerm::uint64_constant(0),
@@ -1154,10 +1151,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         [x.clone(), x],
     );
     let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
-    let base = OldAddress {
-        base: "retained_fold_indices".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new("retained_fold_indices".into(), AddressOffset::constant(0));
     let pointer = base.offset_by_shared_elements(index, 4);
     let interval = FoldReadInterval {
         memory: SymbolicMemory::new(),

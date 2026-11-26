@@ -2,22 +2,22 @@ use super::*;
 #[test]
 fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let _session = VerificationSession::enter();
-    let cell = OldAddress {
-        base: "pointer-retained_state-cell".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let cell = Address::new(
+        "pointer-retained_state-cell".into(),
+        AddressOffset::constant(0),
+    );
     let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
         OldPointer::from_read(
-            OldAddress::loaded_value(memory, &cell),
+            Address::loaded_value(memory, &cell),
             ProgramType::Int32Pointer,
             memory,
             &cell,
         )
     };
     let rhs = OldPointer::new(
-        OldAddress::symbolic(Variable(991_100)),
+        Address::symbolic(Variable(991_100)),
         ProgramType::Int32Pointer,
     );
     let fact = |pointer| {
@@ -28,7 +28,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     };
     let source = fact(pointer(&before));
     let target = fact(pointer(&after));
-    let origin = Arc::new(OldAddress::symbolic(Variable(991_101)));
+    let origin = Arc::new(Address::symbolic(Variable(991_101)));
     let forged = fact(
         pointer(&after)
             .with_provenance(origin.clone())

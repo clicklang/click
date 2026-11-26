@@ -6,9 +6,9 @@ use super::*;
 
 #[test]
 fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
-    let a = OldAddress::symbolic(Variable(96_120));
-    let b = OldAddress::symbolic(Variable(96_121));
-    let c = OldAddress::symbolic(Variable(96_122));
+    let a = Address::symbolic(Variable(96_120));
+    let b = Address::symbolic(Variable(96_121));
+    let c = Address::symbolic(Variable(96_122));
     let goal = normalization_pointer_equality(&a, &c);
     let mut curve = Vec::new();
     for size in [16, 64, 256] {
@@ -19,8 +19,8 @@ fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
         ]);
         for i in 0..size {
             facts = facts.with_fact(normalization_pointer_equality(
-                &OldAddress::symbolic(Variable(100_000 + i * 2)),
-                &OldAddress::symbolic(Variable(100_001 + i * 2)),
+                &Address::symbolic(Variable(100_000 + i * 2)),
+                &Address::symbolic(Variable(100_001 + i * 2)),
             ));
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -42,10 +42,7 @@ fn listed_loaded_fold_matching_tracks_explicit_premises_not_memory_history() {
     let mut selected = Vec::new();
     for size in [16u32, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress {
-            base: "listed-fold".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("listed-fold".into(), AddressOffset::constant(0));
         let mut memory = SymbolicMemory::new().with_block("listed-fold", size * 4);
         for index in 0..size {
             memory = memory.store(

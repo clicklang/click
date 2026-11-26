@@ -16052,7 +16052,7 @@ impl Parser {
                 ..
             } = &expression
             {
-                // OldAddress the typed field lvalue without evaluating its load.
+                // Address the typed field lvalue without evaluating its load.
                 // This preserves the field's pointee type and qualifiers even
                 // when the aggregate itself uses byte-addressed storage.
                 // The member is its own subobject, as the C frontend narrows
@@ -17006,10 +17006,10 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    crate::kernel::OldAddress {
-                        base: crate::kernel::AddressBase::StaticObject { binding: id },
-                        offset: crate::kernel::AddressOffset::constant(0),
-                    },
+                    Address::new(
+                        crate::kernel::AddressBase::StaticObject { binding: id },
+                        crate::kernel::AddressOffset::constant(0),
+                    ),
                     ProgramType::UInt8Pointer,
                 ),
             )));
@@ -17247,13 +17247,13 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(Some(SyntaxTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::OldAddress {
-                        base: crate::kernel::AddressBase::AutomaticLocal {
+                    Address::new(
+                        crate::kernel::AddressBase::AutomaticLocal {
                             binding: id,
                             instance,
                         },
-                        offset: crate::kernel::AddressOffset::constant(0),
-                    },
+                        crate::kernel::AddressOffset::constant(0),
+                    ),
                     ProgramType::UInt8Pointer,
                 )),
             )));
@@ -17412,10 +17412,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    crate::kernel::OldAddress {
-                        base: block,
-                        offset: crate::kernel::AddressOffset::constant(0),
-                    },
+                    Address::new(block, crate::kernel::AddressOffset::constant(0)),
                     ProgramType::UInt8Pointer,
                 ),
             )));

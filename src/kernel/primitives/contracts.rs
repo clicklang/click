@@ -2594,7 +2594,7 @@ impl MemoryRange {
         (&self.start_bound, &self.end_bound)
     }
 
-    pub fn new(base: OldAddress, start: OldMachineTerm, end: OldMachineTerm) -> Self {
+    pub fn new(base: Address, start: OldMachineTerm, end: OldMachineTerm) -> Self {
         Self::new_with_element_width(base, start, end, 4)
     }
 
@@ -2604,7 +2604,7 @@ impl MemoryRange {
     /// int32-only kernel callers. New ranges produced from typed C input
     /// should use this constructor instead.
     pub(crate) fn new_with_element_width(
-        base: OldAddress,
+        base: Address,
         start: OldMachineTerm,
         end: OldMachineTerm,
         element_width: u32,
@@ -2657,7 +2657,7 @@ impl MemoryRange {
     /// The object and field this range is exactly, when it is all the bytes
     /// of one field of a symbolic layout: at `object + offsetof(L, f)`,
     /// spanning `f`'s extent, in bytes or in whole elements.
-    pub(crate) fn symbolic_field(&self) -> Option<(OldAddress, super::SymbolicLayoutName, u32)> {
+    pub(crate) fn symbolic_field(&self) -> Option<(Address, super::SymbolicLayoutName, u32)> {
         let (rest, layout, field) =
             super::SymbolicLayoutName::field_displacement(&self.base.offset)?;
         let extent = layout.field_extent(field);
@@ -2682,10 +2682,8 @@ impl MemoryRange {
         };
         exact.then(|| {
             (
-                OldAddress {
-                    base: self.base.base.clone(),
-                    offset: rest.cloned().unwrap_or(AddressOffset::constant(0)),
-                },
+                self.base
+                    .with_offset(rest.cloned().unwrap_or(AddressOffset::constant(0))),
                 layout,
                 field,
             )
@@ -2744,7 +2742,7 @@ impl MemoryRange {
         self
     }
 
-    pub(in crate::kernel) fn carrier_owner(&self) -> Option<&std::sync::Arc<OldAddress>> {
+    pub(in crate::kernel) fn carrier_owner(&self) -> Option<&std::sync::Arc<Address>> {
         self.carrier.owner()
     }
 
@@ -2758,7 +2756,7 @@ impl MemoryRange {
 
     pub(in crate::kernel) fn with_bounds_owner(
         mut self,
-        origin: Option<std::sync::Arc<OldAddress>>,
+        origin: Option<std::sync::Arc<Address>>,
         known: bool,
     ) -> Self {
         self.carrier = ArrayObject::from_parts(known, None, origin);
@@ -2767,7 +2765,7 @@ impl MemoryRange {
 
     pub(in crate::kernel) fn with_provenance(
         mut self,
-        provenance: std::sync::Arc<OldAddress>,
+        provenance: std::sync::Arc<Address>,
     ) -> Self {
         self.provenance = provenance;
         self
@@ -2786,7 +2784,7 @@ impl MemoryRange {
         self
     }
 
-    pub(in crate::kernel) fn access_provenance(&self) -> (&OldAddress, Option<&OldAddress>) {
+    pub(in crate::kernel) fn access_provenance(&self) -> (&Address, Option<&Address>) {
         (
             &self.provenance,
             match &self.carrier {
@@ -2798,7 +2796,7 @@ impl MemoryRange {
 
     /// Retained identity metadata for diagnostic rendering only. Reading this
     /// view performs no inference, normalization, or proof-state traversal.
-    pub(crate) fn diagnostic_pointer_metadata(&self) -> (&OldAddress, Option<&OldAddress>, bool) {
+    pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Address, Option<&Address>, bool) {
         (
             &self.provenance,
             self.carrier.owner().map(|owner| &**owner),
@@ -2843,7 +2841,7 @@ impl MemoryRange {
     }
 
     /// The address of the range's first element, in its own index kind.
-    pub(crate) fn start_pointer(&self) -> OldAddress {
+    pub(crate) fn start_pointer(&self) -> Address {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
@@ -2858,7 +2856,7 @@ impl MemoryRange {
     }
 
     /// The address one past the range's last element, in its own kind.
-    pub(crate) fn end_pointer(&self) -> OldAddress {
+    pub(crate) fn end_pointer(&self) -> Address {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
@@ -3039,7 +3037,7 @@ impl MemoryRange {
     /// use this bounded, derived view without introducing a second resource
     /// representation. The returned pointer is the first byte of the range;
     /// the second value is its byte length.
-    pub(crate) fn byte_footprint(&self) -> (OldAddress, OldMachineTerm) {
+    pub(crate) fn byte_footprint(&self) -> (Address, OldMachineTerm) {
         (
             self.start_pointer(),
             memory_range_byte_count(self.start().clone(), self.end().clone(), self.element_width),
@@ -3051,7 +3049,7 @@ impl MemoryRange {
     }
 
     /// Rebase a range without changing the domain of either endpoint.
-    pub(crate) fn with_base(&self, base: OldAddress) -> Self {
+    pub(crate) fn with_base(&self, base: Address) -> Self {
         Self {
             base,
             ..self.clone()
@@ -3062,7 +3060,7 @@ impl MemoryRange {
     /// coordinate system.
     pub(crate) fn with_bounds(
         &self,
-        base: OldAddress,
+        base: Address,
         start: OldMachineTerm,
         end: OldMachineTerm,
     ) -> Self {
@@ -3093,7 +3091,7 @@ impl MemoryRange {
     /// Any other shape answers nothing, and the caller keeps its per-cell
     /// check. The work is proportional to the guard and the pointer.
     pub(crate) fn guarded_quantified_cells(
-        pointer: &OldAddress,
+        pointer: &Address,
         variable: Variable,
         guard: &Proposition,
         element_width: u32,
@@ -3114,10 +3112,7 @@ impl MemoryRange {
             } if is_variable(&index) => RangeIndexKind::UInt64,
             _ => return None,
         };
-        let base = OldAddress {
-            base: pointer.base.clone(),
-            offset: base_offset,
-        };
+        let base = pointer.with_offset(base_offset);
         let index = OldMachineTerm::Variable(variable);
         let reconstructed = match kind {
             RangeIndexKind::Int32 => base.offset_by_elements(index, element_width),
@@ -3206,7 +3201,7 @@ impl MemoryRange {
 
     /// The bytes an access of `extent` at `pointer` reaches: a byte count,
     /// or a whole object of abstract type ([`Self::access`]).
-    pub(crate) fn of_access(pointer: &OldAddress, extent: super::AccessExtent) -> Self {
+    pub(crate) fn of_access(pointer: &Address, extent: super::AccessExtent) -> Self {
         match extent {
             super::AccessExtent::Bytes(bytes) => Self::new_with_element_width(
                 pointer.clone(),
@@ -3224,7 +3219,7 @@ impl MemoryRange {
     /// reaches: one element of the type's width, or, for a value of an
     /// abstract type, its whole object, `[pointer, pointer + sizeof(T))`,
     /// whose size is the type's and no number Click knows.
-    pub(crate) fn access(pointer: OldAddress, program_type: ProgramType) -> Self {
+    pub(crate) fn access(pointer: Address, program_type: ProgramType) -> Self {
         match program_type {
             ProgramType::Parameter(parameter) if parameter.has_abstract_size() => Self::new_wide(
                 pointer,
@@ -3244,7 +3239,7 @@ impl MemoryRange {
     /// The bytes of a whole object of `size` at `pointer`: `[0, size)` bytes,
     /// or for a symbolic layout `[0, sizeof(S))`, the range a value of the
     /// struct held whole reaches.
-    pub(crate) fn object(pointer: OldAddress, size: super::LayoutSize) -> Self {
+    pub(crate) fn object(pointer: Address, size: super::LayoutSize) -> Self {
         match size {
             super::LayoutSize::Bytes(bytes) => Self::new_with_element_width(
                 pointer,
@@ -3273,7 +3268,7 @@ impl MemoryRange {
 
     /// A range whose bounds are unsigned 64-bit element indices.
     pub(crate) fn new_wide(
-        base: OldAddress,
+        base: Address,
         start: OldMachineTerm,
         end: OldMachineTerm,
         element_width: u32,
@@ -3284,7 +3279,7 @@ impl MemoryRange {
         }
     }
 
-    pub fn base(&self) -> &OldAddress {
+    pub fn base(&self) -> &Address {
         &self.base
     }
 
@@ -3318,10 +3313,10 @@ impl MemoryRange {
     /// answer it through [`Self::is_unnamed_footprint`].
     pub(crate) fn unnamed_footprint() -> Self {
         Self::new_with_element_width(
-            OldAddress {
-                base: super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
-                offset: super::AddressOffset::constant(0),
-            },
+            Address::new(
+                super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
+                super::AddressOffset::constant(0),
+            ),
             OldMachineTerm::constant(0),
             // Endpoints are `int32` values: this is the largest span whose
             // guards hold, so no consumer that assumes a held range's span
@@ -3340,7 +3335,7 @@ impl MemoryRange {
 /// Whether a range or segment based at `base` is
 /// [`MemoryRange::unnamed_footprint`]: the reserved block is spelled nowhere
 /// else.
-pub(crate) fn is_unnamed_footprint_base(base: &OldAddress) -> bool {
+pub(crate) fn is_unnamed_footprint_base(base: &Address) -> bool {
     base.base == super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK)
 }
 
@@ -4687,15 +4682,15 @@ mod guarded_quantified_cell_tests {
     }
 
     /// `p + v` for a byte array `p`, indexed by an unsigned 64-bit `v`.
-    fn wide_cell(base: &OldAddress) -> OldAddress {
+    fn wide_cell(base: &Address) -> Address {
         base.offset_by_typed_elements(OldMachineTerm::Variable(index()), 1, true, true)
     }
 
-    fn parameter() -> OldAddress {
-        OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(7)), 1),
-        }
+    fn parameter() -> Address {
+        Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(7)), 1),
+        )
     }
 
     #[test]
@@ -4763,10 +4758,10 @@ mod guarded_quantified_cell_tests {
             None
         );
         // A base that moves with the binder is not one fixed range.
-        let moving = wide_cell(&OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(index()), 1),
-        });
+        let moving = wide_cell(&Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(index()), 1),
+        ));
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),
             None
@@ -4828,14 +4823,14 @@ mod retained_loadable_count_tests {
                             for retain_end in [false, true] {
                                 let mut range = if wide {
                                     MemoryRange::new_wide(
-                                        OldAddress::symbolic(Variable(10993701)),
+                                        Address::symbolic(Variable(10993701)),
                                         start.clone(),
                                         end.clone(),
                                         width,
                                     )
                                 } else {
                                     MemoryRange::new_with_element_width(
-                                        OldAddress::symbolic(Variable(10993701)),
+                                        Address::symbolic(Variable(10993701)),
                                         start.clone(),
                                         end.clone(),
                                         width,

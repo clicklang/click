@@ -111,10 +111,10 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
         let source = Variable(55);
-        let replacement = OldAddress::symbolic(Variable(56));
+        let replacement = Address::symbolic(Variable(56));
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-            Box::new(OldAddress::symbolic(source)),
+            Box::new(Address::symbolic(source)),
             LoadKind::Int32,
         );
         let native = OldMachineTerm::RangeFold {

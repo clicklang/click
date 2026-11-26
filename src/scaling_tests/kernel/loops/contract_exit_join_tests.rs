@@ -13,7 +13,7 @@ fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
         program_value_comparison_proposition(value, ComparisonOperator::Equal, &int32(3)).unwrap()
     };
     let range = MemoryRange::new_with_element_width(
-        OldAddress::symbolic(Variable(927_022)),
+        Address::symbolic(Variable(927_022)),
         OldMachineTerm::constant(0),
         OldMachineTerm::Variable(Variable(927_020)),
         4,
@@ -73,10 +73,10 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         let mut memory = SymbolicMemory::new().with_block("shared", 4 * size);
         for index in 0..size {
             shared = shared.with_local(format!("spare{index}"), int32(index));
-            let pointer = OldAddress {
-                base: AddressBase::from("shared"),
-                offset: AddressOffset::constant(i64::from(index) * 4),
-            };
+            let pointer = Address::new(
+                AddressBase::from("shared"),
+                AddressOffset::constant(i64::from(index) * 4),
+            );
             memory = memory.store(pointer, int32(index));
         }
         let shared = shared.with_memory(memory.clone());
@@ -178,7 +178,7 @@ fn exit_cell_separation_shares_the_active_borrow_footprint() {
     use crate::kernel::borrows::BorrowLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress::symbolic(Variable(927_000));
+    let pointer = Address::symbolic(Variable(927_000));
     let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), 4u32.into(), 1);
     let expected_left = Box::new(Resource::Memory(range(pointer.clone())));
     let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
@@ -190,7 +190,7 @@ fn exit_cell_separation_shares_the_active_borrow_footprint() {
             // Include overlap with the changed cell. Construction must retain
             // the prerequisite even here, without trying to prove it.
             let view =
-                ResourceFact::view_memory(range(OldAddress::symbolic(Variable(927_000 + index))));
+                ResourceFact::view_memory(range(Address::symbolic(Variable(927_000 + index))));
             let (_, occurrences) =
                 ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
             let opening = ledger
@@ -283,14 +283,8 @@ fn contract_exit_marker_join_work_is_linear_in_exits_and_skips_ambient_cells() {
 #[test]
 fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress {
-        base: "shared".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let other = OldAddress {
-        base: "other".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("shared".into(), AddressOffset::constant(0));
+    let other = Address::new("other".into(), AddressOffset::constant(0));
     let mut samples = Vec::new();
     for count in [4usize, 64, 1024] {
         let mut memory = SymbolicMemory::new()
@@ -331,10 +325,10 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
 #[test]
 fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("shared".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("shared".into()),
+        AddressOffset::constant(0),
+    );
     let memory = SymbolicMemory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.
     let load =

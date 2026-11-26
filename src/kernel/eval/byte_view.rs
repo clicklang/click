@@ -28,7 +28,7 @@ const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 /// Recover a retained byte without treating partial values as byte cells.
 pub(in crate::kernel) fn known_integer_byte(
     memory: &SymbolicMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<OldMachineTerm> {
     if let Some(value) = memory.cells.get(pointer) {
@@ -72,7 +72,7 @@ pub(super) fn merge_byte_bits(left: OldMachineTerm, right: OldMachineTerm) -> Ol
 /// authority come from the checked output transfer, not from this equation.
 pub(in crate::kernel) fn declared_uint32_read_representation(
     point: &ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<Proposition> {
     if byte_order != Some(ByteOrder::Little) || pointer.offset.as_const() != Some(0) {
@@ -118,7 +118,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
 /// byte naming its own version. The access itself has its own obligations.
 pub(in crate::kernel) fn indexed_uint32_byte_read(
     point: &ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<(ProgramValue, ExecutionFacts)> {
     if byte_order != Some(ByteOrder::Little)
@@ -170,10 +170,10 @@ pub(in crate::kernel) fn indexed_uint32_byte_read(
 /// and the ordinary store transition invalidates overlapping cached values.
 pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     memory: &SymbolicMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     stored: &ProgramValue,
     byte_order: Option<ByteOrder>,
-) -> Option<(OldAddress, ProgramValue)> {
+) -> Option<(Address, ProgramValue)> {
     if byte_order != Some(ByteOrder::Little) {
         return None;
     }
@@ -191,10 +191,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     }
     let as_byte = byte_word;
     let incoming = as_byte(stored)?;
-    let start = OldAddress {
-        base: pointer.base.clone(),
-        offset: AddressOffset::constant(0),
-    };
+    let start = pointer.with_offset(AddressOffset::constant(0));
     let mut assembled = OldMachineTerm::constant(0);
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
@@ -234,7 +231,7 @@ fn byte_word(value: &ProgramValue) -> Option<OldMachineTerm> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct ContainingIntegerCell {
     /// The cell's own address, `(block, const o')`.
-    pub(in crate::kernel) pointer: OldAddress,
+    pub(in crate::kernel) pointer: Address,
     /// The cell's value, an integer variant wider than one byte.
     pub(in crate::kernel) value: ProgramValue,
     /// Which byte of the cell's representation the access names, `o - o'`.
@@ -271,7 +268,7 @@ fn integer_cell_width(value: &ProgramValue) -> Option<u32> {
 /// float, `_Bool`).
 pub(in crate::kernel) fn containing_integer_cell(
     memory: &SymbolicMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<ContainingIntegerCell> {
     if byte_order != Some(ByteOrder::Little) {
@@ -296,10 +293,7 @@ pub(in crate::kernel) fn containing_integer_cell(
     // There are at most seven possible starts. Exact lookups use the
     // concrete and run indexes without materializing the logical cell map.
     for cell_offset in (lowest..offset).rev() {
-        let cell_pointer = OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(cell_offset),
-        };
+        let cell_pointer = pointer.with_offset(AddressOffset::constant(cell_offset));
         crate::instrumentation::record_deterministic_work(1);
         let Some(value) = memory.cells.get(&cell_pointer) else {
             continue;

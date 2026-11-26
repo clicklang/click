@@ -663,7 +663,7 @@ impl IteratedStorePlan {
 /// fact may still hold is refused: it would silently change the fact.
 pub(crate) fn plan_iterated_guard_store(
     state: &ExecutionState,
-    pointer: &OldAddress,
+    pointer: &Address,
     value: &ProgramValue,
     assumptions: &PureFactContext,
 ) -> Result<IteratedStorePlan, String> {

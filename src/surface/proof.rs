@@ -215,10 +215,7 @@ mod certificate_tests {
 
     #[test]
     fn local_index_surface_candidates_reject_nested_loads() {
-        let pointer = OldAddress {
-            base: "data".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("data".into(), AddressOffset::constant(0));
         let load = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
