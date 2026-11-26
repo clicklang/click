@@ -269,9 +269,9 @@ int32 run_first_destroyed(int32 payload) {
     mark after_read;
     step();
     have second->kid == kid by { close(); }
-    have at(after_read, separate(memory(out), memory(kid->refs))) by { normalize(); }
+    have at(after_read, separate(memory(out), memory(kid->refs))) by { close(); }
     have separate(statement(11).assignment(out, 0).footprint, memory(kid->refs)) by {
-        normalize() using { at(after_read, separate(memory(out), memory(kid->refs))); };
+        close() using { at(after_read, separate(memory(out), memory(kid->refs))); };
     }
     have separate(statement(11).assignment(out, 0).footprint, memory(second->kid->refs)) by {
         rewrite(second->kid, kid);
@@ -283,7 +283,7 @@ int32 run_first_destroyed(int32 payload) {
     have out == observed by { close(); }
     have out == payload by { close(); }
     with(child_control(kid)) {
-        have to_integer(count(child_ref(kid))) == 1 by { normalize(); }
+        have to_integer(count(child_ref(kid))) == 1 by { close(); }
         have to_integer(kid->refs) == 1 by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             close();
@@ -362,9 +362,9 @@ int32 run_second_destroyed(int32 payload) {
     mark after_read;
     step();
     have first->kid == kid by { close(); }
-    have at(after_read, separate(memory(out), memory(kid->refs))) by { normalize(); }
+    have at(after_read, separate(memory(out), memory(kid->refs))) by { close(); }
     have separate(statement(11).assignment(out, 0).footprint, memory(kid->refs)) by {
-        normalize() using { at(after_read, separate(memory(out), memory(kid->refs))); };
+        close() using { at(after_read, separate(memory(out), memory(kid->refs))); };
     }
     have separate(statement(11).assignment(out, 0).footprint, memory(first->kid->refs)) by {
         rewrite(first->kid, kid);
@@ -376,7 +376,7 @@ int32 run_second_destroyed(int32 payload) {
     have out == observed by { close(); }
     have out == payload by { close(); }
     with(child_control(kid)) {
-        have to_integer(count(child_ref(kid))) == 1 by { normalize(); }
+        have to_integer(count(child_ref(kid))) == 1 by { close(); }
         have to_integer(kid->refs) == 1 by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             close();
