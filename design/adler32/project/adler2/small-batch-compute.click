@@ -103,7 +103,7 @@ theorem adler_chunk_bytes_step(count: uint64) {
  }
 }
 theorem adler_chunk_bytes_zero() {
- ensures adler_chunk_bytes(0u64) == 0u64 by { unfold(adler_chunk_bytes(0u64)); normalize(); }
+ ensures adler_chunk_bytes(0u64) == 0u64 by { unfold(adler_chunk_bytes(0u64)); close(); }
 }
 theorem adler_chunk_bytes_position(p: uint64, count: uint64) {
  requires p % 4u64 == 0u64;
