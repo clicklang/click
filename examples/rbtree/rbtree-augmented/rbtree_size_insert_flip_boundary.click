@@ -126,28 +126,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => {
                             have not (sized_flip_stopped(old(state.chain)) == 1) by {
                                 rewrite(old(state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
-                                unfold(sized_flip_stopped(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); normalize();
+                                unfold(sized_flip_stopped(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); close();
                             }
                             contradiction(sized_flip_stopped(old(state.chain)) == 1);
                         },
                         SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => {
                             have not (sized_flip_stopped(old(state.chain)) == 1) by {
                                 rewrite(old(state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
-                                unfold(sized_flip_stopped(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); normalize();
+                                unfold(sized_flip_stopped(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); close();
                             }
                             contradiction(sized_flip_stopped(old(state.chain)) == 1);
                         },
                         SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => {
                             have not (sized_flip_stopped(old(state.chain)) == 1) by {
                                 rewrite(old(state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
-                                unfold(sized_flip_stopped(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); normalize();
+                                unfold(sized_flip_stopped(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); close();
                             }
                             contradiction(sized_flip_stopped(old(state.chain)) == 1);
                         },
                         SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => {
                             have not (sized_flip_stopped(old(state.chain)) == 1) by {
                                 rewrite(old(state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                unfold(sized_flip_stopped(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); normalize();
+                                unfold(sized_flip_stopped(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); close();
                             }
                             contradiction(sized_flip_stopped(old(state.chain)) == 1);
                         },
