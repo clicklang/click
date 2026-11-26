@@ -65,6 +65,7 @@ use crate::kernel::equality_graph::{NumericAddressConnectivity, NumericAddressOw
 use crate::kernel::primitives::LoadKind;
 use crate::kernel::primitives::OldMachineTerm;
 use crate::kernel::{ExecutionValue, PureFactContext, StoredMemoryValue, Variable};
+use crate::kernel::{OffsetTree, OffsetView};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Bound;
@@ -519,7 +520,7 @@ impl CellRun {
             base: self.base.base.clone(),
             offset: OldAddressOffset::add(
                 self.base.offset.clone(),
-                OldAddressOffset::Constant(shift),
+                OldAddressOffset::constant(shift),
             ),
         }
     }
@@ -760,9 +761,9 @@ pub(crate) enum RunAnchor {
 
 impl RunAnchor {
     fn of(offset: &OldAddressOffset) -> Self {
-        match offset {
-            OldAddressOffset::Constant(constant) => Self::Constant(*constant),
-            offset => Self::Symbolic(offset.clone()),
+        match offset.view() {
+            OffsetView::Constant(constant) => Self::Constant(constant),
+            _ => Self::Symbolic(offset.clone()),
         }
     }
 }
@@ -1228,7 +1229,7 @@ pub(crate) fn offset_stem_and_constant(
         if let Some(value) = stem.as_const() {
             return (None, constant.saturating_add(value));
         }
-        let OldAddressOffset::Add(left, right) = stem else {
+        let OffsetView::Add(left, right) = stem.view() else {
             return (Some(stem), constant);
         };
         let Some(value) = right.as_const() else {
@@ -1616,14 +1617,14 @@ impl CellStore {
         match stem {
             None => self
                 .concrete
-                .range(at(OldAddressOffset::Constant(low))..at(OldAddressOffset::Constant(high)))
+                .range(at(OldAddressOffset::constant(low))..at(OldAddressOffset::constant(high)))
                 .map(native_cell)
                 .collect(),
             Some(stem) => {
                 let shifted = |shift| {
-                    at(OldAddressOffset::Add(
-                        Box::new(stem.clone()),
-                        Box::new(OldAddressOffset::Constant(shift)),
+                    at(OldAddressOffset::raw_add(
+                        stem.clone(),
+                        OldAddressOffset::constant(shift),
                     ))
                 };
                 let mut result: Vec<_> = self
@@ -1781,7 +1782,7 @@ impl CellStore {
             .range::<_, OldAddress>((
                 Bound::Excluded(OldAddress {
                     base: AddressBase::Temporary(u64::MAX),
-                    offset: OldAddressOffset::Constant(i64::MAX),
+                    offset: OldAddressOffset::constant(i64::MAX),
                 }),
                 Bound::Unbounded,
             ))
@@ -3224,10 +3225,10 @@ impl CellStore {
     fn point_run_ranges(&self, pointer: &OldAddress) -> (Vec<(RunKey, RunKey)>, Vec<RunKey>) {
         use crate::kernel::reasoning::store_gap::CONSTANT_LIMIT;
 
-        let (stem, offset) = match &pointer.offset {
-            OldAddressOffset::Constant(offset) => (None, Some(*offset)),
-            OldAddressOffset::Add(stem, shift) => (Some(stem.as_ref()), shift.as_const()),
-            stem => (Some(stem), Some(0)),
+        let (stem, offset) = match pointer.offset.view() {
+            OffsetView::Constant(offset) => (None, Some(offset)),
+            OffsetView::Add(stem, shift) => (Some(stem), shift.as_const()),
+            _ => (Some(&pointer.offset), Some(0)),
         };
         let Some(offset) =
             offset.filter(|offset| (-CONSTANT_LIMIT..=CONSTANT_LIMIT).contains(offset))
@@ -3245,11 +3246,16 @@ impl CellStore {
                 RunAnchor::Constant(-CONSTANT_LIMIT),
                 RunAnchor::Constant(CONSTANT_LIMIT),
             )],
-            Some(stem @ (OldAddressOffset::Variable(_) | OldAddressOffset::Int32Scaled { .. })) => {
+            Some(stem)
+                if matches!(
+                    stem.view(),
+                    OffsetView::Variable(_) | OffsetView::Int32Scaled { .. }
+                ) =>
+            {
                 let shift = |offset| {
-                    RunAnchor::of(&OldAddressOffset::Add(
-                        Box::new(stem.clone()),
-                        Box::new(OldAddressOffset::Constant(offset)),
+                    RunAnchor::of(&OldAddressOffset::raw_add(
+                        stem.clone(),
+                        OldAddressOffset::constant(offset),
                     ))
                 };
                 vec![
@@ -3518,8 +3524,8 @@ where
     match &line.stem {
         None => {
             intervals.push(range(
-                Bound::Included(at(OldAddressOffset::Constant(first))),
-                Bound::Included(at(OldAddressOffset::Constant(last))),
+                Bound::Included(at(OldAddressOffset::constant(first))),
+                Bound::Included(at(OldAddressOffset::constant(last))),
             ));
         }
         Some(stem) => {
@@ -3530,9 +3536,9 @@ where
                 ));
             }
             let shifted = |shift: i64| {
-                at(OldAddressOffset::Add(
-                    Box::new(stem.clone()),
-                    Box::new(OldAddressOffset::Constant(shift)),
+                at(OldAddressOffset::raw_add(
+                    stem.clone(),
+                    OldAddressOffset::constant(shift),
                 ))
             };
             intervals.push(range(

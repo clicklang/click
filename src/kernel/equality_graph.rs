@@ -54,6 +54,7 @@
 
 use super::prelude::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::{OffsetTree, OffsetView};
 
 mod admitted;
 #[cfg(test)]
@@ -418,7 +419,7 @@ impl AffineOffset {
     /// coefficient has no offset spelling (a variable scaled by anything but
     /// one) or a value leaves `i64`.
     pub(in crate::kernel) fn to_offset_term(&self) -> Option<OldAddressOffset> {
-        let mut term = OldAddressOffset::Constant(i64::try_from(self.constant).ok()?);
+        let mut term = OldAddressOffset::constant(i64::try_from(self.constant).ok()?);
         // Compact IDs depend on interning order. Legacy spelling output must
         // retain structural order so proof routes do not depend on that order.
         let mut terms: Vec<_> = self.terms.iter().collect();
@@ -427,7 +428,7 @@ impl AffineOffset {
             let coefficient = i64::try_from(*coefficient).ok()?;
             let addend = match atom {
                 OffsetAtom::Variable(variable) if coefficient == 1 => {
-                    OldAddressOffset::Variable(*variable)
+                    OldAddressOffset::variable(*variable)
                 }
                 OffsetAtom::Variable(_) => return None,
                 OffsetAtom::Int32(value) => {
@@ -528,7 +529,7 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 /// definition is term metadata, not a hypothesis about the loaded address.
 pub(crate) fn logical_pointer_read_term(value: &OldAddress) -> Option<OldMachineTerm> {
     if let Some(read) = value.as_loaded_value() {
-        return (read.displacement == OldAddressOffset::Constant(0)).then(|| {
+        return matches!(read.displacement.view(), OffsetView::Constant(0)).then(|| {
             crate::kernel::OldMachineTerm::read_named(
                 read.point,
                 read.defining_address,
@@ -902,7 +903,7 @@ impl EqualityGraph {
             {
                 let read = OldAddress {
                     base: value.base.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 };
                 if !state.logical_values.contains(&read) {
                     state.logical_values = state.logical_values.with_value(read.clone());
@@ -949,7 +950,7 @@ impl EqualityGraph {
                 continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
-                if matches!(value.offset, OldAddressOffset::Add(..)) {
+                if matches!(value.offset.view(), OffsetView::Add(..)) {
                     if state.logical_query_dependencies.get(&value) == Some(&reads.generation) {
                         continue;
                     }
@@ -962,11 +963,11 @@ impl EqualityGraph {
                 // it does not assert that arbitrary scaled arithmetic is a
                 // pointer load, nor manufacture a shifted equality premise.
                 if matches!(value.base, AddressBase::Symbolic(_))
-                    && value.offset != OldAddressOffset::Constant(0)
+                    && !matches!(value.offset.view(), OffsetView::Constant(0))
                 {
                     let base = OldAddress {
                         base: value.base.clone(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     };
                     if reads.definitions.contains_key(&base) {
                         pending.push(base);
@@ -1348,7 +1349,7 @@ impl EqualityGraph {
             base: base.base.clone(),
             offset: OldAddressOffset::add(
                 base.offset.clone(),
-                OldAddressOffset::Constant(displacement),
+                OldAddressOffset::constant(displacement),
             ),
         })
     }
@@ -1378,13 +1379,13 @@ impl EqualityGraph {
         // the original step. Bounds still apply to the complete result.
         if pointer.base != base.base
             && matches!(
-                pointer.offset,
-                OldAddressOffset::Int64Scaled { unsigned: true, .. }
+                pointer.offset.view(),
+                OffsetView::Int64Scaled { unsigned: true, .. }
             )
         {
             let cursor = OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             if let Some(spelling) = self.wide_additive_address(&cursor)
                 && let Some(aligned) = self.pointer_at_base_with_spelling(&spelling, base, false)
@@ -1407,7 +1408,7 @@ impl EqualityGraph {
         if let Some(bytes) = pointer.offset.as_const().filter(|bytes| *bytes != 0) {
             let cursor = OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             if let Some(spelling) = self.wide_additive_address(&cursor)
                 && let Some(aligned) = self.pointer_at_base_with_spelling(&spelling, base, false)
@@ -1416,7 +1417,7 @@ impl EqualityGraph {
                     base: aligned.base,
                     offset: OldAddressOffset::add(
                         aligned.offset,
-                        OldAddressOffset::Constant(bytes),
+                        OldAddressOffset::constant(bytes),
                     ),
                 });
             }
@@ -1433,11 +1434,11 @@ impl EqualityGraph {
         if self.are_equal(pointer, base) {
             return Some(base.clone());
         }
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             for (part, rest) in [(left, right), (right, left)] {
                 let part = OldAddress {
                     base: pointer.base.clone(),
-                    offset: part.as_ref().clone(),
+                    offset: part.clone(),
                 };
                 if let Some(aligned) =
                     self.pointer_at_base_with_spelling(&part, base, allow_spelling)
@@ -1448,7 +1449,7 @@ impl EqualityGraph {
                     if aligned.offset == base.offset {
                         return Some(OldAddress {
                             base: aligned.base,
-                            offset: OldAddressOffset::add(aligned.offset, rest.as_ref().clone()),
+                            offset: OldAddressOffset::add(aligned.offset, rest.clone()),
                         });
                     }
                 }
@@ -2907,7 +2908,7 @@ impl EqualityGraphState {
                 }
                 self.register_pointer_address(&OldAddress {
                     base: block,
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 continue;
             }
@@ -2947,7 +2948,7 @@ impl EqualityGraphState {
                 let address_term = self.register_pointer_address(&address);
                 let value_term = self.register_pointer_address(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 self.terms.pointer_read(
                     point.congruence_read_key(),
@@ -3016,11 +3017,11 @@ impl EqualityGraphState {
                 equalities.push((
                     OldAddress {
                         base: block.clone(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     },
                     OldAddress {
                         base: other.clone(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     },
                 ));
             }
@@ -3080,14 +3081,12 @@ impl EqualityGraphState {
         let Some(reverse) = displacement.checked_neg() else {
             return false;
         };
-        let shifted_left = OldAddressOffset::Add(
-            Box::new(left.offset.clone()),
-            Box::new(OldAddressOffset::Constant(displacement)),
+        let shifted_left = OldAddressOffset::raw_add(
+            left.offset.clone(),
+            OldAddressOffset::constant(displacement),
         );
-        let shifted_right = OldAddressOffset::Add(
-            Box::new(right.offset.clone()),
-            Box::new(OldAddressOffset::Constant(reverse)),
-        );
+        let shifted_right =
+            OldAddressOffset::raw_add(right.offset.clone(), OldAddressOffset::constant(reverse));
         self.terms.are_equal(&shifted_left, &right.offset)
             || self.terms.are_equal(&left.offset, &shifted_right)
     }
@@ -3111,8 +3110,7 @@ impl EqualityGraphState {
         if representative != pointer.base
             && let Some(delta) = delta.to_offset_term()
         {
-            let translated =
-                OldAddressOffset::Add(Box::new(pointer.offset.clone()), Box::new(delta));
+            let translated = OldAddressOffset::raw_add(pointer.offset.clone(), delta);
             let (canonical, new) = self.terms.address(representative.clone(), translated);
             if new {
                 self.weights
@@ -3132,11 +3130,11 @@ impl EqualityGraphState {
                     (
                         OldAddress {
                             base: left,
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         },
                         OldAddress {
                             base: right,
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         },
                     )
                 },

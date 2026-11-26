@@ -26,6 +26,7 @@ use crate::kernel::integer_exclusions::ExcludedIntegers;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -2435,46 +2436,42 @@ fn offset_equality(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     // Wide scaled offsets also denote exact products, so cancelling their
     // common nonzero stride preserves equality and disequality. Keep the
     // full index domain; no low-word projection is involved.
-    use crate::kernel::OldAddressOffset as O;
-    let wide = match (a.as_ref(), b.as_ref()) {
+    let wide = match (a.view(), b.view()) {
         (
-            O::Int64Scaled {
-                value: a,
+            OffsetView::Int64Scaled {
+                index: a,
                 byte_width: wa,
                 unsigned: ua,
             },
-            O::Int64Scaled {
-                value: b,
+            OffsetView::Int64Scaled {
+                index: b,
                 byte_width: wb,
                 unsigned: ub,
             },
-        ) if wa == wb && *wa != 0 && ua == ub => Some((a.clone(), b.clone())),
+        ) if wa == wb && wa != 0 && ua == ub => Some((a, b)),
         (
-            O::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index: value,
                 byte_width,
                 unsigned,
             },
-            O::Constant(bytes),
+            OffsetView::Constant(bytes),
         )
         | (
-            O::Constant(bytes),
-            O::Int64Scaled {
-                value,
+            OffsetView::Constant(bytes),
+            OffsetView::Int64Scaled {
+                index: value,
                 byte_width,
                 unsigned,
             },
-        ) if bytes.checked_rem(*byte_width) == Some(0) => {
-            let count = bytes.checked_div(*byte_width)?;
-            let count = if *unsigned {
+        ) if bytes.checked_rem(byte_width) == Some(0) => {
+            let count = bytes.checked_div(byte_width)?;
+            let count = if unsigned {
                 OldMachineTerm::uint64_constant(u64::try_from(count).ok()?)
             } else {
                 OldMachineTerm::int64_constant(count)
             };
-            Some((
-                value.clone(),
-                V::Old(&count).retain(MachineIntegerType::Int64),
-            ))
+            Some((value, V::Old(&count).retain(MachineIntegerType::Int64)))
         }
         _ => None,
     };
@@ -2529,15 +2526,14 @@ fn same_field_bases<'a>(
     a: &'a OldAddressOffset,
     b: &'a OldAddressOffset,
 ) -> Option<(&'a OldAddressOffset, &'a OldAddressOffset)> {
-    use crate::kernel::OldAddressOffset as O;
-    match (a, b) {
-        (O::Add(a_base, a_field), O::Add(b_base, b_field))
+    match (a.view(), b.view()) {
+        (OffsetView::Add(a_base, a_field), OffsetView::Add(b_base, b_field))
             if matches!(
-                (a_field.as_ref(), b_field.as_ref()),
-                (O::Constant(a_field), O::Constant(b_field)) if a_field == b_field
+                (a_field.view(), b_field.view()),
+                (OffsetView::Constant(a_field), OffsetView::Constant(b_field)) if a_field == b_field
             ) =>
         {
-            Some((a_base.as_ref(), b_base.as_ref()))
+            Some((a_base, b_base))
         }
         _ => None,
     }
@@ -2765,8 +2761,7 @@ impl Residues {
     /// `addr(p + o)` is `addr(p) + o`: the address of a pointer whose
     /// offset is a sum, read through the address of one summand's pointer.
     fn address_residue(&self, pointer: &OldAddress, depth: u32) -> Option<Residue> {
-        use crate::kernel::OldAddressOffset as O;
-        let O::Add(left, right) = &pointer.offset else {
+        let OffsetView::Add(left, right) = pointer.offset.view() else {
             return None;
         };
         let mut best = None;
@@ -2774,7 +2769,7 @@ impl Residues {
             let base = OldMachineTerm::IntegerAddress(
                 Box::new(OldAddress {
                     base: pointer.base.clone(),
-                    offset: base.as_ref().clone(),
+                    offset: base.clone(),
                 }),
                 crate::kernel::AddressObjectClass::NONE,
             );
@@ -2791,20 +2786,21 @@ impl Residues {
 /// The residue of a pointer offset's byte count: exact for constants, and
 /// `0 mod 2^tz(w)` for `w` times an unknown index.
 fn offset_residue(offset: &OldAddressOffset) -> Option<Residue> {
-    use crate::kernel::OldAddressOffset as O;
     charge();
-    match offset {
-        O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
-        O::Int32Scaled { value, byte_width } => match value.operand_view().word32_constant() {
-            Some(index) => Some(Residue::exact(
-                i64::from(index as i32).wrapping_mul(*byte_width) as u64,
-            )),
-            None => (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
-        },
-        O::Int64Scaled { byte_width, .. } => {
-            (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0))
+    match offset.view() {
+        OffsetView::Constant(bytes) => Some(Residue::exact(bytes as u64)),
+        OffsetView::Int32Scaled { index, byte_width } => {
+            match index.operand_view().word32_constant() {
+                Some(index) => Some(Residue::exact(
+                    i64::from(index as i32).wrapping_mul(byte_width) as u64,
+                )),
+                None => (byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
+            }
         }
-        O::Add(a, b) => offset_residue(a)
+        OffsetView::Int64Scaled { byte_width, .. } => {
+            (byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0))
+        }
+        OffsetView::Add(a, b) => offset_residue(a)
             .zip(offset_residue(b))
             .map(|(a, b)| a.combine(b, u64::wrapping_add)),
         _ => None,

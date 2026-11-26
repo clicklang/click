@@ -19,6 +19,7 @@ use crate::kernel::program_point::ReadKey;
 use crate::kernel::unary_node;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType, ProgramPoint};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_i64, constant_u64, int64_constant, uint64_constant};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
@@ -872,13 +873,13 @@ impl TermClasses {
         // the aliased base subexpression after a previous block merge.
         // One selected prefix suffices; do not recursively publish prefixes
         // or enumerate other addresses in the class.
-        let shift = match &offset {
-            OldAddressOffset::Add(base, displacement) => displacement
+        let shift = match offset.view() {
+            OffsetView::Add(base, displacement) => displacement
                 .as_const()
                 .filter(|bytes| *bytes != 0)
-                .map(|bytes| (base.as_ref().clone(), bytes)),
-            OldAddressOffset::Constant(bytes) if *bytes != 0 => {
-                Some((OldAddressOffset::Constant(0), *bytes))
+                .map(|bytes| (base.clone(), bytes)),
+            OffsetView::Constant(bytes) if bytes != 0 => {
+                Some((OldAddressOffset::constant(0), bytes))
             }
             _ => None,
         };
@@ -897,7 +898,7 @@ impl TermClasses {
                 .registered_address_shifts
                 .with_value((address, raw_offset));
         }
-        if let OldAddressOffset::Add(base, displacement) = &offset
+        if let OffsetView::Add(base, displacement) = offset.view()
             && displacement.as_const().is_none()
             && !self
                 .registered_address_shifts
@@ -977,9 +978,9 @@ impl TermClasses {
     }
 
     fn retain_numeric_address(&mut self, root: u64, pointer: OldAddress) {
-        let displaced = |p: &OldAddress| match &p.offset {
-            OldAddressOffset::Add(_, offset) => offset.as_const().is_some_and(|bytes| bytes != 0),
-            OldAddressOffset::Constant(bytes) => *bytes != 0,
+        let displaced = |p: &OldAddress| match p.offset.view() {
+            OffsetView::Add(_, offset) => offset.as_const().is_some_and(|bytes| bytes != 0),
+            OffsetView::Constant(bytes) => bytes != 0,
             _ => false,
         };
         if self
@@ -1041,7 +1042,7 @@ impl TermClasses {
         let base_offset = self.intern(&base.offset);
         let index_class = self.shared_int32_class(index);
         let displacement = self.intern_node(Node::Int32Scaled(index_class, i64::from(width)));
-        let zero_base = base.offset == OldAddressOffset::Constant(0);
+        let zero_base = matches!(base.offset.view(), OffsetView::Constant(0));
         let raw = if zero_base {
             displacement
         } else {
@@ -1089,7 +1090,7 @@ impl TermClasses {
         if representative != base.base
             && let Some(delta_node) = self.intern_affine_offset(delta)
         {
-            self.address(representative.clone(), OldAddressOffset::Constant(0));
+            self.address(representative.clone(), OldAddressOffset::constant(0));
             let translated = self.intern_node(Node::Add(raw, delta_node));
             let normalized = affine
                 .as_ref()
@@ -1149,12 +1150,12 @@ impl TermClasses {
         if new_block && let AddressBase::PureFunctionApplication(application) = block {
             // Give the call its zero-offset address once. Arguments may enqueue
             // nested calls; the shared dependency worklist drains them iteratively.
-            let zero = if operand == self.intern(&OldAddressOffset::Constant(0)) {
+            let zero = if operand == self.intern(&OldAddressOffset::constant(0)) {
                 id
             } else {
                 self.address_without_shift(
                     AddressBase::PureFunctionApplication(application.clone()),
-                    OldAddressOffset::Constant(0),
+                    OldAddressOffset::constant(0),
                 )
                 .0
             };
@@ -1221,7 +1222,7 @@ impl TermClasses {
     }
 
     pub(super) fn retain_additive_address(&mut self, id: u64, pointer: &OldAddress) {
-        if !matches!(pointer.offset, OldAddressOffset::Add(_, _)) {
+        if !matches!(pointer.offset.view(), OffsetView::Add(_, _)) {
             return;
         }
         let wide = Self::additive_offset_is_wide(&pointer.offset);
@@ -1251,9 +1252,9 @@ impl TermClasses {
     // native index on which the caller stated its window bounds.
     fn prefer_wide_offset(new: &OldAddressOffset, prior: &OldAddressOffset) -> bool {
         let native = |offset: &OldAddressOffset| {
-            matches!(offset,
-            OldAddressOffset::Add(_, right) if matches!(right.as_ref(),
-                OldAddressOffset::Int64Scaled { unsigned: true, .. }))
+            matches!(offset.view(),
+            OffsetView::Add(_, right) if matches!(right.view(),
+                OffsetView::Int64Scaled { unsigned: true, .. }))
         };
         native(new) && !native(prior)
     }
@@ -1273,12 +1274,12 @@ impl TermClasses {
         let mut wide = false;
         while let Some(offset) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            match offset {
-                OldAddressOffset::Add(left, right) => {
+            match offset.view() {
+                OffsetView::Add(left, right) => {
                     pending.push(left);
                     pending.push(right);
                 }
-                OldAddressOffset::Int64Scaled { .. } => {
+                OffsetView::Int64Scaled { .. } => {
                     wide = true;
                     break;
                 }
@@ -1289,7 +1290,7 @@ impl TermClasses {
     }
 
     fn retain_additive_offset(&mut self, id: u64, offset: &OldAddressOffset) {
-        if !matches!(offset, OldAddressOffset::Add(_, _)) {
+        if !matches!(offset.view(), OffsetView::Add(_, _)) {
             return;
         }
         let wide = Self::additive_offset_is_wide(offset);
@@ -1438,8 +1439,7 @@ impl TermClasses {
         self.address_uses.remove(moved);
         for (id, offset) in uses.iter() {
             crate::instrumentation::record_deterministic_work(1);
-            let translated =
-                OldAddressOffset::Add(Box::new((**offset).clone()), Box::new(delta.clone()));
+            let translated = OldAddressOffset::raw_add((**offset).clone(), delta.clone());
             let (new, _) = self.address(kept.clone(), translated);
             self.close(vec![(*id, new)]);
         }
@@ -1682,10 +1682,7 @@ impl TermClasses {
             self.byte_product_nodes.insert(key, id);
         }
         if let Some((index, stride)) = self.defined_byte_products.get(&key).cloned() {
-            let element = self.intern(&OldAddressOffset::Int32Scaled {
-                value: index,
-                byte_width: stride,
-            });
+            let element = self.intern(&OldAddressOffset::int32_scaled(index, stride));
             self.close(vec![(id, element)]);
         }
     }
@@ -1707,10 +1704,7 @@ impl TermClasses {
         self.defined_byte_products
             .insert(key, (index.clone(), stride));
         if let Some(node) = self.byte_product_nodes.get(&key).copied() {
-            let element = self.intern(&OldAddressOffset::Int32Scaled {
-                value: index,
-                byte_width: stride,
-            });
+            let element = self.intern(&OldAddressOffset::int32_scaled(index, stride));
             self.close(vec![(node, element)]);
         }
     }

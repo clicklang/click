@@ -17,6 +17,7 @@ use read_intervals::ReadIntervals;
 
 use super::*;
 use crate::kernel::equality_graph::{AffineOffset, EqualityGraph, PointerClassMerge};
+use crate::kernel::{OffsetTree, OffsetView};
 
 /// A selected full-pointer frame can select the same supplier without entering
 /// the caller's unconditional graph. The derived input lineage is local to
@@ -32,7 +33,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &OldAddress) -
     if matches!(pointer.base, AddressBase::Load(_)) {
         let read = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         if let Some(stored) =
             crate::kernel::memory_history::checked_pointer_read_stored_value(&read, assumptions)
@@ -46,7 +47,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &OldAddress) -
     // the caller.
     let mut offsets = vec![&pointer.offset];
     while let Some(offset) = offsets.pop() {
-        if let OldAddressOffset::Add(left, right) = offset {
+        if let OffsetView::Add(left, right) = offset.view() {
             offsets.push(right);
             offsets.push(left);
             continue;
@@ -271,7 +272,7 @@ impl MemoryAddresses {
         // indexed miss, even when they contribute no address row.
         let Some(base) = graph.canonical_pointer(&OldAddress {
             base: range.base().base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }) else {
             self.incomplete = true;
             return;
@@ -791,7 +792,7 @@ impl MemoryAccessCandidates {
         if read && !self.entries.exact() {
             let direct = ResourceContext::sole_access_supplier(&self.index, &self.query, true);
             let owner = direct.or_else(|| {
-                (!matches!(self.query.offset, OldAddressOffset::Add(_, _)))
+                (!matches!(self.query.offset.view(), OffsetView::Add(_, _)))
                     .then(|| self.index.graph.additive_address(&self.query))
                     .flatten()
                     .and_then(|query| {
@@ -869,7 +870,7 @@ impl MemoryAccessCandidates {
             {
                 return Some(address);
             }
-            let spelling = if matches!(self.query.offset, OldAddressOffset::Add(_, _)) {
+            let spelling = if matches!(self.query.offset.view(), OffsetView::Add(_, _)) {
                 self.query.clone()
             } else {
                 self.index
@@ -961,13 +962,12 @@ impl ObjectEvidenceSources {
             let mut base = (*pointer).clone();
             loop {
                 keys.insert(base.clone());
-                base.offset = match &base.offset {
-                    OldAddressOffset::Add(left, _) => (**left).clone(),
-                    OldAddressOffset::Constant(value) if *value != 0 => {
-                        OldAddressOffset::Constant(0)
-                    }
+                let next = match base.offset.view() {
+                    OffsetView::Add(left, _) => left.clone(),
+                    OffsetView::Constant(value) if value != 0 => OldAddressOffset::constant(0),
                     _ => break,
                 };
+                base.offset = next;
             }
         }
         keys.into_iter().flat_map(move |key| {
@@ -1530,9 +1530,9 @@ impl MemoryQuery<'_> {
             Self::Address(pointer) => {
                 let mut pending = vec![pointer.offset.clone()];
                 while let Some(offset) = pending.pop() {
-                    if let OldAddressOffset::Add(left, right) = &offset {
-                        pending.push(left.as_ref().clone());
-                        pending.push(right.as_ref().clone());
+                    if let OffsetView::Add(left, right) = offset.view() {
+                        pending.push(left.clone());
+                        pending.push(right.clone());
                     }
                     graph.address_class(&OldAddress {
                         base: pointer.base.clone(),
@@ -1541,7 +1541,7 @@ impl MemoryQuery<'_> {
                 }
                 graph.address_class(&OldAddress {
                     base: pointer.base.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
             }
             Self::Footprint(range) => {
@@ -2628,11 +2628,11 @@ impl ResourceContext {
         if let Some(entry) = index.symbolic.sole_base(class, owned) {
             return Some(entry);
         }
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             for part in [left, right] {
                 let part = OldAddress {
                     base: pointer.base.clone(),
-                    offset: part.as_ref().clone(),
+                    offset: part.clone(),
                 };
                 if let Some(entry) = Self::sole_access_supplier(index, &part, owned) {
                     return Some(entry);
@@ -2641,7 +2641,7 @@ impl ResourceContext {
         }
         let root = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let class = index.graph.address_class(&root)?;
         index.symbolic.sole_base(class, owned)
@@ -2709,18 +2709,16 @@ impl ResourceContext {
                     return Some(MemoryAccessEntries::Relative(Box::new(entries)));
                 }
             }
-            let (prefix, bytes) = match &base.offset {
-                OldAddressOffset::Add(left, right) => {
+            let (prefix, bytes) = match base.offset.view() {
+                OffsetView::Add(left, right) => {
                     if let Some(bytes) = right.as_const() {
-                        (left.as_ref().clone(), bytes)
+                        (left.clone(), bytes)
                     } else {
                         let bytes = left.as_const()?;
-                        (right.as_ref().clone(), bytes)
+                        (right.clone(), bytes)
                     }
                 }
-                OldAddressOffset::Constant(bytes) if *bytes != 0 => {
-                    (OldAddressOffset::Constant(0), *bytes)
-                }
+                OffsetView::Constant(bytes) if bytes != 0 => (OldAddressOffset::constant(0), bytes),
                 _ => return None,
             };
             base.offset = prefix;
@@ -2767,7 +2765,7 @@ impl ResourceContext {
         // A reference result may capture an interior address without an
         // additive syntax tree. Its checked class retains a producer spelling
         // with that base; use it for indexed supplier selection only.
-        let spelling = (!matches!(pointer.offset, OldAddressOffset::Add(_, _)))
+        let spelling = (!matches!(pointer.offset.view(), OffsetView::Add(_, _)))
             .then(|| index.graph.additive_address(pointer))
             .flatten();
         let selected_pointer = spelling.as_ref().unwrap_or(pointer);
