@@ -40,9 +40,11 @@ fn rust_integer_literals_preserve_native_types_and_signed_boundaries() {
         .unwrap_or_else(|error| panic!("{ty}: {error:?}"));
     }
     // In particular, explicit i64 must retain its type even at the i32 boundary.
-    prove("function large() -> i64 { -2147483648i64 }
-           theorem width() { ensures large() == -2147483648i64 by { unfold(large()); close(); } }")
-        .unwrap();
+    prove(
+        "function large() -> i64 { -2147483648i64 }
+           theorem width() { ensures large() == -2147483648i64 by { unfold(large()); close(); } }",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -61,12 +63,8 @@ fn rust_integer_radices_and_separators_verify() {
     }"#,
     )
     .unwrap();
-    assert!(
-        prove("theorem false_claim() { ensures 0xffu8 == 254u8 by { close(); } }").is_err()
-    );
-    assert!(
-        prove("theorem false_claim() { ensures 0x1_0000 == 0u16 by { close(); } }").is_err()
-    );
+    assert!(prove("theorem false_claim() { ensures 0xffu8 == 254u8 by { close(); } }").is_err());
+    assert!(prove("theorem false_claim() { ensures 0x1_0000 == 0u16 by { close(); } }").is_err());
 }
 
 #[test]
