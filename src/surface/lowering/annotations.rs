@@ -234,7 +234,9 @@ fn fixed_measure_state(expression: &SyntaxTerm) -> Option<FixedMeasureState> {
 }
 
 mod comparison_elaboration;
+mod declarations;
 mod typing_environment;
+use declarations::Declarations;
 use typing_environment::TypingEnvironment;
 #[cfg(test)]
 mod tests;
@@ -4080,46 +4082,14 @@ fn spec_integer_to_term(
 
 impl AnnotationLowerer<'_> {
     fn source_binding(&self, name: crate::kernel::BindingName) -> crate::kernel::BindingName {
-        name.named()
-            .and_then(|name| self.source_bindings.as_ref()?.get(name))
-            .map(|(_, binding)| binding.clone())
-            .unwrap_or(name)
+        self.declarations().source_binding(name)
     }
 
     fn declared_pointer_element_type(
         &self,
         name: impl Into<crate::kernel::BindingName>,
     ) -> Option<ProgramType> {
-        let name = self.source_binding(name.into());
-        if name == crate::kernel::CONTRACT_RESULT {
-            return self
-                .result_type
-                .pointee_type()
-                .or_else(|| self.result_type.array_element_type());
-        }
-        // A resolved local carries its declared type when lowering recorded
-        // one; a local named by selector (`f.statement(3).local(word)`) may
-        // not, and then reads its type from the state that declares it.
-        if name.unresolved_name().is_none()
-            && let Some(element) = name
-                .program_type()
-                .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()))
-        {
-            return Some(element);
-        }
-        self.local_type_state
-            .and_then(|state| {
-                state
-                    .local_object_type(&name)
-                    .and_then(|ty| ty.pointee_type())
-                    // A local array, such as `char tmp[12]`, is indexed by
-                    // its element type, as a fixed-state proof reads it.
-                    .or_else(|| state.locals().array_object_element_type(&name))
-            })
-            .or_else(|| {
-                name.metadata_in(self.pointer_element_types.as_ref())
-                    .copied()
-            })
+        self.declarations().declared_pointer_element_type(name)
     }
 
     /// Attach the same checked loop clauses to compiler-lowered statements.
@@ -5925,29 +5895,7 @@ impl AnnotationLowerer<'_> {
     /// The declared C type of a parameter or local named in a clause, from
     /// its typed entry value or the live declaration state.
     fn c_variable_type(&self, name: impl Into<crate::kernel::BindingName>) -> Option<ProgramType> {
-        let name = self.source_binding(name.into());
-        if name == crate::kernel::CONTRACT_RESULT {
-            return Some(self.result_type);
-        }
-        if name.unresolved_name().is_none() {
-            return name.program_type();
-        }
-        name.metadata_in(self.program_parameter_types.as_ref())
-            .copied()
-            .or_else(|| {
-                name.metadata_in(self.entry_values.as_ref())
-                    .map(ProgramValue::program_type)
-            })
-            .or_else(|| {
-                self.entry_state
-                    .locals()
-                    .get(&name)
-                    .map(|value| value.program_type())
-            })
-            .or_else(|| {
-                self.local_type_state
-                    .and_then(|state| state.local_object_type(&name))
-            })
+        self.declarations().c_variable_type(name)
     }
 
     fn contract_expression_click_type_in_scope(
