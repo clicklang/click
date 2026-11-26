@@ -11386,7 +11386,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // External arguments share a block and carry the
                 // actual base as an offset prefix: `(base + i) == base`
                 // needs facts about `i`, not old reads through `base`.
-                let zero = crate::kernel::OldAddressOffset::constant(0);
+                let zero = crate::kernel::AddressOffset::constant(0);
                 let (left, right) = match (left.offset.view(), right.offset.view()) {
                     (OffsetView::Add(base, index), _) if base == &right.offset => (index, &zero),
                     (_, OffsetView::Add(base, index)) if &left.offset == base => (&zero, index),

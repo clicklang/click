@@ -37,11 +37,11 @@ mod tests {
             OldAddress::symbolic(Variable(999001)),
             OldAddress {
                 base: AddressBase::FunctionSymbolic(Variable(999001)),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldAddress {
                 base: AddressBase::ExternalObject(Variable(999001)),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             OldAddress::loaded_value(
@@ -56,7 +56,7 @@ mod tests {
                         OldMachineTerm::Variable(Variable(999002)),
                     ))],
                 )),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
         ];
         let base = values.clone();
@@ -65,11 +65,14 @@ mod tests {
                 base: pointer.base,
                 offset: OldAddressOffset::Add(
                     Box::new(OldAddressOffset::Constant(0)),
-                    Box::new(OldAddressOffset::scaled_int32_node(
-                        OldMachineTerm::Variable(Variable(999002)),
-                        4,
+                    Box::new(crate::kernel::OldAddressOffset::from(
+                        AddressOffset::scaled_int32_node(
+                            OldMachineTerm::Variable(Variable(999002)),
+                            4,
+                        ),
                     )),
-                ),
+                )
+                .into(),
             });
         }
         values
@@ -108,7 +111,8 @@ mod tests {
             offset: OldAddressOffset::Add(
                 Box::new(OldAddressOffset::Constant(1)),
                 Box::new(OldAddressOffset::Constant(2)),
-            ),
+            )
+            .into(),
         };
         for pointer in pointers() {
             let source =
@@ -180,7 +184,7 @@ mod tests {
             let source = OldConditionTerm::AddressEqual(
                 Box::new(OldAddress {
                     base: block,
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 }),
                 Box::new(OldAddress::null()),
             );
@@ -233,9 +237,9 @@ mod tests {
                     },
                 );
                 let offset = if wide {
-                    OldAddressOffset::scaled_int64_node(value, 8, false)
+                    AddressOffset::scaled_int64_node(value, 8, false)
                 } else {
-                    OldAddressOffset::scaled_int32_node(value, 4)
+                    AddressOffset::scaled_int32_node(value, 4)
                 };
                 OldConditionTerm::AddressEqual(
                     Box::new(OldAddress {

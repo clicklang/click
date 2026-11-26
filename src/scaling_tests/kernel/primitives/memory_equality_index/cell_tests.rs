@@ -568,7 +568,7 @@ fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
     for size in [8u32, 32, 128, 512] {
         let at = |id: u64| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(859_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(859_000 + id)).into(),
         };
         let (owner, alias) = (at(0), at(1));
         let mut resources = ResourceContext::new().unchecked_with_fact(view(&owner, 0, 4));
@@ -1217,7 +1217,7 @@ fn constant_memory_miss_ignores_unrelated_zero_bound_neighbors() {
 fn composition_object_evidence_ignores_unrelated_admitted_sources() {
     let external = |id: u64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(899_000 + id)),
+        offset: OldAddressOffset::Variable(Variable(899_000 + id)).into(),
     };
     let target = external(0);
     let target_fact = view(&target, 0, 4);
@@ -1512,7 +1512,7 @@ fn a_cold_small_memory_index_skips_unrelated_pointer_merge_history() {
         }
         let kept = OldAddress {
             base: "local:cold-contract".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let resources = ResourceContext::new().unchecked_with_fact(view(&kept, 0, 4));
         let (index, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1542,7 +1542,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let read = |context: &PureFactContext, memory: &SymbolicMemory| {
             let retained_state = crate::kernel::intern_memory_ref(memory);
@@ -1668,7 +1668,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let read = |context: &PureFactContext, memory: &SymbolicMemory| {
             let retained_state = crate::kernel::intern_memory_ref(memory);
@@ -1797,7 +1797,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let stored = OldAddress::symbolic(Variable(9_930_000));
         let mut memory = SymbolicMemory::new().store(
@@ -1808,7 +1808,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
             memory = memory.store(
                 OldAddress {
                     base: AddressBase::Heap(i),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramValue::Int32(1u32.into()),
             );

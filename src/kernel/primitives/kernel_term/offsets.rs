@@ -2,6 +2,8 @@
 //! interpretation; it neither normalizes offsets nor consults facts.
 use super::*;
 mod operations;
+mod written;
+pub use written::AddressOffset;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum KernelAddressOffset {
@@ -27,6 +29,26 @@ struct OffsetData {
     id: OffsetIdentity,
     node: KernelAddressOffset,
     constant: Option<i64>,
+    /// A scaled node's written index carrier ([`AddressOffset`]): the one it
+    /// was built from, else the one explicit output names, held so its
+    /// identity never changes while the node is alive.
+    index: std::sync::OnceLock<Result<SharedMachineIntegerTerm, &'static str>>,
+    /// The written syntax fingerprint ([`AddressOffset`]'s equality fast path).
+    syntax_hash: std::sync::OnceLock<Result<u64, &'static str>>,
+    /// The written constant fold ([`AddressOffset::as_const`]).
+    syntax_constant: std::sync::OnceLock<Option<i64>>,
+}
+impl OffsetData {
+    fn new(id: OffsetIdentity, node: KernelAddressOffset, constant: Option<i64>) -> Self {
+        Self {
+            id,
+            node,
+            constant,
+            index: Default::default(),
+            syntax_hash: Default::default(),
+            syntax_constant: Default::default(),
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 enum OffsetIdentity {
@@ -290,7 +312,7 @@ impl OffsetTree for SharedAddressOffset {
             value: KernelTerm::retain_address_index(&index),
             byte_width,
         }
-        .into_shared()
+        .into_shared_with_index(Some(index), true)
         .expect("native offset types")
     }
 
@@ -300,7 +322,7 @@ impl OffsetTree for SharedAddressOffset {
             byte_width,
             unsigned,
         }
-        .into_shared()
+        .into_shared_with_index(Some(index), true)
         .expect("native offset types")
     }
 
@@ -323,7 +345,21 @@ impl SharedAddressOffset {
     pub(crate) fn node(&self) -> &KernelAddressOffset {
         &self.0.node
     }
-    fn intern(node: KernelAddressOffset) -> Self {
+    /// The handle of `node`. A scaled node keeps `index`, the carrier it is
+    /// built from, unless a live handle of the node already holds one.
+    fn intern(
+        node: KernelAddressOffset,
+        index: Option<SharedMachineIntegerTerm>,
+        charge: bool,
+    ) -> Self {
+        let handle = Self::intern_node(node, charge);
+        if let Some(index) = index {
+            let _ = handle.0.index.set(Ok(index));
+        }
+        handle
+    }
+
+    fn intern_node(node: KernelAddressOffset, charge: bool) -> Self {
         static INTERNER: std::sync::OnceLock<Mutex<OffsetInterner>> = std::sync::OnceLock::new();
         let mut interner = INTERNER
             .get_or_init(Default::default)
@@ -333,7 +369,9 @@ impl SharedAddressOffset {
             return Self(value);
         }
         // Only insertion grows the arena. A live hit needs no garbage upkeep.
-        crate::instrumentation::record_deterministic_work(8);
+        if charge {
+            crate::instrumentation::record_deterministic_work(8);
+        }
         // As with the common term arena, bounded upkeep never scans the arena.
         for _ in 0..interner.cleanup.len().min(8) {
             let key = interner.cleanup.pop_front().unwrap();
@@ -349,11 +387,12 @@ impl SharedAddressOffset {
         }
         let id = interner.next_id;
         interner.next_id = id.checked_add(1).expect("offset identity exhausted");
-        let value = Arc::new(OffsetData {
-            id: OffsetIdentity::Interned(id),
-            constant: node.constant_value(),
-            node: node.clone(),
-        });
+        let constant = node.constant_value();
+        let value = Arc::new(OffsetData::new(
+            OffsetIdentity::Interned(id),
+            node.clone(),
+            constant,
+        ));
         interner.nodes.insert(node.clone(), Arc::downgrade(&value));
         interner.cleanup.push_back(node);
         Self(value)
@@ -376,19 +415,35 @@ impl KernelAddressOffset {
     }
 
     pub(crate) fn into_shared(self) -> Result<SharedAddressOffset, &'static str> {
+        self.into_shared_with_index(None, true)
+    }
+
+    /// [`Self::into_shared`], for a scaled node built from the index carrier
+    /// `index` (see [`AddressOffset`]). Without `charge`, it records no
+    /// deterministic work: [`AddressOffset`] builds nodes as the native
+    /// offset tree did, for free.
+    fn into_shared_with_index(
+        self,
+        index: Option<SharedMachineIntegerTerm>,
+        charge: bool,
+    ) -> Result<SharedAddressOffset, &'static str> {
         // Constant displacements already have scalar identities. Their value
         // supplies equality directly, without interner insertion or upkeep.
         if let Self::Constant(value) = &self {
-            crate::instrumentation::record_deterministic_work(1);
-            return Ok(SharedAddressOffset(Arc::new(OffsetData {
-                id: OffsetIdentity::Constant(*value),
-                constant: Some(*value),
-                node: self,
-            })));
+            if charge {
+                crate::instrumentation::record_deterministic_work(1);
+            }
+            let id = OffsetIdentity::Constant(*value);
+            let constant = Some(*value);
+            return Ok(SharedAddressOffset(Arc::new(OffsetData::new(
+                id, self, constant,
+            ))));
         }
         // One selected node; a new arena entry pays its bounded upkeep inside
         // intern. Reusing a live node performs no insertion or cleanup.
-        crate::instrumentation::record_deterministic_work(1);
+        if charge {
+            crate::instrumentation::record_deterministic_work(1);
+        }
         match &self {
             Self::Int32Scaled { value, .. }
                 if !matches!(
@@ -409,7 +464,7 @@ impl KernelAddressOffset {
             }
             _ => {}
         }
-        Ok(SharedAddressOffset::intern(self))
+        Ok(SharedAddressOffset::intern(self, index, charge))
     }
 
     pub(crate) fn import(offset: &OldAddressOffset) -> SharedAddressOffset {
@@ -419,6 +474,15 @@ impl KernelAddressOffset {
     pub(crate) fn try_import(
         offset: &OldAddressOffset,
     ) -> Result<SharedAddressOffset, &'static str> {
+        Self::import_charged(offset, true)
+    }
+
+    /// [`Self::try_import`]; without `charge`, as [`AddressOffset`]
+    /// conversion, which records no work.
+    fn import_charged(
+        offset: &OldAddressOffset,
+        charge: bool,
+    ) -> Result<SharedAddressOffset, &'static str> {
         enum Task<'a> {
             Enter(&'a OldAddressOffset),
             Add,
@@ -426,6 +490,7 @@ impl KernelAddressOffset {
         let mut pending = vec![Task::Enter(offset)];
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
+            let mut index = None;
             let node = match task {
                 Task::Enter(OldAddressOffset::Constant(value)) => Self::Constant(*value),
                 Task::Enter(OldAddressOffset::Variable(value)) => Self::Variable(*value),
@@ -434,6 +499,7 @@ impl KernelAddressOffset {
                     continue;
                 }
                 Task::Enter(OldAddressOffset::Int32Scaled { value, byte_width }) => {
+                    index = Some(value.clone());
                     Self::Int32Scaled {
                         value: KernelTerm::retain_address_index(value),
                         byte_width: *byte_width,
@@ -443,18 +509,21 @@ impl KernelAddressOffset {
                     value,
                     byte_width,
                     unsigned,
-                }) => Self::Int64Scaled {
-                    value: KernelTerm::retain_address_index(value),
-                    byte_width: *byte_width,
-                    unsigned: *unsigned,
-                },
+                }) => {
+                    index = Some(value.clone());
+                    Self::Int64Scaled {
+                        value: KernelTerm::retain_address_index(value),
+                        byte_width: *byte_width,
+                        unsigned: *unsigned,
+                    }
+                }
                 Task::Add => {
                     let right = values.pop().expect("right offset");
                     let left = values.pop().expect("left offset");
                     Self::Add([left, right])
                 }
             };
-            values.push(node.into_shared()?);
+            values.push(node.into_shared_with_index(index, charge)?);
         }
         Ok(values.pop().expect("offset root"))
     }
@@ -484,6 +553,7 @@ impl KernelAddressOffset {
 
     /// Explicit native output. Completed offset children are moved, never
     /// cached and cloned at every prefix. Shared numeric indices stay shared.
+    #[cfg(test)]
     pub(crate) fn export(root: &SharedAddressOffset) -> Result<OldAddressOffset, &'static str> {
         enum Task<'a> {
             Enter(&'a SharedAddressOffset),
@@ -615,12 +685,9 @@ mod tests {
         }
     }
 
-    /// An imported offset orders exactly as the old value it came from, so
-    /// a handle can key an ordered map (and a cell-store range scan) in place
-    /// of an old offset without changing its order.
-    #[test]
-    fn imported_offsets_order_as_their_old_values() {
-        let _session = crate::kernel::VerificationSession::enter();
+    /// Old offsets of every node kind, including the cell store's range
+    /// shapes and scaled indices under sums.
+    fn ordering_cases() -> Vec<OldAddressOffset> {
         let constant = OldAddressOffset::Constant;
         let add = |a: OldAddressOffset, b: OldAddressOffset| {
             OldAddressOffset::Add(Box::new(a), Box::new(b))
@@ -665,6 +732,16 @@ mod tests {
                 values.push(add(variable(994101), values[index].clone()));
             }
         }
+        values
+    }
+
+    /// An imported offset orders exactly as the old value it came from, so
+    /// a handle can key an ordered map (and a cell-store range scan) in place
+    /// of an old offset without changing its order.
+    #[test]
+    fn imported_offsets_order_as_their_old_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let values = ordering_cases();
         let roots: Vec<_> = values.iter().map(KernelAddressOffset::import).collect();
         for (a, left) in values.iter().zip(&roots) {
             for (b, right) in values.iter().zip(&roots) {
@@ -705,6 +782,115 @@ mod tests {
         assert_ne!(roots[0], roots[1]);
         assert_ne!(roots[0].cmp(&roots[1]), std::cmp::Ordering::Equal);
         assert_eq!(roots[0].cmp(&roots[1]), roots[1].cmp(&roots[0]).reverse());
+    }
+
+    fn written_hash(offset: &AddressOffset) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        offset.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// A written offset compares, orders, hashes and prints exactly as the old
+    /// value it came from, and keeps doing so after the old values are gone:
+    /// its index identities do not drift.
+    #[test]
+    fn written_offsets_compare_order_and_print_as_their_old_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let values = ordering_cases();
+        let written: Vec<_> = values.iter().map(AddressOffset::from).collect();
+        let expected: Vec<Vec<_>> = values
+            .iter()
+            .map(|a| values.iter().map(|b| (a.cmp(b), a == b)).collect())
+            .collect();
+        for (a, left) in values.iter().zip(&written) {
+            assert_eq!(format!("{a:?}"), format!("{left:?}"));
+            assert_eq!(&left.to_old(), a);
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            a.hash(&mut hasher);
+            assert_eq!(written_hash(left), hasher.finish(), "{a:?}");
+        }
+        drop(values);
+        for _ in 0..2 {
+            for (i, left) in written.iter().enumerate() {
+                for (j, right) in written.iter().enumerate() {
+                    let (order, equal) = expected[i][j];
+                    assert_eq!(left.cmp(right), order, "{left:?} vs {right:?}");
+                    assert_eq!(left == right, equal, "{left:?} vs {right:?}");
+                    if equal {
+                        assert_eq!(written_hash(left), written_hash(right));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handles that differ only in an index annotation the old equality
+    /// ignores are one written offset: equal, hashed alike and unordered.
+    #[test]
+    fn annotation_distinct_handles_are_one_written_offset() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let written: Vec<_> = [CScalarClass::Int, CScalarClass::Char]
+            .into_iter()
+            .map(|class| {
+                AddressOffset::raw_add(
+                    AddressOffset::variable(Variable(994106)),
+                    AddressOffset::scaled_int64_node(
+                        OldMachineTerm::IntegerAddress(
+                            Box::new(OldAddress::symbolic(Variable(994107))),
+                            crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(
+                                class,
+                            ))),
+                        ),
+                        1,
+                        true,
+                    ),
+                )
+            })
+            .collect();
+        assert_ne!(written[0].shared(), written[1].shared());
+        assert_eq!(written[0], written[1]);
+        assert_eq!(written_hash(&written[0]), written_hash(&written[1]));
+        assert_eq!(written[0].cmp(&written[1]), std::cmp::Ordering::Equal);
+        let other = AddressOffset::raw_add(
+            AddressOffset::variable(Variable(994106)),
+            AddressOffset::constant(0),
+        );
+        assert_eq!(
+            written[0].cmp(&other),
+            written[0].to_old().cmp(&other.to_old())
+        );
+    }
+
+    /// The written constant fold and folding sum are the old ones.
+    #[test]
+    fn written_offsets_fold_as_their_old_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut values = ordering_cases();
+        values.push(OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::constant(3),
+            4,
+        ));
+        values.push(OldAddressOffset::Add(
+            Box::new(OldAddressOffset::Variable(Variable(994108))),
+            Box::new(OldAddressOffset::Constant(4)),
+        ));
+        for a in &values {
+            assert_eq!(AddressOffset::from(a).as_const(), a.as_const(), "{a:?}");
+            for b in &values {
+                if [a, b]
+                    .iter()
+                    .any(|v| v.as_const().is_some_and(|k| k.unsigned_abs() > 1 << 40))
+                {
+                    continue;
+                }
+                assert_eq!(
+                    AddressOffset::add(a.into(), b.into()),
+                    OldAddressOffset::add(a.clone(), b.clone()),
+                    "{a:?} + {b:?}"
+                );
+            }
+        }
     }
 
     #[test]

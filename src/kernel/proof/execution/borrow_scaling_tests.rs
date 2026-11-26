@@ -88,7 +88,7 @@ fn parameter_view(variable: u64) -> ResourceFact {
     ResourceFact::view_memory(MemoryRange::new_with_element_width(
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(variable)),
+            offset: OldAddressOffset::Variable(Variable(variable)).into(),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(1),
@@ -122,7 +122,7 @@ fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
         memory = memory.store(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(4 * index as i64),
+                offset: OldAddressOffset::Constant(4 * index as i64).into(),
             },
             int32(0),
         );

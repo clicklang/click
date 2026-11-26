@@ -1366,7 +1366,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     };
     let local_i = OldAddress {
         base: local_i_block.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let entry = verified
         .specification

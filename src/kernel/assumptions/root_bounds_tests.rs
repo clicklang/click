@@ -16,7 +16,7 @@ fn a_full_pointer_equality_connects_a_read_bounds_to_owned_root_storage() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = OldAddress {
         base: AddressBase::Heap(981_000),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let stored = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
     let read = read_pointer(981_001);
@@ -50,7 +50,7 @@ fn a_known_subobject_bounds_does_not_grant_root_storage_access() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = OldAddress {
         base: AddressBase::Heap(981_002),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let bounded = OldPointer::new(base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
         SubobjectBounds {

@@ -102,7 +102,7 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
             let base = SymbolicMemory::global_pointer("buf");
             let element = |index: i64| OldAddress {
                 base: base.base.clone(),
-                offset: OldAddressOffset::Constant(index * width),
+                offset: OldAddressOffset::Constant(index * width).into(),
             };
             let before_statement = registered();
             let (read, statement_work) = crate::instrumentation::measure_deterministic_work(|| {

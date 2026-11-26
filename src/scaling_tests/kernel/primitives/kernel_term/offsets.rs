@@ -207,3 +207,47 @@ fn offset_order_skips_shared_prefixes_and_walks_distinct_chains_once() {
         assert!(work <= 2 * size + 8, "size={size}, chain work={work}");
     }
 }
+
+/// A written offset fingerprints each node once, for equality. Comparing or
+/// ordering offsets that share a deep prefix does not walk the prefix, and
+/// neither does a later comparison of the prefix itself.
+#[test]
+fn written_offsets_compare_and_order_without_walking_shared_prefixes() {
+    let visits = || written::WRITTEN_VISITS.with(std::cell::Cell::get);
+    let measure = |operation: &dyn Fn()| {
+        let before = visits();
+        operation();
+        visits() - before
+    };
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut prefix = AddressOffset::variable(Variable(998400));
+        for i in 0..size {
+            prefix = AddressOffset::raw_add(
+                prefix,
+                AddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(998401 + i as u64)),
+                    4,
+                ),
+            );
+        }
+        let other = AddressOffset::raw_add(prefix.clone(), AddressOffset::constant(0));
+        let first = measure(&|| assert_ne!(prefix, other));
+        assert!(
+            first <= 2 * size + 3,
+            "size={size}, first comparison={first}"
+        );
+        let again = measure(&|| assert_ne!(prefix, other));
+        assert_eq!(again, 0, "size={size}");
+
+        let left = AddressOffset::raw_add(prefix.clone(), AddressOffset::constant(1));
+        let right = AddressOffset::raw_add(prefix.clone(), AddressOffset::constant(2));
+        let same = AddressOffset::raw_add(prefix, AddressOffset::constant(1));
+        let shared = measure(&|| {
+            assert_ne!(left, right);
+            assert_eq!(left, same);
+            assert_eq!(left.cmp(&right), std::cmp::Ordering::Less);
+        });
+        assert!(shared <= 6, "size={size}, shared-prefix visits={shared}");
+    }
+}

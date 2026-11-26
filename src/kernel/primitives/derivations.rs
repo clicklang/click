@@ -843,8 +843,8 @@ impl PointerOffsetCongruenceEvidence {
 
     pub(in crate::kernel) fn checks(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {

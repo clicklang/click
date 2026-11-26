@@ -774,11 +774,11 @@ fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
     let _session = VerificationSession::enter();
     let local = OldAddress {
         base: "local:unrelated".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let argument = SpecPureFunctionArgument::ArrayRef {
         point: SpecPoint::Current,
@@ -839,15 +839,15 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
     let _session = VerificationSession::enter();
     let array = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let local = OldAddress {
         base: "local:callee-write".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let other = OldAddress {
         base: "local:other-callee-write".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
     let entry = ExecutionState::new().begin_function_entry_memory();
@@ -1245,11 +1245,11 @@ fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
     let array = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let local = OldAddress {
         base: "local:callee-write".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let arguments = [SpecPredicateArgument::ArrayRef {
         point: SpecPoint::Current,

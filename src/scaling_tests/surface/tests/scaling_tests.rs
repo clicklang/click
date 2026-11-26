@@ -2323,7 +2323,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     let at = |block: &str, element: u32| {
         OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Variable(Variable(450_000)),
+            offset: OldAddressOffset::Variable(Variable(450_000)).into(),
         }
         .offset_by_bytes(4 * element)
     };
@@ -2448,7 +2448,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
     };
     let at = |block: String, variable: u64| OldAddress {
         base: block.as_str().into(),
-        offset: OldAddressOffset::Variable(Variable(variable)),
+        offset: OldAddressOffset::Variable(Variable(variable)).into(),
     };
     let range = |base: OldAddress, start: u32, end: u32| {
         Resource::Memory(MemoryRange::new(
@@ -2464,7 +2464,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
         };
     let address = OldAddress {
         base: "goal".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let alias = OldAddress::symbolic(Variable(460_000));
     let cases: [(
@@ -2486,7 +2486,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             &|index| {
                 read_defined(OldAddress {
                     base: format!("other{index}").as_str().into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 })
             },
         ),
@@ -7261,7 +7261,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
 
     let index_cell = OldAddress {
         base: "selected-index".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let index = OldMachineTerm::Variable(Variable(490_000));
     let equality = Proposition::condition_is(
@@ -7283,7 +7283,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
             memory = memory.store(
                 OldAddress {
                     base: format!("other-cell-{i}").as_str().into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramValue::Int32(value.clone()),
             );
@@ -7299,7 +7299,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         }
         let at = |value| OldAddress {
             base: "selected-array".into(),
-            offset: OldAddressOffset::scaled_int32_node(value, 4),
+            offset: OldAddressOffset::scaled_int32_node(value, 4).into(),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),

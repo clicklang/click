@@ -54,7 +54,7 @@
 //! entry a search over the whole collection would.
 
 use super::{
-    AddressBase, HashedOrdMap, HashedOrdSet, OldAddress, OldAddressOffset, ProgramType, Variable,
+    AddressBase, AddressOffset, HashedOrdMap, HashedOrdSet, OldAddress, ProgramType, Variable,
 };
 use crate::kernel::OffsetTree;
 use std::hash::Hash;
@@ -83,11 +83,11 @@ impl BlockKeyed for OldAddress {
     }
 
     fn first_key_of(block: &AddressBase) -> Self {
-        // `Constant` is `OldAddressOffset`'s first variant, so this offset
+        // `Constant` is `AddressOffset`'s first variant, so this offset
         // orders below every offset term.
         OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::constant(i64::MIN),
+            offset: AddressOffset::constant(i64::MIN),
         }
     }
 }
@@ -733,7 +733,9 @@ mod tests {
                 map.insert(
                     OldAddress {
                         base: block.clone(),
-                        offset: OldAddressOffset::Constant(offset),
+                        offset: crate::kernel::AddressOffset::from(
+                            crate::kernel::OldAddressOffset::Constant(offset),
+                        ),
                     },
                     index as u32,
                 );
@@ -741,7 +743,9 @@ mod tests {
             map.insert(
                 OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Variable(Variable(1)),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Variable(Variable(1)),
+                    ),
                 },
                 index as u32,
             );

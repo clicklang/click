@@ -326,7 +326,7 @@ fn certification_binary(
 
 fn pointer_offset_bytes(
     assumptions: &PureFactContext,
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     let literal = |n| {
         SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, OldMachineTerm::constant(n))
@@ -381,8 +381,8 @@ fn pointer_offset_bytes(
 /// offset extends the fact offset additively.
 fn pointer_offset_byte_delta(
     assumptions: &PureFactContext,
-    goal_offset: &OldAddressOffset,
-    fact_offset: &OldAddressOffset,
+    goal_offset: &AddressOffset,
+    fact_offset: &AddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     if goal_offset == fact_offset {
         return Some(SharedMachineIntegerTerm::intern(
@@ -514,7 +514,7 @@ fn symbolic_base_aliases_a_held_cell(
     };
     let object = OldAddress {
         base: base.base.clone(),
-        offset: OldAddressOffset::constant(0),
+        offset: AddressOffset::constant(0),
     };
     assumptions.exact_pointer_aliases(&object).any(|alias| {
         crate::instrumentation::record_deterministic_work(1);
@@ -855,7 +855,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
         return false;
     }
     fn collect_shallow_offset_variables(
-        offset: &OldAddressOffset,
+        offset: &AddressOffset,
         variables: &mut BTreeSet<Variable>,
     ) {
         match offset.view() {
@@ -3154,11 +3154,11 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
 /// resolver once per atom at top level, never inside the resolution
 /// recursion.
 fn pointer_offsets_equal_with_resolved_atoms(
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
-    let resolve = |offset: &OldAddressOffset| {
+    let resolve = |offset: &AddressOffset| {
         let (atoms, mut constant) = crate::kernel::reasoning::offset_atoms_and_constant(offset);
         let mut unresolved = Vec::new();
         for atom in atoms {
@@ -3195,7 +3195,7 @@ fn pointer_offsets_equal_with_resolved_atoms(
                 assumptions,
             )
     };
-    let atoms_match = |left: &OldAddressOffset, right: &OldAddressOffset| {
+    let atoms_match = |left: &AddressOffset, right: &AddressOffset| {
         if left == right
             || assumptions.exact_condition_value(&OldConditionTerm::address_offset_equal(
                 left.clone(),
@@ -3488,7 +3488,7 @@ mod shared_contract_operand_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "contract-expression-cell".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let written = OldMachineTerm::add(
             OldMachineTerm::Variable(Variable(1017151)),
@@ -3535,7 +3535,7 @@ mod shared_contract_operand_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "contract-index".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let load = |id| {
             let memory = crate::kernel::SymbolicMemory::new()
@@ -3566,13 +3566,19 @@ mod shared_contract_operand_tests {
         let related = empty.clone().assume_condition(equation.clone(), true);
         let exports = KernelTermExport::machine_export_count();
         assert!(pointer_offsets_equal_with_resolved_atoms(
-            &left, &left, &empty
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&left),
+            &empty
         ));
         assert!(!pointer_offsets_equal_with_resolved_atoms(
-            &left, &right, &empty
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&right),
+            &empty
         ));
         assert!(pointer_offsets_equal_with_resolved_atoms(
-            &left, &right, &related
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&right),
+            &related
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
@@ -3594,20 +3600,26 @@ mod shared_contract_operand_tests {
         let lower_only = empty.clone().assume_condition(lower.clone(), true);
         let bounded = lower_only.clone().assume_condition(upper, true);
         let exports = KernelTermExport::machine_export_count();
-        assert!(pointer_offset_bytes(&empty, &offset).is_none());
-        let bytes = pointer_offset_bytes(&bounded, &offset).expect("selected bounds");
-        assert!(pointer_offset_bytes(&lower_only, &offset).is_none());
+        assert!(
+            pointer_offset_bytes(&empty, &crate::kernel::AddressOffset::from(&offset)).is_none()
+        );
+        let bytes = pointer_offset_bytes(&bounded, &crate::kernel::AddressOffset::from(&offset))
+            .expect("selected bounds");
+        assert!(
+            pointer_offset_bytes(&lower_only, &crate::kernel::AddressOffset::from(&offset))
+                .is_none()
+        );
         assert!(
             pointer_offset_bytes(
                 &bounded,
-                &OldAddressOffset::Int64Scaled {
+                &crate::kernel::AddressOffset::from(&OldAddressOffset::Int64Scaled {
                     value: SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
                         OldMachineTerm::int64_from_32(x)
                     ),
                     byte_width: 4,
                     unsigned: false,
-                }
+                })
             )
             .is_none()
         );

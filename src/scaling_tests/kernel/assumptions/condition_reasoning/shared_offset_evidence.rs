@@ -29,7 +29,10 @@ fn cold_offset_evidence_misses_do_not_export_shared_dags() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(
                 PureFactContext::new()
-                    .pointer_offset_congruence_evidence(&left, &right)
+                    .pointer_offset_congruence_evidence(
+                        &crate::kernel::AddressOffset::from(&left),
+                        &crate::kernel::AddressOffset::from(&right)
+                    )
                     .is_none()
             );
         });
@@ -82,10 +85,21 @@ fn shared_offset_source_paths_scale_with_selected_dags() {
             let empty = PureFactContext::new();
             let facts = empty.clone().assume_condition(source, true);
             let proof = facts
-                .pointer_offset_congruence_evidence(&a, &b)
+                .pointer_offset_congruence_evidence(
+                    &crate::kernel::AddressOffset::from(&a),
+                    &crate::kernel::AddressOffset::from(&b),
+                )
                 .expect("shared source path");
-            assert!(proof.checks(&a, &b, &facts));
-            assert!(!proof.checks(&a, &b, &empty));
+            assert!(proof.checks(
+                &crate::kernel::AddressOffset::from(&a),
+                &crate::kernel::AddressOffset::from(&b),
+                &facts
+            ));
+            assert!(!proof.checks(
+                &crate::kernel::AddressOffset::from(&a),
+                &crate::kernel::AddressOffset::from(&b),
+                &empty
+            ));
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         samples.push(work);

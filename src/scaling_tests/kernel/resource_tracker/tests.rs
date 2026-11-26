@@ -452,7 +452,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
         let mut reads = Vec::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            collect_offset_reads(&offset, &mut reads)
+            collect_offset_reads(&crate::kernel::AddressOffset::from(&offset), &mut reads)
         });
         assert_eq!(reads.len(), 1);
         assert_eq!(KernelTermExport::machine_export_count(), exports);

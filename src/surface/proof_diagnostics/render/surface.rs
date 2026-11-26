@@ -1504,7 +1504,7 @@ impl Printer<'_> {
         }
     }
 
-    fn offset(&mut self, offset: &OldAddressOffset, depth: usize) -> String {
+    fn offset(&mut self, offset: &AddressOffset, depth: usize) -> String {
         match offset.view() {
             OffsetView::Constant(bytes) => bytes.to_string(),
             OffsetView::Variable(variable) => self
@@ -3617,7 +3617,9 @@ mod tests {
         let pointer = ProgramValue::Pointer(OldPointer::new(
             OldAddress {
                 base: AddressBase::Concrete("global:cells".into()),
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             },
             ProgramType::Int32Pointer,
         ));
@@ -3662,7 +3664,9 @@ mod tests {
             ProgramValue::Pointer(OldPointer::new(
                 OldAddress {
                     base: AddressBase::Concrete(format!("global:{name}")),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(0),
+                    ),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -3728,7 +3732,7 @@ mod tests {
     fn historical_loads_use_their_own_state_names_and_keep_their_read_type() {
         let pointer = OldAddress {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let base =
             ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
@@ -3779,7 +3783,7 @@ mod tests {
         let index = Variable(9);
         let heap = OldAddress {
             base: AddressBase::Heap(1),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before =
             ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 4));
@@ -3855,7 +3859,7 @@ mod resource_tests {
     fn resource_arguments_keep_the_same_read_states_as_proposition_operands() {
         let pointer = OldAddress {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = ExecutionState::new()
             .with_local(

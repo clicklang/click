@@ -210,7 +210,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     value: SharedMachineIntegerTerm,
     byte_width: i64,
     wide: Option<bool>,
-) -> OldAddressOffset {
+) -> AddressOffset {
     let view = value.operand_view();
     if let Some(native) = view
         .literal()
@@ -225,10 +225,8 @@ pub(in crate::kernel) fn transported_scaled_index(
         })
     {
         return match wide {
-            None => OldAddressOffset::scale_int32(native.into_owned(), byte_width),
-            Some(unsigned) => {
-                OldAddressOffset::scale_int64(native.into_owned(), byte_width, unsigned)
-            }
+            None => AddressOffset::scale_int32(native.into_owned(), byte_width),
+            Some(unsigned) => AddressOffset::scale_int64(native.into_owned(), byte_width, unsigned),
         };
     }
     if wide == Some(false) {
@@ -265,7 +263,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     if wide.is_none()
         && let Some(v) = view.word32_constant()
     {
-        return OldAddressOffset::constant(i64::from(v as i32) * byte_width);
+        return AddressOffset::constant(i64::from(v as i32) * byte_width);
     }
     let constant = match wide {
         Some(true) => view.uint64_constant().and_then(|v| i64::try_from(v).ok()),
@@ -274,7 +272,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     }
     .and_then(|v| v.checked_mul(byte_width));
     if let Some(constant) = constant {
-        return OldAddressOffset::constant(constant);
+        return AddressOffset::constant(constant);
     }
     // The existing offset representation observes both signed and unsigned
     // wide indices through its Int64 carrier; `unsigned` carries the reading.
@@ -284,8 +282,8 @@ pub(in crate::kernel) fn transported_scaled_index(
         MachineIntegerType::Int32
     });
     match wide {
-        None => OldAddressOffset::int32_scaled(value, byte_width),
-        Some(unsigned) => OldAddressOffset::int64_scaled(value, byte_width, unsigned),
+        None => AddressOffset::int32_scaled(value, byte_width),
+        Some(unsigned) => AddressOffset::int64_scaled(value, byte_width, unsigned),
     }
 }
 
@@ -333,7 +331,8 @@ mod tests {
                 .then_some(format == MachineIntegerType::UInt64);
             let offset = transported_scaled_index(framed, 4, wide);
             let (OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. }) = offset
+            | OldAddressOffset::Int64Scaled { value, .. }) =
+                crate::kernel::OldAddressOffset::from(offset)
             else {
                 panic!("retained scaled call");
             };
@@ -369,6 +368,18 @@ mod tests {
             retained(ty, &expected).structural_value(),
             "{term:?}"
         );
+        // An offset's index is a 32- or 64-bit machine integer: building an
+        // offset refuses any other carrier, so narrower indices have no
+        // offset to normalize.
+        if !matches!(
+            ty,
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
+        ) {
+            return;
+        }
         for width in [1, 4, -1] {
             let offset = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
                 OldAddressOffset::Int32Scaled {
@@ -390,16 +401,19 @@ mod tests {
                         byte_width: width,
                     },
                 },
-                _ => OldAddressOffset::scale_int64(
+                _ => crate::kernel::OldAddressOffset::from(AddressOffset::scale_int64(
                     expected.clone(),
                     width,
                     ty == MachineIntegerType::UInt64,
-                ),
+                )),
             };
             let exports = KernelTermExport::machine_export_count();
-            let actual = normalize_exact_memory_loads_in_pointer_offset(&offset, facts);
+            let actual = normalize_exact_memory_loads_in_pointer_offset(
+                &crate::kernel::AddressOffset::from(&offset),
+                facts,
+            );
             assert_eq!(exports, KernelTermExport::machine_export_count());
-            match (actual, native) {
+            match (crate::kernel::OldAddressOffset::from(actual), native) {
                 (
                     OldAddressOffset::Int32Scaled {
                         value: a,
@@ -480,12 +494,13 @@ mod tests {
                 let offset = transported_scaled_index(result.clone(), width, wide);
                 assert_eq!(exports, KernelTermExport::machine_export_count());
                 let expected_offset = match wide {
-                    None => OldAddressOffset::scale_int32(expected.clone(), width),
-                    Some(unsigned) => {
-                        OldAddressOffset::scale_int64(expected.clone(), width, unsigned)
-                    }
+                    None => AddressOffset::scale_int32(expected.clone(), width),
+                    Some(unsigned) => AddressOffset::scale_int64(expected.clone(), width, unsigned),
                 };
-                match (&offset, &expected_offset) {
+                match (
+                    &crate::kernel::OldAddressOffset::from(&offset),
+                    &crate::kernel::OldAddressOffset::from(&expected_offset),
+                ) {
                     (
                         OldAddressOffset::Int32Scaled {
                             value: a,
@@ -613,7 +628,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: "transport-index".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let before = SymbolicMemory::new()
             .with_block("transport-index", 16)
@@ -664,7 +679,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: "registered-index".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let before = SymbolicMemory::new().with_block("registered-index", 16);
         let load = OldMachineTerm::read_named(
@@ -947,7 +962,7 @@ mod tests {
         let index = OldMachineTerm::Variable(Variable(1018953));
         let query = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::scaled_int32_node(index.clone(), 4),
+            offset: AddressOffset::scaled_int32_node(index.clone(), 4),
         };
         let load = OldMachineTerm::read_named(
             ProgramPoint::at(

@@ -47,15 +47,14 @@ fn memory_erased_comparison(proposition: &Proposition) -> Option<Proposition> {
             other => other.clone(),
         }
     }
-    fn erase_offset(offset: &OldAddressOffset) -> OldAddressOffset {
+    fn erase_offset(offset: &AddressOffset) -> AddressOffset {
         match offset.view() {
             OffsetView::Add(left, right) => {
-                OldAddressOffset::raw_add(erase_offset(left), erase_offset(right))
+                AddressOffset::raw_add(erase_offset(left), erase_offset(right))
             }
-            OffsetView::Int32Scaled { index, byte_width } => OldAddressOffset::scaled_int32_node(
-                erase_term(index.structural_value()),
-                byte_width,
-            ),
+            OffsetView::Int32Scaled { index, byte_width } => {
+                AddressOffset::scaled_int32_node(erase_term(index.structural_value()), byte_width)
+            }
             _ => offset.clone(),
         }
     }

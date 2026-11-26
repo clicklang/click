@@ -200,7 +200,12 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
         let mut ranges = Vec::new();
         let mut uncertain = false;
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
-            collect_memory_load_ranges(&offset, &mut ranges, &mut uncertain, &mut None)
+            collect_memory_load_ranges(
+                &crate::kernel::AddressOffset::from(&offset),
+                &mut ranges,
+                &mut uncertain,
+                &mut None,
+            )
         });
         assert_eq!(uncertain, depth >= MAX_MEMORY_LOAD_FOOTPRINT_DEPTH);
         if !uncertain {

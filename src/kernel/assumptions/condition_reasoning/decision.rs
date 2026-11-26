@@ -837,8 +837,8 @@ impl PureFactContext {
 
     fn offsets_distinct_by_stated_separation(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<bool> {
         if left == right {
             return None;
@@ -911,8 +911,8 @@ impl PureFactContext {
     /// were equal the two pointers would be one pointer.
     fn offsets_distinct_by_nullness(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<bool> {
         let left_blocks = self.null_pointer_offsets.get(left)?;
         let right_blocks = self.null_pointer_offsets.get(right)?;
@@ -925,7 +925,7 @@ impl PureFactContext {
             // The index only nominates the block. Both premises are then
             // taken through the exact check, so they are recorded exactly
             // and a stale entry can never decide anything on its own.
-            let pointer_at = |offset: &OldAddressOffset| OldAddress {
+            let pointer_at = |offset: &AddressOffset| OldAddress {
                 base: block.clone(),
                 offset: offset.clone(),
             };
@@ -1833,8 +1833,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointer_offset_congruence_evidence(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<PointerOffsetCongruenceEvidence> {
         if left == right {
             return Some(PointerOffsetCongruenceEvidence::Exact);
@@ -1953,8 +1953,8 @@ impl PureFactContext {
 
     fn pointer_offset_element_index_evidence(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<PointerOffsetCongruenceEvidence> {
         let byte_width = common_pointer_offset_element_width(left, right)?;
         let (left_index, right_index) = (
@@ -3308,8 +3308,8 @@ mod shared_equality_dispatch_tests {
                         let width = if case == 12 { 8 } else { 4 };
                         sources.push(Proposition::condition_is(
                             OldConditionTerm::address_offset_equal(
-                                OldAddressOffset::scale_int32(value, width),
-                                OldAddressOffset::scale_int32(
+                                AddressOffset::scale_int32(value, width),
+                                AddressOffset::scale_int32(
                                     OldMachineTerm::Variable(Variable(981003)),
                                     width,
                                 ),
@@ -3408,7 +3408,7 @@ mod shared_equality_dispatch_tests {
                     OldMachineTerm::Variable(Variable(983001)),
                     OldMachineTerm::Variable(Variable(983002)),
                 );
-                let offset = |value| OldAddressOffset::scaled_int32_node(value, width);
+                let offset = |value| AddressOffset::scaled_int32_node(value, width);
                 let source = Proposition::condition_is(
                     OldConditionTerm::address_offset_equal(
                         offset(native_product),
@@ -3649,7 +3649,7 @@ mod shared_offset_evidence_tests {
         KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
     };
 
-    fn offset(term: &OldMachineTerm, width: i64) -> OldAddressOffset {
+    fn offset(term: &OldMachineTerm, width: i64) -> AddressOffset {
         let root = KernelTerm::retained_machine_operand(
             MachineIntegerType::Int32,
             MachineOperandView::Old(term),
@@ -3658,6 +3658,7 @@ mod shared_offset_evidence_tests {
             value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: width,
         }
+        .into()
     }
 
     #[test]
@@ -3800,8 +3801,12 @@ mod shared_offset_evidence_tests {
         let cases = [
             offset(&x, 4),
             offset(&x, -4),
-            OldAddressOffset::Add(offset(&x, 4).into(), OldAddressOffset::Constant(8).into()),
-            OldAddressOffset::Constant(-12),
+            OldAddressOffset::Add(
+                Box::new(crate::kernel::OldAddressOffset::from(offset(&x, 4))),
+                Box::new(OldAddressOffset::Constant(8)),
+            )
+            .into(),
+            OldAddressOffset::Constant(-12).into(),
         ];
         for v in cases {
             for width in [0, 1, 4, 8] {
@@ -3811,7 +3816,7 @@ mod shared_offset_evidence_tests {
             }
         }
         for unsigned in [false, true] {
-            let wide = OldAddressOffset::scaled_int64_node(x.clone(), 4, unsigned);
+            let wide = AddressOffset::scaled_int64_node(x.clone(), 4, unsigned);
             assert!(shared_element_index_from_offset(&wide, 4).is_none());
         }
     }

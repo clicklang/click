@@ -6,7 +6,7 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let field = OldAddress {
         base: "local:field".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let value = OldAddress::symbolic(Variable(976_000));
     let read = OldAddress::loaded_value(&memory, &field);
@@ -75,7 +75,7 @@ fn definitions_registered_after_publication_select_existing_payloads() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let field = OldAddress {
         base: "local:late_field".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let value = OldAddress::symbolic(Variable(976_200));
     let read = OldAddress::loaded_value(&memory, &field);

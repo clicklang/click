@@ -46,7 +46,7 @@ fn initialize_program_function_globals_with(
                     state.memory.clone().store(
                         OldAddress {
                             base: slot.base.clone(),
-                            offset: OldAddressOffset::constant(offset as i64),
+                            offset: AddressOffset::constant(offset as i64),
                         },
                         literal.element_value(byte),
                     ),
@@ -1543,14 +1543,14 @@ fn copy_retained_aggregate_union_member<'a>(
                         }
                         load => OldAddress {
                             base: source_field.base.clone(),
-                            offset: OldAddressOffset::scale_int32(load, 1),
+                            offset: AddressOffset::scale_int32(load, 1),
                         },
                     }
                 } else {
                     let pointee_type = element_type.pointee_type()?;
                     OldAddress {
                         base: source_field.base.clone(),
-                        offset: OldAddressOffset::scale_int32(
+                        offset: AddressOffset::scale_int32(
                             load,
                             i64::from(pointee_type.byte_width()),
                         ),

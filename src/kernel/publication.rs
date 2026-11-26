@@ -510,7 +510,7 @@ mod tests {
     fn flag(index: usize) -> OldAddress {
         OldAddress {
             base: format!("publication-flag-{index}").into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }
     }
 
@@ -541,7 +541,7 @@ mod tests {
         for index in subscribers..subscribers + unrelated {
             let cell = OldAddress {
                 base: format!("unrelated-cell-{index}").into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             memory = memory
                 .with_block(cell.base.clone(), 4)

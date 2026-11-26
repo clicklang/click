@@ -884,7 +884,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         Condition(&'a OldConditionTerm),
         Bitvector(&'a OldMachineTerm),
         Shared(&'a crate::kernel::KernelTerm),
-        PointerOffset(&'a OldAddressOffset),
+        PointerOffset(&'a AddressOffset),
     }
     /// The walk's flags and its shared counters. A scaled index's operand
     /// is walked by a nested walk over the same state, run where the
@@ -1318,7 +1318,7 @@ mod tests {
         );
         let pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         // The named form has to be the same read as the spelled `MemoryLoad`
         // alternative below: its kind, and the width that term's naming
@@ -1374,7 +1374,7 @@ mod tests {
 
         let dynamic_pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::Concrete("heap:test".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -1426,7 +1426,7 @@ mod tests {
         let memory = crate::kernel::SymbolicMemory::new();
         let pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let range = Proposition::MemoryLoadable {
             memory: crate::kernel::SymbolicMemory::new(),
@@ -1579,7 +1579,7 @@ mod tests {
             && let Proposition::MemoryLoadable { base, .. } = consequent.as_mut()
         {
             base.offset =
-                OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(1 << 40)), 1);
+                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(1 << 40)), 1);
         }
         let unregistered_guarded = crate::kernel::quantifiers::test_exists(
             "len".to_string(),

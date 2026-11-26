@@ -289,30 +289,30 @@ pub(in crate::surface) fn offset_pointer_by_elements(
 }
 
 pub(in crate::surface) fn add_pointer_offset(
-    left: OldAddressOffset,
-    right: OldAddressOffset,
-) -> OldAddressOffset {
-    let constant = |offset: &OldAddressOffset| match offset.view() {
+    left: AddressOffset,
+    right: AddressOffset,
+) -> AddressOffset {
+    let constant = |offset: &AddressOffset| match offset.view() {
         OffsetView::Constant(value) => Some(value),
         _ => None,
     };
     match (constant(&left), constant(&right)) {
-        (Some(left), Some(right)) => OldAddressOffset::constant(left + right),
+        (Some(left), Some(right)) => AddressOffset::constant(left + right),
         (Some(0), _) => right,
         (_, Some(0)) => left,
-        _ => OldAddressOffset::raw_add(left, right),
+        _ => AddressOffset::raw_add(left, right),
     }
 }
 
 pub(in crate::surface) fn scale_int32_offset(
     value: OldMachineTerm,
     byte_width: i64,
-) -> OldAddressOffset {
+) -> AddressOffset {
     match value {
         bits32_constant!(value) => {
-            OldAddressOffset::constant((constant_u32(value) as i32 as i64) * byte_width)
+            AddressOffset::constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => OldAddressOffset::scaled_int32_node(value, byte_width),
+        value => AddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
@@ -363,7 +363,9 @@ mod tests {
         let value = ProgramValue::typed_pointer(
             OldAddress {
                 base: "parameter-bytes".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             },
             ProgramType::Int32Pointer,
         );
@@ -380,7 +382,9 @@ mod tests {
         let reassigned = ProgramValue::typed_pointer(
             OldAddress {
                 base: "reassigned-bytes".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             },
             ProgramType::Int32Pointer,
         );

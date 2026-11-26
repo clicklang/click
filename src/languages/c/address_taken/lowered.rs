@@ -251,7 +251,7 @@ mod tests {
             program_return(crate::kernel::program_expression::pointer_value(
                 OldAddress {
                     base: "local:capture".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
             )),
         ));

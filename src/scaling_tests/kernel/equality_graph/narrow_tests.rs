@@ -145,7 +145,7 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                 let _session = crate::kernel::VerificationSession::enter();
                 let cell = |i| OldAddress {
                     base: "narrow".into(),
-                    offset: OldAddressOffset::Constant(i * 4),
+                    offset: OldAddressOffset::Constant(i * 4).into(),
                 };
                 let stored = narrow_stored_value(format, 7);
                 let mut memory = SymbolicMemory::new().with_block("narrow", (size as u32 + 1) * 4);

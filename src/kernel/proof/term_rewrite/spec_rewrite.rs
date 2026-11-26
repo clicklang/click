@@ -2181,7 +2181,7 @@ mod tests {
         let memory: SharedMemory = SymbolicMemory::new().into();
         let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(101)),
-            offset: OldAddressOffset::scaled_int32_node(
+            offset: AddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(Variable(0)).into(),
                     destination: MachineIntegerType::Int32,

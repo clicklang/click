@@ -605,7 +605,14 @@ In `src/kernel/`:
   some widths stay context-implied while machine operators carry formats is
   explained in `design/machine-integers.md`; the older typed-index rulings
   against format-carrying nodes were superseded.
-- `OldAddressOffset`: pointer-offset expressions.
+- `AddressOffset`: pointer-offset expressions. It wraps an interned offset
+  handle (`SharedAddressOffset`) and is read and built through `OffsetTree`.
+  Its equality, hash and order are the written syntax's: tree shape,
+  constants, variables, byte widths and interpretations, and each index by
+  its numeric identity, so handles that differ only in an index annotation
+  are one offset. Each node caches its syntax hash and keeps its index
+  carrier, so hashing is O(1) and index identities never drift. The native
+  tree `OldAddressOffset` remains for tests and explicit conversion.
 - `OldConditionTerm`: proof-level truth-valued conditions: machine comparisons
   `Compare { format, relation, left, right }` and overflow tests
   `Overflows { format, op, left, right }` at every machine-integer format,
@@ -1199,8 +1206,8 @@ arithmetic that is modular by definition. A key that *is* ordered — the
 pairwise scan — is an ordering question wearing a key's clothes, and takes the
 signed reading.
 
-A **byte offset** is mathematical. `OldAddressOffset` adds exactly, and
-`OldAddressOffset::scale_int32` sign-extends its index before multiplying by
+A **byte offset** is mathematical. `AddressOffset` adds exactly, and
+`AddressOffset::scale_int32` sign-extends its index before multiplying by
 the element width, so a pointer's displacement from its block is an `i64` that
 never wraps. An **element index** is modular. `OldMachineTerm` is a 32-bit
 machine value, so `OldMachineTerm::add` and `OldMachineTerm::subtract` wrap:

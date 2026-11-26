@@ -295,7 +295,7 @@ mod tests {
     fn declared_provenance_supply_type_evidence_without_changing_pointer_views() {
         let object = OldAddress {
             base: "declared_node".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let memory =
             SymbolicMemory::new().with_classed_block(object.base.clone(), Some(class()), 8);
@@ -332,7 +332,7 @@ mod tests {
             (original.clone(), SymbolicMemory::new()),
             (
                 make(OldAddress {
-                    offset: OldAddressOffset::Constant(4),
+                    offset: OldAddressOffset::Constant(4).into(),
                     ..object
                 }),
                 memory.clone(),

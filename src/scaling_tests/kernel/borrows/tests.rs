@@ -418,7 +418,7 @@ fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
                 crate::kernel::MemoryRange::new(
                     OldAddress {
                         base: format!("unrelated-view-carrier-{extra}").into(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0).into(),
                     },
                     0u32.into(),
                     4u32.into(),
@@ -456,7 +456,7 @@ fn partial_borrow_carrier_return_ignores_unrelated_owners() {
             let range = crate::kernel::MemoryRange::new(
                 OldAddress {
                     base: format!("unrelated-carrier-{extra}").into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 0u32.into(),
                 4u32.into(),
@@ -982,11 +982,11 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
     use crate::kernel::{OldAddress, OldAddressOffset, OldConditionTerm};
     let p = OldAddress {
         base: "overlap".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let q = OldAddress {
         base: p.base.clone(),
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(600)), 1),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(600)), 1).into(),
     };
     let protected = MemoryRange::new_with_element_width(
         p.clone(),
@@ -1015,7 +1015,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         ] {
             let equality = OldConditionTerm::address_offset_equal(
                 q.offset.clone(),
-                OldAddressOffset::Constant(offset),
+                OldAddressOffset::Constant(offset).into(),
             );
             let context = assumptions.clone().assume_condition(equality.clone(), true);
             let query = MemoryRange::new_with_element_width(

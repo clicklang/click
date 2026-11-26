@@ -36,7 +36,7 @@
 //! initial values, and each iteration sees the same accumulator, index and
 //! cell). Framing guarantees those cells hold the same bytes at both
 //! states. Pointer offsets are exact `i64` sums of sign-extended scaled
-//! `int32` terms (`OldAddressOffset::Int32Scaled`), so the cells occupy the
+//! `int32` terms (an `AddressOffset` 32-bit scaled index), so the cells occupy the
 //! contiguous bytes `[p + 4*start, p + 4*end)` with no wraparound, and a write
 //! misses them exactly when it ends at or below the first byte or starts at or
 //! above the last one. Emptiness is used only when a fact or the syntax proves

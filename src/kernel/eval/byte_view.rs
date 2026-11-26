@@ -193,7 +193,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     let incoming = as_byte(stored)?;
     let start = OldAddress {
         base: pointer.base.clone(),
-        offset: OldAddressOffset::constant(0),
+        offset: AddressOffset::constant(0),
     };
     let mut assembled = OldMachineTerm::constant(0);
     for byte in 0..4 {
@@ -298,7 +298,7 @@ pub(in crate::kernel) fn containing_integer_cell(
     for cell_offset in (lowest..offset).rev() {
         let cell_pointer = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(cell_offset),
+            offset: AddressOffset::constant(cell_offset),
         };
         crate::instrumentation::record_deterministic_work(1);
         let Some(value) = memory.cells.get(&cell_pointer) else {

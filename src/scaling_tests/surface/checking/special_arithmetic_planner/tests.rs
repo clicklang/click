@@ -8,7 +8,7 @@ fn pointer_relevance_visits_shared_prefixes_once() {
     };
     let target = OldAddress {
         base: AddressBase::Concrete("unrelated".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let mut previous = None;
     for size in [16, 64, 256] {

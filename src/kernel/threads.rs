@@ -1309,7 +1309,7 @@ impl ThreadContext {
 #[cfg(test)]
 mod ownership_partition_tests {
     use super::*;
-    use crate::kernel::OldAddressOffset;
+    use crate::kernel::AddressOffset;
 
     #[test]
     fn worker_partition_receipt_survives_private_slots_but_not_public_ownership_or_registry_changes()
@@ -1321,7 +1321,9 @@ mod ownership_partition_tests {
             ResourceFact::own_memory(super::super::MemoryRange::new(
                 OldAddress {
                     base: block,
-                    offset: OldAddressOffset::Constant(0),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(0),
+                    ),
                 },
                 0u32.into(),
                 4u32.into(),

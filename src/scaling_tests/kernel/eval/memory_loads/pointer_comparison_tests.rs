@@ -6,11 +6,11 @@ fn exact_pointer_read_reuses_the_indexed_store_across_local_history() {
         let _session = VerificationSession::enter();
         let slot = OldAddress {
             base: "local:pointer-holding-slot".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let unrelated = OldAddress {
             base: "local:unrelated-scalar".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let value_type = ProgramType::Int32Pointer;
         let target = OldPointer::new(OldAddress::symbolic(Variable(989_013)), value_type);
@@ -54,7 +54,7 @@ fn stored_address_base_queries_scale_with_new_read_definitions() {
         let _session = VerificationSession::enter();
         let target = OldAddress {
             base: AddressBase::Heap(989_010),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let other = AddressBase::Heap(989_011);
         let slot = OldAddress::symbolic(Variable(989_012));
@@ -102,7 +102,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         let _session = VerificationSession::enter();
         let address = |index| OldAddress {
             base: AddressBase::Heap(index),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let mut memory = SymbolicMemory::new();
         for index in 0..selected + unrelated {
@@ -152,7 +152,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
         let _session = VerificationSession::enter();
         let address = |index| OldAddress {
             base: AddressBase::Heap(index),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         // A library instance, as Surface registers it: opaque, of fixed width.
         TypeParameterName::declare_library_instance("SliceIter<uint8>");

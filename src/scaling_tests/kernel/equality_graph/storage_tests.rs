@@ -17,7 +17,7 @@ fn automatic_storage_lookup_does_not_walk_alias_history() {
             ),
             instance: crate::kernel::LocalStorageInstance::Implicit,
         },
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {

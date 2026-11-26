@@ -28,14 +28,18 @@ fn pointer_surface_index_readers_retain_shared_dags() {
                     .unwrap();
             let base = OldAddress {
                 base: AddressBase::Concrete("surface-index-dag".into()),
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             };
             let pointer = OldAddress {
                 base: base.base.clone(),
-                offset: OldAddressOffset::Int32Scaled {
-                    value,
-                    byte_width: 4,
-                },
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Int32Scaled {
+                        value,
+                        byte_width: 4,
+                    },
+                ),
             };
             let exports = KernelTermExport::machine_export_count();
             let (index, work) = crate::instrumentation::measure_deterministic_work(|| {

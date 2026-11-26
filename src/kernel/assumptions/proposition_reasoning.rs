@@ -3714,8 +3714,8 @@ impl PureFactContext {
         condition: &OldConditionTerm,
     ) -> BTreeSet<OldMachineTerm> {
         fn collect_offset_candidates(
-            pattern: &OldAddressOffset,
-            target: &OldAddressOffset,
+            pattern: &AddressOffset,
+            target: &AddressOffset,
             bound: Variable,
             candidates: &mut BTreeSet<OldMachineTerm>,
         ) {
@@ -4821,8 +4821,8 @@ impl PureFactContext {
 
     fn address_offsets_equal_for_transport(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         if left == right {
             return true;
@@ -4857,8 +4857,8 @@ impl PureFactContext {
 
     fn address_offsets_state_equivalent(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         if left == right {
             return true;
@@ -4895,8 +4895,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn has_pointer_offset_state_fact(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         // Keep this deliberately structural and one-hop. Callers use it only
         // to move an already-certified address equality between framed memory
@@ -5659,7 +5659,7 @@ mod guided_condition_instantiation_tests {
             ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(OldAddress {
                 base: "quantified-cells".into(),
-                offset: OldAddressOffset::scale_int32(index, 4),
+                offset: AddressOffset::scale_int32(index, 4),
             }),
             kind,
         )
@@ -6322,8 +6322,7 @@ mod shared_wide_order_evidence_tests {
     #[test]
     fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{
-            LoadKind, MachineOperandView, OldAddress, OldAddressOffset, SymbolicMemory,
-            intern_memory,
+            AddressOffset, LoadKind, MachineOperandView, OldAddress, SymbolicMemory, intern_memory,
         };
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
@@ -6333,7 +6332,7 @@ mod shared_wide_order_evidence_tests {
                     ProgramPoint::at(&memory),
                     Box::new(OldAddress {
                         base: "wide-order".into(),
-                        offset: OldAddressOffset::Constant(offset),
+                        offset: OldAddressOffset::Constant(offset).into(),
                     }),
                     LoadKind::Bits64,
                 )

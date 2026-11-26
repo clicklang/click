@@ -109,7 +109,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         ProgramValue::typed_pointer(
             OldAddress {
                 base: AddressBase::Function("text".to_string()),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             function_type,
         ),
@@ -137,7 +137,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         ProgramValue::typed_pointer(
             OldAddress {
                 base: AddressBase::Function("text".into()),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             incompatible,
         ),
@@ -261,7 +261,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
     ));
     let pointer = OldAddress {
         base: AddressBase::FunctionSymbolic(Variable(890)),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let value = ProgramValue::typed_pointer(pointer.clone(), qualified);
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Predicate {

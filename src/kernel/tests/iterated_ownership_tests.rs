@@ -24,7 +24,7 @@ const UNRELATED: u64 = 7_000_003;
 fn heap_base(identity: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::Heap(identity),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     }
 }
 
@@ -282,7 +282,7 @@ mod scaling_tests {
 fn indexed_slots_use_the_selected_clause_across_states() {
     let source = OldAddress {
         base: "iterated-pointer-slot".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let before = SymbolicMemory::new()
         .with_block("iterated-pointer-slot", 8)
@@ -297,7 +297,8 @@ fn indexed_slots_use_the_selected_clause_across_states() {
                 LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
             ),
             4,
-        ),
+        )
+        .into(),
     };
     let held_base = read(&before, &source);
     let current_base = read(&after, &source);

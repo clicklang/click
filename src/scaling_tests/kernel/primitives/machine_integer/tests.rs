@@ -283,7 +283,7 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
 fn read_cell(index: u64) -> crate::kernel::OldAddress {
     crate::kernel::OldAddress {
         base: crate::kernel::AddressBase::Concrete("local:integer-read-cells".into()),
-        offset: crate::kernel::OldAddressOffset::Constant(8 * index as i64),
+        offset: crate::kernel::OldAddressOffset::Constant(8 * index as i64).into(),
     }
 }
 
@@ -355,7 +355,7 @@ fn wide_address(terms: u64) -> crate::kernel::OldAddress {
     }
     crate::kernel::OldAddress {
         base: crate::kernel::AddressBase::Concrete("local:integer-read-wide".into()),
-        offset,
+        offset: offset.into(),
     }
 }
 

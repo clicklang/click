@@ -306,7 +306,7 @@ mod tests {
     use super::*;
     use crate::kernel::BooleanOperandView as B;
 
-    fn sources() -> Vec<OldAddressOffset> {
+    fn sources() -> Vec<AddressOffset> {
         let mut result = vec![
             OldAddressOffset::Constant(0),
             OldAddressOffset::Constant(1),
@@ -318,28 +318,33 @@ mod tests {
                 OldMachineTerm::constant(0),
                 OldMachineTerm::Variable(Variable(998002)),
             ] {
-                result.push(OldAddressOffset::scaled_int32_node(bits, width));
+                result.push(crate::kernel::OldAddressOffset::from(
+                    AddressOffset::scaled_int32_node(bits, width),
+                ));
             }
             for unsigned in [false, true] {
-                result.push(OldAddressOffset::scaled_int64_node(
-                    OldMachineTerm::Variable(Variable(998003)),
-                    width,
-                    unsigned,
+                result.push(crate::kernel::OldAddressOffset::from(
+                    AddressOffset::scaled_int64_node(
+                        OldMachineTerm::Variable(Variable(998003)),
+                        width,
+                        unsigned,
+                    ),
                 ));
             }
         }
         for n in [30, 31, 32, 33] {
             let mut offset =
-                OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998002)), 4);
+                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998002)), 4);
             for _ in 0..n {
                 offset = OldAddressOffset::Add(
-                    Box::new(offset),
+                    Box::new(crate::kernel::OldAddressOffset::from(offset)),
                     Box::new(OldAddressOffset::Constant(1)),
-                );
+                )
+                .into();
             }
-            result.push(offset);
+            result.push(crate::kernel::OldAddressOffset::from(offset));
         }
-        result
+        result.into_iter().map(AddressOffset::from).collect()
     }
 
     #[test]
@@ -347,12 +352,12 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let values = sources();
         for a in &values {
-            let shared = KernelAddressOffset::import(a);
+            let shared = KernelAddressOffset::import(&crate::kernel::OldAddressOffset::from(a));
             assert_eq!(shared.as_const(), a.as_const());
             for b in &values {
                 let root = KernelTerm::address_offset_equal([
                     shared.clone(),
-                    KernelAddressOffset::import(b),
+                    KernelAddressOffset::import(&crate::kernel::OldAddressOffset::from(b)),
                 ]);
                 let expected = OldConditionTerm::address_offset_equal(a.clone(), b.clone());
                 assert_eq!(
@@ -369,11 +374,16 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for offset in sources() {
             let source = OldConditionTerm::AddressOffsetEqual(
-                Box::new(OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::Constant(0)),
-                    Box::new(offset),
+                Box::new(
+                    OldAddressOffset::Add(
+                        Box::new(OldAddressOffset::Constant(0)),
+                        Box::new(crate::kernel::OldAddressOffset::from(offset)),
+                    )
+                    .into(),
+                ),
+                Box::new(crate::kernel::AddressOffset::from(
+                    OldAddressOffset::Constant(5),
                 )),
-                Box::new(OldAddressOffset::Constant(5)),
             );
             let root = KernelTermImport::default().condition(&source);
             assert!(matches!(
@@ -438,13 +448,15 @@ mod tests {
                     },
                 );
                 let offset = if wide {
-                    OldAddressOffset::scaled_int64_node(value, 8, false)
+                    AddressOffset::scaled_int64_node(value, 8, false)
                 } else {
-                    OldAddressOffset::scaled_int32_node(value, 4)
+                    AddressOffset::scaled_int32_node(value, 4)
                 };
                 OldConditionTerm::AddressOffsetEqual(
                     Box::new(offset),
-                    Box::new(OldAddressOffset::Constant(0)),
+                    Box::new(crate::kernel::AddressOffset::from(
+                        OldAddressOffset::Constant(0),
+                    )),
                 )
             };
             let a = condition(ProgramPoint::at(&memory_a));
@@ -492,7 +504,7 @@ mod identity_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let sources = [CScalarClass::Int, CScalarClass::Char].map(|class| {
             OldConditionTerm::AddressOffsetEqual(
-                Box::new(OldAddressOffset::scaled_int64_node(
+                Box::new(AddressOffset::scaled_int64_node(
                     OldMachineTerm::IntegerAddress(
                         Box::new(OldAddress::symbolic(Variable(998400))),
                         crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
@@ -500,7 +512,9 @@ mod identity_tests {
                     1,
                     true,
                 )),
-                Box::new(OldAddressOffset::Constant(0)),
+                Box::new(crate::kernel::AddressOffset::from(
+                    OldAddressOffset::Constant(0),
+                )),
             )
         });
         let roots = sources

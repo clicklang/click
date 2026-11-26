@@ -618,7 +618,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
 fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() {
     let pointer = OldAddress {
         base: "wide-cast-source".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new()
         .with_block("wide-cast-source", 4)
@@ -762,7 +762,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
     for signed in [false, true] {
         let pointer = OldAddress {
             base: "wide-cached-read".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let bits = if signed {
             OldMachineTerm::int64_constant(0x1_0000_0001)

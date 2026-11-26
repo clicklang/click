@@ -106,14 +106,14 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
             );
             selected.assume_condition(
                 &OldConditionTerm::address_offset_equal(
-                    offset.clone(),
-                    crate::kernel::OldAddressOffset::Constant(0),
+                    offset.clone().into(),
+                    crate::kernel::OldAddressOffset::Constant(0).into(),
                 ),
                 false,
             );
             selected.decide(&OldConditionTerm::address_offset_equal(
-                offset,
-                crate::kernel::OldAddressOffset::Constant(8),
+                offset.into(),
+                crate::kernel::OldAddressOffset::Constant(8).into(),
             ))
         });
         assert_eq!(answer, Some(true));

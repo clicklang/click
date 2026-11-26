@@ -9,7 +9,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = OldAddress {
         base: "run-adjacency".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let source = crate::kernel::intern_memory(SymbolicMemory::new());
     let context = PureFactContext::new();

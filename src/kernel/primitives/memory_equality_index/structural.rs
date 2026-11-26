@@ -50,7 +50,7 @@ impl StructuralMemory {
 
     fn candidates(&self, pointer: &OldAddress) -> BTreeSet<ResourceEntryId> {
         let mut result = BTreeSet::new();
-        let mut add_shape = |offset: &OldAddressOffset| {
+        let mut add_shape = |offset: &AddressOffset| {
             let key = shape(&OldAddress {
                 base: pointer.base.clone(),
                 offset: offset.clone(),
@@ -88,7 +88,7 @@ fn remove_owned_key(
 // constant displacement. Symbolic indexing and state matching need the
 // shape payload instead; their membership is a checked judgment, not an
 // ordering of affine vectors.
-fn plain_origin(mut offset: &OldAddressOffset) -> bool {
+fn plain_origin(mut offset: &AddressOffset) -> bool {
     loop {
         match offset.view() {
             OffsetView::Constant(_) | OffsetView::Variable(_) => return true,
@@ -220,7 +220,11 @@ fn retained_plain_origin_requires_an_exact_allowed_atom() {
             byte_width: 4,
         };
         let exports = KernelTermExport::machine_export_count();
-        assert_eq!(plain_origin(&offset), expected, "{ty:?} {term:?}");
+        assert_eq!(
+            plain_origin(&crate::kernel::AddressOffset::from(&offset)),
+            expected,
+            "{ty:?} {term:?}"
+        );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

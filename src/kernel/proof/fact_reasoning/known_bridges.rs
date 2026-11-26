@@ -1018,9 +1018,9 @@ mod tests {
                 right: Box::new(memory(
                     OldAddress {
                         base: boundary.base.clone(),
-                        offset: OldAddressOffset::add(
+                        offset: AddressOffset::add(
                             boundary.offset.clone(),
-                            OldAddressOffset::Constant(offset),
+                            OldAddressOffset::Constant(offset).into(),
                         ),
                     },
                     1u32.into(),

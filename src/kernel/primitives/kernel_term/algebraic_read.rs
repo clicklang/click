@@ -30,10 +30,7 @@ mod tests {
         let ty = TypeParameterName::intern("RetainedReadT").algebraic_type();
         let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(999744)),
-            offset: OldAddressOffset::scaled_int32_node(
-                OldMachineTerm::Variable(Variable(999745)),
-                4,
-            ),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999745)), 4),
         };
         let sources = [first, second].map(|memory| AlgebraicTerm {
             algebraic_type: ty.clone(),

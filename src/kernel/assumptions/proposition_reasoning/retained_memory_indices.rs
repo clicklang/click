@@ -22,7 +22,7 @@ fn binary(
 fn reads() -> [OldMachineTerm; 3] {
     let pointer = OldAddress {
         base: "retained-retained_state".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 64)
@@ -32,7 +32,7 @@ fn reads() -> [OldMachineTerm; 3] {
         );
     let other = OldAddress {
         base: pointer.base.clone(),
-        offset: OldAddressOffset::Constant(32),
+        offset: OldAddressOffset::Constant(32).into(),
     };
     let separate = memory
         .clone()
@@ -49,11 +49,12 @@ fn reads() -> [OldMachineTerm; 3] {
         )
     })
 }
-fn scaled(root: &KernelTerm) -> OldAddressOffset {
+fn scaled(root: &KernelTerm) -> AddressOffset {
     OldAddressOffset::Int32Scaled {
         value: MachineOperandView::Shared(root).retain(MachineIntegerType::Int32),
         byte_width: 4,
     }
+    .into()
 }
 
 #[test]
@@ -165,16 +166,28 @@ fn state_source_index_matches_retained_signed_and_unsigned_ring_terms() {
         assert_eq!(offset_state_shape(&source), offset_state_shape(&target));
         let end = OldAddressOffset::Constant(12);
         let fact = Proposition::condition_is(
-            OldConditionTerm::address_offset_equal(source.clone(), end.clone()),
+            OldConditionTerm::address_offset_equal(source.clone(), end.clone().into()),
             true,
         );
         let parent = PureFactContext::new();
         let context = parent.clone().assume_proposition(fact.clone());
         let exports = KernelTermExport::machine_export_count();
-        assert!(context.has_pointer_offset_state_fact(&target, &end));
-        assert!(context.has_pointer_offset_state_fact(&end, &target));
-        assert!(!context.has_pointer_offset_state_fact(&changed, &end));
-        assert!(!parent.has_pointer_offset_state_fact(&target, &end));
+        assert!(
+            context
+                .has_pointer_offset_state_fact(&target, &crate::kernel::AddressOffset::from(&end))
+        );
+        assert!(
+            context
+                .has_pointer_offset_state_fact(&crate::kernel::AddressOffset::from(&end), &target)
+        );
+        assert!(
+            !context
+                .has_pointer_offset_state_fact(&changed, &crate::kernel::AddressOffset::from(&end))
+        );
+        assert!(
+            !parent
+                .has_pointer_offset_state_fact(&target, &crate::kernel::AddressOffset::from(&end))
+        );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
@@ -186,7 +199,7 @@ fn cached_state_syntax_never_caches_context_authority() {
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("retained_state-alias", 16));
     let pointers = [994110, 994111].map(|id| OldAddress {
         base: "retained_state-alias".into(),
-        offset: OldAddressOffset::Variable(Variable(id)),
+        offset: OldAddressOffset::Variable(Variable(id)).into(),
     });
     let roots = pointers.each_ref().map(|pointer| {
         shared(&OldMachineTerm::read_named(

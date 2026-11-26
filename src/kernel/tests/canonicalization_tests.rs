@@ -24,7 +24,10 @@ fn collect_offset_load_variables_from_value(
             collect_offset_load_variables_from_term(term, load_variables);
         }
         ProgramValue::Pointer(pointer) => {
-            collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
+            collect_offset_load_variables_from_offset(
+                &crate::kernel::OldAddressOffset::from(&pointer.offset),
+                load_variables,
+            );
         }
     }
 }
@@ -33,7 +36,7 @@ fn collect_offset_load_variables_from_value(
 fn floating_values_keep_their_declared_width_and_opaque_payload() {
     let float_pointer = OldAddress {
         base: "float-storage".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let float_value = ProgramValue::Float32(OldMachineTerm::constant(0x8000_0000));
     let float_memory = SymbolicMemory::new()
@@ -55,7 +58,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
 
     let double_pointer = OldAddress {
         base: "double-storage".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let double_value =
         ProgramValue::Float64(OldMachineTerm::uint64_constant(0x7ff8_0000_0000_0001));
@@ -87,10 +90,16 @@ fn collect_offset_load_variables_from_term(
         OldMachineTerm::ThreadHandle(_) => {}
         OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => {}
         OldMachineTerm::MemoryLoad(_, pointer, _) => {
-            collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
+            collect_offset_load_variables_from_offset(
+                &crate::kernel::OldAddressOffset::from(&pointer.offset),
+                load_variables,
+            );
         }
         OldMachineTerm::IntegerAddress(pointer, _) => {
-            collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
+            collect_offset_load_variables_from_offset(
+                &crate::kernel::OldAddressOffset::from(&pointer.offset),
+                load_variables,
+            );
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_offset_load_variables_from_term(left, load_variables);
@@ -253,11 +262,11 @@ fn assert_load_variables_have_defining_facts(
 fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
     let len_cell = OldAddress {
         base: "len".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let data = OldAddress {
         base: "data".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new()
         .with_block("len", 4)
@@ -310,7 +319,7 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
 fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
     let cell = OldAddress {
         base: "pp".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new().with_block("pp", 4);
     let state = ExecutionState::new()
@@ -359,7 +368,7 @@ fn unresolved_canonicalization_test_load() -> OldMachineTerm {
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(OldAddress {
             base: "canonical-shapes".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }),
         crate::kernel::LoadKind::Int32,
     )
@@ -565,7 +574,7 @@ fn canonical_term_is_independent_of_contextual_equalities() {
 fn canonical_term_resolves_equal_loads_to_one_form() {
     let pointer = OldAddress {
         base: "cells".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let base = SymbolicMemory::new().with_block("cells", 4);
     // The same unresolved load, read from two states that differ only by
@@ -612,7 +621,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
 fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     let pointer = OldAddress {
         base: "condition-cells".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new()
         .with_block("condition-cells", 4)
@@ -637,8 +646,12 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     let pointer_offset = OldMachineTerm::If {
         condition: Box::new(OldConditionTerm::AddressOffsetEqual(
-            Box::new(OldAddressOffset::scaled_int32_node(load.clone(), 4)),
-            Box::new(OldAddressOffset::Constant(28)),
+            Box::new(crate::kernel::AddressOffset::from(
+                OldAddressOffset::scaled_int32_node(load.clone(), 4),
+            )),
+            Box::new(crate::kernel::AddressOffset::from(
+                OldAddressOffset::Constant(28),
+            )),
         )),
         then_term: Box::new(OldMachineTerm::constant(4)),
         else_term: Box::new(OldMachineTerm::constant(5)),
@@ -669,7 +682,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
 fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     let pointer = OldAddress {
         base: "deep-cells".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let base = SymbolicMemory::new().with_block("deep-cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
@@ -720,7 +733,7 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
 fn shared_offsets_retain_state_identity_through_canonicalization() {
     let pointer = OldAddress {
         base: "cells".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let base = SymbolicMemory::new().with_block("cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
@@ -737,15 +750,17 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
 
     // Equal contents at different states do not make identical terms.
     assert!(!crate::kernel::offsets_have_same_canonical_form(
-        &scaled(base.clone()),
-        &scaled(drifted),
+        &crate::kernel::AddressOffset::from(&scaled(base.clone())),
+        &crate::kernel::AddressOffset::from(&scaled(drifted)),
     ));
-    let retained = crate::kernel::eval::canonical_offset_term(&scaled(base.clone()));
+    let retained = crate::kernel::eval::canonical_offset_term(&crate::kernel::AddressOffset::from(
+        &scaled(base.clone()),
+    ));
     assert_eq!(retained, scaled(base.clone()));
     // Distinct cells stay distinct.
     let other = OldAddress {
         base: "cells".into(),
-        offset: OldAddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4).into(),
     };
     let other_scaled = OldAddressOffset::scaled_int32_node(
         OldMachineTerm::read_named(
@@ -756,8 +771,8 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
         4,
     );
     assert!(!crate::kernel::offsets_have_same_canonical_form(
-        &scaled(base),
-        &other_scaled,
+        &crate::kernel::AddressOffset::from(&scaled(base)),
+        &crate::kernel::AddressOffset::from(&other_scaled),
     ));
 }
 
@@ -771,12 +786,15 @@ fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
                 OldAddressOffset::Add(Box::new(offset), Box::new(OldAddressOffset::Constant(1)));
         }
 
-        let canonical = crate::kernel::eval::canonical_offset_term(&offset);
+        let canonical = crate::kernel::eval::canonical_offset_term(
+            &crate::kernel::AddressOffset::from(&offset),
+        );
         assert_eq!(
             crate::kernel::eval::canonical_offset_term(&canonical),
             canonical,
             "offset canonicalization was not idempotent at depth {depth}",
         );
+        let canonical = crate::kernel::OldAddressOffset::from(&canonical);
         let mut leaf = &canonical;
         while let OldAddressOffset::Add(left, _) = leaf {
             leaf = left;
@@ -815,7 +833,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         ProgramPoint::at(&memory),
         Box::new(OldAddress {
             base: "data".into(),
-            offset: OldAddressOffset::scaled_int32_node(index.clone(), 4),
+            offset: OldAddressOffset::scaled_int32_node(index.clone(), 4).into(),
         }),
         crate::kernel::LoadKind::Int32,
     );
@@ -823,7 +841,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         ProgramPoint::at(&memory),
         Box::new(OldAddress {
             base: "data".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }),
         crate::kernel::LoadKind::Int32,
     );
@@ -870,7 +888,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         &[MemoryRange::new(
             OldAddress {
                 base: "data".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
@@ -882,7 +900,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         ProgramPoint::at(&other_epoch),
         Box::new(OldAddress {
             base: "data".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }),
         crate::kernel::LoadKind::Int32,
     ));
@@ -902,7 +920,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         ProgramPoint::at(&memory),
         Box::new(OldAddress {
             base: "other-data".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }),
         crate::kernel::LoadKind::Int32,
     ));
@@ -932,7 +950,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
             ProgramPoint::at(&memory),
             Box::new(OldAddress {
                 base: "p".into(),
-                offset,
+                offset: offset.into(),
             }),
             crate::kernel::LoadKind::Int32,
         )
@@ -976,7 +994,7 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
             ProgramPoint::at(&memory),
             Box::new(OldAddress {
                 base: "p".into(),
-                offset,
+                offset: offset.into(),
             }),
             crate::kernel::LoadKind::Int32,
         ))
@@ -1011,7 +1029,8 @@ fn load_variable_free_variables_include_its_state_cells() {
     let written = SymbolicMemory::new().with_block("p", 12).store(
         OldAddress {
             base: "p".into(),
-            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(counter), 4),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(counter), 4)
+                .into(),
         },
         ProgramValue::Int32(OldMachineTerm::constant(5)),
     );
@@ -1019,7 +1038,7 @@ fn load_variable_free_variables_include_its_state_cells() {
         ProgramPoint::at(&(crate::kernel::intern_memory(written))),
         Box::new(OldAddress {
             base: "p".into(),
-            offset: OldAddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8).into(),
         }),
         crate::kernel::LoadKind::Int32,
     ));
@@ -1082,7 +1101,7 @@ fn nested_state_load_named(
     let block = AddressBase::Concrete("retained_state-chain".to_string());
     let at = |offset: i64| OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset).into(),
     };
     let blocks = std::sync::Arc::new(MemoryBlocks::from_iter([(
         block.clone(),
@@ -1132,7 +1151,8 @@ fn a_live_memorys_counted_variables_are_its_walked_variables() {
         offset: OldAddressOffset::add(
             OldAddressOffset::Variable(Variable(7_950_001)),
             OldAddressOffset::Constant(offset),
-        ),
+        )
+        .into(),
     };
     let value = |variable: u64| ProgramValue::Int32(OldMachineTerm::Variable(Variable(variable)));
     let source =
@@ -1257,11 +1277,11 @@ fn variable_substitution_visits_each_state_once_per_rewrite() {
 fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     let field = OldAddress {
         base: "fields".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let other = OldAddress {
         base: "fields".into(),
-        offset: OldAddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8).into(),
     };
     let entry = SymbolicMemory::new().with_block("fields", 16);
     let loaded = crate::kernel::eval::canonical_cell_load(
@@ -1331,14 +1351,16 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
         Box::new(OldAddressOffset::Constant(8)),
     );
     assert_eq!(
-        crate::kernel::reasoning::offset_atoms_and_constant(&offset),
-        (vec![wrapping], 8),
+        crate::kernel::reasoning::offset_atoms_and_constant(&crate::kernel::AddressOffset::from(
+            &offset
+        )),
+        (vec![wrapping.into()], 8),
         "the sum inside the scaled index stays one atom"
     );
     assert_eq!(
-        crate::kernel::reasoning::offset_atoms_and_constant(&scaled(OldMachineTerm::constant(
-            (-3i32) as u32
-        ))),
+        crate::kernel::reasoning::offset_atoms_and_constant(&crate::kernel::AddressOffset::from(
+            &scaled(OldMachineTerm::constant((-3i32) as u32))
+        )),
         (Vec::new(), -12),
         "a constant scaled index is its signed value times the width"
     );
@@ -1357,7 +1379,7 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     let source = crate::kernel::intern_memory(SymbolicMemory::new().with_block("wrap-source", 64));
     let base = OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new().with_seeded_cells(base, 4, ProgramType::Int32, 0, 8, source);
     let run = memory
@@ -1379,7 +1401,7 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     };
     let store_at = |word: &OldMachineTerm| OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::scaled_int32_node(word.clone(), 4),
+        offset: OldAddressOffset::scaled_int32_node(word.clone(), 4).into(),
     };
 
     let wrapping = binary_node!(

@@ -8,7 +8,7 @@ fn alias_free_work(selected: u32, unrelated: u32) -> usize {
     for index in 0..selected + unrelated {
         let base = OldAddress {
             base: AddressBase::Heap(974_000 + u64::from(index)),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         resources = resources.unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4));
         if index < selected {

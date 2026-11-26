@@ -1246,7 +1246,7 @@ fn production_memory_fact(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = MemoryRange::new(
         OldAddress {
             base: "v14-buffer".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         OldMachineTerm::constant(start),
         OldMachineTerm::constant(end),

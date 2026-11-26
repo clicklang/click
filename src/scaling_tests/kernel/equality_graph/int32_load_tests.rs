@@ -113,7 +113,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         };
         let backing = OldAddress {
             base: owner.base.clone(),
-            offset: OldAddressOffset::scale_int32(load(&execution), 4),
+            offset: OldAddressOffset::scale_int32(load(&execution), 4).into(),
         };
         let after = execution.clone().store(
             backing.offset_by_int32_elements(var(88)),
@@ -121,7 +121,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         );
         let selected = OldAddress {
             base: owner.base.clone(),
-            offset: OldAddressOffset::scale_int32(load(&after), 4),
+            offset: OldAddressOffset::scale_int32(load(&after), 4).into(),
         };
         let mut graph = EqualityGraph::default();
         for extra in 0..size {

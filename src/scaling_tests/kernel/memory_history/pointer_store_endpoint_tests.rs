@@ -11,7 +11,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4).into(),
     };
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);

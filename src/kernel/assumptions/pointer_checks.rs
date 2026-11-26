@@ -304,12 +304,14 @@ mod tests {
                             value,
                             byte_width: 4,
                         }
+                        .into()
                     } else {
                         OldAddressOffset::Int64Scaled {
                             value,
                             byte_width: 8,
                             unsigned: true,
                         }
+                        .into()
                     },
                 }
             };
@@ -402,7 +404,7 @@ mod tests {
         );
         let base = OldAddress {
             base: AddressBase::Heap(1012101),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let stored = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
         let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
@@ -470,7 +472,7 @@ mod value_equality_tests {
         let block = OldPointer::new(
             OldAddress {
                 base: AddressBase::Heap(4_211_001),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             ProgramType::Int32Pointer,
         );

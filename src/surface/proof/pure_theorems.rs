@@ -4675,7 +4675,9 @@ fn constant_integer(expression: &SyntaxTerm) -> Option<(i128, Option<ConstantTyp
             let crate::kernel::AddressBase::StringLiteral { bytes, .. } = &address.base else {
                 return None;
             };
-            let crate::kernel::OldAddressOffset::Constant(offset) = address.offset else {
+            let crate::kernel::OffsetView::Constant(offset) =
+                crate::kernel::OffsetTree::view(&address.offset)
+            else {
                 return None;
             };
             let (index, _) = constant_integer(index)?;

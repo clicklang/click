@@ -7,7 +7,7 @@ fn var(id: u64) -> OldMachineTerm {
 fn address(id: u64) -> OldAddress {
     OldAddress {
         base: "array".into(),
-        offset: OldAddressOffset::scale_int32(var(id), 4),
+        offset: OldAddressOffset::scale_int32(var(id), 4).into(),
     }
 }
 fn load(memory: &SharedMemory, pointer: &OldAddress, bytes: u32) -> OldMachineTerm {
@@ -242,7 +242,7 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
     );
     let at = |block: &str, bytes: i64| OldAddress {
         base: block.into(),
-        offset: OldAddressOffset::Constant(bytes),
+        offset: OldAddressOffset::Constant(bytes).into(),
     };
     let address_of = |pointer: OldAddress| OldMachineTerm::integer_address(pointer);
     let after = intern_memory(memory.memory().clone().store(
@@ -621,7 +621,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     let beside = intern_memory(before.memory().clone().store(
         OldAddress {
             base: "beside-array".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         ProgramValue::Int32(var(993182)),
     ));

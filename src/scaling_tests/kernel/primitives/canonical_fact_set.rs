@@ -74,9 +74,11 @@ fn partial_borrow_footprints_prepare_only_changed_tree_paths() {
                 MemoryRange::new(
                     OldAddress {
                         base: AddressBase::ExternalArgument,
-                        offset: OldAddressOffset::scaled_int32_node(
-                            OldMachineTerm::Variable(Variable(1_967_000 + index as u64)),
-                            4,
+                        offset: crate::kernel::AddressOffset::from(
+                            OldAddressOffset::scaled_int32_node(
+                                OldMachineTerm::Variable(Variable(1_967_000 + index as u64)),
+                                4,
+                            ),
                         ),
                     },
                     OldMachineTerm::constant(0),

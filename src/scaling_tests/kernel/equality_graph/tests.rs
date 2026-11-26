@@ -11,11 +11,11 @@ fn wide_borrow_alignment_retains_both_index_widths_without_alias_scans() {
         let mut graph = EqualityGraph::default();
         let bytes = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(index(999_200), 1),
+            offset: OldAddressOffset::scale_int32(index(999_200), 1).into(),
         };
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(index(999_201), 1),
+            offset: OldAddressOffset::scale_int32(index(999_201), 1).into(),
         };
         let computed = base.offset_by_elements(index(999_202), 1);
         let wide = bytes.offset_by_typed_elements(index(999_203), 1, true, true);
@@ -75,11 +75,11 @@ fn repeated_address_queries_reuse_registered_addresses() {
         };
         let left = OldAddress {
             base: symbolic(1),
-            offset: offset(1_000),
+            offset: offset(1_000).into(),
         };
         let right = OldAddress {
             base: symbolic(2),
-            offset: offset(5_000),
+            offset: offset(5_000).into(),
         };
         let (first, first_work) =
             crate::instrumentation::measure_deterministic_work(|| graph.are_equal(&left, &right));
@@ -162,8 +162,8 @@ fn same_block_pointer_premise_chains_have_indexed_work() {
         let (_, insertion_work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
                 assert!(graph.add_equality(
-                    &at_offset(block.clone(), offset(i)),
-                    &at_offset(block.clone(), offset(i + 1)),
+                    &at_offset(block.clone(), offset(i).into()),
+                    &at_offset(block.clone(), offset(i + 1).into()),
                 ));
             }
         });
@@ -172,7 +172,10 @@ fn same_block_pointer_premise_chains_have_indexed_work() {
             "size={size}, insertion work={insertion_work}"
         );
         let (equal, query_work) = crate::instrumentation::measure_deterministic_work(|| {
-            graph.are_offsets_equal(&offset(0), &offset(size))
+            graph.are_offsets_equal(
+                &crate::kernel::AddressOffset::from(&offset(0)),
+                &crate::kernel::AddressOffset::from(&offset(size)),
+            )
         });
         assert!(equal);
         assert!(query_work < 64, "size={size}, query work={query_work}");
@@ -188,9 +191,12 @@ fn equal_base_offset_queries_ignore_unrelated_class_members() {
         for i in 0..size {
             graph.add_equality(&at(symbolic(30_000 + i), 0), &at(symbolic(30_001 + i), 0));
         }
-        graph.add_offset_equality(&x, &y);
-        let left = at_offset(symbolic(30_000), x.clone());
-        let right = at_offset(symbolic(30_000 + size), y.clone());
+        graph.add_offset_equality(
+            &crate::kernel::AddressOffset::from(&x),
+            &crate::kernel::AddressOffset::from(&y),
+        );
+        let left = at_offset(symbolic(30_000), x.clone().into());
+        let right = at_offset(symbolic(30_000 + size), y.clone().into());
         let (equal, work) =
             crate::instrumentation::measure_deterministic_work(|| graph.are_equal(&left, &right));
         assert!(equal);
@@ -211,15 +217,15 @@ fn pointer_transitivity_recovers_same_block_offsets() {
     for reverse in [false, true] {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128, 512] {
-            let x = at_offset(AddressBase::ExternalArgument, offset(960_000));
-            let y = at_offset(AddressBase::ExternalArgument, offset(960_001));
+            let x = at_offset(AddressBase::ExternalArgument, offset(960_000).into());
+            let y = at_offset(AddressBase::ExternalArgument, offset(960_001).into());
             let z = at(symbolic(960_002), 0);
             let mut graph = EqualityGraph::default();
             for id in 0..size {
                 graph.add_equality(
                     &at_offset(
                         symbolic(961_000 + id),
-                        OldAddressOffset::Variable(Variable(963_000 + id)),
+                        OldAddressOffset::Variable(Variable(963_000 + id)).into(),
                     ),
                     &z,
                 );
@@ -258,8 +264,8 @@ fn pointer_transitivity_recovers_same_block_offsets() {
     let mut graph = EqualityGraph::default();
     graph.add_equality(&at(symbolic(962_000), 4), &at(symbolic(962_001), 8));
     assert!(!graph.are_offsets_equal(
-        &OldAddressOffset::Constant(4),
-        &OldAddressOffset::Constant(8)
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(4)),
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(8))
     ));
 }
 
@@ -267,13 +273,16 @@ fn pointer_transitivity_recovers_same_block_offsets() {
 fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
     for size in [8u64, 32, 128, 512] {
         let offset = |i| OldAddressOffset::Variable(Variable(940_000 + i));
-        let x = at_offset(AddressBase::ExternalArgument, offset(0));
-        let y = at_offset(AddressBase::ExternalArgument, offset(size));
+        let x = at_offset(AddressBase::ExternalArgument, offset(0).into());
+        let y = at_offset(AddressBase::ExternalArgument, offset(size).into());
         let z = at(symbolic(950_000), 0);
         let mut graph = EqualityGraph::default();
         let (_, construction) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 1..size {
-                graph.add_offset_equality(&offset(i), &offset(i + 1));
+                graph.add_offset_equality(
+                    &crate::kernel::AddressOffset::from(&offset(i)),
+                    &crate::kernel::AddressOffset::from(&offset(i + 1)),
+                );
             }
             graph.add_equality(&y, &z);
             graph.add_equality(&z, &OldAddress::null());
@@ -286,7 +295,10 @@ fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
         let sibling = graph.clone();
         let mut branch = graph.clone();
         let (_, query) = crate::instrumentation::measure_deterministic_work(|| {
-            branch.add_offset_equality(&offset(0), &offset(1));
+            branch.add_offset_equality(
+                &crate::kernel::AddressOffset::from(&offset(0)),
+                &crate::kernel::AddressOffset::from(&offset(1)),
+            );
             assert!(branch.are_equal(&x, &OldAddress::null()));
             assert!(branch.are_equal(&OldAddress::null(), &x));
         });
@@ -309,11 +321,14 @@ fn constant_displacement_queries_ignore_unrelated_class_members() {
             graph.add_equality(&at(symbolic(40_000 + i), 0), &at(symbolic(40_001 + i), 0));
         }
         graph.add_offset_equality(
-            &OldAddressOffset::add(x.clone(), OldAddressOffset::Constant(8)),
-            &y,
+            &crate::kernel::AddressOffset::from(&OldAddressOffset::add(
+                x.clone(),
+                OldAddressOffset::Constant(8),
+            )),
+            &crate::kernel::AddressOffset::from(&y),
         );
-        let left = at_offset(a, x);
-        let right = at_offset(symbolic(40_000 + size), y);
+        let left = at_offset(a, x.into());
+        let right = at_offset(symbolic(40_000 + size), y.into());
         let (equal, work) =
             crate::instrumentation::measure_deterministic_work(|| graph.are_equal(&left, &right));
         assert!(equal);
@@ -336,10 +351,16 @@ fn same_block_pointer_queries_scale_with_registered_offset_classes() {
         for id in 0..size {
             graph.add_int32_equality(&index(id), &index(id + 1));
         }
-        let first = at_offset(base.clone(), OldAddressOffset::scale_int32(index(0), 4));
+        let first = at_offset(
+            base.clone(),
+            OldAddressOffset::scale_int32(index(0), 4).into(),
+        );
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for id in 1..=size {
-                let other = at_offset(base.clone(), OldAddressOffset::scale_int32(index(id), 4));
+                let other = at_offset(
+                    base.clone(),
+                    OldAddressOffset::scale_int32(index(id), 4).into(),
+                );
                 assert!(graph.are_equal(&first, &other));
             }
         });
@@ -428,7 +449,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         &x,
         &OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4).into(),
         }
     ));
     // New unrelated definitions must not make rediscovery visit more than
@@ -636,12 +657,12 @@ fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_condition(
-                OldConditionTerm::address_offset_equal(offset(i), offset(i + 1)),
+                OldConditionTerm::address_offset_equal(offset(i).into(), offset(i + 1).into()),
                 true,
             );
         }
-        let left = at_offset(symbolic(499_999), offset(0));
-        let right = at_offset(symbolic(499_999), offset(size));
+        let left = at_offset(symbolic(499_999), offset(0).into());
+        let right = at_offset(symbolic(499_999), offset(size).into());
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.pointers_proven_equal_ignoring_memory_separation(&left, &right)
         });

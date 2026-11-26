@@ -21,9 +21,7 @@
 //! Every operation touches the entries of the one block it names (O(log n)
 //! to position plus the entries it merges or visits), never unrelated blocks.
 
-use super::{
-    AddressBase, AliasCandidates, HashedOrdMap, OldAddress, OldAddressOffset, ProgramValue,
-};
+use super::{AddressBase, AddressOffset, AliasCandidates, HashedOrdMap, OldAddress, ProgramValue};
 use crate::kernel::OffsetTree;
 
 /// See the module comment.
@@ -56,7 +54,7 @@ impl std::hash::Hash for InitializedBytes {
 fn constant_start(block: &AddressBase, offset: i64) -> OldAddress {
     OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::constant(offset),
+        offset: AddressOffset::constant(offset),
     }
 }
 

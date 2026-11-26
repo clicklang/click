@@ -547,7 +547,7 @@ pub(in crate::kernel) fn program_values_definitely_distinct(
 /// consumers and at every certificate that re-checks them, while refusing
 /// costs an answer none of them can use.
 pub(in crate::kernel) fn element_index_from_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<OldMachineTerm> {
     if let OffsetView::Constant(bytes) = offset.view() {
@@ -560,7 +560,7 @@ pub(in crate::kernel) fn element_index_from_offset(
 /// The same residue extraction retaining shared index operands. Native-output
 /// callers keep `element_index_from_offset`; evidence checking uses this view.
 pub(in crate::kernel) fn shared_element_index_from_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
     use crate::kernel::{
@@ -625,7 +625,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
 /// the proof establishes explicitly. No low-word fact establishes high bits.
 #[cfg(test)]
 pub(in crate::kernel) fn element_index_from_offset_with_facts(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<OldMachineTerm> {
@@ -637,7 +637,7 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
 }
 
 pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
@@ -739,7 +739,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
 ///
 /// [`element_index_from_offset`] answers with one `OldMachineTerm`, and that
 /// is a lossy answer for anything but an equality. A byte offset is
-/// mathematical `i64` — [`OldAddressOffset::scale_int32`] sign-extends its
+/// mathematical `i64` — [`AddressOffset::scale_int32`] sign-extends its
 /// index before scaling, and `Add` adds exactly — while a `OldMachineTerm` is
 /// modular, so collapsing a sum of offsets into [`OldMachineTerm::add`] keeps
 /// the delta only *modulo* `2^32`. A membership or order conclusion drawn from
@@ -868,7 +868,7 @@ impl ExactElementDelta {
 /// [`element_index_from_offset`] for a caller that needs the delta's value and
 /// not merely its residue. See [`ExactElementDelta`].
 pub(in crate::kernel) fn exact_element_delta_from_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<ExactElementDelta> {
     if element_width == 0 {
@@ -895,10 +895,10 @@ pub(in crate::kernel) fn exact_element_delta_from_offset(
 }
 
 pub(in crate::kernel) fn common_pointer_offset_element_width(
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
 ) -> Option<u32> {
-    fn offset_element_width(offset: &OldAddressOffset) -> Option<u32> {
+    fn offset_element_width(offset: &AddressOffset) -> Option<u32> {
         match offset.view() {
             OffsetView::Int32Scaled { byte_width, .. }
             | OffsetView::Int64Scaled { byte_width, .. } => {
@@ -947,8 +947,8 @@ pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
     // checks independent of harmless grouping differences in pointer
     // arithmetic.
     fn offset_from_nested_base(
-        offset: &OldAddressOffset,
-        base: &OldAddressOffset,
+        offset: &AddressOffset,
+        base: &AddressOffset,
     ) -> Option<SharedMachineIntegerTerm> {
         if offset == base {
             return Some(
@@ -1003,7 +1003,7 @@ fn element_index_literal(bytes: i64, width: u32) -> Option<u32> {
 }
 
 pub(in crate::kernel) fn byte_offset_from_pointer_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
 ) -> Option<OldMachineTerm> {
     if let OffsetView::Constant(bytes) = offset.view() {
         return element_index_literal(bytes, 1).map(OldMachineTerm::constant);
@@ -1026,7 +1026,7 @@ fn shared_offset_sum(
 }
 
 pub(in crate::kernel) fn shared_byte_offset_from_pointer_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
 ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
     use crate::kernel::{KernelTerm, MachineIntegerType as T, MachineOperandView as V};
     let constant = |n| V::Old(&OldMachineTerm::constant(n)).retain(T::Int32);
@@ -1183,7 +1183,7 @@ pub(in crate::kernel) struct ScaledElementOffset {
 /// elements: a caller's bound `0 <= i <= n` with `n <= PTRDIFF_MAX / w`
 /// rules out its overflow.
 pub(in crate::kernel) fn scaled_element_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
 ) -> Option<ScaledElementOffset> {
     let (scaled, field) = match offset.view() {
         OffsetView::Add(left, right) => match (left.view(), right.view()) {
@@ -1432,8 +1432,8 @@ fn add_condition_path_fact_with_visibility(
 pub(in crate::kernel) fn add_address_offset_equality_execution_pure_facts(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    left: OldAddressOffset,
-    right: OldAddressOffset,
+    left: AddressOffset,
+    right: AddressOffset,
     value: bool,
 ) -> Option<()> {
     add_condition_path_fact(
@@ -1446,7 +1446,7 @@ pub(in crate::kernel) fn add_address_offset_equality_execution_pure_facts(
     // A single wide stride is exact, not modular multiplication. Dividing
     // a constant multiple by its nonzero stride gives an equivalent native
     // index comparison in both polarities, without truncating to 32 bits.
-    let wide_index_condition = |scaled: &OldAddressOffset, constant: &OldAddressOffset| {
+    let wide_index_condition = |scaled: &AddressOffset, constant: &AddressOffset| {
         let OffsetView::Int64Scaled {
             index,
             byte_width,
@@ -1553,8 +1553,8 @@ pub(in crate::kernel) fn add_address_offset_equality_execution_pure_facts(
 /// one of the offsets the index reaches; the offset equality then folds to
 /// false (see `pointer_offsets_differ_by_residue`).
 pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
-    scaled: &'term OldAddressOffset,
-    constant: &OldAddressOffset,
+    scaled: &'term AddressOffset,
+    constant: &AddressOffset,
 ) -> Option<(&'term SharedMachineIntegerTerm, i32)> {
     let target = constant.as_const()?;
     let (leaves, offset) = scaled.int32_scaled_linear_form()?;
@@ -3048,18 +3048,20 @@ mod shared_reconstruction_tests {
         SharedMachineIntegerTerm as S,
     };
 
-    fn scaled(value: S, width: i64, wide: bool) -> OldAddressOffset {
+    fn scaled(value: S, width: i64, wide: bool) -> AddressOffset {
         if wide {
             OldAddressOffset::Int64Scaled {
                 value,
                 byte_width: width,
                 unsigned: true,
             }
+            .into()
         } else {
             OldAddressOffset::Int32Scaled {
                 value,
                 byte_width: width,
             }
+            .into()
         }
     }
 
@@ -3083,6 +3085,7 @@ mod shared_reconstruction_tests {
                     byte_width: 8,
                     unsigned: ty == T::UInt64,
                 }
+                .into()
             };
             let exports = KernelTermExport::machine_export_count();
             let element = scaled_element_offset(&offset).unwrap();
@@ -3193,8 +3196,16 @@ mod shared_reconstruction_tests {
         let x = OldMachineTerm::Variable(Variable(1018204));
         let y = OldMachineTerm::Variable(Variable(1018205));
         let offset = OldAddressOffset::Add(
-            Box::new(scaled(S::index(T::Int32, x.clone()), 4, false)),
-            Box::new(scaled(S::index(T::Int32, y.clone()), 4, false)),
+            Box::new(crate::kernel::OldAddressOffset::from(scaled(
+                S::index(T::Int32, x.clone()),
+                4,
+                false,
+            ))),
+            Box::new(crate::kernel::OldAddressOffset::from(scaled(
+                S::index(T::Int32, y.clone()),
+                4,
+                false,
+            ))),
         );
         let empty = PureFactContext::new();
         let mut bounded = empty.clone();
@@ -3210,13 +3221,22 @@ mod shared_reconstruction_tests {
                 );
         }
         let exports = KernelTermExport::machine_export_count();
-        assert!(!empty.element_index_rebuild_is_exact_for_width(&offset, 4));
-        assert!(bounded.element_index_rebuild_is_exact_for_width(&offset, 4));
+        assert!(!empty.element_index_rebuild_is_exact_for_width(
+            &crate::kernel::AddressOffset::from(&offset),
+            4
+        ));
+        assert!(bounded.element_index_rebuild_is_exact_for_width(
+            &crate::kernel::AddressOffset::from(&offset),
+            4
+        ));
         let wraps = OldAddressOffset::Add(
             Box::new(OldAddressOffset::Constant(i64::from(i32::MAX) * 4)),
             Box::new(OldAddressOffset::Constant(4)),
         );
-        assert!(!empty.element_index_rebuild_is_exact_for_width(&wraps, 4));
+        assert!(!empty.element_index_rebuild_is_exact_for_width(
+            &crate::kernel::AddressOffset::from(&wraps),
+            4
+        ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 

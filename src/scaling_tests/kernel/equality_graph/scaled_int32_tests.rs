@@ -9,8 +9,14 @@ fn scaled_int32_late_merges_and_constant_evaluation_scale_with_affected_parents(
     for size in [16u64, 64, 256, 1024] {
         let mut graph = EqualityGraph::default();
         for i in 1..=size {
-            graph.add_offset_equality(&scaled(1, i as i64), &offset(10_000 + i));
-            graph.add_offset_equality(&scaled(2, i as i64), &offset(20_000 + i));
+            graph.add_offset_equality(
+                &crate::kernel::AddressOffset::from(&scaled(1, i as i64)),
+                &crate::kernel::AddressOffset::from(&offset(10_000 + i)),
+            );
+            graph.add_offset_equality(
+                &crate::kernel::AddressOffset::from(&scaled(2, i as i64)),
+                &crate::kernel::AddressOffset::from(&offset(20_000 + i)),
+            );
         }
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -18,10 +24,15 @@ fn scaled_int32_late_merges_and_constant_evaluation_scale_with_affected_parents(
                 // The heavy class acquires a literal from a singleton.
                 graph.add_int32_equality(&OldMachineTerm::constant(3), &scalar(1));
                 for i in 1..=size {
-                    assert!(graph.are_offsets_equal(&offset(10_000 + i), &offset(20_000 + i)));
                     assert!(graph.are_offsets_equal(
-                        &offset(10_000 + i),
-                        &OldAddressOffset::Constant(3 * i as i64)
+                        &crate::kernel::AddressOffset::from(&offset(10_000 + i)),
+                        &crate::kernel::AddressOffset::from(&offset(20_000 + i))
+                    ));
+                    assert!(graph.are_offsets_equal(
+                        &crate::kernel::AddressOffset::from(&offset(10_000 + i)),
+                        &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(
+                            3 * i as i64
+                        ))
                     ));
                 }
             })
@@ -39,14 +50,20 @@ fn scaled_int32_forks_do_not_reindex_unaffected_parents() {
     for size in [16u64, 64, 256, 1024] {
         let mut graph = EqualityGraph::default();
         for i in 1..=size {
-            graph.add_offset_equality(&scaled(1, i as i64), &offset(10_000 + i));
+            graph.add_offset_equality(
+                &crate::kernel::AddressOffset::from(&scaled(1, i as i64)),
+                &crate::kernel::AddressOffset::from(&offset(10_000 + i)),
+            );
         }
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 for i in 0..size {
                     let mut branch = graph.clone();
                     branch.add_int32_equality(&scalar(20_000 + i), &scalar(1));
-                    assert!(branch.are_offsets_equal(&scaled(20_000 + i, 1), &offset(10_001)));
+                    assert!(branch.are_offsets_equal(
+                        &crate::kernel::AddressOffset::from(&scaled(20_000 + i, 1)),
+                        &crate::kernel::AddressOffset::from(&offset(10_001))
+                    ));
                 }
             })
         });
@@ -70,13 +87,22 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
                 false,
             );
         }
-        graph.add_offset_equality(&scaled(1, 4), &offset(10));
+        graph.add_offset_equality(
+            &crate::kernel::AddressOffset::from(&scaled(1, 4)),
+            &crate::kernel::AddressOffset::from(&offset(10)),
+        );
         let sibling = graph.clone();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_int32_equality(&scalar(1), &OldMachineTerm::constant(2048));
-            assert!(graph.are_offsets_equal(&offset(10), &OldAddressOffset::Constant(8192)));
+            assert!(graph.are_offsets_equal(
+                &crate::kernel::AddressOffset::from(&offset(10)),
+                &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(8192))
+            ));
         });
-        assert!(!sibling.are_offsets_equal(&offset(10), &OldAddressOffset::Constant(8192)));
+        assert!(!sibling.are_offsets_equal(
+            &crate::kernel::AddressOffset::from(&offset(10)),
+            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(8192))
+        ));
         assert!(graph.knows_condition(
             &OldConditionTerm::equal(scalar(1), OldMachineTerm::constant(0)),
             false

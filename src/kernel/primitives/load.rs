@@ -14,7 +14,7 @@
 use crate::kernel::OffsetTree;
 use std::sync::Arc;
 
-use super::{AddressBase, OldAddress, OldAddressOffset, ProgramPoint};
+use super::{AddressBase, AddressOffset, OldAddress, ProgramPoint};
 
 /// One load: a cell's bytes at a version point, interned by
 /// `(point.read_key(), cell)`. The term carries its point and cell, so
@@ -147,7 +147,7 @@ impl Load {
     pub(crate) fn address(&self) -> OldAddress {
         OldAddress {
             base: self.base(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
 

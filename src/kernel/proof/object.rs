@@ -3436,9 +3436,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddress,
-            OldAddressOffset, OldConditionTerm, ProgramValue, SharedIntegerRangeEndpoint,
-            SymbolicMemory,
+            AddressOffset, ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+            OldAddress, OldConditionTerm, ProgramValue, SharedIntegerRangeEndpoint, SymbolicMemory,
         };
         type TestProof = ProofObject<
             (),
@@ -3498,7 +3497,9 @@ mod tests {
                         memory,
                         base: OldAddress {
                             base: "alpha".into(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: crate::kernel::AddressOffset::from(
+                                crate::kernel::OldAddressOffset::Constant(0),
+                            ),
                         },
                         bytes: (OldMachineTerm::Variable(variable)).into(),
                         wide: false,
@@ -3572,7 +3573,9 @@ mod tests {
         let changed = before.clone().store(
             OldAddress {
                 base: "alpha".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             },
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
@@ -3592,7 +3595,7 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            ExecutionState, LoopInvariantCheck, OldAddress, OldAddressOffset, ProgramType,
+            AddressOffset, ExecutionState, LoopInvariantCheck, OldAddress, ProgramType,
             ProgramValue, SpecExpression, SpecPoint, SpecProposition,
         };
         type TestProof = ProofObject<
@@ -3606,7 +3609,9 @@ mod tests {
                 crate::kernel::OldPointer::new(
                     OldAddress {
                         base: "unallocated".into(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: crate::kernel::AddressOffset::from(
+                            crate::kernel::OldAddressOffset::Constant(0),
+                        ),
                     },
                     ProgramType::Int32Pointer,
                 ),

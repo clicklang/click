@@ -118,7 +118,8 @@ fn algebraic_read_construction_keeps_growing_shared_addresses_without_exports() 
             offset: OldAddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::from_shared(format, index).unwrap(),
                 byte_width: 4,
-            },
+            }
+            .into(),
         };
         let address = SharedAddress::import(&pointer);
         let ty = TypeParameterName::intern("ReadScaleT").algebraic_type();

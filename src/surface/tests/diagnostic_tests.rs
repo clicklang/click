@@ -782,9 +782,11 @@ fn click_addition_cancels_a_negated_pointer_base() {
 fn an_unnamed_store_index_is_spelled_through_its_own_base() {
     let base = |variable: u64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scaled_int32_node(
-            OldMachineTerm::Variable(Variable(variable)),
-            4,
+        offset: crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(variable)),
+                4,
+            ),
         ),
     };
     let parameters = vec![
@@ -812,13 +814,14 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
     // `visited + old_cur * 4`, with `old_cur` a variable no local names.
     let store = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Add(
-            Box::new(base(100_001).offset),
-            Box::new(OldAddressOffset::scaled_int32_node(
+        offset: crate::kernel::OldAddressOffset::Add(
+            Box::new(crate::kernel::OldAddressOffset::from(base(100_001).offset)),
+            Box::new(crate::kernel::OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(1_000_000)),
                 4,
             )),
-        ),
+        )
+        .into(),
     };
     assert_eq!(
         super::diagnostics::source_cell_text_for_tests(
@@ -835,7 +838,12 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
 fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
     let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100000)), 4),
+        offset: crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100000)),
+                4,
+            ),
+        ),
     };
     let field = base.offset_by_bytes(4);
 
@@ -872,7 +880,7 @@ fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
 fn execution_effect_diagnostics_omit_raw_memory_states() {
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(8),
+        offset: crate::kernel::OldAddressOffset::Constant(8).into(),
     };
     let before = SymbolicMemory::new().store(pointer.clone(), int32(1));
     let after = before.clone().store(pointer.clone(), int32(2));
@@ -1337,7 +1345,7 @@ fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
 
     let pointer = OldAddress {
         base: AddressBase::Concrete("selected_resource".to_string()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let selected = ResourceFact::own_memory(MemoryRange::new(
         pointer,
@@ -1374,7 +1382,7 @@ fn borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
     let range = MemoryRange::new(
         OldAddress {
             base: AddressBase::Concrete("selected_range".to_string()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         OldMachineTerm::constant(1),
         OldMachineTerm::constant(3),
@@ -1578,11 +1586,11 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
 fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let global = OldAddress {
         base: "global:counter".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(982_001)),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let before = SymbolicMemory::new().with_block(global.base.clone(), 4);
     let after = before.clone().store(alias.clone(), int32(1));
@@ -1686,7 +1694,7 @@ fn a_uint32_order_is_named_as_unsigned() {
 fn missing_mutex_use_names_the_required_resource_without_borrow_internals() {
     let mutex = crate::kernel::OldAddress {
         base: "selected_mutex".into(),
-        offset: crate::kernel::OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let rendered = super::diagnostics::describe_runtime_error(
         &crate::kernel::RuntimeError::MissingMutexUse {
@@ -2095,7 +2103,7 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     };
     let base = OldAddress {
         base: AddressBase::Concrete("unknown".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let state = ExecutionState::new().with_local(
         "cursor",
@@ -2125,7 +2133,7 @@ fn address_mismatch_diagnostic_compares_selected_read_points() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let first = ExecutionState::new()
         .begin_function_entry_memory()
@@ -2936,7 +2944,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     };
     let read = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(992001)),
+        offset: crate::kernel::OldAddressOffset::Variable(Variable(992001)).into(),
     };
     let written = OldAddress::symbolic(Variable(992002));
     let before = SymbolicMemory::new();
@@ -2947,7 +2955,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     let after = blocked.clone().store(
         OldAddress {
             base: "local:unrelated".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         },
         int32(1),
     );
@@ -3145,7 +3153,7 @@ fn call_resource_diagnostic_read_shows_state_and_access() {
     use crate::kernel::{AddressBase, MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm};
     let address = OldAddress {
         base: AddressBase::Concrete("selected_child_cell".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let required = ResourceFact::View(crate::kernel::Resource::Memory(MemoryRange::new(
         address,
@@ -3595,7 +3603,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
     let memory = SymbolicMemory::new();
     let pointer = OldAddress {
         base: "pending_read_cell".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let goal = Proposition::condition_is(
         OldConditionTerm::Compare {
@@ -3746,7 +3754,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     let _session = crate::kernel::VerificationSession::enter();
     let read = OldAddress {
         base: AddressBase::Concrete("child_cell".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let before = SymbolicMemory::new();
     let after = before.clone().store(read.clone(), int32(7));
@@ -3766,7 +3774,8 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
                         Box::new(OldMachineTerm::Variable(Variable(993451))),
                     ),
                     4,
-                ),
+                )
+                .into(),
             },
             ProgramType::Int32Pointer,
         )))
@@ -4295,7 +4304,7 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
     let pointer = crate::kernel::OldPointer::new(
         OldAddress {
             base: AddressBase::Concrete("array".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         },
         ProgramType::Int32PointerPointer,
     );

@@ -257,11 +257,11 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
 fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixteen() {
     let slot = OldAddress {
         base: "wide-slot-external".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let pointee = OldAddress {
         base: "wide-pointee-external".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new()
         .with_block(slot.base.clone(), 8)
@@ -323,7 +323,7 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
     for pointer_ty in [ProgramType::Int128Pointer, ProgramType::UInt128Pointer] {
         let slot = OldAddress {
             base: "wide-symbolic-slot".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         for bytes in [7, 8] {
             let state = ExecutionState::new()
@@ -425,7 +425,7 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
 fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
     let at = |offset| OldAddress {
         base: "local:wide-prefix".into(),
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset).into(),
     };
     let mut memory = SymbolicMemory::new()
         .with_block("local:wide-prefix", 16)
@@ -448,7 +448,7 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
             .write_scalar_array_region(
                 &OldAddress {
                     base: "local:wide-target".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramType::UInt8,
                 8,
@@ -558,7 +558,7 @@ fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
     let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("offsets", 16));
     let at = |offset| OldAddress {
         base: "offsets".into(),
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset).into(),
     };
     for ty in [
         ProgramType::VoidPointer,

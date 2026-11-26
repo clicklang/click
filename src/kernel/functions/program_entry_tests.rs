@@ -542,7 +542,9 @@ fn owned_bytes(resources: &ResourceContext) -> BTreeMap<AddressBase, Vec<(i64, i
         let range = fact
             .memory_own_range()
             .expect("startup permissions own memory");
-        let OldAddressOffset::Constant(offset) = range.base().offset else {
+        let crate::kernel::OffsetView::Constant(offset) =
+            crate::kernel::OffsetTree::view(&range.base().offset)
+        else {
             panic!("startup ranges have constant bases");
         };
         let width = i64::from(range.element_width());
