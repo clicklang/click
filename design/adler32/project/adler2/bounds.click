@@ -157,15 +157,20 @@ theorem adler_lane_a_invariant_step(n: Integer, a: Integer, byte: Integer) {
     requires a <= adler_lane_a_ceiling(n);
     requires byte <= 255;
     ensures a + byte <= adler_lane_a_ceiling(n + 1) by {
-        have adler_lane_a_ceiling(n) == 65520 + 255 * n by {
-            unfold(adler_lane_a_ceiling(n)); close();
+        unfold(adler_lane_a_ceiling(n));
+        have a <= 65520 + 255 * n by {
+            rewrite(65520 + 255 * n, adler_lane_a_ceiling(n));
+            close();
         }
-        have a <= 65520 + 255 * n by close() using {
-                a <= adler_lane_a_ceiling(n);
-                adler_lane_a_ceiling(n) == 65520 + 255 * n;
-            };
+        have a + byte <= (65520 + 255 * n) + 255 by {
+            apply(click::integer::add_le(a, 65520 + 255 * n, byte, 255));
+        }
+        have 255 * (n + 1) == 255 * n + 255 * 1 by {
+            apply(click::integer::multiply_add_left(n, 1, 255));
+        }
         unfold(adler_lane_a_ceiling(n + 1));
-        close() using { a <= 65520 + 255 * n; byte <= 255; };
+        rewrite(255 * (n + 1), 255 * n + 255 * 1);
+        close() using { a + byte <= (65520 + 255 * n) + 255; };
     }
 }
 
@@ -197,8 +202,17 @@ theorem adler_lane_b_ceiling_successor(n: Integer) {
         unfold(adler_lane_b_ceiling(n + 1));
         unfold(adler_lane_b_ceiling(n));
         unfold(adler_lane_a_ceiling(n + 1));
+        have 65520 * (n + 1) == 65520 * n + 65520 * 1 by {
+            apply(click::integer::multiply_add_left(n, 1, 65520));
+        }
+        have 255 * (adler_lane_triangle(n) + (n + 1)) ==
+            255 * adler_lane_triangle(n) + 255 * (n + 1) by {
+            apply(click::integer::multiply_add_left(adler_lane_triangle(n), n + 1, 255));
+        }
         rewrite(adler_lane_triangle(n + 1), adler_lane_triangle(n) + (n + 1));
-        close() using {  };
+        rewrite(65520 * (n + 1), 65520 * n + 65520 * 1);
+        rewrite(255 * (adler_lane_triangle(n) + (n + 1)), 255 * adler_lane_triangle(n) + 255 * (n + 1));
+        close() using {};
     }
 }
 
@@ -213,10 +227,7 @@ theorem adler_lane_b_invariant_step(n: Integer, a: Integer, b: Integer, byte: In
         have a + byte <= adler_lane_a_ceiling(n + 1) by apply(adler_lane_a_invariant_step(n, a, byte));
         have adler_lane_b_ceiling(n + 1) == adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1) by apply(adler_lane_b_ceiling_successor(n));
         rewrite(adler_lane_b_ceiling(n + 1), adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1));
-        close() using {
-            b <= adler_lane_b_ceiling(n);
-            a + byte <= adler_lane_a_ceiling(n + 1);
-        };
+        apply(click::integer::add_le(b, adler_lane_b_ceiling(n), a + byte, adler_lane_a_ceiling(n + 1)));
     }
 }
 
