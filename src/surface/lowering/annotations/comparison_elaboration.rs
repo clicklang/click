@@ -96,9 +96,9 @@ impl AnnotationLowerer<'_> {
             }
             return Ok(SurfaceProposition::Comparison {
                 kind: ComparisonKind::Integer,
-                left: integer_surface_term(left.clone()),
+                left: integer_surface_term(left.clone(), &TypingEnvironment::of(environment)),
                 operator,
-                right: integer_surface_term(right.clone()),
+                right: integer_surface_term(right.clone(), &TypingEnvironment::of(environment)),
             });
         }
         // Two values of one struct are equal when each field is: the
@@ -525,12 +525,12 @@ impl AnnotationLowerer<'_> {
 /// `-`, `*` and negation are Integer arithmetic, and every other construct
 /// stays `Untyped`. A negated literal stays `Untyped`: lowering reads it as
 /// the literal `-n`, not as a negation.
-fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
+fn integer_surface_term(term: SyntaxTerm, typing: &TypingEnvironment<'_>) -> SurfaceTerm {
     let binary = |op, left: Box<SyntaxTerm>, right: Box<SyntaxTerm>| SurfaceTerm::Binary {
         op,
         kind: ArithmeticKind::Integer,
-        left: Box::new(integer_surface_term(*left)),
-        right: Box::new(integer_surface_term(*right)),
+        left: Box::new(integer_surface_term(*left, typing)),
+        right: Box::new(integer_surface_term(*right, typing)),
     };
     if matches!(term, SyntaxTerm::Negate(_)) && integer_literal_spelling(&term).is_some() {
         return SurfaceTerm::Untyped(term);
@@ -541,7 +541,7 @@ fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
         SyntaxTerm::Multiply(left, right) => binary(ArithmeticOperator::Multiply, left, right),
         SyntaxTerm::Negate(operand) => SurfaceTerm::Negate {
             kind: ArithmeticKind::Integer,
-            operand: Box::new(integer_surface_term(*operand)),
+            operand: Box::new(integer_surface_term(*operand, typing)),
         },
         SyntaxTerm::IntegerLiteral(text) => SurfaceTerm::IntegerLiteral {
             text,
@@ -551,6 +551,14 @@ fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
         // lowering reads it among the Integer bindings or refuses it.
         // (A generated binder is never a `Binding`.)
         SyntaxTerm::Binding(name) => SurfaceTerm::Name {
+            name,
+            ty: ClickType::Integer,
+        },
+        // A C-variable spelling of an Integer binder names the same binder.
+        // A C variable that is no Integer binder stays `Untyped`.
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) if typing.is_integer_binding(&name) => SurfaceTerm::Name {
             name,
             ty: ClickType::Integer,
         },
