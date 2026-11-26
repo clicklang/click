@@ -30,18 +30,50 @@ pub(crate) enum ComparisonKind {
     Sequence,
 }
 
+/// Which arithmetic an operation is. Only Integer arithmetic is on Surface
+/// so far; machine arithmetic, with its format, moves next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ArithmeticKind {
+    /// Mathematical Integer arithmetic, which does not wrap.
+    Integer,
+}
+
+/// A binary arithmetic operator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ArithmeticOperator {
+    Add,
+    Subtract,
+    Multiply,
+}
+
 /// A typed Surface term.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum SurfaceTerm {
+    /// `left op right` in the arithmetic `kind` names.
+    Binary {
+        op: ArithmeticOperator,
+        kind: ArithmeticKind,
+        left: Box<SurfaceTerm>,
+        right: Box<SurfaceTerm>,
+    },
+    /// `-operand` in the arithmetic `kind` names.
+    Negate {
+        kind: ArithmeticKind,
+        operand: Box<SurfaceTerm>,
+    },
     /// A term elaboration has not typed yet; lowering reads it the old way,
     /// as the surrounding typed node says.
     Untyped(SyntaxTerm),
 }
 
 impl SurfaceTerm {
-    pub(crate) fn syntax(&self) -> &SyntaxTerm {
+    /// The Syntax of a term not yet typed. Only an Integer comparison's
+    /// operands have typed forms so far, so every other comparison's
+    /// operands are `Untyped`.
+    pub(crate) fn untyped_syntax(&self) -> &SyntaxTerm {
         match self {
             Self::Untyped(term) => term,
+            typed => unreachable!("only Integer operands are typed so far: {typed:?}"),
         }
     }
 }
