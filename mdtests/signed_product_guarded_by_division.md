@@ -30,7 +30,8 @@ int64 product64(int64 x, int64 y) {
 theorem signed_quotient_observation(y: int32) {
     requires y > 0;
     ensures to_integer(2147483647 / y) == truncating_quotient(2147483647, to_integer(y)) by {
-        normalize() using { y > 0; };
+        have to_integer(y) != 0 by close();
+        close();
     }
 }
 ```

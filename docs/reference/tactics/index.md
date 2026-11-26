@@ -1767,6 +1767,10 @@ observation equals its operand when the destination-range bounds are available.
 Each check reads the named operands and at most two exact bound keys; it does
 not search for an interval or derive missing bounds.
 
+A written signed `int32` or `int64` division observation equals the mathematical
+truncating quotient of the same operands when the divisor is known nonzero and
+the signed minimum divided by `-1` is excluded.
+
 For a valid literal shift count, a left-shift observation equals multiplication
 by its power of two when the exact result is in range; signed shifts also
 require a nonnegative source. A signed OR or XOR of two nonnegative
