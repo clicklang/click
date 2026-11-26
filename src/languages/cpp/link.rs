@@ -112,6 +112,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
     let mut library_contracts = String::new();
     let mut library_models = BTreeSet::new();
     let mut overload_paths = BTreeMap::new();
+    let mut cpp_binding_conversions = BTreeSet::new();
     for (source, execution) in parts {
         for function in &execution.functions {
             crate::instrumentation::record_deterministic_work(1);
@@ -209,6 +210,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
             }
         }
         library_models.extend(execution.library_models.iter().cloned());
+        cpp_binding_conversions.extend(execution.cpp_binding_conversions.iter().cloned());
         overload_paths.extend(
             execution
                 .overload_paths
@@ -223,6 +225,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
         library_models,
         record_spellings,
         overload_paths,
+        cpp_binding_conversions,
     })
 }
 

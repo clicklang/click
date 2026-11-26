@@ -1644,13 +1644,18 @@ fn coercion_contracts(
     let class = record_of(class, records);
     let class = class.as_str();
     let receiver = BTreeMap::from([("this".to_string(), "object".to_string())]);
-    let head = |name: &str| {
+    use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+    let conversion = CppObjectConversion::new(class, target);
+    let head = |kind| {
         at(
             position,
             vec![
+                Token::CppBindingContract(std::sync::Arc::new(CppBindingContract {
+                    conversion: conversion.clone(),
+                    kind,
+                })),
                 ident("extern"),
                 ident("void"),
-                ident(name),
                 Token::LParen,
                 ident("const"),
                 ident("struct"),
@@ -1695,8 +1700,7 @@ fn coercion_contracts(
         }
         tokens
     };
-    let root = target;
-    let mut tokens = head(&crate::languages::cpp::names::object_pack_name(class, root));
+    let mut tokens = head(CppBindingKind::AcquireMutable);
     tokens.extend(memory("consumes"));
     tokens.extend(resources("consumes"));
     tokens.extend(instance("produces"));
@@ -1719,9 +1723,7 @@ fn coercion_contracts(
         ));
     }
     tokens.push((Token::RBrace, position.clone()));
-    tokens.extend(head(&crate::languages::cpp::names::object_unpack_name(
-        class, root,
-    )));
+    tokens.extend(head(CppBindingKind::ReleaseMutable));
     tokens.extend(instance("consumes"));
     tokens.extend(memory("produces"));
     tokens.extend(resources("produces"));
@@ -1745,7 +1747,7 @@ fn coercion_contracts(
     // to a resource the pack produces beside the object: while the callee
     // holds the object, nothing changes the memory or hands it over again,
     // so the caller keeps every field. The unpack gives both up.
-    let lend = crate::languages::cpp::names::object_lend_name(class, root);
+    let lend = conversion.loan_family();
     let lent = |verb: &str, from_view: bool| {
         let mut clause = vec![
             ident(verb),
@@ -1780,9 +1782,7 @@ fn coercion_contracts(
             Token::RBrace,
         ],
     ));
-    tokens.extend(head(&crate::languages::cpp::names::object_const_pack_name(
-        class, root,
-    )));
+    tokens.extend(head(CppBindingKind::AcquireShared));
     tokens.extend(at(
         position,
         vec![
@@ -1813,9 +1813,7 @@ fn coercion_contracts(
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
     tokens.push((Token::RBrace, position.clone()));
-    tokens.extend(head(
-        &crate::languages::cpp::names::object_const_unpack_name(class, root),
-    ));
+    tokens.extend(head(CppBindingKind::ReleaseShared));
     tokens.extend(lent("consumes", false));
     tokens.extend(instance("consumes"));
     // The resources come back holding the object's state, which a `const`

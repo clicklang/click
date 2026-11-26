@@ -266,6 +266,8 @@ struct SourceBindingInfo {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) cpp_binding_conversions:
+        std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
     pub(in crate::surface) cpp_binding_functions:
         BTreeMap<String, crate::languages::interface::ImportedFunction>,
     pub(in crate::surface) local_bindings: std::sync::Arc<SourceBindingIndex>,
@@ -583,6 +585,7 @@ pub(super) fn parse_library_file_items(source: &str) -> Result<ClickFile, ClickE
 
 pub(in crate::surface) enum ImportedCallee<'a> {
     Function(&'a FunctionBlock),
+    CppBinding(&'a crate::kernel::CppBindingContract, &'a FunctionBlock),
     Tactic(&'a TacticDefinition),
     Contract(&'a ContractDefinition),
 }
@@ -686,7 +689,12 @@ pub(super) fn parse_file_items_for_module(
             .map(|(name, positions)| (name.clone(), positions.clone())),
     );
     for callee in imported_callees {
+        parser.current_cpp_binding = None;
         let (named_contract, block) = match callee {
+            ImportedCallee::CppBinding(contract, block) => {
+                parser.current_cpp_binding = Some((*contract).clone());
+                (false, *block)
+            }
             ImportedCallee::Function(block) => (false, *block),
             ImportedCallee::Tactic(tactic) => (false, tactic.function_block()),
             ImportedCallee::Contract(definition) => {
@@ -746,6 +754,7 @@ pub(super) fn parse_file_items_for_module(
         }
     }
     parser.in_contract_definition = false;
+    parser.current_cpp_binding = None;
     for definition in imported_resources {
         parser
             .declared_resource_fields
@@ -827,6 +836,7 @@ pub(super) enum Token {
     SharedObjectView,
     /// Frontend-only marker for a C++ method’s virtual interface.
     CppVirtualInterface,
+    CppBindingContract(std::sync::Arc<crate::kernel::CppBindingContract>),
     Ident(String),
     Number(u32),
     // Keep literal metadata shared so adding Rust forms does not enlarge
@@ -935,6 +945,7 @@ impl Token {
             | Self::ByteString(_) => "",
             Self::SharedObjectView => "shared object view",
             Self::CppVirtualInterface => "virtual method interface",
+            Self::CppBindingContract(_) => "C++ reference binding contract",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -1034,6 +1045,10 @@ fn reduce_contract_binary_expression(
 struct Parser {
     cpp_binding_functions: BTreeMap<String, crate::languages::interface::ImportedFunction>,
     cpp_binding_layouts: BTreeMap<String, super::lowering::SourceExecutionLayout>,
+    cpp_binding_conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
+    current_cpp_binding: Option<crate::kernel::CppBindingContract>,
+    cpp_binding_binders:
+        BTreeMap<crate::kernel::CppBindingContract, BTreeMap<String, CalleeResourceBinder>>,
     cpp_binding_function: Option<String>,
     checked_expansion_closers: BTreeSet<SourcePosition>,
     local_bindings: std::sync::Arc<SourceBindingIndex>,
@@ -1919,6 +1934,7 @@ impl Parser {
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.cpp_binding_functions = layouts.cpp_binding_functions;
+        parser.cpp_binding_conversions = layouts.cpp_binding_conversions;
         parser.local_bindings = layouts.local_bindings;
         parser.string_literal_values = layouts.string_literal_values;
         parser.string_literal_owners = layouts.string_literal_owners;
@@ -2314,6 +2330,9 @@ impl Parser {
             loop_predicate_bodies: BTreeMap::new(),
             cpp_binding_functions: BTreeMap::new(),
             cpp_binding_layouts: BTreeMap::new(),
+            cpp_binding_conversions: Default::default(),
+            current_cpp_binding: None,
+            cpp_binding_binders: BTreeMap::new(),
             cpp_binding_function: None,
             program_object_names_by_function: BTreeMap::new(),
             c_library_names_by_function: BTreeMap::new(),
@@ -2718,6 +2737,10 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut cpp_virtual_interfaces = BTreeMap::new();
+        let mut cpp_bindings = CppBindingContracts {
+            conversions: self.cpp_binding_conversions.clone(),
+            written: BTreeMap::new(),
+        };
         let mut tactic_definitions = Vec::new();
         let mut termination_proof = None;
         let mut termination_span = None;
@@ -2862,6 +2885,18 @@ impl Parser {
                         "duplicate virtual interface for `{}`",
                         crate::languages::display_source_names(&method)
                     )));
+                }
+            } else if let Some(Token::CppBindingContract(contract)) = self.peek().cloned() {
+                self.position += 1;
+                self.current_cpp_binding = Some((*contract).clone());
+                let block = self.parse_function_block(true)?;
+                self.current_cpp_binding = None;
+                if cpp_bindings
+                    .written
+                    .insert((*contract).clone(), block)
+                    .is_some()
+                {
+                    return Err(self.error(format!("duplicate contract for {contract}")));
                 }
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
@@ -3142,6 +3177,7 @@ impl Parser {
             contract_definitions,
             function_blocks,
             cpp_virtual_interfaces,
+            cpp_bindings,
             tactic_definitions,
             termination_proof,
             termination_span,
@@ -6660,7 +6696,9 @@ impl Parser {
             parsed_return_type.interface_type
         };
         let mut c_source = None;
-        let (name, receiver) = if self.verifies_cpp() {
+        let (name, receiver) = if let Some(binding) = &self.current_cpp_binding {
+            (binding.to_string(), None)
+        } else if self.verifies_cpp() {
             let declarator = self.parse_cpp_declarator(is_static)?;
             if declarator.returnless != returnless {
                 return Err(self.error(if declarator.returnless {
@@ -8490,7 +8528,7 @@ impl Parser {
         } else {
             None
         };
-        let mut callee = if let Some(CodeRegionRef::Path(steps)) = &source_binding {
+        let binding_contract = if let Some(CodeRegionRef::Path(steps)) = &source_binding {
             let function = self
                 .cpp_binding_function
                 .as_ref()
@@ -8503,10 +8541,17 @@ impl Parser {
                 let layout = super::lowering::SourceExecutionLayout::for_function(imported)?;
                 self.cpp_binding_layouts.insert(function.clone(), layout);
             }
-            self.cpp_binding_layouts[function]
-                .cpp_binding_target(steps)
-                .map_err(|message| self.error(message))?
-                .to_string()
+            Some(
+                self.cpp_binding_layouts[function]
+                    .cpp_binding_target(steps)
+                    .map_err(|message| self.error(message))?
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        let mut callee = if let Some(region) = &source_binding {
+            super::diagnostics::describe_code_region_ref(region)
         } else {
             self.expect_ident(if tactic {
                 "tactic name"
@@ -8565,15 +8610,16 @@ impl Parser {
         } else if has_map {
             self.position += 1;
         }
-        let mut declared = if named_contract {
-            &self.contract_resource_binders
+        let mut declared = if let Some(binding) = &binding_contract {
+            self.cpp_binding_binders.get(binding)
+        } else if named_contract {
+            self.contract_resource_binders.get(&callee)
         } else {
-            &self.callee_resource_binders
+            self.callee_resource_binders.get(&callee)
         }
-        .get(&callee)
         .cloned()
         .unwrap_or_default();
-        if has_map && !named_contract && declared.is_empty() {
+        if has_map && binding_contract.is_none() && !named_contract && declared.is_empty() {
             declared = self.library_callee_value_parameters(&callee)?;
         }
         if has_map {
@@ -9137,12 +9183,18 @@ impl Parser {
             return;
         };
         crate::instrumentation::record_deterministic_work(1);
-        let registry = if self.in_contract_definition {
-            &mut self.contract_resource_binders
+        let binders = if let Some(binding) = &self.current_cpp_binding {
+            self.cpp_binding_binders.entry(binding.clone()).or_default()
+        } else if self.in_contract_definition {
+            self.contract_resource_binders
+                .entry(function.to_string())
+                .or_default()
         } else {
-            &mut self.callee_resource_binders
+            self.callee_resource_binders
+                .entry(function.to_string())
+                .or_default()
         };
-        registry.entry(function.to_string()).or_default().insert(
+        binders.insert(
             binding.name.clone(),
             CalleeResourceBinder {
                 identity: binding.identity,

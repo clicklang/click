@@ -316,11 +316,12 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .chain(
             file.cpp_virtual_interfaces
                 .values()
+                .chain(file.cpp_bindings.written.values())
                 .map(|block| (block, true)),
         );
-    for (function, virtual_interface) in function_blocks {
+    for (function, internal_interface) in function_blocks {
         crate::surface::enter_ambient_declaration(function.signature().name());
-        if !virtual_interface && !function_specs.insert(function.signature().name().to_string()) {
+        if !internal_interface && !function_specs.insert(function.signature().name().to_string()) {
             return Err(ClickError::new(format!(
                 "duplicate contract or C function spec `{}`",
                 function.signature().name()

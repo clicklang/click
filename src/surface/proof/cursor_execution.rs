@@ -2105,7 +2105,7 @@ fn execute_step_from_frontier_position_selecting_path(
     {
         return Err(ClickError::new(format!(
             "`step({}, {{ ... }})` requires a call to `{}` at the current frontier",
-            transport.function, transport.function
+            transport.target, transport.target
         )));
     }
     if matches!(source_region.kind, SourceStatementKind::If { .. }) {
@@ -2232,7 +2232,12 @@ fn execute_step_from_frontier_position_selecting_path(
         } else {
             &step_statement
         };
+        use crate::kernel::CallBinderTarget;
         let called = match selected_statement {
+            ProgramStatement::Call { cpp_binding: Some(binding), arguments, .. } => {
+                matches!(&transport.target, CallBinderTarget::CppBinding(contract) if contract == &binding.contract)
+                    .then_some(arguments.len())
+            }
             ProgramStatement::Call {
                 function_name,
                 arguments,
@@ -2247,27 +2252,28 @@ fn execute_step_from_frontier_position_selecting_path(
                 function_name,
                 arguments,
                 ..
-            } => Some((function_name.as_str(), arguments.len())),
+            } => {
+                let named_contract = function_environment.selected_call_contract.as_ref();
+                (transport.names_call_to(function_name)
+                    || matches!(&transport.target, CallBinderTarget::Function(name) if Some(name) == named_contract))
+                    .then_some(arguments.len())
+            }
             _ => None,
         };
         match called {
-            Some((name, arity))
-                if transport.names_call_to(name)
-                    || function_environment.selected_call_contract.as_deref()
-                        == Some(transport.function.as_ref()) =>
-            {
+            Some(arity) => {
                 if arity != transport.arity {
                     return Err(ClickError::new(format!(
-                        "`{name}` is called with {arity} argument(s) here, but the step writes {}",
-                        transport.arity
+                        "`{}` takes {arity} argument(s) here, but the step writes {}",
+                        transport.target, transport.arity
                     )));
                 }
             }
             _ => {
                 return Err(ClickError::new(format!(
                     "`step({}, {{ ... }})` requires a call to `{}` at the current frontier; next operation: {}",
-                    transport.function,
-                    transport.function,
+                    transport.target,
+                    transport.target,
                     describe_statement_head(&step_statement)
                 )));
             }

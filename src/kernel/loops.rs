@@ -236,31 +236,15 @@ pub(super) fn execute_program_call_paths(
                 Vec::new(),
             )]);
         };
-        if environment.selected_call_contract.is_some() {
-            return Ok(vec![StatementExecutionPath::new(
-                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
-                    "step(Contract) requires a function-pointer call".into(),
-                )),
-                Vec::new().into(),
-                Vec::new(),
-            )]);
-        }
-        if super::functions::contract_reaches_population(rule.function.contract_interface())
-            && !super::functions::authority_preserves_assumed_resource_contract(
-                rule.function.contract_interface(),
-            )
-        {
-            return Ok(vec![authority_call_refusal_path()]);
-        }
-        let paths = super::functions::execute_external_function_rule(
+        return execute_cpp_external_transition(
             state,
             rule,
+            None,
             arguments,
             assumptions,
             environment,
             budget,
-        )?;
-        return call_statement_paths(paths, budget);
+        );
     }
     // A call through a function pointer calls whatever the pointer holds.
     if let Some(callee) = callee {
@@ -414,6 +398,72 @@ pub(super) fn execute_program_call_paths(
     call_statement_paths(paths, budget)
 }
 
+pub(super) fn execute_cpp_binding_paths(
+    state: &ExecutionState,
+    binding: &CppBindingContract,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    execution_context: ExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let environment = execution_context.environment;
+    let Some(rule) = environment.get_cpp_binding_rule(binding) else {
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                "missing contract for {binding}"
+            ))),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    };
+    execute_cpp_external_transition(
+        state,
+        rule,
+        Some(binding),
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )
+}
+
+fn execute_cpp_external_transition(
+    state: &ExecutionState,
+    rule: &ExternalFunctionRule,
+    binding: Option<&CppBindingContract>,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    if environment.selected_call_contract.is_some() {
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
+                "step(Contract) requires a function-pointer call".into(),
+            )),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    }
+    if super::functions::contract_reaches_population(rule.function.contract_interface())
+        && !super::functions::authority_preserves_assumed_resource_contract(
+            rule.function.contract_interface(),
+        )
+    {
+        return Ok(vec![authority_call_refusal_path()]);
+    }
+    let paths = super::functions::execute_external_function_rule(
+        state,
+        rule,
+        binding,
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )?;
+    call_statement_paths(paths, budget)
+}
+
 fn call_statement_paths(
     paths: Vec<FunctionPath>,
     budget: &ExecutionBudget,
@@ -550,7 +600,7 @@ fn execute_modeled_pthread_mutex_paths(
                 )
             ) =>
         {
-            transport.function.as_ref() == contract.function_name
+            matches!(&transport.target, CallBinderTarget::Function(name) if name.as_ref() == contract.function_name)
                 && transport.arity == contract.arity
                 && transport.bindings.iter().all(|(identity, _)| {
                     contract

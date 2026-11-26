@@ -128,8 +128,14 @@ struct SourceExecutionLayoutData {
     /// the statement's own regions, not its children's.
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The acquisition region and contract for each written call argument.
-    cpp_bindings: BTreeMap<(usize, crate::kernel::CppBindingSlot), (usize, String)>,
-    cpp_binding_releases: BTreeMap<(usize, crate::kernel::CppBindingSlot), (usize, String)>,
+    cpp_bindings: BTreeMap<
+        (usize, crate::kernel::CppBindingSlot),
+        (usize, crate::kernel::CppBindingContract),
+    >,
+    cpp_binding_releases: BTreeMap<
+        (usize, crate::kernel::CppBindingSlot),
+        (usize, crate::kernel::CppBindingContract),
+    >,
     cpp_binding_sites: BTreeMap<usize, (usize, crate::kernel::CppBindingSlot, bool)>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
@@ -932,25 +938,32 @@ impl SourceExecutionLayout {
                         }
                     }
                     if let ProgramStatement::Call {
-                        function_name,
                         cpp_binding: Some(binding),
                         ..
                     } = statement
+                        && let Some(source) = binding.source
                     {
-                        let call = statement_index + binding.call_offset;
-                        let release = statement_index + binding.release_offset;
+                        let call = statement_index + source.call_offset;
+                        let release = statement_index + source.release_offset;
                         layout.cpp_bindings.insert(
-                            (call, binding.slot),
-                            (statement_index, function_name.clone()),
+                            (call, source.slot),
+                            (statement_index, binding.contract.clone()),
                         );
                         layout
-                            .cpp_binding_sites
-                            .insert(statement_index, (call, binding.slot, false));
+                            .cpp_binding_releases
+                            .insert((call, source.slot), (release, binding.contract.release()));
                         layout
                             .cpp_binding_sites
-                            .insert(release, (call, binding.slot, true));
+                            .insert(statement_index, (call, source.slot, false));
+                        layout
+                            .cpp_binding_sites
+                            .insert(release, (call, source.slot, true));
                     }
-                    if let ProgramStatement::Call { arguments, .. }
+                    if let ProgramStatement::Call {
+                        arguments,
+                        cpp_binding: None,
+                        ..
+                    }
                     | ProgramStatement::CallResult { arguments, .. }
                     | ProgramStatement::CallConstruct { arguments, .. } = statement
                     {
@@ -963,6 +976,7 @@ impl SourceExecutionLayout {
                     }
                     if let ProgramStatement::Call {
                         function_name,
+                        cpp_binding: None,
                         callee: None,
                         ..
                     }
@@ -1107,17 +1121,6 @@ impl SourceExecutionLayout {
                 })
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
-        }
-        for (&region, &(call, slot, release)) in &layout.cpp_binding_sites {
-            if release && let Some(name) = layout.call_targets.get(&region) {
-                layout
-                    .cpp_binding_releases
-                    .insert((call, slot), (region, name.clone()));
-            }
-        }
-        for region in layout.cpp_binding_sites.keys() {
-            layout.calls.remove(region);
-            layout.call_targets.remove(region);
         }
         if imported.has_cpp_call_paths()
             || !layout.call_numbers.is_empty()
@@ -1993,14 +1996,14 @@ impl SourceExecutionLayout {
     pub(in crate::surface) fn cpp_binding_target(
         &self,
         steps: &[crate::surface::SourcePathStep],
-    ) -> Result<&str, String> {
+    ) -> Result<&crate::kernel::CppBindingContract, String> {
         Ok(&self.cpp_binding_region(steps)?.1)
     }
 
     fn cpp_binding_region(
         &self,
         steps: &[crate::surface::SourcePathStep],
-    ) -> Result<&(usize, String), String> {
+    ) -> Result<&(usize, crate::kernel::CppBindingContract), String> {
         use crate::surface::{ProgramPointKind, SourcePathStep};
         let Some((SourcePathStep::Binding { slot, release }, call_path)) = steps.split_last()
         else {
