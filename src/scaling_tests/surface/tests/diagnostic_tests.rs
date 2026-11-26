@@ -22,7 +22,7 @@ int32 once(int32 i, int32 x) {
         initialize by { close(); }
         maintain by {
             step();
-            have i >= 0 by { normalize(); }
+            have i >= 0 by { close(); }
         }
     }
     step();

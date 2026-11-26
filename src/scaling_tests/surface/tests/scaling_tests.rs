@@ -810,7 +810,7 @@ fn explicit_constructor_unfold_has_near_linear_nested_match_work() {
         }
         let source = format!(
             "function nested(n: Nat) -> Nat {{ {body} }}\n\
-            theorem nested_result(n: Nat) {{ ensures nested(n) == n by {{ unfold(nested(n)); normalize(); }} }}"
+            theorem nested_result(n: Nat) {{ ensures nested(n) == n by {{ unfold(nested(n)); close(); }} }}"
         );
         if size > parser::MATCH_NESTING_LIMIT {
             let error = verify_click_theorems(&source)
@@ -852,7 +852,7 @@ fn symbolic_integer_match_lowering_has_near_linear_width_work() {
              theorem nested(value: Integer) {{\n\
                  ensures match Choice::V0(value) {{\n\
                      {arms}\n\
-                 }} == value by {{ normalize(); }}\n\
+                 }} == value by {{ close(); }}\n\
              }}"
         );
         let (result, sample) = scaling_sample(width, || verify_click_theorems(&source));
@@ -881,7 +881,7 @@ fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
         }
         let source = format!(
             "spec enum Box {{ Empty, Wrapped(Integer) }}\n\
-             theorem nested() {{ ensures {body} == 0 by {{ normalize(); }} }}"
+             theorem nested() {{ ensures {body} == 0 by {{ close(); }} }}"
         );
         if depth > parser::MATCH_NESTING_LIMIT {
             let error = verify_click_theorems(&source)
@@ -912,9 +912,13 @@ fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
 fn parametric_theorem_declarations_have_near_linear_checking_work() {
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
-        let source = (0..size).map(|index| format!(
-            "theorem reflexive_{index}<T>(x: T) {{ ensures x == x by {{ normalize(); }} }}\n"
-        )).collect::<String>();
+        let source = (0..size)
+            .map(|index| {
+                format!(
+                    "theorem reflexive_{index}<T>(x: T) {{ ensures x == x by {{ close(); }} }}\n"
+                )
+            })
+            .collect::<String>();
         let (verified, sample) = scaling_sample(size, || verify_click_theorems(&source));
         assert_eq!(
             verified.expect("every unused generic proof checks").len(),
@@ -1413,7 +1417,7 @@ fn unrelated_identity_project(function_count: usize) -> (Vec<(String, String)>, 
     click_source.push('\n');
     for index in 0..function_count {
         click_source.push_str(&format!(
-            "int32 scaling_identity_{index}(int32 x) {{\n    ensures result == x;\n}} by {{\n    step();\n    normalize();\n}}\n\n"
+            "int32 scaling_identity_{index}(int32 x) {{\n    ensures result == x;\n}} by {{\n    step();\n    close();\n}}\n\n"
         ));
     }
     (c_sources, click_source)
