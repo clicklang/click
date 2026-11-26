@@ -2754,18 +2754,17 @@ fn collect_pointer_offset_integer_variables(
     if checked_collection_checkpoint() {
         return;
     }
-    match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => {}
+        OffsetView::Add(left, right) => {
             collect_pointer_offset_integer_variables(left, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_pointer_offset_integer_variables(right, variables, seen);
         }
-        OldAddressOffset::Int32Scaled { value, .. }
-        | OldAddressOffset::Int64Scaled { value, .. } => {
-            visit_machine_carrier_leaves(value, |leaf| {
+        OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+            visit_machine_carrier_leaves(&index, |leaf| {
                 collect_operand_integer_variables_seen(leaf, variables, seen)
             });
         }
@@ -3860,18 +3859,17 @@ fn collect_pointer_offset_capture_variables(
     if checked_collection_checkpoint() {
         return;
     }
-    match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => {}
+        OffsetView::Add(left, right) => {
             collect_pointer_offset_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_pointer_offset_capture_variables(right, variables, integer_seen);
         }
-        OldAddressOffset::Int32Scaled { value, .. }
-        | OldAddressOffset::Int64Scaled { value, .. } => {
-            visit_machine_carrier_leaves(value, |leaf| {
+        OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+            visit_machine_carrier_leaves(&index, |leaf| {
                 if let Some((_, pointer, _)) = leaf.read() {
                     collect_pointer_capture_variables(pointer, variables, integer_seen);
                 } else if let MachineOperandView::Old(term) = leaf {
@@ -4862,11 +4860,9 @@ fn collect_pointer_offset_scope_summary(
     if checked_collection_checkpoint() {
         return IntegerScopeSummary::default();
     }
-    match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
-            IntegerScopeSummary::default()
-        }
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => IntegerScopeSummary::default(),
+        OffsetView::Add(left, right) => {
             let mut summary = collect_pointer_offset_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4874,9 +4870,8 @@ fn collect_pointer_offset_scope_summary(
             summary.merge(collect_pointer_offset_scope_summary(right, summaries));
             summary
         }
-        OldAddressOffset::Int32Scaled { value, .. }
-        | OldAddressOffset::Int64Scaled { value, .. } => {
-            collect_machine_scope_summary(value, summaries)
+        OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+            collect_machine_scope_summary(&index, summaries)
         }
     }
 }
@@ -5695,9 +5690,9 @@ fn collect_pointer_offset_binder_variables(
     if checked_collection_checkpoint() {
         return;
     }
-    match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => {}
+        OffsetView::Add(left, right) => {
             collect_pointer_offset_binder_variables(
                 left,
                 integer_variables,
@@ -5714,9 +5709,8 @@ fn collect_pointer_offset_binder_variables(
                 integer_seen,
             );
         }
-        OldAddressOffset::Int32Scaled { value, .. }
-        | OldAddressOffset::Int64Scaled { value, .. } => {
-            visit_machine_carrier_leaves(value, |leaf| {
+        OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+            visit_machine_carrier_leaves(&index, |leaf| {
                 collect_operand_binder_variables_seen(
                     leaf,
                     integer_variables,
@@ -6017,21 +6011,20 @@ pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
     offset: &OldAddressOffset,
     variables: &mut BTreeSet<Variable>,
 ) {
-    match offset {
-        OldAddressOffset::Constant(_) => {}
-        OldAddressOffset::Variable(variable) => {
+    match offset.view() {
+        OffsetView::Constant(_) => {}
+        OffsetView::Variable(variable) => {
             if collecting_connection_variables() || COORDINATE_VARIABLES.with(std::cell::Cell::get)
             {
-                variables.insert(*variable);
+                variables.insert(variable);
             }
         }
-        OldAddressOffset::Add(left, right) => {
+        OffsetView::Add(left, right) => {
             collect_pointer_offset_bitvector_variables(left, variables);
             collect_pointer_offset_bitvector_variables(right, variables);
         }
-        OldAddressOffset::Int32Scaled { value, .. }
-        | OldAddressOffset::Int64Scaled { value, .. } => {
-            collect_machine_bitvector_variables(value, variables);
+        OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+            collect_machine_bitvector_variables(&index, variables);
         }
     }
 }

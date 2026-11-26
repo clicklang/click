@@ -6259,9 +6259,9 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
     to: &OldMachineTerm,
 ) -> std::borrow::Cow<'a, OldAddressOffset> {
     use std::borrow::Cow;
-    match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => Cow::Borrowed(offset),
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => Cow::Borrowed(offset),
+        OffsetView::Add(left, right) => {
             let left = substitute_bitvector_variable_in_pointer_offset_cow(left, from, to);
             let right = substitute_bitvector_variable_in_pointer_offset_cow(right, from, to);
             if matches!((&left, &right), (Cow::Borrowed(_), Cow::Borrowed(_))) {
@@ -6270,15 +6270,15 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
                 Cow::Owned(OldAddressOffset::add(left.into_owned(), right.into_owned()))
             }
         }
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
-            substitute_in_scaled_pointer_index(value, *byte_width, None, from, to)
+        OffsetView::Int32Scaled { index, byte_width } => {
+            substitute_in_scaled_pointer_index(&index, byte_width, None, from, to)
                 .map_or(Cow::Borrowed(offset), Cow::Owned)
         }
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index,
             byte_width,
             unsigned,
-        } => substitute_in_scaled_pointer_index(value, *byte_width, Some(*unsigned), from, to)
+        } => substitute_in_scaled_pointer_index(&index, byte_width, Some(unsigned), from, to)
             .map_or(Cow::Borrowed(offset), Cow::Owned),
     }
 }
@@ -7545,7 +7545,7 @@ fn substitute_pointer_variable_in_block(
             substitute_pointer_variable_in_pointer(
                 &OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 },
                 from,
                 to,
