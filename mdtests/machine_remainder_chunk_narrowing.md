@@ -5,10 +5,10 @@ narrowed into a signed word without its bound.
 
 ```click
 theorem complete_prefix(n: uint64) {
-    ensures (((n - n % 3u64) as uint32 as int32) % 3) == 0 by normalize();
+    ensures (((n - n % 3u64) as uint32 as int32) % 3) == 0 by close();
 }
 ```
 
 ```expect
-fail: normalize
+fail: `solve` failed for `complete_prefix.ensures_0`
 ```
