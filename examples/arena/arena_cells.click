@@ -3986,7 +3986,7 @@ int32 arena_pipeline(
     let r2 = fold(arena_region(second), { start: w1_start, end: w1_end });
     mark w1;
     step(arena_write, { r: r1, st: s0 }) {
-        requires 0 <= 0 by normalize();
+        requires 0 <= 0 by { close(); }
         requires r1.end <= s0.capacity by close();
         requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
             all {
@@ -4171,7 +4171,7 @@ int32 arena_pipeline(
     }
     mark w2;
     step(arena_write, { r: r2, st: s0 }) {
-        requires 0 <= 0 by normalize();
+        requires 0 <= 0 by { close(); }
         requires r2.end <= s0.capacity by close();
         requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
             all {
