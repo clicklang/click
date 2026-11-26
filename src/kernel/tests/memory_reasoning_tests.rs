@@ -1311,7 +1311,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
     let resource_at = |memory: SymbolicMemory| Resource::Composite {
         name: "tree".to_string(),
         arguments: vec![
-            ProgramValue::Pointer(OldPointer::from_read(
+            ProgramValue::Pointer(Pointer::from_read(
                 Address::new(
                     AddressBase::ExternalArgument,
                     AddressOffset::scale_int32(
@@ -1857,7 +1857,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
     }
     apply_law(
         crate::kernel::prove_separation_subrange(
-            OldPointer::new(execution_data.clone(), ProgramType::Int32Pointer),
+            Pointer::new(execution_data.clone(), ProgramType::Int32Pointer),
             4,
             MachineIntegerType::Int32,
             0u32.into(),
@@ -2077,13 +2077,13 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
         Box::new(field.clone()),
         crate::kernel::LoadKind::Bits64,
     );
-    let pointer = OldPointer::from_read(
+    let pointer = Pointer::from_read(
         Address::from_integer_address(bits),
         ProgramType::VoidPointer,
         &before,
         &field,
     );
-    let parent = OldPointer::new(
+    let parent = Pointer::new(
         Address::symbolic(Variable(9_889_501)),
         ProgramType::VoidPointer,
     );
@@ -3902,7 +3902,7 @@ fn a_store_to_a_local_is_not_framed_away_for_an_unresolved_pointer() {
         .without_possible_aliasing_cells(&q, crate::kernel::C_POINTER_BYTE_WIDTH, &bare)
         .store(
             q.clone(),
-            ProgramValue::Pointer(OldPointer::new(symbolic.clone(), ProgramType::Int32Pointer)),
+            ProgramValue::Pointer(Pointer::new(symbolic.clone(), ProgramType::Int32Pointer)),
         );
     let after_store = after_binding
         .clone()

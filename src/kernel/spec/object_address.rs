@@ -83,7 +83,7 @@ mod tests {
         let first = SymbolicMemory::global_pointer("first");
         let second = SymbolicMemory::global_pointer("second");
         let first_value =
-            ProgramValue::Pointer(OldPointer::new(first.clone(), ProgramType::UInt8Pointer));
+            ProgramValue::Pointer(Pointer::new(first.clone(), ProgramType::UInt8Pointer));
         let second_value = ProgramValue::typed_pointer(second.clone(), ProgramType::UInt8Pointer);
         let memory = SymbolicMemory::new()
             .with_block(first.base.clone(), 24)

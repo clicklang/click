@@ -2718,7 +2718,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let pointer_slot = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
-        let pointer = OldPointer::from_point_read(
+        let pointer = Pointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::Int32Pointer,
             &pointer_slot,
@@ -2752,7 +2752,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let point = entry.program_point();
         let slot = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
-        let pointer = OldPointer::from_point_read(
+        let pointer = Pointer::from_point_read(
             point.clone().for_legacy_read(),
             ProgramType::Int32Pointer,
             &slot,
@@ -2770,7 +2770,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let caller_cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
-        let loaded = OldPointer::from_point_read(
+        let loaded = Pointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::UInt64Pointer,
             &caller_cell.offset_by_bytes(8),

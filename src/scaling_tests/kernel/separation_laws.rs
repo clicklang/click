@@ -14,7 +14,7 @@ fn subrange_law_does_not_enumerate_the_interval() {
             let _session = crate::kernel::VerificationSession::enter();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_subrange(
-                    OldPointer::new(
+                    Pointer::new(
                         Address::symbolic(Variable(8_390_000)),
                         ProgramType::Int64Pointer,
                     ),
@@ -50,7 +50,7 @@ fn elements_laws_do_not_walk_the_index_distance() {
                     MachineIntegerType::Int32 => OldMachineTerm::constant(n as u32),
                     _ => OldMachineTerm::int64_constant(i64::from(n)),
                 };
-                let base = OldPointer::new(
+                let base = Pointer::new(
                     Address::symbolic(Variable(8_390_001)),
                     ProgramType::Int64Pointer,
                 );
@@ -215,7 +215,7 @@ fn element_containment_does_not_enumerate_its_interval() {
             let _session = crate::kernel::VerificationSession::enter();
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_contains_element(
-                    OldPointer::new(
+                    Pointer::new(
                         Address::symbolic(Variable(8_390_002)),
                         ProgramType::Int64Pointer,
                     ),
@@ -250,7 +250,7 @@ fn rebase_law_does_not_enumerate_its_interval() {
             let _session = crate::kernel::VerificationSession::enter();
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_rebase(
-                    OldPointer::new(
+                    Pointer::new(
                         Address::symbolic(Variable(8_390_003)),
                         ProgramType::Int64Pointer,
                     ),

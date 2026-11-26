@@ -34,7 +34,7 @@ renamed to "old". Renamed so far:
 
 | Old | Replacement |
 | --- | --- |
-| `OldPointer` | `KernelPointer` (handle `SharedPointer`) |
+| `OldPointer` | Done: deleted. `Pointer`, the written view of the kernel handle `SharedPointer` (node `KernelPointer`; array object `ArrayObject` over `KernelArrayObject`, bounds `SubobjectBounds` over `KernelSubobjectBounds`) |
 | `KernelTerm::old_pointer_value`, `old_pointer_argument` | the retained `SharedPointer` itself |
 | `OldMachineTerm` | `KernelTerm` machine nodes (`MachineBinary`, `MachineCast`, …) |
 | `MachineOperandView::Old`, `MachineLeaf::Old` | `MachineOperandView::Shared` |

@@ -30,8 +30,8 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
     let alias = Address::symbolic(Variable(973_001));
     let facts = PureFactContext::new().assume_proposition(Proposition::condition_is(
         OldConditionTerm::pointer_equal(
-            OldPointer::new(alias.clone(), ProgramType::Int32Pointer),
-            OldPointer::new(base.clone(), ProgramType::Int32Pointer),
+            Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+            Pointer::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -105,8 +105,8 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
     let pending = Address::symbolic(Variable(973_022));
     let facts = PureFactContext::new().assume_proposition(Proposition::condition_is(
         OldConditionTerm::pointer_equal(
-            OldPointer::new(alias.clone(), ProgramType::Int32Pointer),
-            OldPointer::new(base.clone(), ProgramType::Int32Pointer),
+            Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+            Pointer::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));

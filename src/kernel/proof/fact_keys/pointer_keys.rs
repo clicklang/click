@@ -329,7 +329,7 @@ pub(super) fn recorded_value(pointer: &SharedPointer) -> MemoryErasedPointerKey 
         bounds: p.array.bounds().map(|e| {
             (
                 state_address(&e.start),
-                memory_operands::operand(V::Shared(&e.width)),
+                memory_operands::operand(V::Shared(&e.width())),
             )
         }),
         bounds_known: known,
@@ -355,7 +355,7 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
         bounds: match p.array.bounds() {
             Some(e) => Some((
                 alpha_address::<ALLOW_LOADS>(&e.start, bindings, next)?,
-                alpha_machine_key::<ALLOW_LOADS>(V::Shared(&e.width), bindings, next)?,
+                alpha_machine_key::<ALLOW_LOADS>(V::Shared(&e.width()), bindings, next)?,
             )),
             None => None,
         },
@@ -369,20 +369,20 @@ mod tests {
         KernelTermExport, MachineBinaryOp, SharedMachineIntegerTerm, SubobjectBounds,
         VerificationSession,
     };
-    fn pointer(offset: AddressOffset) -> OldPointer {
+    fn pointer(offset: AddressOffset) -> Pointer {
         let address = Address::new(AddressBase::Concrete("shared-key".into()), offset);
-        OldPointer::new(address.clone(), ProgramType::VoidPointer)
-            .with_provenance(Arc::new(address.clone()))
-            .with_bounds(Some(SubobjectBounds {
-                start: address,
-                width: OldMachineTerm::Binary {
+        Pointer::new(address.clone(), ProgramType::VoidPointer)
+            .with_provenance(address.clone())
+            .with_bounds(Some(SubobjectBounds::new(
+                address,
+                OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
                     left: OldMachineTerm::Variable(Variable(1010002)).into(),
                     right: OldMachineTerm::constant(4).into(),
                 },
-            }))
-            .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1010001)))))
+            )))
+            .with_bounds_owner(Some(Address::symbolic(Variable(1010001))))
     }
 
     #[test]
@@ -402,7 +402,7 @@ mod tests {
                 AddressOffset::int64_scaled(scalar, 8, true)
             };
             let source = pointer(AddressOffset::raw_add(scaled, AddressOffset::constant(3)));
-            let shared = SharedPointer::import(&source);
+            let shared = source.shared().clone();
             let expected = memory_erased_pointer_key(&source);
             let alpha = alpha_program_value_key_with_bindings::<true>(
                 &ProgramValue::Pointer(source.clone()),
@@ -428,7 +428,7 @@ mod tests {
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let make = |memory| {
-            SharedPointer::import(&pointer(AddressOffset::int32_scaled(
+            pointer(AddressOffset::int32_scaled(
                 SharedMachineIntegerTerm::index(
                     MachineIntegerType::Int32,
                     OldMachineTerm::read_named(
@@ -438,7 +438,8 @@ mod tests {
                     ),
                 ),
                 4,
-            )))
+            ))
+            .into_shared()
         };
         let a = make(before);
         let b = make(after);

@@ -1412,12 +1412,11 @@ fn native_fragment_consumption_checks_each_typed_provenance() {
     let facts = PureFactContext::new();
     let required = ResourceFact::own_memory(range(0, 8).with_typed_carrier());
     for wrong in [false, true] {
-        let second =
-            ResourceFact::own_memory(range(2, 8).with_provenance(std::sync::Arc::new(if wrong {
-                other.clone()
-            } else {
-                p.clone()
-            })));
+        let second = ResourceFact::own_memory(range(2, 8).with_provenance(if wrong {
+            other.clone()
+        } else {
+            p.clone()
+        }));
         let first = ResourceFact::own_memory(range(0, 2));
         let context = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts([first.clone(), second.clone()]);
@@ -1501,7 +1500,7 @@ fn ownership_queries_preserve_authority_checks_and_branches(symbolic: bool) {
                 "zero" => ResourceFact::Own(Resource::Memory(tail), Box::new(0u32.into())),
                 "negative" => ResourceFact::Own(Resource::Memory(tail), Box::new(u32::MAX.into())),
                 "provenance" => ResourceFact::own_memory(
-                    tail.with_provenance(std::sync::Arc::new(Address::symbolic(Variable(991_012)))),
+                    tail.with_provenance(Address::symbolic(Variable(991_012))),
                 ),
                 _ => ResourceFact::own_memory(tail),
             };

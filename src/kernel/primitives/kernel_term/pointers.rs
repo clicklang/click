@@ -3,52 +3,50 @@
 use super::addresses::SharedAddress;
 use super::*;
 mod rewrite;
+mod written;
 pub(crate) use rewrite::{PointerRewrite, PointerRewriteError};
+pub(in crate::kernel) use written::ArrayObject;
+use written::SubobjectWidth;
+pub use written::{Pointer, SubobjectBounds};
 
+/// A pointer's bounds as the kernel reads them: the start address and the
+/// width term. The written view is [`SubobjectBounds`].
 #[derive(Clone, Debug)]
 pub(crate) struct KernelSubobjectBounds {
     pub(crate) start: SharedAddress,
-    pub(crate) width: KernelTerm,
+    width: SubobjectWidth,
+}
+impl KernelSubobjectBounds {
+    pub(crate) fn new(start: SharedAddress, width: KernelTerm) -> Self {
+        Self {
+            start,
+            width: SubobjectWidth::kernel(width),
+        }
+    }
+    /// The width term. A written width is imported when first read.
+    pub(crate) fn width(&self) -> &KernelTerm {
+        self.width.kernel_term()
+    }
 }
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KernelPointerQualifiers {
     pub(crate) object_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) object_type_evidence: Option<ObjectTypeEvidence>,
 }
-/// [`ArrayObject`] with common children.
+/// A pointer's array object; [`ArrayObject`] is its written view.
 #[derive(Clone, Debug)]
 pub(crate) enum KernelArrayObject {
     Allocation,
     Opaque(Option<SharedAddress>),
     Member(Arc<KernelMemberArray>),
 }
-/// [`MemberArray`] with common children.
+/// A member subobject (`design/pointer-subobject-bounds.md`).
 #[derive(Clone, Debug)]
 pub(crate) struct KernelMemberArray {
     pub(crate) bounds: Option<KernelSubobjectBounds>,
     pub(crate) within: Option<SharedAddress>,
 }
 impl KernelArrayObject {
-    pub(in crate::kernel) fn export(&self) -> Result<ArrayObject, &'static str> {
-        let owner = |owner: &SharedAddress| owner.export().map(Arc::new);
-        Ok(match self {
-            Self::Allocation => ArrayObject::Allocation,
-            Self::Opaque(name) => ArrayObject::Opaque(name.as_ref().map(owner).transpose()?),
-            Self::Member(member) => ArrayObject::Member(Arc::new(MemberArray {
-                bounds: member
-                    .bounds
-                    .as_ref()
-                    .map(|bounds| -> Result<_, &'static str> {
-                        Ok(SubobjectBounds {
-                            start: bounds.start.export()?,
-                            width: KernelTermExport::machine(&bounds.width)?,
-                        })
-                    })
-                    .transpose()?,
-                within: member.within.as_ref().map(owner).transpose()?,
-            })),
-        })
-    }
     /// As [`ArrayObject::from_parts`].
     pub(crate) fn from_parts(
         known: bool,
@@ -100,7 +98,7 @@ impl KernelArrayObject {
             && self.owner() == other.owner()
             && match (self.bounds(), other.bounds()) {
                 (None, None) => true,
-                (Some(a), Some(b)) => a.start == b.start && a.width == b.width,
+                (Some(a), Some(b)) => a.start == b.start && a.width() == b.width(),
                 _ => false,
             }
     }
@@ -207,56 +205,6 @@ impl SharedPointer {
             .chain(std::iter::once(&value.provenance))
             .chain(value.array.owner())
             .chain(value.array.bounds().map(|bounds| &bounds.start))
-    }
-    /// The pointer's addresses are already kernel handles: their blocks were
-    /// admitted, and charged, where each address was built
-    /// ([`Address::new`]).
-    pub(crate) fn import(value: &OldPointer) -> Self {
-        let address = |address: &Address| address.shared().clone();
-        Self::new(KernelPointer {
-            address: address(&value.address),
-            provenance: address(&value.provenance),
-            array: match value.array_object() {
-                ArrayObject::Allocation => KernelArrayObject::Allocation,
-                ArrayObject::Opaque(owner) => {
-                    KernelArrayObject::Opaque(owner.as_deref().map(address))
-                }
-                ArrayObject::Member(member) => {
-                    KernelArrayObject::Member(Arc::new(KernelMemberArray {
-                        bounds: member.bounds.as_ref().map(|bounds| KernelSubobjectBounds {
-                            start: address(&bounds.start),
-                            width: KernelTerm::retained_machine_operand(
-                                MachineIntegerType::Int32,
-                                MachineOperandView::Old(&bounds.width),
-                            ),
-                        }),
-                        within: member.within.as_deref().map(address),
-                    }))
-                }
-            },
-            program_type: value.program_type,
-            qualifiers: value.qualifiers.as_ref().map(|q| {
-                Arc::new(KernelPointerQualifiers {
-                    object_class: q.object_class.clone(),
-                    object_type_evidence: q.object_type_evidence.clone(),
-                })
-            }),
-        })
-    }
-    pub(crate) fn export(&self) -> Result<OldPointer, &'static str> {
-        let value = self.node();
-        Ok(OldPointer {
-            address: value.address.export()?,
-            provenance: Arc::new(value.provenance.export()?),
-            array: value.array.export()?,
-            program_type: value.program_type,
-            qualifiers: value.qualifiers.as_ref().map(|q| {
-                Arc::new(PointerQualifiers {
-                    object_class: q.object_class.clone(),
-                    object_type_evidence: q.object_type_evidence.clone(),
-                })
-            }),
-        })
     }
 }
 
@@ -367,7 +315,7 @@ impl KernelTerm {
 
     /// Keep the producer structure when existing object-argument checking
     /// refines only its complete pointer payload.
-    pub(crate) fn refined_pointer_argument(&self, pointer: &OldPointer) -> Self {
+    pub(crate) fn refined_pointer_argument(&self, pointer: &Pointer) -> Self {
         if let KernelTermNode::ArrayReference {
             point,
             pointer: source,
@@ -380,7 +328,7 @@ impl KernelTerm {
                 *element_type,
             );
         }
-        self.with_pointer_payload(SharedPointer::import(pointer))
+        self.with_pointer_payload(pointer.shared().clone())
     }
 
     pub(crate) fn with_pointer_payload(&self, value: SharedPointer) -> Self {
@@ -418,89 +366,118 @@ impl KernelTerm {
 mod tests {
     use super::*;
     use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-    pub(super) fn complete_source() -> OldPointer {
+    pub(super) fn complete_source() -> Pointer {
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        OldPointer {
-            address: Address::symbolic(Variable(1000001)),
-            provenance: Arc::new(Address::symbolic(Variable(1000002))),
-            array: ArrayObject::from_parts(
+        let mut pointer = Pointer::from_parts(
+            Address::symbolic(Variable(1000001)),
+            Address::symbolic(Variable(1000002)),
+            ArrayObject::from_parts(
                 true,
-                Some(SubobjectBounds {
-                    start: Address::symbolic(Variable(1000004)),
-                    width: OldMachineTerm::Variable(Variable(1000005)),
-                }),
-                Some(Arc::new(Address::symbolic(Variable(1000003)))),
+                Some(SubobjectBounds::new(
+                    Address::symbolic(Variable(1000004)),
+                    OldMachineTerm::Variable(Variable(1000005)),
+                )),
+                Some(Address::symbolic(Variable(1000003))),
             ),
-            program_type: ProgramType::VoidPointer,
-            qualifiers: Some(Arc::new(PointerQualifiers {
-                object_class: Some(class.clone()),
-                object_type_evidence: Some(ObjectTypeEvidence::parameter(class, 3, 1000006, false)),
-            })),
-        }
-    }
-    #[test]
-    fn complete_payload_preserves_addresses_qualifiers_and_unchecked_evidence() {
-        let source = complete_source();
-        let shared = SharedPointer::import(&source);
-        let output = shared.export().unwrap();
-        assert_eq!(source, output);
-        // Logical equality omits these; compare the exact payload separately.
-        assert_eq!(output.bounds_owner(), source.bounds_owner());
-        let before = source.qualifiers.as_ref().unwrap();
-        let after = output.qualifiers.as_ref().unwrap();
-        assert_eq!(before.object_class, after.object_class);
-        assert_eq!(before.object_type_evidence, after.object_type_evidence);
-        assert!(!after.object_type_evidence.as_ref().unwrap().checked);
-        assert!(
-            before
-                .object_type_evidence
-                .as_ref()
-                .unwrap()
-                .premises
-                .ptr_eq(&after.object_type_evidence.as_ref().unwrap().premises)
+            ProgramType::VoidPointer,
         );
+        let qualifiers = pointer.qualifiers_mut();
+        qualifiers.object_class = Some(class.clone());
+        qualifiers.object_type_evidence =
+            Some(ObjectTypeEvidence::parameter(class, 3, 1000006, false));
+        pointer
+    }
+    /// A written pointer is its kernel handle: the kernel reads the same
+    /// payload, and exporting it back shares the handle.
+    #[test]
+    fn complete_payload_is_the_written_pointers_handle() {
+        let source = complete_source();
+        let shared = source.shared().clone();
+        let output = shared.export().unwrap();
+        assert_eq!(output.shared(), source.shared());
+        assert_eq!(source, output);
+        assert!(shared.node().array.owner().is_some());
+        let bounds = shared.node().array.bounds().unwrap();
+        assert_eq!(
+            bounds.width(),
+            &KernelTerm::retained_machine_operand(
+                MachineIntegerType::Int32,
+                MachineOperandView::Old(&OldMachineTerm::Variable(Variable(1000005))),
+            )
+        );
+        let qualifiers = shared.node().qualifiers.as_ref().unwrap();
+        assert_eq!(
+            qualifiers.object_class,
+            Some(CAccessClass::Scalar(CScalarClass::Int))
+        );
+        assert!(!qualifiers.object_type_evidence.as_ref().unwrap().checked);
         assert_eq!(shared.clone(), shared);
+    }
+    /// A kernel-built handle with a kernel width exports its written width.
+    #[test]
+    fn kernel_bounds_export_their_written_width() {
+        let source = complete_source();
+        let value = source.shared().node();
+        let start = value.array.bounds().unwrap().start.clone();
+        let width = KernelTerm::retained_machine_operand(
+            MachineIntegerType::Int32,
+            MachineOperandView::Old(&OldMachineTerm::constant(4)),
+        );
+        let built = SharedPointer::new(KernelPointer {
+            array: KernelArrayObject::from_parts(
+                true,
+                Some(KernelSubobjectBounds::new(start, width)),
+                None,
+            ),
+            ..value.clone()
+        });
+        let written = built.export().unwrap();
+        assert_eq!(written.shared(), &built);
+        assert_eq!(
+            written.bounds().unwrap().width(),
+            &OldMachineTerm::constant(4)
+        );
+        assert_eq!(
+            written,
+            source.with_bounds(Some(SubobjectBounds::constant(
+                Address::symbolic(Variable(1000004)),
+                4
+            )))
+        );
     }
     #[test]
     fn logical_equality_does_not_coalesce_distinct_complete_payloads() {
         let a = complete_source();
         let mut b = a.clone();
-        let q = Arc::make_mut(b.qualifiers.as_mut().unwrap());
+        let q = b.qualifiers_mut();
         q.object_class = Some(CAccessClass::Scalar(CScalarClass::Char));
         q.object_type_evidence = None;
         b = b.with_bounds_owner(None); // Ignored by logical equality when bounds_known.
         assert_eq!(a, b);
-        let left = SharedPointer::import(&a);
-        let right = SharedPointer::import(&b);
+        let left = a.shared().clone();
+        let right = b.shared().clone();
         assert_ne!(left, right);
         assert_eq!(
-            left.export().unwrap().qualifiers.unwrap().object_class,
+            a.qualifiers().unwrap().object_class,
             Some(CAccessClass::Scalar(CScalarClass::Int))
         );
-        assert!(
-            right
-                .export()
-                .unwrap()
-                .qualifiers
-                .unwrap()
-                .object_class
-                .is_some()
-        );
+        assert!(b.qualifiers().unwrap().object_class.is_some());
         assert!(left.node().array.owner().is_some());
         assert!(right.node().array.owner().is_none());
     }
     #[test]
     fn source_payload_names_do_not_inherit_logical_equality_omissions() {
         let source = complete_source();
-        let retained = SharedPointer::import(&source);
-        assert!(retained.same_source_payload(&SharedPointer::import(&source)));
+        let retained = source.shared().clone();
+        assert!(retained.same_source_payload(source.shared()));
         let mut variants = Vec::new();
         variants.push(source.clone().with_bounds_owner(None));
         let mut changed = source.clone();
-        Arc::make_mut(changed.qualifiers.as_mut().unwrap()).object_class = None;
+        changed.qualifiers_mut().object_class = None;
         variants.push(changed);
         let mut changed = source.clone();
-        Arc::make_mut(changed.qualifiers.as_mut().unwrap())
+        changed
+            .qualifiers_mut()
             .object_type_evidence
             .as_mut()
             .unwrap()
@@ -511,18 +488,36 @@ mod tests {
                 source, different,
                 "these distinctions are not logical pointer identity"
             );
-            assert!(!retained.same_source_payload(&SharedPointer::import(&different)));
+            assert!(!retained.same_source_payload(different.shared()));
         }
+        // Changing a copy never changes the handle it was copied from.
+        assert!(retained.same_source_payload(source.shared()));
+        assert!(
+            retained
+                .node()
+                .qualifiers
+                .as_ref()
+                .unwrap()
+                .object_class
+                .is_some()
+        );
     }
 
     #[test]
-    fn absent_and_present_default_qualifiers_round_trip_exactly() {
-        let mut source = complete_source();
-        for qualifiers in [None, Some(Arc::new(PointerQualifiers::default()))] {
-            source.qualifiers = qualifiers;
-            let output = SharedPointer::import(&source).export().unwrap();
-            assert_eq!(output.qualifiers.is_some(), source.qualifiers.is_some());
-        }
+    fn absent_and_present_default_qualifiers_stay_distinct() {
+        let source = complete_source();
+        let absent = Pointer::from_parts(
+            source.address().clone(),
+            source.provenance().clone(),
+            source.array_object().clone(),
+            source.program_type(),
+        );
+        let mut present = absent.clone();
+        present.qualifiers_mut();
+        assert!(absent.qualifiers().is_none());
+        assert!(present.qualifiers().is_some());
+        assert!(!absent.shared().same_source_payload(present.shared()));
+        assert_eq!(absent, present);
     }
 }
 #[cfg(test)]

@@ -34,7 +34,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         // through unrelated symbolic names after the observation might alias
         // either half of the pointer and cannot preserve its complete value.
         let cached = logical_pointer_read(&memory, &address, &empty);
-        let cached_value = OldPointer::from_read(
+        let cached_value = Pointer::from_read(
             cached.clone(),
             ProgramType::Int64Pointer,
             &intern_memory_ref(&memory),
@@ -52,7 +52,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         context = context.assume_condition(
             OldConditionTerm::pointer_equal(
                 cached_value.clone(),
-                OldPointer::new(model.clone(), ProgramType::Int64Pointer),
+                Pointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
             true,
         );
@@ -114,7 +114,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         let missing_alias = empty.clone().assume_condition(
             OldConditionTerm::pointer_equal(
                 cached_value.clone(),
-                OldPointer::new(model.clone(), ProgramType::Int64Pointer),
+                Pointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
             true,
         );
@@ -1542,8 +1542,8 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
             .store(slot_b.clone(), second);
         let context = PureFactContext::new().assume_condition(
             OldConditionTerm::pointer_equal(
-                OldPointer::new(a, ProgramType::Int32Pointer),
-                OldPointer::new(b, ProgramType::Int32Pointer),
+                Pointer::new(a, ProgramType::Int32Pointer),
+                Pointer::new(b, ProgramType::Int32Pointer),
             ),
             true,
         );
@@ -1693,12 +1693,8 @@ fn querying_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
         if size == 16 {
             // A full pointer premise still supplies the selected member bounds.
             let root = Address::symbolic(Variable(989_704));
-            let bounded = OldPointer::new(root.clone(), ProgramType::Int32Pointer).with_bounds(
-                Some(SubobjectBounds {
-                    start: root,
-                    width: 4u32.into(),
-                }),
-            );
+            let bounded = Pointer::new(root.clone(), ProgramType::Int32Pointer)
+                .with_bounds(Some(SubobjectBounds::new(root, 4u32.into())));
             let related = context.assume_condition(
                 OldConditionTerm::pointer_equal(pointer.clone(), bounded.clone()),
                 true,
@@ -1831,16 +1827,12 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
         for i in 0..selected {
             let slot = Address::symbolic(Variable(983_000 + i));
             let target = Address::symbolic(Variable(984_000 + i));
-            let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
-                Some(SubobjectBounds {
-                    start: target,
-                    width: 4u32.into(),
-                }),
-            );
+            let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+                .with_bounds(Some(SubobjectBounds::new(target, 4u32.into())));
             let memory = intern_memory_ref(
                 &SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
             );
-            let read = OldPointer::new(
+            let read = Pointer::new(
                 Address::version_read(&memory, &slot),
                 ProgramType::Int32Pointer,
             );
@@ -2397,7 +2389,7 @@ fn differently_typed_reads_of_one_pointer_cell_intern_one_load() {
             let version = point
                 .ordinary_typed_version(&cell, ty)
                 .expect("entry version of the pointer cell");
-            OldPointer::from_point_read(version, ty, &cell)
+            Pointer::from_point_read(version, ty, &cell)
         };
         let before = registry_len();
         let first = read(TYPES[0]);
@@ -2439,8 +2431,8 @@ fn a_pointer_store_answers_loads_of_its_category_at_any_pointee_type() {
     let callback = slot_cell(8);
     let sibling = slot_cell(16);
     let target = Address::symbolic(Variable(983_001));
-    let pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer);
-    let function = OldPointer::new(
+    let pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer);
+    let function = Pointer::new(
         Address::function("callback_target"),
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     );
@@ -2468,7 +2460,7 @@ fn a_pointer_store_answers_loads_of_its_category_at_any_pointee_type() {
                 .indexed_typed_version(&object, ProgramType::UInt8Pointer)
                 .expect("the int32 * store answers a uint8 * load");
             assert_eq!(byte_view.read_version_id(), written.program_point_id());
-            let read = OldPointer::from_point_read(byte_view, ProgramType::UInt8Pointer, &object);
+            let read = Pointer::from_point_read(byte_view, ProgramType::UInt8Pointer, &object);
             let stored = crate::kernel::eval::pointer_read_over_write_program_value(read.address())
                 .expect("the stored pointer");
             assert_eq!(stored.address(), &target);

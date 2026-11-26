@@ -400,7 +400,7 @@ mod tests {
     #[test]
     fn algebraic_constructor_match_keys_keep_native_field_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(999620)),
             ProgramType::Int32Pointer,
         );
@@ -424,7 +424,7 @@ mod tests {
                 arms: vec![AlgebraicBitvectorMatchArm {
                     variant: "Arm".into(),
                     bindings: vec![
-                        AlgebraicValue::Program(ProgramValue::Pointer(OldPointer::new(
+                        AlgebraicValue::Program(ProgramValue::Pointer(Pointer::new(
                             Address::symbolic(Variable(999623)),
                             ProgramType::Int32Pointer,
                         ))),
@@ -474,11 +474,14 @@ mod tests {
             KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Bool)]);
         assert_ne!(root, KernelTermImport::default().algebraic(&other));
 
-        let pointer = OldPointer::new(
-            Address::symbolic(Variable(999600)),
-            ProgramType::Int32Pointer,
-        );
-        let values = [pointer.clone(), pointer].map(|pointer| {
+        // Two producers of one logical pointer: distinct handles.
+        let pointer = || {
+            Pointer::new(
+                Address::symbolic(Variable(999600)),
+                ProgramType::Int32Pointer,
+            )
+        };
+        let values = [pointer(), pointer()].map(|pointer| {
             let mut value = KernelMatch::test_scrutinee(vec![
                 AlgebraicValueType::Integer,
                 AlgebraicValueType::Program(ProgramType::Int32Pointer),

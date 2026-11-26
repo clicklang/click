@@ -39,10 +39,12 @@ pub(in crate::kernel) use machine::wrap_exact as wrap_exact_machine_value;
 use num_bigint::BigInt;
 pub use offsets::AddressOffset;
 pub(crate) use offsets::{KernelAddressOffset, OffsetTree, OffsetView, SharedAddressOffset};
+pub(in crate::kernel) use pointers::ArrayObject;
 pub(crate) use pointers::{
     KernelArrayObject, KernelMemberArray, KernelSubobjectBounds, PointerRewrite,
     PointerRewriteError, SharedPointer,
 };
+pub use pointers::{Pointer, SubobjectBounds};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
 
@@ -1842,7 +1844,7 @@ impl KernelTermImport {
                     KernelTerm::program_parameter(self.algebraic(value))
                 }
                 ProgramValue::Pointer(value) => {
-                    KernelTerm::shared_pointer_value(SharedPointer::import(value))
+                    KernelTerm::shared_pointer_value(value.shared().clone())
                 }
                 // Void has no expression. A complete pointer/integer record is
                 // the package-7 value descriptor, not its numeric projection.
@@ -1855,7 +1857,7 @@ impl KernelTermImport {
             } => match pointer {
                 ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
                     point.clone(),
-                    KernelTerm::shared_pointer_value(SharedPointer::import(pointer)),
+                    KernelTerm::shared_pointer_value(pointer.shared().clone()),
                     *element_type,
                 ),
                 // Preserve the existing refusal boundary for a non-pointer
@@ -2238,7 +2240,7 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = OldPointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_declared_object_class(Some(
             crate::kernel::effective_type::CAccessClass::Scalar(
                 crate::kernel::effective_type::CScalarClass::Int,
@@ -2270,11 +2272,10 @@ mod tests {
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
         let base = Address::symbolic(Variable(75));
-        let root = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
-        let member = root.clone().with_bounds(Some(SubobjectBounds {
-            start: base,
-            width: 4u32.into(),
-        }));
+        let root = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+        let member = root
+            .clone()
+            .with_bounds(Some(SubobjectBounds::new(base, 4u32.into())));
         let mut import = KernelTermImport::default();
         let root = PureFunctionArgument::Value(ProgramValue::Pointer(root));
         let member = PureFunctionArgument::Value(ProgramValue::Pointer(member));

@@ -308,11 +308,8 @@ fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
             ],
         );
         let domain = Address::symbolic(Variable(986_246));
-        let value = OldPointer::new(domain.offset_by_bytes(4), ty).with_bounds(Some(
-            crate::kernel::SubobjectBounds {
-                start: domain,
-                width: 16u32.into(),
-            },
+        let value = Pointer::new(domain.offset_by_bytes(4), ty).with_bounds(Some(
+            crate::kernel::SubobjectBounds::new(domain, 16u32.into()),
         ));
         let initial = ExecutionState::new().with_memory(
             SymbolicMemory::new().with_block(target.base.clone(), layout.size_bytes()),
@@ -392,11 +389,8 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
     assert_eq!(*address, source_member);
 
     let domain = Address::symbolic(Variable(986_247));
-    let value = OldPointer::new(domain.offset_by_bytes(4), pointer_type).with_bounds(Some(
-        crate::kernel::SubobjectBounds {
-            start: domain,
-            width: 16u32.into(),
-        },
+    let value = Pointer::new(domain.offset_by_bytes(4), pointer_type).with_bounds(Some(
+        crate::kernel::SubobjectBounds::new(domain, 16u32.into()),
     ));
     let stored = initial.clone().with_memory(
         initial
@@ -479,7 +473,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = SymbolicMemory::local_pointer("retained_copy_source");
     let target = SymbolicMemory::local_pointer("retained_copy_target");
-    let pointer = OldPointer::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(1027800)),
         ProgramType::Int32Pointer,
     );
@@ -489,7 +483,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
             "copied".into(),
             vec![],
         ),
-        crate::kernel::SharedPointer::import(&pointer),
+        pointer.shared().clone(),
     );
     let memory = SymbolicMemory::new()
         .with_block(source.base.clone(), 8)

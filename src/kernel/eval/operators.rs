@@ -171,7 +171,7 @@ fn add_arithmetic_branch_fact(
     add_condition_path_fact(facts, assumptions, condition, value)
 }
 
-fn pointer_types_compatible(left: &OldPointer, right: &OldPointer) -> bool {
+fn pointer_types_compatible(left: &Pointer, right: &Pointer) -> bool {
     left.program_type()
         .pointer_types_compatible(right.program_type())
         || left.is_null()
@@ -1911,7 +1911,7 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
 /// pointer forms (C11 6.3.2.3p7): the allocation's bytes, not the member the
 /// pointer was formed from. Linux's `container_of` steps back from a member
 /// this way.
-fn gnu_void_arithmetic_operand(pointer: OldPointer) -> OldPointer {
+fn gnu_void_arithmetic_operand(pointer: Pointer) -> Pointer {
     if pointer.program_type() == ProgramType::VoidPointer {
         pointer.with_root_bounds()
     } else {
@@ -1920,7 +1920,7 @@ fn gnu_void_arithmetic_operand(pointer: OldPointer) -> OldPointer {
 }
 
 pub(super) fn pointer_value_step_width(
-    pointer: &OldPointer,
+    pointer: &Pointer,
     expression_width: Option<u32>,
 ) -> Option<u32> {
     // GNU C treats void-pointer arithmetic as byte arithmetic. Other
@@ -2181,8 +2181,8 @@ fn uint32_order_condition(
 
 fn apply_same_allocation_pointer_operation(
     state: &ExecutionState,
-    left: OldPointer,
-    right: OldPointer,
+    left: Pointer,
+    right: Pointer,
     context: &'static str,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -2235,8 +2235,8 @@ fn apply_same_allocation_pointer_operation(
 /// two provenances, or else the path continues with the fact and the
 /// undefined-behavior path records its negation. Both raise as written.
 fn apply_same_allocation_guard(
-    left: &OldPointer,
-    right: &OldPointer,
+    left: &Pointer,
+    right: &Pointer,
     context: &'static str,
     mut facts: ExecutionFacts,
     mut obligations: Vec<ProofObligation>,
@@ -2272,7 +2272,7 @@ fn apply_same_allocation_guard(
 
 fn apply_pointer_object_nonnull_guard(
     state: &ExecutionState,
-    pointer: &OldPointer,
+    pointer: &Pointer,
     is_null: OldConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -2373,33 +2373,33 @@ enum SameArray {
 /// width), or both the whole object. When either side's bounds are not known
 /// (a pointer from a parameter or loaded from memory), its array is the
 /// object the same-object check already compares.
-fn pointer_subtraction_same_array(left: &OldPointer, right: &OldPointer) -> SameArray {
+fn pointer_subtraction_same_array(left: &Pointer, right: &Pointer) -> SameArray {
     if !left.bounds_are_known() || !right.bounds_are_known() {
         return SameArray::Holds;
     }
     match (left.bounds(), right.bounds()) {
         (None, None) => SameArray::Holds,
         (Some(left), Some(right)) => {
-            if left.width.as_const().is_some()
-                && right.width.as_const().is_some()
-                && left.width != right.width
+            if left.width().as_const().is_some()
+                && right.width().as_const().is_some()
+                && left.width() != right.width()
             {
                 return SameArray::Refuted;
             }
-            if left.start == right.start && left.width == right.width {
+            if left.start() == right.start() && left.width() == right.width() {
                 return SameArray::Holds;
             }
-            if left.width != right.width {
+            if left.width() != right.width() {
                 // Symbolic widths that are not the same term: the bounds are
                 // the same subobject only if both parts agree.
                 return SameArray::When(vec![
-                    OldConditionTerm::address_equal(left.start.clone(), right.start.clone()),
-                    OldConditionTerm::equal(left.width.clone(), right.width.clone()),
+                    OldConditionTerm::address_equal(left.start().clone(), right.start().clone()),
+                    OldConditionTerm::equal(left.width().clone(), right.width().clone()),
                 ]);
             }
             SameArray::When(vec![OldConditionTerm::address_equal(
-                left.start.clone(),
-                right.start.clone(),
+                left.start().clone(),
+                right.start().clone(),
             )])
         }
         // A member subobject and a whole object are different arrays.
@@ -2479,8 +2479,8 @@ pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> 
 /// The kernel fact `same_allocation(left, right)`: one predicate, which
 /// raises to itself (`design/pointer-model.md`).
 pub(in crate::kernel) fn same_allocation_proposition(
-    left: &OldPointer,
-    right: &OldPointer,
+    left: &Pointer,
+    right: &Pointer,
 ) -> Proposition {
     Proposition::Predicate {
         name: crate::kernel::SAME_ALLOCATION_PREDICATE_NAME.to_string(),
@@ -2945,7 +2945,7 @@ pub(in crate::kernel) fn pointer_index_term(
 
 fn pointer_offset_by_elements_paths(
     state: &ExecutionState,
-    pointer: OldPointer,
+    pointer: Pointer,
     offset: OldMachineTerm,
     byte_width: u32,
     unsigned: bool,
@@ -3194,7 +3194,7 @@ fn byte_product_no_overflow(
 
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     state: &ExecutionState,
-    pointer: OldPointer,
+    pointer: Pointer,
     bytes: impl Into<crate::kernel::LayoutOffset>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -4165,7 +4165,7 @@ fn pointer_index_from_base(
 /// `const` pointee qualifier, as formation always has; the write-through-const
 /// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
-    pointer: OldPointer,
+    pointer: Pointer,
     guards: Vec<PointerFormationGuard>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -6368,7 +6368,7 @@ fn subobject_bounds_guards(
     bounds: &SubobjectBounds,
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
-    let offset = shared_pointer_byte_offset_from_base(pointer, &bounds.start)?;
+    let offset = shared_pointer_byte_offset_from_base(pointer, &bounds.start())?;
     Some(vec![
         PointerFormationGuard {
             condition: crate::kernel::assumptions::index_comparison(
@@ -6387,7 +6387,7 @@ fn subobject_bounds_guards(
                     MachineOperandView::Old(&OldMachineTerm::constant(bytes)),
                 )
                 .operand_view(),
-                MachineOperandView::Old(&bounds.width),
+                MachineOperandView::Old(&bounds.width()),
             ),
             value: true,
         },
@@ -6415,9 +6415,9 @@ fn subobject_bounds_proven(
     assumptions_with_path_context(assumptions, facts, obligations).pointer_access_in_range(
         pointer,
         bytes,
-        &bounds.start,
+        &bounds.start(),
         &OldMachineTerm::constant(0),
-        &bounds.width,
+        &bounds.width(),
         1,
     )
 }
@@ -6465,21 +6465,21 @@ fn symbolic_field_within_bounds(
     extent: crate::kernel::AccessExtent,
 ) -> bool {
     // A whole value of abstract type at the start of bounds of its size.
-    if *pointer == bounds.start
+    if pointer == bounds.start()
         && let crate::kernel::AccessExtent::Object(parameter) = extent
     {
-        return bounds.width == parameter.size_term();
+        return *bounds.width() == parameter.size_term();
     }
     let Some((rest, layout, field)) =
         crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)
     else {
         return false;
     };
-    pointer.base == bounds.start.base
-        && rest.map_or(bounds.start.offset.as_const() == Some(0), |rest| {
-            *rest == bounds.start.offset
+    pointer.base == bounds.start().base
+        && rest.map_or(bounds.start().offset.as_const() == Some(0), |rest| {
+            *rest == bounds.start().offset
         })
-        && bounds.width == layout.size_term()
+        && *bounds.width() == layout.size_term()
         && layout.within_field(field, extent)
 }
 
@@ -6493,9 +6493,9 @@ fn subobject_access_refusal_of(
     // this diagnostic only after checking has refused the access.
     let required = Proposition::ResourceContains {
         parent: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
-            bounds.start.clone(),
+            bounds.start().clone(),
             0u32.into(),
-            bounds.width.clone(),
+            bounds.width().clone(),
             1,
         ))),
         child: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
@@ -6563,7 +6563,7 @@ pub(in crate::kernel) fn effective_type_refusal_of(
 /// subobject bounds. A result whose position cannot be related to the
 /// bounds is refused outright.
 fn subobject_formation_guards(
-    value: &OldPointer,
+    value: &Pointer,
     result: &Address,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
@@ -6619,7 +6619,7 @@ fn subobject_formation_guards(
 /// its address. A pointer that already designates a subobject may select
 /// only a part of it.
 pub(in crate::kernel) fn subobject_paths(
-    pointer: OldPointer,
+    pointer: Pointer,
     width: u32,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -6908,14 +6908,14 @@ mod pointer_domain_tests {
     #[test]
     fn arithmetic_and_access_check_admitted_bounds_without_adopting_them() {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = OldPointer::new(
+        let value = Pointer::new(
             Address::symbolic(Variable(1013100)),
             ProgramType::Int32Pointer,
         );
-        let selected = value.clone().with_bounds(Some(SubobjectBounds {
-            start: value.address().clone(),
-            width: 4u32.into(),
-        }));
+        let selected = value.clone().with_bounds(Some(SubobjectBounds::new(
+            value.address().clone(),
+            4u32.into(),
+        )));
         let facts = PureFactContext::new().assume_condition(
             OldConditionTerm::pointer_equal(value.clone(), selected.clone()),
             true,

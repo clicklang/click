@@ -16,8 +16,8 @@ use crate::kernel::{
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
-    KernelTermNode, MachineIntegerType, OldPointer, ProgramType, ProgramValue,
-    PureFunctionArgument, SharedIntegerTerm, SharedMemory, Sort, Term,
+    KernelTermNode, MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
+    SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{OffsetTree, OffsetView};
@@ -139,7 +139,7 @@ impl MemoryErasedPointerKey {
     }
 }
 
-fn memory_erased_pointer_key(pointer: &OldPointer) -> MemoryErasedPointerKey {
+fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
     MemoryErasedPointerKey {
         address: memory_erased_address_key(pointer.address()),
         provenance: memory_erased_address_key(pointer.provenance()),
@@ -150,8 +150,8 @@ fn memory_erased_pointer_key(pointer: &OldPointer) -> MemoryErasedPointerKey {
         },
         bounds: pointer.bounds().map(|bounds| {
             (
-                memory_erased_address_key(&bounds.start),
-                memory_erased_bitvector_key(&bounds.width),
+                memory_erased_address_key(&bounds.start()),
+                memory_erased_bitvector_key(&bounds.width()),
             )
         }),
         bounds_known: pointer.bounds_are_known(),
@@ -2425,12 +2425,12 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             bounds: match pointer.bounds() {
                 Some(bounds) => Some((
                     alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                        &bounds.start,
+                        &bounds.start(),
                         bindings,
                         next_binder,
                     )?,
                     alpha_machine_key::<ALLOW_LOADS>(
-                        crate::kernel::MachineOperandView::Old(&bounds.width),
+                        crate::kernel::MachineOperandView::Old(&bounds.width()),
                         bindings,
                         next_binder,
                     )?,
@@ -5426,7 +5426,7 @@ mod complete_pointer_condition_tests {
     #[test]
     fn complete_pointer_conditions_keep_state_domain_keys() {
         let _session = crate::kernel::VerificationSession::enter();
-        let a = OldPointer::new(
+        let a = Pointer::new(
             Address::symbolic(Variable(998620)),
             ProgramType::Int32Pointer,
         );
@@ -5434,10 +5434,10 @@ mod complete_pointer_condition_tests {
         for value in [
             a.clone(),
             a.clone().with_root_bounds(),
-            a.clone().with_bounds(Some(SubobjectBounds {
-                start: Address::null(),
-                width: OldMachineTerm::constant(4),
-            })),
+            a.clone().with_bounds(Some(SubobjectBounds::new(
+                Address::null(),
+                OldMachineTerm::constant(4),
+            ))),
         ] {
             let source = OldConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
             let root = crate::kernel::KernelTermImport::default().condition(&source);

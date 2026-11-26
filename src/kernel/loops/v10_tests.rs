@@ -76,11 +76,11 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
 #[test]
 fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let field = OldPointer::new(
+    let field = Pointer::new(
         Address::symbolic(Variable(916_200)),
         ProgramType::Int32Pointer,
     );
-    let data = OldPointer::new(
+    let data = Pointer::new(
         Address::symbolic(Variable(916_201)),
         ProgramType::Int32Pointer,
     );

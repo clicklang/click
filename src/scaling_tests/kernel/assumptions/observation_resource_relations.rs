@@ -43,7 +43,7 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
             LoadKind::Int32,
             4,
         );
-        let pointer = OldPointer::new(address.clone(), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(address.clone(), ProgramType::Int32Pointer);
         let source = relation(OldMachineTerm::Variable(name), pointer.clone(), false);
         let goal = relation(
             OldMachineTerm::read_named(

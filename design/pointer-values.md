@@ -4,8 +4,9 @@ Status: superseded by `design/pointer-model.md` before implementation. Its decis
 
 ## Problem
 
-A kernel pointer (`OldPointer` in `src/kernel/primitives.rs`) is more than an
-address. Its identity (`OldPointer::identity`) is:
+A kernel pointer (`Pointer`, the written view of `KernelPointer`, in
+`src/kernel/primitives/kernel_term/pointers/written.rs`) is more than an
+address. Its identity (`Pointer::identity`) is:
 
 | Part | Meaning |
 | --- | --- |
@@ -119,7 +120,7 @@ pointer<int32 *>(address: &s->second, provenance: &s->first + 1)
   identity part. `address(pointer<T>(address: a, ..)) == address(a)` always
   holds. `same_object(pointer<T>(address: a, provenance: q), q)` holds when
   `q` has object provenance.
-- **Kernel Click.** Lowering produces exactly the `OldPointer` with those parts.
+- **Kernel Click.** Lowering produces exactly the `Pointer` with those parts.
   It reads no facts, so it is fact-stable
   (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`).
 

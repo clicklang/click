@@ -4501,10 +4501,10 @@ mod numeric_address_annotation_tests {
                 .proposition(),
             &equality,
         );
-        let left = OldPointer::new(p.clone(), ProgramType::Int32Pointer)
+        let left = Pointer::new(p.clone(), ProgramType::Int32Pointer)
             .with_bounds(Some(SubobjectBounds::constant(p, 4)));
         for width in [4, 8] {
-            let right = OldPointer::new(q.clone(), ProgramType::Int32Pointer)
+            let right = Pointer::new(q.clone(), ProgramType::Int32Pointer)
                 .with_bounds(Some(SubobjectBounds::constant(q.clone(), width)));
             assert!(!facts.assumptions().pointer_provenance_match(&left, &right));
         }

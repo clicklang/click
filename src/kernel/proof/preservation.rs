@@ -1020,7 +1020,7 @@ mod tests {
         };
         **left = (**left)
             .clone()
-            .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(8_399_099))));
+            .with_provenance(Address::symbolic(Variable(8_399_099)));
         wrong_domain.result = Proposition::condition_is(condition, true);
         assert!(
             wrong_domain

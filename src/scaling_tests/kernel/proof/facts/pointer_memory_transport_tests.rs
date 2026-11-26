@@ -9,14 +9,14 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
-        OldPointer::from_read(
+        Pointer::from_read(
             Address::loaded_value(memory, &cell),
             ProgramType::Int32Pointer,
             memory,
             &cell,
         )
     };
-    let rhs = OldPointer::new(
+    let rhs = Pointer::new(
         Address::symbolic(Variable(991_100)),
         ProgramType::Int32Pointer,
     );
@@ -28,7 +28,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     };
     let source = fact(pointer(&before));
     let target = fact(pointer(&after));
-    let origin = Arc::new(Address::symbolic(Variable(991_101)));
+    let origin = Address::symbolic(Variable(991_101));
     let forged = fact(
         pointer(&after)
             .with_provenance(origin.clone())
@@ -52,10 +52,10 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
             ));
         }
         for index in 0..size {
-            let selected = pointer(&before).with_bounds(Some(SubobjectBounds {
-                start: cell.clone(),
-                width: OldMachineTerm::constant(u32::try_from(index + 1).unwrap()),
-            }));
+            let selected = pointer(&before).with_bounds(Some(SubobjectBounds::new(
+                cell.clone(),
+                OldMachineTerm::constant(u32::try_from(index + 1).unwrap()),
+            )));
             facts = facts.with_fact(Proposition::condition_is(
                 OldConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
                 true,

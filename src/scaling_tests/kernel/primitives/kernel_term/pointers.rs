@@ -16,29 +16,27 @@ fn complete_pointer_import_retains_persistent_evidence_without_traversal() {
                 true,
             ));
         }
-        Arc::make_mut(source.qualifiers.as_mut().unwrap()).object_type_evidence = Some(evidence);
+        source.qualifiers_mut().object_type_evidence = Some(evidence);
         let ((shared, output), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let shared = SharedPointer::import(&source);
+            let shared = source.shared().clone();
             let output = shared.export().unwrap();
             (shared, output)
         });
         assert!(work <= 100, "size={size}, work={work}");
         let before = source
-            .qualifiers
-            .as_ref()
+            .qualifiers()
             .unwrap()
             .object_type_evidence
             .as_ref()
             .unwrap();
         let after = output
-            .qualifiers
-            .as_ref()
+            .qualifiers()
             .unwrap()
             .object_type_evidence
             .as_ref()
             .unwrap();
         assert!(before.premises.ptr_eq(&after.premises));
-        let named = SharedPointer::import(&source);
+        let named = source.shared().clone();
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
             named.same_source_payload(&shared)
         });
@@ -63,7 +61,7 @@ fn complete_pointer_import_retains_persistent_evidence_without_traversal() {
 #[test]
 fn complete_pointer_construction_retains_shared_bounds_width_dags() {
     for size in [16, 64, 256] {
-        let source = SharedPointer::import(&complete_source());
+        let source = complete_source().into_shared();
         let mut value = source.node().clone();
         let mut width =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1000011));
@@ -74,14 +72,14 @@ fn complete_pointer_construction_retains_shared_bounds_width_dags() {
                 [width.clone(), width],
             );
         }
-        let mut bounds = value.array.bounds().unwrap().clone();
-        bounds.width = width.clone();
+        let start = value.array.bounds().unwrap().start.clone();
+        let bounds = KernelSubobjectBounds::new(start, width.clone());
         value.array = value.array.with_bounds(Some(bounds));
         let exports = KernelTermExport::machine_export_count();
         let (shared, work) =
             crate::instrumentation::measure_deterministic_work(|| SharedPointer::new(value));
         assert_eq!(work, 1);
-        assert_eq!(&shared.node().array.bounds().unwrap().width, &width);
+        assert_eq!(shared.node().array.bounds().unwrap().width(), &width);
         let equivalent = SharedPointer::new(shared.node().clone());
         let mut different = shared.node().clone();
         different.array = different.array.with_owner(None);
@@ -107,7 +105,7 @@ fn pointer_storage_keys_hash_the_shared_bounds_width_once() {
 
     for depth in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = SharedPointer::import(&complete_source());
+        let source = complete_source().into_shared();
         let mut value = source.node().clone();
         let mut width =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1000012));
@@ -118,8 +116,8 @@ fn pointer_storage_keys_hash_the_shared_bounds_width_once() {
                 [width.clone(), width],
             );
         }
-        let mut bounds = value.array.bounds().unwrap().clone();
-        bounds.width = width;
+        let start = value.array.bounds().unwrap().start.clone();
+        let bounds = KernelSubobjectBounds::new(start, width);
         value.array = value.array.with_bounds(Some(bounds));
         let root = KernelTerm::shared_pointer_value(SharedPointer::new(value));
         let exports = KernelTermExport::machine_export_count();

@@ -127,7 +127,7 @@ specs may also write the Rust type. The other four are spelled as in Rust.
 
 1. **Consumers of a pointer that assume it is thin.** Arithmetic,
    dereference, range formation and integer casts must take the thin part
-   or refuse a wide pointer. There are 203 `OldPointer::new` sites in 72
+   or refuse a wide pointer. There are 203 `Pointer::new` sites in 72
    files outside tests. The type distinguishes wide pointers, so a
    consumer that does not handle one refuses it rather than misreading it.
    The inventory is [below](#inventory-of-pointer-consumers).
@@ -145,10 +145,11 @@ behaviour in the large evaluation files (`eval/memory_loads.rs`,
 `eval/expression.rs`, `kernel/spec.rs`, `surface/proof/surface_synthesis.rs`)
 is still to be confirmed.
 
-**Choke points.** `OldPointer`'s fields are private
-(`primitives.rs:2945-3300`), so metadata flows through a few places:
+**Choke points.** `Pointer` is the written view of the kernel payload
+`KernelPointer`, whose fields only `kernel_term/pointers.rs` and its
+`written.rs` reach, so metadata flows through a few places:
 
-- `identity()` (`primitives.rs:3313-3373`) for equality, hash and order,
+- `Pointer::identity()` (`kernel_term/pointers/written.rs`) for equality, hash and order,
   plus `same_provenance_as` and `retained_nonaddress_metadata`;
 - `map_pointers`, `try_map_pointers` and `map_addresses` (`:3256-3283`)
   for substitution and transport, which today map addresses only and need
@@ -243,7 +244,7 @@ one value.
 
 ### Kernel facts the options rely on
 
-- `OldPointer` (`src/kernel/primitives.rs:2657`) is already a compound: an
+- `Pointer` (`src/kernel/primitives/kernel_term/pointers/written.rs`) is already a compound: an
   address, its provenance and its array object. Its identity, hash and
   order use those components, not its type.
 - The e-graph decomposes pointer equality by component:

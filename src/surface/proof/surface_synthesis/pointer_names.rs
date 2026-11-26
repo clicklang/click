@@ -14,7 +14,7 @@ enum Value {
 impl NamedValue {
     pub(super) fn new((value, name): (ProgramValue, SurfaceBinder)) -> Self {
         let value = match value {
-            ProgramValue::Pointer(pointer) => Value::Pointer(SharedPointer::import(&pointer)),
+            ProgramValue::Pointer(pointer) => Value::Pointer(pointer.shared().clone()),
             value => Value::Other(value),
         };
         Self { value, name }
@@ -34,7 +34,7 @@ pub(super) fn shared_name(value: &SharedPointer) -> Option<SurfaceBinder> {
 
 pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
     if let ProgramValue::Pointer(pointer) = value {
-        return shared_name(&SharedPointer::import(pointer));
+        return shared_name(pointer.shared());
     }
     PROOF_LOCAL_VALUE_NAMES.with(|names| {
         names.borrow().iter().find_map(|named| match &named.value {
@@ -47,9 +47,9 @@ pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{KernelTermExport, OldPointer, SubobjectBounds, VerificationSession};
+    use crate::kernel::{KernelTermExport, Pointer, SubobjectBounds, VerificationSession};
 
-    fn check_names(values: Vec<(&str, OldPointer)>) {
+    fn check_names(values: Vec<(&str, Pointer)>) {
         let state = ExecutionState::new();
         let bindings: ProgramValueBindings = values
             .iter()
@@ -61,7 +61,7 @@ mod tests {
             .collect();
         with_proof_local_value_names(names, || {
             for (name, pointer) in values {
-                let retained = SharedPointer::import(&pointer);
+                let retained = pointer.shared().clone();
                 let read_root = crate::kernel::KernelTerm::retained_pointer_read(&pointer);
                 let root = crate::kernel::KernelTermImport::default().argument(
                     &crate::kernel::PureFunctionArgument::Value(ProgramValue::Pointer(
@@ -166,7 +166,7 @@ mod tests {
                 let ProgramValue::Pointer(restored) = value else {
                     panic!("pointer name")
                 };
-                assert!(retained.same_source_payload(&SharedPointer::import(&restored)));
+                assert!(retained.same_source_payload(restored.shared()));
             }
         });
     }
@@ -174,16 +174,16 @@ mod tests {
     #[test]
     fn shared_pointer_equality_uses_the_names_of_distinct_same_address_operands() {
         let _session = VerificationSession::enter();
-        let left = OldPointer::new(
+        let left = Pointer::new(
             Address::symbolic(Variable(1018020)),
             ProgramType::Int32Pointer,
         );
-        let right = left.clone().with_bounds(Some(SubobjectBounds {
-            start: left.address().clone(),
-            width: crate::kernel::OldMachineTerm::uint64_constant(4),
-        }));
+        let right = left.clone().with_bounds(Some(SubobjectBounds::new(
+            left.address().clone(),
+            crate::kernel::OldMachineTerm::uint64_constant(4),
+        )));
         let root = crate::kernel::KernelTerm::pointer_equal_raw(
-            [&left, &right].map(SharedPointer::import),
+            [&left, &right].map(|pointer| pointer.shared().clone()),
         );
         let bindings = ProgramValueBindings::from([
             ("p".into(), ProgramValue::Pointer(left)),
@@ -225,7 +225,7 @@ mod tests {
             KernelTermImport, MachineIntegerType, OldMachineTerm, PureFunctionArgument,
         };
         let _session = VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1024950)),
             ProgramType::Int32Pointer,
         );
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn pointer_proof_names_preserve_qualifiers_instead_of_address_equality() {
         let _session = VerificationSession::enter();
-        let plain = OldPointer::new(
+        let plain = Pointer::new(
             Address::symbolic(Variable(1015000)),
             ProgramType::Int32Pointer,
         );
@@ -300,15 +300,15 @@ mod tests {
         );
         let pointer = Address::symbolic(Variable(1015010));
         let make = |memory| {
-            OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
-                SubobjectBounds {
-                    start: pointer.clone(),
-                    width: OldMachineTerm::read_named(
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+                SubobjectBounds::new(
+                    pointer.clone(),
+                    OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         crate::kernel::LoadKind::Int32,
                     ),
-                },
+                ),
             ))
         };
         check_names(vec![("a_before", make(before)), ("z_after", make(after))]);
@@ -349,11 +349,11 @@ mod tests {
     #[test]
     fn pointer_proof_name_scopes_restore_exact_payload_bindings() {
         let _session = VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1015020)),
             ProgramType::Int32Pointer,
         );
-        let shared = SharedPointer::import(&pointer);
+        let shared = pointer.shared().clone();
         let value = ProgramValue::Pointer(pointer);
         assert!(shared_name(&shared).is_none());
         with_proof_local_value_names(vec![(value.clone(), "outer".into())], || {

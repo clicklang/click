@@ -173,7 +173,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
             name: format!("file{index}::state"),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
-                    crate::kernel::OldPointer::new(pointer.clone(), ProgramType::UInt64Pointer),
+                    crate::kernel::Pointer::new(pointer.clone(), ProgramType::UInt64Pointer),
                 ))),
                 value_type: ProgramType::UInt64,
                 volatile: false,

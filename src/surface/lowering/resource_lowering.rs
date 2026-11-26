@@ -86,7 +86,7 @@ const INPUT_VARIABLE_BASE: u64 = 1 << 34;
 const INPUT_VARIABLE_CEILING: u64 = 1 << 40;
 thread_local! {
     static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
-    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::OldPointer)>> = Default::default();
+    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::Pointer)>> = Default::default();
     static INPUT_VARIABLE_OWNERS: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize)>> = Default::default();
     static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
 }
@@ -195,7 +195,7 @@ fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickErr
 // before the function is verified. No unrelated function inputs are searched.
 pub(in crate::surface) fn input_pointer_parameter(
     scope: u64,
-    pointer: &crate::kernel::OldPointer,
+    pointer: &crate::kernel::Pointer,
 ) -> Option<usize> {
     let variable = input_pointer_identity(pointer)?;
     crate::instrumentation::record_deterministic_work(1);
@@ -206,7 +206,7 @@ pub(in crate::surface) fn input_pointer_parameter(
     })
 }
 
-fn input_pointer_identity(pointer: &crate::kernel::OldPointer) -> Option<Variable> {
+fn input_pointer_identity(pointer: &crate::kernel::Pointer) -> Option<Variable> {
     if pointer.address().base != AddressBase::ExternalArgument {
         return None;
     }

@@ -55,10 +55,11 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
         Vec::new(),
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
-    let payload = SharedPointer::import(&OldPointer::new(
+    let payload = Pointer::new(
         Address::symbolic(Variable(1027300)),
         ProgramType::Int32Pointer,
-    ));
+    )
+    .into_shared();
     for unrelated in [0, 128, 512] {
         let mut state = ExecutionState::new();
         for n in 0..unrelated {

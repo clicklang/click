@@ -8211,7 +8211,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::OldPointer) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::Pointer) -> Result<u32, String> {
         if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
             pointer.object_class()
         {

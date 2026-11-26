@@ -1344,16 +1344,16 @@ mod tests {
             },
             OldConditionTerm::PointerEqual(
                 Box::new(
-                    OldPointer::new(
+                    Pointer::new(
                         Address::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
-                    .with_bounds(Some(SubobjectBounds {
-                        start: Address::symbolic(Variable(970_011)),
-                        width: OldMachineTerm::Variable(Variable(970_012)),
-                    })),
+                    .with_bounds(Some(SubobjectBounds::new(
+                        Address::symbolic(Variable(970_011)),
+                        OldMachineTerm::Variable(Variable(970_012)),
+                    ))),
                 ),
-                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
             OldConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::raw_add(
@@ -1770,7 +1770,7 @@ mod mixed_argument_tests {
                 ],
             },
         };
-        let pointer = ProgramValue::Pointer(OldPointer::new(
+        let pointer = ProgramValue::Pointer(Pointer::new(
             Address::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));

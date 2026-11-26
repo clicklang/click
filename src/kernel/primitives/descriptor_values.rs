@@ -774,7 +774,7 @@ mod protocol_value_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
 
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(998991)),
             ProgramType::Int32Pointer,
         );
@@ -784,7 +784,7 @@ mod protocol_value_tests {
                 .with_declared_object_class(Some(CAccessClass::Scalar(class)))
         });
         let [left, right] = pointers.each_ref().map(|pointer| {
-            let root = KernelTerm::shared_pointer_value(SharedPointer::import(pointer));
+            let root = KernelTerm::shared_pointer_value(pointer.shared().clone());
             StoredProgramValue::from(ExecutionValue::Shared(root))
         });
         assert_ne!(left.root(), right.root());
@@ -1093,7 +1093,7 @@ mod term_payload_contract_tests {
         state.finish()
     }
 
-    fn algebraic(pointer: OldPointer) -> AlgebraicTerm {
+    fn algebraic(pointer: Pointer) -> AlgebraicTerm {
         let mut value = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(
             ProgramType::Int32Pointer,
         )]);
@@ -1139,7 +1139,7 @@ mod term_payload_contract_tests {
             assert_eq!(hash(&retained), hash(value));
             assert_eq!(stored.into_native_compat(), *value);
         }
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(991701)),
             ProgramType::Int32Pointer,
         );
