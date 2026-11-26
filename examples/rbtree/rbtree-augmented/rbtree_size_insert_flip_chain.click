@@ -885,7 +885,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(path.model, at(iteration,state.context));
                                         rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
                                         rewrite(at(iteration,state.chain), SizedFlipChain::Root);
-                                        unfold(sized_flip_context(SizedFlipChain::Root)); normalize();
+                                        unfold(sized_flip_context(SizedFlipChain::Root)); close();
                                     }
                                     have parent == 0 by {
                                         rewrite(parent, above);
@@ -942,7 +942,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(path.model, at(iteration,state.context));
                                         rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
                                         rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
-                                        unfold(sized_flip_context(SizedFlipChain::Stop(ctx))); normalize();
+                                        unfold(sized_flip_context(SizedFlipChain::Stop(ctx))); close();
                                     }
                                     have sized_flip_black_boundary(ctx) == 1 by {
                                         unfold(sized_flip_allowed(SizedFlipChain::Stop(ctx)));
@@ -999,7 +999,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
                                                 unfold(sized_flip_result(SizedFlipChain::Stop(ctx), at(iteration,state.model)));
                                                 rewrite(focus.model, at(iteration,state.model));
-                                                rewrite(path.model, SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); normalize();
+                                                rewrite(path.model, SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); close();
                                             }
                                             have above == sized_context_parent(SizedContext::Left(a, gp, color, cached, sibling, up), 0) by {
                                                 rewrite(above, parent);
@@ -1058,7 +1058,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
                                                 unfold(sized_flip_result(SizedFlipChain::Stop(ctx), at(iteration,state.model)));
                                                 rewrite(focus.model, at(iteration,state.model));
-                                                rewrite(path.model, SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); normalize();
+                                                rewrite(path.model, SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); close();
                                             }
                                             have above == sized_context_parent(SizedContext::Right(a, gp, color, cached, sibling, up), 0) by {
                                                 rewrite(above, parent);
