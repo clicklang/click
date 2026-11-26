@@ -21,7 +21,7 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     have separate(memory(this->fee), memory(other.size)) by close();
     step();
     have separate(region(0).footprint, at(region(0).entry, memory(other.size))) by {
-        normalize() using { at(region(0).entry, separate(memory(this->fee), memory(other.size))); };
+        close() using { at(region(0).entry, separate(memory(this->fee), memory(other.size))); };
     }
     have at(region(0).exit, other.size) == at(region(0).entry, other.size) by close();
     have to_integer(this->size) + to_integer(other.size) <= 2147483647 by close() using {
@@ -30,6 +30,14 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     have to_integer(this->size) + to_integer(other.size) >= -2147483648 by close() using {
         -1073741824 <= this->size; -1073741824 <= other.size;
     };
+    step();
+    have separate(memory((&this->size)[0..1]), memory(other.fee)) by { close(); }
+    have separate(region(1).footprint, at(region(1).entry, memory(other.fee))) by {
+        close() using { separate(memory((&this->size)[0..1]), memory(other.fee)); };
+    }
+    have at(region(1).exit, other.fee) == at(region(1).entry, other.fee) by {
+        preserve(at(region(1).entry, memory(other.fee)), region(1));
+    }
     step_until(function.exit);
     close();
 }

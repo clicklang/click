@@ -2035,7 +2035,7 @@ int32 caller() {
         close();
     }
     have result == at(statement(2).entry, program::result) by {
-        normalize();
+        close();
     }
     close();
 }
@@ -2134,7 +2134,7 @@ int32 f(int32* p) {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have reflexive(p) == 1 by { unfold(reflexive(p)); normalize(); }
+    have reflexive(p) == 1 by { unfold(reflexive(p)); close(); }
     let out = fold(Cell(p), { tag: 1 });
     close();
 }

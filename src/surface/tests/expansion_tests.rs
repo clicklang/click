@@ -6026,7 +6026,7 @@ int32 nested(int32 x) {
     step_until(function.exit);
     have 0 <= to_integer(x) + 1 by close() using { 0 <= to_integer(x); };
     have 0 <= to_integer(x) + 2 by close() using { 0 <= to_integer(x); };
-    have x == x by normalize();
+    have x == x by close();
     close();
 }
 "#;
@@ -6047,7 +6047,7 @@ int32 nested(int32 x) {
         "{}",
         expanded.source
     );
-    assert!(expanded.source.contains("have x == x by normalize();"));
+    assert!(expanded.source.contains("have x == x by close();"));
     verify_c_sources(&expanded.source, &sources)
         .expect("the batch's structured certificates must parse and recheck");
 }
@@ -6067,7 +6067,7 @@ theorem one_tactic_proofs(x: int32) {
     ensures 0 <= x and x == x by close();
     ensures 0 <= x by apply(helper(x));
     ensures 0 <= x and x == x by {
-        have x == x by normalize();
+        have x == x by close();
         have 0 <= x by apply(helper(x));
         have 0 <= x and x == x by close();
         close();
@@ -6107,10 +6107,7 @@ theorem one_tactic_proofs(x: int32) {
         expanded.contains("ensures 0 <= x by {\n        apply(helper(x));"),
         "{expanded}"
     );
-    assert!(
-        expanded.contains("have x == x by normalize();"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("have x == x by close();"), "{expanded}");
 }
 
 /// The inventory `click audit` walks is the same whether a one-tactic proof

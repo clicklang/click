@@ -1805,7 +1805,7 @@ void update(int32* p, int32 x) {
     ensures exists (z: int32) { z == x } by {
         step_until(function.exit);
         witness(x);
-        normalize();
+        close();
     }
 }
 void parent(int32* p) {
