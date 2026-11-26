@@ -81,11 +81,11 @@ theorem adler_native_four_lane_a_prefix_step_u64(bytes: uint8[], n: uint64, a_se
    rewrite(adler_spec_a(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed)), adler_spec_a_u64(bytes, n, a_seed));
    close();
   }
-  have to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32) by normalize() using { to_integer(v1) == to_integer((bytes + n)[1] as int32); };
-  have to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32) by normalize() using { to_integer(v2) == to_integer((bytes + n)[2] as int32); };
-  have to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32) by normalize() using { to_integer(v3) == to_integer((bytes + n)[3] as int32); };
+  have to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32) by close() using { to_integer(v1) == to_integer((bytes + n)[1] as int32); };
+  have to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32) by close() using { to_integer(v2) == to_integer((bytes + n)[2] as int32); };
+  have to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32) by close() using { to_integer(v3) == to_integer((bytes + n)[3] as int32); };
   apply(adler_native_four_lane_a_prefix_step(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed), a, a0, a1, a2, a3, v0, v1, v2, v3));
-  have to_integer(0 + 4) == to_integer(4u64) by normalize();
+  have to_integer(0 + 4) == to_integer(4u64) by close();
   apply(adler_spec_a_bridge(bytes + n, 0 + 4, 4u64, adler_spec_a_u64(bytes, n, a_seed)));
   have to_integer(n) + to_integer(4u64) <= 18446744073709551615 by close() using { to_integer(n) + 4 <= 18446744073709551615; };
   apply(adler_spec_a_concat_u64(bytes, n, 4u64, a_seed));
@@ -131,11 +131,11 @@ theorem adler_native_deferred_b_prefix_step_u64(bytes: uint8[], n: uint64, pos: 
    rewrite(adler_spec_b(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed)), adler_spec_b_u64(bytes, n, a_seed, b_seed));
    close();
   }
-  have to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32) by normalize() using { to_integer(v1) == to_integer((bytes + n)[1] as int32); };
-  have to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32) by normalize() using { to_integer(v2) == to_integer((bytes + n)[2] as int32); };
-  have to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32) by normalize() using { to_integer(v3) == to_integer((bytes + n)[3] as int32); };
+  have to_integer(v1) == to_integer((bytes + n)[0 + 1] as int32) by close() using { to_integer(v1) == to_integer((bytes + n)[1] as int32); };
+  have to_integer(v2) == to_integer((bytes + n)[0 + 2] as int32) by close() using { to_integer(v2) == to_integer((bytes + n)[2] as int32); };
+  have to_integer(v3) == to_integer((bytes + n)[0 + 3] as int32) by close() using { to_integer(v3) == to_integer((bytes + n)[3] as int32); };
   apply(adler_native_deferred_b_prefix_step(bytes + n, 0, pos, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed), a, b, a0, a1, a2, a3, b0, b1, b2, b3, v0, v1, v2, v3));
-  have to_integer(0 + 4) == to_integer(4u64) by normalize();
+  have to_integer(0 + 4) == to_integer(4u64) by close();
   apply(adler_spec_b_bridge(bytes + n, 0 + 4, 4u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed)));
   have to_integer(n) + to_integer(4u64) <= 18446744073709551615 by close() using { to_integer(n) + 4 <= 18446744073709551615; };
   apply(adler_spec_b_concat_u64(bytes, n, 4u64, a_seed, b_seed));
