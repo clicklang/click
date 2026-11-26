@@ -314,24 +314,28 @@ impl AffineOffset {
 
     /// Normalize the explicit offset in one iterative traversal. Building a
     /// fresh form at every Add node would copy a growing prefix quadratically.
-    pub(in crate::kernel) fn of(offset: &OldAddressOffset) -> Option<Self> {
+    pub(in crate::kernel) fn of<T: crate::kernel::OffsetTree>(offset: &T) -> Option<Self> {
         let mut result = Self::default();
         let mut pending = vec![offset];
         while let Some(offset) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            match offset {
-                OldAddressOffset::Constant(value) => {
-                    result.constant = result.constant.checked_add(i128::from(*value))?;
+            use crate::kernel::OffsetView;
+            match offset.view() {
+                OffsetView::Constant(value) => {
+                    result.constant = result.constant.checked_add(i128::from(value))?;
                 }
-                OldAddressOffset::Variable(variable) => {
-                    result.add_atom(OffsetAtom::Variable(*variable), 1)?;
+                OffsetView::Variable(variable) => {
+                    result.add_atom(OffsetAtom::Variable(variable), 1)?;
                 }
-                OldAddressOffset::Add(left, right) => {
+                OffsetView::Add(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                OldAddressOffset::Int32Scaled { value, byte_width } => {
-                    let width = i128::from(*byte_width);
+                OffsetView::Int32Scaled {
+                    index: value,
+                    byte_width,
+                } => {
+                    let width = i128::from(byte_width);
                     if let Some(value) = value.operand_view().word32_constant() {
                         result.constant = result
                             .constant
@@ -346,13 +350,13 @@ impl AffineOffset {
                         )?;
                     }
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index: value,
                     byte_width,
                     unsigned,
                 } => {
-                    let width = i128::from(*byte_width);
-                    let constant = if *unsigned {
+                    let width = i128::from(byte_width);
+                    let constant = if unsigned {
                         value.operand_view().uint64_constant().map(i128::from)
                     } else {
                         value.operand_view().int64_constant().map(i128::from)
@@ -363,14 +367,14 @@ impl AffineOffset {
                         result.add_atom(
                             OffsetAtom::Int64 {
                                 value: MachineAtom::from_operand(
-                                    if *unsigned {
+                                    if unsigned {
                                         crate::kernel::MachineIntegerType::UInt64
                                     } else {
                                         crate::kernel::MachineIntegerType::Int64
                                     },
                                     value.operand_view(),
                                 ),
-                                unsigned: *unsigned,
+                                unsigned,
                             },
                             width,
                         )?;
