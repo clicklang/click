@@ -106,7 +106,13 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { close(); }
 
     step_until(call(1).entry);
-    step();
+    step() by {
+        have at(function.entry, 1u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
+            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            close();
+        }
+        close();
+    }
     have call(1).result == old(std_span_data(dst)) + 1 by { close(); }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[0..4])) by { close(); }
     step();
@@ -178,7 +184,13 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { close(); }
 
     step_until(call(2).entry);
-    step();
+    step() by {
+        have at(function.entry, 2u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
+            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            close();
+        }
+        close();
+    }
     have call(2).result == old(std_span_data(dst)) + 2 by { close(); }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[0..4])) by { close(); }
     step();
@@ -262,7 +274,13 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { close(); }
 
     step_until(call(3).entry);
-    step();
+    step() by {
+        have at(function.entry, 3u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
+            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            close();
+        }
+        close();
+    }
     have call(3).result == old(std_span_data(dst)) + 3 by { close(); }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[0..4])) by { close(); }
     step();
@@ -515,7 +533,17 @@ void FixtureReader::read(std::span<std::byte> dst) {
         preserve(memory(this->remaining), region(12));
     }
     have at(region(12).exit, this->remaining) == old(this->remaining) by { close(); }
-    have this->remaining == old(this->remaining) - 4u64 by { close(); }
+    have this->remaining == ((old(this->remaining) - 4u64) as uint64) by {
+        rewrite(old(this->remaining), at(region(12).exit, this->remaining));
+        close();
+    }
+    have to_integer((old(this->remaining) - 4u64) as uint64) == to_integer(old(this->remaining)) - to_integer(4u64) by {
+        apply(click::integer::uint64_subtract_to_integer(old(this->remaining), 4u64));
+    }
+    have this->remaining == old(this->remaining) - 4u64 by {
+        rewrite(this->remaining, ((old(this->remaining) - 4u64) as uint64));
+        close();
+    }
     close();
 }
 
@@ -552,7 +580,6 @@ uint32 ser_readdata32<FixtureReader>(struct FixtureReader& s) {
             rewrite(at(call(2).entry, std_span_data(call(2).parameter(dst))), ((&obj) as (uint8 *)));
             close();
         }
-        requires separate(memory(at(call(2).entry, load<uint8*>(region(4).result))[0..4]), memory(s.data[0..4])) by { close(); }
     }
     have std_span_data(call(2).parameter(dst)) == ((&obj) as (uint8 *)) by { close(); }
     have ((&obj) as (uint8 *))[0] == 120u8 by { close(); }

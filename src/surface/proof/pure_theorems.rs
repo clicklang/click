@@ -3577,9 +3577,9 @@ mod tests {
         }
         let changed_goal = "theorem changed_goal(n: int32) { requires n >= 0; ensures n >= 0 implies n >= 0 by { intro() { let ih = induct(n); close(); } } }";
         let error = crate::surface::verify_c_sources(changed_goal, &[])
-            .expect_err("induction still targets the original theorem goal");
+            .expect_err("a subproof cannot introduce its own induction goal");
         assert!(
-            error.message().contains("original theorem goal"),
+            error.message().contains("only one top-level `induct` tactic"),
             "{}",
             error.report()
         );
