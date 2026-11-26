@@ -163,3 +163,47 @@ fn growing_offset_guards_reuse_observation_normalization() {
         assert!(work <= 55 * size + 100, "size={size}, work={work}");
     }
 }
+
+/// Ordering two offsets that share a prefix handle does not walk the prefix,
+/// and ordering two chains that differ only at their innermost operand walks
+/// the left spine once.
+#[test]
+fn offset_order_skips_shared_prefixes_and_walks_distinct_chains_once() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let constant = |k| KernelAddressOffset::Constant(k).into_shared().unwrap();
+        let variable = |id| {
+            KernelAddressOffset::Variable(Variable(id))
+                .into_shared()
+                .unwrap()
+        };
+        let mut prefix = variable(998000);
+        for i in 0..size {
+            prefix = SharedAddressOffset::add(prefix, variable(998001 + i as u64));
+        }
+        let left = KernelAddressOffset::Add([prefix.clone(), constant(1)])
+            .into_shared()
+            .unwrap();
+        let right = KernelAddressOffset::Add([prefix, constant(2)])
+            .into_shared()
+            .unwrap();
+        let (order, work) = crate::instrumentation::measure_deterministic_work(|| left.cmp(&right));
+        assert_eq!(order, std::cmp::Ordering::Less);
+        assert!(work <= 4, "size={size}, shared-prefix work={work}");
+
+        let chain = |first| {
+            let mut root = variable(first);
+            for i in 0..size {
+                let step = KernelAddressOffset::Add([root, variable(999000 + i as u64)]);
+                root = step.into_shared().unwrap();
+            }
+            KernelAddressOffset::Add([root, constant(0)])
+                .into_shared()
+                .unwrap()
+        };
+        let (a, b) = (chain(997000), chain(997001));
+        let (order, work) = crate::instrumentation::measure_deterministic_work(|| a.cmp(&b));
+        assert_eq!(order, std::cmp::Ordering::Less);
+        assert!(work <= 2 * size + 8, "size={size}, chain work={work}");
+    }
+}

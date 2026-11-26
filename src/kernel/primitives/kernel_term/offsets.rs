@@ -28,7 +28,7 @@ struct OffsetData {
     node: KernelAddressOffset,
     constant: Option<i64>,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 enum OffsetIdentity {
     Constant(i64),
     Interned(u64),
@@ -49,6 +49,93 @@ impl Eq for SharedAddressOffset {}
 impl Hash for SharedAddressOffset {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
+    }
+}
+/// The structural order of [`OldAddressOffset`]'s derived `Ord`, so a handle
+/// can key an ordered map in place of an old offset without changing its
+/// iteration or range order: by variant (constant, variable, sum, 32-bit and
+/// 64-bit scaled index), then constants by value, variables by identity, a
+/// sum by its left then its right operand, and a scaled index by its retained
+/// machine index ([`SharedMachineIntegerTerm`]'s order), byte width and
+/// interpretation. An imported offset therefore compares exactly as the old
+/// value it came from.
+///
+/// Two handles can be structurally equal yet different handles: an index's
+/// retained carrier may keep annotations the old value's equality ignores.
+/// Those fall back to handle identity, so `Ordering::Equal` holds exactly
+/// when the handles are equal, as `Ord` requires of `Eq`.
+///
+/// The walk is iterative and stops at the first shared or ordered pair, so
+/// comparing two handles that share a subtree does not walk it.
+impl Ord for SharedAddressOffset {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        fn rank(node: &KernelAddressOffset) -> u8 {
+            match node {
+                KernelAddressOffset::Constant(_) => 0,
+                KernelAddressOffset::Variable(_) => 1,
+                KernelAddressOffset::Add(_) => 2,
+                KernelAddressOffset::Int32Scaled { .. } => 3,
+                KernelAddressOffset::Int64Scaled { .. } => 4,
+            }
+        }
+        if self == other {
+            return Ordering::Equal;
+        }
+        let mut pending = vec![(self, other)];
+        while let Some((left, right)) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if left == right {
+                continue;
+            }
+            let order = match (left.node(), right.node()) {
+                (KernelAddressOffset::Constant(a), KernelAddressOffset::Constant(b)) => a.cmp(b),
+                (KernelAddressOffset::Variable(a), KernelAddressOffset::Variable(b)) => a.cmp(b),
+                (KernelAddressOffset::Add([a, b]), KernelAddressOffset::Add([c, d])) => {
+                    // Left operand first: pop order is the reverse of push order.
+                    pending.push((b, d));
+                    pending.push((a, c));
+                    Ordering::Equal
+                }
+                (
+                    KernelAddressOffset::Int32Scaled {
+                        value: a,
+                        byte_width: w,
+                    },
+                    KernelAddressOffset::Int32Scaled {
+                        value: b,
+                        byte_width: x,
+                    },
+                ) => Self::exact_index(a)
+                    .cmp(&Self::exact_index(b))
+                    .then(w.cmp(x)),
+                (
+                    KernelAddressOffset::Int64Scaled {
+                        value: a,
+                        byte_width: w,
+                        unsigned: u,
+                    },
+                    KernelAddressOffset::Int64Scaled {
+                        value: b,
+                        byte_width: x,
+                        unsigned: v,
+                    },
+                ) => Self::exact_index(a)
+                    .cmp(&Self::exact_index(b))
+                    .then(w.cmp(x))
+                    .then(u.cmp(v)),
+                (a, b) => rank(a).cmp(&rank(b)),
+            };
+            if order != Ordering::Equal {
+                return order;
+            }
+        }
+        self.0.id.cmp(&other.0.id)
+    }
+}
+impl PartialOrd for SharedAddressOffset {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 #[derive(Default)]
@@ -352,6 +439,98 @@ mod tests {
             assert_eq!(index.ty(), &KernelType::Program(format.program_type()));
             assert_eq!(index, value.shared_operand().unwrap());
         }
+    }
+
+    /// An imported offset orders exactly as the old value it came from, so
+    /// a handle can key an ordered map (and a cell-store range scan) in place
+    /// of an old offset without changing its order.
+    #[test]
+    fn imported_offsets_order_as_their_old_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let constant = OldAddressOffset::Constant;
+        let add = |a: OldAddressOffset, b: OldAddressOffset| {
+            OldAddressOffset::Add(Box::new(a), Box::new(b))
+        };
+        let variable = |id| OldAddressOffset::Variable(Variable(id));
+        let mut values = vec![
+            constant(i64::MIN),
+            constant(-8),
+            constant(0),
+            constant(4),
+            constant(i64::MAX),
+            variable(994101),
+            variable(994102),
+        ];
+        // The cell store's range shapes: a stem plus constants either side.
+        for stem in [variable(994101), variable(994102)] {
+            for k in [-4, 0, 4, 8] {
+                values.push(add(stem.clone(), constant(k)));
+            }
+        }
+        values.push(add(add(variable(994101), constant(4)), constant(4)));
+        values.push(add(variable(994101), add(constant(4), constant(4))));
+        values.push(add(constant(0), variable(994101)));
+        for id in [994103, 994104] {
+            for width in [1, 4, -8] {
+                values.push(OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(id)),
+                    width,
+                ));
+                for unsigned in [false, true] {
+                    values.push(OldAddressOffset::scaled_int64_node(
+                        OldMachineTerm::Variable(Variable(id)),
+                        width,
+                        unsigned,
+                    ));
+                }
+            }
+        }
+        let scaled = values.len();
+        for index in 0..scaled {
+            if matches!(values[index], OldAddressOffset::Int32Scaled { .. }) {
+                values.push(add(variable(994101), values[index].clone()));
+            }
+        }
+        let roots: Vec<_> = values.iter().map(KernelAddressOffset::import).collect();
+        for (a, left) in values.iter().zip(&roots) {
+            for (b, right) in values.iter().zip(&roots) {
+                assert_eq!(left.cmp(right), a.cmp(b), "{a:?} vs {b:?}");
+                assert_eq!(left == right, a == b, "{a:?} vs {b:?}");
+            }
+        }
+        let mut sorted_old = values.clone();
+        sorted_old.sort();
+        let mut sorted_roots = roots.clone();
+        sorted_roots.sort();
+        let exported: Vec<_> = sorted_roots
+            .iter()
+            .map(|root| KernelAddressOffset::export(root).unwrap())
+            .collect();
+        assert_eq!(exported, sorted_old);
+    }
+
+    /// Handles that differ only in an index annotation the old equality
+    /// ignores are ordered apart, consistently with handle equality.
+    #[test]
+    fn annotation_distinct_offsets_order_consistently_with_handle_equality() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let roots: Vec<_> = [CScalarClass::Int, CScalarClass::Char]
+            .into_iter()
+            .map(|class| {
+                KernelAddressOffset::import(&OldAddressOffset::scaled_int64_node(
+                    OldMachineTerm::IntegerAddress(
+                        Box::new(OldAddress::symbolic(Variable(994105))),
+                        crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
+                    ),
+                    1,
+                    true,
+                ))
+            })
+            .collect();
+        assert_ne!(roots[0], roots[1]);
+        assert_ne!(roots[0].cmp(&roots[1]), std::cmp::Ordering::Equal);
+        assert_eq!(roots[0].cmp(&roots[1]), roots[1].cmp(&roots[0]).reverse());
     }
 
     #[test]
