@@ -4119,7 +4119,7 @@ fn terminator_named_locals(terminator: &T) -> Vec<&MirLocalId> {
             ..
         } => {
             let mut named = match function {
-                MirCallee::Direct(_) => Vec::new(),
+                MirCallee::Direct(_) | MirCallee::Binding { .. } => Vec::new(),
                 MirCallee::Pointer { local } => vec![local],
             };
             named.extend(

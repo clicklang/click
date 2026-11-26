@@ -137,9 +137,14 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
                 file.function_blocks()
                     .iter()
                     .map(parser::ImportedCallee::Function)
-                    .chain(file.cpp_bindings.written.iter().map(|(contract, block)| {
-                        parser::ImportedCallee::CppBinding(contract, block)
-                    }))
+                    .chain(
+                        file.binding_contracts
+                            .written
+                            .iter()
+                            .map(|(contract, block)| {
+                                parser::ImportedCallee::ReferenceBinding(contract, block)
+                            }),
+                    )
                     .chain(
                         file.tactic_definitions()
                             .iter()
@@ -477,10 +482,14 @@ fn merge_modules(
         contract_definitions: Vec::new(),
         function_blocks: Vec::new(),
         cpp_virtual_interfaces: BTreeMap::new(),
-        cpp_bindings: CppBindingContracts {
+        binding_contracts: ReferenceBindingContracts {
             conversions: locals
                 .get(entry)
-                .map(|file| file.cpp_bindings.conversions.clone())
+                .map(|file| file.binding_contracts.conversions.clone())
+                .unwrap_or_default(),
+            rust_conversions: locals
+                .get(entry)
+                .map(|file| file.binding_contracts.rust_conversions.clone())
                 .unwrap_or_default(),
             written: BTreeMap::new(),
         },
@@ -568,9 +577,9 @@ fn merge_modules(
         merged
             .function_blocks
             .extend(local.function_blocks.iter().cloned());
-        for (contract, block) in &local.cpp_bindings.written {
+        for (contract, block) in &local.binding_contracts.written {
             if merged
-                .cpp_bindings
+                .binding_contracts
                 .written
                 .insert(contract.clone(), block.clone())
                 .is_some()

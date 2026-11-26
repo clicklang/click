@@ -236,7 +236,7 @@ pub(super) fn execute_program_call_paths(
                 Vec::new(),
             )]);
         };
-        return execute_cpp_external_transition(
+        return execute_external_transition(
             state,
             rule,
             None,
@@ -398,16 +398,16 @@ pub(super) fn execute_program_call_paths(
     call_statement_paths(paths, budget)
 }
 
-pub(super) fn execute_cpp_binding_paths(
+pub(super) fn execute_reference_binding_paths(
     state: &ExecutionState,
-    binding: &CppBindingContract,
+    binding: &ReferenceBindingContract,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let environment = execution_context.environment;
-    let Some(rule) = environment.get_cpp_binding_rule(binding) else {
+    let Some(rule) = environment.get_reference_binding_rule(binding) else {
         return Ok(vec![StatementExecutionPath::new(
             StatementOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
                 "missing contract for {binding}"
@@ -416,7 +416,7 @@ pub(super) fn execute_cpp_binding_paths(
             Vec::new(),
         )]);
     };
-    execute_cpp_external_transition(
+    execute_external_transition(
         state,
         rule,
         Some(binding),
@@ -427,10 +427,10 @@ pub(super) fn execute_cpp_binding_paths(
     )
 }
 
-fn execute_cpp_external_transition(
+fn execute_external_transition(
     state: &ExecutionState,
     rule: &ExternalFunctionRule,
-    binding: Option<&CppBindingContract>,
+    binding: Option<&ReferenceBindingContract>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,

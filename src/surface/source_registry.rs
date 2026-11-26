@@ -423,8 +423,9 @@ impl FunctionSourceRequirements {
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub(in crate::surface) struct FunctionSourceRegistry {
     functions: PersistentMap<String, FunctionSourceRequirements>,
-    cpp_bindings:
-        std::sync::Arc<BTreeMap<crate::kernel::CppBindingContract, FunctionSourceRequirements>>,
+    binding_contracts: std::sync::Arc<
+        BTreeMap<crate::kernel::ReferenceBindingContract, FunctionSourceRequirements>,
+    >,
     claim_entries: ClaimEntryCache,
     program: Option<crate::kernel::ProgramContractBodies>,
 }
@@ -508,17 +509,17 @@ impl FunctionSourceRegistry {
         }
         Ok(Self {
             functions,
-            cpp_bindings: Default::default(),
+            binding_contracts: Default::default(),
             claim_entries: ClaimEntryCache::default(),
             program: None,
         })
     }
 
-    pub(in crate::surface) fn with_cpp_bindings(
+    pub(in crate::surface) fn with_reference_bindings(
         mut self,
-        bindings: &BTreeMap<crate::kernel::CppBindingContract, FunctionBlock>,
+        bindings: &BTreeMap<crate::kernel::ReferenceBindingContract, FunctionBlock>,
     ) -> Self {
-        self.cpp_bindings = std::sync::Arc::new(
+        self.binding_contracts = std::sync::Arc::new(
             bindings
                 .iter()
                 .map(|(key, block)| {
@@ -532,11 +533,11 @@ impl FunctionSourceRegistry {
         self
     }
 
-    pub(in crate::surface) fn cpp_binding(
+    pub(in crate::surface) fn reference_binding(
         &self,
-        key: &crate::kernel::CppBindingContract,
+        key: &crate::kernel::ReferenceBindingContract,
     ) -> Option<&FunctionSourceRequirements> {
-        self.cpp_bindings.get(key)
+        self.binding_contracts.get(key)
     }
 
     /// Register the exact source-to-execution name mapping during preparation,
@@ -560,7 +561,7 @@ impl FunctionSourceRegistry {
     pub(in crate::surface) fn for_contract_proof(&self) -> Self {
         Self {
             functions: self.functions.clone(),
-            cpp_bindings: self.cpp_bindings.clone(),
+            binding_contracts: self.binding_contracts.clone(),
             claim_entries: ClaimEntryCache::default(),
             program: None,
         }

@@ -1794,7 +1794,7 @@ fn statement_calls_visiting(
         // Reference bindings run a checked resource transition, which has no
         // callee body and cannot diverge.
         ProgramStatement::Call {
-            cpp_binding: Some(_),
+            reference_binding: Some(_),
             ..
         } => {}
         // A call through a function pointer reaches whatever the pointer
@@ -5284,7 +5284,7 @@ mod address_escape_tests {
     fn helper_call_receiving_the_address_is_detected() {
         let call = ProgramStatement::Call {
             dispatch: crate::kernel::CallDispatch::Direct,
-            cpp_binding: None,
+            reference_binding: None,
             function_name: "reset".to_string(),
             arguments: vec![address_of("n")],
             callee: None,

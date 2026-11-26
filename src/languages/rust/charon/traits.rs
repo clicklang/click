@@ -585,70 +585,6 @@ impl Adapter<'_> {
             _ => None,
         }
     }
-
-    /// The external functions that turn a crate struct's memory into a crate
-    /// trait's object and back, where a reference to the struct becomes the
-    /// trait's object: `<S as Trait>::__pack` and `<S as Trait>::__unpack`.
-    /// The sidecar's definitions of the trait's functions for the struct give
-    /// them their contracts.
-    pub(super) fn object_coercion_names(
-        &self,
-        record_name: &str,
-        trait_name: &str,
-        shared: bool,
-    ) -> Result<(String, String), String> {
-        let (pack, unpack) = if shared {
-            (
-                super::super::names::SHARED_PACK,
-                super::super::names::SHARED_UNPACK,
-            )
-        } else {
-            ("__pack", "__unpack")
-        };
-        Ok((
-            super::super::names::trait_method_name(record_name, trait_name, pack),
-            super::super::names::trait_method_name(record_name, trait_name, unpack),
-        ))
-    }
-
-    /// The pack and unpack functions of `record` as the object of
-    /// `trait_id`'s instance `instance`.
-    pub(super) fn object_coercion_functions(
-        &self,
-        record: &str,
-        trait_id: a::TraitDeclId,
-        instance: &str,
-    ) -> Result<Vec<out::Function>, String> {
-        let (pack, unpack) = self.object_coercion_names(record, instance, false)?;
-        let (shared_pack, shared_unpack) = self.object_coercion_names(record, instance, true)?;
-        let span = span(self.krate.trait_decls[trait_id].item_meta.span);
-        Ok([pack, unpack, shared_pack, shared_unpack]
-            .into_iter()
-            .map(|name| out::Function {
-                sites: Vec::new(),
-                name,
-                return_type: Type::Unit,
-                parameters: vec![out::Place {
-                    name: MirLocalId::PositionalParameter { position: 0 },
-                    value_type: Type::Reference {
-                        mutable: false,
-                        pointee: Box::new(Type::Record {
-                            name: record.to_string(),
-                        }),
-                    },
-                    span: span.clone(),
-                }],
-                body: vec![],
-                mir: None,
-                external: true,
-                captures: 0,
-                implements: None,
-                instance_of: None,
-                core_method: None,
-                span: span.clone(),
-            })
-            .collect())
-    }
 }
 
 /// The locals of `body` a crate struct reference is unsized into a `&dyn`
@@ -687,6 +623,12 @@ pub(super) fn unsized_objects(
     objects
 }
 
+pub(super) struct ObjectCoercion {
+    pub(super) argument: usize,
+    pub(super) binding: crate::kernel::RustBindingContract,
+    pub(super) value: E,
+}
+
 /// Wraps each call that passes a crate struct reference as a crate trait's
 /// object: before it, the struct's memory becomes the object, and after it,
 /// the object becomes the memory again. Each wrapped call's block keeps its
@@ -694,47 +636,48 @@ pub(super) fn unsized_objects(
 /// itself, and the unpacks, then go where the call went.
 pub(super) fn wrap_object_coercions(
     blocks: &mut Vec<out::MirBlock>,
-    coercions: Vec<(usize, bool, Vec<(usize, String, String, E)>)>,
+    coercions: Vec<(usize, bool, Vec<ObjectCoercion>)>,
 ) -> Result<Vec<out::MirObjectBinding>, String> {
     let mut bindings = Vec::new();
     for (block, method, wraps) in coercions {
         if wraps.is_empty() {
             continue;
         }
-        let T::Call {
-            target,
-            destination,
-            ..
-        } = blocks[block].terminator.clone()
-        else {
+        let T::Call { target, .. } = blocks[block].terminator.clone() else {
             return Err(unsupported("trait object coercion outside a call"));
         };
         let call = std::mem::replace(
             &mut blocks[block].terminator,
             T::Goto { target: usize::MAX },
         );
-        let call_with = |function: &str, argument: &E, target: usize| T::Call {
-            function: function.into(),
-            arguments: vec![argument.clone()],
-            owned_arguments: Vec::new(),
-            destination: destination.clone(),
-            target,
-            result: None,
+        let transfer = |coercion: &ObjectCoercion, release: bool, target| {
+            let mut binding = coercion.binding.clone();
+            if release {
+                binding.kind = binding.kind.release();
+            }
+            T::Call {
+                function: out::MirCallee::Binding { binding },
+                arguments: vec![coercion.value.clone()],
+                owned_arguments: Vec::new(),
+                destination: None,
+                target,
+                result: None,
+            }
         };
         // Blocks in order: packs after the first, the call, the unpacks.
         let first = blocks.len();
         let packs = wraps.len() - 1;
         let call_block = first + packs;
         let first_unpack = call_block + 1;
-        for (index, &(argument, ..)) in wraps.iter().enumerate() {
+        for (index, coercion) in wraps.iter().enumerate() {
             bindings.push(out::MirObjectBinding {
-                argument: argument.checked_sub(usize::from(method)),
+                argument: coercion.argument.checked_sub(usize::from(method)),
                 call: call_block,
                 acquire: if index == 0 { block } else { first + index - 1 },
                 release: first_unpack + index,
             });
         }
-        for (index, (_, pack, _, argument)) in wraps.iter().enumerate().skip(1) {
+        for (index, coercion) in wraps.iter().enumerate().skip(1) {
             let next = if index == wraps.len() - 1 {
                 call_block
             } else {
@@ -743,7 +686,7 @@ pub(super) fn wrap_object_coercions(
             blocks.push(out::MirBlock {
                 terminator_site: None,
                 statements: Vec::new(),
-                terminator: call_with(pack, argument, next),
+                terminator: transfer(coercion, false, next),
             });
         }
         let mut call = call;
@@ -760,7 +703,7 @@ pub(super) fn wrap_object_coercions(
             statements: Vec::new(),
             terminator: call,
         });
-        for (index, (_, _, unpack, argument)) in wraps.iter().enumerate() {
+        for (index, coercion) in wraps.iter().enumerate() {
             let next = if index == wraps.len() - 1 {
                 target
             } else {
@@ -769,13 +712,12 @@ pub(super) fn wrap_object_coercions(
             blocks.push(out::MirBlock {
                 terminator_site: None,
                 statements: Vec::new(),
-                terminator: call_with(unpack, argument, next),
+                terminator: transfer(coercion, true, next),
             });
         }
-        let (_, first_pack, _, argument) = &wraps[0];
-        blocks[block].terminator = call_with(
-            first_pack,
-            argument,
+        blocks[block].terminator = transfer(
+            &wraps[0],
+            false,
             if packs == 0 { call_block } else { first },
         );
     }
@@ -871,7 +813,7 @@ mod tests {
     // or unsized to `&dyn`, becomes the trait's object for the call: the call
     // is between the struct's pack and unpack, which the import declares.
     #[test]
-    fn charon_trait_objects_wrap_coercions_in_pack_and_unpack() {
+    fn charon_trait_objects_wrap_coercions_in_typed_bindings() {
         let artifact: ExtractionArtifact = serde_json::from_slice(OBJECT_ARTIFACT).unwrap();
         let sources = [("shapes.rs".into(), OBJECT_SOURCE.to_vec())]
             .into_iter()
@@ -884,65 +826,84 @@ mod tests {
             Some(&sources),
         )
         .unwrap();
-        let display = |name: &str| super::super::super::names::rust_display_name(name).unwrap();
-        let function = |name: &str| export.functions.iter().find(|f| f.name == name).unwrap();
-        // The calls in block order from the entry, following each call.
-        let path = |name: &str| {
-            let blocks = &function(name).mir.as_ref().unwrap().blocks;
-            let mut block = 0;
-            let mut calls = Vec::new();
-            loop {
-                match &blocks[block].terminator {
-                    T::Call {
-                        function, target, ..
-                    } => {
-                        calls.push(display(function.source_name().unwrap()));
-                        block = *target;
-                    }
-                    T::Goto { target } => block = *target,
-                    _ => break,
-                }
-            }
-            calls
-        };
-        assert_eq!(
-            path("__rust_q_I13_trait_objects_I13_through_bound"),
-            [
-                "<trait_objects::Square as trait_objects::Shape>::__pack_shared",
-                "trait_objects::total",
-                "<trait_objects::Square as trait_objects::Shape>::__unpack_shared",
-            ]
-        );
-        assert_eq!(
-            path("__rust_q_I13_trait_objects_I11_through_dyn"),
-            [
-                "<trait_objects::Circle as trait_objects::Shape>::__pack_shared",
-                "trait_objects::dynamic",
-                "<trait_objects::Circle as trait_objects::Shape>::__unpack_shared",
-            ]
-        );
-        for name in [
-            "<trait_objects::Square as trait_objects::Shape>::__pack",
-            "<trait_objects::Circle as trait_objects::Shape>::__unpack",
-            "<trait_objects::Square as trait_objects::Shape>::__pack_shared",
-            "<trait_objects::Circle as trait_objects::Shape>::__unpack_shared",
-        ] {
-            let coercion = export
+        use crate::kernel::{ReferenceBindingKind, RustBindingContract, RustObjectConversion};
+        let named = |path: &str| {
+            export
                 .functions
                 .iter()
-                .find(|f| {
-                    super::super::super::names::rust_display_name(&f.name).as_deref() == Some(name)
+                .find(|function| {
+                    super::super::super::names::rust_display_name(&function.name).as_deref()
+                        == Some(path)
                 })
-                .unwrap();
-            assert!(coercion.external && coercion.return_type == Type::Unit);
+                .unwrap()
+        };
+        for (caller, record, callee, shared) in [
+            (
+                "trait_objects::through_bound",
+                "Square",
+                "trait_objects::total",
+                true,
+            ),
+            (
+                "trait_objects::through_dyn",
+                "Circle",
+                "trait_objects::dynamic",
+                true,
+            ),
+            (
+                "trait_objects::reset_square",
+                "Square",
+                "trait_objects::reset",
+                false,
+            ),
+        ] {
+            let mir = named(caller).mir.as_ref().unwrap();
+            let [site] = mir.object_bindings.as_slice() else {
+                panic!("expected one binding at {caller}");
+            };
+            let call_at = |index: usize| match &mir.blocks[index].terminator {
+                T::Call { function, .. } => function,
+                _ => panic!("expected a call or binding transition at {caller}"),
+            };
+            let expected = RustBindingContract {
+                conversion: RustObjectConversion {
+                    record: export
+                        .records
+                        .iter()
+                        .find(|r| {
+                            super::super::super::names::rust_display_name(&r.name).as_deref()
+                                == Some(&format!("trait_objects::{record}"))
+                        })
+                        .unwrap()
+                        .name
+                        .clone(),
+                    trait_name: "__rust_q_I13_trait_objects_I5_Shape".into(),
+                },
+                kind: ReferenceBindingKind::acquire(shared),
+            };
             assert_eq!(
-                coercion.parameters[0].name,
-                MirLocalId::PositionalParameter { position: 0 }
+                call_at(site.acquire),
+                &out::MirCallee::Binding {
+                    binding: expected.clone()
+                }
             );
-            assert!(super::super::super::names::is_object_coercion(
-                &coercion.name
-            ));
+            assert_eq!(
+                call_at(site.call).source_name(),
+                Some(named(callee).name.as_str())
+            );
+            assert_eq!(
+                call_at(site.release),
+                &out::MirCallee::Binding {
+                    binding: RustBindingContract {
+                        kind: expected.kind.release(),
+                        ..expected
+                    }
+                }
+            );
         }
+        assert!(export.functions.iter().all(|function| {
+            !function.name.contains("__pack") && !function.name.contains("__unpack")
+        }));
     }
 
     // A generic implementation is imported once, at its type parameter, an

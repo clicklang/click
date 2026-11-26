@@ -813,9 +813,10 @@ pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct CppBindingContracts {
+struct ReferenceBindingContracts {
     conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
-    written: BTreeMap<crate::kernel::CppBindingContract, FunctionBlock>,
+    rust_conversions: std::sync::Arc<BTreeSet<crate::kernel::RustObjectConversion>>,
+    written: BTreeMap<crate::kernel::ReferenceBindingContract, FunctionBlock>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -844,7 +845,7 @@ pub struct ClickFile {
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
     cpp_virtual_interfaces: BTreeMap<String, FunctionBlock>,
-    cpp_bindings: CppBindingContracts,
+    binding_contracts: ReferenceBindingContracts,
     termination_proof: Option<Vec<ProofTactic>>,
     termination_span: Option<(crate::source::SourcePosition, crate::source::SourcePosition)>,
     /// User-defined tactics: contracts over the proof state, each proved once
@@ -7740,7 +7741,7 @@ pub enum SourcePathStep {
     AnyCall(usize),
     /// The checked transfer at a written call argument or receiver.
     Binding {
-        slot: crate::kernel::CppBindingSlot,
+        slot: crate::kernel::ReferenceBindingSlot,
         release: bool,
     },
     /// A loop's own test, after the calls its condition makes: `test()`; a

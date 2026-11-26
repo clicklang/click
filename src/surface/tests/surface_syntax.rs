@@ -5127,13 +5127,29 @@ fn a_rust_trait_function_is_its_object_field() {
         .iter()
         .map(|block| display(block.signature().name()))
         .collect::<Vec<_>>();
-    for name in [
-        "shapes::Shape::area",
-        "<shapes::Square as shapes::Shape>::area",
-        "<shapes::Square as shapes::Shape>::__pack",
-        "<shapes::Square as shapes::Shape>::__unpack",
-    ] {
-        assert!(names.iter().any(|found| found == name), "{name}: {names:?}");
+    assert_eq!(
+        names,
+        [
+            "shapes::Shape::area",
+            "<shapes::Square as shapes::Shape>::area"
+        ]
+    );
+    use crate::kernel::{
+        ReferenceBindingContract, ReferenceBindingKind, RustBindingContract, RustObjectConversion,
+    };
+    let conversion = RustObjectConversion {
+        record: "__rust_q_I6_shapes_I6_Square".into(),
+        trait_name: "__rust_q_I6_shapes_I5_Shape".into(),
+    };
+    for kind in ReferenceBindingKind::ALL {
+        let binding = ReferenceBindingContract::Rust(RustBindingContract {
+            conversion: conversion.clone(),
+            kind,
+        });
+        assert!(
+            file.binding_contracts.written.contains_key(&binding),
+            "{binding}"
+        );
     }
     // The implementation renames `scale` and reads `size(self)` as
     // `self.side`, with the interface's guarantee labeled as the interface's.
@@ -5229,15 +5245,15 @@ fn a_cpp_class_function_is_its_object_field() {
         crate::languages::cpp::names::cpp_display_name(block.signature().name()).as_deref()
             == Some("Shape::object")
     }));
-    use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+    use crate::kernel::{CppBindingContract, CppObjectConversion, ReferenceBindingKind};
     let conversion = CppObjectConversion::new("Square", "Shape");
-    for kind in CppBindingKind::ALL {
-        let binding = CppBindingContract {
+    for kind in ReferenceBindingKind::ALL {
+        let binding = crate::kernel::ReferenceBindingContract::Cpp(CppBindingContract {
             conversion: conversion.clone(),
             kind,
-        };
+        });
         assert!(
-            file.cpp_bindings.written.contains_key(&binding),
+            file.binding_contracts.written.contains_key(&binding),
             "{binding}"
         );
     }

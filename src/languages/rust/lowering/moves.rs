@@ -465,7 +465,7 @@ pub(super) fn lower(
             T::ReturnValue { .. }
                 | T::BoxFree { .. }
                 | T::Call {
-                    function: MirCallee::Direct(_),
+                    function: MirCallee::Direct(_) | MirCallee::Binding { .. },
                     ..
                 }
         )
@@ -567,6 +567,36 @@ pub(super) fn lower(
                     }
                     None => program_skip(),
                 }
+            }
+            T::Call {
+                function: MirCallee::Binding { binding },
+                arguments,
+                ..
+            } => {
+                use crate::kernel::{ReferenceBindingContract, ReferenceBindingOperation};
+                let object = Type::Reference {
+                    mutable: false,
+                    pointee: Box::new(Type::Record {
+                        name: binding.conversion.record.clone(),
+                    }),
+                };
+                let (prefix, arguments) = cx.typed_arguments(vec![object], arguments)?;
+                // Keep the same region boundaries as other direct MIR calls.
+                let prefix = program_seq(prefix, program_skip());
+                binding_call = Some((block, region_count(&prefix)));
+                program_seq(
+                    prefix,
+                    ProgramStatement::Call {
+                        function_name: String::new(),
+                        arguments,
+                        callee: None,
+                        dispatch: crate::kernel::CallDispatch::Direct,
+                        reference_binding: Some(std::sync::Arc::new(ReferenceBindingOperation {
+                            contract: ReferenceBindingContract::Rust(binding.clone()),
+                            source: None,
+                        })),
+                    },
+                )
             }
             T::Call {
                 function: MirCallee::Pointer { local },

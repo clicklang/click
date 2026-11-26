@@ -1719,16 +1719,18 @@ fn coercion_contracts(
     let class = record_of(class, records);
     let class = class.as_str();
     let receiver = BTreeMap::from([("this".to_string(), "object".to_string())]);
-    use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+    use crate::kernel::{CppBindingContract, CppObjectConversion, ReferenceBindingKind};
     let conversion = CppObjectConversion::new(class, target);
     let head = |kind| {
         at(
             position,
             vec![
-                Token::CppBindingContract(std::sync::Arc::new(CppBindingContract {
-                    conversion: conversion.clone(),
-                    kind,
-                })),
+                Token::ReferenceBindingContract(std::sync::Arc::new(
+                    crate::kernel::ReferenceBindingContract::Cpp(CppBindingContract {
+                        conversion: conversion.clone(),
+                        kind,
+                    }),
+                )),
                 ident("extern"),
                 ident("void"),
                 Token::LParen,
@@ -1775,7 +1777,7 @@ fn coercion_contracts(
         }
         tokens
     };
-    let mut tokens = head(CppBindingKind::AcquireMutable);
+    let mut tokens = head(ReferenceBindingKind::AcquireMutable);
     tokens.extend(memory("consumes"));
     tokens.extend(resources("consumes"));
     tokens.extend(instance("produces"));
@@ -1798,7 +1800,7 @@ fn coercion_contracts(
         ));
     }
     tokens.push((Token::RBrace, position.clone()));
-    tokens.extend(head(CppBindingKind::ReleaseMutable));
+    tokens.extend(head(ReferenceBindingKind::ReleaseMutable));
     tokens.extend(instance("consumes"));
     tokens.extend(memory("produces"));
     tokens.extend(resources("produces"));
@@ -1857,7 +1859,7 @@ fn coercion_contracts(
             Token::RBrace,
         ],
     ));
-    tokens.extend(head(CppBindingKind::AcquireShared));
+    tokens.extend(head(ReferenceBindingKind::AcquireShared));
     tokens.extend(at(
         position,
         vec![
@@ -1888,7 +1890,7 @@ fn coercion_contracts(
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
     tokens.push((Token::RBrace, position.clone()));
-    tokens.extend(head(CppBindingKind::ReleaseShared));
+    tokens.extend(head(ReferenceBindingKind::ReleaseShared));
     tokens.extend(lent("consumes", false));
     tokens.extend(instance("consumes"));
     // The resources come back holding the object's state, which a `const`

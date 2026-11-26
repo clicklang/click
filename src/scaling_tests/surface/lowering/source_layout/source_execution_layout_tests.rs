@@ -226,38 +226,38 @@ fn typed_conditional_value_layout_preserves_join_identity_and_scales() {
 #[test]
 fn cpp_reference_binding_lookup_uses_the_call_and_argument_indexes() {
     use crate::kernel::{
-        CppBindingContract, CppBindingKind, CppBindingOperation, CppBindingSlot, CppBindingSource,
-        CppObjectConversion, program_call,
+        CppBindingContract, CppObjectConversion, ReferenceBindingKind, ReferenceBindingOperation,
+        ReferenceBindingSlot, ReferenceBindingSource, program_call,
     };
     use crate::surface::{ProgramPointKind, SourcePathStep};
 
     let steps = [
         SourcePathStep::Call("target".into(), 0),
         SourcePathStep::Binding {
-            slot: CppBindingSlot::Argument(0),
+            slot: ReferenceBindingSlot::Argument(0),
             release: false,
         },
     ];
     let mut counts = Vec::new();
     for count in [8, 32, 128, 512] {
-        let contract = CppBindingContract {
+        let contract = crate::kernel::ReferenceBindingContract::Cpp(CppBindingContract {
             conversion: CppObjectConversion::new("Derived", "Base"),
-            kind: CppBindingKind::AcquireShared,
-        };
+            kind: ReferenceBindingKind::AcquireShared,
+        });
         let transition = |contract, source| ProgramStatement::Call {
             function_name: String::new(),
             arguments: vec![],
             callee: None,
             dispatch: crate::kernel::CallDispatch::Direct,
-            cpp_binding: Some(std::sync::Arc::new(CppBindingOperation {
+            reference_binding: Some(std::sync::Arc::new(ReferenceBindingOperation {
                 contract,
                 source,
             })),
         };
         let acquire = transition(
             contract.clone(),
-            Some(CppBindingSource {
-                slot: CppBindingSlot::Argument(0),
+            Some(ReferenceBindingSource {
+                slot: ReferenceBindingSlot::Argument(0),
                 call_offset: 1,
                 release_offset: 2,
             }),
@@ -286,25 +286,15 @@ fn cpp_reference_binding_lookup_uses_the_call_and_argument_indexes() {
                 layout.reference_binding_target(&[
                     steps[0].clone(),
                     SourcePathStep::Binding {
-                        slot: CppBindingSlot::Argument(0),
+                        slot: ReferenceBindingSlot::Argument(0),
                         release: true,
                     },
                 ]),
             )
         });
         assert_eq!(result.0, Ok(count));
-        assert_eq!(
-            result.1,
-            Ok(&crate::kernel::CallBinderTarget::CppBinding(
-                contract.clone()
-            ))
-        );
-        assert_eq!(
-            result.2,
-            Ok(&crate::kernel::CallBinderTarget::CppBinding(
-                contract.release()
-            ))
-        );
+        assert_eq!(result.1, Ok(&contract));
+        assert_eq!(result.2, Ok(&contract.release()));
         counts.push(work);
     }
     assert!(

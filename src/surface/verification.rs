@@ -595,7 +595,7 @@ fn verify_click_file_theorems_with_environment(
     );
     let function_source_registry = Arc::new(
         FunctionSourceRegistry::from_function_blocks(&combined_external_function_blocks(file)?)?
-            .with_cpp_bindings(&file.cpp_bindings.written),
+            .with_reference_bindings(&file.binding_contracts.written),
     );
     verify_theorem_definitions(
         TheoremEnvironment::with_standard_library(&[])?.with_discovery_library(file)?,
@@ -716,7 +716,7 @@ fn verify_click_file_theorem_context(
         &parsed_sources,
         &external_and_user_function_blocks,
         &file.cpp_virtual_interfaces,
-        &file.cpp_bindings,
+        &file.binding_contracts,
         file.contract_definitions(),
         spec_definitions,
         &resource_environment,
@@ -742,7 +742,7 @@ fn verify_click_file_theorem_context(
     if theorem.executes.is_some() {
         let registry = std::sync::Arc::new(
             FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
-                .with_cpp_bindings(&file.cpp_bindings.written),
+                .with_reference_bindings(&file.binding_contracts.written),
         );
         let dependencies = TheoremEnvironment::with_standard_library(
             file.theorem_definitions()
@@ -1061,7 +1061,7 @@ fn erase_read_positions(file: &mut ClickFile) {
         .function_blocks
         .iter_mut()
         .chain(file.cpp_virtual_interfaces.values_mut())
-        .chain(file.cpp_bindings.written.values_mut())
+        .chain(file.binding_contracts.written.values_mut())
         .chain(
             file.tactic_definitions
                 .iter_mut()
@@ -2160,7 +2160,7 @@ fn verify_program_in_context(
     let function_source_registry = Arc::new(
         FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
             .with_execution_names(&termination_kernel_names)
-            .with_cpp_bindings(&file.cpp_bindings.written),
+            .with_reference_bindings(&file.binding_contracts.written),
     );
     let (termination_plans, requested_termination) = program_function_termination_plans(
         &file,
@@ -2274,7 +2274,7 @@ fn verify_program_in_context(
             &parsed_sources,
             &external_and_user_function_blocks,
             &file.cpp_virtual_interfaces,
-            &file.cpp_bindings,
+            &file.binding_contracts,
             file.contract_definitions(),
             spec_definitions,
             &resource_environment,
@@ -2562,7 +2562,6 @@ fn verify_program_in_context(
                 assumed_terminating
                     .extend(admitted_functions.difference(&declared_diverging).cloned());
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
-                assumed_terminating.extend(object_coercion_names(&parsed_sources));
                 assumed_terminating.extend(modeled_thread_runtime_names());
                 let preliminary = program_contracts
                     .bootstrap_termination_rules(crate::kernel::ProgramTerminationInputs {
@@ -2882,7 +2881,6 @@ fn verify_program_in_context(
         .collect::<BTreeSet<_>>();
     assumed_terminating.extend(admitted_functions.difference(&declared_diverging).cloned());
     assumed_terminating.extend(closure_instance_names(&parsed_sources));
-    assumed_terminating.extend(object_coercion_names(&parsed_sources));
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
@@ -4804,6 +4802,9 @@ impl parser::ProgramLayouts {
         let mut tables = parser::ProgramLayouts {
             struct_layouts: execution.layouts.clone(),
             record_spellings: execution.record_spellings.clone(),
+            rust_binding_conversions: std::sync::Arc::new(
+                execution.rust_binding_conversions.clone(),
+            ),
             cpp_binding_conversions: std::sync::Arc::new(execution.cpp_binding_conversions.clone()),
             ..Default::default()
         };
@@ -5407,7 +5408,7 @@ pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
     cpp_virtual_interfaces: &BTreeMap<String, FunctionBlock>,
-    cpp_bindings: &CppBindingContracts,
+    binding_contracts: &ReferenceBindingContracts,
     contract_definitions: &[ContractDefinition],
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
@@ -5667,32 +5668,8 @@ pub(in crate::surface) fn build_function_environment(
             }
             None => function.to_kernel_function(),
         };
-        let unwritten_coercion = function_block.is_none() && is_object_coercion(function.name());
         if closure_captures > 0 {
             environment = with_closure_instance(environment, &function, closure_captures)?;
-        }
-        // A trait's or class's object carries no state when its sidecar
-        // declares no functions: making one from a reference to the struct
-        // or derived class, or the reference back, moves nothing.
-        if unwritten_coercion {
-            let no_op = function.clone().with_contract(
-                vec![],
-                vec![],
-                vec![],
-                vec![FunctionContractClaim::body_safety()],
-                true,
-            );
-            let rule =
-                crate::kernel::program_external_function_rule(no_op.clone()).ok_or_else(|| {
-                    ClickError::new(format!(
-                        "object coercion `{}` cannot be applied opaquely",
-                        function.name()
-                    ))
-                })?;
-            environment = environment
-                .with_function(no_op)
-                .with_external_function_rule(rule);
-            continue;
         }
         environment = environment.with_function(function);
     }
@@ -5799,9 +5776,9 @@ pub(in crate::surface) fn build_function_environment(
             .with_function(function)
             .with_external_function_rule(rule);
     }
-    environment = install_cpp_binding_contracts(
+    environment = install_reference_binding_contracts(
         environment,
-        cpp_bindings,
+        binding_contracts,
         parsed_sources,
         spec_definitions,
         resource_environment,
@@ -5812,39 +5789,59 @@ pub(in crate::surface) fn build_function_environment(
 
 /// Install one rule per typed binding contract. An unmodeled conversion
 /// still has a checked transition, but its interface transfers nothing.
-fn install_cpp_binding_contracts(
+fn install_reference_binding_contracts(
     mut environment: ExecutionEnvironment,
-    bindings: &CppBindingContracts,
+    bindings: &ReferenceBindingContracts,
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     spec_definitions: SpecDefinitions<'_>,
     resources: &ResourceEnvironment,
 ) -> Result<ExecutionEnvironment, ClickError> {
-    use crate::kernel::{CppBindingContract, CppBindingKind};
+    use crate::kernel::{
+        CppBindingContract, ReferenceBindingContract, ReferenceBindingKind, RustBindingContract,
+    };
     use crate::languages::interface::{ImportedFunction, ImportedParameter};
 
     let layouts = resources.struct_layouts();
-    let object_parameter = |derived: &str| {
+    let object_parameter = |derived: &str, rust: bool| {
         let layout = layouts.get(derived).ok_or_else(|| {
             ClickError::new(format!(
-                "C++ binding from `{derived}` has no checked layout"
+                "reference binding from `{derived}` has no checked layout"
             ))
         })?;
-        Ok::<_, ClickError>(
-            ImportedParameter::from_binding(
-                InterfaceType::Int32Pointer,
-                "object".to_string(),
-                Some(derived.to_owned()),
-            )
-            .with_pointee_struct_layout(derived.to_owned(), layout.clone())
-            .with_pointee_constant(true),
+        let mut parameter = ImportedParameter::from_binding(
+            InterfaceType::Int32Pointer,
+            "object".to_string(),
+            Some(derived.to_owned()),
         )
+        .with_pointee_struct_layout(derived.to_owned(), layout.clone())
+        .with_pointee_constant(true);
+        if rust && let size @ crate::kernel::LayoutSize::Of(_) = layout.size() {
+            parameter = parameter.with_fixed_reference_bounds(size);
+        }
+        Ok::<_, ClickError>(parameter)
     };
     for (contract, block) in &bindings.written {
-        let declaration = if bindings.conversions.contains(&contract.conversion) {
+        let receiver = match contract {
+            ReferenceBindingContract::Cpp(cpp)
+                if bindings.conversions.contains(&cpp.conversion) =>
+            {
+                Some(cpp.conversion.derived.as_ref())
+            }
+            ReferenceBindingContract::Rust(rust)
+                if bindings.rust_conversions.contains(&rust.conversion) =>
+            {
+                Some(rust.conversion.record.as_str())
+            }
+            _ => None,
+        };
+        let declaration = if let Some(receiver) = receiver {
             ImportedFunction::external(
                 InterfaceType::Void,
                 contract.to_string(),
-                vec![object_parameter(&contract.conversion.derived)?],
+                vec![object_parameter(
+                    receiver,
+                    matches!(contract, ReferenceBindingContract::Rust(_)),
+                )?],
             )
         } else {
             external_c_function_with_layouts(block, layouts)
@@ -5873,40 +5870,55 @@ fn install_cpp_binding_contracts(
                 "contract for {contract} cannot be applied opaquely"
             ))
         })?;
-        environment = environment.with_cpp_binding_rule(contract.clone(), rule);
+        environment = environment.with_reference_binding_rule(contract.clone(), rule);
     }
-    for conversion in bindings.conversions.iter() {
-        let object = object_parameter(&conversion.derived)?;
-        for kind in CppBindingKind::ALL {
-            crate::instrumentation::record_deterministic_work(1);
-            let contract = CppBindingContract {
+    let cpp = bindings.conversions.iter().flat_map(|conversion| {
+        ReferenceBindingKind::ALL.map(|kind| {
+            ReferenceBindingContract::Cpp(CppBindingContract {
                 conversion: conversion.clone(),
                 kind,
-            };
-            if bindings.written.contains_key(&contract) {
-                continue;
-            }
-            let function = ImportedFunction::external(
-                InterfaceType::Void,
-                contract.to_string(),
-                vec![object.clone()],
-            )
-            .to_kernel_function()
-            .with_contract(
-                vec![],
-                vec![],
-                vec![],
-                vec![FunctionContractClaim::body_safety()],
-                true,
-            );
-            let rule =
-                crate::kernel::program_external_function_rule(function).ok_or_else(|| {
-                    ClickError::new(format!(
-                        "contract for {contract} cannot be applied opaquely"
-                    ))
-                })?;
-            environment = environment.with_cpp_binding_rule(contract, rule);
+            })
+        })
+    });
+    let rust = bindings.rust_conversions.iter().flat_map(|conversion| {
+        ReferenceBindingKind::ALL.map(|kind| {
+            ReferenceBindingContract::Rust(RustBindingContract {
+                conversion: conversion.clone(),
+                kind,
+            })
+        })
+    });
+    for contract in cpp.chain(rust) {
+        crate::instrumentation::record_deterministic_work(1);
+        let receiver = match &contract {
+            ReferenceBindingContract::Cpp(cpp) => cpp.conversion.derived.as_ref(),
+            ReferenceBindingContract::Rust(rust) => rust.conversion.record.as_str(),
+        };
+        if bindings.written.contains_key(&contract) {
+            continue;
         }
+        let function = ImportedFunction::external(
+            InterfaceType::Void,
+            contract.to_string(),
+            vec![object_parameter(
+                receiver,
+                matches!(contract, ReferenceBindingContract::Rust(_)),
+            )?],
+        )
+        .to_kernel_function()
+        .with_contract(
+            vec![],
+            vec![],
+            vec![],
+            vec![FunctionContractClaim::body_safety()],
+            true,
+        );
+        let rule = crate::kernel::program_external_function_rule(function).ok_or_else(|| {
+            ClickError::new(format!(
+                "contract for {contract} cannot be applied opaquely"
+            ))
+        })?;
+        environment = environment.with_reference_binding_rule(contract, rule);
     }
     Ok(environment)
 }
@@ -6070,25 +6082,6 @@ fn check_trait_method_implementations(
         }
     }
     Ok(())
-}
-
-/// The functions that turn a Rust struct reference into a trait object and back.
-/// Each returns
-/// at once: it only moves resources.
-fn object_coercion_names(
-    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
-) -> impl Iterator<Item = String> + '_ {
-    parsed_sources
-        .values()
-        .map(|(_, function)| function.name())
-        .filter(|name| is_object_coercion(name))
-        .map(str::to_string)
-}
-
-/// Whether `name` is a function an importer places where a reference
-/// becomes a Rust trait object, or back.
-fn is_object_coercion(name: &str) -> bool {
-    crate::languages::rust::names::is_object_coercion(name)
 }
 
 /// The functions that make instances of the program's capturing closures.

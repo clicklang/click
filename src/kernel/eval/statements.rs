@@ -4938,10 +4938,10 @@ fn execute_execution_statement_leaf_paths(
             budget,
         )?,
         ProgramStatement::Call {
-            cpp_binding: Some(binding),
+            reference_binding: Some(binding),
             arguments,
             ..
-        } => super::super::loops::execute_cpp_binding_paths(
+        } => super::super::loops::execute_reference_binding_paths(
             state,
             &binding.contract,
             arguments,

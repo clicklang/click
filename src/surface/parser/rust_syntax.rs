@@ -85,7 +85,15 @@ impl Parser {
         }
         let written_instance = self.rust_written_instances.contains(&self.position);
         self.expect_ident_spelling("fn")?;
-        let path = self.expect_rust_path("function name")?;
+        let binding = self
+            .current_reference_binding
+            .as_ref()
+            .map(ToString::to_string);
+        let path = if binding.is_some() {
+            Vec::new()
+        } else {
+            self.expect_rust_path("function name")?
+        };
         self.rust_trait_type_parameters.clear();
         // A generic function's instance, written out at its types,
         // `fn cells::read<i32>(...)`, is named with them.
@@ -101,7 +109,9 @@ impl Parser {
         } else {
             BTreeMap::new()
         };
-        let name = if self.rust_impl_type.is_some() || self.rust_trait_interface.is_some() {
+        let name = if let Some(binding) = binding {
+            binding
+        } else if self.rust_impl_type.is_some() || self.rust_trait_interface.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
             crate::languages::rust::names::method_path_name(

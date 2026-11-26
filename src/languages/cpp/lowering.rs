@@ -608,7 +608,9 @@ impl LoweringContext<'_> {
     }
 
     fn coerced_call(&mut self, call: ProgramStatement, has_receiver: bool) -> ProgramStatement {
-        use crate::kernel::{CppBindingOperation, CppBindingSlot, CppBindingSource};
+        use crate::kernel::{
+            ReferenceBindingOperation, ReferenceBindingSlot, ReferenceBindingSource,
+        };
         let coercions = std::mem::take(&mut self.pending_coercions);
         // The only multi-step call passed here is a call followed by the
         // assignment of its result. Both count as regions of the binding.
@@ -621,23 +623,23 @@ impl LoweringContext<'_> {
             crate::instrumentation::record_deterministic_work(1);
             let remaining = coercions.len() - index;
             let slot = if has_receiver && *position == 0 {
-                CppBindingSlot::Receiver
+                ReferenceBindingSlot::Receiver
             } else {
-                CppBindingSlot::Argument(position - usize::from(has_receiver))
+                ReferenceBindingSlot::Argument(position - usize::from(has_receiver))
             };
             let transition = |contract, source| ProgramStatement::Call {
                 function_name: String::new(),
                 arguments: vec![address.clone()],
                 callee: None,
                 dispatch: crate::kernel::CallDispatch::Direct,
-                cpp_binding: Some(std::sync::Arc::new(CppBindingOperation {
-                    contract,
+                reference_binding: Some(std::sync::Arc::new(ReferenceBindingOperation {
+                    contract: crate::kernel::ReferenceBindingContract::Cpp(contract),
                     source,
                 })),
             };
             let acquire = transition(
                 contract.clone(),
-                Some(CppBindingSource {
+                Some(ReferenceBindingSource {
                     slot,
                     call_offset: remaining,
                     release_offset: remaining + call_regions + remaining - 1,
@@ -714,7 +716,7 @@ impl LoweringContext<'_> {
         shared: bool,
         address: ProgramExpression,
     ) {
-        use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+        use crate::kernel::{CppBindingContract, CppObjectConversion, ReferenceBindingKind};
         let conversion = CppObjectConversion::new(derived, base);
         self.polymorphism
             .coercions
@@ -724,7 +726,7 @@ impl LoweringContext<'_> {
             position,
             CppBindingContract {
                 conversion,
-                kind: CppBindingKind::acquire(shared),
+                kind: ReferenceBindingKind::acquire(shared),
             },
             address,
         ));
@@ -1421,7 +1423,7 @@ impl LoweringContext<'_> {
                         arguments,
                         dispatch,
                         callee: None,
-                        cpp_binding: None,
+                        reference_binding: None,
                     },
                     self.call_has_receiver(callee),
                 );

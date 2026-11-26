@@ -141,9 +141,10 @@ pub(crate) struct SourceSites {
 }
 
 /// The source layout's regions for a coercion of one written call argument.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ObjectBindingRegions {
     pub(crate) argument: Option<usize>,
+    pub(crate) binding: crate::kernel::RustBindingContract,
     pub(crate) call: usize,
     pub(crate) acquire: usize,
     pub(crate) release: usize,

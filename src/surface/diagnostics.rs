@@ -7311,7 +7311,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
             format!("{target} = {call}")
         }
         ProgramStatement::Call {
-            cpp_binding: Some(binding),
+            reference_binding: Some(binding),
             ..
         } => binding.contract.to_string(),
         ProgramStatement::Call {
@@ -8435,8 +8435,8 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::AnyCall(index) => format!("call({index})"),
                 SourcePathStep::Binding { slot, release } => {
                     let slot = match slot {
-                        crate::kernel::CppBindingSlot::Receiver => "receiver".to_owned(),
-                        crate::kernel::CppBindingSlot::Argument(index) => {
+                        crate::kernel::ReferenceBindingSlot::Receiver => "receiver".to_owned(),
+                        crate::kernel::ReferenceBindingSlot::Argument(index) => {
                             format!("argument({index})")
                         }
                     };

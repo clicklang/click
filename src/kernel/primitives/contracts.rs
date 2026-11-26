@@ -4116,29 +4116,29 @@ impl ExecutionEnvironment {
         self.function_contracts.get(name)
     }
 
-    pub(crate) fn with_cpp_binding_rule(
+    pub(crate) fn with_reference_binding_rule(
         mut self,
-        contract: CppBindingContract,
+        contract: ReferenceBindingContract,
         rule: ExternalFunctionRule,
     ) -> Self {
-        Arc::make_mut(&mut self.cpp_binding_rules).insert(contract, rule);
+        Arc::make_mut(&mut self.reference_binding_rules).insert(contract, rule);
         self.variable_index = ExecutionEnvironmentVariableIndex::default();
         self
     }
 
-    pub(crate) fn get_cpp_binding_rule(
+    pub(crate) fn get_reference_binding_rule(
         &self,
-        contract: &CppBindingContract,
+        contract: &ReferenceBindingContract,
     ) -> Option<&ExternalFunctionRule> {
         crate::instrumentation::record_deterministic_work(1);
-        self.cpp_binding_rules.get(contract)
+        self.reference_binding_rules.get(contract)
     }
 
-    pub(crate) fn get_cpp_binding_function(
+    pub(crate) fn get_reference_binding_function(
         &self,
-        binding: &CppBindingContract,
+        binding: &ReferenceBindingContract,
     ) -> Option<&ProgramFunction> {
-        self.get_cpp_binding_rule(binding)
+        self.get_reference_binding_rule(binding)
             .map(|rule| &rule.function)
     }
 
@@ -4300,7 +4300,7 @@ impl ExecutionEnvironment {
             .external_function_rules
             .values()
             .chain(self.cpp_virtual_rules.values())
-            .chain(self.cpp_binding_rules.values())
+            .chain(self.reference_binding_rules.values())
             .any(|rule| {
                 rule.function
                     .resource_ensures()
@@ -4332,7 +4332,10 @@ impl ExecutionEnvironment {
         std::sync::Arc::ptr_eq(&self.functions, &other.functions)
             && std::sync::Arc::ptr_eq(&self.function_contracts, &other.function_contracts)
             && Arc::ptr_eq(&self.cpp_virtual_rules, &other.cpp_virtual_rules)
-            && Arc::ptr_eq(&self.cpp_binding_rules, &other.cpp_binding_rules)
+            && Arc::ptr_eq(
+                &self.reference_binding_rules,
+                &other.reference_binding_rules,
+            )
             && std::sync::Arc::ptr_eq(
                 &self.external_function_rules,
                 &other.external_function_rules,

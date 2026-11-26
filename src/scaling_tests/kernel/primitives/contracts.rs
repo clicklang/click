@@ -106,12 +106,17 @@ fn virtual_interface_lookup_uses_one_method_key() {
 }
 
 #[test]
-fn cpp_binding_rule_lookup_uses_one_conversion_key() {
+fn reference_binding_rule_lookup_uses_one_conversion_key() {
     for size in [8, 32, 128, 512] {
         let mut environment = ExecutionEnvironment::new();
-        let binding = |index| CppBindingContract {
-            conversion: CppObjectConversion::new(&format!("Derived{index}"), "Base"),
-            kind: CppBindingKind::AcquireShared,
+        let binding = |index| {
+            ReferenceBindingContract::Rust(RustBindingContract {
+                conversion: RustObjectConversion {
+                    record: format!("Record{index}"),
+                    trait_name: "Interface".into(),
+                },
+                kind: ReferenceBindingKind::AcquireShared,
+            })
         };
         let descriptor = ProgramFunction::new(
             ProgramType::Void,
@@ -128,14 +133,19 @@ fn cpp_binding_rule_lookup_uses_one_conversion_key() {
         );
         let rule = crate::kernel::program_external_function_rule(descriptor).unwrap();
         for index in 0..size {
-            environment = environment.with_cpp_binding_rule(binding(index), rule.clone());
+            environment = environment.with_reference_binding_rule(binding(index), rule.clone());
+            let cpp = ReferenceBindingContract::Cpp(CppBindingContract {
+                conversion: CppObjectConversion::new(&format!("Record{index}"), "Interface"),
+                kind: ReferenceBindingKind::AcquireShared,
+            });
+            environment = environment.with_reference_binding_rule(cpp, rule.clone());
         }
         let acquire = binding(size / 2);
         let release = acquire.release();
         let ((hit, miss), work) = crate::instrumentation::measure_deterministic_work(|| {
             (
-                environment.get_cpp_binding_rule(&acquire),
-                environment.get_cpp_binding_rule(&release),
+                environment.get_reference_binding_rule(&acquire),
+                environment.get_reference_binding_rule(&release),
             )
         });
         assert!(hit.is_some());

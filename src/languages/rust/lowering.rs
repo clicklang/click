@@ -1237,8 +1237,16 @@ fn lower_function(
                         .copied()
                         .ok_or("Rust object binding lost its call region")
                 };
+                let super::schema::MirTerminator::Call {
+                    function: MirCallee::Binding { binding: contract },
+                    ..
+                } = &mir.blocks[binding.acquire].terminator
+                else {
+                    return Err("Rust object binding lost its acquisition".into());
+                };
                 object_bindings.push(crate::languages::interface::ObjectBindingRegions {
                     argument: binding.argument,
+                    binding: contract.clone(),
                     call,
                     acquire: region(binding.acquire)?,
                     release: region(binding.release)?,

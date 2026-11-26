@@ -2179,7 +2179,7 @@ fn collect_execution_environment_variables_uncached(
         environment
             .cpp_virtual_rules
             .values()
-            .chain(environment.cpp_binding_rules.values())
+            .chain(environment.reference_binding_rules.values())
             .map(|rule| &rule.function),
     ) {
         collect_program_function_bitvector_variables(function, variables);

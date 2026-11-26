@@ -1432,13 +1432,8 @@ fn method_at(
     Some((method.clone(), list_open, list_close, body_open, body_close))
 }
 
-/// The trusted contracts of the functions the importer places where a
-/// reference to this type becomes the trait's object, and back:
-/// `<Type as Trait>::__pack` consumes the struct's memory and produces the
-/// object, whose fields are the type's definitions of the trait's functions
-/// on that memory; `__unpack` returns the memory, whose definitions are the
-/// object's fields. A shared reference's pair leaves the memory with the
-/// caller, lent until the unpack.
+/// The checked contracts for taking and releasing a Rust trait-object
+/// reference. Mutable bindings transfer memory, and shared bindings lend it.
 fn coercion_contracts(
     object: &ObjectTrait,
     trait_name: &str,
@@ -1460,13 +1455,24 @@ fn coercion_contracts(
         }
         tokens
     };
-    let head = |name: &str| {
+    use crate::kernel::{
+        ReferenceBindingContract, ReferenceBindingKind, RustBindingContract, RustObjectConversion,
+    };
+    let conversion = RustObjectConversion {
+        record: type_name.to_owned(),
+        trait_name: trait_name.to_owned(),
+    };
+    let head = |kind| {
+        let contract = ReferenceBindingContract::Rust(RustBindingContract {
+            conversion: conversion.clone(),
+            kind,
+        });
         let mut tokens = at(
             position,
             vec![
+                Token::ReferenceBindingContract(std::sync::Arc::new(contract)),
                 ident("extern"),
                 ident("fn"),
-                ident(name),
                 Token::LParen,
                 ident("object"),
                 Token::Colon,
@@ -1499,10 +1505,7 @@ fn coercion_contracts(
             vec![ident(verb), Token::Star, ident("object"), Token::Semicolon],
         )
     };
-    let pack = crate::languages::rust::names::trait_method_name(type_name, trait_name, "__pack");
-    let unpack =
-        crate::languages::rust::names::trait_method_name(type_name, trait_name, "__unpack");
-    let mut tokens = head(&pack);
+    let mut tokens = head(ReferenceBindingKind::AcquireMutable);
     tokens.extend(memory("consumes"));
     tokens.extend(resources("consumes"));
     tokens.extend(instance("produces"));
@@ -1525,7 +1528,7 @@ fn coercion_contracts(
         ));
     }
     tokens.push((Token::RBrace, position.clone()));
-    tokens.extend(head(&unpack));
+    tokens.extend(head(ReferenceBindingKind::ReleaseMutable));
     tokens.extend(instance("consumes"));
     tokens.extend(memory("produces"));
     tokens.extend(resources("produces"));
@@ -1589,11 +1592,7 @@ fn coercion_contracts(
             Token::RBrace,
         ],
     ));
-    tokens.extend(head(&crate::languages::rust::names::trait_method_name(
-        type_name,
-        trait_name,
-        crate::languages::rust::names::SHARED_PACK,
-    )));
+    tokens.extend(head(ReferenceBindingKind::AcquireShared));
     tokens.extend(at(
         position,
         vec![
@@ -1624,11 +1623,7 @@ fn coercion_contracts(
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
     tokens.push((Token::RBrace, position.clone()));
-    tokens.extend(head(&crate::languages::rust::names::trait_method_name(
-        type_name,
-        trait_name,
-        crate::languages::rust::names::SHARED_UNPACK,
-    )));
+    tokens.extend(head(ReferenceBindingKind::ReleaseShared));
     tokens.extend(lent("consumes", false));
     tokens.extend(instance("consumes"));
     // The resources come back holding the object's state, which a shared

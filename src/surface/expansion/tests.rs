@@ -4194,7 +4194,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
         program_seq(
             ProgramStatement::Call {
                 dispatch: crate::kernel::CallDispatch::Direct,
-                cpp_binding: None,
+                reference_binding: None,
                 function_name: "may_throw".into(),
                 arguments: Vec::new(),
                 callee: None,

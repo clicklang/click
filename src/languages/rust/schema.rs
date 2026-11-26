@@ -799,7 +799,12 @@ pub enum MirStatement {
 #[serde(untagged)]
 pub enum MirCallee {
     Direct(String),
-    Pointer { local: MirLocalId },
+    Pointer {
+        local: MirLocalId,
+    },
+    Binding {
+        binding: crate::kernel::RustBindingContract,
+    },
 }
 
 impl From<String> for MirCallee {
@@ -819,6 +824,7 @@ impl MirCallee {
         match self {
             Self::Direct(name) => Some(name),
             Self::Pointer { local } => local.source_name(),
+            Self::Binding { .. } => None,
         }
     }
 }
