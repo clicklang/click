@@ -26,6 +26,10 @@ branch; `Context::Left` and `Context::Right` send it into `parent->rb_left ==
 old`, whose cell the frame owns through its own `identity` payload rather than
 through any C name — see the note at the end of this file.
 
+The three wrappers use one checked contract for the existing splice helper.
+The helper proves the copy once and opens the context for the root, left,
+or right link update.
+
 ```c filename=rbtree.h
 #ifndef RBTREE_H
 #define RBTREE_H
@@ -209,6 +213,204 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
     }
 }
 
+resource parent_tag_frame(identity: struct rb_node*, grandparent: struct rb_node*) {
+    field color: Color;
+    owns identity->__rb_parent_color;
+    fact identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1);
+    fact ((identity->__rb_parent_color & ~3) as (struct rb_node *)) == grandparent;
+    fact (identity->__rb_parent_color & 1) == color_bit(color);
+}
+
+function context_parent(context: Context) -> struct rb_node* {
+    match context {
+        Context::Top => 0,
+        Context::Left(identity, grandparent, color, sibling, up) => identity,
+        Context::Right(identity, grandparent, color, sibling, up) => identity,
+    }
+}
+
+function no_splice_sibling(context: Context) -> Bool {
+    match context {
+        Context::Top => true,
+        Context::Left(identity, grandparent, color, sibling, up) => sibling == RbTree::Empty,
+        Context::Right(identity, grandparent, color, sibling, up) => sibling == RbTree::Empty,
+    }
+}
+
+void rb_replace_node(struct rb_node* victim, struct rb_node* new, struct rb_root* root) {
+    consumes c: ctx_at(victim, root);
+    consumes t: rb_at(victim);
+    consumes new->__rb_parent_color;
+    consumes new->rb_left;
+    consumes new->rb_right;
+    requires t.model ==
+        RbTree::Node(victim, context_parent(c.model), Color::Black, RbTree::Empty, RbTree::Empty);
+    requires no_splice_sibling(c.model);
+    requires victim->rb_left == 0;
+    requires victim->rb_right == 0;
+    requires new != 0;
+    requires aligned(new, 8);
+    produces d: ctx_at(new, root);
+    produces u: rb_at(new);
+    ensures d.model == old(c.model);
+    ensures u.model == rb_substitute(old(t.model), new);
+} by {
+    let { left: l, right: r } = unfold(t);
+    unfold(l);
+    unfold(r);
+    step_until(statement(1).entry);
+    have parent == context_parent(c.model) by close();
+    have ((victim->__rb_parent_color & ~3u64) as (struct rb_node *)) == parent by close();
+    mark before_copy;
+    have victim->rb_left == 0 by close();
+    have victim->rb_right == 0 by close();
+    have separate(memory(new->__rb_parent_color), memory(victim->rb_left)) by close();
+    have separate(memory(new->rb_left), memory(victim->rb_left)) by close();
+    have separate(memory(new->rb_right), memory(victim->rb_left)) by close();
+    have separate(memory(new->__rb_parent_color), memory(victim->rb_right)) by close();
+    have separate(memory(new->rb_left), memory(victim->rb_right)) by close();
+    have separate(memory(new->rb_right), memory(victim->rb_right)) by close();
+    step_until(statement(2).entry);
+    have separate(statement(1).region(0).footprint, memory(victim->rb_left)) by close() using {
+        separate(memory(new->__rb_parent_color), memory(victim->rb_left));
+    };
+    have at(statement(1).region(0).exit, victim->rb_left) == at(statement(1).region(0).entry, victim->rb_left) by {
+        preserve(memory(victim->rb_left), statement(1).region(0));
+    }
+    have separate(statement(1).region(1).footprint, memory(victim->rb_left)) by close() using {
+        separate(memory(new->rb_left), memory(victim->rb_left));
+    };
+    have at(statement(1).region(1).exit, victim->rb_left) == at(statement(1).region(1).entry, victim->rb_left) by {
+        preserve(memory(victim->rb_left), statement(1).region(1));
+    }
+    have separate(statement(1).region(2).footprint, memory(victim->rb_left)) by close() using {
+        separate(memory(new->rb_right), memory(victim->rb_left));
+    };
+    have at(statement(1).region(2).exit, victim->rb_left) == at(statement(1).region(2).entry, victim->rb_left) by {
+        preserve(memory(victim->rb_left), statement(1).region(2));
+    }
+    have victim->rb_left == 0 by close();
+    have separate(statement(1).region(0).footprint, memory(victim->rb_right)) by close() using {
+        separate(memory(new->__rb_parent_color), memory(victim->rb_right));
+    };
+    have at(statement(1).region(0).exit, victim->rb_right) == at(statement(1).region(0).entry, victim->rb_right) by {
+        preserve(memory(victim->rb_right), statement(1).region(0));
+    }
+    have separate(statement(1).region(1).footprint, memory(victim->rb_right)) by close() using {
+        separate(memory(new->rb_left), memory(victim->rb_right));
+    };
+    have at(statement(1).region(1).exit, victim->rb_right) == at(statement(1).region(1).entry, victim->rb_right) by {
+        preserve(memory(victim->rb_right), statement(1).region(1));
+    }
+    have separate(statement(1).region(2).footprint, memory(victim->rb_right)) by close() using {
+        separate(memory(new->rb_right), memory(victim->rb_right));
+    };
+    have at(statement(1).region(2).exit, victim->rb_right) == at(statement(1).region(2).entry, victim->rb_right) by {
+        preserve(memory(victim->rb_right), statement(1).region(2));
+    }
+    have victim->rb_right == 0 by close();
+    have at(statement(1).region(1).exit, new->rb_left) == 0 by close();
+    have new->rb_left == 0 by close();
+    have new->rb_right == 0 by close();
+    have new->__rb_parent_color == old(victim->__rb_parent_color) by close();
+    have new->__rb_parent_color == at(before_copy, victim->__rb_parent_color) by close();
+    have ((new->__rb_parent_color & ~3u64) as (struct rb_node *)) == parent by {
+        rewrite(new->__rb_parent_color, at(before_copy, victim->__rb_parent_color));
+        close();
+    }
+    let l2 = fold(rb_at(0), { model: RbTree::Empty });
+    let r2 = fold(rb_at(0), { model: RbTree::Empty });
+    let u = fold(rb_at(new), {
+        model: RbTree::Node(new, parent, Color::Black, RbTree::Empty, RbTree::Empty),
+        left: l2, right: r2
+    });
+    have old(t.model) == RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty) by close();
+    have u.model == rb_substitute(old(t.model), new) by {
+        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
+        unfold(rb_substitute(RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty), new));
+        close();
+    }
+    match c.model {
+        Context::Top => {
+            have context_parent(Context::Top) == 0 by {
+                unfold(context_parent(Context::Top));
+                close();
+            }
+            have context_parent(c.model) == 0 by {
+                rewrite(c.model, Context::Top);
+                close();
+            }
+            have parent == 0 by close();
+            unfold(c);
+            step_until(function.exit);
+            have root->rb_node == new by close();
+            let d = fold(ctx_at(new, root), { model: Context::Top });
+            close();
+        },
+        Context::Left(identity, grandparent, color, sibling, up) => {
+            have context_parent(Context::Left(identity, grandparent, color, sibling, up)) == identity by {
+                unfold(context_parent(Context::Left(identity, grandparent, color, sibling, up)));
+                close();
+            }
+            have context_parent(c.model) == identity by {
+                rewrite(c.model, Context::Left(identity, grandparent, color, sibling, up));
+                close();
+            }
+            have parent == identity by close();
+            have no_splice_sibling(Context::Left(identity, grandparent, color, sibling, up)) by {
+                have no_splice_sibling(c.model) by close();
+                rewrite(Context::Left(identity, grandparent, color, sibling, up), c.model);
+                close();
+            }
+            unfold(no_splice_sibling(Context::Left(identity, grandparent, color, sibling, up)));
+            have sibling == RbTree::Empty by close();
+            let { sibling: s, up: outer } = unfold(c);
+            let saved_tag = fold(parent_tag_frame(identity, grandparent), { color: color });
+            unfold(s);
+            have identity->rb_left == victim by close();
+            have identity->rb_right == 0 by close();
+            have separate(memory(identity->rb_left), memory(identity->rb_right)) by close();
+            step_until(function.exit);
+            have identity->rb_left == new by close();
+            have identity->rb_right == 0 by close();
+            unfold(saved_tag);
+            let s2 = fold(rb_at(0), { model: RbTree::Empty });
+            let d = fold(ctx_at(new, root), { model: Context::Left(identity, grandparent, color, sibling, up), sibling: s2, up: outer });
+            close();
+        },
+        Context::Right(identity, grandparent, color, sibling, up) => {
+            have context_parent(Context::Right(identity, grandparent, color, sibling, up)) == identity by {
+                unfold(context_parent(Context::Right(identity, grandparent, color, sibling, up)));
+                close();
+            }
+            have context_parent(c.model) == identity by {
+                rewrite(c.model, Context::Right(identity, grandparent, color, sibling, up));
+                close();
+            }
+            have parent == identity by close();
+            have no_splice_sibling(Context::Right(identity, grandparent, color, sibling, up)) by {
+                have no_splice_sibling(c.model) by close();
+                rewrite(Context::Right(identity, grandparent, color, sibling, up), c.model);
+                close();
+            }
+            unfold(no_splice_sibling(Context::Right(identity, grandparent, color, sibling, up)));
+            have sibling == RbTree::Empty by close();
+            let { sibling: s, up: outer } = unfold(c);
+            let saved_tag = fold(parent_tag_frame(identity, grandparent), { color: color });
+            unfold(s);
+            have identity->rb_right == victim by close();
+            have identity->rb_left == 0 by close();
+            have separate(memory(identity->rb_right), memory(identity->rb_left)) by close();
+            step_until(function.exit);
+            have identity->rb_right == new by close();
+            have identity->rb_left == 0 by close();
+            unfold(saved_tag);
+            let s2 = fold(rb_at(0), { model: RbTree::Empty });
+            let d = fold(ctx_at(new, root), { model: Context::Right(identity, grandparent, color, sibling, up), sibling: s2, up: outer });
+            close();
+        },
+    }
+}
 void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
                        struct rb_node* parent, struct rb_root* root) {
     consumes c: ctx_at(victim, root);
@@ -229,29 +431,22 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
     ensures d.model == old(c.model);
     ensures u.model == rb_substitute(old(t.model), new_node);
 } by {
-    let { left: l, right: r } = unfold(t);
-    unfold(c);
-    unfold(l);
-    unfold(r);
-    have color_bit(Color::Black) == 1 by {
-        unfold(color_bit(Color::Black));
-        normalize();
+    have context_parent(c.model) == parent by {
+        rewrite(c.model, Context::Top);
+        unfold(context_parent(Context::Top));
+        close();
     }
+    have no_splice_sibling(c.model) by {
+        rewrite(c.model, Context::Top);
+        unfold(no_splice_sibling(Context::Top));
+        close();
+    }
+    have t.model == RbTree::Node(victim, context_parent(c.model), Color::Black, RbTree::Empty, RbTree::Empty) by {
+        rewrite(context_parent(c.model), parent);
+        close();
+    }
+    let { d: d, u: u } = step(rb_replace_node, { c: c, t: t });
     step_until(function.exit);
-    let l2 = fold(rb_at(new_node->rb_left), { model: RbTree::Empty });
-    let r2 = fold(rb_at(new_node->rb_right), { model: RbTree::Empty });
-    let u = fold(rb_at(new_node), {
-        model: RbTree::Node(new_node, parent, Color::Black, RbTree::Empty, RbTree::Empty),
-        left: l2, right: r2
-    });
-    let d = fold(ctx_at(new_node, root), { model: old(c.model) });
-    have u.model == rb_substitute(old(t.model), new_node) by {
-        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
-        unfold(rb_substitute(
-            RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
-            new_node));
-        normalize();
-    }
     close();
 }
 
@@ -279,29 +474,22 @@ void replace_left_child(struct rb_node* victim, struct rb_node* new_node,
     ensures d.model == old(c.model);
     ensures u.model == rb_substitute(old(t.model), new_node);
 } by {
-    let { left: l, right: r } = unfold(t);
-    let { sibling: s, up: up } = unfold(c);
-    unfold(l);
-    unfold(r);
-    have color_bit(Color::Black) == 1 by {
-        unfold(color_bit(Color::Black));
-        normalize();
+    have context_parent(c.model) == parent by {
+        rewrite(c.model, Context::Left(parent, grandparent, Color::Black, RbTree::Empty, Context::Top));
+        unfold(context_parent(Context::Left(parent, grandparent, Color::Black, RbTree::Empty, Context::Top)));
+        close();
     }
+    have no_splice_sibling(c.model) by {
+        rewrite(c.model, Context::Left(parent, grandparent, Color::Black, RbTree::Empty, Context::Top));
+        unfold(no_splice_sibling(Context::Left(parent, grandparent, Color::Black, RbTree::Empty, Context::Top)));
+        close();
+    }
+    have t.model == RbTree::Node(victim, context_parent(c.model), Color::Black, RbTree::Empty, RbTree::Empty) by {
+        rewrite(context_parent(c.model), parent);
+        close();
+    }
+    let { d: d, u: u } = step(rb_replace_node, { c: c, t: t });
     step_until(function.exit);
-    let l2 = fold(rb_at(new_node->rb_left), { model: RbTree::Empty });
-    let r2 = fold(rb_at(new_node->rb_right), { model: RbTree::Empty });
-    let u = fold(rb_at(new_node), {
-        model: RbTree::Node(new_node, parent, Color::Black, RbTree::Empty, RbTree::Empty),
-        left: l2, right: r2
-    });
-    let d = fold(ctx_at(new_node, root), { model: old(c.model), sibling: s, up: up });
-    have u.model == rb_substitute(old(t.model), new_node) by {
-        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
-        unfold(rb_substitute(
-            RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
-            new_node));
-        normalize();
-    }
     close();
 }
 void replace_right_child(struct rb_node* victim, struct rb_node* new_node,
@@ -327,31 +515,22 @@ void replace_right_child(struct rb_node* victim, struct rb_node* new_node,
     ensures d.model == old(c.model);
     ensures u.model == rb_substitute(old(t.model), new_node);
 } by {
-    let { left: l, right: r } = unfold(t);
-    let { sibling: s, up: up } = unfold(c);
-    unfold(s);
-    unfold(l);
-    unfold(r);
-    have color_bit(Color::Black) == 1 by {
-        unfold(color_bit(Color::Black));
-        normalize();
+    have context_parent(c.model) == parent by {
+        rewrite(c.model, Context::Right(parent, grandparent, Color::Black, RbTree::Empty, Context::Top));
+        unfold(context_parent(Context::Right(parent, grandparent, Color::Black, RbTree::Empty, Context::Top)));
+        close();
     }
+    have no_splice_sibling(c.model) by {
+        rewrite(c.model, Context::Right(parent, grandparent, Color::Black, RbTree::Empty, Context::Top));
+        unfold(no_splice_sibling(Context::Right(parent, grandparent, Color::Black, RbTree::Empty, Context::Top)));
+        close();
+    }
+    have t.model == RbTree::Node(victim, context_parent(c.model), Color::Black, RbTree::Empty, RbTree::Empty) by {
+        rewrite(context_parent(c.model), parent);
+        close();
+    }
+    let { d: d, u: u } = step(rb_replace_node, { c: c, t: t });
     step_until(function.exit);
-    let l2 = fold(rb_at(new_node->rb_left), { model: RbTree::Empty });
-    let r2 = fold(rb_at(new_node->rb_right), { model: RbTree::Empty });
-    let u = fold(rb_at(new_node), {
-        model: RbTree::Node(new_node, parent, Color::Black, RbTree::Empty, RbTree::Empty),
-        left: l2, right: r2
-    });
-    let s2 = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
-    let d = fold(ctx_at(new_node, root), { model: old(c.model), sibling: s2, up: up });
-    have u.model == rb_substitute(old(t.model), new_node) by {
-        rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
-        unfold(rb_substitute(
-            RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
-            new_node));
-        normalize();
-    }
     close();
 }
 ```
