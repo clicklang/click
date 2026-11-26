@@ -1797,7 +1797,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                         first_color, first_left, above), ctx.model);
                                 rewrite(Context::Left(node, entry_parent, entry_color,
                                         entry_left, old(c.model)), ctx.model);
-                                normalize();
+                                close();
                             }
                             have above == old(c.model) by close();
                             have plug(above, RbTree::Node(entry_identity, entry_parent,
@@ -1806,7 +1806,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                 rewrite(above, old(c.model));
                                 rewrite(RbTree::Node(entry_identity, entry_parent, entry_color,
                                         entry_right, entry_left), old(t.model));
-                                normalize();
+                                close();
                             }
                             have t.model == entry_right;
                             have plug(ctx.model, t.model) == plug(old(c.model),
@@ -1901,7 +1901,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                 unfold(ctx_node_is(Context::Right(node, par,
                                                             color, right_model, ctx.model),
                                                         node));
-                                                normalize();
+                                                close();
                                             }
                                             match l.model {
                                                 RbTree::Empty => { contradiction(l.model
@@ -1979,7 +1979,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                             left_model)) == left_model by {
                                         unfold(rb_right(RbTree::Node(identity, par, color,
                                                     right_model, left_model)));
-                                        normalize();
+                                        close();
                                     }
                                     have node != 0;
                                     let sub = fold(rb_at(node), {
@@ -2135,7 +2135,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                     have parent == par by close();
                                     have par == parent by {
                                         rewrite(parent, par);
-                                        normalize();
+                                        close();
                                     }
                                     let t = fold(rb_at(node), {
                                         model: RbTree::Node(identity,
@@ -2202,7 +2202,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                 unfold(ctx_is_left(Context::Right(frame_identity,
                                                             frame_parent, frame_color,
                                                             frame_right, above)));
-                                                normalize();
+                                                close();
                                             }
                                             have plug(Context::Right(frame_identity,
                                                     frame_parent, frame_color, frame_right,
@@ -2224,7 +2224,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                             let { sibling: s, up: u } = unfold(c);
                                             have defined(parent->rb_left) by {
                                                 rewrite(parent, frame_identity);
-                                                normalize();
+                                                close();
                                             }
                                             match s.model {
                                                 RbTree::Empty => {
@@ -2675,13 +2675,13 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                     frame_color, frame_left, above)) != 1 by {
                                 rewrite(ctx_is_left(Context::Left(frame_identity,
                                         frame_parent, frame_color, frame_left, above)), 0);
-                                normalize();
+                                close();
                             }
                             have ctx_is_left(Context::Left(frame_identity, frame_parent,
                                     frame_color, frame_left, above)) == 1 by {
                                 unfold(ctx_is_left(Context::Left(frame_identity,
                                             frame_parent, frame_color, frame_left, above)));
-                                normalize();
+                                close();
                             }
                             contradiction(ctx_is_left(Context::Left(frame_identity,
                                         frame_parent, frame_color, frame_left, above)) == 1);
