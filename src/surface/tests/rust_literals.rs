@@ -20,9 +20,9 @@ fn rust_integer_literals_preserve_native_types_and_signed_boundaries() {
     ] {
         prove(&format!(
             "theorem limits() {{
-            ensures -{min}{ty} < 0{ty} by {{ normalize(); }}
-            ensures {max}{ty} > 0{ty} by {{ normalize(); }}
-            ensures -(({min}{ty})) == -{min}{ty} by {{ normalize(); }}
+            ensures -{min}{ty} < 0{ty} by {{ close(); }}
+            ensures {max}{ty} > 0{ty} by {{ close(); }}
+            ensures -(({min}{ty})) == -{min}{ty} by {{ close(); }}
         }}"
         ))
         .unwrap_or_else(|error| panic!("{ty}: {error:?}"));
@@ -35,13 +35,13 @@ fn rust_integer_literals_preserve_native_types_and_signed_boundaries() {
         ("usize", "18446744073709551615"),
     ] {
         prove(&format!(
-            "theorem limits() {{ ensures {max}{ty} > 0{ty} by {{ normalize(); }} }}"
+            "theorem limits() {{ ensures {max}{ty} > 0{ty} by {{ close(); }} }}"
         ))
         .unwrap_or_else(|error| panic!("{ty}: {error:?}"));
     }
     // In particular, explicit i64 must retain its type even at the i32 boundary.
     prove("function large() -> i64 { -2147483648i64 }
-           theorem width() { ensures large() == -2147483648i64 by { unfold(large()); normalize(); } }")
+           theorem width() { ensures large() == -2147483648i64 by { unfold(large()); close(); } }")
         .unwrap();
 }
 
@@ -49,11 +49,11 @@ fn rust_integer_literals_preserve_native_types_and_signed_boundaries() {
 fn rust_integer_radices_and_separators_verify() {
     prove(
         r#"theorem spelling_boundaries() {
-        ensures 0xff_ff_u16 == 65535u16 by { normalize(); }
-        ensures 0b__1__u32 == 1u32 by { normalize(); }
-        ensures 0o7_7u8 == 63u8 by { normalize(); }
-        ensures -0x8000_0000i32 < 0i32 by { normalize(); }
-        ensures -(0x8000_0000_0000_0000isize) < 0isize by { normalize(); }
+        ensures 0xff_ff_u16 == 65535u16 by { close(); }
+        ensures 0b__1__u32 == 1u32 by { close(); }
+        ensures 0o7_7u8 == 63u8 by { close(); }
+        ensures -0x8000_0000i32 < 0i32 by { close(); }
+        ensures -(0x8000_0000_0000_0000isize) < 0isize by { close(); }
     }
     theorem mathematical(value: Integer) {
         requires value == 0x1_0000_0000_0000_0000;
@@ -62,10 +62,10 @@ fn rust_integer_radices_and_separators_verify() {
     )
     .unwrap();
     assert!(
-        prove("theorem false_claim() { ensures 0xffu8 == 254u8 by { normalize(); } }").is_err()
+        prove("theorem false_claim() { ensures 0xffu8 == 254u8 by { close(); } }").is_err()
     );
     assert!(
-        prove("theorem false_claim() { ensures 0x1_0000 == 0u16 by { normalize(); } }").is_err()
+        prove("theorem false_claim() { ensures 0x1_0000 == 0u16 by { close(); } }").is_err()
     );
 }
 
@@ -122,10 +122,10 @@ fn rust_integer_literal_syntax_does_not_change_c_or_cpp_sidecars() {
     }
     verify_c_sources(
         "verifying \"source.c\"; theorem legacy() {
-        ensures 255u8 > 0u8 by { normalize(); }
-        ensures 4294967295u32 > 0u32 by { normalize(); }
-        ensures -9223372036854775808i64 < 0i64 by { normalize(); }
-        ensures 18446744073709551615u64 > 0u64 by { normalize(); }
+        ensures 255u8 > 0u8 by { close(); }
+        ensures 4294967295u32 > 0u32 by { close(); }
+        ensures -9223372036854775808i64 < 0i64 by { close(); }
+        ensures 18446744073709551615u64 > 0u64 by { close(); }
     }",
         &[("source.c", "")],
     )
