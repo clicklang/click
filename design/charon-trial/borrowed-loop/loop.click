@@ -1,4 +1,5 @@
 import click::integer;
+import click::separation;
 
 verifying "loop.rs";
 
@@ -36,22 +37,27 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
                 rewrite(slot, value);
                 close();
             }
-            have separate(memory(*slot), memory(guard.saved)) by {
+            have separate(memory(*slot), memory((&guard.saved)[0..1])) by {
                 rewrite(slot, value);
+                have contains(memory(guard.saved), memory((&guard.saved)[0..1])) by close();
+                apply(separation::contains_refl(memory(value[0..1])));
+                apply(separation::separate_restrict(memory(guard.saved), memory(value[0..1]), memory((&guard.saved)[0..1]), memory(value[0..1])));
                 close();
             }
             mark before_write;
             step();
             have separate(region(31).footprint, memory(guard.slot)) by {
-                normalize() using { at(before_write, separate(memory(*slot), memory(guard.slot))); };
+                close() using { at(before_write, separate(memory(*slot), memory(guard.slot))); };
             }
-            have separate(region(31).footprint, memory(guard.saved)) by {
-                normalize() using { at(before_write, separate(memory(*slot), memory(guard.saved))); };
+            have separate(region(31).footprint, memory((&guard.saved)[0..1])) by {
+                close() using { at(before_write, separate(memory(*slot), memory((&guard.saved)[0..1]))); };
             }
             have guard.slot == at(before_write, guard.slot) by {
                 preserve(memory(guard.slot), region(31));
             }
-            have guard.saved == at(before_write, guard.saved) by close();
+            have guard.saved == at(before_write, guard.saved) by {
+                preserve(memory((&guard.saved)[0..1]), region(31));
+            }
             have guard.slot == value by {
                 rewrite(guard.slot, at(before_write, guard.slot));
                 close();
