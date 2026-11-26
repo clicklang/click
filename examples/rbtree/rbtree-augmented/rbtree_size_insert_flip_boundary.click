@@ -195,11 +195,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(focus.model, SizedTree::Node(identity, 0, Color::Black, value, left, right));
                                 rewrite(old(state.chain), SizedFlipChain::Root);
                                 rewrite(old(state.model), SizedTree::Node(identity, ancestor, shade, value, left, right));
-                                unfold(sized_flip_result(SizedFlipChain::Root, SizedTree::Node(identity, ancestor, shade, value, left, right)));
-                                unfold(sized_recolor(SizedTree::Node(identity, ancestor, shade, value, left, right), Color::Black));
-                                unfold(sized_plug(SizedContext::Top, SizedTree::Node(identity, 0, Color::Black, value, left, right)));
                                 have ancestor == 0 by close();
-                                rewrite(ancestor, 0); normalize();
+                                apply(sized_flip_root_recolors_from_parent(identity, ancestor, 0, shade, value, left, right));
+                                close();
                             }
                             have 0 == sized_context_parent(SizedContext::Top, 0) by {
                                 unfold(sized_context_parent(SizedContext::Top, 0)); close();
