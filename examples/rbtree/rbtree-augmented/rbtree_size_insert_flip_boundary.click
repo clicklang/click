@@ -83,7 +83,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             have identity->__rb_parent_color == address(ancestor) by {
                 rewrite(identity->__rb_parent_color, address(ancestor) + (identity->__rb_parent_color & 1));
                 rewrite((identity->__rb_parent_color & 1), color_bit(shade));
-                rewrite(color_bit(shade), 0); normalize();
+                rewrite(color_bit(shade), 0);
+                have address(ancestor) + 0u64 == address(ancestor) by close();
+                close();
             }
             have node->__rb_parent_color == address(ancestor) by {
                 rewrite(node, identity);
@@ -173,7 +175,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             unfold(color_bit(Color::Black));
                             have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                 rewrite(node->__rb_parent_color, 1);
-                                rewrite(color_bit(Color::Black), 1); normalize();
+                                rewrite(color_bit(Color::Black), 1);
+                                have (1u64 & 1u64) == 1u64 by close();
+                                close();
                             }
                             let focus = fold(sized_at(node), { model: SizedTree::Node(identity, 0, Color::Black, value, left, right), metadata: metadata, left: l, right: r });
                             have sized_value(focus.model) == value by {
