@@ -945,7 +945,7 @@ theorem black_color_is_black(color: Color) {
                 have not(color_black(Color::Red) == 1);
                 contradiction(color_black(Color::Red) == 1);
             }
-            Color::Black => { normalize(); }
+            Color::Black => { close(); }
         }
     }
 }
@@ -972,7 +972,7 @@ theorem black_color_is_black(color: Color) {
                 have not(color_black(Color::Red) == 1) by close();
                 contradiction(color_black(Color::Red) == 1);
             }
-            Color::Black => { normalize(); }
+            Color::Black => { close(); }
         }
     }
 }
@@ -1019,7 +1019,7 @@ theorem black_color_is_black(color: Color) {
                     have to_integer(slots - capacity) == 0 by {{
                         {rewrite}
                         rewrite(used, 0);
-                        normalize();
+                        close();
                     }}
                     close();
                 }}

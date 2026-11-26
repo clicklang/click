@@ -386,7 +386,7 @@ mod tests {
                         ensures forall (unused: Integer) {{
                             {prefix}(match {scrutinee} {{ Packet::Empty => 0, Packet::Full(n) => n }})
                                 {relation} (match {scrutinee} {{ Packet::Empty => 0, Packet::Full(n) => n }}){suffix}
-                        }} by {{ intro() {{ normalize(); }} }}
+                        }} by {{ intro() {{ close(); }} }}
                     }}
                     "#
                 );
@@ -763,7 +763,7 @@ mod tests {
         let overflowing = r#"
             theorem overflow_in_second_step() {
                 ensures (1..3).fold(2147483646, |acc: int32, k: int32| -> int32 { acc + k })
-                    == -2147483647 by { normalize(); }
+                    == -2147483647 by { close(); }
             }
         "#;
         let error = crate::surface::verify_c_sources(overflowing, &[]).unwrap_err();
@@ -1118,7 +1118,7 @@ theorem only_element(v: int32, x: int32) {
                 theorem bounded() {{
                     ensures forall (x: {ty}) {{ x == x }} by {{
                         intro(value) {{
-                            normalize();
+                            close();
                         }}
                     }}
                 }}

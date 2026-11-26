@@ -231,13 +231,13 @@ int32 int_if(int32 x) {
     ensures forall (n: Integer) {
         ((if 1 < 2 { n } else { 7 }) : Integer) <= n
     };
-} by { step_until(function.exit); intro() { normalize(); } }
+} by { step_until(function.exit); intro() { close(); } }
 
 int32 alg_if(int32 x) {
     ensures forall (n: Integer) {
         (if 1 == 2 { Choice::Left } else { Choice::Right }) == Choice::Right
     };
-} by { step_until(function.exit); intro() { normalize(); } }
+} by { step_until(function.exit); intro() { close(); } }
 "#;
         let lines = capture(|| {
             crate::surface::verify_c_sources(source, &[("anchor.c", c)]).unwrap();
@@ -349,13 +349,13 @@ int32 projection(int32 seed) {
     ensures forall (unused: Integer) {
         (1..4).fold(seed, |acc: int32, k: int32| -> int32 { acc }) == seed
     };
-} by { step_until(function.exit); intro() { normalize(); } }
+} by { step_until(function.exit); intro() { close(); } }
 
 int32 short_sum(int32 seed) {
     ensures forall (unused: Integer) {
         (1..3).fold(5, |acc: int32, k: int32| -> int32 { acc + k }) == 8
     };
-} by { step_until(function.exit); intro() { normalize(); } }
+} by { step_until(function.exit); intro() { close(); } }
 "#;
         let lines = capture(|| {
             crate::surface::verify_c_sources(source, &[("folds.c", c)]).unwrap();
