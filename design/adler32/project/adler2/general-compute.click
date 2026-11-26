@@ -11,14 +11,14 @@ import click::integer;
 // Original remainder reductions and recombination preserve both residues.
 // The original scalar tail and final fields satisfy the common entry-input specification.
 
-theorem adler_uint64_self_subtract(n: uint64) { ensures to_integer(n - n) == to_integer(0u64) by normalize(); }
+theorem adler_uint64_self_subtract(n: uint64) { ensures to_integer(n - n) == to_integer(0u64) by close(); }
 theorem adler_i32_below_mod(n: int32) { requires n <= 65520; ensures n < 65521 by close() using { n <= 65520; }; }
 theorem adler_bounded_pointer_association(base: const uint8*, index: int32) {
  requires 0 <= index;
  requires index <= 22204;
  ensures (base + index) + 4 == base + (index + 4) by {
   have defined(index + 4) by close() using { 0 <= index; index <= 22204; };
-  normalize() using { defined(index + 4); };
+  apply(integer::uint8_pointer_add_associate_int32(base, index, 4));
  }
 }
 theorem adler_scalar_batch_product_bound(length: uint32, seed: uint32) {
@@ -35,7 +35,7 @@ theorem adler_scalar_batch_product_bound(length: uint32, seed: uint32) {
 theorem adler_small_length_cast(length: uint64) {
  requires length <= 22204u64;
  ensures (length as u32) <= 22204u32 by {
-  have 0u64 <= length by normalize();
+  have 0u64 <= length by close();
   have 0 <= to_integer(length) by close();
   have to_integer(length) <= 4294967295 by close() using { to_integer(length) <= 22204; };
   have to_integer((length as u32)) == to_integer(length) by {
@@ -53,7 +53,7 @@ theorem adler_tail_pointer_association(base: const uint8*, index: int32) {
  requires index <= 2147483646;
  ensures (base + index) + 1 == base + (index + 1) by {
   have defined(index + 1) by close() using { 0 <= index; index <= 2147483646; };
-  normalize() using { defined(index + 1); };
+  apply(integer::uint8_pointer_add_associate_int32(base, index, 1));
  }
 }
 
