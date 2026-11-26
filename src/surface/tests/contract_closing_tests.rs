@@ -17,7 +17,7 @@ fn proof(steps: &str) -> String {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn explicit_contract_closing_uses_ordinary_known_steps() {
-    let source = proof("normalize(); close(); close(); close();");
+    let source = proof("close(); close(); close(); close();");
     let mut verified = without_implicit_solve(|| verify_c_sources(&source, C))
         .unwrap_or_else(|error| panic!("{}", error.message()));
     // Reuse the completed artifact: losing its ordinary root must refuse,
@@ -61,7 +61,7 @@ fn per_clause_contract_closing_expands_after_its_source_proof() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn omitted_finalization_steps_run_in_checked_only_replay() {
     for count in 0..=3 {
-        let source = proof(&format!("normalize(); {}", "close(); ".repeat(count)))
+        let source = proof(&format!("close(); {}", "close(); ".repeat(count)))
             .replace("step_until(function.exit);", "step();");
         crate::surface::check_audit_claim("value.contract", true, || {
             verify_c_sources(&source, C).map_err(|error| error.report())
@@ -82,7 +82,7 @@ fn omitted_finalization_steps_run_in_checked_only_replay() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn written_close_closes_only_one_selected_closing_goal() {
-    let source = proof("normalize(); close(); normalize();");
+    let source = proof("close(); close(); close() using {};");
     let error = without_implicit_solve(|| verify_c_sources(&source, C)).unwrap_err();
     assert!(
         error
@@ -138,7 +138,7 @@ fn proposition_closers_name_the_pending_closing_goal() {
         "close() using {};",
         "all { true => { close(); } true => { close(); } }",
     ] {
-        let source = proof(&format!("normalize(); {closer}"));
+        let source = proof(&format!("close(); {closer}"));
         let error = verify_c_sources(&source, C).unwrap_err();
         assert!(
             error.message().contains("requires a proposition goal"),
@@ -161,11 +161,11 @@ fn footprint_refusal_names_the_goal_and_the_closing_operation() {
     )];
     for (steps, expected) in [
         (
-            "normalize();",
+            "close();",
             "contract finalization could not prove the write footprint obligation",
         ),
         (
-            "normalize(); close(); close(); close();",
+            "close(); close(); close(); close();",
             "this tactic could not prove the write footprint obligation",
         ),
     ] {
