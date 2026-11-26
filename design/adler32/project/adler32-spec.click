@@ -434,7 +434,7 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
     apply(integer::int32_add_to_integer(prefix, suffix));
     rewrite(to_integer(prefix + suffix), to_integer(prefix) + to_integer(suffix));
     rewrite(suffix, 0);
-    close() using {};
+    close();
    }
    apply(adler_sum_empty(bytes + prefix, 0));
    have adler_byte_sum(bytes + prefix, suffix) == 0 by { rewrite(suffix, 0); close(); }
