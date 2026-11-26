@@ -5180,7 +5180,9 @@ fn a_cpp_class_function_is_its_object_field() {
         class Shape { function size(this) -> int32; } \
         extern int Shape::area(int scale) const { ensures result == size(this) + scale; } \
         int total(const Shape& shape, int scale) { ensures result == size(shape) + scale; } \
-        class Square : Shape { function size(this) -> int32 { this->side } }";
+        class Square : Shape { function size(this) -> int32 { this->side } } \
+        extern int Shape::object() const { ensures result == size(this); } \
+        extern void lend(int* p) { owns held: Shape::object(p); }";
     use crate::languages::interface::{InterfaceType, RecordLayout};
 
     let layout = |fields, size| RecordLayout::from_explicit_fields(fields, size, 8).unwrap();
@@ -5207,9 +5209,23 @@ fn a_cpp_class_function_is_its_object_field() {
     let object = file
         .resource_definitions()
         .iter()
-        .find(|definition| definition.name() == "Shape__object")
+        .find(|definition| definition.name() == "Shape::object")
         .expect("the class's object is declared");
     assert!(object.is_sealed());
+    let lend = file
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == "lend")
+        .expect("the contract that names the object explicitly");
+    assert!(matches!(
+        lend.requires(),
+        [Requirement::Resource(ResourceClause::Named { resource, .. })]
+            if matches!(resource.as_ref(), ResourceClause::Declared { name, .. } if name == object.name())
+    ));
+    assert!(file.function_blocks().iter().any(|block| {
+        crate::languages::cpp::names::cpp_display_name(block.signature().name()).as_deref()
+            == Some("Shape::object")
+    }));
     use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
     let conversion = CppObjectConversion::new("Square", "Shape");
     for kind in CppBindingKind::ALL {

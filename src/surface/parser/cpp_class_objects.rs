@@ -5,11 +5,11 @@
 //! `class Shape { function size(this) -> int32; }`, and each class passed as
 //! one defines them, `class Square : Shape { function size(this) -> int32 {
 //! this->side } }`. The class's object is then a sealed abstract resource
-//! whose fields are those functions, `Shape__object`:
+//! whose fields are those functions, `Shape::object`:
 //!
 //! - A method of the class, and a parameter `Shape& x`, holds the object:
-//!   its contract owns `object_resource(this): Shape__object(this)` or `object_resource(x):
-//!   Shape__object(&x)` and reads `size(x)` as its field `size`. A `const`
+//!   its contract owns `object_resource(this): Shape::object(this)` or `object_resource(x):
+//!   Shape::object(&x)` and reads `size(x)` as its field `size`. A `const`
 //!   method or reference keeps the fields; a mutable one may change them,
 //!   which its `ensures` read as new and `old(size(x))` as at entry.
 //! - A method of a defining class is verified on its object's memory: it owns
@@ -37,7 +37,7 @@ use super::*;
 #[derive(Clone)]
 pub(super) struct ObjectClass {
     family: String,
-    /// The type arguments a use names the family at, `Holder__object<int>`:
+    /// The type arguments a use names the family at, `Holder<int>::object`:
     /// none for a class that is not a template's.
     arguments: Vec<String>,
     /// The type parameters of the resource this block declares, none for a
@@ -122,10 +122,85 @@ fn method_name(class: &str, method: &str) -> String {
 
 /// The name of the abstract resource that is class `class`'s object. A
 /// class template's instance, `Holder<int>`, has the generic resource of its
-/// template, `Holder__object`, at its arguments.
+/// template, `Holder::object`, at its arguments.
 fn object_family(class: &str) -> String {
     let template = class.split_once('<').map_or(class, |(name, _)| name);
-    format!("{template}__object")
+    format!("{template}::object")
+}
+
+/// Gives a generic class's object resource the same qualifier as its class.
+pub(super) fn object_resource_instance(family: &str, arguments: &[String]) -> Option<String> {
+    let template = family.strip_suffix("::object")?;
+    Some(format!("{template}<{}>::object", arguments.join(", ")))
+}
+
+/// In clauses and proofs, pass `Holder<int>::object(...)` to generic resource
+/// expansion as the family `Holder::object` applied to `int`.
+fn rewrite_resource_paths(
+    source: Vec<Spanned>,
+    objects: &BTreeMap<String, ObjectClass>,
+) -> Vec<Spanned> {
+    let families = objects
+        .values()
+        .map(|object| object.family.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut output = Vec::with_capacity(source.len());
+    let mut index = 0;
+    let mut depth = 0;
+    while let Some((token, position)) = source.get(index) {
+        // A top-level C++ method declarator can also end in `::object(...)`.
+        if depth > 0
+            && !matches!(
+                source.get(index.wrapping_sub(1)),
+                Some((Token::ColonColon, _))
+            )
+            && let Token::Ident(class) = token
+            && matches!(
+                source.get(index + 1),
+                Some((Token::LessThan | Token::ColonColon, _))
+            )
+            && let Some((arguments, after)) = resource_path_tail(&source, index + 1)
+        {
+            let family = object_family(class);
+            if families.contains(family.as_str()) {
+                output.push((Token::Ident(family), position.clone()));
+                output.extend(source[arguments].iter().cloned());
+                index = after;
+                continue;
+            }
+        }
+        match token {
+            Token::LBrace | Token::LParen | Token::LBracket => depth += 1,
+            Token::RBrace | Token::RParen | Token::RBracket => depth -= 1,
+            _ => {}
+        }
+        output.push((token.clone(), position.clone()));
+        index += 1;
+    }
+    output
+}
+
+fn resource_path_tail(source: &[Spanned], start: usize) -> Option<(std::ops::Range<usize>, usize)> {
+    let suffix = if source.get(start)?.0 == Token::LessThan {
+        // The shared resource expansion accepts names and multiword C++
+        // types. Stop at the first token outside that argument grammar.
+        let end = start
+            + 1
+            + source[start + 1..]
+                .iter()
+                .take_while(|(token, _)| matches!(token, Token::Ident(_) | Token::Comma))
+                .count();
+        if source.get(end)?.0 != Token::GreaterThan {
+            return None;
+        }
+        end + 1
+    } else {
+        start
+    };
+    (source.get(suffix)?.0 == Token::ColonColon
+        && is_ident(source.get(suffix + 1), "object")
+        && source.get(suffix + 2)?.0 == Token::LParen)
+        .then_some((start..suffix, suffix + 2))
 }
 
 /// The type arguments of a class template instance's spelling, `["int"]` for
@@ -176,7 +251,7 @@ fn substituted(tokens: &[Spanned], substitution: &BTreeMap<String, String>) -> V
     output
 }
 
-/// A use of `object`'s resource, `Holder__object<int>`, before its `(`.
+/// A use of `object`'s resource, `Holder<int>::object`, before its `(`.
 fn family_use(object: &ObjectClass, position: &SourcePosition) -> Vec<Spanned> {
     let mut tokens = vec![(ident(&object.family), position.clone())];
     if !object.arguments.is_empty() {
@@ -535,7 +610,7 @@ pub(super) fn rewrite_class_objects(
                 .map(move |method| method_name(class, method))
         })
         .collect();
-    let (tokens, positions) = output.into_iter().unzip();
+    let (tokens, positions) = rewrite_resource_paths(output, &objects).into_iter().unzip();
     Ok((
         tokens,
         positions,
@@ -1142,7 +1217,7 @@ fn object_parameter<'a>(
 }
 
 /// The handle owned for a holder's object: `object_resource(this):
-/// Shape__object(this)` or `object_resource(x): Shape__object(&x)`, and, when
+/// Shape::object(this)` or `object_resource(x): Shape::object(&x)`, and, when
 /// `kept`, that it keeps its fields.
 fn object_clauses(
     holder: &str,

@@ -2,6 +2,10 @@
 # IDs are stable review keys; paths are relative to docs/.
 
 [[item]]
+id = "cpp.resource.class-object"
+path = "reference/cli/capture.md#class-templates-verified-once"
+
+[[item]]
 id = "c.type.void"
 path = "reference/language/c.md#supported-types"
 
