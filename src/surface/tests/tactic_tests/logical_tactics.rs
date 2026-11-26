@@ -317,7 +317,7 @@ fn defined_rejects_concrete_undefined_expression() {
     let click_source = r#"
             theorem overflow_is_defined() {
                 ensures defined(2147483647 + 1) by {
-                    normalize();
+                    close() using {};
                 }
             }
         "#;
@@ -325,7 +325,9 @@ fn defined_rejects_concrete_undefined_expression() {
     let error = verify_c_sources(click_source, &[])
         .expect_err("a concretely overflowing expression is not defined");
     assert!(
-        error.message().contains("goal did not normalize to true"),
+        error.message().contains(
+            "`close() using` could not prove the current goal from only its listed premises"
+        ),
         "{}",
         error.message()
     );
@@ -455,7 +457,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
                 let saved = x;
                 ensures forall (x: int32) { saved == x } by {
                     intro() {
-                        normalize();
+                        close() using {};
                     }
                 }
             }
@@ -465,7 +467,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
                 let saved: Integer = x;
                 ensures forall (x: Integer) { saved == x } by {
                     intro() {
-                        normalize();
+                        close() using {};
                     }
                 }
             }
@@ -476,7 +478,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
                 let saved: Integer = x;
                 ensures exists (x: Integer) { saved == 1 } by {
                     witness(1);
-                    normalize();
+                    close() using {};
                 }
             }
         "#,
@@ -485,10 +487,12 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
     for source in false_claims {
         let error = verify_c_sources(source, &[])
             .expect_err("a lexical alias must retain the outer binding");
+        let message = error.message();
         assert!(
-            error.message().contains("did not normalize to true"),
-            "{}",
-            error.message()
+            message.contains(
+                "`close() using` could not prove the current goal from only its listed premises"
+            ) || message.contains("could not close the remaining witness obligations"),
+            "{message}"
         );
     }
 
@@ -1518,7 +1522,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
             } by {
                 have exists (j: int32) { j == x } by {
                     witness(x);
-                    normalize();
+                    close();
                 }
                 step_until(function.exit);
                 close();
@@ -1538,7 +1542,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
                 ..
             }) if matches!(
                 body.as_slice(),
-                [ProofTactic::Witness(_), ProofTactic::Normalize]
+                [ProofTactic::Witness(_), ProofTactic::Known]
             )
         )
     }));
@@ -1800,11 +1804,11 @@ fn cases_refuses_alternatives_that_do_not_cover_the_premise() {
                 cases {
                     x == 1 => {
                         rewrite(x, 1);
-                        normalize();
+                        close();
                     }
                     x == 3 => {
                         rewrite(x, 3);
-                        normalize();
+                        close();
                     }
                 }
             }
@@ -1845,11 +1849,11 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
                 cases {
                     x == 1 => {
                         rewrite(x, 2);
-                        normalize();
+                        close();
                     }
                     x == 2 => {
                         rewrite(x, 1);
-                        normalize();
+                        close();
                     }
                 }
             }
@@ -3028,14 +3032,14 @@ theorem three_way(x: int32) {
         cases {
             x == 1 => {
                 rewrite(x, 1);
-                normalize();
+                close();
             }
             x == 2 => {
                 close();
             }
             x == 3 => {
                 rewrite(x, 3);
-                normalize();
+                close();
             }
         }
     }
@@ -3393,7 +3397,7 @@ fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == p }} }} by {{
                     intro() {{
                         witness(saved);
-                        normalize();
+                        close() using {{}};
                     }}
                 }}
             }}
@@ -3402,7 +3406,9 @@ fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
         let error = verify_c_sources(&source, &[])
             .expect_err("outer alias cannot equal every introduced value");
         assert!(
-            error.message().contains("did not normalize to true"),
+            error
+                .message()
+                .contains("could not close the remaining witness obligations"),
             "{ty}: {}",
             error.message()
         );
