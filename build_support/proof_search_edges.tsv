@@ -703,10 +703,12 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from_opposite_bounds	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from_opposite_bounds	try_restricted_solve_closure	1
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	driver	7
+src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	close_refuted_comparison	2
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	try_direct_logical_closure	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	23
 src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	5
-src/surface/proof/smart_closures/integer_composition.rs	mixed	::close_refuted_comparison	driver	4
+src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::close_refuted_comparison	driver	6
+src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::close_refuted_comparison	try_integer_algebra	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	try_solve_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_product_bound_using	driver	3
@@ -830,6 +832,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_i
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_intrinsic_sum_bound	try_intrinsic_sum_bound	1
 
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::try_interval_exclusion_using	driver	3
+src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::try_interval_exclusion_using	close_refuted_comparison	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_interval_exclusion_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	close_selected_signed_order	1
