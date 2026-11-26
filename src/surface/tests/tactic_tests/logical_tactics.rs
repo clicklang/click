@@ -2173,7 +2173,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
         } by {
             have forall (j: int32) { j == j } by {
                 intro() {
-                    normalize();
+                    close();
                 }
             }
             have 1 <= x by {
