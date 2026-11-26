@@ -5,7 +5,92 @@
 //! operand the way the kind says, without inspecting the operands again.
 use super::*;
 
+/// What elaboration still asks of lowering: whether a generic call's result
+/// is algebraic at its instantiation, a pointer's element width, a call
+/// result's pointer element width, and whether an access through an untyped
+/// pointer is refused. Lowering answers these today from the values it
+/// lowered and from its own type inference; each moves to the `Elaborator`
+/// once it can be answered from declared types, and this trait goes away.
+pub(super) trait LoweringQueries {
+    fn generic_call_returns_algebraic(&mut self, expression: &SyntaxTerm) -> bool;
+    fn refuse_untyped_pointer_access(&mut self, expression: &SyntaxTerm) -> Result<(), String>;
+    fn contract_pointer_element_width(&mut self, expression: &SyntaxTerm) -> Option<u32>;
+    fn call_pointer_element_width(
+        &mut self,
+        expression: &SyntaxTerm,
+    ) -> Result<Option<u32>, String>;
+}
+
+/// The lowerer answering elaboration's queries in one lowering context.
+struct InLoweringContext<'l, 'a> {
+    lowerer: &'l mut AnnotationLowerer<'a>,
+    environment: &'l SpecElaborationContext,
+}
+
+impl LoweringQueries for InLoweringContext<'_, '_> {
+    fn generic_call_returns_algebraic(&mut self, expression: &SyntaxTerm) -> bool {
+        self.lowerer
+            .generic_call_returns_algebraic(expression, self.environment)
+    }
+    fn refuse_untyped_pointer_access(&mut self, expression: &SyntaxTerm) -> Result<(), String> {
+        self.lowerer
+            .refuse_untyped_pointer_access(expression, self.environment)
+    }
+    fn contract_pointer_element_width(&mut self, expression: &SyntaxTerm) -> Option<u32> {
+        self.lowerer
+            .contract_pointer_element_width(expression, self.environment)
+    }
+    fn call_pointer_element_width(
+        &mut self,
+        expression: &SyntaxTerm,
+    ) -> Result<Option<u32>, String> {
+        self.lowerer
+            .call_pointer_element_width(expression, self.environment)
+    }
+}
+
 impl AnnotationLowerer<'_> {
+    /// Elaborate a proposition in the lowering context it is lowered in.
+    pub(super) fn elaborate_proposition<'s>(
+        &mut self,
+        proposition: &'s SyntaxProposition,
+        environment: &SpecElaborationContext,
+    ) -> SurfaceProposition<'s> {
+        let elaborator = self.elaborator();
+        elaborator.elaborate_proposition(
+            proposition,
+            &TypingEnvironment::of(environment),
+            &mut InLoweringContext {
+                lowerer: self,
+                environment,
+            },
+        )
+    }
+
+    /// Elaborate `left operator right` in the lowering context it is lowered
+    /// in.
+    pub(super) fn elaborate_comparison(
+        &mut self,
+        left: &SyntaxTerm,
+        operator: ComparisonOperator,
+        right: &SyntaxTerm,
+        environment: &SpecElaborationContext,
+    ) -> Result<SurfaceProposition<'static>, String> {
+        let elaborator = self.elaborator();
+        elaborator.elaborate_comparison(
+            left,
+            operator,
+            right,
+            &TypingEnvironment::of(environment),
+            &mut InLoweringContext {
+                lowerer: self,
+                environment,
+            },
+        )
+    }
+}
+
+impl Elaborator<'_> {
     /// Elaborate a proposition to Surface in the lowering context it is
     /// lowered in: its connectives, and each comparison directly under them
     /// with its kind. A comparison whose elaboration fails stays `Untyped`,
@@ -13,9 +98,10 @@ impl AnnotationLowerer<'_> {
     /// in the same order. Connectives do not change the context, so each
     /// comparison is elaborated in the context lowering would use for it.
     pub(super) fn elaborate_proposition<'s>(
-        &mut self,
+        &self,
         proposition: &'s SyntaxProposition,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
+        lowering: &mut dyn LoweringQueries,
     ) -> SurfaceProposition<'s> {
         let mut surface = crate::surface::elaborate_connectives(proposition);
         let mut pending = vec![&mut surface];
@@ -34,7 +120,7 @@ impl AnnotationLowerer<'_> {
                     right,
                 }) => {
                     if let Ok(comparison) =
-                        self.elaborate_comparison(left, *operator, right, environment)
+                        self.elaborate_comparison(left, *operator, right, typing, lowering)
                     {
                         *node = comparison;
                     }
@@ -47,11 +133,12 @@ impl AnnotationLowerer<'_> {
 
     /// The typed Surface form of `left operator right`.
     pub(super) fn elaborate_comparison(
-        &mut self,
+        &self,
         left: &SyntaxTerm,
         operator: ComparisonOperator,
         right: &SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
+        lowering: &mut dyn LoweringQueries,
     ) -> Result<SurfaceProposition<'static>, String> {
         let comparison = |kind| {
             Ok(SurfaceProposition::Comparison {
@@ -62,8 +149,8 @@ impl AnnotationLowerer<'_> {
             })
         };
         if let (Some(left_element), Some(right_element)) = (
-            self.contract_pointer_element_type(left, &TypingEnvironment::of(environment)),
-            self.contract_pointer_element_type(right, &TypingEnvironment::of(environment)),
+            self.contract_pointer_element_type(left, typing),
+            self.contract_pointer_element_type(right, typing),
         ) && left_element != right_element
         {
             return Err(format!(
@@ -74,10 +161,8 @@ impl AnnotationLowerer<'_> {
         if operator == ComparisonOperator::In {
             return comparison(ComparisonKind::Sequence);
         }
-        let left_is_integer =
-            self.contract_expression_is_integer(left, &TypingEnvironment::of(environment));
-        let right_is_integer =
-            self.contract_expression_is_integer(right, &TypingEnvironment::of(environment));
+        let left_is_integer = self.contract_expression_is_integer(left, typing);
+        let right_is_integer = self.contract_expression_is_integer(right, typing);
         let left_is_integer = left_is_integer
             || (right_is_integer && matches!(left, SyntaxTerm::AlgebraicMatch { .. }));
         let right_is_integer = right_is_integer
@@ -96,9 +181,9 @@ impl AnnotationLowerer<'_> {
             }
             return Ok(SurfaceProposition::Comparison {
                 kind: ComparisonKind::Integer,
-                left: integer_surface_term(left.clone(), &TypingEnvironment::of(environment)),
+                left: integer_surface_term(left.clone(), typing),
                 operator,
-                right: integer_surface_term(right.clone(), &TypingEnvironment::of(environment)),
+                right: integer_surface_term(right.clone(), typing),
             });
         }
         // Two values of one struct are equal when each field is: the
@@ -116,8 +201,13 @@ impl AnnotationLowerer<'_> {
         {
             let mut fields = None;
             for (left, right) in left_fields.iter().zip(&right_fields) {
-                let field =
-                    self.elaborate_comparison(left, ComparisonOperator::Equal, right, environment)?;
+                let field = self.elaborate_comparison(
+                    left,
+                    ComparisonOperator::Equal,
+                    right,
+                    typing,
+                    lowering,
+                )?;
                 fields = Some(match fields {
                     None => field,
                     Some(before) => SurfaceProposition::And(Box::new(before), Box::new(field)),
@@ -130,26 +220,22 @@ impl AnnotationLowerer<'_> {
                 SurfaceProposition::Not(Box::new(equal))
             });
         }
-        let has_algebraic = self
-            .enum_program_value_type(left, &TypingEnvironment::of(environment))
-            .is_some()
-            || self
-                .enum_program_value_type(right, &TypingEnvironment::of(environment))
-                .is_some()
+        let has_algebraic = self.enum_program_value_type(left, typing).is_some()
+            || self.enum_program_value_type(right, typing).is_some()
             || contract_expression_is_algebraic(
                 left,
-                self.spec_definitions.functions,
-                &TypingEnvironment::of(environment),
+                self.definitions.functions,
+                typing,
                 &mut Vec::new(),
             )
             || contract_expression_is_algebraic(
                 right,
-                self.spec_definitions.functions,
-                &TypingEnvironment::of(environment),
+                self.definitions.functions,
+                typing,
                 &mut Vec::new(),
             )
-            || self.generic_call_returns_algebraic(left, environment)
-            || self.generic_call_returns_algebraic(right, environment);
+            || lowering.generic_call_returns_algebraic(left)
+            || lowering.generic_call_returns_algebraic(right);
         let equality_only = |kind, message: &str| {
             if matches!(
                 operator,
@@ -174,12 +260,14 @@ impl AnnotationLowerer<'_> {
         }
         Ok(SurfaceProposition::Comparison {
             kind: ComparisonKind::Native,
-            left: self.native_surface_term(left.clone(), environment),
+            left: self.native_surface_term(left.clone(), typing, lowering),
             operator,
-            right: self.native_surface_term(right.clone(), environment),
+            right: self.native_surface_term(right.clone(), typing, lowering),
         })
     }
+}
 
+impl AnnotationLowerer<'_> {
     /// Lower a Surface proposition. Connectives are lowered here, each over
     /// its operands' lowerings; a comparison by its elaborated kind; an
     /// `Untyped` construct by the Syntax lowering it had before it moved to
@@ -581,7 +669,7 @@ fn integer_surface_term(term: SyntaxTerm, typing: &TypingEnvironment<'_>) -> Sur
     }
 }
 
-impl AnnotationLowerer<'_> {
+impl Elaborator<'_> {
     /// The native Surface form of an operand of a native comparison, in the
     /// lowering context it is lowered in: its `-`, `*`, `/`, `%`, shifts and
     /// bitwise operators are native arithmetic, and every other construct
@@ -591,20 +679,19 @@ impl AnnotationLowerer<'_> {
     /// pointer step stays `Untyped`, so lowering refuses it as before. A `+`
     /// is elaborated by `native_addition`.
     fn native_surface_term(
-        &mut self,
+        &self,
         term: SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
+        lowering: &mut dyn LoweringQueries,
     ) -> SurfaceTerm {
         use ArithmeticOperator as Op;
         if matches!(term, SyntaxTerm::Subtract(..))
-            && self
-                .refuse_untyped_pointer_access(&term, environment)
-                .is_err()
+            && lowering.refuse_untyped_pointer_access(&term).is_err()
         {
             return SurfaceTerm::Untyped(term);
         }
         if matches!(term, SyntaxTerm::Add(..)) {
-            return self.native_addition(term, environment);
+            return self.native_addition(term, typing, lowering);
         }
         let binary = |op, left, right| SurfaceTerm::Binary {
             op,
@@ -615,74 +702,74 @@ impl AnnotationLowerer<'_> {
         match term {
             SyntaxTerm::Subtract(left, right) => {
                 match (
-                    self.contract_pointer_element_width(&left, environment),
-                    self.contract_pointer_element_width(&right, environment),
+                    lowering.contract_pointer_element_width(&left),
+                    lowering.contract_pointer_element_width(&right),
                 ) {
                     (Some(element_width), None) => SurfaceTerm::PointerStep {
-                        pointer: Box::new(self.native_surface_term(*left, environment)),
-                        elements: Box::new(self.native_surface_term(*right, environment)),
+                        pointer: Box::new(self.native_surface_term(*left, typing, lowering)),
+                        elements: Box::new(self.native_surface_term(*right, typing, lowering)),
                         element_width,
                         backward: true,
                     },
                     _ => binary(
                         Op::Subtract,
-                        Box::new(self.native_surface_term(*left, environment)),
-                        Box::new(self.native_surface_term(*right, environment)),
+                        Box::new(self.native_surface_term(*left, typing, lowering)),
+                        Box::new(self.native_surface_term(*right, typing, lowering)),
                     ),
                 }
             }
             SyntaxTerm::Multiply(left, right) => binary(
                 Op::Multiply,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::Divide(left, right) => binary(
                 Op::Divide,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::Remainder(left, right) => binary(
                 Op::Remainder,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::ShiftLeft(left, right) => binary(
                 Op::ShiftLeft,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::RustShiftLeft(left, right) => binary(
                 Op::RustShiftLeft,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::ShiftRight(left, right) => binary(
                 Op::ShiftRight,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::RustShiftRight(left, right) => binary(
                 Op::RustShiftRight,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::BitwiseAnd(left, right) => binary(
                 Op::BitwiseAnd,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::BitwiseOr(left, right) => binary(
                 Op::BitwiseOr,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::BitwiseXor(left, right) => binary(
                 Op::BitwiseXor,
-                Box::new(self.native_surface_term(*left, environment)),
-                Box::new(self.native_surface_term(*right, environment)),
+                Box::new(self.native_surface_term(*left, typing, lowering)),
+                Box::new(self.native_surface_term(*right, typing, lowering)),
             ),
             SyntaxTerm::BitwiseNot(operand) => SurfaceTerm::BitwiseNot {
-                operand: Box::new(self.native_surface_term(*operand, environment)),
+                operand: Box::new(self.native_surface_term(*operand, typing, lowering)),
             },
             // Lowering refuses the negation of an Integer and reads `-n` of
             // an `int32` literal as that constant; both stay `Untyped`, so
@@ -690,31 +777,26 @@ impl AnnotationLowerer<'_> {
             SyntaxTerm::Negate(operand)
                 if !matches!(operand.as_ref(), SyntaxTerm::IntegerLiteral(value)
                         if value.parse::<u64>().is_ok_and(|value| value <= (i32::MAX as u64) + 1))
-                    && !self.contract_expression_is_integer(
-                        &operand,
-                        &TypingEnvironment::of(environment),
-                    ) =>
+                    && !self.contract_expression_is_integer(&operand, typing) =>
             {
                 SurfaceTerm::Negate {
                     kind: ArithmeticKind::Native,
-                    operand: Box::new(self.native_surface_term(*operand, environment)),
+                    operand: Box::new(self.native_surface_term(*operand, typing, lowering)),
                 }
             }
             // A C variable with a known declared type is a typed name; one
             // with no known type stays `Untyped`.
             SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
-            )) => {
-                match self.program_name_type(name.as_str(), &TypingEnvironment::of(environment)) {
-                    Some(ty) => SurfaceTerm::Name {
-                        name,
-                        ty: LeafType::Program(ty),
-                    },
-                    None => SurfaceTerm::Untyped(SyntaxTerm::ProgramExpression(
-                        ProgramExpression::Variable(crate::kernel::BindingName::Named(name)),
-                    )),
-                }
-            }
+            )) => match self.program_name_type(name.as_str(), typing) {
+                Some(ty) => SurfaceTerm::Name {
+                    name,
+                    ty: LeafType::Program(ty),
+                },
+                None => SurfaceTerm::Untyped(SyntaxTerm::ProgramExpression(
+                    ProgramExpression::Variable(crate::kernel::BindingName::Named(name)),
+                )),
+            },
             // C types an unsuffixed decimal constant by its value. One too
             // large for `uint64` stays `Untyped`: lowering refuses it.
             SyntaxTerm::IntegerLiteral(text) => match text.parse::<u64>() {
@@ -749,17 +831,15 @@ impl AnnotationLowerer<'_> {
     /// A check that fails leaves the term `Untyped`, so lowering reports the
     /// same error.
     fn native_addition(
-        &mut self,
+        &self,
         term: SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
+        lowering: &mut dyn LoweringQueries,
     ) -> SurfaceTerm {
         let SyntaxTerm::Add(left, right) = &term else {
             unreachable!("native_addition elaborates an addition");
         };
-        if self
-            .refuse_untyped_pointer_access(&term, environment)
-            .is_err()
-        {
+        if lowering.refuse_untyped_pointer_access(&term).is_err() {
             return SurfaceTerm::Untyped(term);
         }
         // The literal chain `base + 1 + 2 + ...` lowering reads iteratively.
@@ -776,13 +856,8 @@ impl AnnotationLowerer<'_> {
         if literals > 0 {
             // As lowering does: the call width is read only for a base with
             // no pointer element type.
-            if self
-                .contract_pointer_element_type(base, &TypingEnvironment::of(environment))
-                .is_none()
-                && !matches!(
-                    self.call_pointer_element_width(base, environment),
-                    Ok(Some(_))
-                )
+            if self.contract_pointer_element_type(base, typing).is_none()
+                && !matches!(lowering.call_pointer_element_width(base), Ok(Some(_)))
             {
                 return SurfaceTerm::Untyped(term);
             }
@@ -790,25 +865,26 @@ impl AnnotationLowerer<'_> {
         let step = |pointer: &SyntaxTerm, elements: &SyntaxTerm, element_width| {
             (pointer.clone(), elements.clone(), element_width)
         };
-        let chosen = match self.call_pointer_element_width(left, environment) {
+        let chosen = match lowering.call_pointer_element_width(left) {
             Err(_) => return SurfaceTerm::Untyped(term),
             Ok(Some(width)) => Some(step(left, right, width)),
-            Ok(None) => match self.call_pointer_element_width(right, environment) {
+            Ok(None) => match lowering.call_pointer_element_width(right) {
                 Err(_) => return SurfaceTerm::Untyped(term),
                 Ok(Some(width)) => Some(step(right, left, width)),
-                Ok(None) => self
-                    .contract_pointer_element_width(left, environment)
+                Ok(None) => lowering
+                    .contract_pointer_element_width(left)
                     .map(|width| step(left, right, width))
                     .or_else(|| {
-                        self.contract_pointer_element_width(right, environment)
+                        lowering
+                            .contract_pointer_element_width(right)
                             .map(|width| step(right, left, width))
                     }),
             },
         };
         if let Some((pointer, elements, element_width)) = chosen {
             return SurfaceTerm::PointerStep {
-                pointer: Box::new(self.native_surface_term(pointer, environment)),
-                elements: Box::new(self.native_surface_term(elements, environment)),
+                pointer: Box::new(self.native_surface_term(pointer, typing, lowering)),
+                elements: Box::new(self.native_surface_term(elements, typing, lowering)),
                 element_width,
                 backward: false,
             };
@@ -834,8 +910,8 @@ impl AnnotationLowerer<'_> {
         SurfaceTerm::Binary {
             op: ArithmeticOperator::Add,
             kind: ArithmeticKind::Native,
-            left: Box::new(self.native_surface_term(*left, environment)),
-            right: Box::new(self.native_surface_term(*right, environment)),
+            left: Box::new(self.native_surface_term(*left, typing, lowering)),
+            right: Box::new(self.native_surface_term(*right, typing, lowering)),
         }
     }
 }
