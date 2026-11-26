@@ -2,6 +2,7 @@ use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 use crate::kernel::eval::SpecDivision;
 use crate::kernel::{CompareRelation, MachineOperandView, ProgramPoint, StoredPointerOffset};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 mod existential;
@@ -2770,18 +2771,17 @@ fn integer_carrier_in_pointer(pointer: &OldAddress, variable: Variable) -> bool 
 }
 
 fn integer_carrier_in_pointer_offset(offset: &OldAddressOffset, variable: Variable) -> bool {
-    match offset {
-        OldAddressOffset::Constant(_) => false,
-        OldAddressOffset::Variable(load) => {
-            integer_carrier_in_bitvector(&OldMachineTerm::Variable(*load), variable)
+    match offset.view() {
+        OffsetView::Constant(_) => false,
+        OffsetView::Variable(load) => {
+            integer_carrier_in_bitvector(&OldMachineTerm::Variable(load), variable)
         }
-        OldAddressOffset::Add(left, right) => {
+        OffsetView::Add(left, right) => {
             integer_carrier_in_pointer_offset(left, variable)
                 || integer_carrier_in_pointer_offset(right, variable)
         }
-        OldAddressOffset::Int32Scaled { value, .. }
-        | OldAddressOffset::Int64Scaled { value, .. } => {
-            integer_carrier_in_offset_index(value.operand_view(), variable)
+        OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+            integer_carrier_in_offset_index(index.operand_view(), variable)
         }
     }
 }
@@ -2823,14 +2823,14 @@ fn integer_carrier_in_offset_index(operand: MachineOperandView<'_>, variable: Va
 /// the accumulator quantifier is sound, while expanding the registry here
 /// would duplicate the checked carrier collector and reopen its DAG.
 fn pointer_offset_contains_registered_load(offset: &OldAddressOffset) -> bool {
-    match offset {
-        OldAddressOffset::Constant(_) => false,
-        OldAddressOffset::Variable(variable) => crate::kernel::is_load_variable(variable),
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) => false,
+        OffsetView::Variable(variable) => crate::kernel::is_load_variable(&variable),
+        OffsetView::Add(left, right) => {
             pointer_offset_contains_registered_load(left)
                 || pointer_offset_contains_registered_load(right)
         }
-        OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. } => false,
+        OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. } => false,
     }
 }
 
@@ -5967,7 +5967,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 fn canonical_scaled_offset(value: OldMachineTerm, byte_width: i64) -> OldAddressOffset {
     match value {
         bits32_constant!(value) => {
-            OldAddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            OldAddressOffset::constant((constant_u32(value) as i32 as i64) * byte_width)
         }
         value => OldAddressOffset::scaled_int32_node(value, byte_width),
     }
@@ -5975,14 +5975,16 @@ fn canonical_scaled_offset(value: OldMachineTerm, byte_width: i64) -> OldAddress
 
 /// `left + right` on offsets with constants folded and zero addends dropped.
 fn canonical_offset_sum(left: OldAddressOffset, right: OldAddressOffset) -> OldAddressOffset {
-    match (&left, &right) {
-        (OldAddressOffset::Constant(left), OldAddressOffset::Constant(right)) => {
-            OldAddressOffset::Constant(left + right)
-        }
-        (OldAddressOffset::Constant(0), _) => right,
-        (_, OldAddressOffset::Constant(0)) => left,
-        _ => OldAddressOffset::Add(Box::new(left), Box::new(right)),
+    if let (OffsetView::Constant(left), OffsetView::Constant(right)) = (left.view(), right.view()) {
+        return OldAddressOffset::constant(left + right);
     }
+    if matches!(left.view(), OffsetView::Constant(0)) {
+        return right;
+    }
+    if matches!(right.view(), OffsetView::Constant(0)) {
+        return left;
+    }
+    OldAddressOffset::raw_add(left, right)
 }
 
 fn lower_spec_disjunction_at_state_in(
@@ -7227,7 +7229,7 @@ fn evaluate_resource_count_paths(
                         obligations,
                     });
                 }
-                if anchor.offset != OldAddressOffset::Constant(0) {
+                if !matches!(anchor.offset.view(), OffsetView::Constant(0)) {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 }
                 if creation.governing_authority(&description).as_ref() != Some(&description) {
@@ -8437,7 +8439,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     )]
                 } else if !*exact
                     && *value_type == ProgramType::UInt32
-                    && matches!(pointer.offset, OldAddressOffset::Constant(0))
+                    && matches!(pointer.offset.view(), OffsetView::Constant(0))
                     && let Some((value, byte_facts)) = crate::kernel::eval::indexed_uint32_byte_read(
                         &read_point,
                         &pointer,
@@ -8632,7 +8634,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                         base: AddressBase::PureFunctionApplication(
                             application.as_ref().unwrap().clone(),
                         ),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     }
                 },
                 result_type,
@@ -8836,7 +8838,7 @@ fn refine_object_pointer_argument_with_null(
         [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
-                object.offset == OldAddressOffset::Constant(0)
+                matches!(object.offset.view(), OffsetView::Constant(0))
                     && memory.declared_class(object).as_ref() == Some(object_class)
             })
     };

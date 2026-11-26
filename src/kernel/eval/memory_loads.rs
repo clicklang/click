@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineCastSpelling;
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
 fn retained_cell_conversion(source: &ExecutionValue, value: ProgramValue) -> ExecutionValue {
@@ -2503,27 +2504,20 @@ fn symbolic_index_run_load(
             // The selected index is relative to the destination run. Apply
             // that same displacement to the captured source address.
             let scaled = if wide {
-                OldAddressOffset::Int64Scaled {
-                    value: index,
-                    byte_width: scale,
-                    unsigned: true,
-                }
+                OldAddressOffset::int64_scaled(index, scale, true)
             } else {
-                OldAddressOffset::Int32Scaled {
-                    value: index,
-                    byte_width: scale,
-                }
+                OldAddressOffset::int32_scaled(index, scale)
             };
             let offset = if let Some(displaced) = source_base
                 .offset
                 .as_const()
                 .and_then(|base| base.checked_add(shift))
             {
-                OldAddressOffset::add(OldAddressOffset::Constant(displaced), scaled)
+                OldAddressOffset::add(OldAddressOffset::constant(displaced), scaled)
             } else {
                 OldAddressOffset::add(
                     source_base.offset.clone(),
-                    OldAddressOffset::add(scaled, OldAddressOffset::Constant(shift)),
+                    OldAddressOffset::add(scaled, OldAddressOffset::constant(shift)),
                 )
             };
             copied_address = OldAddress {
@@ -2859,10 +2853,10 @@ thread_local! {
 /// A cheap candidate filter for a pointer that may be an exact typed read.
 /// Its shape is not itself evidence: indexed arithmetic can look identical.
 pub(crate) fn typed_pointer_read_variable(value: &OldAddress) -> Option<Variable> {
-    Some(match (&value.base, &value.offset) {
+    Some(match (&value.base, value.offset.view()) {
         (
             AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable),
-            OldAddressOffset::Constant(0),
+            OffsetView::Constant(0),
         ) => *variable,
         _ => return None,
     })
@@ -3173,7 +3167,7 @@ fn stored_pointer_address(address: &OldAddress) -> Option<OldAddress> {
     };
     let read = OldAddress {
         base: address.base.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     let stored = pointer_read_over_write_value(&read)?;
     Some(OldAddress {
@@ -3461,7 +3455,7 @@ pub(crate) fn arithmetic_comparison_form(proposition: &Proposition) -> Option<Pr
 pub(crate) fn pointer_read_over_immediate_store(pointer: &OldAddress) -> Option<OldAddress> {
     crate::instrumentation::record_deterministic_work(1);
     let read = pointer.as_loaded_value()?;
-    if read.displacement != OldAddressOffset::Constant(0) {
+    if !matches!(read.displacement.view(), OffsetView::Constant(0)) {
         return None;
     }
 
@@ -3555,7 +3549,7 @@ pub(crate) fn pointer_read_over_write_decoded_value(
     category: Option<PointerLoadCategory>,
 ) -> Option<OldPointer> {
     let read = pointer.as_loaded_value()?;
-    if read.displacement != OldAddressOffset::Constant(0) {
+    if !matches!(read.displacement.view(), OffsetView::Constant(0)) {
         return None;
     }
 
@@ -4343,45 +4337,42 @@ pub(crate) fn canonical_offset_term(offset: &OldAddressOffset) -> OldAddressOffs
     let mut results = Vec::new();
     while let Some(task) = tasks.pop() {
         match task {
-            Task::Visit(offset) => match offset {
-                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
-                    results.push(offset.clone())
-                }
-                OldAddressOffset::Add(left, right) => {
+            Task::Visit(offset) => match offset.view() {
+                OffsetView::Constant(_) | OffsetView::Variable(_) => results.push(offset.clone()),
+                OffsetView::Add(left, right) => {
                     tasks.push(Task::RebuildAdd);
                     tasks.push(Task::Visit(right));
                     tasks.push(Task::Visit(left));
                 }
-                OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. }
-                    if value.shared_operand().is_some() =>
+                OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. }
+                    if index.shared_operand().is_some() =>
                 {
                     // This child was constructed already. Reopening its read
                     // would change its identity and repeatedly walk its prefix.
                     results.push(offset.clone());
                 }
-                OldAddressOffset::Int32Scaled { value, byte_width } => {
+                OffsetView::Int32Scaled { index, byte_width } => {
                     results.push(OldAddressOffset::scale_int32(
                         canonical_term(
-                            value
+                            index
                                 .retained_written_operand()
                                 .expect("shared indices handled above"),
                         ),
-                        *byte_width,
+                        byte_width,
                     ));
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned,
                 } => results.push(OldAddressOffset::scale_int64(
                     canonical_term(
-                        value
+                        index
                             .retained_written_operand()
                             .expect("shared indices handled above"),
                     ),
-                    *byte_width,
-                    *unsigned,
+                    byte_width,
+                    unsigned,
                 )),
             },
             Task::RebuildAdd => {

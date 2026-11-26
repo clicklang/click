@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::OldMachineTerm;
 use crate::kernel::binary_term;
 use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32};
 
 mod division_domains;
@@ -1952,20 +1953,22 @@ fn pointer_element_indices(
     byte_width: u32,
 ) -> Option<(OldMachineTerm, OldMachineTerm)> {
     let zero = OldMachineTerm::constant(0);
-    let relative = match (&left.offset, &right.offset) {
-        (left, right) if left == right => Some((zero.clone(), zero.clone())),
-        (
-            OldAddressOffset::Add(left_base, left_addend),
-            OldAddressOffset::Add(right_base, right_addend),
-        ) if left_base == right_base => Some((
-            pointer_index_from_offset_term(left_addend, byte_width)?,
-            pointer_index_from_offset_term(right_addend, byte_width)?,
-        )),
-        (OldAddressOffset::Add(base, addend), right) if base.as_ref() == right => Some((
+    let (left_offset, right_offset) = (&left.offset, &right.offset);
+    let relative = match (left_offset.view(), right_offset.view()) {
+        _ if left_offset == right_offset => Some((zero.clone(), zero.clone())),
+        (OffsetView::Add(left_base, left_addend), OffsetView::Add(right_base, right_addend))
+            if left_base == right_base =>
+        {
+            Some((
+                pointer_index_from_offset_term(left_addend, byte_width)?,
+                pointer_index_from_offset_term(right_addend, byte_width)?,
+            ))
+        }
+        (OffsetView::Add(base, addend), _) if base == right_offset => Some((
             pointer_index_from_offset_term(addend, byte_width)?,
             zero.clone(),
         )),
-        (left, OldAddressOffset::Add(base, addend)) if base.as_ref() == left => Some((
+        (_, OffsetView::Add(base, addend)) if base == left_offset => Some((
             zero.clone(),
             pointer_index_from_offset_term(addend, byte_width)?,
         )),
@@ -1987,8 +1990,8 @@ fn pointer_difference_offsets<'a>(
 ) -> Option<(Vec<&'a OldAddressOffset>, Vec<&'a OldAddressOffset>)> {
     fn offset_spine(mut offset: &OldAddressOffset) -> Vec<&OldAddressOffset> {
         let mut spine = Vec::new();
-        while let OldAddressOffset::Add(base, displacement) = offset {
-            spine.push(displacement.as_ref());
+        while let OffsetView::Add(base, displacement) = offset.view() {
+            spine.push(displacement);
             offset = base;
         }
         spine.push(offset);
@@ -2044,20 +2047,19 @@ fn apply_pointer_difference(
         // Pointer formation folds consecutive constant advances. Check an
         // unsigned element index plus that advance in its original type:
         // n + k fits ptrdiff_t iff n <= PTRDIFF_MAX - k for k >= 0.
-        if let [
-            OldAddressOffset::Constant(bytes),
-            OldAddressOffset::Int64Scaled {
-                value,
+        if let [first, second] = offsets.as_slice()
+            && let OffsetView::Constant(bytes) = first.view()
+            && let OffsetView::Int64Scaled {
+                index: value,
                 byte_width: stride,
                 unsigned: true,
-            },
-        ] = offsets.as_slice()
+            } = second.view()
             && byte_width != 0
-            && *stride == i64::from(byte_width)
-            && *bytes >= 0
-            && *bytes % stride == 0
+            && stride == i64::from(byte_width)
+            && bytes >= 0
+            && bytes % stride == 0
         {
-            let advance = *bytes / stride;
+            let advance = bytes / stride;
             guards.push(PointerFormationGuard {
                 condition: crate::kernel::assumptions::wide_index_comparison(
                     CompareRelation::LessEqual,
@@ -3290,12 +3292,12 @@ fn pointer_index_from_concrete_offset(offset: i64, byte_width: u32) -> Option<Ol
 }
 
 fn pointer_arithmetic_index(offset: &OldAddressOffset, byte_width: u32) -> Option<OldMachineTerm> {
-    let OldAddressOffset::Add(left, right) = offset else {
+    let OffsetView::Add(left, right) = offset.view() else {
         return None;
     };
     let right = pointer_index_from_offset_term(right, byte_width)?;
-    let left = match left.as_ref() {
-        OldAddressOffset::Add(..) => pointer_arithmetic_index(left, byte_width)?,
+    let left = match left.view() {
+        OffsetView::Add(..) => pointer_arithmetic_index(left, byte_width)?,
         // The first addend is the pointer's opaque base. It is not an
         // element displacement, even if its byte representation happens to
         // be aligned.
@@ -3305,15 +3307,13 @@ fn pointer_arithmetic_index(offset: &OldAddressOffset, byte_width: u32) -> Optio
 }
 
 fn pointer_offset_contains_int64_scaled(offset: &OldAddressOffset) -> bool {
-    match offset {
-        OldAddressOffset::Int64Scaled { .. } => true,
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Int64Scaled { .. } => true,
+        OffsetView::Add(left, right) => {
             pointer_offset_contains_int64_scaled(left)
                 || pointer_offset_contains_int64_scaled(right)
         }
-        OldAddressOffset::Constant(_)
-        | OldAddressOffset::Variable(_)
-        | OldAddressOffset::Int32Scaled { .. } => false,
+        OffsetView::Constant(_) | OffsetView::Variable(_) | OffsetView::Int32Scaled { .. } => false,
     }
 }
 
@@ -3427,13 +3427,13 @@ fn exact_pointer_index_i64_with_guards(
     use MachineOperandView as V;
     let width = i64::from(element_width.unwrap_or(1));
     let scale = |bytes: i64| (width > 0 && bytes % width == 0).then(|| bytes / width);
-    match offset {
-        OldAddressOffset::Constant(value) => Some(SharedMachineIntegerTerm::intern(
+    match offset.view() {
+        OffsetView::Constant(value) => Some(SharedMachineIntegerTerm::intern(
             T::Int64,
-            OldMachineTerm::int64_constant(scale(*value)?),
+            OldMachineTerm::int64_constant(scale(value)?),
         )),
-        OldAddressOffset::Variable(_) => None,
-        OldAddressOffset::Add(left, right) => {
+        OffsetView::Variable(_) => None,
+        OffsetView::Add(left, right) => {
             let left = exact_pointer_index_i64_with_guards(left, element_width, guards)?;
             let right = exact_pointer_index_i64_with_guards(right, element_width, guards)?;
             Some(exact_offset_operation(
@@ -3443,8 +3443,11 @@ fn exact_pointer_index_i64_with_guards(
                 guards,
             ))
         }
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
-            let scale = scale(*byte_width)?;
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => {
+            let scale = scale(byte_width)?;
             let left = value
                 .operand_view()
                 .retain(T::Int32)
@@ -3459,16 +3462,17 @@ fn exact_pointer_index_i64_with_guards(
                 guards,
             ))
         }
-        OldAddressOffset::Int64Scaled { byte_width: 0, .. } => Some(
-            SharedMachineIntegerTerm::intern(T::Int64, OldMachineTerm::int64_constant(0)),
-        ),
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled { byte_width: 0, .. } => Some(SharedMachineIntegerTerm::intern(
+            T::Int64,
+            OldMachineTerm::int64_constant(0),
+        )),
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width,
             unsigned,
         } => {
-            let scale = scale(*byte_width)?;
-            if *unsigned {
+            let scale = scale(byte_width)?;
+            if unsigned {
                 let width = u64::try_from(scale).ok().filter(|width| *width > 0)?;
                 guards.push(PointerFormationGuard {
                     condition: crate::kernel::assumptions::wide_index_comparison(
@@ -3487,7 +3491,7 @@ fn exact_pointer_index_i64_with_guards(
                 }
                 &signed
             } else {
-                value
+                &value
             };
             Some(exact_offset_operation(
                 Operation::Multiply,
@@ -3563,12 +3567,12 @@ fn address_base_bounds(
         return Some(guards);
     }
 
-    if let OldAddressOffset::Int64Scaled {
-        value,
+    if let OffsetView::Int64Scaled {
+        index: value,
         byte_width: scale,
         unsigned,
-    } = &pointer.offset
-        && *scale > 0
+    } = pointer.offset.view()
+        && scale > 0
     {
         // Compare the original 64-bit element count to the number of elements
         // the block can hold. Rebuilding it as a 32-bit residue can certify an
@@ -3576,31 +3580,31 @@ fn address_base_bounds(
         // A 64-bit size states its element count where its byte count
         // spells one (it was admitted exact, so `n * w` holds `n`).
         let wide_count = (allocation_size.kind() == AllocationSizeKind::UInt64)
-            .then(|| allocation_size.element_count(u32::try_from(*scale).ok()?))
+            .then(|| allocation_size.element_count(u32::try_from(scale).ok()?))
             .flatten();
         let limit = if let Some(count) = wide_count {
-            if *unsigned {
+            if unsigned {
                 count
             } else {
                 OldMachineTerm::int64_from_uint64_bits(count)
             }
-        } else if *unsigned {
+        } else if unsigned {
             let bytes = allocation_size.uint64_bytes();
-            if *scale == 1 {
+            if scale == 1 {
                 bytes
             } else {
-                OldMachineTerm::uint64_divide(bytes, OldMachineTerm::uint64_constant(*scale as u64))
+                OldMachineTerm::uint64_divide(bytes, OldMachineTerm::uint64_constant(scale as u64))
             }
         } else {
             let bytes = allocation_size.int64_bytes();
-            if *scale == 1 {
+            if scale == 1 {
                 bytes
             } else {
-                OldMachineTerm::int64_divide(bytes, OldMachineTerm::int64_constant(*scale))
+                OldMachineTerm::int64_divide(bytes, OldMachineTerm::int64_constant(scale))
             }
         };
         let mut guards = Vec::new();
-        if !*unsigned {
+        if !unsigned {
             guards.push(PointerFormationGuard {
                 condition: formation_comparison(
                     MachineIntegerType::Int64,
@@ -3613,7 +3617,7 @@ fn address_base_bounds(
         }
         guards.push(PointerFormationGuard {
             condition: formation_comparison(
-                if *unsigned {
+                if unsigned {
                     MachineIntegerType::UInt64
                 } else {
                     MachineIntegerType::Int64
@@ -3730,15 +3734,15 @@ fn wide_element_block_bounds(
         condition,
         value: true,
     };
-    if let OldAddressOffset::Constant(bytes) = offset {
-        let bytes = u64::try_from(*bytes).ok()?;
+    if let OffsetView::Constant(bytes) = offset.view() {
+        let bytes = u64::try_from(bytes).ok()?;
         let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size.bytes(), bytes);
         return Some(vec![guard(OldConditionTerm::uint64_less_equal(
             bound,
             count.clone(),
         ))]);
     }
-    if matches!(offset, OldAddressOffset::Int32Scaled { .. }) {
+    if matches!(offset.view(), OffsetView::Int32Scaled { .. }) {
         // A bare 32-bit index keeps its own rule.
         return None;
     }
@@ -3770,18 +3774,18 @@ fn wide_block_bounds_of_32_bit_offset(
     offset: &OldAddressOffset,
     size: &AllocationSize,
 ) -> Option<Vec<PointerFormationGuard>> {
-    if let OldAddressOffset::Int32Scaled {
-        value,
+    if let OffsetView::Int32Scaled {
+        index: value,
         byte_width: scale,
-    } = offset
-        && *scale > 0
+    } = offset.view()
+        && scale > 0
     {
-        let limit = match size.element_count(u32::try_from(*scale).ok()?) {
+        let limit = match size.element_count(u32::try_from(scale).ok()?) {
             Some(count) => OldMachineTerm::int64_from_uint64_bits(count),
-            None if *scale == 1 => size.int64_bytes(),
+            None if scale == 1 => size.int64_bytes(),
             None => OldMachineTerm::int64_divide(
                 size.int64_bytes(),
-                OldMachineTerm::int64_constant(*scale),
+                OldMachineTerm::int64_constant(scale),
             ),
         };
         return Some(vec![
@@ -3848,17 +3852,13 @@ fn strided_block_bounds(
     offset: &OldAddressOffset,
     block_size: &OldMachineTerm,
 ) -> Option<Vec<PointerFormationGuard>> {
-    let (index, stride, field) = match offset {
-        OldAddressOffset::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
-        OldAddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (
-                OldAddressOffset::Int32Scaled { value, byte_width },
-                OldAddressOffset::Constant(field),
-            )
-            | (
-                OldAddressOffset::Constant(field),
-                OldAddressOffset::Int32Scaled { value, byte_width },
-            ) => (value, *byte_width, *field),
+    let (index, stride, field) = match offset.view() {
+        OffsetView::Int32Scaled { index, byte_width } => (index, byte_width, 0),
+        OffsetView::Add(left, right) => match (left.view(), right.view()) {
+            (OffsetView::Int32Scaled { index, byte_width }, OffsetView::Constant(field))
+            | (OffsetView::Constant(field), OffsetView::Int32Scaled { index, byte_width }) => {
+                (index, byte_width, field)
+            }
             _ => return None,
         },
         _ => return None,
