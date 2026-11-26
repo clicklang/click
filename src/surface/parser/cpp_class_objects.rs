@@ -566,7 +566,6 @@ pub(super) fn rewrite_class_objects(
                             &objects,
                             &defining,
                             &references,
-                            records,
                         )?);
                     }
                     for target in &targets {
@@ -1553,7 +1552,6 @@ fn dispatch_contracts(
     objects: &BTreeMap<String, ObjectClass>,
     defining: &BTreeMap<String, DefiningClass>,
     references: &BTreeMap<String, String>,
-    records: &BTreeMap<String, String>,
 ) -> Result<Vec<Spanned>, ClickError> {
     let root = &objects[&definer.root];
     let mut output = Vec::new();
@@ -1604,7 +1602,6 @@ fn dispatch_contracts(
             objects,
             defining,
             references,
-            records,
             &mut rewritten,
         )?;
         // Parse this as the real method's signature, keeping its contract in
