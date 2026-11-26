@@ -503,7 +503,8 @@ fn charon_symbolic_multiply_checks_general_safety_and_full_width_boundaries() {
     for requirements in [
         "",
         "requires rhs == 2u32; requires x == 4294967295u32;",
-        "requires rhs == 0u32; requires x <= 4294967295u32 / rhs;",
+        // At this boundary, every multiplier of at least two overflows.
+        "requires 2u32 <= rhs; requires x == 2147483648u32;",
     ] {
         let invalid = CHARON_MULTIPLY_SIDECAR.replace(premise, requirements);
         assert!(
@@ -6925,6 +6926,15 @@ fn chunks_exact_is_proved_from_its_fields() {
             invariant to_integer(n) * 4 + to_integer(iter.v.len()) == to_integer(bytes.len()) - to_integer(bytes.len() % 4u64);
             initialize by {
                 have bytes.len() % 4u64 <= bytes.len();
+                have iter.v.len() == bytes.len() - bytes.len() % 4u64;
+                have bytes.len() - bytes.len() % 4u64 - iter.v.len() == 0u64 by {
+                    rewrite(bytes.len() - bytes.len() % 4u64, iter.v.len());
+                    close();
+                }
+                have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len()) by {
+                    rewrite(bytes.len() - bytes.len() % 4u64 - iter.v.len(), 0u64);
+                    close();
+                }
                 close();
             }
             maintain by {
