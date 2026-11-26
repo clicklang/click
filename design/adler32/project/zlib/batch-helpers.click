@@ -34,7 +34,6 @@ theorem zlib_batch_remaining_bounds(n: uint32) {
   have to_integer(16u64) * to_integer(n as uint64) <= 18446744073709551615 by close() using { to_integer(n) <= 347; to_integer(n as uint64) == to_integer(n); };
   apply(integer::uint64_multiply_to_integer(16u64, n as uint64));
   unfold(zlib_batch_remaining(n));
-  close() using { to_integer(16u64 * n as uint64) == to_integer(16u64) * to_integer(n as uint64); to_integer(n as uint64) == to_integer(n); };
  }
 }
 theorem zlib_batch_remaining_limit(n: uint32) {
