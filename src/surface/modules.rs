@@ -1035,7 +1035,7 @@ void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); c
             r#"
 verifying "test.c";
 int32 helper(int32 x) { ensures result == x; }
-tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
+tactic keep(x: int32) { ensures x == x; } by { have x == x by close(); }
 "#,
             [],
         );

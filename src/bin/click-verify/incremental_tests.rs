@@ -88,8 +88,8 @@ impl Drop for Project {
     }
 }
 
-const TRUE_THEOREM: &str = "theorem claim() { ensures 1 == 1 by { normalize(); } }";
-const FALSE_THEOREM: &str = "theorem claim() { ensures 1 == 2 by { normalize(); } }";
+const TRUE_THEOREM: &str = "theorem claim() { ensures 1 == 1 by { close(); } }";
+const FALSE_THEOREM: &str = "theorem claim() { ensures 1 == 2 by { close(); } }";
 
 fn entered_verification(events: &[VerificationEvent]) -> bool {
     events
@@ -104,7 +104,7 @@ fn incremental_rejects_unattested_false_theorem_only_sidecars() {
     project.write("project.click", FALSE_THEOREM);
     project.commit();
 
-    assert!(project.verify().unwrap_err().contains("normalize"));
+    assert!(project.verify().unwrap_err().contains("goal: 1 == 2"));
     let (explained, events) = collect(|| project.incremental("HEAD", true));
     explained.unwrap();
     assert!(
@@ -116,7 +116,7 @@ fn incremental_rejects_unattested_false_theorem_only_sidecars() {
         project
             .incremental("HEAD", false)
             .unwrap_err()
-            .contains("normalize")
+            .contains("goal: 1 == 2")
     );
     assert!(!project.attested("HEAD"));
 }
@@ -148,7 +148,7 @@ fn incremental_verifies_reuses_and_rechecks_theorem_only_sidecars() {
         project
             .incremental("HEAD", false)
             .unwrap_err()
-            .contains("normalize")
+            .contains("goal: 1 == 2")
     );
 }
 
