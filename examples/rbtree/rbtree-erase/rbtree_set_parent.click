@@ -51,10 +51,11 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
                 close();
             }
             let after = fold(rb_at(rb), { model: RbTree::Node(node, p, color, lm, rm), left: left, right: right });
-            have after.model == rb_reparent(old(before.model), p) by {
-                rewrite(before.model, RbTree::Node(node, parent, color, lm, rm));
-                unfold(rb_reparent(old(RbTree::Node(node, parent, color, lm, rm)), p));
-                normalize() using {};
+            have old(before.model) == RbTree::Node(node, parent, color, lm, rm) by { close(); }
+            have rb_reparent(old(before.model), p) == RbTree::Node(node, p, color, lm, rm) by {
+                rewrite(old(before.model), RbTree::Node(node, parent, color, lm, rm));
+                unfold(rb_reparent(RbTree::Node(node, parent, color, lm, rm), p));
+                close();
             }
             close();
         },
