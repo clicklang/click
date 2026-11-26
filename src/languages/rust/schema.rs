@@ -553,6 +553,9 @@ pub enum Statement {
 pub struct MirBody {
     pub locals: Vec<Place>,
     pub blocks: Vec<MirBlock>,
+    /// The blocks implementing each reference conversion at a written call.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_bindings: Vec<MirObjectBinding>,
     /// MIR's return destination. A body that returns an expression directly
     /// has no declaration for this ID.
     #[serde(default = "return_place_id")]
@@ -584,6 +587,16 @@ pub struct MirBody {
         skip_serializing_if = "BTreeMap::is_empty"
     )]
     pub borrowed_scalars: BTreeMap<MirLocalId, u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MirObjectBinding {
+    /// None selects the receiver of a written method call.
+    pub argument: Option<usize>,
+    pub call: usize,
+    pub acquire: usize,
+    pub release: usize,
 }
 
 // JSON object keys erase the distinction between an integer ID and a

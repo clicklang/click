@@ -282,8 +282,8 @@ fn cpp_reference_binding_lookup_uses_the_call_and_argument_indexes() {
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
                 layout.source_path_region(&steps, ProgramPointKind::Entry),
-                layout.cpp_binding_target(&steps),
-                layout.cpp_binding_target(&[
+                layout.reference_binding_target(&steps),
+                layout.reference_binding_target(&[
                     steps[0].clone(),
                     SourcePathStep::Binding {
                         slot: CppBindingSlot::Argument(0),
@@ -293,8 +293,18 @@ fn cpp_reference_binding_lookup_uses_the_call_and_argument_indexes() {
             )
         });
         assert_eq!(result.0, Ok(count));
-        assert_eq!(result.1, Ok(&contract));
-        assert_eq!(result.2, Ok(&contract.release()));
+        assert_eq!(
+            result.1,
+            Ok(&crate::kernel::CallBinderTarget::CppBinding(
+                contract.clone()
+            ))
+        );
+        assert_eq!(
+            result.2,
+            Ok(&crate::kernel::CallBinderTarget::CppBinding(
+                contract.release()
+            ))
+        );
         counts.push(work);
     }
     assert!(

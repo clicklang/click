@@ -113,6 +113,12 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
             "    ensures result == 3 + scale;",
             "trait_objects::through_dyn.ensures_0",
         ),
+        (
+            Some("fn trait_objects::default_square("),
+            "statement(1).call(0).receiver.binding",
+            "statement(1).call(0).argument(0).binding",
+            "does not perform a checked reference binding",
+        ),
         // A mutable call may change the object: a caller lending the struct
         // gets fields the new size determines, not the fields it lent.
         (
@@ -200,6 +206,10 @@ fn charon_trait_objects_tools_recheck_expanded_certificates() {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
     assert_cli(&p, &["verify"]);
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(expanded.contains(".receiver.binding"));
+    assert!(expanded.contains(".argument(0).binding.release"));
+    assert!(!expanded.contains("__pack") && !expanded.contains("__unpack"));
 }
 
 const RESOURCE_SIDECAR: &str = include_str!("../../design/charon-trial/resource-state/slots.click");

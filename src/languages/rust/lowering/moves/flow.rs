@@ -533,6 +533,7 @@ mod tests {
             core_method: None,
             span: span.clone(),
             mir: Some(MirBody {
+                object_bindings: Vec::new(),
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
@@ -628,6 +629,7 @@ mod tests {
             right: Box::new(local("size")),
         };
         let mut mir = MirBody {
+            object_bindings: Vec::new(),
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
             unnamed_locals: Default::default(),
@@ -899,6 +901,7 @@ mod tests {
             .map(MirLocalId::from)
             .collect::<BTreeSet<_>>();
         let mut mir = MirBody {
+            object_bindings: Vec::new(),
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
             unnamed_locals: Default::default(),

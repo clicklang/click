@@ -10,7 +10,7 @@
 //! Each statement records the source range it covers, so a MIR statement is
 //! the innermost statement whose range holds where it starts.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
@@ -38,6 +38,7 @@ pub(crate) struct FunctionSource {
     pub(crate) statements: Vec<SourceStatement>,
     pub(crate) compound_literals: BTreeMap<(Position, Position), u32>,
     pub(crate) borrows: BTreeMap<(Position, Position), u32>,
+    pub(crate) method_calls: BTreeSet<(Position, Position)>,
 }
 
 /// The written statements and compound literal occurrences of the function that covers `at`.
@@ -59,6 +60,7 @@ pub(crate) fn function_source(file: &syn::File, at: Position) -> Option<Function
         statements,
         compound_literals: storage.literals,
         borrows: storage.borrows,
+        method_calls: storage.method_calls,
     })
 }
 
@@ -66,6 +68,7 @@ pub(crate) fn function_source(file: &syn::File, at: Position) -> Option<Function
 struct StorageOccurrences {
     literals: BTreeMap<(Position, Position), u32>,
     borrows: BTreeMap<(Position, Position), u32>,
+    method_calls: BTreeSet<(Position, Position)>,
 }
 
 impl StorageOccurrences {
@@ -82,6 +85,15 @@ impl StorageOccurrences {
 }
 
 impl<'ast> Visit<'ast> for StorageOccurrences {
+    fn visit_expr_method_call(&mut self, expression: &'ast syn::ExprMethodCall) {
+        let span = expression.span();
+        let start = span.start();
+        let end = span.end();
+        self.method_calls
+            .insert(((start.line, start.column), (end.line, end.column)));
+        syn::visit::visit_expr_method_call(self, expression);
+    }
+
     fn visit_expr_array(&mut self, expression: &'ast syn::ExprArray) {
         Self::add(&mut self.literals, expression);
         syn::visit::visit_expr_array(self, expression);

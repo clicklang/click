@@ -297,8 +297,8 @@ fn generic_container::through_dyn(x: u32) -> Option<u32> {
 } by {
     step_until(statement(0).call(0).entry);
     let { after: empty } = step(__rust_q_I17_generic_container_T46___rust_q_I17_generic_container_I5_Stack_A3_u32_I3_new);
-    step_until(statement(1).call(0).entry);
-    let { object_resource(): packed } = step(__rust_q_T46___rust_q_I17_generic_container_I5_Stack_A3_u32_R50___rust_q_I17_generic_container_I9_Container_A3_u32_I6___pack, { state: empty });
+    step_until(statement(1).call(0).argument(0).binding.entry);
+    let { object_resource(): packed } = step(statement(1).call(0).argument(0).binding, { state: empty });
     have packed.size == 0u64 by close();
     have packed.items == List<u32>::Nil by close();
     step_until(function.exit);

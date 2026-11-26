@@ -4813,9 +4813,13 @@ impl parser::ProgramLayouts {
             .map(|function| (function.name(), function.source_name()))
             .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
-            if cpp && function.prelowered_kernel_function().is_some() {
+            if (cpp && function.prelowered_kernel_function().is_some())
+                || function
+                    .source_sites()
+                    .is_some_and(|sites| !sites.object_bindings.is_empty())
+            {
                 tables
-                    .cpp_binding_functions
+                    .reference_binding_functions
                     .insert(function.source_name().to_string(), function.clone());
             }
             tables.register_local_bindings(function);
