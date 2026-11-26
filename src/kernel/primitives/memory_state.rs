@@ -11092,9 +11092,10 @@ impl ExecutionState {
             &view,
             memory.pending_steps.as_ref(),
         );
-        if self.memory.pending_steps.is_some() {
-            self.point = self.program_point().path_link().clone();
-        }
+        assert!(
+            self.memory.pending_steps.is_none(),
+            "a proof-only view is installed at a settled point"
+        );
         self.point = self.point.with_materialized_view(&source, &view, verified);
         memory.pending_steps = None;
         self.with_materialized_memory(memory)
@@ -11285,14 +11286,14 @@ impl ExecutionState {
         self.point.id()
     }
 
-    /// Point of an observation in this state, including a successor reached
-    /// by pending steps. A settled state already carries the ID.
+    /// Point of an observation in this state: the point it stands at. A
+    /// state with staged steps is between points and is never observed.
     pub(crate) fn observation_point_id(&self) -> Option<super::program_point::ProgramPointId> {
-        if self.memory.pending_steps.is_some() {
-            self.program_point().id()
-        } else {
-            self.program_point_id()
-        }
+        assert!(
+            self.memory.pending_steps.is_none(),
+            "a state with staged steps is read before its atomic region completes"
+        );
+        self.program_point_id()
     }
 
     /// Take `memory` as one step of the atomic region in progress, with

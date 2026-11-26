@@ -372,7 +372,16 @@ pub(super) fn verify_execution_theorem(
             )),
         )
     };
-    let parsed = crate::surface::verification::external_c_function(&block).with_proof_body(body);
+    // A concrete callee's static storage is installed at the synthetic
+    // function's entry, as an imported caller's is.
+    let parsed = crate::surface::verification::external_c_function(&block)
+        .with_proof_body(body)
+        .with_callee_static_storage(
+            concrete_callee
+                .and_then(|callee| environment.direct_callee_static_storage(callee))
+                .into_iter()
+                .collect(),
+        );
     let claims = function_claims(&block);
     let verified = prove_claims_by_grouped_script(
         None,

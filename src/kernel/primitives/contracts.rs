@@ -1246,6 +1246,7 @@ impl ProgramFunction {
             string_literals: Vec::new(),
             address_taken_locals: AddressTakenLocals::default(),
             loop_source_index: LoopSourceIndexCache::default(),
+            callee_static_storage: CalleeStaticStorage::default(),
             natural_loop_source: None,
         }
     }
@@ -1311,6 +1312,93 @@ impl ProgramFunction {
         self
     }
 
+    /// This function with `callees` as the static storage of the functions
+    /// its body calls directly ([`CalleeStaticStorage`]).
+    pub fn with_callee_static_storage(mut self, callees: Vec<ProgramFunction>) -> Self {
+        self.callee_static_storage = CalleeStaticStorage(callees.into());
+        self
+    }
+
+    /// The static storage of the functions this body calls directly that its
+    /// own storage does not declare.
+    pub fn callee_static_storage(&self) -> &[ProgramFunction] {
+        &self.callee_static_storage.0
+    }
+
+    /// This function's static storage alone: its name, which names its
+    /// static locals, and its storage, without a body or parameters.
+    pub fn static_storage_only(&self) -> ProgramFunction {
+        let mut storage = ProgramFunction::new(
+            ProgramType::Void,
+            self.name.clone(),
+            vec![],
+            ProgramStatement::Skip,
+        );
+        storage.global_variables = self.global_variables.clone();
+        storage.global_arrays = self.global_arrays.clone();
+        storage.static_variables = self.static_variables.clone();
+        storage.static_storage = self.static_storage.clone();
+        storage.string_literals = self.string_literals.clone();
+        storage
+    }
+
+    /// This storage-only function without the globals and literals `owner`
+    /// declares, which `owner`'s entry installs itself; none when nothing is
+    /// left.
+    pub fn static_storage_beyond(&self, owner: &ProgramFunction) -> Option<ProgramFunction> {
+        let globals = owner
+            .global_variables
+            .iter()
+            .map(Global::kernel_name)
+            .chain(owner.global_arrays.iter().map(GlobalArray::kernel_name))
+            .chain(
+                owner
+                    .global_aggregates()
+                    .iter()
+                    .map(GlobalAggregate::kernel_name),
+            )
+            .chain(
+                owner
+                    .global_aggregate_arrays()
+                    .iter()
+                    .map(GlobalAggregateArray::kernel_name),
+            )
+            .collect::<BTreeSet<_>>();
+        let literals = owner
+            .string_literals
+            .iter()
+            .map(StringLiteral::identity)
+            .collect::<BTreeSet<_>>();
+        let mut storage = self.static_storage_only();
+        storage
+            .global_variables
+            .retain(|global| !globals.contains(global.kernel_name()));
+        storage
+            .global_arrays
+            .retain(|global| !globals.contains(global.kernel_name()));
+        let shared = Arc::make_mut(&mut storage.static_storage);
+        shared
+            .global_aggregates
+            .retain(|global| !globals.contains(global.kernel_name()));
+        shared
+            .global_aggregate_arrays
+            .retain(|global| !globals.contains(global.kernel_name()));
+        storage
+            .string_literals
+            .retain(|literal| !literals.contains(literal.identity()));
+        let static_storage = &storage.static_storage;
+        let empty = storage.global_variables.is_empty()
+            && storage.global_arrays.is_empty()
+            && storage.static_variables.is_empty()
+            && storage.string_literals.is_empty()
+            && static_storage.static_arrays.is_empty()
+            && static_storage.global_aggregates.is_empty()
+            && static_storage.global_aggregate_arrays.is_empty()
+            && static_storage.static_aggregates.is_empty()
+            && static_storage.static_aggregate_arrays.is_empty();
+        (!empty).then_some(storage)
+    }
+
     pub fn with_source_body(mut self, source_body: ProgramStatement) -> Self {
         self.source_body = source_body;
         self.loop_source_index = LoopSourceIndexCache::default();
@@ -1373,6 +1461,8 @@ impl ProgramFunction {
             string_literals,
             address_taken_locals: _,
             loop_source_index: _,
+            // Derived from the source body and the program.
+            callee_static_storage: _,
             natural_loop_source,
         } = self;
         *program_entry == other.program_entry
@@ -4233,6 +4323,21 @@ impl ExecutionEnvironment {
         name: &str,
     ) -> Option<&VerifiedFunctionRule> {
         self.verified_function_rules.get(name)
+    }
+
+    /// The static storage a direct call of `name` reads: its function's, as
+    /// a storage-only function. A synthesized caller's entry installs it.
+    pub(crate) fn direct_callee_static_storage(&self, name: &str) -> Option<ProgramFunction> {
+        self.verified_function_rules
+            .get(name)
+            .map(|rule| &rule.function)
+            .or_else(|| {
+                self.external_function_rules
+                    .get(name)
+                    .map(|rule| &rule.function)
+            })
+            .or_else(|| self.get_function(name))
+            .map(ProgramFunction::static_storage_only)
     }
 
     pub(in crate::kernel) fn get_verified_function_termination_rule(

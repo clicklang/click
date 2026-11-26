@@ -4174,11 +4174,8 @@ fn assert_one_point_per_region(
             if let [effect] = link.predecessors()
                 && effect.is_call_effect()
             {
-                // A callee's static storage is materialized when its entry is
-                // built, at one point before the call's effect.
                 assert!(
-                    reached_from_entry(effect)
-                        || matches!(effect.predecessors(), [materialized] if reached_from_entry(materialized)),
+                    reached_from_entry(effect),
                     "{} reached its effect point through more than one new program point",
                     verification_operation_name(statement)
                 );

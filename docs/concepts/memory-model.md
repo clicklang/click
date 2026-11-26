@@ -39,7 +39,7 @@ point, and its value equation comes from the recorded store. When execution
 records a batch of effects at one point, the endpoint indexes the surviving
 stores by cell. Earlier disjoint versions remain available. An unclassified
 effect clears the accumulated entries, and a disconnected log cannot carry
-versions. A provisional point does not replay a batch to name a read.
+versions. A state with staged steps has no point and is never read.
 At a branch join, the index keeps a version when every arm carries the same
 recorded write. A second write of an equal value still has its own version.
 The join compares the changed branches of the persistent index. A checked call

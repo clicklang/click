@@ -74,7 +74,8 @@ point, its exit, from its entry. A region that changes memory in several steps
 stages each one (`ExecutionState::stage_memory`) and installs them together:
 the next install takes every staged step, and the leaf executor completes each
 path it returns (`complete_staged_memory`). A staged state stands between
-points, so a region reads only at its entry or its exit. A declaration's
+points and has none: a region reads only at its entry or its exit, and asking
+a staged state for its point panics (`ProgramPoint::of_state`). A declaration's
 initializer is read at the region's entry, which the fresh block leaves
 unchanged, unless it names the object being declared. Test builds assert the
 rule for every leaf statement (`assert_one_point_per_region`).
@@ -89,10 +90,13 @@ initialization of the memory it produces are staged together after those
 reads, so the exit takes both; its produced words' equations are made at the
 exit. Every value is the same at both, so `.effect` is a migration
 measure, to be removed once reads are named by the write that made their
-value. Static storage a function reads is one region: a function's entry
-installs all of its literals and globals at one point, and a callee whose
-storage the caller's memory lacks materializes it at one point before the
-effect (`initialize_callee_globals`); storage already present adds no point.
+value. A function's entry installs its static storage in one region: its own
+literals, globals and statics, and the memory of those its direct callees
+declare beyond them
+(`ProgramFunction::callee_static_storage`, which the surface attaches once the
+program is imported). A call therefore finds its callee's storage in place and
+reaches its effect point directly from its entry; storage already present adds
+no point.
 A call's mutex protocol steps, a
 helper's exchange and each typed use's forgetting, are steps of the call
 (`mutexes::ProtocolSite::InCall`): they read at the call's entry, where the

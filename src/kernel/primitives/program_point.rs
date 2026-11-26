@@ -1496,48 +1496,6 @@ impl std::fmt::Debug for ProgramPoint {
     }
 }
 
-type PendingPointKey = (Option<ProgramPointId>, usize, (u32, u32), bool);
-
-thread_local! {
-    /// The point made for each pending step log, so a state asked for its
-    /// point twice gets one point. Keyed by the log object, not by memory
-    /// contents: two routes to equal memory are two logs and two points.
-    /// The entry holds the log, so its address is not reused while keyed.
-    /// The same pending log may be reached from a view with different
-    /// evidence that its first indexed store follows the execution point.
-    static PENDING_POINTS: std::cell::RefCell<
-        std::collections::HashMap<PendingPointKey, (Arc<StepLog>, PathLink)>,
-    > = std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-/// The point after `path` that the steps in `steps` reach, with `memory`.
-fn pending_point(path: &PathLink, steps: &Arc<StepLog>, memory: &SharedMemory) -> PathLink {
-    let continues_index = steps.previous.is_none() && path.matches_indexed_view(steps.step.base());
-    let key = (
-        path.id(),
-        Arc::as_ptr(steps) as usize,
-        memory.arena_id(),
-        continues_index,
-    );
-    PENDING_POINTS.with(|points| {
-        points
-            .borrow_mut()
-            .entry(key)
-            .or_insert_with(|| {
-                (
-                    steps.clone(),
-                    path.after_with_index(
-                        memory.clone(),
-                        Some(steps.clone()),
-                        PointTransition::Provisional,
-                    ),
-                )
-            })
-            .1
-            .clone()
-    })
-}
-
 /// Identity of a read, separate from the memory view retained for checking.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(in crate::kernel) enum ReadKey {
@@ -1736,14 +1694,13 @@ impl ProgramPoint {
     /// handed out holds the memory it names. The log determines the
     /// successor even when the steps return to the predecessor's contents.
     pub(super) fn of_state(memory: &SymbolicMemory, path: &PathLink) -> Self {
-        let shared = intern_memory_ref(memory);
-        let path = match &memory.pending_steps {
-            Some(steps) => pending_point(path, steps, &shared),
-            _ => path.clone(),
-        };
+        assert!(
+            memory.pending_steps.is_none(),
+            "a state with staged steps is read before its atomic region completes"
+        );
         Self {
-            memory: shared,
-            path,
+            memory: intern_memory_ref(memory),
+            path: path.clone(),
             read: ReadSelection::Legacy(LegacyPlace::OwnPath),
         }
     }
@@ -3211,22 +3168,6 @@ mod tests {
         }
         assert!(work.iter().all(|&used| used <= work[0] + 64), "{work:?}");
 
-        // The source itself can still be carrying its own actual store.
-        let pending = start.clone().with_materialized_memory(
-            start
-                .memory()
-                .clone()
-                .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(11))),
-        );
-        let point = pending.program_point().id();
-        let named = pending.clone().with_materialized_memory_at_current_point(
-            pending.memory().clone().materialize_named_cell(
-                OldAddress::symbolic(Variable(38_128)),
-                ProgramValue::Int32(OldMachineTerm::constant(42)),
-            ),
-        );
-        assert_eq!(version(&named), point);
-
         // A replacement whose log performed a real store cannot carry the
         // old version even when it writes the same value to the same cell.
         let same_contents = written
@@ -3242,9 +3183,8 @@ mod tests {
             .memory()
             .clone()
             .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(13)));
-        let indexed = written.clone().with_materialized_memory(next.clone());
-        assert_eq!(version(&indexed), indexed.program_point().id());
-        assert_eq!(version(&rejected.with_materialized_memory(next)), None);
+        let indexed = written.clone().with_memory(next);
+        assert_eq!(version(&indexed), indexed.program_point_id());
         let unlogged = written.clone().with_materialized_memory_at_current_point(
             same_contents.materialize_named_cell(
                 OldAddress::symbolic(Variable(38_129)),
@@ -3299,63 +3239,22 @@ mod tests {
         assert!(intern_memory_ref(&memory).memory().pending_steps.is_none());
     }
 
-    /// A state that has taken steps since its last point stands at a point
-    /// after them, holding its current memory; a frame built from the state
-    /// stands there too, with the state's own memory value.
+    /// A state with staged steps stands between points: asking it for its
+    /// point is a defect in the region that staged them.
     #[test]
-    fn a_state_with_pending_steps_stands_after_them() {
+    #[should_panic(
+        expected = "a state with staged steps is read before its atomic region completes"
+    )]
+    fn a_state_with_staged_steps_has_no_point() {
         let start = ExecutionState::default().with_memory(memory_holding(0));
-        let moved = start.clone().with_materialized_memory(
+        let mut staged = start.clone();
+        staged.stage_memory(
             start
                 .memory()
                 .clone()
                 .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(7))),
         );
-        let point = moved.program_point();
-        assert_ne!(point.id(), start.program_point().id());
-        assert_eq!(
-            point.predecessor_ids(),
-            vec![start.program_point().id().unwrap()]
-        );
-        assert_eq!(point.path_link().memory(), Some(point.shared_memory()));
-
-        let frame = ExecutionState::at_state(&moved);
-        assert_eq!(frame.program_point().id(), point.id());
-        assert!(frame.memory().same_storage_roots(moved.memory()));
-    }
-
-    /// Recorded steps reach a new point even when their net contents match
-    /// the predecessor. Looking up that pending successor, or making a frame
-    /// there, must retain the same point identity.
-    #[test]
-    fn pending_steps_returning_to_equal_memory_reach_a_stable_successor() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let start = ExecutionState::default().with_memory(memory_holding(0));
-        let memory = start
-            .memory()
-            .clone()
-            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(1)))
-            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(0)));
-        assert!(memory.pending_steps.is_some());
-        let moved = start.clone().with_materialized_memory(memory);
-        assert_eq!(start.memory(), moved.memory());
-        let point = moved.program_point();
-        assert_ne!(point.id(), start.program_point().id());
-        assert_eq!(
-            point.predecessor_ids(),
-            vec![start.program_point().id().unwrap()]
-        );
-        assert_eq!(moved.program_point().id(), point.id());
-        assert_eq!(point.path_link().memory(), Some(point.shared_memory()));
-        let frame = ExecutionState::at_state(&moved);
-        assert_eq!(frame.program_point().id(), point.id());
-        assert!(frame.memory().pending_steps.is_none());
-        assert_eq!(frame.program_point().id(), point.id());
-        // A frame without pending steps stays at the predecessor.
-        assert_eq!(
-            ExecutionState::at_state(&start).program_point().id(),
-            start.program_point().id()
-        );
+        staged.program_point();
     }
 
     /// A state that takes another state's memory continues that state's

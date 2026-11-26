@@ -10,8 +10,29 @@ pub(super) fn initialize_program_function_globals_owned(
     function: &ProgramFunction,
     initialize_missing_storage: bool,
 ) -> ExecutionState {
-    let (mut state, staged) =
-        initialize_program_function_globals_with(state, function, initialize_missing_storage);
+    initialize_function_static_storage(state, function, initialize_missing_storage, true)
+}
+
+/// [`initialize_program_function_globals_owned`], with the static storage of
+/// the functions `function` calls directly in the same region when
+/// `with_callees`: its memory, not its bindings, so each call of them finds
+/// its storage in place and adds no point.
+fn initialize_function_static_storage(
+    state: ExecutionState,
+    function: &ProgramFunction,
+    initialize_missing_storage: bool,
+    with_callees: bool,
+) -> ExecutionState {
+    let (mut state, mut staged) =
+        initialize_program_function_globals_with(state, function, initialize_missing_storage, true);
+    if with_callees {
+        for callee in function.callee_static_storage() {
+            let callee_staged;
+            (state, callee_staged) =
+                initialize_program_function_globals_with(state, callee, false, false);
+            staged |= callee_staged;
+        }
+    }
     if staged {
         state.complete_staged_memory();
     }
@@ -25,7 +46,7 @@ pub(super) fn initialize_callee_globals(
     state: &ExecutionState,
     function: &ProgramFunction,
 ) -> ExecutionState {
-    initialize_program_function_globals_owned(state.clone(), function, false)
+    initialize_function_static_storage(state.clone(), function, false, false)
 }
 
 /// Stage one install of the static storage region in progress.
@@ -35,11 +56,13 @@ fn stage_static_storage(memory: SymbolicMemory, state: &mut ExecutionState, stag
 }
 
 /// The state with `function`'s static storage staged, and whether anything
-/// was staged.
+/// was staged. When `bind`, the frame also names the storage and holds its
+/// literals; otherwise only its memory is installed.
 fn initialize_program_function_globals_with(
     mut state: ExecutionState,
     function: &ProgramFunction,
     initialize_missing_storage: bool,
+    bind: bool,
 ) -> (ExecutionState, bool) {
     let mut staged = false;
     for literal in function.string_literals() {
@@ -69,6 +92,10 @@ fn initialize_program_function_globals_with(
                     &mut staged,
                 );
             }
+        }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
         }
         let value = ExecutionValue::from(ProgramValue::typed_pointer(
             slot.clone(),
@@ -120,6 +147,10 @@ fn initialize_program_function_globals_with(
                     &mut staged,
                 );
             }
+        }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
         }
         let library_value = global
             .linked_library_value
@@ -180,6 +211,10 @@ fn initialize_program_function_globals_with(
                 );
             }
         }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
+        }
         state.locals.set_array_object_at_with_constant(
             global_array.kernel_name().clone(),
             global_array.element_type(),
@@ -229,6 +264,10 @@ fn initialize_program_function_globals_with(
                     &mut staged,
                 );
             }
+        }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
         }
         state.locals.set_aggregate_object_at_with_constant(
             global_aggregate.kernel_name().clone(),
@@ -290,6 +329,10 @@ fn initialize_program_function_globals_with(
                 );
             }
         }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
+        }
         state.locals.set_array_object_at_with_constant(
             global_aggregate_array.kernel_name().clone(),
             ProgramType::UInt8,
@@ -340,6 +383,10 @@ fn initialize_program_function_globals_with(
                     &mut staged,
                 );
             }
+        }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
         }
         state.locals.set_global_with_all_qualifiers(
             static_local.kernel_name().clone(),
@@ -400,6 +447,10 @@ fn initialize_program_function_globals_with(
                 );
             }
         }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
+        }
         state.locals.set_array_object_at_with_constant(
             static_array.kernel_name().clone(),
             static_array.element_type(),
@@ -448,6 +499,10 @@ fn initialize_program_function_globals_with(
                     &mut staged,
                 );
             }
+        }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
         }
         state.locals.set_aggregate_object_at_with_constant(
             static_aggregate.kernel_name().clone(),
@@ -508,6 +563,10 @@ fn initialize_program_function_globals_with(
                     &mut staged,
                 );
             }
+        }
+        // Storage installed for a callee binds nothing in this frame.
+        if !bind {
+            continue;
         }
         state.locals.set_array_object_at_with_constant(
             static_aggregate_array.kernel_name().clone(),

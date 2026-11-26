@@ -7282,6 +7282,7 @@ pub struct ProgramFunction {
     pub(super) string_literals: Vec<StringLiteral>,
     pub(super) address_taken_locals: AddressTakenLocals,
     pub(super) loop_source_index: LoopSourceIndexCache,
+    pub(super) callee_static_storage: CalleeStaticStorage,
     /// A frontend-identified whole-body cycle. Its source identity exists
     /// before a frontier clause adds the executable proof wrapper.
     pub(super) natural_loop_source: Option<(ControlTargetId, Option<ControlTargetId>)>,
@@ -7293,6 +7294,34 @@ pub struct ProgramFunction {
 /// ordering ignore it.
 #[derive(Clone, Debug, Default)]
 pub(super) struct AddressTakenLocals(Arc<std::sync::OnceLock<BTreeSet<BindingName>>>);
+
+/// The static storage of the functions a function's body calls directly
+/// that its own storage does not declare, each as a storage-only function
+/// ([`ProgramFunction::static_storage_only`]). The function's entry installs
+/// its memory with the function's own storage, so a call finds its callee's
+/// storage in place. The frontend derives it from the body and the program,
+/// so equality, hashing and ordering ignore it.
+#[derive(Clone, Debug, Default)]
+pub(super) struct CalleeStaticStorage(pub(super) Arc<[ProgramFunction]>);
+impl PartialEq for CalleeStaticStorage {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for CalleeStaticStorage {}
+impl std::hash::Hash for CalleeStaticStorage {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl PartialOrd for CalleeStaticStorage {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for CalleeStaticStorage {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
 
 /// Derived source-loop shapes and eligibility data, shared by function clones.
 #[derive(Clone, Debug, Default)]

@@ -611,3 +611,34 @@ fn function_static_storage_is_installed_as_one_region() {
     let again = initialize_program_function_globals(&entry, &function);
     assert_eq!(again.program_point_id(), entry.program_point_id());
 }
+
+#[test]
+fn a_callees_static_storage_is_installed_at_its_callers_entry_without_binding() {
+    let callee = storage_function(
+        "callee",
+        vec![Global::new("other", ProgramType::Int32, int32(3))],
+    )
+    .with_string_literals(vec![StringLiteral::new(
+        StringLiteralId::new("callee", 0),
+        b"hi\0".to_vec(),
+    )]);
+    let caller = storage_function("caller", vec![])
+        .with_callee_static_storage(vec![callee.static_storage_only()]);
+    let start = ExecutionState::new().begin_function_entry_memory();
+    let entry = initialize_program_function_globals(&start, &caller);
+    let [from] = entry.path_link().predecessors() else {
+        panic!("a caller's and its callees' static storage reach one new point");
+    };
+    assert_eq!(from.id(), start.program_point_id());
+    assert!(
+        entry
+            .memory()
+            .has_block(&SymbolicMemory::global_pointer("other").base)
+    );
+    assert!(!entry.locals.contains_name("other"));
+    assert!(entry.literal_values.is_empty());
+    assert!(entry.resources().facts().is_empty());
+    // The callee's entry, built at a call, finds its storage in place.
+    let call = initialize_callee_globals(&entry, &callee);
+    assert_eq!(call.program_point_id(), entry.program_point_id());
+}
