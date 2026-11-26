@@ -1018,6 +1018,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
+        if facts.holds_false() {
+            return Ok(self.closed_focused());
+        }
         let proposition = goal.proposition();
         let available = |proposition: &Proposition| {
             // Re-lowering a quoted quantified fact freshens its binders.

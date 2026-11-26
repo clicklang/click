@@ -860,34 +860,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     }
                 }
             }
-            // A literal false premise needs no source search or arithmetic
-            // derivation. Fixed-state goals can use the same explicit
-            // contradiction as pure goals. Both spellings of the literal
-            // are read: `false` holds, and `true` does not, as the infeasible
-            // arm of a case split on a decided condition states it.
-            if proof.goal().is_some()
-                && proof
-                    .facts()
-                    .holds_contradiction_fact(&Proposition::condition_is(
-                        OldConditionTerm::Constant(false),
-                        true,
-                    ))
-                && let Some(closed) = attempt::candidate_outcome(proof.driver().apply_step(
-                    ProofStep::Contradiction(SyntaxProposition::Comparison {
-                        // Machine literals cannot be shadowed by C parameters
-                        // named `false` or `true` when the certificate is read.
-                        left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                            ProgramValue::UInt32(0u32.into()),
-                        )),
-                        operator: ComparisonOperator::Equal,
-                        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                            ProgramValue::UInt32(1u32.into()),
-                        )),
-                    }),
-                ))?
-            {
-                break 'close closed;
-            }
             if let Some(closed) =
                 crate::kernel::search::ProofSearch::try_discharged_consequent_closure(&(proof))?
             {

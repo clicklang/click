@@ -1259,6 +1259,14 @@ impl PureFactStore {
             })
     }
 
+    /// Exact membership of false (or the equivalent negated true) in this branch.
+    pub(super) fn holds_false(&self) -> bool {
+        let falsehood = Proposition::condition_is(OldConditionTerm::Constant(false), true);
+        self.contains(&falsehood)
+            || self.assumptions.contains_assumed_exact(&falsehood)
+            || self.contains_opposite_constant_polarity(&falsehood)
+    }
+
     /// Whether the positive half of `contradiction(fact)` is held, so a
     /// refusal can say which half was missing.
     pub(crate) fn holds_contradiction_fact(&self, fact: &Proposition) -> bool {

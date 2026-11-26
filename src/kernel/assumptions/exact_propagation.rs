@@ -135,11 +135,18 @@ fn literal(proposition: &Proposition, mut positive: bool) -> Literal {
                 comparison::structural_native_comparison_view(condition, true)
             };
             if let Some(mut view) = view {
-                let truth = if view.relation == Relation::NotEqual {
-                    view.relation = Relation::Equal;
-                    !*truth
-                } else {
-                    *truth
+                let truth = match view.relation {
+                    Relation::NotEqual => {
+                        view.relation = Relation::Equal;
+                        !*truth
+                    }
+                    Relation::LessEqual => {
+                        // a <= b is the negative polarity of b < a.
+                        view.relation = Relation::Less;
+                        view.operands.swap(0, 1);
+                        !*truth
+                    }
+                    Relation::Equal | Relation::Less => *truth,
                 };
                 LiteralKey::Comparison(super::observation_comparisons::key(&view), truth)
             } else {

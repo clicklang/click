@@ -77,7 +77,7 @@ remains supported.
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
   [Proposition reasoning](#proposition-reasoning).
 - `contradiction(P)`: close an impossible case from a fact and its negation.
-  Use `contradiction()` when the context already establishes `false`.
+  For proposition goals, `close()` also uses an already established `false`.
   See [Proposition reasoning](#proposition-reasoning).
 
 ## Which to use
@@ -95,6 +95,9 @@ when the default misses or when a proof must not search.
 - **Closing a proposition.** Let the implicit closer finish the script,
   or write `close()` to close the first open goal and continue. Use
   `close() using { ... }` to restrict proof search to listed facts.
+  If the focused branch already holds `false`, `close()` discharges its
+  proposition goal with no search. Exact proposition propagation establishes
+  `false` when the branch holds both a proposition and its negation.
   For a proof that must replay without search, use `click verify --checked-only`.
 - **Equalities and states.** `rewrite(from, to)` rewrites the goal with an
   equality at the current state.
