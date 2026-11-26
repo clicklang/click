@@ -457,9 +457,9 @@ tactic attach_erase_links(focus: struct rb_node*, parent: struct rb_node*, root:
             have links.model == Context::Left(identity, grandparent, color, sibling_model, outer_model) by close();
             have erase_context_is_right(links.model) == 0 by {
                 rewrite(links.model, Context::Left(identity, grandparent, color, sibling_model, outer_model));
-                unfold(erase_context_is_right(Context::Left(identity, grandparent, color, sibling_model, outer_model))); normalize();
+                unfold(erase_context_is_right(Context::Left(identity, grandparent, color, sibling_model, outer_model))); close();
             }
-            have links.model != Context::Top by { rewrite(links.model, Context::Left(identity, grandparent, color, sibling_model, outer_model)); normalize(); }
+            have links.model != Context::Top by { rewrite(links.model, Context::Left(identity, grandparent, color, sibling_model, outer_model)); close(); }
             apply(links.model != Context::Top and erase_context_is_right(links.model) == 0
                 implies parent->rb_left == focus and parent->rb_right == links.sibling_ptr);
             apply(links.model != Context::Top implies parent != 0 and links.root_count == 0 and links.parent_count == 1);
@@ -484,10 +484,10 @@ tactic attach_erase_links(focus: struct rb_node*, parent: struct rb_node*, root:
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
             have links.model == Context::Right(identity, grandparent, color, sibling_model, outer_model) by close();
-            have links.model != Context::Top by { rewrite(links.model, Context::Right(identity, grandparent, color, sibling_model, outer_model)); normalize(); }
+            have links.model != Context::Top by { rewrite(links.model, Context::Right(identity, grandparent, color, sibling_model, outer_model)); close(); }
             have erase_context_is_right(links.model) == 1 by {
                 rewrite(links.model, Context::Right(identity, grandparent, color, sibling_model, outer_model));
-                unfold(erase_context_is_right(Context::Right(identity, grandparent, color, sibling_model, outer_model))); normalize();
+                unfold(erase_context_is_right(Context::Right(identity, grandparent, color, sibling_model, outer_model))); close();
             }
             apply(erase_context_is_right(links.model) == 1
                 implies parent->rb_right == focus and parent->rb_left == links.sibling_ptr);

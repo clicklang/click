@@ -8,8 +8,8 @@ asks for the written form.
 ```click
 theorem nothing_is_nothing(xs: List<int32>) {
     ensures xs == xs by {
-        have List::Nil == List::Nil by { normalize(); }
-        normalize();
+        have List::Nil == List::Nil by { close(); }
+        close();
     }
 }
 ```

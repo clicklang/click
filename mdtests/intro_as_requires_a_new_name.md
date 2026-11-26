@@ -7,7 +7,7 @@ introducing the goal's variable as `n` is refused where it is written.
 theorem intro_as_clash(n: int32) {
     ensures forall (a: int32) { a == a } by {
         intro(n) {
-            normalize();
+            close();
         }
     }
 }
