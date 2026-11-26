@@ -206,6 +206,17 @@ fn unchanged_integer_folds_equal(left: &IntegerTerm, right: &IntegerTerm) -> boo
     (a.is_some() || b.is_some()) && a.as_ref().unwrap_or(left) == b.as_ref().unwrap_or(right)
 }
 
+/// An observed machine fold retains the identities of its free variables.
+/// Its accumulator and item can be renamed within the fold body.
+fn observed_machine_folds_alpha_equal(left: &SharedIntegerTerm, right: &SharedIntegerTerm) -> bool {
+    let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (left.as_ref(), right.as_ref()) else {
+        return false;
+    };
+    a.operand_view().fold().is_some()
+        && b.operand_view().fold().is_some()
+        && super::super::fact_keys::integer_terms_alpha_equivalent(left, right) == Some(true)
+}
+
 fn unchanged_machine_folds_equal(left: &OldMachineTerm, right: &OldMachineTerm) -> bool {
     let left = MachineOperandView::Old(left);
     let right = MachineOperandView::Old(right);
@@ -474,6 +485,7 @@ fn condition_value(condition: &OldConditionTerm) -> Option<bool> {
                 condition,
                 OldConditionTerm::IntegerEqual(..) | OldConditionTerm::IntegerNotEqual(..)
             ) && (unchanged_integer_folds_equal(left, right)
+                || observed_machine_folds_alpha_equal(left, right)
                 || conditional_matches_alpha_equal(left, right))
             {
                 return Some(matches!(condition, OldConditionTerm::IntegerEqual(..)));

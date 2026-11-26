@@ -68,7 +68,7 @@ theorem symbolic_control(lo: int32, hi: int32) {
     ensures forall (unused: Integer) {
         (lo..hi).fold(5, |acc: int32, k: int32| -> int32 { k })
             == (lo..hi).fold(5, |acc: int32, k: int32| -> int32 { k })
-    } by { intro() { normalize(); } }
+    } by { intro() { close(); } }
 }
 ```
 
