@@ -663,7 +663,7 @@ fn push_surface_step(steps: &mut Vec<ProofStep>, step: &ProofStep) {
 fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofStep) {
     #[cfg(test)]
     SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
-    if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
+    if steps.last().is_some_and(ProofStep::ends_refuted_path) {
         return;
     }
     if attach_deferred_open_tail(steps, step) {
@@ -909,7 +909,7 @@ pub(super) fn append_surface_tactics_by_leaf(
     ) {
         #[cfg(test)]
         SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
-        if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
+        if steps.last().is_some_and(ProofStep::ends_refuted_path) {
             return;
         }
         if let Some(ProofStep::Open {

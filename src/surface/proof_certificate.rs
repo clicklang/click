@@ -135,6 +135,7 @@ pub enum ProofStep {
         body: Box<ProofCertificate>,
     },
     Enumerate,
+    CloseUnreachable,
     Contradiction(SyntaxProposition),
     Rewrite(SyntaxProposition),
     Preserve(SyntaxProposition),
@@ -531,6 +532,10 @@ impl ProofCertificate {
 }
 
 impl ProofStep {
+    pub(in crate::surface) fn ends_refuted_path(&self) -> bool {
+        matches!(self, Self::CloseUnreachable | Self::Contradiction(_))
+    }
+
     pub(super) fn from_validated_tactic(tactic: &ProofTactic) -> Self {
         match tactic {
             ProofTactic::CloseInvariantsBy(body) => {
@@ -793,6 +798,7 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             ProofTactic::Known => Self::Known,
+            ProofTactic::CloseUnreachable => Self::CloseUnreachable,
             ProofTactic::CloseBounds(premises) => Self::CloseBounds(premises.clone()),
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
@@ -977,6 +983,7 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             Self::Known => ProofTactic::Known,
+            Self::CloseUnreachable => ProofTactic::CloseUnreachable,
             Self::CloseBounds(premises) => ProofTactic::CloseBounds(premises.clone()),
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
@@ -1222,7 +1229,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::CheckTerminationLocal(_)
         | ProofStep::CheckTerminationComponent { .. }
         | ProofStep::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
-        ProofStep::Known | ProofStep::CloseBounds(_) => TacticClass::Simple(SimpleTactic::Known),
+        ProofStep::Known | ProofStep::CloseUnreachable | ProofStep::CloseBounds(_) => {
+            TacticClass::Simple(SimpleTactic::Known)
+        }
         ProofStep::Normalize
         | ProofStep::NormalizeUsing(_)
         | ProofStep::CompatibilityNormalize(_) => TacticClass::Simple(SimpleTactic::Normalize),

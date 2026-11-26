@@ -18,8 +18,25 @@ fn close_on_exact_contradiction_uses_bounded_work() {
         arguments: vec![],
     };
     let negative = Proposition::Not(Box::new(positive.clone()));
+    let frontier = |facts| -> ProofObject<
+        (),
+        ProofObligation<(), Arc<OutcomeProofState<()>>>,
+        ProofExecutionState<()>,
+    > {
+        ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Frontier(FrontierObligation),
+                ProofBranchState {
+                    facts,
+                    execution: None,
+                },
+            ),
+        )
+    };
 
     let mut baseline = None;
+    let mut frontier_baseline = None;
     for size in [0, 16, 64, 256] {
         let unrelated = (0..size)
             .map(|i| Proposition::Predicate {
@@ -29,11 +46,28 @@ fn close_on_exact_contradiction_uses_bounded_work() {
             .collect::<Vec<_>>();
         let facts = PureFactStore::from_ordered(&unrelated).with_fact(positive.clone());
         let consistent = known_computation_proof(goal.clone(), facts.clone());
-        let inconsistent = known_computation_proof(goal.clone(), facts.with_fact(negative.clone()));
+        let inconsistent_facts = facts.with_fact(negative.clone());
+        let inconsistent = known_computation_proof(goal.clone(), inconsistent_facts.clone());
         let (closed, work) =
             measure_deterministic_work(|| inconsistent.apply_known(PropositionKnownContext::Exact));
         assert!(closed.is_ok(), "fact count {size}");
         assert_eq!(work, *baseline.get_or_insert(work), "fact count {size}");
+        let dead_frontier = frontier(inconsistent_facts);
+        let (closed, work) =
+            measure_deterministic_work(|| dead_frontier.close_unreachable_frontier());
+        assert!(closed.is_some_and(|closed| {
+            closed
+                .state()
+                .open_branches()
+                .get(closed.focused_branch())
+                .is_none()
+        }));
+        assert_eq!(
+            work,
+            *frontier_baseline.get_or_insert(work),
+            "fact count {size}"
+        );
+        assert!(frontier(facts).close_unreachable_frontier().is_none());
         assert!(
             consistent
                 .apply_known(PropositionKnownContext::Exact)

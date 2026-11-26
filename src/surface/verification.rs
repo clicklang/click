@@ -928,7 +928,10 @@ fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
         for arm in &mut std::sync::Arc::make_mut(proof_match).arms {
             append_on_every_path(&mut arm.tactics, suffix);
         }
-    } else if !matches!(script.last(), Some(ProofTactic::Contradiction(_))) {
+    } else if !matches!(
+        script.last(),
+        Some(ProofTactic::Close | ProofTactic::CloseUnreachable | ProofTactic::Contradiction(_))
+    ) {
         script.extend(suffix.iter().cloned());
     }
 }

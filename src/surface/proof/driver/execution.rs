@@ -2783,15 +2783,19 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                 continuation,
             } => {
                 for indexed in tactics {
-                    // A `contradiction` refutes the path it stands on, wherever it
-                    // stands. The planner's `[Contradiction]` fast path keeps a
-                    // sole-tactic arm out of the frontier split entirely; an arm
-                    // that first bridges the refuting fact into its own spelling
-                    // is an ordinary live path, and closes here instead. A refuted
-                    // path owes no invariant and no measure, contributes no back
-                    // edge and no exit, so it neither runs its continuation nor
-                    // becomes a leaf.
-                    if let ProofTactic::Contradiction(surface) = &indexed.tactic {
+                    // A refuted path owes no invariant or measure and contributes
+                    // no back edge or exit. Retain its terminal step for replay.
+                    let refutation = match &indexed.tactic {
+                        ProofTactic::Close if proof.facts().holds_false() => {
+                            Some(ProofStep::CloseUnreachable)
+                        }
+                        ProofTactic::CloseUnreachable => Some(ProofStep::CloseUnreachable),
+                        ProofTactic::Contradiction(surface) => {
+                            Some(ProofStep::Contradiction(surface.clone()))
+                        }
+                        _ => None,
+                    };
+                    if let Some(step) = refutation {
                         let execution = proof.execution_view()?.execution.clone();
                         let inside_match = execution
                             .presentation
@@ -2799,10 +2803,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             .iter()
                             .any(|choice| choice.match_arm.is_some());
                         let proof = proof.start_source_tactic(indexed.source_index)?;
-                        let proof = proof.driver().apply_step_at(
-                            ProofStep::Contradiction(surface.clone()),
-                            indexed.source_index,
-                        )?;
+                        let proof = proof.driver().apply_step_at(step, indexed.source_index)?;
                         if inside_match {
                             refuted_match_paths.push((execution, proof.path_certificate()?));
                         }
@@ -3713,12 +3714,9 @@ fn advance_prepared_execution_match<'a>(
         execution_region_leading_tactic(&arms[index])
             .map_or(usize::MAX, |tactic| tactic.source_index)
     })?;
-    // An arm that only bridges facts and then refutes itself owes no C
-    // outcome either. Its bridge (`have`s, unfolds, theorem applications, no
-    // C step) runs in the arm, and its `contradiction` excludes the
-    // constructor from the facts the bridge reached, so it is planned like a
-    // sole `contradiction` rather than executed as a live arm that would
-    // have to reach function exit.
+    // A terminal closer can exclude a constructor before executing C.
+    // Run the arm's fact-only prefix so it can establish the refutation in
+    // the arm's own state. Publish its capture only if the arm is excluded.
     for (index, arm) in arms.iter().enumerate() {
         if plan.excluded_certificate(index).is_some() {
             continue;
@@ -3733,10 +3731,11 @@ fn advance_prepared_execution_match<'a>(
         let Some((last, bridge)) = tactics.split_last() else {
             continue;
         };
-        let ProofTactic::Contradiction(surface) = &last.tactic else {
-            continue;
-        };
-        if !matches!(continuation.as_ref(), InternalProofNode::Done)
+        if !matches!(
+            last.tactic,
+            ProofTactic::Contradiction(_) | ProofTactic::Close | ProofTactic::CloseUnreachable
+        ) || (matches!(last.tactic, ProofTactic::Close) && proof.is_at_function_exit())
+            || !matches!(continuation.as_ref(), InternalProofNode::Done)
             || !bridge
                 .iter()
                 .all(|indexed| bridges_without_executing(&indexed.tactic))
@@ -3759,16 +3758,24 @@ fn advance_prepared_execution_match<'a>(
         else {
             continue;
         };
+        let scoped = scoped.at_source_tactic(last.source_index);
+        let (step, partition) = match &last.tactic {
+            ProofTactic::Close | ProofTactic::CloseUnreachable => {
+                let Some(partition) = scoped.execution_match_arm_unreachable(&plan, index) else {
+                    continue;
+                };
+                (ProofStep::CloseUnreachable, partition)
+            }
+            ProofTactic::Contradiction(surface) => (
+                ProofStep::Contradiction(surface.clone()),
+                scoped.prepare_execution_match_arm_exclusion(&plan, index, surface)?,
+            ),
+            _ => unreachable!("expected a terminal refutation tactic"),
+        };
         if let (Some(capture), Some(bridged)) = (expansion_capture.as_deref_mut(), bridge_capture) {
             *capture = bridged;
         }
-        let scoped = scoped.at_source_tactic(last.source_index);
-        let partition = scoped.prepare_execution_match_arm_exclusion(&plan, index, surface)?;
-        // Dispatch belongs to the driver: retain the ordinary contradiction's
-        // source attribution, trace and certificate before publishing the arm.
-        let closed = scoped
-            .driver()
-            .apply_step_at(ProofStep::Contradiction(surface.clone()), last.source_index)?;
+        let closed = scoped.driver().apply_step_at(step, last.source_index)?;
         closed.finish_execution_match_arm_exclusion(&mut plan, index, &entered, partition)?;
     }
     if plan.live_cases().is_empty() {

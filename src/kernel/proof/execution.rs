@@ -15,10 +15,10 @@ use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType
 use crate::kernel::{
     CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MemoryRange,
-    OldAddress, OldMachineTerm, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
-    ProofObligation, Proposition, PureFactContext, Resource, ResourceContext, ResourceFact,
-    ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, SymbolicMemory, Theorem,
-    Variable, VerifiedLoopRule,
+    OldAddress, OldConditionTerm, OldMachineTerm, ProgramExpression, ProgramFunction,
+    ProgramStatement, ProgramValue, ProofObligation, Proposition, PureFactContext, Resource,
+    ResourceContext, ResourceFact, ResourceSpec, RuntimeError, SpecProposition, StatementOutcome,
+    SymbolicMemory, Theorem, Variable, VerifiedLoopRule,
 };
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
@@ -3709,21 +3709,27 @@ impl CheckedProofCasePartition {
     ///
     /// `arm_facts` are the facts the arm's own proof reached: this case's
     /// facts plus what the arm's `have`s established from them, each checked
-    /// by its own proof. The arm is refuted when those facts contradict
-    /// `fact`, exactly as [`Self::excluding_constructor_case`] decides it for
-    /// a sole `contradiction`. The facts must hold this case's fact, so a
+    /// by its own proof. The arm is refuted when they hold `false` or
+    /// contradict the cited `fact`. The facts must hold this case's fact, so a
     /// context from another arm, or from before the split, cannot exclude
     /// this one.
     pub(crate) fn excluding_constructor_case_in(
         &self,
         index: usize,
         arm_facts: &PureFactStore,
-        fact: Proposition,
+        fact: Option<Proposition>,
     ) -> Option<Arc<Self>> {
         self.witness_scope.as_ref()?;
-        if !arm_facts.contains(self.case_fact(index)?) || !arm_facts.contradicts(&fact) {
+        if !arm_facts.contains(self.case_fact(index)?) {
             return None;
         }
+        let fact = match fact {
+            Some(fact) if arm_facts.contradicts(&fact) => fact,
+            None if arm_facts.holds_false() => {
+                Proposition::condition_is(OldConditionTerm::Constant(false), true)
+            }
+            _ => return None,
+        };
         let mut successor = self.clone();
         successor.identity = Arc::new(());
         successor.excluded[index] = Some(fact);
