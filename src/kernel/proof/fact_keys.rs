@@ -3313,6 +3313,7 @@ mod proposition_identity_tests {
         forall(
             variable,
             Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: Address::new(

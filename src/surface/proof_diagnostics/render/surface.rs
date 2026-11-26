@@ -3600,6 +3600,7 @@ mod tests {
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &current);
         labels.recorded_states(&recorded);
         let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: state.observation_point_id(),
             memory: before.memory().clone(),
             pointer: pointer.clone(),

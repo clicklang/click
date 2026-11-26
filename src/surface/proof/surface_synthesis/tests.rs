@@ -569,6 +569,7 @@ fn definedness_round_trips_at_distinct_points_after_unfold_names_a_cell() {
             ExpressionOutcome::Value(_)
         ));
         let fact = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: Some(point),
             memory: checked.state.memory().clone(),
             pointer: pointer.clone(),

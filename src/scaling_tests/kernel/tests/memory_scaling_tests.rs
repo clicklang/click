@@ -3168,6 +3168,7 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
         let initial = SymbolicMemory::new();
         let defined = |memory: &SymbolicMemory| {
             PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: read.clone(),

@@ -3780,6 +3780,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         if matches!(path.outcome, ExpressionOutcome::Value(_)) {
                             let mut fact =
                                 ExecutionPureFact::certified(Proposition::MemoryReadDefined {
+                                    point: state.memory_point(),
                                     at,
                                     memory: state.memory.clone(),
                                     pointer: pointer.clone(),

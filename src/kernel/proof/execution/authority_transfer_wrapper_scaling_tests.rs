@@ -76,6 +76,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
     let forged_facts = open_facts
         .clone()
         .with_fact(Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: open.program_point().id(),
             memory: open.memory().clone(),
             pointer: crate::kernel::Address::symbolic(Variable(9_850_004)),

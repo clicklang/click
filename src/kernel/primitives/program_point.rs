@@ -767,6 +767,13 @@ impl PathLink {
         Self::default()
     }
 
+    /// The point of a proposition built only to look a fact up by its
+    /// memory: lookups compare no point, so it needs none. It goes when
+    /// fact indexes are keyed by point.
+    pub(crate) fn lookup_key() -> Self {
+        Self::default()
+    }
+
     pub(super) fn function_entry(memory: SharedMemory) -> Self {
         Self::reached_from(
             memory,

@@ -110,6 +110,7 @@ pub(in crate::kernel) fn initialized_scalar_range_fact(
     );
     let wide = format == MachineIntegerType::UInt64;
     let defined = Proposition::MemoryReadDefined {
+        point: state.memory_point(),
         at: state.observation_point_id(),
         memory: state.memory().clone(),
         pointer: range

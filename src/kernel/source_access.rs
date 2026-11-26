@@ -195,7 +195,7 @@ impl ReferenceObservationSource {
     pub(super) fn matches_proposition(&self, proposition: &Proposition) -> bool {
         self.0.as_deref().is_none_or(|observation| match observation {
             ReferenceObservation::Read { source: _, pointer: expected, retained_state, at: expected_point, value_type: expected_type } => matches!(proposition,
-                Proposition::MemoryReadDefined { memory, pointer, value_type, at }
+                Proposition::MemoryReadDefined { memory, pointer, value_type, at, .. }
                 if expected_point == at && *retained_state == MemoryStateIdentity::of(memory) && expected == pointer && expected_type == value_type),
             ReferenceObservation::Borrow(birth) => matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(left, right), _)) if (left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer))),
         })
@@ -417,6 +417,7 @@ mod tests {
             kind: ReferenceAccessKind::Read,
         });
         let mut fact = ExecutionPureFact::certified(Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: memory.clone(),
             pointer: pointer.clone(),

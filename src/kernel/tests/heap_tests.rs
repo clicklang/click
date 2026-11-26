@@ -2353,6 +2353,7 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
     };
     let address = pointer.address().clone();
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: state.memory().clone(),
         pointer: address.clone(),
@@ -2382,6 +2383,7 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
         .free_heap_block(&address, &PureFactContext::new())
         .unwrap();
     let stale = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: freed,
         pointer: address,
@@ -2404,6 +2406,7 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
     let alias = Address::symbolic(Variable(940_001));
     let unrelated = Address::new(AddressBase::Heap(940_002), AddressOffset::constant(0));
     let validity = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: state.memory().clone(),
         pointer: address.clone(),
@@ -2453,6 +2456,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
         .unwrap();
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: memory.clone(),
             pointer: field.clone(),

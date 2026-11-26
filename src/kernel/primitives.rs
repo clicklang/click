@@ -15066,6 +15066,9 @@ pub enum KernelProposition {
     MemoryReadDefined {
         at: Option<program_point::ProgramPointId>,
         memory: SymbolicMemory,
+        /// The point `memory` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]), unlike `at`.
+        point: program_point::PathLink,
         pointer: Address,
         value_type: ProgramType,
     },
@@ -15359,6 +15362,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             memory,
             pointer,
             value_type,
+            ..
         } => {
             at.hash(state);
             memory.hash(state);
@@ -15657,7 +15661,9 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             memory,
             pointer,
             value_type,
+            point,
         } => Proposition::MemoryReadDefined {
+            point: point.clone(),
             at: *at,
             memory: memory.clone(),
             pointer: pointer.clone(),
