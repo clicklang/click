@@ -578,12 +578,6 @@ impl Adapter<'_> {
                     }
                     super::names::push_impl_type(&mut encoded, &record);
                 }
-                a::PathElem::Builtin(a::BuiltinPathElem::Closure, d) => {
-                    super::names::push_path_segment(
-                        &mut encoded,
-                        &super::names::closure_segment(d.index() as u32),
-                    )
-                }
                 _ => return Err(unsupported("qualified function path component")),
             }
         }
@@ -687,6 +681,8 @@ struct Adapter<'a> {
     drop_glues: BTreeMap<a::TypeDeclId, (a::FunDeclId, RustDestructor)>,
     /// Each closure's `ClosureAsFn` function, by the closure's name.
     closure_shims: BTreeMap<a::FunDeclId, String>,
+    closure_declarations: std::collections::HashMap<Vec<a::PathElem>, a::Span>,
+    closure_sources: std::cell::RefCell<BTreeMap<usize, super::source_statements::ClosureSites>>,
     /// The `Fn::call` methods of closures, imported as the closures, with
     /// each closure's state type.
     closure_calls: BTreeMap<a::FunDeclId, a::TypeDeclId>,
@@ -3067,6 +3063,15 @@ pub(super) fn decode_crate(
         destructors: BTreeMap::new(),
         drop_glues: BTreeMap::new(),
         closure_shims: BTreeMap::new(),
+        closure_declarations: krate
+            .type_decls
+            .iter()
+            .filter(|decl| {
+                decl.item_meta.is_local && matches!(decl.src, a::TypeSource::Closure { .. })
+            })
+            .map(|decl| (decl.item_meta.name.name.clone(), decl.item_meta.span))
+            .collect(),
+        closure_sources: std::cell::RefCell::default(),
         closure_calls: BTreeMap::new(),
         user_iterator_nexts: BTreeSet::new(),
         closure_captures: BTreeMap::new(),
@@ -3275,7 +3280,7 @@ pub(super) fn decode_crate(
                             continue;
                         }
                         adapter.closure_calls.insert(id, state);
-                        let name = adapter.closure_name(closure)?;
+                        let name = adapter.closure_name(closure, f.item_meta.span)?;
                         adapter.functions.insert(id, name);
                         continue;
                     }

@@ -2380,6 +2380,27 @@ pub fn program_call_value(
     )
 }
 
+pub(crate) fn program_create_closure(
+    step: u32,
+    closure: String,
+    captures: Vec<ProgramExpression>,
+    source: Option<ClosureSite>,
+) -> (ProgramStatement, ProgramExpression) {
+    (
+        ProgramStatement::CreateClosure {
+            step,
+            closure,
+            captures,
+            source,
+        },
+        ProgramExpression::StepResult {
+            step,
+            origin: StepOrigin::Value("closure creation"),
+            ends: true,
+        },
+    )
+}
+
 /// Two explicit operations: a call retaining its value, then a scalar assignment.
 #[cfg(test)]
 pub fn program_call_then_assign(

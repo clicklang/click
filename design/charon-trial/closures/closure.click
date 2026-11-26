@@ -11,7 +11,7 @@ fn closures::apply(f: fn(i32) -> i32, x: i32) -> i32 {
     ensures result == x + x;
 }
 
-fn closures::caller::{closure#0}(y: i32) -> i32 {
+fn closures::caller.statement(0).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 1000;
     ensures result == y + y;
 }
@@ -21,12 +21,12 @@ fn closures::caller(x: i32) -> i32 {
     ensures result == x + x;
 }
 
-fn closures::choose::{closure#0}(y: i32) -> i32 {
+fn closures::choose.statement(0).statement(0).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 1000;
     ensures result == y + y;
 }
 
-fn closures::choose::{closure#1}(z: i32) -> i32 {
+fn closures::choose.statement(0).statement(1).call(0).argument(0)(z: i32) -> i32 {
     requires 0 <= z and z <= 1000;
     ensures result == z + z;
 }

@@ -98,7 +98,11 @@ pub(super) fn statement_expressions<'a>(
                 expressions.push((condition, true));
             }
         }
-        ProgramStatement::CallConstruct { arguments, .. } => {
+        ProgramStatement::CreateClosure {
+            captures: arguments,
+            ..
+        }
+        | ProgramStatement::CallConstruct { arguments, .. } => {
             expressions.extend(arguments.iter().map(|argument| (argument, false)));
         }
         ProgramStatement::Call {

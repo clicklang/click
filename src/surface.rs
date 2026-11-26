@@ -7746,6 +7746,9 @@ pub enum SourcePathStep {
     /// The statement's `j`th call of any callee, including one through a
     /// function pointer, in evaluation order: `call(j)`; a chain's end.
     AnyCall(usize),
+    /// A callable formed by a written argument or initializer.
+    ClosureArgument(usize),
+    ClosureInitializer,
     /// The checked transfer at a written call argument or receiver.
     Binding {
         slot: crate::kernel::ReferenceBindingSlot,

@@ -83,6 +83,7 @@ fn children_all(
             cleanup: handler,
         } => visit(try_body) && visit(handler),
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }

@@ -4039,7 +4039,7 @@ fn rust_integer_literal_spans_keep_later_declarations_addressable() {
 
 #[test]
 fn source_tools_share_parser_tokens_and_byte_spans() {
-    let source = "/* λ # } */ import click::list::{append}; caller::{closure#12}; Box::(lambda#3); 37u64 -> value => next;";
+    let source = "/* λ # } */ import click::list::{append}; caller.statement(0).call(0).argument(0); Box::(lambda#3); 37u64 -> value => next;";
     let tokens = parser::source_tokens(source).unwrap();
     assert_eq!(
         tokens
@@ -4057,8 +4057,21 @@ fn source_tools_share_parser_tokens_and_byte_spans() {
             "}",
             ";",
             "caller",
-            "::",
-            "{closure#12}",
+            ".",
+            "statement",
+            "(",
+            "0",
+            ")",
+            ".",
+            "call",
+            "(",
+            "0",
+            ")",
+            ".",
+            "argument",
+            "(",
+            "0",
+            ")",
             ";",
             "Box",
             "::",

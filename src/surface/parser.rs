@@ -13290,17 +13290,31 @@ impl Parser {
             } else {
                 ReferenceBindingSlot::Receiver
             };
-            self.expect(Token::Dot)?;
-            if self.expect_ident("binding")? != "binding" {
-                return Err(self.error("expected `.binding` after a call argument or receiver"));
-            }
-            let release = self.peek() == Some(&Token::Dot)
-                && matches!(self.peek_next(), Some(Token::Ident(step)) if step == "release");
-            if release {
+            if self.peek() == Some(&Token::Dot)
+                && matches!(self.peek_next(), Some(Token::Ident(step)) if step == "binding")
+            {
                 self.expect(Token::Dot)?;
-                self.expect_ident("release")?;
+                self.expect_ident_spelling("binding")?;
+                let release = self.peek() == Some(&Token::Dot)
+                    && matches!(self.peek_next(), Some(Token::Ident(step)) if step == "release");
+                if release {
+                    self.expect(Token::Dot)?;
+                    self.expect_ident_spelling("release")?;
+                }
+                steps.push(SourcePathStep::Binding { slot, release });
+            } else if let ReferenceBindingSlot::Argument(index) = slot {
+                steps.push(SourcePathStep::ClosureArgument(index));
+            } else {
+                return Err(self.error("expected `.binding` after a call receiver"));
             }
-            steps.push(SourcePathStep::Binding { slot, release });
+        }
+        if matches!(steps.last(), Some(SourcePathStep::Statement(_)))
+            && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(step)) if step == "initializer")
+        {
+            self.expect(Token::Dot)?;
+            self.expect_ident_spelling("initializer")?;
+            steps.push(SourcePathStep::ClosureInitializer);
         }
         if self.chained_region_follows(&["read_event"]) {
             self.expect(Token::Dot)?;

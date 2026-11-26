@@ -119,6 +119,163 @@ impl<'ast> Visit<'ast> for StorageOccurrences {
     fn visit_item(&mut self, _: &'ast syn::Item) {}
 }
 
+pub(crate) use crate::kernel::{ClosureExpression, ClosureSite};
+
+impl ClosureSite {
+    pub(crate) fn contract_name(&self, owner: &str) -> String {
+        use std::fmt::Write;
+        let mut name = owner.to_owned();
+        for statement in &self.statements {
+            write!(name, ".statement({statement})").unwrap();
+        }
+        match self.expression {
+            ClosureExpression::Argument { call, argument } => {
+                write!(name, ".call({call}).argument({argument})").unwrap();
+            }
+            ClosureExpression::Initializer => name.push_str(".initializer"),
+        }
+        name
+    }
+}
+
+pub(crate) type ClosureSites = BTreeMap<(Position, Position), ClosureSite>;
+
+/// Index each closure once, at its written expression in the enclosing body.
+pub(crate) fn closure_sites(file: &syn::File) -> ClosureSites {
+    let mut visitor = ClosureBodies::default();
+    visitor.visit_file(file);
+    visitor.sites
+}
+
+#[derive(Default)]
+struct ClosureBodies {
+    sites: ClosureSites,
+}
+
+impl<'ast> Visit<'ast> for ClosureBodies {
+    fn visit_block(&mut self, block: &'ast syn::Block) {
+        for (index, statement) in block.stmts.iter().enumerate() {
+            collect_closure_sites(
+                &mut self.sites,
+                Item::Statement(statement),
+                vec![index as u32],
+            );
+        }
+        // Nested bodies are visited as separate functions. Child statements
+        // in this body were already collected by collect_closure_sites.
+        let mut nested = NestedBodyVisitor(self);
+        syn::visit::visit_block(&mut nested, block);
+    }
+}
+
+struct NestedBodyVisitor<'a>(&'a mut ClosureBodies);
+
+impl<'ast> Visit<'ast> for NestedBodyVisitor<'_> {
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        self.0.visit_item(item);
+    }
+
+    fn visit_expr_closure(&mut self, closure: &'ast syn::ExprClosure) {
+        if let syn::Expr::Block(body) = closure.body.as_ref() {
+            self.0.visit_block(&body.block);
+        }
+    }
+}
+
+fn collect_closure_sites(sites: &mut ClosureSites, item: Item<'_>, path: Vec<u32>) {
+    let mut visitor = ClosureExpressions {
+        sites,
+        path: &path,
+        next_call: 0,
+    };
+    let mut children = Children::default();
+    match item {
+        Item::Statement(statement) => {
+            visitor.visit_stmt(statement);
+            children.visit_stmt(statement);
+        }
+        Item::ArmBody(expression) => {
+            visitor.visit_expr(expression);
+            children.visit_expr(expression);
+        }
+    }
+    for (index, child) in children.items.into_iter().enumerate() {
+        let mut child_path = path.clone();
+        child_path.push(index as u32);
+        collect_closure_sites(sites, child, child_path);
+    }
+}
+
+struct ClosureExpressions<'a> {
+    sites: &'a mut ClosureSites,
+    path: &'a [u32],
+    next_call: u32,
+}
+
+impl ClosureExpressions<'_> {
+    fn record(&mut self, mut expression: &syn::Expr, position: ClosureExpression) {
+        loop {
+            expression = match expression {
+                syn::Expr::Paren(node) => &node.expr,
+                syn::Expr::Cast(node) => &node.expr,
+                syn::Expr::Group(node) => &node.expr,
+                syn::Expr::Reference(node) => &node.expr,
+                syn::Expr::Closure(node) => {
+                    let span = node.span();
+                    let (start, end) = (span.start(), span.end());
+                    self.sites.insert(
+                        ((start.line, start.column), (end.line, end.column)),
+                        ClosureSite {
+                            statements: self.path.to_vec(),
+                            expression: position,
+                        },
+                    );
+                    return;
+                }
+                _ => return,
+            };
+        }
+    }
+
+    fn call(&mut self, arguments: &syn::punctuated::Punctuated<syn::Expr, syn::Token![,]>) {
+        let call = self.next_call;
+        self.next_call += 1;
+        for (argument, expression) in arguments.iter().enumerate() {
+            self.record(
+                expression,
+                ClosureExpression::Argument {
+                    call,
+                    argument: argument as u32,
+                },
+            );
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for ClosureExpressions<'_> {
+    fn visit_expr_call(&mut self, expression: &'ast syn::ExprCall) {
+        syn::visit::visit_expr_call(self, expression);
+        self.call(&expression.args);
+    }
+
+    fn visit_expr_method_call(&mut self, expression: &'ast syn::ExprMethodCall) {
+        syn::visit::visit_expr_method_call(self, expression);
+        self.call(&expression.args);
+    }
+
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        syn::visit::visit_local(self, local);
+        if let Some(init) = &local.init {
+            self.record(&init.expr, ClosureExpression::Initializer);
+        }
+    }
+
+    fn visit_block(&mut self, _: &'ast syn::Block) {}
+    fn visit_arm(&mut self, _: &'ast syn::Arm) {}
+    fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+    fn visit_item(&mut self, _: &'ast syn::Item) {}
+}
+
 /// The innermost statement of `statements` whose range holds `at`.
 pub(crate) fn innermost(statements: &[SourceStatement], at: Position) -> Option<usize> {
     statements

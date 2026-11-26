@@ -53,7 +53,9 @@ pub(super) fn rewrite_function_values<V>(
             if !matches!(
                 tokens.get(end),
                 Some(Token::LParen | Token::LessThan | Token::ColonColon)
-            ) && functions.contains_key(&name)
+            ) && !(tokens.get(end) == Some(&Token::Dot)
+                && matches!(index.checked_sub(1).and_then(|at| tokens.get(at)), Some(Token::Ident(word)) if word == "fn"))
+                && functions.contains_key(&name)
             {
                 out_tokens.push(Token::Amp);
                 out_positions.push(positions[index].clone());
@@ -71,9 +73,40 @@ pub(super) fn rewrite_function_values<V>(
 }
 
 impl Parser {
-    /// A Rust sidecar states its signature as Rust does:
-    /// `fn name(a: T, b: U) -> R`, with references, slices, and methods in
-    /// `impl` blocks. C-shaped function contracts are refused for Rust sources.
+    fn parse_rust_closure_contract_name(&mut self, owner: &str) -> Result<String, ClickError> {
+        use crate::languages::rust::source_statements::{ClosureExpression, ClosureSite};
+        let mut statements = Vec::new();
+        while self.chained_region_follows(&["statement"]) {
+            self.expect(Token::Dot)?;
+            self.expect_ident_spelling("statement")?;
+            self.expect(Token::LParen)?;
+            statements.push(self.expect_number("statement index")?);
+            self.expect(Token::RParen)?;
+        }
+        self.expect(Token::Dot)?;
+        let expression = if self.peek_ident() == Some("initializer") {
+            self.position += 1;
+            ClosureExpression::Initializer
+        } else {
+            self.expect_ident_spelling("call")?;
+            self.expect(Token::LParen)?;
+            let call = self.expect_number("call index")?;
+            self.expect(Token::RParen)?;
+            self.expect(Token::Dot)?;
+            self.expect_ident_spelling("argument")?;
+            self.expect(Token::LParen)?;
+            let argument = self.expect_number("argument index")?;
+            self.expect(Token::RParen)?;
+            ClosureExpression::Argument { call, argument }
+        };
+        Ok(ClosureSite {
+            statements,
+            expression,
+        }
+        .contract_name(owner))
+    }
+
+    /// Read a Rust signature, including a closure's written expression path.
     #[inline(never)]
     pub(super) fn parse_rust_function_signature(
         &mut self,
@@ -120,6 +153,10 @@ impl Parser {
         } else {
             trait_instance_name(&path, &instance_arguments)
         };
+        let mut name = name;
+        while self.chained_region_follows(&["statement"]) {
+            name = self.parse_rust_closure_contract_name(&name)?;
+        }
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();

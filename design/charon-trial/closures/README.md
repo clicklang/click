@@ -8,12 +8,11 @@ function that the pointer cast names. The importer keeps the `Fn::call`
 body as the closure, rewritten as a function of the closure's parameters,
 and reads the cast of the generated function as the closure's address.
 
-The sidecar names a closure as rustc does, by its enclosing function and its
-index there, `fn closures::caller::{closure#0}(y: i32) -> i32`, and verifies
+The sidecar selects the closure's source expression in its enclosing function, `fn closures::caller.statement(0).call(0).argument(0)(y: i32) -> i32`, and verifies
 it like any function. `apply` requires the named contract `Doubling` of its
 pointer, so a caller passing a closure must show the closure meets
 `Doubling`, from the closure's own contract. `choose` passes a different
-closure on each branch, `{closure#0}` and `{closure#1}`.
+closure on each branch, selected through that branch’s written statement.
 
 Regressions refuse a closure contract that does not meet `Doubling`, a false
 closure contract, a caller whose closure has no contract, and a closure name

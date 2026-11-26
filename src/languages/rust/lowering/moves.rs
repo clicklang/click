@@ -1021,18 +1021,19 @@ pub(super) fn lower(
                         }
                     }
                 }
-                // A new closure instance is the value its instance function
-                // returns for the captured values.
+                // Form a callable carrying the values captured here.
                 S::Assign {
                     target: E::Local { name },
                     value:
                         E::ClosureInstance {
                             function,
+                            site,
                             captures,
                             value_type,
                         },
                 } => {
-                    let (checks, value) = cx.prepared_closure(function, captures, value_type)?;
+                    let (checks, value) =
+                        cx.prepared_closure(function, site, captures, value_type)?;
                     program_seq(checks, program_assign(cx.binding(name)?, value))
                 }
                 S::Assign {

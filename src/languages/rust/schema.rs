@@ -513,6 +513,7 @@ pub enum Expression {
     /// value of `value_type`: `&|y| y + k as &dyn Fn(i32) -> i32`.
     ClosureInstance {
         function: String,
+        site: crate::kernel::ClosureSite,
         captures: Vec<Self>,
         value_type: Type,
     },

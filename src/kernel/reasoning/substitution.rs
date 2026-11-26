@@ -1066,6 +1066,20 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
                 pointer_type: callee.pointer_type,
             }),
         },
+        ProgramStatement::CreateClosure {
+            step,
+            closure,
+            captures,
+            source,
+        } => ProgramStatement::CreateClosure {
+            step: *step,
+            closure: closure.clone(),
+            source: source.clone(),
+            captures: captures
+                .iter()
+                .map(|value| s.program_expression(value))
+                .collect(),
+        },
         ProgramStatement::CallResult {
             aggregate_layout,
             call,
@@ -2712,7 +2726,11 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bound_variables(expression, variables)
         }
-        ProgramStatement::CallConstruct { arguments, .. }
+        ProgramStatement::CreateClosure {
+            captures: arguments,
+            ..
+        }
+        | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => {
             for argument in arguments {

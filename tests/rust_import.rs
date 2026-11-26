@@ -2492,8 +2492,6 @@ fn verify_rust_proof_after(
     head: &str,
 ) -> Result<(), click::surface::ClickError> {
     let start = source.find(head).expect("the function exists") + head.len();
-    // A qualified closure name itself contains `{closure#N}`. Only search
-    // for the contract brace after the complete function name.
     let offset = start + source[start..].find('{').unwrap();
     let prefix = &source[..offset];
     let line = prefix.bytes().filter(|&byte| byte == b'\n').count() + 1;

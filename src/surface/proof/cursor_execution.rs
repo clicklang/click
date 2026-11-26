@@ -4139,6 +4139,12 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         } => {
             format!("{name} = {}", describe_program_expression(expression))
         }
+        ProgramStatement::CreateClosure { closure, .. } => {
+            format!(
+                "create closure at {}",
+                crate::languages::display_source_names(closure)
+            )
+        }
         ProgramStatement::CallConstruct {
             target,
             function_name,

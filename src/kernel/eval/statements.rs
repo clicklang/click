@@ -31,6 +31,92 @@ pub(in crate::kernel) fn execute_execution_statement(
     Some(path.outcome)
 }
 
+fn execute_create_closure(
+    state: &ExecutionState,
+    step: u32,
+    closure: &str,
+    captures: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let Some(contract) = environment
+        .get_function_contract(closure)
+        .filter(|contract| contract.closure)
+    else {
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                "creating closure `{closure}` requires its checked contract"
+            ))),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    };
+    super::super::functions::evaluate_program_arguments_paths(
+        state,
+        captures,
+        assumptions,
+        budget,
+        Some(environment),
+    )?
+    .into_iter()
+    .map(|path| {
+        let ArgumentsPath {
+            values,
+            outcome,
+            mut facts,
+            obligations,
+        } = path;
+        let mut result = None;
+        let outcome = match outcome {
+            Some(FunctionOutcome::Throw { value, state }) => {
+                StatementOutcome::Throw { value, state }
+            }
+            Some(FunctionOutcome::UndefinedBehavior(error)) => {
+                StatementOutcome::UndefinedBehavior(error)
+            }
+            Some(FunctionOutcome::RuntimeError(error)) => StatementOutcome::RuntimeError(error),
+            Some(FunctionOutcome::VerificationDiverges) => StatementOutcome::VerificationDiverges,
+            Some(FunctionOutcome::Return { .. }) => {
+                unreachable!("evaluating an operand does not return from its function")
+            }
+            None if values.len() != contract.interface().value_parameters().len()
+                || values
+                    .iter()
+                    .zip(contract.interface().value_parameters())
+                    .any(|(value, parameter)| value.program_type() != parameter.program_type()) =>
+            {
+                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
+            }
+            None => {
+                let value = super::super::functions::symbolic_call_result(
+                    contract.function_pointer_type(),
+                    budget.allocate_kernel_variable()?,
+                );
+                let mut arguments = vec![
+                    Term::ExecutionState(Box::new(ExecutionState::new())),
+                    Term::ProgramValue(value.clone().into()),
+                ];
+                arguments.extend(
+                    values
+                        .into_iter()
+                        .map(|capture| Term::ProgramValue(capture.into())),
+                );
+                facts.push(ExecutionPureFact::certified(Proposition::Predicate {
+                    name: contract.predicate_name(),
+                    arguments,
+                }));
+                let mut next = state.clone();
+                next.set_step_result(step, value.clone());
+                result = Some(value);
+                StatementOutcome::Normal(Box::new(next))
+            }
+        };
+        Ok(StatementExecutionPath::new(outcome, facts, obligations).with_call_result(result))
+    })
+    .collect()
+}
+
 pub(in crate::kernel) fn execute_program_lvalue_assignment_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
@@ -3819,6 +3905,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::UnwindCleanup { .. }
         // Everything else declares nothing.
         | ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
@@ -4367,6 +4454,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::HeapAllocate { .. } => "verification statement: heap allocate",
         ProgramStatement::HeapFree { .. } => "verification statement: heap free",
         ProgramStatement::Assert { .. } => "verification statement: assert",
+        ProgramStatement::CreateClosure { .. } => "verification statement: closure creation",
         ProgramStatement::BuiltinConstantP { .. } => "verification statement: __builtin_constant_p",
         ProgramStatement::StepValue { .. } => "verification statement: step value",
         ProgramStatement::Return(_) => "verification statement: return",
@@ -5111,6 +5199,20 @@ fn execute_execution_statement_leaf_paths(
         ProgramStatement::Assert { condition, label } => {
             execute_program_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
+        ProgramStatement::CreateClosure {
+            step,
+            closure,
+            captures,
+            ..
+        } => execute_create_closure(
+            state,
+            *step,
+            closure,
+            captures,
+            assumptions,
+            execution_context.environment,
+            budget,
+        )?,
         ProgramStatement::BuiltinConstantP { step } => {
             let value = OldMachineTerm::Variable(budget.allocate_kernel_variable()?);
             let equals = |constant| {

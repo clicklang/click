@@ -7335,6 +7335,12 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
             describe_called_function(function_name),
             describe_program_expression_list(arguments)
         ),
+        ProgramStatement::CreateClosure { closure, .. } => {
+            format!(
+                "create closure at {}",
+                crate::languages::display_source_names(closure)
+            )
+        }
         ProgramStatement::BuiltinConstantP { .. } => "__builtin_constant_p(…);".into(),
         ProgramStatement::HeapAllocate {
             target,
@@ -8440,6 +8446,8 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Region(index) => format!("region({index})"),
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
                 SourcePathStep::AnyCall(index) => format!("call({index})"),
+                SourcePathStep::ClosureArgument(index) => format!("argument({index})"),
+                SourcePathStep::ClosureInitializer => "initializer".to_owned(),
                 SourcePathStep::Binding { slot, release } => {
                     let slot = match slot {
                         crate::kernel::ReferenceBindingSlot::Receiver => "receiver".to_owned(),

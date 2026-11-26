@@ -602,11 +602,12 @@ amount; }`, and attached with `requires Adds(f, { amount: k });`, as in C
 ([`design/charon-trial/parameterized-contracts`](https://github.com/clicklang/click/blob/master/design/charon-trial/parameterized-contracts/adds.click)).
 
 A closure that captures nothing can be passed for such a pointer,
-`apply(|y| y + y, x)`. The sidecar names it as rustc does, by its enclosing
-function and its index there: `fn closures::caller::{closure#0}(y: i32) ->
+`apply(|y| y + y, x)`. The sidecar selects the written closure expression in its enclosing function: `fn closures::caller.statement(0).call(0).argument(0)(y: i32) ->
 i32 { requires ...; ensures ...; } by { ... }`, verified like any function,
 and the caller's proof shows it meets the contract the callee requires of
-the pointer. The importer keeps the closure's `Fn::call` body, rewritten as
+the pointer. The path counts written calls and arguments from zero. A closure
+directly in a local initializer uses `statement(i).initializer`. Parentheses
+and a reference around a closure leave this selection on the same expression. The importer keeps the closure's `Fn::call` body, rewritten as
 a function of the closure's parameters, and reads Charon's cast of the
 generated `ClosureAsFn` function as the closure's address. A closure called
 directly is refused
@@ -615,7 +616,7 @@ directly is refused
 A `&dyn Fn(i32) -> i32` parameter of scalar parameters and result is a
 callback as a `fn` pointer is, and a closure passed for it may capture
 variables, `shift(&|y| y + k, x, k)`. The closure's contract names its
-captures as its body does, `fn capturing_closures::caller::{closure#0}(y:
+captures as its body does, `fn capturing_closures::caller.statement(0).call(0).argument(0)(y:
 i32) -> i32 { requires 0 <= k and k <= 1000; ensures result == y + k; }`,
 and the callee states what it needs with a parameterized contract,
 `requires Adds(f, { amount: k });`. Creating the closure gives a function

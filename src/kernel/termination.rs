@@ -1414,7 +1414,11 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => escapes(expression),
-        ProgramStatement::CallConstruct { arguments, .. }
+        ProgramStatement::CreateClosure {
+            captures: arguments,
+            ..
+        }
+        | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().for_each(escapes),
         ProgramStatement::HeapAllocate { bytes, .. } => escapes(bytes),
@@ -1876,6 +1880,7 @@ fn statement_calls_visiting(
             }
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -1968,6 +1973,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             }
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -4001,6 +4007,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
             }
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -4258,6 +4265,7 @@ fn visit_loop_obligations(
             Ok(())
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
@@ -4569,7 +4577,11 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         ProgramStatement::Assign { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
-        ProgramStatement::CallConstruct { arguments, .. }
+        ProgramStatement::CreateClosure {
+            captures: arguments,
+            ..
+        }
+        | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => {
             arguments.iter().for_each(visit);
@@ -4957,6 +4969,7 @@ fn self_call_loop_indices(
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
