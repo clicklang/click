@@ -17122,7 +17122,7 @@ pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &
 fn proof_change_scope_requires_explicit_proofs_and_preserves_surroundings() {
     let implicit = "int32 f() {\n    ensures result == 0;\n}\n";
     let explicit = "int32 f() {\n    ensures result == 0;\n} by {\n    close();\n}\n";
-    let expanded = explicit.replace("close();", "step(); normalize();");
+    let expanded = explicit.replace("close();", "step(); close();");
     assert!(only_function_proof_changed(explicit, &expanded, "f"));
     assert!(!only_function_proof_changed(implicit, &expanded, "f"));
     assert!(!only_function_proof_changed(explicit, implicit, "f"));

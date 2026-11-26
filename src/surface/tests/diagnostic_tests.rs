@@ -2695,7 +2695,7 @@ fn implicit_theorem_search_is_timed_without_a_written_tactic_path() {
 fn linear_function_proofs_execute_once_at_multiple_sizes() {
     use crate::instrumentation::{VerificationEvent, collect};
     for size in [16, 64, 256] {
-        let premises = "have 0 == 0 by { normalize(); }\n".repeat(size);
+        let premises = "have 0 == 0 by { close(); }\n".repeat(size);
         let source = format!(
             "verifying \"f.c\"; int32 f() {{ ensures result == 0; }} by {{ {premises} step_until(function.exit); close(); }}"
         );
@@ -3177,7 +3177,7 @@ fn call_resource_diagnostic_read_shows_state_and_access() {
 fn smart_have_budget_refusal_retains_checked_trace_prefix() {
     for nested in [false, true] {
         let body = if nested {
-            "have value == value by { normalize(); } close();"
+            "have value == value by { close(); } close();"
         } else {
             "close();"
         };
@@ -3243,7 +3243,7 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
             step(); step();
             loop {
                 invariant i >= 0;
-                initialize by { normalize(); }
+                initialize by { close(); }
                 maintain by {
                     step();
                     have cell[0] == value + 1 by { close(); }
@@ -4013,7 +4013,7 @@ fn rejected_wide_historical_fact_retains_store_prefix() {
         } by {
             mark before_write; step();
             have p[0] == 7u64 by { close(); }
-            step_until(function.exit); normalize();
+            step_until(function.exit); close();
         }
     "#;
     with_proof_trace("f", || {
@@ -4121,7 +4121,7 @@ fn budget_stopped_close_retains_its_checked_loop_prefix() {
                     step();
                 }
             }
-            step_until(function.exit); normalize();
+            step_until(function.exit); close();
         }
     "#;
     with_proof_trace("f", || {
@@ -4161,7 +4161,7 @@ fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
         /* REFINEMENT */
         int32 accept(void (*f)(struct node*)) {
             requires Callback(f); ensures result == 0;
-        } by { step_until(function.exit); normalize(); }
+        } by { step_until(function.exit); close(); }
         int32 caller() { ensures result == 0; } by { /* APPLY */ step_until(function.exit); }
     "#;
     let c = [(

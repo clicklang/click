@@ -1815,20 +1815,16 @@ fn check_rendered_expectation(
 fn sidecar_fixtures_propagate_verification_errors() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("proof.click");
-    fs::write(
-        &path,
-        "theorem valid() { ensures 1 == 1 by { normalize(); } }",
-    )
-    .unwrap();
+    fs::write(&path, "theorem valid() { ensures 1 == 1 by { close(); } }").unwrap();
     run_mdtest(&path).expect("a checked sidecar proof passes");
     fs::write(
         &path,
-        "theorem invalid() { ensures 1 == 2 by { normalize(); } }",
+        "theorem invalid() { ensures 1 == 2 by { close(); } }",
     )
     .unwrap();
     let error =
         run_mdtest(&path).expect_err("a successful input summary cannot hide a failed proof");
-    assert!(error.contains("did not normalize to true"), "{error}");
+    assert!(error.contains("could not establish `1 == 2`"), "{error}");
     fs::write(&path, "theorem malformed(").unwrap();
     assert!(
         run_mdtest(&path).is_err(),

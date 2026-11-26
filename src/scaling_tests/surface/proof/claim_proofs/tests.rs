@@ -5,8 +5,7 @@
 #[test]
 fn explicit_closers_lower_each_return_goal_once_without_unfoldings() {
     use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
-    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
-        .unwrap();
+    crate::surface::verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     for size in [2, 4, 8, 16] {
         let claims = "ensures result == x;\n".repeat(size);
         let closers = "close();\n".repeat(size);
@@ -41,8 +40,7 @@ fn check_return_claim_preparation_scaling(
     sizes: impl IntoIterator<Item = (usize, usize)>,
 ) {
     use crate::instrumentation::{VerificationEvent, collect};
-    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
-        .unwrap();
+    crate::surface::verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     for (resources, claims) in sizes {
         let holdings = (0..resources)
             .map(|i| format!("owns marker({i});\n"))

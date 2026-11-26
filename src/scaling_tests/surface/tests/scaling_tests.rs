@@ -441,7 +441,7 @@ theorem count_step(n: uint64{parameters}) {{
 #[ignore = "nightly: multi-size quantified frame refusal and positive controls"]
 fn false_quantified_frames_do_not_materialize_the_constant_domain() {
     use crate::instrumentation::measure_deterministic_work;
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let program = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
     let mut samples = Vec::new();
     for size in [16, 1024, 1_000_000, 100_000_000] {
@@ -716,7 +716,7 @@ fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8] {
@@ -762,7 +762,7 @@ fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8, 10] {
@@ -1258,7 +1258,7 @@ fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
     let mut requirement_work = Vec::new();
     for size in [8, 16, 32, 64] {
         let unrelated = (0..size)
-            .map(|index| format!("    have 0 <= {index} by {{\n        normalize();\n    }}\n"))
+            .map(|index| format!("    have 0 <= {index} by {{\n        close();\n    }}\n"))
             .collect::<String>();
         let click_source = format!(
             "verifying \"conditional_callee.c\";\n\
@@ -1502,7 +1502,7 @@ fn load_variable_project(statement_count: usize, axis: LoadAxis) -> (String, Str
         // one smart tactic in this fixture, before the scalar result goal.
         click_source.push_str("    close();\n");
     }
-    click_source.push_str("    normalize();\n");
+    click_source.push_str("    close();\n");
     click_source.push_str("}\n");
     (c_source, click_source)
 }
@@ -1575,7 +1575,7 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
         }
         step();
         have 1 == 1 by {
-            normalize();
+            close();
         }
         close();
     }
@@ -2751,7 +2751,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
          \x20       match m {\n\
          \x20           Chain::Nil => {\n\
          \x20               unfold(chain_len(Chain::Nil));\n\
-         \x20               normalize();\n\
+         \x20               close();\n\
          \x20           }\n\
          \x20           Chain::Link(rest) => {\n\
          \x20               apply(ih(rest));\n\
@@ -2798,7 +2798,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
              \x20                       rewrite(c.model, Chain::Link(rest_model));\n\
              \x20                       unfold(chain_len(Chain::Link(rest_model)));\n\
-             \x20                       normalize();\n\
+             \x20                       close();\n\
              \x20                   }}\n\
              \x20                   apply(chain_len_is_nonnegative(rest_model));\n\
              \x20                   have chain_len(rest_model) < chain_len(c.model) by {{\n\
@@ -11727,7 +11727,7 @@ theorem append_tally(lo: int32, hi: int32) {{
     requires lo < hi;
     ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {{
         unfold(tally(lo, hi));
-        normalize();
+        close();
     }}
 }}
 "#
@@ -11888,7 +11888,7 @@ fn check_struct_value_equality_cost(fields: usize) {
     // `*dst == *src` is its fields' equalities: forming the two values and
     // comparing them is linear in the fields, as writing the comparisons
     // out is.
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
     let declaration = names
         .iter()

@@ -1486,7 +1486,7 @@ fn profile_resolves_a_project_once_for_reporting_as_tactic_rows_grow() {
             "verifying \"identity.c\";\n\
              int32 identity(int32 x) {{ ensures result == x; }} by {{\n\
              step();\n{}close();\n}}\n",
-            "have result == x by { normalize(); }\n".repeat(count)
+            "have result == x by { close(); }\n".repeat(count)
         );
         fs::write(&path, source).unwrap();
         let targets = profile_targets(&path).unwrap();
