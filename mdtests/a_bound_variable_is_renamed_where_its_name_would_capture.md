@@ -15,7 +15,7 @@ verifying "a_bound_variable_is_renamed_where_its_name_would_capture.c";
 theorem t(n: int32) {
     ensures forall (a: int32) { forall (n: int32) { a == n } } by {
         intro() {
-            normalize();
+            close();
         }
     }
 }

@@ -39,11 +39,11 @@ theorem a_true_premise_is_not_refuted(b: Box, p: int32) {
         have holds(b, p) == 0 by {
             unfold(holds(b, p));
             rewrite(holds(b, p), 1);
-            normalize();
+            close();
         }
         have holds(b, p) != 0 by {
             rewrite(holds(b, p), 1);
-            normalize();
+            close();
         }
         contradiction(holds(b, p) == 0);
     }

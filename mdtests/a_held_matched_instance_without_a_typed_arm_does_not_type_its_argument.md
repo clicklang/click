@@ -34,7 +34,7 @@ int32 peek(struct node* q) {
     owns t: tree(q->left);
     ensures result == 0;
 } by {
-    have keep(Ref::At(q->left)) == 1 by { unfold(keep(Ref::At(q->left))); normalize(); }
+    have keep(Ref::At(q->left)) == 1 by { unfold(keep(Ref::At(q->left))); close(); }
 }
 ```
 

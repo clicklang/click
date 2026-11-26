@@ -1864,9 +1864,12 @@ this step unchanged, and profiling charges one simple leaf.
 
 **Form:** `normalize()`
 
-**Expansion output.** `click expand` writes it; by hand, write it to close a
-goal that is true by evaluation alone, typically after `unfold` or `rewrite`.
-It reads no facts, so it proves the same goal in every context.
+**Compatibility.** For new proofs, use `close()` after any needed `unfold`
+or `rewrite`. For an existing proof, use
+[`click expand --migrate-normalize`](../cli/expand.md#options) to try a
+replacement and check that the expanded proof replays without normalization.
+
+`normalize()` reads no facts, so it proves the same goal in every context.
 
 **Accepts** a goal that is not itself a conjunction, disjunction, implication,
 or quantifier, when evaluation makes it true:
@@ -1943,10 +1946,12 @@ No operand history or ambient facts are read.
 
 **Form:** `normalize() using { P; ... }`
 
-This compatibility form checks a goal under its named premises. Expansion
-retains written calls. The tactic decides conditions in the goal from the cited
-premises and the equality graph, then applies `normalize()`'s check (see
-[Context-free normalization](#context-free-normalization)) to the result.
+This compatibility form checks a goal under its named premises. For new proofs
+with selected facts, use `close() using { P; ... }` or cite them in explicit
+proof steps. Expansion retains written calls. The tactic decides conditions in
+the goal from the cited premises and the equality graph, then applies
+the [context-free normalization check](#context-free-normalization) to the
+result.
 
 For a signed `int32` order goal, the cited comparisons can form a chain in
 list order from the goal's lower endpoint to its upper endpoint. A strict
@@ -1991,8 +1996,7 @@ For an integer converted to `float` or `double`, `close()` can check
 the rounded limits of the source type. A tighter bound can cite a constant
 integer endpoint. The check rounds that endpoint at the destination precision.
 `close()` prefers named library laws when they cover the selected bounds.
-For other supported shapes it can still expand to `normalize() using` with
-those premises.
+Expansion requires a checked proof for the shape of the selected bounds.
 
 
 For a positive signed divisor `y`, cite `y > 0` and `x <= MAX / y`
@@ -2489,8 +2493,8 @@ Integer composition plans expand their premise, addition, scaling, and
 equality-direction nodes into ordinary `have`, `apply(...)`, `rewrite`,
 and `close()` steps. Each intermediate fact is established once and later
 nodes reuse it. Context-free identities relate the plan's flat affine forms
-to the written operands. Expansion uses checked `normalize()` when the
-bounded algebra emitter cannot spell an identity. Integer antisymmetry uses
+to the written operands. Expansion requires the bounded algebra emitter to
+produce a checked proof of each identity. Integer antisymmetry uses
 `integer::le_antisymmetric`.
 
 Strict Integer premises and goals use the successor-order law. Linear
@@ -2515,8 +2519,8 @@ For example, from `flag == true`, `close()` proves
 `(if flag { Some(x) } else { None }) == Some(x)`. Nested selections expose
 one arm at a time and retain each proof as an explicit rewrite. A Boolean
 comparison with a literal can also use the selected arm's exact truth fact.
-Definition refutations whose unfolding also needs constructor-match reduction
-can retain a checked `normalize() using` step with the selected branch facts.
+Definition refutations that still depend on compatibility normalization for
+constructor-match reduction are unavailable to expansion.
 See [the explicit arm proofs](https://github.com/clicklang/click/blob/master/mdtests/non_numeric_conditional_arm_equations.md).
 
 Scalar signed interval claims, operation bounds, and narrowed casts expand
