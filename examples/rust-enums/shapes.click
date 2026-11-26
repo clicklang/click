@@ -21,21 +21,36 @@ fn perimeter(s: Shape) -> u32 {
     ensures result == perimeter;
 }
 
-fn grow(s: Shape) -> Shape {
-    requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;
-    ensures result == match s {
+function grown_shape(s: Shape) -> Shape {
+    match s {
         Shape::Circle(r) => Shape::Circle(r + 1u32),
         Shape::Rect(w, h) => Shape::Rect(w, h),
         Shape::Empty => Shape::Empty,
-    } by {
+    }
+}
+
+fn grow(s: Shape) -> Shape {
+    requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;
+    ensures result == grown_shape(s) by {
         match s {
             Shape::Circle(r) => {
                 step_until(function.exit);
                 rewrite(s, Shape::Circle(r));
-                normalize() using {};
+                unfold(grown_shape(Shape::Circle(r)));
+                close();
             },
-            Shape::Rect(w, h) => { step_until(function.exit); close(); },
-            Shape::Empty => { step_until(function.exit); close(); },
+            Shape::Rect(w, h) => {
+                step_until(function.exit);
+                rewrite(s, Shape::Rect(w, h));
+                unfold(grown_shape(Shape::Rect(w, h)));
+                close();
+            },
+            Shape::Empty => {
+                step_until(function.exit);
+                rewrite(s, Shape::Empty);
+                unfold(grown_shape(Shape::Empty));
+                close();
+            },
         }
     }
 }

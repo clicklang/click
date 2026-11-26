@@ -43,7 +43,7 @@ int32 loop_entry_guard_before_written_implication_rejects(int32 p[3]) {
             }
             have forall (k: int32) { 0 <= k and k < i implies p[k] == p[k] } by {
                 intro() {
-                    normalize();
+                    close() using {};
                 }
             }
         }
@@ -55,5 +55,5 @@ int32 loop_entry_guard_before_written_implication_rejects(int32 p[3]) {
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

@@ -1,7 +1,7 @@
 # Deleting a loop-entry guard introduction is rejected
 
-A quantified entry claim still requires a proof of the written quantifier;
-`normalize()` alone cannot discharge it. There is no implicit read guard.
+The quantified entry claim requires introduction of the quantifier before
+`close() using {}` can act on its body.
 
 ```c filename=loop_entry_guard_intro_required.c
 int32 loop_entry_guard_intro_required(int32 p[3]) {
@@ -42,7 +42,7 @@ int32 loop_entry_guard_intro_required(int32 p[3]) {
                 }
             }
             have forall (k: int32) { 0 <= k and k < i implies p[k] == k } by {
-                normalize();
+                close() using {};
             }
         }
         maintain by close();
@@ -53,5 +53,5 @@ int32 loop_entry_guard_intro_required(int32 p[3]) {
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

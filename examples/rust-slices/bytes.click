@@ -22,6 +22,15 @@ fn first(bytes: &[u8]) -> u8 {
     ensures result == bytes[0];
 }
 
+theorem byte_increment_is_exact(value: uint8) {
+    requires to_integer(value) < 255;
+    ensures to_integer((value + 1) as uint8) == to_integer(value) + 1 by {
+        have 0 <= to_integer(value) + 1;
+        apply(click::integer::lt_step_le(to_integer(value), 255));
+        close();
+    }
+}
+
 fn increment_first(bytes: &mut [u8]) {
     requires bytes.len() == 4;
     requires bytes[0] < 255;
@@ -29,14 +38,9 @@ fn increment_first(bytes: &mut [u8]) {
     ensures bytes[0] == old(bytes[0]) + 1;
 } by {
     step_until(function.exit);
-    have 0 <= old(to_integer(bytes[0])) + 1;
     have old(to_integer(bytes[0])) < 255;
-    have old(to_integer(bytes[0])) + 1 <= 255 by {
-        apply(click::integer::lt_step_le(old(to_integer(bytes[0])), 255));
-    }
-    have to_integer(bytes[0]) == old(to_integer(bytes[0])) + 1 by {
-        normalize() using { 0 <= old(to_integer(bytes[0])) + 1; old(to_integer(bytes[0])) + 1 <= 255; };
-    }
+    have bytes[0] == ((old(bytes[0]) + 1) as u8);
+    apply(byte_increment_is_exact(old(bytes[0])));
     close();
 }
 
