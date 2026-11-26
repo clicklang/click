@@ -485,7 +485,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_parent_is(at(iteration,state.model), p) == 1 by {
                                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi),p));
-                                                        normalize() using { above == p; };
+                                                        rewrite(above, p);
+                                                        close();
                                                     }
                                                     unfold(sized_value(at(iteration,state.model)));
                                                     have to_integer(pv) == 1 + to_integer(sized_value(other)) + to_integer(sized_value(at(iteration,state.model))) by {
@@ -575,7 +576,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have sized_parent_is(uncle,g) == 0 by {
                                                                 rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                                 unfold(sized_parent_is(SizedTree::Node(u, ug, uc, uv, ul, ur),g));
-                                                                normalize() using { not (ug == g); };
+                                                                have (if ug == g { 1 } else { 0 }) == 0 by close();
+                                                                rewrite(if ug == g { 1 } else { 0 }, 0);
+                                                                close();
                                                             }
                                                             have not (sized_parent_is(uncle,g) == 1) by {
                                                                 rewrite(sized_parent_is(uncle,g), 0); normalize();
@@ -610,7 +613,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have gparent == g by close();
                                                     have aligned(gparent, 8) by close();
                                                     have (address(gparent) | 1) == address(gparent) + 1 by {
-                                                        normalize() using { aligned(gparent, 8); };
+                                                        have (address(gparent) & 1u64) == 0u64 by close() using { aligned(gparent, 8); };
+                                                        apply(integer::uint64_or_disjoint(address(gparent), 1u64));
                                                     }
                                                     step(); // Load the grandparent's right child.
                                                     have parent == tmp by close();
@@ -620,7 +624,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(red_uncle);
                                                     have (u->__rb_parent_color & 1) == 0 by close();
                                                     have (tmp->__rb_parent_color & 1) == 0 by {
-                                                        normalize() using { tmp == u; (u->__rb_parent_color & 1) == 0; };
+                                                        rewrite(tmp, u);
+                                                        close();
                                                     }
                                                     step();
                                                     step();
@@ -658,7 +663,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_parent_is(at(iteration,state.model), p) == 1 by {
                                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi),p));
-                                                        normalize() using { above == p; };
+                                                        rewrite(above, p);
+                                                        close();
                                                     }
                                                     unfold(sized_value(at(iteration,state.model)));
                                                     have to_integer(pv) == 1 + to_integer(sized_value(at(iteration,state.model))) + to_integer(sized_value(other)) by {
@@ -748,7 +754,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have sized_parent_is(uncle,g) == 0 by {
                                                                 rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                                 unfold(sized_parent_is(SizedTree::Node(u, ug, uc, uv, ul, ur),g));
-                                                                normalize() using { not (ug == g); };
+                                                                have (if ug == g { 1 } else { 0 }) == 0 by close();
+                                                                rewrite(if ug == g { 1 } else { 0 }, 0);
+                                                                close();
                                                             }
                                                             have not (sized_parent_is(uncle,g) == 1) by {
                                                                 rewrite(sized_parent_is(uncle,g), 0); normalize();
@@ -783,7 +791,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have gparent == g by close();
                                                     have aligned(gparent, 8) by close();
                                                     have (address(gparent) | 1) == address(gparent) + 1 by {
-                                                        normalize() using { aligned(gparent, 8); };
+                                                        have (address(gparent) & 1u64) == 0u64 by close() using { aligned(gparent, 8); };
+                                                        apply(integer::uint64_or_disjoint(address(gparent), 1u64));
                                                     }
                                                     step(); // Load the grandparent's right child.
                                                     have parent == tmp by close();
@@ -793,7 +802,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(red_uncle);
                                                     have (u->__rb_parent_color & 1) == 0 by close();
                                                     have (tmp->__rb_parent_color & 1) == 0 by {
-                                                        normalize() using { tmp == u; (u->__rb_parent_color & 1) == 0; };
+                                                        rewrite(tmp, u);
+                                                        close();
                                                     }
                                                     step();
                                                     step();
@@ -831,7 +841,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_parent_is(at(iteration,state.model), p) == 1 by {
                                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi),p));
-                                                        normalize() using { above == p; };
+                                                        rewrite(above, p);
+                                                        close();
                                                     }
                                                     unfold(sized_value(at(iteration,state.model)));
                                                     have to_integer(pv) == 1 + to_integer(sized_value(other)) + to_integer(sized_value(at(iteration,state.model))) by {
@@ -978,7 +989,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(focus.model, at(iteration,state.model));
                                                 rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                 unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi), sized_context_parent(path.model, 0)));
-                                                normalize() using { above == sized_context_parent(at(iteration,state.context), 0); at(iteration,state.context) == ctx; ctx == SizedContext::Left(a, gp, color, cached, sibling, up); path.model == SizedContext::Left(a, gp, color, cached, sibling, up); };
+                                                rewrite(above, sized_context_parent(at(iteration,state.context), 0));
+                                                rewrite(at(iteration,state.context), ctx);
+                                                rewrite(ctx, SizedContext::Left(a, gp, color, cached, sibling, up));
+                                                rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), path.model);
+                                                close();
                                             }
                                             have sized_plug(path.model, focus.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by {
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
@@ -1033,7 +1048,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(focus.model, at(iteration,state.model));
                                                 rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                 unfold(sized_parent_is(SizedTree::Node(current, above, red, count, lo, hi), sized_context_parent(path.model, 0)));
-                                                normalize() using { above == sized_context_parent(at(iteration,state.context), 0); at(iteration,state.context) == ctx; ctx == SizedContext::Right(a, gp, color, cached, sibling, up); path.model == SizedContext::Right(a, gp, color, cached, sibling, up); };
+                                                rewrite(above, sized_context_parent(at(iteration,state.context), 0));
+                                                rewrite(at(iteration,state.context), ctx);
+                                                rewrite(ctx, SizedContext::Right(a, gp, color, cached, sibling, up));
+                                                rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), path.model);
+                                                close();
                                             }
                                             have sized_plug(path.model, focus.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by {
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::Stop(ctx));
