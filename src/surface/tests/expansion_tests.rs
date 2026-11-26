@@ -1258,6 +1258,8 @@ fn wide_viewable_element_needs_containment_and_initializedness() {
     let report = verify_c_sources(&inside, &sources).unwrap_err().report();
     assert!(report.contains("goal: defined"), "{report}");
 
+    let inner_closer = "                    close();\n                }";
+    assert!(inside.contains(inner_closer));
     let initialized = inside
         .replace(
             "    ensures result",
@@ -1268,17 +1270,17 @@ fn wide_viewable_element_needs_containment_and_initializedness() {
             ),
         )
         .replace(
-            "            close();\n        }",
+            inner_closer,
             concat!(
-                "            instantiate(forall (j: uint64) {\n",
-                "                to_integer(j) < to_integer(n + 1u64) implies defined(old(bytes[j]))\n",
-                "            }, k);\n",
-                "            have defined(old(bytes[k])) by { close(); }\n",
-                "            have separate(memory(x), memory(bytes[k])) by { normalize(); }\n",
-                "            have separate(statement(0).footprint, memory(bytes[k])) by {\n",
-                "                normalize() using { separate(memory(x), memory(bytes[k])); };\n",
-                "            }\n",
-                "            preserve(memory(bytes[k]), statement(0));\n        }",
+                "                    instantiate(forall (j: uint64) {\n",
+                "                        to_integer(j) < to_integer(n + 1u64) implies defined(old(bytes[j]))\n",
+                "                    }, k);\n",
+                "                    have defined(old(bytes[k])) by { close(); }\n",
+                "                    have separate(memory(x), memory(bytes[k])) by { close(); }\n",
+                "                    have separate(statement(0).footprint, memory(bytes[k])) by {\n",
+                "                        close() using { separate(memory(x), memory(bytes[k])); };\n",
+                "                    }\n",
+                "                    preserve(memory(bytes[k]), statement(0));\n                }",
             ),
         );
     verify_c_sources(&initialized, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
@@ -23882,13 +23884,15 @@ int32 caller(int32 a, int32 b) {
         step() {
             requires is_positive(a) == 1 or is_positive(b) == 1 by {
                 have is_positive(a) == 1 by {
-                    unfold(is_positive(a)); normalize() using { a > 0; }
+                    unfold(is_positive(a));
+                    close() using { a > 0; };
                 }
                 close();
             }
             requires is_positive(b) == 1 or is_positive(a) == 1 by {
                 have is_positive(a) == 1 by {
-                    unfold(is_positive(a)); normalize() using { a > 0; }
+                    unfold(is_positive(a));
+                    close() using { a > 0; };
                 }
                 close();
             }
@@ -25467,7 +25471,7 @@ fn contract_claim_requirements_expand_as_ordinary_have_proofs() {
         int32 identity(int32 x) {
             requires x == 1 or x == 2;
             ensures to_uint8(to_integer(x)) == to_uint8(to_integer(x))
-                by { step(); normalize(); }
+                by { step(); close(); }
         }
     "#;
     let sources = [("claim_domain.c", c)];
