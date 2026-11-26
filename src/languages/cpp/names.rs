@@ -269,8 +269,8 @@ mod path_tests {
             assert!(super::super::import::is_identifier(&name), "{name}");
             assert_eq!(cpp_display_name(&name), Some(path.join("::")));
             assert_eq!(
-                display_cpp_names(&format!("`{name}.ensures_0` and {name}_iface")),
-                format!("`{}.ensures_0` and {name}_iface", path.join("::"))
+                display_cpp_names(&format!("`{name}.ensures_0` and {name}_suffix")),
+                format!("`{}.ensures_0` and {name}_suffix", path.join("::"))
             );
         }
         assert_eq!(path_name(&["total"]), "total");

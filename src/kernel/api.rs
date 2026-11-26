@@ -7897,6 +7897,7 @@ pub fn program_function_refines_function_contract(
 
 pub(crate) enum OverrideInterface<'a> {
     Named(&'a str),
+    OnImplementation(&'a FunctionContract),
     Verified(&'a ProgramFunction),
 }
 
@@ -7914,6 +7915,7 @@ pub(crate) fn program_override_refinement_failure(
     let verified_contract;
     let contract = match interface {
         OverrideInterface::Named(name) => environment.get_function_contract(name),
+        OverrideInterface::OnImplementation(contract) => Some(contract),
         OverrideInterface::Verified(interface) => {
             verified_contract = FunctionContract::new(interface.name(), interface.clone());
             verified_contract.as_ref()

@@ -15,8 +15,8 @@
 //! - A method of a defining class is verified on its object's memory: it owns
 //!   `*this`, `size(this)` is the class's definition, and an override of the
 //!   object class's method inherits that method's clauses read the same way.
-//!   Its `requires` must follow from them, which the `contract` named for it
-//!   with `_iface` states, and which verification checks.
+//!   The refinement check compares its `requires` with the inherited
+//!   clauses on that memory.
 //! - A defining class may name a resource holding the rest of its object's
 //!   state, `resource state: nodes<T>(this->head);`, and define functions
 //!   from its fields, `{ state.items }`: each of its methods owns it beside
@@ -104,6 +104,7 @@ struct Head {
     template: Vec<Spanned>,
     /// Its return type's tokens.
     result: Vec<Spanned>,
+    signature_start: usize,
     class: Option<String>,
     method: String,
     list_open: usize,
@@ -291,13 +292,6 @@ fn template_prefix(source: &[Spanned], start: usize) -> Option<(Vec<String>, usi
         .map(|parameter| parameter.name)
         .collect();
     Some((names, close + 1))
-}
-
-/// The `contract` that states a defining class's method's interface on its
-/// own memory, which the method must refine. `implementation` is the
-/// method's importer name.
-fn implementation_interface_contract(implementation: &str) -> String {
-    super::rust_trait_objects::implementation_interface_contract(implementation)
 }
 
 /// The methods a rewrite states on objects, by importer name.
@@ -517,15 +511,7 @@ pub(super) fn rewrite_class_objects(
     let mut depth = 0i32;
     while index < source.len() {
         if let Some(head) = pending.next_if(|head| head.start == index) {
-            rewrite_function(
-                &source,
-                head,
-                &objects,
-                &defining,
-                &references,
-                records,
-                &mut output,
-            )?;
+            rewrite_function(&source, head, &objects, &defining, &references, &mut output)?;
             index = head.end;
             continue;
         }
@@ -1149,6 +1135,7 @@ fn head_at(source: &[Spanned], item_start: usize, list_open: usize) -> Option<He
         start: item_start,
         template,
         result: source[start..name_start].to_vec(),
+        signature_start: start,
         class,
         method: method.clone(),
         list_open,
@@ -1319,7 +1306,6 @@ fn rewrite_function(
     objects: &BTreeMap<String, ObjectClass>,
     defining: &BTreeMap<String, DefiningClass>,
     references: &BTreeMap<String, String>,
-    records: &BTreeMap<String, String>,
     output: &mut Vec<Spanned>,
 ) -> Result<(), ClickError> {
     let own = parameters(&source[head.list_open + 1..head.list_close]);
@@ -1363,7 +1349,6 @@ fn rewrite_function(
     }
     let mut interface_contract = None;
     if let Some(definer) = definer {
-        let class = head.class.as_deref().unwrap_or_default();
         let root = &objects[&definer.root];
         let functions = root
             .functions
@@ -1496,36 +1481,14 @@ fn rewrite_function(
         if interface.is_some() {
             // A generic method's interface is stated once for every type, as
             // the method is verified.
-            let mut contract = head.template.clone();
+            let mut contract = at(&position, vec![Token::OverrideContract]);
+            contract.extend(head.template.iter().cloned());
             contract.push((ident("contract"), position.clone()));
-            contract.extend(head.result.iter().cloned());
-            contract.extend(at(
-                &position,
-                vec![
-                    ident(&implementation_interface_contract(&method_name(
-                        class,
-                        &head.method,
-                    ))),
-                    Token::LParen,
-                ],
-            ));
-            if head.is_const {
-                contract.push((ident("const"), position.clone()));
-            }
-            contract.extend(at(
-                &position,
-                vec![
-                    ident("struct"),
-                    ident(&record_of(class, records)),
-                    Token::Star,
-                    ident("this"),
-                ],
-            ));
-            for parameter in &own {
-                contract.push((Token::Comma, position.clone()));
-                contract.extend(parameter.tokens.iter().cloned());
-            }
-            contract.extend(at(&position, vec![Token::RParen, Token::LBrace]));
+            contract.extend(
+                source[head.signature_start..=head.body_open]
+                    .iter()
+                    .cloned(),
+            );
             contract.extend(memory.iter().cloned());
             contract.push((Token::Semicolon, position.clone()));
             for clause in &held {
