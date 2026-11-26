@@ -1100,9 +1100,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     let written_grandparent_link = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
                                                                 step();
                                                                     mark before_sibling_recolor;
-                                                                    have separate(memory(sx->rb_left), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_left), memory(sx->__rb_parent_color)) by close();
                                                                     have separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); close(); }
-                                                                    have separate(memory(sx->rb_right), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_right), memory(sx->__rb_parent_color)) by close();
                                                                     have separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); close(); }
                                                                 step();
                                                                     have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(sx->rb_left)) by { close(); }
@@ -1847,8 +1847,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             let triangle_new_parent = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
                                                                             step();
                                                                             mark before_outer_child_color;
-                                                                            have separate(memory(original_left->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_left); normalize(); }
-                                                                            have separate(memory(original_left->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_left); normalize(); }
+                                                                            have separate(memory(original_left->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_left); close(); }
+                                                                            have separate(memory(original_left->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_left); close(); }
                                                                             step();
                                                                             have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(original_left->rb_left)) by { close(); }
                                                                             have original_left->rb_left == at(before_outer_child_color, original_left->rb_left) by { preserve(memory(original_left->rb_left), statement(1).statement(4).statement(15).statement(0)); }
@@ -1911,11 +1911,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), left: un, right: rn });
                                                                     have rb_parent_is(RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib), nid) == 1 by {
                                                                         unfold(rb_parent_is(RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib), nid));
-                                                                        normalize();
+                                                                        close();
                                                                     }
                                                                     have rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid) == 1 by {
                                                                         unfold(rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid));
-                                                                        normalize();
+                                                                        close();
                                                                     }
                                                                     have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                                                         unfold(color_bit(Color::Black));
@@ -2750,8 +2750,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             let triangle_new_parent = fold(insert_right_link(parent), { link: InsertLink::To(gparent) });
                                                                             step();
                                                                             mark before_outer_child_color;
-                                                                            have separate(memory(original_outer_child->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_outer_child); normalize(); }
-                                                                            have separate(memory(original_outer_child->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_outer_child); normalize(); }
+                                                                            have separate(memory(original_outer_child->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_outer_child); close(); }
+                                                                            have separate(memory(original_outer_child->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, original_outer_child); close(); }
                                                                             step();
                                                                             have separate(statement(1).statement(4).statement(5).statement(0).footprint, memory(original_outer_child->rb_right)) by { close(); }
                                                                             have original_outer_child->rb_right == at(before_outer_child_color, original_outer_child->rb_right) by { preserve(memory(original_outer_child->rb_right), statement(1).statement(4).statement(5).statement(0)); }
@@ -2814,11 +2814,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib), right: un, left: rn });
                                                                     have rb_parent_is(RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), nid) == 1 by {
                                                                         unfold(rb_parent_is(RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), nid));
-                                                                        normalize();
+                                                                        close();
                                                                     }
                                                                     have rb_parent_is(RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib), nid) == 1 by {
                                                                         unfold(rb_parent_is(RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), usib), nid));
-                                                                        normalize();
+                                                                        close();
                                                                     }
                                                                     have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                                                         unfold(color_bit(Color::Black));
@@ -3309,9 +3309,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     let written_grandparent_link = fold(insert_left_link(parent), { link: InsertLink::To(gparent) });
                                                                 step();
                                                                     mark before_sibling_recolor;
-                                                                    have separate(memory(sx->rb_left), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_left), memory(sx->__rb_parent_color)) by close();
                                                                     have separate(memory(sx->rb_left), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); close(); }
-                                                                    have separate(memory(sx->rb_right), memory(sx->__rb_parent_color)) by normalize();
+                                                                    have separate(memory(sx->rb_right), memory(sx->__rb_parent_color)) by close();
                                                                     have separate(memory(sx->rb_right), memory(tmp->__rb_parent_color)) by { rewrite(tmp, sx); close(); }
                                                                 step();
                                                                     have separate(statement(1).statement(4).statement(15).statement(0).footprint, memory(sx->rb_left)) by { close(); }
