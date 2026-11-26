@@ -3816,13 +3816,13 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { with(cell(p)) { close(); } }\n  if true { normalize(); } else { close(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all { true => { normalize(); } true => { close(); } }\n  outcomes { threw => { step(); } returned => { close(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { close(); } }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { with(cell(p)) { close(); } }\n  if true { close(); } else { close(); }\n  cases { true => { step(); } false => { close(); } }\n  all { true => { close(); } true => { close(); } }\n  outcomes { threw => { step(); } returned => { close(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { close(); } }\n  close() using {};\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
     let branch = position_at_offset(source, source.find("branch").unwrap());
-    let branch_else = position_at_offset(source, source.rfind("close").unwrap());
-    let last = position_at_offset(source, source.rfind("normalize").unwrap());
+    let branch_else = position_at_offset(source, source.rfind("close();").unwrap());
+    let last = position_at_offset(source, source.rfind("close() using").unwrap());
     assert!(!index.line_has_multiple_starts(&branch).unwrap());
     assert!(!index.line_has_multiple_starts(&last).unwrap());
     assert_eq!(
@@ -3838,7 +3838,7 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     // Each second arm's first tactic.
     for (kind, inner) in [
         ("if", "close(); }\n  cases"),
-        ("cases", "normalize(); } }\n  all"),
+        ("cases", "close(); } }\n  all"),
         ("all", "close(); } }\n  outcomes"),
     ] {
         let outer = position_at_offset(source, source.find(kind).unwrap());
@@ -3861,7 +3861,7 @@ fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
         let child = index.nested_position(&have, &[0]).unwrap();
         assert_eq!(
             child,
-            position_at_offset(source, source.find("normalize").unwrap())
+            position_at_offset(source, source.find("close").unwrap())
         );
         (
             index.have_body_contains(&have, &child).unwrap(),
@@ -3870,8 +3870,8 @@ fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
         )
     };
     assert_eq!(
-        answers("by { have true by normalize(); close(); }"),
-        answers("by { have true by { normalize(); } close(); }")
+        answers("by { have true by close(); close(); }"),
+        answers("by { have true by { close(); } close(); }")
     );
 }
 
