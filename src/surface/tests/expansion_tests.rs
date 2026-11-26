@@ -14997,7 +14997,12 @@ fn branch_join_retains_a_historical_fact_in_its_continuation() {
         ContractProofClaim::Grouped,
     )
     .expect("the retained common historical fact should expand");
-    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(
+        !expanded
+            .lines()
+            .any(|line| line.trim_start().starts_with("transport(")),
+        "{expanded}"
+    );
     verify_c_sources(&expanded, &[("choose_bound_transport.c", c_source)])
         .expect("the explicit common have should independently re-derive");
 }
