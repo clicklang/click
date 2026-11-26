@@ -1,9 +1,7 @@
 # simple proof tactics
 
-These proofs use only deterministic, bounded simple tactics. `known` reuses
-an available semantic fact or checks a goal-local computation. `normalize`
-retains its other normalization routes, and `rewrite` performs one
-explicitly named equality substitution.
+These proofs show how `close` discharges an available fact or a reflexive goal
+and how `rewrite` substitutes one side of a cited equality for the other.
 
 ```c filename=simple_tactics.c
 int32 identity(int32 x) {
@@ -22,9 +20,9 @@ theorem exact_known(x: int32) {
     }
 }
 
-theorem normalized_identity(x: int32) {
+theorem reflexive_identity(x: int32) {
     ensures x + 1 == x + 1 by {
-        normalize();
+        close();
     }
 }
 

@@ -159,7 +159,7 @@ needle = "outcomes {"
 
 [[form]]
 id = "normalize"
-path = "mdtests/simple_tactics.md"
+path = "mdtests/normalize_using_decides_conditions_without_substituting.md"
 needle = "normalize();"
 
 [[form]]

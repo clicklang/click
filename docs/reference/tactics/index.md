@@ -1938,7 +1938,7 @@ upper bound with slack `c - 1`, and the corresponding signed slack bounds.
 The divisor and shift count retain the native operation's type and domain.
 No operand history or ambient facts are read.
 
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md)
+**Checked examples:** [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md)
 
 ### Normalization with selected premises
 
