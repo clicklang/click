@@ -15,7 +15,8 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
                 offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9_884_003)),
                     4,
-                ),
+                )
+                .into(),
             };
             let separation = |left, right| Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(

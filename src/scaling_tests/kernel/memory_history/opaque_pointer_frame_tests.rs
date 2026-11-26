@@ -288,7 +288,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "packed-scaling".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let mut memory = SymbolicMemory::new().with_block("packed-scaling", 32);
         let mut context = PureFactContext::new();
@@ -297,7 +297,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             memory = memory.with_block(name.clone(), 4).store(
                 OldAddress {
                     base: name.into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(index)),
             );

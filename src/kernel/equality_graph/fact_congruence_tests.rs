@@ -656,7 +656,8 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let original = OldPointer::new(
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1)
+                .into(),
         },
         ProgramType::UInt8Pointer,
     );
@@ -676,25 +677,27 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let at_first = original.clone().with_address(OldAddress {
         base: original.address().base.clone(),
         offset: OldAddressOffset::add(
-            original.address().offset.clone(),
+            original.address().offset.clone().into(),
             OldAddressOffset::scale_int64(first.clone(), 1, true),
-        ),
+        )
+        .into(),
     });
     let at_second = batch.clone().with_address(OldAddress {
         base: batch.address().base.clone(),
-        offset: OldAddressOffset::scale_int64(second.clone(), 1, true),
+        offset: OldAddressOffset::scale_int64(second.clone(), 1, true).into(),
     });
     let sequential = OldAddress {
         base: original.address().base.clone(),
         offset: OldAddressOffset::add(
-            at_first.address().offset.clone(),
+            at_first.address().offset.clone().into(),
             OldAddressOffset::scale_int64(second.clone(), 1, true),
-        ),
+        )
+        .into(),
     };
     let target = original.clone().with_address(OldAddress {
         base: original.address().base.clone(),
         offset: OldAddressOffset::add(
-            original.address().offset.clone(),
+            original.address().offset.clone().into(),
             OldAddressOffset::scale_int64(
                 OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
@@ -705,7 +708,8 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
                 1,
                 true,
             ),
-        ),
+        )
+        .into(),
     });
     let full = |left: OldPointer, right: OldPointer| {
         Proposition::condition_is(

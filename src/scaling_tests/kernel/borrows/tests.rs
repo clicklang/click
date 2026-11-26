@@ -802,7 +802,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
         for index in 0..size {
             let base = crate::kernel::OldAddress {
                 base: crate::kernel::AddressBase::Concrete(format!("overlap-{index}")),
-                offset: crate::kernel::OldAddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0).into(),
             };
             let owner = ResourceFact::own_memory(MemoryRange::new(
                 base.clone(),
@@ -1147,7 +1147,7 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
         ResourceFact::own_memory(crate::kernel::MemoryRange::new_with_element_width(
             crate::kernel::OldAddress {
                 base: "buffer".into(),
-                offset: crate::kernel::OldAddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0).into(),
             },
             crate::kernel::OldMachineTerm::constant(start),
             crate::kernel::OldMachineTerm::constant(end),

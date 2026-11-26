@@ -208,7 +208,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         let _session = VerificationSession::enter();
         let cell = |name: String| OldAddress {
             base: name.into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let selected = cell("zz-recent-pointer-origin".into());
         let mut memory = SymbolicMemory::new().with_block(selected.base.clone(), 8);

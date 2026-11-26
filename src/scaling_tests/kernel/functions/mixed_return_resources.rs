@@ -1938,7 +1938,7 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                     } else if family == "control" {
                         OldAddress {
                             base: AddressBase::ExternalArgument,
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0).into(),
                         }
                     } else {
                         OldAddress::symbolic(Variable(8_880_000))
@@ -2290,7 +2290,7 @@ fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_alia
                 let pointer = if axis == "same-block aliases" {
                     OldAddress {
                         base: first.memory_own_range().unwrap().base().base.clone(),
-                        offset: OldAddressOffset::Variable(Variable(9_950_000 + index)),
+                        offset: OldAddressOffset::Variable(Variable(9_950_000 + index)).into(),
                     }
                 } else {
                     OldAddress::symbolic(Variable(9_950_000 + index))
@@ -2436,7 +2436,7 @@ fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classe
                 let pointer = if axis == "same-block aliases" {
                     OldAddress {
                         base: first.memory_own_range().unwrap().base().base.clone(),
-                        offset: OldAddressOffset::Variable(Variable(9_960_000 + index)),
+                        offset: OldAddressOffset::Variable(Variable(9_960_000 + index)).into(),
                     }
                 } else {
                     OldAddress::symbolic(Variable(9_960_000 + index))

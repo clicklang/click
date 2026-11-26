@@ -3677,6 +3677,7 @@ mod tests {
     //! number of runs.
 
     use super::*;
+    use crate::kernel::OldAddressOffset;
     use crate::kernel::primitives::{SymbolicMemory, Variable};
     use std::collections::BTreeMap;
 

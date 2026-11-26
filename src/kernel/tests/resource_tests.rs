@@ -3023,7 +3023,7 @@ fn resource_memory_block_and_interval_indexes_update_logarithmically() {
             ResourceFact::own_memory(memory_range(
                 OldAddress {
                     base: format!("unrelated-{index}").into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 0,
                 1,
@@ -3032,7 +3032,7 @@ fn resource_memory_block_and_interval_indexes_update_logarithmically() {
         let target = ResourceFact::own_memory(memory_range(
             OldAddress {
                 base: "target-block".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             7,
             11,
@@ -5005,7 +5005,7 @@ fn supported_projection_interval_updates_scale_with_index_height() {
             let view = ResourceFact::view_memory(MemoryRange::new(
                 OldAddress {
                     base: "projection-curve".into(),
-                    offset: OldAddressOffset::Constant((8 + index * 8) as i64),
+                    offset: OldAddressOffset::Constant((8 + index * 8) as i64).into(),
                 },
                 OldMachineTerm::constant(0),
                 OldMachineTerm::constant(1),
@@ -5024,7 +5024,7 @@ fn supported_projection_interval_updates_scale_with_index_height() {
         let target_view = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "projection-curve".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),

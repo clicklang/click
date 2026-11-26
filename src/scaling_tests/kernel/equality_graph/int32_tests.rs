@@ -399,8 +399,8 @@ fn offset_premise_shallow_decision_and_forks_scale() {
                 for i in 0..size {
                     parent = parent.clone().assume_condition(
                         OldConditionTerm::address_offset_equal(
-                            OldAddressOffset::scale_int32(var(i), 4),
-                            OldAddressOffset::scale_int32(var(i + 1), 4),
+                            OldAddressOffset::scale_int32(var(i), 4).into(),
+                            OldAddressOffset::scale_int32(var(i + 1), 4).into(),
                         ),
                         true,
                     );
@@ -574,7 +574,7 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
             OldPointer::new(
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::scale_int32(var(id), 4),
+                    offset: OldAddressOffset::scale_int32(var(id), 4).into(),
                 },
                 ProgramType::Int32Pointer,
             )

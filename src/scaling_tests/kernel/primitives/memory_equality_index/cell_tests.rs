@@ -137,7 +137,7 @@ fn forks_before_publication_keep_indexed_candidates_without_input_rescans() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(859_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(859_000 + id)).into(),
         };
         let empty = PureFactContext::new();
         // Both forks precede resource publication. Their term registrations
@@ -210,7 +210,7 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id: u64| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(859_200 + id)),
+            offset: OldAddressOffset::Variable(Variable(859_200 + id)).into(),
         };
         let parent = PureFactContext::new();
         let first = parent.clone().assume_condition(
@@ -297,7 +297,7 @@ fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id: u64| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(864_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(864_000 + id)).into(),
         };
         let initial = PureFactContext::new();
         let mut parent = initial.clone();
@@ -354,7 +354,7 @@ fn whole_cell_write_merges_and_queries_do_not_scan_other_payloads() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(862_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(862_000 + id)).into(),
         };
         let owner = ResourceFact::own_memory(MemoryRange::new(at(0), 0u32.into(), 1u32.into()));
         let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
@@ -416,7 +416,7 @@ fn late_offset_cell_hits_scale_with_affected_entries() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(853_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(853_000 + id)).into(),
         };
         let mut resources = ResourceContext::new();
         for i in 0..size {
@@ -473,7 +473,7 @@ fn cell_publication_and_forks_do_not_repeat_input_registration() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(854_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(854_000 + id)).into(),
         };
         let mut resources = ResourceContext::new();
         let mut facts = PureFactContext::new();
@@ -531,7 +531,7 @@ fn scratch_queries_do_not_force_input_registration_at_the_next_boundary() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(856_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(856_000 + id)).into(),
         };
         let facts = PureFactContext::new();
         let mut resources = ResourceContext::new();
@@ -1449,7 +1449,7 @@ fn captured_interior_address_selects_its_base_beside_same_block_owners() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(973_100)),
+        offset: OldAddressOffset::Variable(Variable(973_100)).into(),
     };
     let captured = OldAddress::symbolic(Variable(973_101));
     let i = OldMachineTerm::Variable(Variable(973_102));
@@ -1477,7 +1477,7 @@ fn captured_interior_address_selects_its_base_beside_same_block_owners() {
         for k in 0..size {
             let field = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(974_000 + k)),
+                offset: OldAddressOffset::Variable(Variable(974_000 + k)).into(),
             };
             frame = frame.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(field, 0u32.into(), 1u32.into(), 8),
@@ -1926,7 +1926,7 @@ fn query_read_definition_merges_scale_with_changed_suppliers() {
         };
         let unrelated = OldAddress {
             base: AddressBase::Heap(989_810),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let first = crate::kernel::intern_memory(
             SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
@@ -1942,7 +1942,7 @@ fn query_read_definition_merges_scale_with_changed_suppliers() {
         for n in 0..count {
             let cell = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(i64::from(n) * 16),
+                offset: OldAddressOffset::Constant(i64::from(n) * 16).into(),
             };
             let named = name(&first, &cell);
             let read = OldAddress::loaded_value(&later, &cell);
@@ -1962,7 +1962,7 @@ fn query_read_definition_merges_scale_with_changed_suppliers() {
             resources = resources.unchecked_with_fact(view(
                 &OldAddress {
                     base: AddressBase::Heap(990_000 + u64::from(n)),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 0,
                 8,

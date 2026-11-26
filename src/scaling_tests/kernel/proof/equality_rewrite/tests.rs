@@ -17,10 +17,12 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             let mut q = OldAddress::symbolic(Variable(241_001)).offset_by_bytes(3);
             if same_block {
                 p.offset =
-                    OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_002)), 1);
+                    OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_002)), 1)
+                        .into();
                 q.base = p.base.clone();
                 q.offset =
-                    OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_003)), 1);
+                    OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_003)), 1)
+                        .into();
             }
             let cited = Proposition::condition_is(
                 OldConditionTerm::address_equal(p.clone(), q.clone()),
@@ -119,7 +121,8 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let owner = OldAddress::symbolic(Variable(211_000));
         let alias = OldAddress {
             base: AddressBase::Symbolic(Variable(211_001)),
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(211_002)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(211_002)), 4)
+                .into(),
         };
         let address = owner.offset_by_bytes(16);
         let alias_address = alias.offset_by_bytes(16);
@@ -441,7 +444,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = OldAddress {
         base: "rewrite-selected-read".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     crate::kernel::eval::declare_load_access_width(&pointer, 4);
     let before = SymbolicMemory::new().with_block("rewrite-selected-read", 4);
@@ -502,7 +505,10 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let source = OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_920)), 1);
     let target = OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_921)), 1);
     let cited = Proposition::condition_is(
-        OldConditionTerm::AddressOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
+        OldConditionTerm::AddressOffsetEqual(
+            Box::new(source.clone().into()),
+            Box::new(target.clone().into()),
+        ),
         true,
     );
     let memory = SymbolicMemory::new().with_block("offset-view-rewrite", 8);
@@ -511,7 +517,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
         memory: memory.clone(),
         base: OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::add(source, OldAddressOffset::Constant(2)),
+            offset: OldAddressOffset::add(source, OldAddressOffset::Constant(2)).into(),
         },
         bytes: (span.clone()).into(),
         wide: false,

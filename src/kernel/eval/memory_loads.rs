@@ -8419,7 +8419,7 @@ mod tests {
                     memory = memory.store(
                         OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::Constant(i64::from(index) * 4),
+                            offset: OldAddressOffset::Constant(i64::from(index) * 4).into(),
                         },
                         int32(index),
                     );

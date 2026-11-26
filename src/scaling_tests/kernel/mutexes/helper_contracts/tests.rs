@@ -56,6 +56,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                 &Default::default(),
                 &assumptions,
                 &mut ExecutionBudget::new(),
+                crate::kernel::mutexes::ProtocolSite::Own,
             )
             .unwrap();
             let guard = exported_guard(&held).unwrap();
@@ -70,6 +71,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                 &Default::default(),
                 &assumptions,
                 &mut ExecutionBudget::new(),
+                crate::kernel::mutexes::ProtocolSite::Own,
             )
             .unwrap()
             .0;
@@ -87,6 +89,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                     &Default::default(),
                     &assumptions,
                     &mut ExecutionBudget::new(),
+                    crate::kernel::mutexes::ProtocolSite::Own,
                 )
                 .unwrap();
                 assert!(permits_return(&held));
@@ -102,6 +105,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                     &Default::default(),
                     &assumptions,
                     &mut ExecutionBudget::new(),
+                    crate::kernel::mutexes::ProtocolSite::Own,
                 )
                 .unwrap();
                 released

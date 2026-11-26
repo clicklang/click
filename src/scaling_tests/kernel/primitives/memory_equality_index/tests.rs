@@ -460,15 +460,18 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
         let model = OldAddress::symbolic(Variable(950_001));
         let parameter = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_002)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_002)), 4)
+                .into(),
         };
         let old_read = OldAddress {
             base: parent.base.clone(),
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_003)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_003)), 4)
+                .into(),
         };
         let cursor = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_004)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_004)), 4)
+                .into(),
         };
         let prefix = PureFactContext::new()
             .assume_condition(OldConditionTerm::address_equal(parameter, parent), true)
@@ -537,15 +540,18 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
         let model = OldAddress::symbolic(Variable(940_001));
         let parameter = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_002)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_002)), 4)
+                .into(),
         };
         let old_read = OldAddress {
             base: parent.base.clone(),
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_003)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_003)), 4)
+                .into(),
         };
         let cursor = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_004)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_004)), 4)
+                .into(),
         };
         let prefix = PureFactContext::new()
             .assume_condition(OldConditionTerm::address_equal(parameter, parent), true)
@@ -609,7 +615,7 @@ fn mixed_span_read_hits_and_misses_do_not_scan_unrelated_ranges() {
         resources.synchronize_memory_equalities(&facts);
         let at = |offset| OldAddress {
             base: alias.base.clone(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset).into(),
         };
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {

@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::OldAddressOffset;
 use crate::kernel::binary_node;
 use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
