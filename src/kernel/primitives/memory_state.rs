@@ -290,11 +290,22 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             }
             HavocIdentityTask::PointerOffset(offset) => {
                 crate::instrumentation::record_deterministic_work(1);
-                match offset {
-                    OldAddressOffset::Constant(value) => {
+                let offset = match offset.into_add() {
+                    Ok((left, right)) => {
+                        identity.push_str("oa(");
+                        tasks.push(HavocIdentityTask::Text(")"));
+                        tasks.push(HavocIdentityTask::PointerOffset(right));
+                        tasks.push(HavocIdentityTask::Text(","));
+                        tasks.push(HavocIdentityTask::PointerOffset(left));
+                        continue;
+                    }
+                    Err(offset) => offset,
+                };
+                match offset.view() {
+                    OffsetView::Constant(value) => {
                         let _ = write!(identity, "oc{value};");
                     }
-                    OldAddressOffset::Variable(variable) => {
+                    OffsetView::Variable(variable) => {
                         if !push_registered_load(
                             &mut identity,
                             &mut tasks,
@@ -304,16 +315,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             let _ = write!(identity, "ov{};", variable.0);
                         }
                     }
-                    OldAddressOffset::Add(left, right) => {
-                        identity.push_str("oa(");
-                        tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::PointerOffset(*right));
-                        tasks.push(HavocIdentityTask::Text(","));
-                        tasks.push(HavocIdentityTask::PointerOffset(*left));
-                    }
-                    OldAddressOffset::Int32Scaled { value, byte_width }
-                    | OldAddressOffset::Int64Scaled {
-                        value, byte_width, ..
+                    OffsetView::Add(..) => unreachable!("sums are split above"),
+                    OffsetView::Int32Scaled { index, byte_width }
+                    | OffsetView::Int64Scaled {
+                        index, byte_width, ..
                     } => {
                         identity.push_str("os(");
                         tasks.push(HavocIdentityTask::Text(")"));
@@ -322,7 +327,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         ));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(
-                            value.structural_value().clone(),
+                            index.structural_value().clone(),
                         ));
                     }
                 }

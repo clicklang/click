@@ -61,7 +61,7 @@ impl NumericAddressConnectivity {
                 let (object, inserted) = Self::node(objects, &mut self.next_id, &bucket);
                 self.join(operand, object);
                 if inserted && let Some(variable) = parameter_partition_variable(&bucket) {
-                    self.record_coordinate_bucket(*variable, object);
+                    self.record_coordinate_bucket(variable, object);
                 }
                 if has_pointer_alias(&bucket) {
                     self.mark_pointer_alias_node(object);
@@ -180,7 +180,7 @@ impl NumericAddressConnectivity {
         // The write's own bucket may be absent from the numeric forest.
         parameter_partition_variable(bucket).is_some_and(|variable| {
             matches!(
-                self.raw_coordinates.get(variable),
+                self.raw_coordinates.get(&variable),
                 Some(RawStoreCoordinate::HasWideEquality)
             )
         }) || !self.raw_coordinate_roots.is_empty()

@@ -5227,11 +5227,6 @@ enum AtomicCanonicalizationTask<'a> {
         right_block: AddressBase,
     },
     RebuildOffsetAdd,
-    RebuildInt32Scaled(i64),
-    RebuildInt64Scaled {
-        byte_width: i64,
-        unsigned: bool,
-    },
     RebuildIf,
     RebuildRangeFold {
         accumulator: Variable,
@@ -5885,45 +5880,44 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                     tasks.push(AtomicCanonicalizationTask::Visit(left));
                 }
             },
-            AtomicCanonicalizationTask::VisitOffset(offset) => match offset {
-                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
+            AtomicCanonicalizationTask::VisitOffset(offset) => match offset.view() {
+                OffsetView::Constant(_) | OffsetView::Variable(_) => {
                     offset_results.push(offset.clone())
                 }
-                OldAddressOffset::Add(left, right) => {
+                OffsetView::Add(left, right) => {
                     tasks.push(AtomicCanonicalizationTask::RebuildOffsetAdd);
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(right));
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(left));
                 }
-                OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. }
-                    if value.shared_operand().is_some() =>
+                OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. }
+                    if index.shared_operand().is_some() =>
                 {
                     // A shared index retains its chosen read states. Its
                     // stored values are comparison evidence, not address syntax.
                     offset_results.push(offset.clone());
                 }
-                OldAddressOffset::Int32Scaled { value, byte_width } => {
-                    tasks.push(AtomicCanonicalizationTask::RebuildInt32Scaled(*byte_width));
-                    tasks.push(AtomicCanonicalizationTask::Visit(
-                        value
+                // The view owns the index, so its written operand is
+                // canonicalized by a nested walk, at the point the operand's
+                // task would be popped.
+                OffsetView::Int32Scaled { index, byte_width } => {
+                    let value = canonicalize_atomic_loads_deep(
+                        index
                             .retained_written_operand()
                             .expect("shared indices handled above"),
-                    ));
+                    );
+                    offset_results.push(OldAddressOffset::scale_int32(value, byte_width));
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned,
                 } => {
-                    tasks.push(AtomicCanonicalizationTask::RebuildInt64Scaled {
-                        byte_width: *byte_width,
-                        unsigned: *unsigned,
-                    });
-                    tasks.push(AtomicCanonicalizationTask::Visit(
-                        value
+                    let value = canonicalize_atomic_loads_deep(
+                        index
                             .retained_written_operand()
                             .expect("shared indices handled above"),
-                    ));
+                    );
+                    offset_results.push(OldAddressOffset::scale_int64(value, byte_width, unsigned));
                 }
             },
             // Integer operators and conversions are rebuilt as bare nodes;
@@ -6007,17 +6001,6 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                 let right = offset_results.pop().expect("visited right pointer offset");
                 let left = offset_results.pop().expect("visited left pointer offset");
                 offset_results.push(OldAddressOffset::add(left, right));
-            }
-            AtomicCanonicalizationTask::RebuildInt32Scaled(byte_width) => {
-                let value = results.pop().expect("visited scaled term");
-                offset_results.push(OldAddressOffset::scale_int32(value, byte_width));
-            }
-            AtomicCanonicalizationTask::RebuildInt64Scaled {
-                byte_width,
-                unsigned,
-            } => {
-                let value = results.pop().expect("visited scaled term");
-                offset_results.push(OldAddressOffset::scale_int64(value, byte_width, unsigned));
             }
             AtomicCanonicalizationTask::RebuildIf => {
                 let else_term = results.pop().expect("visited else term");
@@ -7240,38 +7223,40 @@ pub(super) fn normalize_exact_memory_loads_in_pointer_offset(
                     results.push(offset);
                     continue;
                 }
-                match offset {
-                    OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
-                        results.push(offset)
-                    }
-                    OldAddressOffset::Add(left, right) => {
+                let offset = match offset.into_add() {
+                    Ok((left, right)) => {
                         tasks.push(Task::RebuildAdd);
-                        tasks.push(Task::Visit(*right));
-                        tasks.push(Task::Visit(*left));
+                        tasks.push(Task::Visit(right));
+                        tasks.push(Task::Visit(left));
+                        continue;
                     }
-                    OldAddressOffset::Int32Scaled { value, byte_width } => {
-                        let normalized = normalize_exact_index(&value, assumptions)
-                            .unwrap_or_else(|| value.clone());
-                        results.push(
+                    Err(offset) => offset,
+                };
+                let scaled = match offset.view() {
+                    OffsetView::Constant(_) | OffsetView::Variable(_) => None,
+                    OffsetView::Add(..) => unreachable!("sums are split above"),
+                    OffsetView::Int32Scaled { index, byte_width } => {
+                        let normalized =
+                            normalize_exact_index(&index, assumptions).unwrap_or(index);
+                        Some(
                             if let Some(bits) = normalized.operand_view().word32_constant() {
                                 OldAddressOffset::constant((bits as i32 as i64) * byte_width)
                             } else {
                                 OldAddressOffset::int32_scaled(normalized, byte_width)
                             },
-                        );
+                        )
                     }
-                    OldAddressOffset::Int64Scaled {
-                        value,
+                    OffsetView::Int64Scaled {
+                        index,
                         byte_width,
                         unsigned,
-                    } => {
-                        results.push(transported_scaled_index(
-                            normalize_exact_index(&value, assumptions).unwrap_or(value),
-                            byte_width,
-                            Some(unsigned),
-                        ));
-                    }
-                }
+                    } => Some(transported_scaled_index(
+                        normalize_exact_index(&index, assumptions).unwrap_or(index),
+                        byte_width,
+                        Some(unsigned),
+                    )),
+                };
+                results.push(scaled.unwrap_or(offset));
             }
             Task::RebuildAdd => {
                 let right = results.pop().expect("visited right pointer offset");

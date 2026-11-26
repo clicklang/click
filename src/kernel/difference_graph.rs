@@ -2402,18 +2402,17 @@ fn flip_sign(domain: Domain, value: i128) -> i128 {
 
 /// A pointer offset as `value * width` for an `int32` value, or a constant
 /// byte offset. Exact: the product is formed in 64 bits.
-enum ScaledOffset<'a> {
-    Scaled(V<'a>, i64),
+enum ScaledOffset {
+    Scaled(crate::kernel::SharedMachineIntegerTerm, i64),
     Bytes(i64),
 }
 
-fn scaled_offset(offset: &crate::kernel::OldAddressOffset) -> Option<ScaledOffset<'_>> {
-    use crate::kernel::OldAddressOffset as O;
-    match offset {
-        O::Int32Scaled { value, byte_width } if *byte_width != 0 => {
-            Some(ScaledOffset::Scaled(value.operand_view(), *byte_width))
+fn scaled_offset(offset: &crate::kernel::OldAddressOffset) -> Option<ScaledOffset> {
+    match offset.view() {
+        OffsetView::Int32Scaled { index, byte_width } if byte_width != 0 => {
+            Some(ScaledOffset::Scaled(index, byte_width))
         }
-        O::Constant(bytes) => Some(ScaledOffset::Bytes(*bytes)),
+        OffsetView::Constant(bytes) => Some(ScaledOffset::Bytes(bytes)),
         _ => None,
     }
 }
@@ -2495,8 +2494,8 @@ fn offset_equality(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     }
     let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
         (ScaledOffset::Scaled(a, wa), ScaledOffset::Scaled(b, wb)) if wa == wb => (
-            a.retain(MachineIntegerType::Int32),
-            b.retain(MachineIntegerType::Int32),
+            a.operand_view().retain(MachineIntegerType::Int32),
+            b.operand_view().retain(MachineIntegerType::Int32),
         ),
         (ScaledOffset::Scaled(value, width), ScaledOffset::Bytes(bytes))
         | (ScaledOffset::Bytes(bytes), ScaledOffset::Scaled(value, width))
@@ -2504,7 +2503,7 @@ fn offset_equality(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
         {
             let count = i32::try_from(bytes / width).ok()?;
             (
-                value.retain(MachineIntegerType::Int32),
+                value.operand_view().retain(MachineIntegerType::Int32),
                 V::Old(&OldMachineTerm::constant(count as u32)).retain(MachineIntegerType::Int32),
             )
         }

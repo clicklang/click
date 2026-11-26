@@ -1116,7 +1116,25 @@ fn record_surface_synthesis_exhaustion(category: &'static str) {
 }
 
 fn bitvector_term_exceeds_depth_limit(root: &OldMachineTerm) -> bool {
-    let mut pending = vec![(root, 0usize)];
+    bitvector_term_exceeds_depth_limit_from(root, 0)
+}
+
+/// Whether an address offset that is one scaled index has a path below the
+/// index, entered at `depth`, that reaches the depth limit.
+fn scaled_index_exceeds_depth_limit(offset: &OldAddressOffset, depth: usize) -> bool {
+    match offset.view() {
+        OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+            bitvector_term_exceeds_depth_limit_from(index.structural_value(), depth)
+        }
+        _ => false,
+    }
+}
+
+/// Whether some path below `root`, entered at `depth`, reaches the depth
+/// limit. An address's scaled index is owned by its offset view, so its
+/// operand is checked by a nested walk; the answer does not depend on order.
+fn bitvector_term_exceeds_depth_limit_from(root: &OldMachineTerm, depth: usize) -> bool {
+    let mut pending = vec![(root, depth)];
     while let Some((term, depth)) = pending.pop() {
         if depth >= SURFACE_SYNTHESIS_DEPTH_LIMIT.saturating_sub(1) {
             return true;
@@ -1163,17 +1181,13 @@ fn bitvector_term_exceeds_depth_limit(root: &OldMachineTerm) -> bool {
             | OldMachineTerm::IntegerToMachine { .. }
             | OldMachineTerm::BoolCast { .. } => {}
             OldMachineTerm::MemoryLoad(_, pointer, _) => {
-                if let OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. } = &pointer.offset
-                {
-                    pending.push((value.structural_value(), depth + 1));
+                if scaled_index_exceeds_depth_limit(&pointer.offset, depth + 1) {
+                    return true;
                 }
             }
             OldMachineTerm::IntegerAddress(pointer, _) => {
-                if let OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. } = &pointer.offset
-                {
-                    pending.push((value.structural_value(), depth + 1));
+                if scaled_index_exceeds_depth_limit(&pointer.offset, depth + 1) {
+                    return true;
                 }
             }
             OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => {}

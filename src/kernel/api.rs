@@ -66,38 +66,38 @@ pub(crate) fn memory_access_element_bound(
 ) -> Option<MemoryAccessElementBound> {
     let size = memory.block_size(&pointer.base)?;
     let mut pending = vec![&pointer.offset];
-    let mut widest: Option<(&OldMachineTerm, u32)> = None;
+    let mut widest: Option<(SharedMachineIntegerTerm, u32)> = None;
     while let Some(term) = pending.pop() {
-        match term {
-            OldAddressOffset::Add(left, right) => {
+        match term.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            // A widened index is spelled as the C index it widens: a
-            // `uint32` index zero-extends to the 64-bit offset.
-            OldAddressOffset::Int32Scaled { value, byte_width }
-            | OldAddressOffset::Int64Scaled {
-                value, byte_width, ..
+            OffsetView::Int32Scaled { index, byte_width }
+            | OffsetView::Int64Scaled {
+                index, byte_width, ..
             } => {
-                let value = match value.structural_value() {
-                    cast_term!(UInt64From32, index) => index,
-                    value => value,
-                };
-                let stride = u32::try_from(*byte_width).ok()?;
-                if widest.is_none_or(|(_, widest)| stride > widest) {
-                    widest = Some((value, stride));
+                let stride = u32::try_from(byte_width).ok()?;
+                if widest.as_ref().is_none_or(|(_, widest)| stride > *widest) {
+                    widest = Some((index, stride));
                 }
             }
-            OldAddressOffset::Constant(_) => {}
-            OldAddressOffset::Variable(_) => return None,
+            OffsetView::Constant(_) => {}
+            OffsetView::Variable(_) => return None,
         }
     }
     let (index, stride) = widest?;
     if stride < byte_width {
         return None;
     }
+    // A widened index is spelled as the C index it widens: a `uint32` index
+    // zero-extends to the 64-bit offset.
+    let index = match index.structural_value() {
+        cast_term!(UInt64From32, index) => OldMachineTerm::clone(index),
+        value => value.clone(),
+    };
     Some(MemoryAccessElementBound {
-        index: index.clone(),
+        index,
         count: crate::kernel::reasoning::element_count_from_bytes(size, stride)?,
         stride,
     })

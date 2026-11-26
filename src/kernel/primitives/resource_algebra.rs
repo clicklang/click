@@ -1551,6 +1551,8 @@ const MAX_MEMORY_LOAD_FOOTPRINT_DEPTH: usize = 64;
 enum MemoryLoadFootprintWork<'a> {
     Shared(&'a KernelTerm, usize),
     Offset(&'a OldAddressOffset, usize),
+    /// A scaled index, held by value because an offset view owns it.
+    Index(SharedMachineIntegerTerm, usize),
     Term(&'a OldMachineTerm, usize),
 }
 
@@ -1574,10 +1576,46 @@ fn collect_memory_load_work<'a>(
     uncertain: &mut bool,
     source_memory_state: &mut Option<MemoryStateIdentity>,
 ) {
+    collect_memory_load_work_with(
+        initial,
+        &mut std::collections::HashSet::new(),
+        ranges,
+        uncertain,
+        source_memory_state,
+    );
+}
+
+/// The footprint walk over `initial`, sharing `shared_seen` with an
+/// enclosing walk. A nested walk runs to completion where its item would
+/// have been popped, so it visits as the enclosing stack would.
+fn collect_memory_load_work_with<'a>(
+    initial: impl IntoIterator<Item = MemoryLoadFootprintWork<'a>>,
+    shared_seen: &mut std::collections::HashSet<(u64, usize)>,
+    ranges: &mut Vec<MemoryRange>,
+    uncertain: &mut bool,
+    source_memory_state: &mut Option<MemoryStateIdentity>,
+) {
     let mut work = initial.into_iter().collect::<Vec<_>>();
-    let mut shared_seen = std::collections::HashSet::new();
     while let Some(item) = work.pop() {
         match item {
+            MemoryLoadFootprintWork::Index(index, depth) => {
+                // The index's operand borrows from the owned index, so it is
+                // walked by a nested walk over the same seen set.
+                let operand = match index.shared_operand() {
+                    Some(node) => MemoryLoadFootprintWork::Shared(node, depth),
+                    None => MemoryLoadFootprintWork::Term(
+                        index.retained_written_operand().expect("native index"),
+                        depth,
+                    ),
+                };
+                collect_memory_load_work_with(
+                    [operand],
+                    shared_seen,
+                    ranges,
+                    uncertain,
+                    source_memory_state,
+                );
+            }
             MemoryLoadFootprintWork::Shared(node, depth) => {
                 // Footprints are unions. Repeated DAG occurrences at the same
                 // depth add no range or uncertainty; different depths retain
@@ -1617,22 +1655,15 @@ fn collect_memory_load_work<'a>(
                     *uncertain = true;
                     continue;
                 }
-                match offset {
-                    OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
-                    OldAddressOffset::Add(left, right) => {
+                match offset.view() {
+                    OffsetView::Constant(_) | OffsetView::Variable(_) => {}
+                    OffsetView::Add(left, right) => {
                         work.push(MemoryLoadFootprintWork::Offset(left, depth + 1));
                         work.push(MemoryLoadFootprintWork::Offset(right, depth + 1));
                     }
-                    OldAddressOffset::Int32Scaled { value, .. }
-                    | OldAddressOffset::Int64Scaled { value, .. } => {
-                        if let Some(node) = value.shared_operand() {
-                            work.push(MemoryLoadFootprintWork::Shared(node, depth + 1));
-                        } else {
-                            work.push(MemoryLoadFootprintWork::Term(
-                                value.retained_written_operand().expect("native index"),
-                                depth + 1,
-                            ));
-                        }
+                    OffsetView::Int32Scaled { index, .. }
+                    | OffsetView::Int64Scaled { index, .. } => {
+                        work.push(MemoryLoadFootprintWork::Index(index, depth + 1));
                     }
                 }
             }
