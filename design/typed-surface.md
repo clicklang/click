@@ -259,6 +259,18 @@ over `NoOuterNames`, C parameters in the declarations, and a
 `LoweringQueries` that knows nothing, with no lowerer. The declarations
 still hold an (empty) entry state, a kernel value.
 
+`Declarations` reads names' C types from kernel states (the entry state, the
+entry values, and the state that declares the clause's locals) only for
+names that no C scope resolved, which is most names in function contracts and
+fixed-state proofs. Those reads move to front-end declarations one lookup at a
+time: first a debug-build check that the declaration gives the kernel's answer
+in every lowering context, then the switch. Globals go first.
+`GlobalDeclarations` (`languages/interface.rs`) holds a function's global
+and static objects' declared types, by spelling and by kernel name, and debug
+builds check both global lookups against it. Fixed-state proofs, call-site
+requirements, composite resources and fold registration do not have the
+function's declarations yet and are not checked.
+
 Still to do in stage 2: elaboration runs where lowering reaches a comparison,
 not as a pass before lowering; the raiser still returns Syntax and keeps its
 guessing special cases; and arithmetic kind is still chosen by which lowering

@@ -9814,6 +9814,13 @@ impl Parser {
             object.prepare_static_binding();
         }
         let static_locals = std::mem::take(&mut self.static_locals);
+        let static_arrays = std::mem::take(&mut self.static_arrays);
+        let storage_types = std::sync::Arc::new(crate::languages::interface::StorageTypes::of(
+            &self.globals,
+            &self.global_arrays,
+            &static_locals,
+            &static_arrays,
+        ));
         let local_struct_pointers = std::mem::take(&mut self.local_struct_pointers)
             .into_iter()
             .filter_map(|(name, struct_name)| Some((name, struct_name?)))
@@ -9868,7 +9875,8 @@ impl Parser {
             global_aggregates: self.global_aggregates.clone(),
             global_aggregate_arrays: self.global_aggregate_arrays.clone(),
             static_locals,
-            static_arrays: std::mem::take(&mut self.static_arrays),
+            storage_types,
+            static_arrays,
             static_aggregates: std::mem::take(&mut self.static_aggregates),
             static_aggregate_arrays: std::mem::take(&mut self.static_aggregate_arrays),
             local_struct_pointers,

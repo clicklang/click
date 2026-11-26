@@ -64,6 +64,7 @@ impl Declared {
                 result_type: ProgramType::Int32,
                 entry_values: Default::default(),
                 local_type_state: None,
+                global_declarations: None,
                 program_parameter_types: Arc::new(
                     self.c_parameters
                         .iter()

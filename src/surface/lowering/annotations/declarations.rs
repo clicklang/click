@@ -12,6 +12,11 @@ pub(super) struct Declarations<'a> {
     pub(super) result_type: ProgramType,
     pub(super) entry_values: Arc<ProgramValueBindings>,
     pub(super) local_type_state: Option<&'a ExecutionState>,
+    /// The global and static objects the function declares. Debug builds
+    /// check every global type read from the entry state against them; the
+    /// lowering contexts that do not have the function yet hold `None`.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pub(super) global_declarations: Option<crate::languages::interface::GlobalDeclarations>,
     pub(super) program_parameter_types: Arc<BTreeMap<String, ProgramType>>,
     pub(super) pointer_element_types: Arc<BTreeMap<String, ProgramType>>,
 }
@@ -25,6 +30,7 @@ impl<'a> AnnotationLowerer<'a> {
             result_type: self.result_type,
             entry_values: self.entry_values.clone(),
             local_type_state: self.local_type_state,
+            global_declarations: self.global_declarations.clone(),
             program_parameter_types: self.program_parameter_types.clone(),
             pointer_element_types: self.pointer_element_types.clone(),
         }
@@ -189,7 +195,16 @@ impl Declarations<'_> {
                         .then(|| self.result_type.pointee_type())
                         .flatten()
                 })
-                .or_else(|| self.entry_state.global_array_element_type(name))
+                // A global or static array is indexed by its element type.
+                .or_else(|| {
+                    let from_state = self.entry_state.global_array_element_type(name);
+                    self.check_declared_global(
+                        name,
+                        from_state,
+                        crate::languages::interface::GlobalDeclarations::array_element_type,
+                    );
+                    from_state
+                })
                 // A C++ reference's carrier is declared as a pointer to its
                 // referent.
                 .or_else(|| {
@@ -199,9 +214,13 @@ impl Declarations<'_> {
                 })
                 // A pointer global reads at its declared pointee.
                 .or_else(|| {
-                    self.entry_state
-                        .global_object_type(name)
-                        .and_then(ProgramType::pointee_type)
+                    let from_state = self.entry_state.global_object_type(name);
+                    self.check_declared_global(
+                        name,
+                        from_state,
+                        crate::languages::interface::GlobalDeclarations::object_type,
+                    );
+                    from_state.and_then(ProgramType::pointee_type)
                 })
                 .or_else(|| typing.bound_pointer_pointee_type(name)),
             ProgramExpression::TypedLoad { value_type, .. } => match value_type {
@@ -230,6 +249,32 @@ impl Declarations<'_> {
                 .program_expression_array_element_type(pointer, typing)
                 .and_then(ProgramType::pointee_type),
             _ => None,
+        }
+    }
+
+    /// Debug builds: the type the entry state gives a global or static
+    /// object is the type the function declares for it, so the declarations
+    /// can answer in its place (`design/typed-surface.md`). Not checked in a
+    /// lowering context that does not have the function's declarations yet.
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
+    fn check_declared_global(
+        &self,
+        name: &crate::kernel::BindingName,
+        from_state: Option<ProgramType>,
+        declared: fn(
+            &crate::languages::interface::GlobalDeclarations,
+            &crate::kernel::BindingName,
+        ) -> Option<ProgramType>,
+    ) {
+        #[cfg(debug_assertions)]
+        if let Some(declarations) = &self.global_declarations {
+            crate::instrumentation::uncharged_debug_check(|| {
+                assert_eq!(
+                    declared(declarations, name),
+                    from_state,
+                    "global `{name}`: the type the function declares is not the type its entry state gives"
+                );
+            });
         }
     }
 }
