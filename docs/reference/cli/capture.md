@@ -1947,7 +1947,7 @@ int Square::area(int scale) const {
 }
 ```
 
-The object is the sealed abstract resource `Shape__object`, with a field for
+The object is the sealed abstract resource `Shape::object`, with a field for
 each function. A method of `Shape`, and a function's `Shape&` parameter,
 hold it with no clause written and read `size(this)` or `size(shape)` as its
 field. A `const` method or `const Shape&` keeps it, so an `ensures` reads it
@@ -1995,9 +1995,9 @@ template<class T> void Wrap<T>::put(T x) {
 }
 ```
 
-The object is the generic resource `Holder__object<T>`, and each instance
+The object is the generic resource `Holder<T>::object`, and each instance
 the import has, `Holder<int>`, holds it at its type arguments,
-`Holder__object<int>`. A pure virtual method can be declared with
+`Holder<int>::object`. A pure virtual method can be declared with
 `template<class T>` in the interface file. Each instance uses the contract
 at its types. `Wrap<T>`'s overrides are verified once, with `T`
 abstract, against the interface read through its definitions, the
