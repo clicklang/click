@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::kernel::CompareRelation;
-use crate::kernel::OldAddressOffset;
 use crate::kernel::binary_node;
 use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
@@ -920,7 +919,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     let function = parsed_function.to_kernel_function();
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::AddressOffset::constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -1883,7 +1882,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         for index in 0..size {
             let pointer = OldAddress {
                 base: "rewrite_reads".into(),
-                offset: OldAddressOffset::Constant(index as i64 * 4),
+                offset: crate::kernel::AddressOffset::constant(index as i64 * 4),
             };
             let stored = binary_node!(
                 UInt32,

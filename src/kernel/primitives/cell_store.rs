@@ -3677,7 +3677,6 @@ mod tests {
     //! number of runs.
 
     use super::*;
-    use crate::kernel::OldAddressOffset;
     use crate::kernel::primitives::{SymbolicMemory, Variable};
     use std::collections::BTreeMap;
 
@@ -3873,11 +3872,13 @@ mod tests {
         let global = AddressBase::Concrete("cell-store-global".to_string());
         let other = AddressBase::Concrete("cell-store-other".to_string());
         let symbolic = AddressBase::Symbolic(Variable(9_310_001));
-        let anchor = OldAddressOffset::Variable(Variable(9_310_002));
+        let anchor = AddressOffset::from(crate::kernel::OldAddressOffset::Variable(Variable(
+            9_310_002,
+        )));
         let symbolic_bases = [
             anchor.clone(),
-            AddressOffset::add(anchor.clone(), OldAddressOffset::Constant(8)),
-            AddressOffset::add(anchor.clone(), OldAddressOffset::Constant(-8)),
+            AddressOffset::add(anchor.clone(), AddressOffset::constant(8)),
+            AddressOffset::add(anchor.clone(), AddressOffset::constant(-8)),
         ];
         let sources = [source(1), source(2)];
         for seed_value in 1..=24u64 {
@@ -3900,7 +3901,7 @@ mod tests {
             for shift in (-8..32).filter(|shift| *shift != 0) {
                 pointers.push(at(
                     &symbolic,
-                    AddressOffset::add(anchor.clone(), OldAddressOffset::Constant(shift)),
+                    AddressOffset::add(anchor.clone(), AddressOffset::constant(shift)),
                 ));
             }
             let mut runs_seen = Vec::<CellRun>::new();
@@ -3971,13 +3972,23 @@ mod tests {
                     }
                     8 => {
                         let modulus = 2 + stream.next(3) as i64;
-                        let keep = |pointer: &OldAddress, _: &ProgramValue| !matches!(pointer.offset, OldAddressOffset::Constant(offset) if offset % (4 * modulus) == 0);
+                        let keep = |pointer: &OldAddress, _: &ProgramValue| {
+                            pointer
+                                .offset
+                                .as_const()
+                                .is_none_or(|offset| offset % (4 * modulus) != 0)
+                        };
                         store.retain(keep);
                         model.retain(|pointer, value| keep(pointer, value));
                     }
                     _ => {
                         let only = AliasCandidates::only_block(&global);
-                        let keep = |pointer: &OldAddress, _: &ProgramValue| !matches!(pointer.offset, OldAddressOffset::Constant(offset) if offset % 8 == 4);
+                        let keep = |pointer: &OldAddress, _: &ProgramValue| {
+                            pointer
+                                .offset
+                                .as_const()
+                                .is_none_or(|offset| offset % 8 != 4)
+                        };
                         store.retain_candidates_outside_by(&only, &[], keep, |_| {
                             (SlotSet::PerSlot, RuleAnswer::Exact)
                         });
