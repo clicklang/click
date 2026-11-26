@@ -30,6 +30,45 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Where a mutex protocol step reads, and how it installs its memory.
+#[derive(Clone, Copy)]
+pub(in crate::kernel) enum ProtocolSite<'a> {
+    /// A protocol step of its own, a lock or unlock statement: it reads at
+    /// its state and installs its memory at a new point.
+    Own,
+    /// A step of a contract call. It reads at the call's entry: a protected
+    /// footprint is placed by addresses, and protected memory is escrowed
+    /// outside the callee's writes, so the callee's effects leave it as it
+    /// was there. It stages its memory into the call's effect point.
+    InCall { entry: &'a ExecutionState },
+}
+
+impl<'a> ProtocolSite<'a> {
+    /// The state this step reads at, for the step at `state`.
+    pub(in crate::kernel) fn reads<'s>(self, state: &'s ExecutionState) -> &'s ExecutionState
+    where
+        'a: 's,
+    {
+        match self {
+            Self::Own => state,
+            Self::InCall { entry } => entry,
+        }
+    }
+
+    /// Installs `memory` at `state`, a step of its own, or stages it as a
+    /// step of the call in progress.
+    pub(in crate::kernel) fn install(
+        self,
+        state: &mut ExecutionState,
+        memory: crate::kernel::SymbolicMemory,
+    ) {
+        match self {
+            Self::Own => state.set_memory_directly(memory),
+            Self::InCall { .. } => state.stage_memory_directly(memory),
+        }
+    }
+}
+
 #[cfg(test)]
 use super::borrows::MutexUseBorrow;
 use super::borrows::{BorrowHoldId, BorrowLedger, BorrowParticipantId, MutexUseBinding};
@@ -1987,6 +2026,7 @@ impl MutexLedger {
         definitions: &Arc<[super::CompositeResourceDefinition]>,
         assumptions: &PureFactContext,
         budget: &mut super::ExecutionBudget,
+        site: ProtocolSite<'_>,
     ) -> Result<(ExecutionState, Vec<super::MemoryRange>), MutexTransitionError> {
         let Some(ledger) = state.mutex_ledger.as_ref() else {
             return Ok((state.clone(), Vec::new()));
@@ -2008,7 +2048,7 @@ impl MutexLedger {
         let ranges = super::functions::checked_owned_memory_ranges(
             invariant,
             definitions,
-            state,
+            site.reads(state),
             assumptions,
         )
         .ok_or("protected mutex resource has no checked memory footprint")?;
@@ -2041,7 +2081,7 @@ impl MutexLedger {
             budget,
         )?;
         let mut next = state.clone();
-        next.set_memory_directly(memory);
+        site.install(&mut next, memory);
         next.mutex_ledger = Some(ledger.with_inserted(
             mutex.clone(),
             MutexEntry::Unlocked {
@@ -4382,6 +4422,7 @@ mod tests {
                 &[definition.clone()].into(),
                 &assumptions,
                 &mut budget,
+                ProtocolSite::Own,
             )
             .unwrap();
             let held = MutexContext::new(fresh)
@@ -4432,6 +4473,7 @@ mod tests {
             &[definition.clone()].into(),
             &assumptions,
             &mut budget,
+            ProtocolSite::Own,
         )
         .unwrap();
         let destroyed = MutexContext::new(fresh)

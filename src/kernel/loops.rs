@@ -513,6 +513,7 @@ fn freshen_shared_mutex_payload(
         &environment.modeled_mutex_definition_list,
         assumptions,
         budget,
+        super::mutexes::ProtocolSite::Own,
     )
     .map_err(|error| error.into_runtime_error(mutex))
 }

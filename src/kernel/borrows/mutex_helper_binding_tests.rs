@@ -65,6 +65,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         &Default::default(),
         &assumptions,
         &mut crate::kernel::ExecutionBudget::new(),
+        crate::kernel::mutexes::ProtocolSite::Own,
     )
     .unwrap();
     assert_eq!(
@@ -83,7 +84,8 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
             None,
             &Default::default(),
             &assumptions,
-            &mut crate::kernel::ExecutionBudget::new()
+            &mut crate::kernel::ExecutionBudget::new(),
+            crate::kernel::mutexes::ProtocolSite::Own
         )
         .is_err()
     );
@@ -98,6 +100,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         &Default::default(),
         &assumptions,
         &mut crate::kernel::ExecutionBudget::new(),
+        crate::kernel::mutexes::ProtocolSite::Own,
     )
     .unwrap();
     let evidence = concat_checked_borrow_evidence(&acquire_evidence, &release_evidence);
@@ -118,6 +121,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         &Default::default(),
         &assumptions,
         &mut crate::kernel::ExecutionBudget::new(),
+        crate::kernel::mutexes::ProtocolSite::Own,
     )
     .unwrap();
     assert!(
@@ -131,7 +135,8 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
             None,
             &Default::default(),
             &assumptions,
-            &mut crate::kernel::ExecutionBudget::new()
+            &mut crate::kernel::ExecutionBudget::new(),
+            crate::kernel::mutexes::ProtocolSite::Own
         )
         .is_err()
     );

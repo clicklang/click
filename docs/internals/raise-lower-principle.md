@@ -88,9 +88,11 @@ ensures, are made at the effect point; its produced words' equations are made
 at the exit. Every value is the same at both, so `.effect` is a migration
 measure, to be removed once reads are named by the write that made their
 value. A callee's static storage is materialized at one point before the
-effect (`initialize_callee_globals`). Calls under a mutex protocol still make
-the protocol's stages at points of their own and are not yet held to the
-rule.
+effect (`initialize_callee_globals`). A call's mutex protocol steps, a
+helper's exchange and each typed use's forgetting, are steps of the call
+(`mutexes::ProtocolSite::InCall`): they read at the call's entry, where the
+callee's effects leave the protected footprint as it was, and stage their
+memory into the effect point.
 
 Review frontend and lowering changes against these checks.
 

@@ -3888,15 +3888,6 @@ fn execute_verified_function_applications_with_suspension(
         // Protocol effects remain in the caller scope. The ordinary summary
         // partition below is recovered before this checked successor is
         // published, so no call-local hold can escape or be discarded.
-        // The mutex protocol stages still make their own points.
-        if transfer.helper_call.is_some()
-            || transfer
-                .stable_view_plan
-                .as_ref()
-                .is_some_and(|plan| !plan.mutex_uses.is_empty())
-        {
-            post_state.complete_staged_memory();
-        }
         let helper_effect = if let Some(helper) = &transfer.helper_call {
             let payload = helper
                 .contract
@@ -3916,9 +3907,10 @@ fn execute_verified_function_applications_with_suspension(
                 }),
                 _ => unreachable!("checked helper use"),
             };
-            // The helper reads the post-call memory where it was made: at the
-            // post state's point, with the caller's ledgers.
-            let protocol_input = caller_state.clone().with_memory_of(&post_state);
+            // The helper's exchange is a step of the call in progress, with
+            // the caller's ledgers: it reads at the call's entry and stages
+            // its memory into the call's effect point.
+            let protocol_input = caller_state.clone().with_staged_memory_of(&post_state);
             match super::mutexes::helper_contracts::apply_call_effect(
                 &protocol_input,
                 &helper.source,
@@ -3930,6 +3922,9 @@ fn execute_verified_function_applications_with_suspension(
                 &environment.modeled_mutex_definition_list,
                 &effective_assumptions,
                 budget,
+                super::mutexes::ProtocolSite::InCall {
+                    entry: caller_state,
+                },
             ) {
                 Ok((successor, evidence, ranges)) => {
                     if !ranges.is_empty() {
@@ -3994,6 +3989,9 @@ fn execute_verified_function_applications_with_suspension(
                     &environment.modeled_mutex_definition_list,
                     &effective_assumptions,
                     budget,
+                    super::mutexes::ProtocolSite::InCall {
+                        entry: caller_state,
+                    },
                 ) {
                     Ok((fresh, ranges)) => {
                         if !ranges.is_empty() {

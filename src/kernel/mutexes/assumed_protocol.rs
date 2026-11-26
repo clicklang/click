@@ -4,6 +4,7 @@
 //! produce fresh folded state; releases consume an owned instance of that type
 //! while retaining the caller's lifetime obligation.
 
+use super::ProtocolSite;
 use super::*;
 use crate::kernel::borrows::{
     BorrowRefusal, CheckedBorrowCallEvidence, CheckedBorrowCallEvidenceSequence,
@@ -123,6 +124,7 @@ impl AssumedMutexProtocol {
             None,
             None,
             &mut crate::kernel::ExecutionBudget::beside_live_state(),
+            super::ProtocolSite::Own,
         )
     }
 
@@ -133,10 +135,11 @@ impl AssumedMutexProtocol {
         definition: Option<&crate::kernel::CompositeResourceDefinition>,
         output: Option<crate::kernel::InstanceId>,
         budget: &mut crate::kernel::ExecutionBudget,
+        site: super::ProtocolSite<'_>,
     ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
         // The point the lock starts from, which names where its acquired
-        // population totals are spelled.
-        let acquired_from = state.program_point().id();
+        // population totals are spelled: inside a call, the call's entry.
+        let acquired_from = site.reads(state).program_point().id();
         let borrows = self.borrows(state)?;
         // A hidden or removed guard still pins the scope. Do not decide local
         // heldness by merely searching the visible resource context.
@@ -183,7 +186,7 @@ impl AssumedMutexProtocol {
         } else {
             resources
         };
-        state.set_memory_directly(memory);
+        site.install(&mut state, memory);
         state.borrow_ledger = Some(next);
         if let (Some(payload), Some(definition)) = (&payload, definition) {
             state = state
@@ -267,6 +270,7 @@ impl AssumedMutexProtocol {
             None,
             &Arc::default(),
             &mut crate::kernel::ExecutionBudget::beside_live_state(),
+            super::ProtocolSite::Own,
         )
     }
 
@@ -278,6 +282,7 @@ impl AssumedMutexProtocol {
         selected: Option<crate::kernel::InstanceId>,
         definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
         budget: &mut crate::kernel::ExecutionBudget,
+        site: super::ProtocolSite<'_>,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
         if guard.protocol != *self {
             return Err(MutexTransitionError::MissingGuard(self.mutex().clone()));
@@ -344,6 +349,7 @@ impl AssumedMutexProtocol {
         let memory = match &restored {
             Some(released) => forget_released_protected_memory(
                 state,
+                site.reads(state),
                 released,
                 &resources,
                 definitions,
@@ -355,7 +361,7 @@ impl AssumedMutexProtocol {
         let evidence = self.evidence(borrows, transition, &next)?;
         let mut state = state.clone();
         state.resources = resources;
-        state.set_memory_directly(memory);
+        site.install(&mut state, memory);
         state.borrow_ledger = Some(next);
         Ok(AssumedMutexTransition { state, evidence })
     }
@@ -487,6 +493,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
         payload_identity,
         budget,
         None,
+        super::ProtocolSite::Own,
     )
 }
 
@@ -500,6 +507,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
     payload_identity: Option<crate::kernel::InstanceId>,
     budget: &mut crate::kernel::ExecutionBudget,
     selected_use: Option<&ResourceFact>,
+    site: super::ProtocolSite<'_>,
 ) -> Result<(ExecutionState, CheckedBorrowCallEvidenceSequence), MutexTransitionError> {
     if !state.preserves_mutex_protocols {
         return Err("opaque mutex transitions require preserving use authority".into());
@@ -530,6 +538,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
             definition,
             payload_identity,
             budget,
+            site,
         )?;
         let mut holders = state
             .opaque_mutex_acquisitions
@@ -589,6 +598,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
             payload_identity,
             definitions,
             budget,
+            site,
         )?;
         let receipts = held.receipts.without_key(mutex);
         let holder = guard.protocol.holder;
@@ -678,8 +688,11 @@ pub(super) fn mint_protected_instance(
 ///
 /// A footprint the derivation cannot name forgets every cell the thread does
 /// not keep owning in `residual`.
+/// `state`'s memory with what the thread stops owning forgotten; the
+/// released footprint is read at `reads`.
 fn forget_released_protected_memory(
     state: &ExecutionState,
+    reads: &ExecutionState,
     released: &ResourceFact,
     residual: &crate::kernel::ResourceContext,
     definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
@@ -689,7 +702,7 @@ fn forget_released_protected_memory(
     let ranges = crate::kernel::functions::checked_owned_memory_ranges(
         released,
         definitions,
-        state,
+        reads,
         assumptions,
     )
     .ok_or("protected mutex resource has no checked memory footprint")?;
@@ -709,8 +722,11 @@ fn forget_released_protected_memory(
         .with_call_memory_havoc(variable, &ranges, assumptions, kept.as_ref()))
 }
 
+/// `state`'s memory with a fresh protected payload, whose footprint is read
+/// at `reads`.
 pub(super) fn fresh_protected_payload(
     state: &ExecutionState,
+    reads: &ExecutionState,
     assumptions: &PureFactContext,
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
@@ -733,7 +749,7 @@ pub(super) fn fresh_protected_payload(
     let ranges = crate::kernel::functions::checked_owned_memory_ranges(
         &fact,
         std::slice::from_ref(definition),
-        state,
+        reads,
         assumptions,
     )
     .ok_or("protected mutex resource has no checked memory footprint")?;
@@ -771,7 +787,7 @@ pub(super) fn fresh_protected_payload(
     let other_ranges = crate::kernel::functions::checked_owned_memory_ranges(
         &ResourceFact::own(Resource::Instance(other)),
         std::slice::from_ref(definition),
-        state,
+        reads,
         assumptions,
     )
     .ok_or("protected mutex resource has no checked memory footprint")?;
@@ -894,6 +910,7 @@ mod tests {
                 Some(&definition),
                 Some(crate::kernel::InstanceId::from_variable(Variable(810))),
                 &mut budget,
+                super::ProtocolSite::Own,
             )
             .unwrap();
         let payload = guard.payload.as_ref().unwrap();
@@ -933,6 +950,7 @@ mod tests {
                 Some(replacement.identity()),
                 &[definition.clone()].into(),
                 &mut budget,
+                super::ProtocolSite::Own,
             )
             .unwrap();
         assert!(
@@ -963,6 +981,7 @@ mod tests {
                     Some(wrong.identity()),
                     &[definition.clone()].into(),
                     &mut budget,
+                    super::ProtocolSite::Own,
                 )
                 .is_err()
         );
@@ -974,6 +993,7 @@ mod tests {
                 None,
                 &[definition.clone()].into(),
                 &mut budget,
+                super::ProtocolSite::Own,
             )
             .unwrap();
         assert!(
@@ -990,6 +1010,7 @@ mod tests {
                 Some(&definition),
                 Some(crate::kernel::InstanceId::from_variable(Variable(811))),
                 &mut budget,
+                super::ProtocolSite::Own,
             )
             .unwrap();
         assert_ne!(payload.fields(), second.payload.unwrap().fields());
