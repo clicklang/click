@@ -261,9 +261,8 @@ impl RegionFootprint {
         })
     }
 
-    /// A return's published outcome can retire a local after the statement
-    /// snapshot. Check that exact retirement edge and object, without walking
-    /// earlier memory states or using an alias search.
+    /// A return's published outcome can retire locals after the statement
+    /// snapshot. Check only the retirement suffix between those endpoints.
     pub(crate) fn viewability_survives_return_cleanup(
         &self,
         outcome: &SymbolicMemory,
@@ -275,9 +274,22 @@ impl RegionFootprint {
         let Some(statement_exit) = interned_storage_of(&self.after) else {
             return false;
         };
-        let retirement = interned_storage_of(outcome).and_then(|memory| memory.derivation());
-        matches!(retirement.as_deref(), Some(MemoryDerivation::LocalLifetimeEnded { base, block })
-            if base.arena_id() == statement_exit.arena_id() && selected.base.proven_distinct(block))
+        let Some(mut current) = interned_storage_of(outcome) else {
+            return false;
+        };
+        while current.arena_id() != statement_exit.arena_id() {
+            crate::instrumentation::record_deterministic_work(1);
+            let retirement = current.derivation();
+            let Some(MemoryDerivation::LocalLifetimeEnded { base, block }) = retirement.as_deref()
+            else {
+                return false;
+            };
+            if !selected.base.proven_distinct(block) {
+                return false;
+            }
+            current = base.clone();
+        }
+        true
     }
 
     pub(crate) fn sequence(
