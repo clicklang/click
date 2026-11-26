@@ -2041,24 +2041,24 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
         .expect("expanded full-range helpers and dependencies");
     for (correct, incorrect) in [
         (
-            "requires total - remaining <= 2147483647u64;",
-            "requires total - remaining <= 2147483648u64;",
+            "requires to_integer(total - remaining) <= to_integer(2147483647u64);",
+            "requires to_integer(total - remaining) <= to_integer(2147483648u64);",
         ),
         (
             "requires to_integer(first) + to_integer(second) <= 18446744073709551615;",
             "requires to_integer(first) + to_integer(second) <= 18446744073709551616;",
         ),
         (
-            "ensures total - remaining < total by",
-            "ensures total - remaining > total by",
+            "ensures to_integer(total - remaining) < to_integer(total) by",
+            "ensures to_integer(total - remaining) > to_integer(total) by",
         ),
         (
-            "ensures zlib_prefix_count(total, middle) <= 2147483647 - zlib_prefix_count(middle, remaining) and defined",
-            "ensures zlib_prefix_count(total, middle) < 2147483647 - zlib_prefix_count(middle, remaining) and defined",
+            "and to_integer(zlib_prefix_count(total, middle)) <= to_integer(2147483647 - zlib_prefix_count(middle, remaining))",
+            "and to_integer(zlib_prefix_count(total, middle)) < to_integer(2147483647 - zlib_prefix_count(middle, remaining))",
         ),
     ] {
         let invalid = source.replacen(correct, incorrect, 1);
-        assert_ne!(source, invalid);
+        assert_ne!(source, invalid, "missing mutation anchor `{correct}`");
         assert!(click::surface::verify_click_theorems(&invalid).is_err());
     }
 }
