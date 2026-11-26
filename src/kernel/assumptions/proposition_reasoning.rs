@@ -370,17 +370,20 @@ impl PureFactContext {
                 base,
                 bytes,
                 wide: true,
+                ..
             } => self.proves_native_memory_loadable(memory, base, bytes.old_form()),
             Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
+                ..
             } => self.proves_memory_loadable(memory, base, bytes.old_form()),
             Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
+                ..
             } => self.proves_memory_access(memory, pointer, *byte_width),
             Proposition::ResourceSeparate { left, right } => {
                 self.proves_resource_separate(left, right)
@@ -582,12 +585,14 @@ impl PureFactContext {
                 base,
                 bytes,
                 wide: true,
+                ..
             } => self.proves_native_memory_loadable(memory, base, bytes.old_form()),
             Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
+                ..
             } => {
                 self.proves_memory_loadable(memory, base, bytes.old_form())
                     // Loadability survives writes: an assumed loadable fact
@@ -604,6 +609,7 @@ impl PureFactContext {
                             base: fact_base,
                             bytes: fact_bytes,
                             wide: false,
+                            ..
                         } = fact
                         else {
                             return false;
@@ -644,6 +650,7 @@ impl PureFactContext {
                 memory,
                 pointer,
                 byte_width,
+                ..
             } => self.proves_memory_access(memory, pointer, *byte_width),
             Proposition::ResourceSeparate { left, right } => {
                 (self.prop_facts.contains(proposition)

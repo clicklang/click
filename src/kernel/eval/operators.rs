@@ -2333,6 +2333,7 @@ fn pointer_has_object_provenance_evidence(
                     base,
                     bytes,
                     wide,
+                    ..
                 } = proposition
                 else {
                     unreachable!("viewability object index contains only viewability facts")
@@ -4114,6 +4115,7 @@ fn held_range_membership(
             base,
             bytes,
             wide: false,
+            ..
         } = proposition
         else {
             continue;

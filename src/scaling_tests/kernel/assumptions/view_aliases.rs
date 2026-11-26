@@ -12,6 +12,7 @@ fn view_misses_do_not_enumerate_pointer_alias_classes() {
         }
         let memory = SymbolicMemory::new();
         let goal = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: 4096.into(),
@@ -50,6 +51,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
                 }
             };
             let fact = Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: source.clone(),
                 bytes: crate::kernel::StoredMachineTerm::new(
@@ -72,6 +74,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             }
             let prove = |pointer: &Address, bytes| {
                 context.proves_atomic_without_search(&Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: pointer.clone(),
                     bytes: crate::kernel::StoredMachineTerm::new(
@@ -123,6 +126,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
         };
         let base = pointer(830_000);
         let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: Address::symbolic(Variable(839_000)),
             bytes: 16.into(),
@@ -135,6 +139,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
             );
         }
         let goal = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: base.clone(),
             bytes: 4096.into(),
@@ -166,6 +171,7 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
         let mut query = source.clone();
         let memory = SymbolicMemory::new();
         let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: source.clone(),
             bytes: 1024.into(),
@@ -178,6 +184,7 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
                 .add_equality(&query.offset_by_bytes(4), &next);
             query = next;
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: Address::symbolic(Variable(850_000 + index)),
                 bytes: 4.into(),
@@ -208,6 +215,7 @@ fn selected_alias_view_cannot_cross_distinct_allocations() {
     // Even an inconsistent graph edge cannot turn a different allocation
     // into this source's storage during a memory query.
     let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: source.clone(),
         bytes: 16.into(),
@@ -240,6 +248,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
             };
             let mut context =
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: source.clone(),
                     bytes: crate::kernel::StoredMachineTerm::new(
@@ -264,6 +273,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                     for (bytes, expected) in [(8, true), (32, false)] {
                         assert_eq!(
                             context.proves_atomic_without_search(&Proposition::MemoryLoadable {
+                                point: Default::default(),
                                 memory: memory.clone(),
                                 base: query.clone(),
                                 bytes: crate::kernel::StoredMachineTerm::new(

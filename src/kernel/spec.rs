@@ -2113,13 +2113,13 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             point: memory,
             resource,
         } => {
-            let memory = match memory {
-                SpecPoint::Current => scope.state.memory(),
+            let (memory, memory_point) = match memory {
+                SpecPoint::Current => (scope.state.memory(), scope.state.memory_point()),
                 SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match scope.loop_entry_state {
-                    Some(entry) => entry.memory(),
+                    Some(entry) => (entry.memory(), entry.memory_point()),
                     None => return Ok(Vec::new()),
                 },
-                SpecPoint::At(point) => point.memory(),
+                SpecPoint::At(point) => (point.memory(), point.path_link().clone()),
             };
             let mut paths = Vec::new();
             for (resource, facts, obligations) in
@@ -2127,7 +2127,11 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
-                    proposition: crate::kernel::resource_viewable(memory, resource),
+                    proposition: crate::kernel::resource_viewable(
+                        memory,
+                        memory_point.clone(),
+                        resource,
+                    ),
                     facts,
                     obligations,
                 });
@@ -5698,13 +5702,13 @@ fn lower_spec_memory_loadable_at_state_in(
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
-    let memory = match memory {
-        SpecPoint::Current => state.memory(),
+    let (memory, memory_point) = match memory {
+        SpecPoint::Current => (state.memory(), state.memory_point()),
         SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match loop_entry_state {
-            Some(entry) => entry.memory(),
+            Some(entry) => (entry.memory(), entry.memory_point()),
             None => return Ok(Vec::new()),
         },
-        SpecPoint::At(point) => point.memory(),
+        SpecPoint::At(point) => (point.memory(), point.path_link().clone()),
     };
     Ok(evaluate_spec_values_at_state_in(
         scope,
@@ -5736,7 +5740,7 @@ fn lower_spec_memory_loadable_at_state_in(
             }
             Some(SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition: range.loadable_fact(memory),
+                proposition: range.loadable_fact(memory, memory_point.clone()),
                 facts: path.facts,
                 obligations,
             })
@@ -5763,7 +5767,7 @@ fn lower_spec_memory_loadable_at_state_in(
             }
             Some(SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition: range.loadable_fact(memory),
+                proposition: range.loadable_fact(memory, memory_point.clone()),
                 facts: path.facts,
                 obligations,
             })
@@ -5846,6 +5850,7 @@ fn lower_spec_memory_loadable_at_state_in(
                 introductions: Vec::new(),
                 proposition: Proposition::MemoryLoadable {
                     memory: memory.clone(),
+                    point: memory_point.clone(),
                     base,
                     bytes: (crate::kernel::memory_range_byte_count(
                         range_start,

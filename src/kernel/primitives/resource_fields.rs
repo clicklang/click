@@ -576,6 +576,7 @@ mod tests {
             ))]);
             let root = fields.program_value(0).unwrap().shared().unwrap().clone();
             let proposition = Proposition::ResourceViewable {
+                point: Default::default(),
                 memory: SymbolicMemory::new(),
                 resource: Box::new(Resource::Instance(instance(fields, ty))),
             };

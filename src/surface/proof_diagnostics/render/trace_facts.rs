@@ -230,6 +230,7 @@ mod tests {
             ),
             (
                 Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory,
                     base: p,
                     bytes: (OldMachineTerm::constant(8)).into(),

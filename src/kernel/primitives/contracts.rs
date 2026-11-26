@@ -2882,9 +2882,14 @@ impl MemoryRange {
     /// count is the unsigned 64-bit `(end - start) * width`, written by
     /// [`wide_loadable_byte_count`] and read back by
     /// [`wide_loadable_element_count`].
-    pub(crate) fn loadable_fact(&self, memory: &SymbolicMemory) -> Proposition {
+    pub(crate) fn loadable_fact(
+        &self,
+        memory: &SymbolicMemory,
+        point: super::program_point::PathLink,
+    ) -> Proposition {
         Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point,
             base: self.start_pointer(),
             bytes: self.loadable_byte_count(),
             wide: self.kind == RangeIndexKind::UInt64,
@@ -4560,6 +4565,7 @@ impl ExecutionEnvironment {
                                 base,
                                 bytes,
                                 wide: false,
+                                ..
                             } => {
                                 memory_states_proven_equal_at_pointer(
                                     memory,

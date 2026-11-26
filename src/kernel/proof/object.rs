@@ -3579,6 +3579,7 @@ mod tests {
                         )),
                     )),
                     Box::new(Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory,
                         base: Address::new("alpha".into(), AddressOffset::constant(0)),
                         bytes: (OldMachineTerm::Variable(variable)).into(),

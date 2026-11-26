@@ -39,12 +39,14 @@ fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
     )
     .with_contract(Vec::new(), vec![ensure], Vec::new(), Vec::new(), true);
     let base_assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: data.clone(),
         bytes: (OldMachineTerm::constant(8)).into(),
         wide: false,
     });
     let element_loadable = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: data.offset_by_int32_elements(OldMachineTerm::constant(1)),
         bytes: (OldMachineTerm::constant(4)).into(),

@@ -1690,6 +1690,7 @@ impl Renderer<'_> {
                 base,
                 bytes,
                 wide,
+                ..
             } => {
                 self.push("viewable(memory=");
                 self.memory(memory);
@@ -1707,6 +1708,7 @@ impl Renderer<'_> {
                 memory,
                 pointer,
                 byte_width,
+                ..
             } => {
                 self.push("can-store(memory=");
                 self.memory(memory);
@@ -1735,6 +1737,7 @@ impl Renderer<'_> {
                 memory,
                 pointer,
                 outcome,
+                ..
             } => {
                 self.push("memory-load(memory=");
                 self.memory(memory);
@@ -1749,7 +1752,9 @@ impl Renderer<'_> {
                 self.push(" separate ");
                 self.resource(right);
             }
-            Proposition::ResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable {
+                memory, resource, ..
+            } => {
                 self.push("viewable(");
                 self.resource(resource);
                 self.push(" in ");
@@ -1766,6 +1771,7 @@ impl Renderer<'_> {
                 before,
                 after,
                 writes,
+                ..
             } => {
                 self.push("memory-mutates-only(");
                 self.memory(before);
@@ -1801,6 +1807,7 @@ impl Renderer<'_> {
                 after,
                 allocation_base,
                 bytes,
+                ..
             } => {
                 self.push("heap-freed(");
                 self.memory(before);
@@ -3320,6 +3327,7 @@ mod tests {
 
     fn loadable_at(memory: SymbolicMemory) -> Proposition {
         Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: Address::new(
                 crate::kernel::AddressBase::ExternalArgument,

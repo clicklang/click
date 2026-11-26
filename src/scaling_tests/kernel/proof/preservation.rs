@@ -16,10 +16,12 @@ fn viewability_preservation_checks_only_the_selected_transition_and_facts() {
             let mut ambient = Vec::new();
             for i in 0..size {
                 // Grow the same range's history and unrelated facts together.
-                ambient.push(range.loadable_fact(&memory));
+                ambient.push(range.loadable_fact(&memory, Default::default()));
                 let other = Address::symbolic(Variable(8_531_000 + i));
-                ambient
-                    .push(MemoryRange::new(other, 0u32.into(), 1u32.into()).loadable_fact(&memory));
+                ambient.push(
+                    MemoryRange::new(other, 0u32.into(), 1u32.into())
+                        .loadable_fact(&memory, Default::default()),
+                );
                 memory = memory.store(pointer.clone(), crate::kernel::int32(i as u32));
             }
             let before = ExecutionState::new().with_memory(memory);
@@ -46,10 +48,10 @@ fn viewability_preservation_checks_only_the_selected_transition_and_facts() {
                 left: Box::new(Resource::Footprint(footprint)),
                 right: Box::new(Resource::Memory(range.clone())),
             };
-            let goal = range.loadable_fact(after.memory());
+            let goal = range.loadable_fact(after.memory(), Default::default());
             ambient.push(separation.clone());
             if entry_present {
-                ambient.push(range.loadable_fact(before.memory()));
+                ambient.push(range.loadable_fact(before.memory(), Default::default()));
             }
             let facts = crate::kernel::proof::PureFactStore::from_ordered(&ambient);
             let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
@@ -263,6 +265,8 @@ fn shared_branch_write_footprint_uses_only_its_arm_endpoints() {
             );
             let effects = vec![ExecutionPureFact::certified(
                 Proposition::MemoryMutatesOnly {
+                    before_point: Default::default(),
+                    after_point: Default::default(),
                     before: entry.memory().clone(),
                     after: exit.memory().clone(),
                     writes: vec![(address.clone(), crate::kernel::AccessExtent::from(4))],

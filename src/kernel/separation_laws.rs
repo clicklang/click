@@ -394,11 +394,16 @@ pub(crate) fn prove_resource_law(name: &str, args: &[Resource]) -> Option<Theore
 
 /// Viewability is a pure state-indexed fact, not resource ownership. SymbolicMemory
 /// descriptors use the existing atom so both Surface spellings coincide.
-pub(crate) fn resource_viewable(memory: &SymbolicMemory, resource: Resource) -> Proposition {
+pub(crate) fn resource_viewable(
+    memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
+    resource: Resource,
+) -> Proposition {
     match resource {
-        Resource::Memory(range) => range.loadable_fact(memory),
+        Resource::Memory(range) => range.loadable_fact(memory, point),
         resource => Proposition::ResourceViewable {
             memory: memory.clone(),
+            point,
             resource: Box::new(resource),
         },
     }
@@ -406,18 +411,19 @@ pub(crate) fn resource_viewable(memory: &SymbolicMemory, resource: Resource) -> 
 
 pub(crate) fn prove_viewable_restrict(
     memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
     parent: Resource,
     child: Resource,
 ) -> Theorem {
     crate::instrumentation::record_deterministic_work(1);
     Theorem::new(Proposition::Implies(
-        Box::new(resource_viewable(memory, parent.clone())),
+        Box::new(resource_viewable(memory, point.clone(), parent.clone())),
         Box::new(Proposition::Implies(
             Box::new(Proposition::ResourceContains {
                 parent: Box::new(parent),
                 child: Box::new(child.clone()),
             }),
-            Box::new(resource_viewable(memory, child)),
+            Box::new(resource_viewable(memory, point, child)),
         )),
     ))
 }
@@ -436,7 +442,9 @@ pub(crate) fn observe_memory_view(state: &ExecutionState, range: &MemoryRange) -
     {
         return None;
     }
-    Some(Theorem::new(range.loadable_fact(state.memory())))
+    Some(Theorem::new(
+        range.loadable_fact(state.memory(), state.memory_point()),
+    ))
 }
 
 #[cfg(test)]

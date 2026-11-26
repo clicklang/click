@@ -447,6 +447,7 @@ pub fn execution_state_justifies_loadability_obligation(
             }
             let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
+                point: crate::kernel::program_point::PathLink::not_yet_a_point(),
                 base: pointer.clone(),
                 bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
                 wide: false,
@@ -462,6 +463,7 @@ pub fn execution_state_justifies_loadability_obligation(
             base,
             bytes,
             wide: false,
+            ..
         } => {
             assumptions.proves_exact(obligation)
                 || matches!(memory.load(base), ExpressionOutcome::Value(_))
@@ -558,6 +560,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
         base,
         bytes,
         wide: false,
+        ..
     } = goal
     else {
         return false;
@@ -576,6 +579,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                     base: fact_base,
                     bytes: fact_bytes,
                     wide: false,
+                    ..
                 } = fact
                 else {
                     return false;
@@ -942,6 +946,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                                 base: fact_base,
                                 bytes,
                                 wide: false,
+                                ..
                             } => {
                                 bytes.as_const() == Some(4)
                                     && crate::kernel::reasoning::memory_range_still_available(
@@ -1904,7 +1909,7 @@ fn program_function_contract_entry_facts(
             assumptions = entry_facts.assume(
                 assumptions,
                 ContractEntryFactOrigin::ClauseLoadable,
-                range.loadable_fact(entry_state.memory()),
+                range.loadable_fact(entry_state.memory(), entry_state.memory_point()),
             );
             continue;
         }
@@ -1913,6 +1918,7 @@ fn program_function_contract_entry_facts(
             assumptions,
             ContractEntryFactOrigin::ClauseLoadable,
             Proposition::MemoryLoadable {
+                point: entry_state.memory_point(),
                 memory: entry_state.memory().clone(),
                 base: range
                     .base()
@@ -3122,12 +3128,14 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
                 base: left_base,
                 bytes: left_bytes,
                 wide: false,
+                ..
             },
             Proposition::MemoryLoadable {
                 memory: right_memory,
                 base: right_base,
                 bytes: right_bytes,
                 wide: false,
+                ..
             },
         ) => {
             canonicalize_pointer_loads(left_base) == canonicalize_pointer_loads(right_base)
@@ -3445,6 +3453,7 @@ pub(super) fn resources_certify_loadability(
         base,
         bytes,
         wide: false,
+        ..
     } = proposition
     else {
         return false;

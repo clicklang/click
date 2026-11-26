@@ -638,6 +638,7 @@ impl Printer<'_> {
                 base,
                 bytes,
                 wide,
+                ..
             } => {
                 let fact = atom(format!(
                     "viewable({})",
@@ -700,7 +701,9 @@ impl Printer<'_> {
                 self.resource(left),
                 self.resource(right)
             ))),
-            Proposition::ResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable {
+                memory, resource, ..
+            } => {
                 let fact = atom(format!("viewable({})", self.resource(resource)));
                 self.qualify_fact(memory, fact)
             }
@@ -724,6 +727,7 @@ impl Printer<'_> {
                 before,
                 after,
                 writes,
+                ..
             } => {
                 let written = writes
                     .iter()

@@ -956,6 +956,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
             );
         }
         let atom = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.as_ref().clone(),
             base: Address::new(
                 AddressBase::Concrete("array".into()),

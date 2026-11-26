@@ -3050,6 +3050,7 @@ fn viewability_alone_cannot_certify_initialization_of_external_storage() {
             }
             let assumptions =
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: pointer.clone(),
                     bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
@@ -3077,6 +3078,7 @@ fn typed_read_initialization_accepts_only_complete_cached_byte_coverage() {
             crate::kernel::intern_memory(SymbolicMemory::new()),
         );
         let context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: pointer.clone(),
             bytes: (OldMachineTerm::constant(8)).into(),

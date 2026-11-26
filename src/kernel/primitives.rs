@@ -15033,11 +15033,17 @@ pub enum KernelProposition {
     },
     MemoryLoads {
         memory: SymbolicMemory,
+        /// The point `memory` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]).
+        point: program_point::PathLink,
         pointer: Address,
         outcome: ExpressionOutcome<StoredProgramValue>,
     },
     MemoryCanStore {
         memory: SymbolicMemory,
+        /// The point `memory` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]).
+        point: program_point::PathLink,
         pointer: Address,
         byte_width: u32,
     },
@@ -15046,6 +15052,9 @@ pub enum KernelProposition {
     /// width, so a reader that takes a wide count as 32 bits misreads it.
     MemoryLoadable {
         memory: SymbolicMemory,
+        /// The point `memory` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]).
+        point: program_point::PathLink,
         base: Address,
         bytes: StoredMachineTerm,
         wide: bool,
@@ -15070,6 +15079,9 @@ pub enum KernelProposition {
     ResourceComposition(ResourceContext),
     ResourceViewable {
         memory: SymbolicMemory,
+        /// The point `memory` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]).
+        point: program_point::PathLink,
         resource: Box<Resource>,
     },
     ResourceContains {
@@ -15082,7 +15094,12 @@ pub enum KernelProposition {
     /// lifetime effects are recorded separately.
     MemoryMutatesOnly {
         before: SymbolicMemory,
+        /// The point `before` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]).
+        before_point: program_point::PathLink,
         after: SymbolicMemory,
+        /// The point `after` is the state at.
+        after_point: program_point::PathLink,
         writes: Vec<(Address, AccessExtent)>,
     },
     /// Internal write bound expressed as [`MemoryRange`] descriptors, including
@@ -15102,7 +15119,12 @@ pub enum KernelProposition {
     /// keeps its format, so a 64-bit block's free reinstates a 64-bit claim.
     HeapAllocationFreed {
         before: SymbolicMemory,
+        /// The point `before` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]).
+        before_point: program_point::PathLink,
         after: SymbolicMemory,
+        /// The point `after` is the state at.
+        after_point: program_point::PathLink,
         allocation_base: Address,
         bytes: AllocationSize,
     },
@@ -15304,6 +15326,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             memory,
             pointer,
             outcome,
+            ..
         } => {
             memory.hash(state);
             pointer.hash(state);
@@ -15313,6 +15336,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             memory,
             pointer,
             byte_width,
+            ..
         } => {
             memory.hash(state);
             pointer.hash(state);
@@ -15323,6 +15347,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             base,
             bytes,
             wide,
+            ..
         } => {
             memory.hash(state);
             base.hash(state);
@@ -15345,7 +15370,9 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             right.hash(state);
         }
         Proposition::ResourceComposition(resources) => resources.hash(state),
-        Proposition::ResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable {
+            memory, resource, ..
+        } => {
             memory.hash(state);
             resource.hash(state);
         }
@@ -15357,6 +15384,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             before,
             after,
             writes,
+            ..
         } => {
             before.hash(state);
             after.hash(state);
@@ -15377,6 +15405,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             after,
             allocation_base,
             bytes,
+            ..
         } => {
             before.hash(state);
             after.hash(state);
@@ -15592,7 +15621,9 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             memory,
             pointer,
             outcome,
+            point,
         } => Proposition::MemoryLoads {
+            point: point.clone(),
             memory: memory.clone(),
             pointer: pointer.clone(),
             outcome: outcome.clone(),
@@ -15601,7 +15632,9 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             memory,
             pointer,
             byte_width,
+            point,
         } => Proposition::MemoryCanStore {
+            point: point.clone(),
             memory: memory.clone(),
             pointer: pointer.clone(),
             byte_width: *byte_width,
@@ -15611,7 +15644,9 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             base,
             bytes,
             wide,
+            point,
         } => Proposition::MemoryLoadable {
+            point: point.clone(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes.clone(),
@@ -15635,8 +15670,13 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::ResourceComposition(resources) => {
             Proposition::ResourceComposition(resources.clone())
         }
-        Proposition::ResourceViewable { memory, resource } => Proposition::ResourceViewable {
+        Proposition::ResourceViewable {
+            memory,
+            point,
+            resource,
+        } => Proposition::ResourceViewable {
             memory: memory.clone(),
+            point: point.clone(),
             resource: resource.clone(),
         },
         Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
@@ -15647,7 +15687,11 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             before,
             after,
             writes,
+            before_point,
+            after_point,
         } => Proposition::MemoryMutatesOnly {
+            before_point: before_point.clone(),
+            after_point: after_point.clone(),
             before: before.clone(),
             after: after.clone(),
             writes: writes.clone(),
@@ -15670,7 +15714,11 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             after,
             allocation_base,
             bytes,
+            before_point,
+            after_point,
         } => Proposition::HeapAllocationFreed {
+            before_point: before_point.clone(),
+            after_point: after_point.clone(),
             before: before.clone(),
             after: after.clone(),
             allocation_base: allocation_base.clone(),

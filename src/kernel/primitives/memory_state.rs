@@ -11133,6 +11133,17 @@ impl ExecutionState {
         &self.point
     }
 
+    /// The point this state's memory is the state at, for a fact that
+    /// quotes it: where the state stands, unless it has staged steps, whose
+    /// memory no point holds yet.
+    pub(crate) fn memory_point(&self) -> super::program_point::PathLink {
+        if self.memory.pending_steps.is_some() {
+            super::program_point::PathLink::not_yet_a_point()
+        } else {
+            self.point.clone()
+        }
+    }
+
     /// The identity of the point this state stands at, without interning its
     /// memory.
     pub(crate) fn program_point_id(&self) -> Option<super::program_point::ProgramPointId> {

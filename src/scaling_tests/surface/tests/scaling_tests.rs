@@ -2326,6 +2326,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
             .offset_by_bytes(4 * element)
     };
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base,
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -7295,12 +7296,14 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
             )
         };
         let source = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: at(OldMachineTerm::constant(2)),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let goal = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: at(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(&memory),

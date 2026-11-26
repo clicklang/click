@@ -2832,7 +2832,10 @@ fn synthesize_surface_atomic_proposition(
             arguments: call_arguments,
         });
     }
-    if let Proposition::ResourceViewable { memory, resource } = proposition {
+    if let Proposition::ResourceViewable {
+        memory, resource, ..
+    } = proposition
+    {
         let viewable = SyntaxProposition::ResourceViewable {
             resource: synthesize_surface_resource_subject(
                 resource,
@@ -2965,6 +2968,7 @@ fn synthesize_surface_atomic_proposition(
         base,
         bytes,
         wide: false,
+        ..
     } = proposition
     {
         let loadable = synthesize_zero_based_loadable_segment(

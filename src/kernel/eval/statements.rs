@@ -1160,6 +1160,7 @@ fn write_program_lvalue_paths_for_initialization(
                 }
             };
             let before_memory = state.memory.clone();
+            let before_point = state.memory_point();
             let mut state = state.clone();
             if !iterated_plan.is_empty() {
                 match iterated_plan.before_store(state.resources().clone()) {
@@ -1247,6 +1248,7 @@ fn write_program_lvalue_paths_for_initialization(
             let mut facts = facts;
             let mut store_fact = ExecutionPureFact::certified_store(
                 before_memory,
+                before_point,
                 state.program_point(),
                 written_pointer.clone(),
                 written_value.clone(),
@@ -3181,6 +3183,7 @@ fn execute_program_heap_free_paths(
             .map(ProgramType::byte_width)
             .unwrap_or(ProgramType::Int32.byte_width());
         let before_free = state.memory.clone();
+        let before_free_point = state.memory_point();
         let mut working_memory = state.memory.clone();
         let bytes = if let Some(bytes) = working_memory.live_heap_block_size(pointer.address()) {
             bytes.clone()
@@ -3380,18 +3383,20 @@ fn execute_program_heap_free_paths(
                 )));
             }
         }
+        let mut next = state
+            .clone()
+            .with_memory(memory.clone())
+            .with_resource_context(resources);
         facts.push(ExecutionPureFact::internal(
             Proposition::HeapAllocationFreed {
                 before: before_free,
-                after: memory.clone(),
+                before_point: before_free_point,
+                after: memory,
+                after_point: next.memory_point(),
                 allocation_base: pointer.address().clone(),
                 bytes: bytes.clone(),
             },
         ));
-        let mut next = state
-            .clone()
-            .with_memory(memory)
-            .with_resource_context(resources);
         if let Err(error) = next.retire_population_storage(&pointer.base) {
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::RuntimeError(error),

@@ -34,6 +34,7 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
             .map(|(before, after, pointer, value)| {
                 ExecutionPureFact::certified_store(
                     before,
+                    Default::default(),
                     crate::kernel::ProgramPoint::of_memory(&after),
                     pointer,
                     value,

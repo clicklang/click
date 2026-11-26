@@ -2268,6 +2268,7 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
         let partial_read = Address::loaded_value(&partial, &cell);
         let ended = later.memory().without_local_block(&target.base);
         let goal = |base: Address, bytes| Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: later.memory().clone(),
             base,
             bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -2306,6 +2307,7 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
             assert!(
                 !crate::kernel::proof::fact_reasoning::normalizes_context_free(
                     &Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: ended.clone(),
                         base: read.clone(),
                         bytes: (OldMachineTerm::constant(4)).into(),

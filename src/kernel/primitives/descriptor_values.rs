@@ -1054,6 +1054,7 @@ mod loadable_count_tests {
                     bytes.clone(),
                 );
                 let fact = Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: SymbolicMemory::new(),
                     base: Address::symbolic(Variable(10993682)),
                     bytes: stored,

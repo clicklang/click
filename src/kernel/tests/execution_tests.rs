@@ -2085,6 +2085,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
 fn while_invariant_is_proof_obligation() {
     let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let invariant = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: pointer,
         bytes: (OldMachineTerm::constant(4)).into(),

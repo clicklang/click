@@ -88,8 +88,15 @@ fn preserve_viewability(
         &footprint.after
     };
     Ok((
-        range.loadable_fact(&footprint.before),
-        range.loadable_fact(after),
+        // A recorded footprint quotes its endpoint memories without points.
+        range.loadable_fact(
+            &footprint.before,
+            crate::kernel::program_point::PathLink::not_yet_a_point(),
+        ),
+        range.loadable_fact(
+            after,
+            crate::kernel::program_point::PathLink::not_yet_a_point(),
+        ),
     ))
 }
 
@@ -462,8 +469,12 @@ mod tests {
             left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(Resource::Memory(range.clone())),
         };
-        let entry_view = range.loadable_fact(state.memory());
-        let goal = range.loadable_fact(&state.memory().without_local_block(&local.base));
+        let entry_view = range.loadable_fact(state.memory(), state.memory_point());
+        // The memory without the local's block is the state at no point.
+        let goal = range.loadable_fact(
+            &state.memory().without_local_block(&local.base),
+            crate::kernel::program_point::PathLink::not_yet_a_point(),
+        );
         assert_eq!(
             apply(&separation, None, &goal, None, |fact| {
                 fact == &separation || fact == &entry_view

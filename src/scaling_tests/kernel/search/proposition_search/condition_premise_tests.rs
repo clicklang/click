@@ -266,6 +266,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
             )
         };
         let source = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: pointer(1),
             bytes: 16.into(),
@@ -274,6 +275,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: pointer(100 + index),
                 bytes: 16.into(),
@@ -291,6 +293,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
         }
         context = context.assume_proposition(source.clone());
         let goal = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: pointer(1).offset_by_bytes(4),
             bytes: 4.into(),

@@ -4246,12 +4246,14 @@ pub(super) fn propositions_match_after_canonical_loads(
                     base: lb,
                     bytes: ln,
                     wide: lw,
+                    ..
                 },
                 Proposition::MemoryLoadable {
                     memory: rm,
                     base: rb,
                     bytes: rn,
                     wide: rw,
+                    ..
                 },
             ) => {
                 let left = crate::kernel::pointer_read_over_immediate_store(lb);

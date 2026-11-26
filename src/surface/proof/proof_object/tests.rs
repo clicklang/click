@@ -434,6 +434,8 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
         let source: ExecutionFacts = (0..size)
             .map(|index| {
                 ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
+                    before_point: Default::default(),
+                    after_point: Default::default(),
                     before: memory.clone(),
                     after: memory.clone(),
                     writes: vec![(
@@ -529,6 +531,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 )),
             )),
             Box::new(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: SymbolicMemory::new().with_block("sum", 16),
                 base: pointer,
                 bytes: (OldMachineTerm::Variable(Variable(30))).into(),

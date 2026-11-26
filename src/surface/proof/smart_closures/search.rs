@@ -14483,6 +14483,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             base,
             bytes,
             wide,
+            ..
         } = goal
         else {
             return None;
@@ -14519,6 +14520,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             regions.push(region.clone());
             let entry = Proposition::MemoryLoadable {
                 memory: footprint.before.clone(),
+                point: crate::kernel::program_point::PathLink::not_yet_a_point(),
                 base: base.clone(),
                 bytes: bytes.clone(),
                 wide: *wide,

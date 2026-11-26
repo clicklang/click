@@ -792,6 +792,7 @@ fn collect_proposition_bitvector_variables_one(
             memory,
             pointer,
             outcome,
+            ..
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
@@ -811,6 +812,7 @@ fn collect_proposition_bitvector_variables_one(
             base,
             bytes,
             wide: _,
+            ..
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(base, variables);
@@ -823,7 +825,9 @@ fn collect_proposition_bitvector_variables_one(
         Proposition::ResourceComposition(resources) => {
             collect_resource_context_bitvector_variables(resources, variables);
         }
-        Proposition::ResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable {
+            memory, resource, ..
+        } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_resource_bitvector_variables(resource, variables);
         }
@@ -835,6 +839,7 @@ fn collect_proposition_bitvector_variables_one(
             before,
             after,
             writes,
+            ..
         } => {
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);
@@ -859,6 +864,7 @@ fn collect_proposition_bitvector_variables_one(
             after,
             allocation_base,
             bytes,
+            ..
         } => {
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);

@@ -2452,8 +2452,10 @@ pub(crate) fn restore_range_span_spelling(
                 base,
                 bytes: folded,
                 wide: false,
+                point,
             },
         ) => Proposition::MemoryLoadable {
+            point: point.clone(),
             memory,
             base,
             bytes: substituted_range_span(bytes.old_form(), from, to)
@@ -3755,6 +3757,7 @@ mod integer_equality_fact_index_tests {
             binder,
             Sort::ProgramInt32,
             Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: Address::new(block.into(), offset),
                 bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -3783,6 +3786,7 @@ mod integer_equality_fact_index_tests {
             binder,
             Sort::ProgramInt32,
             Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: Address::new(block.into(), offset),
                 bytes: (OldMachineTerm::constant(bytes)).into(),

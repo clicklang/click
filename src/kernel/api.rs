@@ -8967,6 +8967,7 @@ pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
     };
     Theorem::new(Proposition::MemoryLoads {
         memory,
+        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
         pointer,
         outcome: outcome.map_value(Into::into),
     })
@@ -8981,6 +8982,7 @@ pub fn prove_memory_load_after_store_same(
     let stored = memory.store(pointer.clone(), value.clone());
     Theorem::new(Proposition::MemoryLoads {
         memory: stored,
+        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
         pointer,
         outcome: ExpressionOutcome::Value((value).into()),
     })
@@ -9005,6 +9007,7 @@ pub fn prove_memory_load_after_store_other(
 
     Some(Theorem::new(Proposition::MemoryLoads {
         memory: stored,
+        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
         pointer: loaded_pointer,
         outcome: outcome.map_value(Into::into),
     }))

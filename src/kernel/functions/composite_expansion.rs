@@ -455,6 +455,7 @@ pub(in crate::kernel) fn checked_evaluate_resource_population_fact_propositions(
                         base,
                         bytes,
                         wide: false,
+                        ..
                     } = obligation.proposition()
                     else {
                         return false;
@@ -691,7 +692,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     let mut propositions = Vec::new();
     for range in ranges {
         propositions.extend(crate::kernel::admitted_memory_range_span_facts(&range));
-        propositions.push(range.loadable_fact(at.memory()));
+        propositions.push(range.loadable_fact(at.memory(), at.path_link().clone()));
     }
     Some(propositions)
 }
@@ -877,6 +878,7 @@ fn instantiate_composite_resource_facts_in_state(
                     base,
                     bytes,
                     wide: false,
+                    ..
                 } = obligation.proposition()
                 else {
                     return false;

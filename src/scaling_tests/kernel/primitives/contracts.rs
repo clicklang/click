@@ -40,7 +40,7 @@ fn loadable_count_production_retains_growing_bound_dags() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..32 {
                     let Proposition::MemoryLoadable { bytes, .. } =
-                        range.loadable_fact(&SymbolicMemory::new())
+                        range.loadable_fact(&SymbolicMemory::new(), Default::default())
                     else {
                         unreachable!()
                     };

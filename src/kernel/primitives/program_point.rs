@@ -760,6 +760,13 @@ impl PathLink {
         self
     }
 
+    /// The point of a memory a fact quotes that no point holds yet: a
+    /// memory made between the points of an atomic region. A migration
+    /// marker; each use is a fact to be given a point.
+    pub(crate) fn not_yet_a_point() -> Self {
+        Self::default()
+    }
+
     pub(super) fn function_entry(memory: SharedMemory) -> Self {
         Self::reached_from(
             memory,

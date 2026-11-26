@@ -1634,24 +1634,28 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         // to trigger costly general equality searches before the matching
         // symbolic range was considered.
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(0),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(8),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(12),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(16),
             bytes: (OldMachineTerm::constant(32)).into(),
