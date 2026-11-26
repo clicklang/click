@@ -7,11 +7,11 @@ function successor(z: Integer) -> Integer {
 
 theorem successor_requires_unfold(z: Integer) {
     ensures successor(z) == z + 1 by {
-        normalize();
+        close() using {};
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```
