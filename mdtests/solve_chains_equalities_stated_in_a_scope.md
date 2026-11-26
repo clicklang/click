@@ -10,15 +10,14 @@ there used to leave no spelling for its fact, so the equality-rewrite search
 found the three candidates but could cite none of them, and every link needed
 its own two-premise `close() using { .. }`. A scope's `have` is now spelled for
 the premise lookups later steps of the same scope make, as one at an outcome
-or an execution frontier already was. The expansion is the three `rewrite`s
-and `normalize()`, and it re-verifies. The chain's work is linear in its
+or an execution frontier already was. The chain's work is linear in its
 length and an unrelated query's is flat
 (`solve_equality_chain_is_linear_and_unrelated_queries_are_flat`).
 
 The two frame links use explicit preservation. Each call publishes that its
 footprint is contained in `other[0..1]`; the resource separation and selected
-cell containment restrict that separation to `occ[k]`. The final chain stays
-one `solve`, which expands to ordinary equality steps.
+cell containment restrict that separation to `occ[k]`. The final `close()`
+uses the three equalities.
 
 ```c filename=solve_chains_equalities_stated_in_a_scope.c
 void mark_one(int* other) {
