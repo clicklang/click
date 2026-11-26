@@ -97,6 +97,9 @@ pub struct ImportedFunction {
     pub(super) global_aggregate_arrays: DeclarationMap<CGlobalAggregateArray>,
     pub(super) static_locals: BTreeMap<crate::kernel::BindingName, CStaticLocal>,
     pub(super) static_arrays: BTreeMap<crate::kernel::BindingName, CStaticArray>,
+    /// The declared types of the global and static objects above, by every
+    /// name a clause uses for them, rebuilt whenever they change.
+    pub(super) storage_types: std::sync::Arc<StorageTypes>,
     pub(super) static_aggregates: BTreeMap<crate::kernel::BindingName, CStaticAggregate>,
     pub(super) static_aggregate_arrays: BTreeMap<crate::kernel::BindingName, CStaticAggregateArray>,
     /// The struct name of each automatic local of struct-pointer type, keyed
@@ -519,6 +522,106 @@ impl InterfaceType {
     }
 }
 
+/// The declared types of the global and static objects a function sees,
+/// by each name a clause may use for one: its source spelling and its kernel
+/// name. A static's spelling hides a global's, and a spelling two statics
+/// share names the later one in kernel-name order, as the kernel binds them
+/// in that order and its later binding of a spelling wins.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct StorageTypes {
+    objects: BTreeMap<crate::kernel::BindingName, crate::kernel::ProgramType>,
+    array_elements: BTreeMap<crate::kernel::BindingName, crate::kernel::ProgramType>,
+}
+
+impl StorageTypes {
+    pub(super) fn of(
+        globals: &DeclarationMap<CGlobal>,
+        global_arrays: &DeclarationMap<CGlobalArray>,
+        static_locals: &BTreeMap<crate::kernel::BindingName, CStaticLocal>,
+        static_arrays: &BTreeMap<crate::kernel::BindingName, CStaticArray>,
+    ) -> Self {
+        let mut types = Self::default();
+        let mut object = |spelling: &str, kernel_name: &crate::kernel::BindingName, ty| {
+            types.objects.insert(kernel_name.clone(), ty);
+            types.objects.insert(spelling.into(), ty);
+        };
+        for (spelling, global) in globals {
+            object(
+                spelling,
+                global.kernel_name(),
+                global.interface_type().to_kernel_type(),
+            );
+        }
+        for static_local in static_locals.values() {
+            object(
+                static_local.name(),
+                static_local.kernel_name(),
+                static_local.interface_type().to_kernel_type(),
+            );
+        }
+        let mut array = |spelling: &str, kernel_name: &crate::kernel::BindingName, ty| {
+            types.array_elements.insert(kernel_name.clone(), ty);
+            types.array_elements.insert(spelling.into(), ty);
+        };
+        for (spelling, global_array) in global_arrays {
+            array(
+                spelling,
+                global_array.kernel_name(),
+                global_array.element_type().to_kernel_type(),
+            );
+        }
+        for static_array in static_arrays.values() {
+            array(
+                static_array.name(),
+                static_array.kernel_name(),
+                static_array.element_type().to_kernel_type(),
+            );
+        }
+        types
+    }
+}
+
+/// The global and static objects a function sees, with the types its front
+/// end declared for them. Shared, so a copy costs nothing.
+#[derive(Clone)]
+pub(crate) struct GlobalDeclarations(std::sync::Arc<StorageTypes>);
+
+impl GlobalDeclarations {
+    /// The declared type of the global or static scalar `name`.
+    pub(crate) fn object_type(
+        &self,
+        name: &crate::kernel::BindingName,
+    ) -> Option<crate::kernel::ProgramType> {
+        self.0.objects.get(name).copied()
+    }
+
+    /// The declared element type of the global or static array `name`.
+    pub(crate) fn array_element_type(
+        &self,
+        name: &crate::kernel::BindingName,
+    ) -> Option<crate::kernel::ProgramType> {
+        self.0.array_elements.get(name).copied()
+    }
+}
+
+impl ImportedFunction {
+    /// The global and static objects this function sees, as declared.
+    pub(crate) fn global_declarations(&self) -> GlobalDeclarations {
+        GlobalDeclarations(self.storage_types.clone())
+    }
+
+    /// Rebuild `storage_types` after the objects it indexes change.
+    fn index_storage_types(mut self) -> Self {
+        self.storage_types = std::sync::Arc::new(StorageTypes::of(
+            &self.globals,
+            &self.global_arrays,
+            &self.static_locals,
+            &self.static_arrays,
+        ));
+        self
+    }
+}
+
 impl ImportedFunction {
     /// An explicitly declared one-call proof, represented with ordinary C AST nodes.
     pub(crate) fn with_proof_body(mut self, body: CStatement) -> Self {
@@ -737,6 +840,7 @@ impl ImportedFunction {
             global_aggregate_arrays: DeclarationMap::new(),
             static_locals: BTreeMap::new(),
             static_arrays: BTreeMap::new(),
+            storage_types: std::sync::Arc::default(),
             static_aggregates: BTreeMap::new(),
             static_aggregate_arrays: BTreeMap::new(),
             local_struct_pointers: BTreeMap::new(),
@@ -1029,7 +1133,7 @@ impl ImportedFunction {
 
     pub(crate) fn with_globals(mut self, globals: DeclarationMap<CGlobal>) -> Self {
         self.globals = globals;
-        self
+        self.index_storage_types()
     }
 
     pub(crate) fn with_global_arrays(
@@ -1037,7 +1141,7 @@ impl ImportedFunction {
         global_arrays: DeclarationMap<CGlobalArray>,
     ) -> Self {
         self.global_arrays = global_arrays;
-        self
+        self.index_storage_types()
     }
 
     pub(crate) fn with_global_aggregates(

@@ -857,6 +857,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             aggregate_parameters: Default::default(),
             program_parameter_types: Default::default(),
             local_type_state: None,
+            global_declarations: None,
             type_inference_failure: None,
             pointer_element_types: definition
                 .parameters()
@@ -928,6 +929,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         aggregate_parameters: Default::default(),
         program_parameter_types: Default::default(),
         local_type_state: None,
+        global_declarations: None,
         type_inference_failure: None,
         pointer_element_types: definition
             .parameters()
@@ -1020,6 +1022,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         aggregate_parameters: Default::default(),
         program_parameter_types: Default::default(),
         local_type_state: None,
+        global_declarations: None,
         type_inference_failure: None,
         pointer_element_types: definition
             .parameters()
@@ -1555,6 +1558,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         pointer_element_types: shape.pointer_element_types.clone(),
         parameter_pointer_element_widths: shape.parameter_pointer_element_widths.clone(),
         local_type_state: None,
+        global_declarations: Some(parsed_function.global_declarations()),
         type_inference_failure: None,
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
@@ -2068,6 +2072,7 @@ fn annotate_function(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: None,
+        global_declarations: Some(parsed_function.global_declarations()),
         type_inference_failure: None,
         pointer_element_types: parsed_function
             .parameters()
@@ -2402,6 +2407,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: Some(current_state),
+        global_declarations: Some(parsed_function.global_declarations()),
         type_inference_failure: None,
         pointer_element_types: parameters
             .iter()
@@ -2465,6 +2471,7 @@ fn fixed_state_elaboration<'a>(
         aggregate_parameters: Default::default(),
         program_parameter_types: Default::default(),
         local_type_state: None,
+        global_declarations: None,
         type_inference_failure: None,
         pointer_element_types: array_element_types.into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths.into(),
@@ -2927,6 +2934,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
     entry_state: &ExecutionState,
     proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
+    global_declarations: Option<crate::languages::interface::GlobalDeclarations>,
 ) -> Result<SpecProposition, String> {
     // A requirement reads only the parameters it names: with the binding's
     // index, the parameter tables hold those alone.
@@ -2969,6 +2977,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: None,
+        global_declarations,
         type_inference_failure: None,
         pointer_element_types: parameters
             .iter()
@@ -3050,6 +3059,7 @@ pub(in crate::surface) fn function_contract_summary(
             .collect::<BTreeMap<_, _>>()
             .into(),
         local_type_state: None,
+        global_declarations: Some(parsed_function.global_declarations()),
         type_inference_failure: None,
         pointer_element_types: parsed_function
             .parameters()
@@ -3612,6 +3622,9 @@ struct AnnotationLowerer<'a> {
     /// Live declaration types for state-parametric branch facts; values remain symbolic.
     /// Each referenced name uses the state's existing index, without a body/history scan.
     local_type_state: Option<&'a ExecutionState>,
+    /// The global and static objects the function declares, when this
+    /// lowering context has the function (`Declarations`).
+    global_declarations: Option<crate::languages::interface::GlobalDeclarations>,
     type_inference_failure: Option<String>,
     /// Declared C types of the function's parameters, where a function is
     /// in scope: a clause's range over a `size_t` parameter is a `size_t`

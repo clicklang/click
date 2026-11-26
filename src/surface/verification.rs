@@ -6456,6 +6456,7 @@ pub(super) fn function_resource_summary_with_entry_ranges(
                     }),
                     &condition,
                     spec_definitions,
+                    Some(parsed_function.global_declarations()),
                 )
                 .map_err(ClickError::new)
             })

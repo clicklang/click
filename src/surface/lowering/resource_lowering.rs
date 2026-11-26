@@ -4087,11 +4087,14 @@ fn requirement_proposition_and_facts_with_assumptions(
     // The requirement is elaborated as the contract elaborates it and
     // lowered by the kernel at the entry state with the parameters bound
     // (`requirement_lowering_state`).
+    // A call site's requirement does not yet carry the callee's declared
+    // globals; its lowering context is not checked against them.
     let spec = crate::surface::lowering::elaborate_requirement_proposition(
         parameter_binding,
         state,
         proposition,
         spec_definitions,
+        None,
     )
     .map_err(ClickError::new)?;
     let (lowered, facts, obligations, _) =
