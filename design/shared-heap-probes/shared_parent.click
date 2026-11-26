@@ -283,7 +283,7 @@ int32 run_first_destroyed(int32 payload) {
     have out == observed by { close(); }
     have out == payload by { close(); }
     with(child_control(kid)) {
-        have to_integer(count(child_ref(kid))) == 1 by { normalize(); }
+        have to_integer(count(child_ref(kid))) == 1 by { close(); }
         have to_integer(kid->refs) == 1 by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             close();
@@ -376,7 +376,7 @@ int32 run_second_destroyed(int32 payload) {
     have out == observed by { close(); }
     have out == payload by { close(); }
     with(child_control(kid)) {
-        have to_integer(count(child_ref(kid))) == 1 by { normalize(); }
+        have to_integer(count(child_ref(kid))) == 1 by { close(); }
         have to_integer(kid->refs) == 1 by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             close();
