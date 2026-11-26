@@ -6,6 +6,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/scalar-slices/slic
 /// a length: indexed reads and writes owe Rust's index panic check, and a
 /// slice passes to a callee whole.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.7s in the parallel gate"]
 fn charon_scalar_slices_verify_with_their_index_checks() {
     let p = Project::from_fixture("design/charon-trial/scalar-slices");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();

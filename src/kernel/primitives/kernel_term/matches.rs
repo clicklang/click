@@ -86,7 +86,7 @@ impl KernelMatchArm {
                     crate::instrumentation::record_deterministic_work(1);
                     return Ok(AlgebraicValue::Program(machine::wrap_exact(
                         format,
-                        MachineTerm::Variable(*variable),
+                        OldMachineTerm::Variable(*variable),
                     )));
                 }
                 export_value(export, value)
@@ -212,9 +212,9 @@ impl KernelMatch {
     pub(crate) fn import_machine(
         import: &mut KernelTermImport,
         format: MachineIntegerType,
-        value: &MachineTerm,
+        value: &OldMachineTerm,
     ) -> Option<Self> {
-        let MachineTerm::AlgebraicMatch { scrutinee, arms } = value else {
+        let OldMachineTerm::AlgebraicMatch { scrutinee, arms } = value else {
             return None;
         };
         let scrutinee = import.argument(&PureFunctionArgument::Algebraic((**scrutinee).clone()));
@@ -225,7 +225,7 @@ impl KernelMatch {
                 // leaves, just as they do outside a match arm.
                 let body = KernelTerm::retained_machine_operand(
                     format,
-                    MachineOperandView::Legacy(&arm.body),
+                    MachineOperandView::Old(&arm.body),
                 );
                 KernelMatchArm::import(
                     import,
@@ -307,14 +307,14 @@ impl KernelMatch {
     pub(crate) fn export_machine(
         &self,
         export: &mut KernelTermExport,
-    ) -> Result<MachineTerm, &'static str> {
+    ) -> Result<OldMachineTerm, &'static str> {
         let KernelType::Program(ty) = self.result_type else {
             return Err("expected machine match");
         };
         if MachineIntegerType::from_program_type(ty).is_none() {
             return Err("expected machine integer match");
         }
-        Ok(MachineTerm::AlgebraicMatch {
+        Ok(OldMachineTerm::AlgebraicMatch {
             scrutinee: self.export_scrutinee(export)?,
             arms: self
                 .arms
@@ -422,7 +422,7 @@ mod tests {
         valid.node = AlgebraicTermNode::Constructor {
             variant: "Arm".into(),
             fields: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(999653)),
+                OldMachineTerm::Variable(Variable(999653)),
             ))],
         };
         let mut cases = vec![valid.clone()];
@@ -461,15 +461,15 @@ mod tests {
     #[test]
     fn numeric_match_roots_preserve_observation_identity_and_typed_arms() {
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(scrutinee()),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Box".into(),
                 bindings: binding(),
                 binding_names: names(),
-                body: MachineTerm::add(
-                    MachineTerm::Variable(Variable(991981)),
-                    MachineTerm::constant(1),
+                body: OldMachineTerm::add(
+                    OldMachineTerm::Variable(Variable(991981)),
+                    OldMachineTerm::constant(1),
                 ),
             }],
         };
@@ -507,15 +507,15 @@ mod tests {
     fn numeric_match_arms_retain_boolean_casts_in_arithmetic_storage() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
-            let cast = MachineTerm::BoolCast {
+            let cast = OldMachineTerm::BoolCast {
                 to: format,
-                value: Box::new(ConditionTerm::Variable(Variable(991982))),
+                value: Box::new(OldConditionTerm::Variable(Variable(991982))),
             };
             for body in [
                 cast.clone(),
-                MachineTerm::add(cast, MachineTerm::constant(1)),
+                OldMachineTerm::add(cast, OldMachineTerm::constant(1)),
             ] {
-                let native = MachineTerm::AlgebraicMatch {
+                let native = OldMachineTerm::AlgebraicMatch {
                     scrutinee: Box::new(scrutinee()),
                     arms: vec![AlgebraicBitvectorMatchArm {
                         variant: "Box".into(),
@@ -539,13 +539,13 @@ mod tests {
     #[test]
     fn numeric_match_imports_share_opaque_body_observation_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(scrutinee()),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Box".into(),
                 bindings: binding(),
                 binding_names: names(),
-                body: MachineTerm::ClickFunctionApplication {
+                body: OldMachineTerm::ClickFunctionApplication {
                     name: "opaque_body".into(),
                     arguments: vec![],
                 },
@@ -581,12 +581,12 @@ mod tests {
         assert_eq!(common.export_integer(&mut export).unwrap(), integer);
         assert!(common.export_machine(&mut export).is_err());
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
-            let native = MachineTerm::AlgebraicMatch {
+            let native = OldMachineTerm::AlgebraicMatch {
                 scrutinee: Box::new(scrutinee()),
                 arms: vec![AlgebraicBitvectorMatchArm {
                     variant: "Box".into(),
                     bindings: binding(),
-                    body: MachineTerm::constant(7),
+                    body: OldMachineTerm::constant(7),
                     binding_names: names(),
                 }],
             };

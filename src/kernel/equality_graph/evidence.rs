@@ -1,7 +1,7 @@
 //! Exact source evidence owned by the service, distinct from closure queries.
 use super::*;
 use crate::kernel::assumptions::equality_graph_term_key;
-use crate::kernel::{BitvectorEqualityDerivationStep, ConditionTerm, Proposition};
+use crate::kernel::{BitvectorEqualityDerivationStep, OldConditionTerm, Proposition};
 use crate::kernel::{
     CompareRelation, MachineIntegerType, MachineOperandView, SharedMachineIntegerTerm,
 };
@@ -12,23 +12,23 @@ use std::collections::{BTreeMap, BTreeSet};
 /// pointer-offset equality. Context-free, so a fact's evidence edge is the
 /// same in every context that holds it.
 pub(in crate::kernel) fn scalar_evidence_pair(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
     if !value {
         return None;
     }
     let (a, b) = match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: a,
             right: b,
         } => (
-            evidence_key(MachineOperandView::Legacy(a)),
-            evidence_key(MachineOperandView::Legacy(b)),
+            evidence_key(MachineOperandView::Old(a)),
+            evidence_key(MachineOperandView::Old(b)),
         ),
-        ConditionTerm::IntegerEqual(..) => {
+        OldConditionTerm::IntegerEqual(..) => {
             let view =
                 crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
             if view.relation != CompareRelation::Equal
@@ -56,7 +56,7 @@ pub(in crate::kernel) fn scalar_evidence_pair(
 
 fn evidence_key(operand: MachineOperandView<'_>) -> SharedMachineIntegerTerm {
     match operand {
-        MachineOperandView::Legacy(term) => SharedMachineIntegerTerm::intern(
+        MachineOperandView::Old(term) => SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             equality_graph_term_key(term),
         ),
@@ -67,7 +67,7 @@ fn evidence_key(operand: MachineOperandView<'_>) -> SharedMachineIntegerTerm {
 impl EqualityGraph {
     pub(in crate::kernel) fn adjust_scalar_evidence_input(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) {
         if !value {
@@ -75,11 +75,11 @@ impl EqualityGraph {
         }
         if !matches!(
             condition,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
-            } | ConditionTerm::IntegerEqual(..)
+            } | OldConditionTerm::IntegerEqual(..)
         ) && condition.true_pointer_offset_sides().is_none()
         {
             return;
@@ -87,7 +87,7 @@ impl EqualityGraph {
         // The new shared source form must actually be a machine equality.
         // Pure Integer equalities do not enter this coordinate index. Keep
         // the existing conservative dependency rule for pointer sources.
-        let shared_pair = if matches!(condition, ConditionTerm::IntegerEqual(..)) {
+        let shared_pair = if matches!(condition, OldConditionTerm::IntegerEqual(..)) {
             let Some(pair) = scalar_evidence_pair(condition, value) else {
                 return;
             };
@@ -169,8 +169,8 @@ impl EqualityGraph {
     /// must still match, so this does not cancel scaling or discard a base.
     pub(in crate::kernel) fn exact_address_offset_equality_source(
         &self,
-        left: &AddressOffset,
-        right: &AddressOffset,
+        left: &OldAddressOffset,
+        right: &OldAddressOffset,
     ) -> Option<&Proposition> {
         let left_index = crate::kernel::reasoning::shared_element_index_from_offset(left, 4)?;
         let right_index = crate::kernel::reasoning::shared_element_index_from_offset(right, 4)?;
@@ -184,14 +184,17 @@ impl EqualityGraph {
                 let Proposition::ConditionIs(condition, true) = premise else {
                     return None;
                 };
-                let (a, b) = condition.native_compat().pointer_offset_sides()?;
+                let (a, b) = condition.old_form().pointer_offset_sides()?;
                 ((a == left && b == right) || (a == right && b == left)).then_some(premise)
             })
     }
 
     #[cfg(test)]
-    pub(in crate::kernel) fn scalar_evidence_class(&self, term: &MachineTerm) -> Vec<MachineTerm> {
-        self.scalar_evidence_class_view(MachineOperandView::Legacy(term))
+    pub(in crate::kernel) fn scalar_evidence_class(
+        &self,
+        term: &OldMachineTerm,
+    ) -> Vec<OldMachineTerm> {
+        self.scalar_evidence_class_view(MachineOperandView::Old(term))
             .into_iter()
             .map(|term| term.value().clone())
             .collect()
@@ -227,7 +230,7 @@ impl EqualityGraph {
         // the allocation order of retained handles.
         fn written(term: &SharedMachineIntegerTerm) -> MachineOperandView<'_> {
             term.retained_written_operand()
-                .map(MachineOperandView::Legacy)
+                .map(MachineOperandView::Old)
                 .unwrap_or_else(|| term.operand_view())
         }
         let mut members: Vec<_> = seen.into_iter().collect();
@@ -242,7 +245,7 @@ impl EqualityGraph {
     /// equalities, excluding `pointer` itself: the pointer counterpart of
     /// [`Self::scalar_evidence_class`]. The edges are symmetric, so the walk
     /// costs the equalities in this one component.
-    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &Address) -> Vec<Address> {
+    pub(in crate::kernel) fn pointer_alias_class(&self, pointer: &OldAddress) -> Vec<OldAddress> {
         let aliases = &self.admitted.address_base_aliases;
         if !aliases.contains_key(pointer) {
             return Vec::new();
@@ -313,7 +316,7 @@ impl EqualityGraph {
                     };
                     let view =
                         crate::kernel::machine_integer::comparison::structural_comparison_view(
-                            condition.native_compat(),
+                            condition.old_form(),
                         )?;
                     if view.negated
                         || view.relation != CompareRelation::Equal
@@ -327,9 +330,7 @@ impl EqualityGraph {
                     view.operands
                         .iter()
                         .all(|operand| match operand.operand_view() {
-                            MachineOperandView::Legacy(term) => {
-                                equality_graph_term_key(term) == *term
-                            }
+                            MachineOperandView::Old(term) => equality_graph_term_key(term) == *term,
                             MachineOperandView::Shared(_) => true,
                         })
                         .then_some(premise)
@@ -353,7 +354,7 @@ impl EqualityGraph {
         &self,
         term: MachineOperandView<'_>,
     ) -> Option<u32> {
-        if let MachineOperandView::Legacy(term) = term {
+        if let MachineOperandView::Old(term) = term {
             return self.direct_scalar_constant(term);
         }
         if let Some(bits) = term.word32_constant() {
@@ -370,7 +371,7 @@ impl EqualityGraph {
             .then_some(value as u32)
     }
 
-    pub(in crate::kernel) fn direct_scalar_constant(&self, term: &MachineTerm) -> Option<u32> {
+    pub(in crate::kernel) fn direct_scalar_constant(&self, term: &OldMachineTerm) -> Option<u32> {
         if let Some(value) = term.as_const() {
             return Some(value);
         }
@@ -378,11 +379,11 @@ impl EqualityGraph {
         let (_, R::Known(value)) = self.scalar_constant_class(term)? else {
             return None;
         };
-        let literal = MachineTerm::constant(value as u32);
+        let literal = OldMachineTerm::constant(value as u32);
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for (left, right) in [(term, &literal), (&literal, term)] {
                 crate::instrumentation::record_deterministic_work(1);
-                let condition = ConditionTerm::Compare {
+                let condition = OldConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
                     left: Box::new(left.clone()),
@@ -402,7 +403,10 @@ impl EqualityGraph {
     /// admitted scalar/offset source mentions its coordinate. A read inside
     /// the selected offset still stays on the ordinary store ladder; a read
     /// in an unrelated source does not disable this shortcut.
-    pub(in crate::kernel) fn offset_has_source_dependencies(&self, offset: &AddressOffset) -> bool {
+    pub(in crate::kernel) fn offset_has_source_dependencies(
+        &self,
+        offset: &OldAddressOffset,
+    ) -> bool {
         let root = crate::kernel::primitives::offset_root_atom(offset);
         if self
             .admitted
@@ -412,9 +416,9 @@ impl EqualityGraph {
             return true;
         }
         let mut variables = BTreeSet::new();
-        let selector = ConditionTerm::AddressOffsetEqual(
+        let selector = OldConditionTerm::AddressOffsetEqual(
             Box::new(offset.clone()),
-            Box::new(AddressOffset::Constant(0)),
+            Box::new(OldAddressOffset::constant(0)),
         );
         if crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(&selector, &mut variables) { return true; }
         variables

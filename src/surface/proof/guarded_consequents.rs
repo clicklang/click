@@ -116,7 +116,7 @@ impl<'a> Proof<'a> {
                     .iter()
                     .filter_map(|(name, binding)| match binding {
                         SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                            crate::kernel::integer64_c_value!(MachineTerm::Variable(variable)),
+                            crate::kernel::integer64_c_value!(OldMachineTerm::Variable(variable)),
                         )) => Some((*variable, name.clone())),
                         _ => None,
                     })
@@ -136,40 +136,40 @@ type BinaryExpression = fn(Box<SyntaxTerm>, Box<SyntaxTerm>) -> SyntaxTerm;
 
 /// The operands and the written operator of a no-overflow condition.
 fn overflow_operands(
-    condition: &ConditionTerm,
-) -> Option<(&MachineTerm, &MachineTerm, BinaryExpression)> {
+    condition: &OldConditionTerm,
+) -> Option<(&OldMachineTerm, &OldMachineTerm, BinaryExpression)> {
     let (left, right, construct): (_, _, BinaryExpression) = match condition {
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left,
             right,
         }
-        | ConditionTerm::Overflows {
+        | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left,
             right,
         } => (left, right, SyntaxTerm::Add),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
         }
-        | ConditionTerm::Overflows {
+        | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             left,
             right,
         } => (left, right, SyntaxTerm::Subtract),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left,
             right,
         }
-        | ConditionTerm::Overflows {
+        | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             left,
@@ -260,8 +260,7 @@ impl GuardedTermRaiser<'_, '_> {
                 Box::new(self.guard(right)?),
             )),
             Proposition::ConditionIs(condition, false)
-                if let Some((left, right, construct)) =
-                    overflow_operands(condition.native_compat()) =>
+                if let Some((left, right, construct)) = overflow_operands(condition.old_form()) =>
             {
                 Some(SyntaxProposition::Defined {
                     expression: construct(Box::new(self.term(left)?), Box::new(self.term(right)?)),
@@ -290,7 +289,7 @@ impl GuardedTermRaiser<'_, '_> {
             return Some(whole);
         }
         let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-            condition.native_compat(),
+            condition.old_form(),
         )?;
         if !matches!(
             view.format,
@@ -331,9 +330,7 @@ impl GuardedTermRaiser<'_, '_> {
     fn operand(&self, value: crate::kernel::MachineOperandView<'_>) -> Option<SyntaxTerm> {
         use crate::kernel::MachineOperandView as V;
         let V::Shared(root) = value else {
-            let V::Legacy(value) = value else {
-                unreachable!()
-            };
+            let V::Old(value) = value else { unreachable!() };
             return self.term(value);
         };
         if let Some(value) = root
@@ -344,7 +341,7 @@ impl GuardedTermRaiser<'_, '_> {
         }
         if let Some(value) = value
             .literal()
-            .or_else(|| value.variable().copied().map(MachineTerm::Variable))
+            .or_else(|| value.variable().copied().map(OldMachineTerm::Variable))
         {
             return self.term(&value);
         }
@@ -380,7 +377,7 @@ impl GuardedTermRaiser<'_, '_> {
     fn field_value<'s>(
         state: &'s ExecutionState,
         access: &ResourceFieldAccess,
-    ) -> Option<&'s MachineTerm> {
+    ) -> Option<&'s OldMachineTerm> {
         let (instance, index) = state.projected_resource_field(
             access.identity,
             &access.children,
@@ -397,7 +394,7 @@ impl GuardedTermRaiser<'_, '_> {
 
     /// A model field the goal names, read at the current state, at function
     /// entry, or at the newest recorded state that holds this value.
-    fn field_surface(&self, term: &MachineTerm) -> Option<SyntaxTerm> {
+    fn field_surface(&self, term: &OldMachineTerm) -> Option<SyntaxTerm> {
         let named =
             |access: &ResourceFieldAccess| Box::new(SyntaxTerm::ResourceField(access.clone()));
         for access in self.accesses {
@@ -423,8 +420,8 @@ impl GuardedTermRaiser<'_, '_> {
         None
     }
 
-    fn term(&self, term: &MachineTerm) -> Option<SyntaxTerm> {
-        if let MachineTerm::Variable(variable) = term
+    fn term(&self, term: &OldMachineTerm) -> Option<SyntaxTerm> {
+        if let OldMachineTerm::Variable(variable) = term
             && let Some(name) = self.bound.get(variable)
         {
             return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
@@ -434,7 +431,7 @@ impl GuardedTermRaiser<'_, '_> {
         if let Some(field) = self.field_surface(term) {
             return Some(field);
         }
-        let binary = |left: &MachineTerm, right: &MachineTerm| {
+        let binary = |left: &OldMachineTerm, right: &OldMachineTerm| {
             Some((Box::new(self.term(left)?), Box::new(self.term(right)?)))
         };
         let composite = match term {
@@ -445,19 +442,19 @@ impl GuardedTermRaiser<'_, '_> {
                 binary(left, right).map(|(left, right)| SyntaxTerm::Subtract(left, right))
             }
             binary_term!(Int32, Multiply, left, right)
-            | MachineTerm::Binary {
+            | OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Multiply,
                 left,
                 right,
             } => binary(left, right).map(|(left, right)| SyntaxTerm::Multiply(left, right)),
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left,
                 right,
             } => binary(left, right).map(|(left, right)| SyntaxTerm::Add(left, right)),
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Subtract,
                 left,

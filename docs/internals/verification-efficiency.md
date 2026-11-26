@@ -433,8 +433,8 @@ kernel executes the statement with the whole proof context visible, reading
 it through the proof object's persistent indexed `PureFactContext`, and a
 cell the context proves outside the effect keeps its name, with ownership
 consulted by direct lookup only. A fact about a cell it cannot prove
-untouched stays at its pre-step state; an explicit `transport` pays for
-anything more. Term comparison performs no frame reasoning. The user-facing
+untouched stays at its pre-step state. A separate frame proof handles any
+later use at the new point. Term comparison performs no frame reasoning. The user-facing
 statement of this rule is
 [What a step carries](../concepts/proof-state.md#what-a-step-carries).
 
@@ -474,14 +474,6 @@ charged to visible semantic output rather than hidden ambient state:
   claims, unrelated functions, or globally declared theorems.
 - Termination height inference reads the forward call closure of the run once
   (see [Termination heights and local descent](#termination-heights-and-local-descent)).
-- An explicit fold read frame (`src/kernel/fold_read_summary.rs`) walks the
-  recorded memory history between the two array states and decides each
-  crossed step once from its own write set; the crossed steps are its output
-  (`explicit_fold_read_transport_along_a_store_sequence_is_near_linear`).
-- An explicit quantified frame (`src/kernel/quantified_frame.rs`) walks source
-  and target once in parallel, renames each binder once, and asks one checked
-  load-history question per differing read; it never instantiates a
-  quantifier (`quantified_frame_is_near_linear_in_unrelated_facts`).
 - Typed range membership of an unsigned 64-bit index in a range with
   constant bounds (`PointerInRangeEvidence::UnsignedIndexed`) builds at most
   four forms of the bound and looks each up exactly.
@@ -722,7 +714,7 @@ Terms have one canonical identity and state changes are explicit:
   [Canonicalization](canonicalization.md).
 - **Transport facts at statement boundaries.** A statement step carries only
   facts whose direct frame check succeeds; other cross-state reasoning is
-  an explicit `transport`, not a comparator side effect.
+  handled by a separate frame proof.
 - **Rewrite states by identity.** Substituting a variable visits each
   interned state once; memoizations are pure functions over interned ids.
 - **A search attempt asks each failed question once.** Inside one attempt
@@ -730,8 +722,7 @@ Terms have one canonical identity and state changes are explicit:
   pointer-distinctness check is remembered by its exact inputs, fact-set
   content id, DAG generation, scope modes, and in-progress lookups. Failures
   that met a cycle cut or limit are not kept, and nothing outlives the
-  attempt (`closure_failure_memo_answers_a_repeated_failure_once`). An
-  explicit `transport` opens the same scope.
+  attempt (`closure_failure_memo_answers_a_repeated_failure_once`).
 - **Select pointer rewrites from the differing offsets.** A same-block
   pointer comparison selects facts about the differing offsets only; literal
   values never nominate rewrite candidates.
@@ -739,8 +730,8 @@ Terms have one canonical identity and state changes are explicit:
   write set contains through one alias and a constant displacement is decided
   before any separation search runs.
 - **Explicit proof steps remain the completeness escape hatch.** `rewrite`
-  uses a proved equality and `transport` uses checked frame evidence; the
-  canonical comparator uses neither.
+  uses a proved equality and `preserve` uses checked frame evidence. Both
+  steps apply outside canonical comparison.
 
 ## Indexed contradiction and premise search
 
@@ -1098,8 +1089,9 @@ complexity argument: enumerating a large bucket, equality class or chain is
 still ambient search, and amortized claims need a total-work argument across
 repeated steps, persistent forks and cold misses. The frozen
 [dependency inventory](https://github.com/clicklang/click/blob/master/build_support/proof_search_edges.tsv)
-and the [caller audit](https://github.com/clicklang/click/blob/master/design/proof-boundary-classification.md)
-record operation/search edges; no operation-to-driver records remain.
+records the enforced operation/search edges. The
+[historical caller audit](https://github.com/clicklang/click/blob/master/design/proof-boundary-classification.md)
+explains the classification at its recorded revision.
 
 Paths are relative to `src/`; test paths to `src/scaling_tests/`.
 [`step_shape_scaling_tests.rs`](https://github.com/clicklang/click/blob/master/src/scaling_tests/surface/tests/step_shape_scaling_tests.rs)

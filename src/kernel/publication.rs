@@ -221,7 +221,7 @@ pub(super) fn execute_publication_paths(
 /// Consumes the flag's explicit storage ownership and mints both rights.
 fn initialize(
     state: &ExecutionState,
-    flag: &Address,
+    flag: &OldAddress,
     value: &ProgramValue,
     payload: &crate::kernel::ResourceDescription,
     assumptions: &PureFactContext,
@@ -237,7 +237,7 @@ fn initialize(
             "the published resource must have no fields in the one-shot publication subset",
         ));
     }
-    if assumptions.decide(&ConditionTerm::pointer_aligned(
+    if assumptions.decide(&OldConditionTerm::pointer_aligned(
         flag.clone(),
         u64::from(FLAG_BYTES),
     )) != Some(true)
@@ -297,7 +297,7 @@ fn payload_fact(right: &PublicationRight) -> ResourceFact {
 /// payload's memory as an unlock forgets protected memory.
 fn release_store(
     state: &ExecutionState,
-    flag: &Address,
+    flag: &OldAddress,
     desired: &ProgramValue,
     order: &ProgramValue,
     assumptions: &PureFactContext,
@@ -312,11 +312,11 @@ fn release_store(
     let ProgramValue::Int32(desired) = desired else {
         return Ok(Err(refusal("atomic_store_explicit stores an int")));
     };
-    if assumptions.decide(&ConditionTerm::Compare {
+    if assumptions.decide(&OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(desired.clone()),
-        right: Box::new(MachineTerm::constant(0)),
+        right: Box::new(OldMachineTerm::constant(0)),
     }) != Some(false)
     {
         return Ok(Err(refusal(
@@ -389,7 +389,7 @@ fn release_store(
 /// some value and receives nothing.
 fn acquire_load(
     state: &ExecutionState,
-    flag: &Address,
+    flag: &OldAddress,
     order: &ProgramValue,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -468,11 +468,11 @@ pub(crate) fn resolve_observed_publications(
         let Some(ProgramValue::Int32(term)) = right.observed() else {
             continue;
         };
-        let zero = ConditionTerm::Compare {
+        let zero = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let Some(unpublished) = assumptions.decide(&zero) else {
             continue;
@@ -507,10 +507,10 @@ mod tests {
     use super::*;
     use crate::kernel::{ResourceDescription, ResourceFieldSchema};
 
-    fn flag(index: usize) -> Address {
-        Address {
+    fn flag(index: usize) -> OldAddress {
+        OldAddress {
             base: format!("publication-flag-{index}").into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -539,9 +539,9 @@ mod tests {
             resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));
         }
         for index in subscribers..subscribers + unrelated {
-            let cell = Address {
+            let cell = OldAddress {
                 base: format!("unrelated-cell-{index}").into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             memory = memory
                 .with_block(cell.base.clone(), 4)
@@ -583,7 +583,7 @@ mod tests {
             stored.root().is_some(),
             "the minted observation stays common"
         );
-        assert_eq!(stored.native_compat(), &value);
+        assert_eq!(stored.old_form(), &value);
     }
 
     /// Acquire-loads every subscriber flag, then settles them all as
@@ -612,11 +612,11 @@ mod tests {
                     unreachable!()
                 };
                 facts.assume_proposition(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     false,
                 ))

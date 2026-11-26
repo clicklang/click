@@ -18,7 +18,8 @@
 //! or a single symbolic one. Every operation touches the entries of the one
 //! block it names, positioned in O(log n).
 
-use super::{Address, AddressBase, AddressOffset, HashedOrdMap, ProgramValue};
+use super::{AddressBase, HashedOrdMap, OldAddress, OldAddressOffset, ProgramValue};
+use crate::kernel::OffsetTree;
 use crate::kernel::effective_type::CAccessClass;
 
 /// The widest scalar a store writes, which bounds how far before a store an
@@ -30,7 +31,7 @@ const MAX_CELL_WIDTH: i64 = 16;
 pub(crate) struct HeapEffectiveTypes {
     /// Cell start to its width, class and the value the store wrote.
     /// Invariant: within one block, entries are pairwise disjoint.
-    entries: HashedOrdMap<Address, HeapEffectiveType>,
+    entries: HashedOrdMap<OldAddress, HeapEffectiveType>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -40,10 +41,10 @@ struct HeapEffectiveType {
     value: ProgramValue,
 }
 
-fn constant_start(block: &AddressBase, offset: i64) -> Address {
-    Address {
+fn constant_start(block: &AddressBase, offset: i64) -> OldAddress {
+    OldAddress {
         base: block.clone(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::constant(offset),
     }
 }
 
@@ -68,7 +69,7 @@ impl HeapEffectiveTypes {
     /// the record changed.
     pub(crate) fn record(
         &mut self,
-        pointer: &Address,
+        pointer: &OldAddress,
         width: u32,
         class: Option<CAccessClass>,
         value: &ProgramValue,
@@ -116,7 +117,7 @@ impl HeapEffectiveTypes {
     /// symbolic entry stays its only one.
     pub(crate) fn map_entries(
         &self,
-        mut rewrite_pointer: impl FnMut(&Address) -> Address,
+        mut rewrite_pointer: impl FnMut(&OldAddress) -> OldAddress,
         mut rewrite_value: impl FnMut(&ProgramValue) -> ProgramValue,
     ) -> Self {
         crate::instrumentation::record_deterministic_work(self.entries.len() + 1);
@@ -144,7 +145,10 @@ impl HeapEffectiveTypes {
 
     /// The keys of `block`'s symbolic-offset entries, at most one. Symbolic
     /// offsets order after every constant one within a block.
-    fn symbolic_keys<'a>(&'a self, block: &'a AddressBase) -> impl Iterator<Item = Address> + 'a {
+    fn symbolic_keys<'a>(
+        &'a self,
+        block: &'a AddressBase,
+    ) -> impl Iterator<Item = OldAddress> + 'a {
         self.entries
             .range((
                 std::ops::Bound::Excluded(constant_start(block, i64::MAX)),
@@ -174,7 +178,7 @@ impl HeapEffectiveTypes {
     /// `current` says.
     pub(crate) fn class_at(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
         current: Option<&ProgramValue>,
     ) -> Option<CAccessClass> {
         crate::instrumentation::record_deterministic_work(1);
@@ -188,12 +192,12 @@ mod tests {
     use super::*;
     use crate::kernel::effective_type::CScalarClass;
 
-    fn cell(offset: i64) -> Address {
+    fn cell(offset: i64) -> OldAddress {
         constant_start(&AddressBase::Heap(7), offset)
     }
 
     fn int(value: u32) -> ProgramValue {
-        ProgramValue::Int32(super::super::MachineTerm::constant(value))
+        ProgramValue::Int32(super::super::OldMachineTerm::constant(value))
     }
 
     const INT: CAccessClass = CAccessClass::Scalar(CScalarClass::Int);
@@ -221,11 +225,11 @@ mod tests {
         assert_eq!(record.len(), 0);
     }
 
-    fn symbolic(variable: u64) -> Address {
-        Address {
+    fn symbolic(variable: u64) -> OldAddress {
+        OldAddress {
             base: AddressBase::Heap(7),
-            offset: AddressOffset::scale_int32(
-                super::super::MachineTerm::Variable(super::super::Variable(variable)),
+            offset: OldAddressOffset::scale_int32(
+                super::super::OldMachineTerm::Variable(super::super::Variable(variable)),
                 4,
             ),
         }

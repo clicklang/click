@@ -49,18 +49,21 @@ uint64 lp(const uint8* b, uint64 n) {
                 have 4u64 <= at(head, vl) by close();
                 apply(click::integer::uint64_subtract_to_integer(at(head, vl), 4u64));
                 have to_integer(vl) == to_integer(at(head, vl)) - 4 by close();
-                have vl < at(head, vl) by {
-                    have to_integer(vl) < to_integer(at(head, vl)) by {
-                        rewrite(to_integer(vl), to_integer(at(head, vl)) - 4);
-                        close();
-                    }
+                have to_integer(vl) < to_integer(at(head, vl)) by {
+                    rewrite(to_integer(vl), to_integer(at(head, vl)) - 4);
                     close();
                 }
+                have vl < at(head, vl) by { close(); }
                 have at(head, v) == b + (n - n % 4u64 - at(head, vl));
                 have to_integer(n - n % 4u64 - at(head, vl)) + 4 <= 18446744073709551615;
                 have (b + (n - n % 4u64 - at(head, vl))) + 4u64 == b + ((n - n % 4u64 - at(head, vl)) + 4u64);
                 have (n - n % 4u64 - at(head, vl)) + 4u64 == n - n % 4u64 - vl;
                 have v == b + (n - n % 4u64 - vl);
+                have vl <= n - n % 4u64 by {
+                    close() using { vl < at(head, vl); at(head, vl) <= n - n % 4u64; };
+                }
+                have 0 <= to_integer(vl);
+                close();
             } else {
                 step();
             }

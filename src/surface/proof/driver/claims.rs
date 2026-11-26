@@ -4116,8 +4116,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     if let Proposition::ConditionIs(condition, value) = proposition
-                                        && assumptions.decide(condition.native_compat())
-                                            == Some(!*value)
+                                        && assumptions.decide(condition.old_form()) == Some(!*value)
                                     {
                                         refuted.push(obligation.clone());
                                         continue;
@@ -5049,73 +5048,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         post_execution_index,
                                         *tactic_index,
                                         tactic,
-                                    );
-                                }
-                            }
-                            PostExecutionTactic::Transport { source, target } => {
-                                if !matches!(outcome, FunctionOutcome::Return { .. }) {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `transport` requires a return outcome"
-                                    )));
-                                }
-                                let (checked_facts, certificate) = if let Some(evolving) =
-                                    outcome_proof.take()
-                                {
-                                    // Plan against the evolving outcome state and
-                                    // retain its checked lowerings.
-                                    let prepared = evolving.with_outcome_store_consequences()?;
-                                    let before = prepared.checkpoint();
-                                    let transported = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&prepared, source, target)? {
-                                        Ok(transported) => Ok(transported),
-                                        Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
-                                            &prepared, source, target, *tactic_index, source_refusal.as_ref(),
-                                        ),
-                                    }
-                                    .inspect_err(|_| {
-                                        prepared.record_certification_failure_trace(
-                                            &proof_label,
-                                            path_index,
-                                        );
-                                    })?;
-                                    let checked_facts = transported.checked_facts().to_vec();
-                                    let certificate = transported.certificate_since(&before)?;
-                                    outcome_proof = Some(transported);
-                                    (checked_facts, certificate)
-                                } else {
-                                    // The unconditional substrate makes this unreachable;
-                                    // fail loudly rather than silently routing through the
-                                    // deleted legacy fixed-state root.
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
-                                    )));
-                                };
-                                // Ordinary `have` publication retains its target;
-                                // the legacy transport transition retains both ends.
-                                match checked_facts.as_slice() {
-                                    [checked_source, checked_target] => {
-                                        outcome_surface_propositions
-                                            .record_lowering(source, checked_source)?;
-                                        outcome_surface_propositions
-                                            .record_lowering(target, checked_target)?;
-                                    }
-                                    [checked_target] => {
-                                        outcome_surface_propositions
-                                            .record_lowering(target, checked_target)?;
-                                    }
-                                    _ => {
-                                        return Err(ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: checked transport did not retain its target"
-                                        )));
-                                    }
-                                }
-                                for tactic in certificate.to_proof_tactics() {
-                                    record_post_execution_surface_tactic(
-                                        &mut path_surface_post_tactics,
-                                        &mut path_deferred_capture_tactics,
-                                        path_capture,
-                                        post_execution_index,
-                                        *tactic_index,
-                                        tactic.clone(),
                                     );
                                 }
                             }
@@ -6737,11 +6669,11 @@ mod tests {
 
     #[test]
     fn inconsistent_context_is_not_sibling_path_evidence() {
-        let left = MachineTerm::Variable(Variable(1));
-        let right = MachineTerm::Variable(Variable(2));
+        let left = OldMachineTerm::Variable(Variable(1));
+        let right = OldMachineTerm::Variable(Variable(2));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(left.clone()),
@@ -6750,7 +6682,7 @@ mod tests {
                 true,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(right.clone()),
@@ -6763,7 +6695,7 @@ mod tests {
         // conflict, and the inconsistency guard is what stops that conflict
         // from being read as sibling-path evidence.
         let exactly_refuted = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(right_term.clone()),
@@ -6780,11 +6712,11 @@ mod tests {
         // reason since the general prover left the kernel: the exact routes
         // report no conflict at all rather than deriving one by explosion.
         let unrelated = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(2))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: Box::new(OldMachineTerm::Variable(Variable(2))),
+                right: Box::new(OldMachineTerm::constant(10)),
             },
             true,
         );
@@ -6796,11 +6728,11 @@ mod tests {
 
     #[test]
     fn consistent_exact_conflict_remains_sibling_path_evidence() {
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::constant(10)),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::constant(10)),
         };
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(condition.clone(), false));
@@ -6820,6 +6752,8 @@ mod evidence_tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn outcome_resource_evidence_rejects_missing_wrong_claim_and_wrong_path() {
         let source = r#"
             resource marker() { fact 0 == 0; }

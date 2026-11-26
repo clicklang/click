@@ -50,9 +50,9 @@ impl Parser {
         }
         self.position += 1;
         let value = if width == 32 {
-            ProgramValue::Float32(MachineTerm::constant(bits as u32))
+            ProgramValue::Float32(OldMachineTerm::constant(bits as u32))
         } else {
-            ProgramValue::Float64(MachineTerm::uint64_constant(bits))
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(bits))
         };
         Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
             value,

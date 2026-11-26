@@ -7,7 +7,7 @@ fn wide_cast_chains_retain_prefixes_with_linear_work() {
         let _session = VerificationSession::enter();
         let mut value: SpecValue = root(
             MachineIntegerType::Int128,
-            &MachineTerm::Variable(Variable(995720)),
+            &OldMachineTerm::Variable(Variable(995720)),
         )
         .into();
         let exports = KernelTermExport::machine_export_count();
@@ -30,7 +30,7 @@ fn wide_quotient_chains_retain_integer_sources_with_linear_work() {
         let _session = VerificationSession::enter();
         let mut value: SpecValue = root(
             MachineIntegerType::Int128,
-            &MachineTerm::Variable(Variable(995721)),
+            &OldMachineTerm::Variable(Variable(995721)),
         )
         .into();
         let divisor: SpecValue =

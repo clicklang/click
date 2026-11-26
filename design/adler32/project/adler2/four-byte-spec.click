@@ -27,7 +27,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((1u32 + x0 as uint32)) == (1 + to_integer(x0 as int32)) by {
   rewrite(to_integer((1u32 + x0 as uint32)), to_integer(1u32) + to_integer(x0 as uint32));
   rewrite(to_integer(x0 as uint32), to_integer(x0 as int32));
-  normalize();
+  close();
  }
  have 1 <= to_integer((1u32 + x0 as uint32)) by close() using { to_integer((1u32 + x0 as uint32)) == to_integer(1u32) + to_integer(x0 as uint32); 0 <= to_integer(x0 as uint32); to_integer(x0 as uint32) <= 255; };
  have to_integer((1u32 + x0 as uint32)) <= 256 by close() using { to_integer((1u32 + x0 as uint32)) == to_integer(1u32) + to_integer(x0 as uint32); 0 <= to_integer(x0 as uint32); to_integer(x0 as uint32) <= 255; };
@@ -37,7 +37,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((1u32 + x0 as uint32) + x1 as uint32)), to_integer((1u32 + x0 as uint32)) + to_integer(x1 as uint32));
   rewrite(to_integer((1u32 + x0 as uint32)), (1 + to_integer(x0 as int32)));
   rewrite(to_integer(x1 as uint32), to_integer(x1 as int32));
-  normalize();
+  close();
  }
  have 1 <= to_integer(((1u32 + x0 as uint32) + x1 as uint32)) by close() using { to_integer(((1u32 + x0 as uint32) + x1 as uint32)) == to_integer((1u32 + x0 as uint32)) + to_integer(x1 as uint32); 1 <= to_integer((1u32 + x0 as uint32)); to_integer((1u32 + x0 as uint32)) <= 256; 0 <= to_integer(x1 as uint32); to_integer(x1 as uint32) <= 255; };
  have to_integer(((1u32 + x0 as uint32) + x1 as uint32)) <= 511 by close() using { to_integer(((1u32 + x0 as uint32) + x1 as uint32)) == to_integer((1u32 + x0 as uint32)) + to_integer(x1 as uint32); 1 <= to_integer((1u32 + x0 as uint32)); to_integer((1u32 + x0 as uint32)) <= 256; 0 <= to_integer(x1 as uint32); to_integer(x1 as uint32) <= 255; };
@@ -47,7 +47,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)), to_integer(((1u32 + x0 as uint32) + x1 as uint32)) + to_integer(x2 as uint32));
   rewrite(to_integer(((1u32 + x0 as uint32) + x1 as uint32)), ((1 + to_integer(x0 as int32)) + to_integer(x1 as int32)));
   rewrite(to_integer(x2 as uint32), to_integer(x2 as int32));
-  normalize();
+  close();
  }
  have 1 <= to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) by close() using { to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) == to_integer(((1u32 + x0 as uint32) + x1 as uint32)) + to_integer(x2 as uint32); 1 <= to_integer(((1u32 + x0 as uint32) + x1 as uint32)); to_integer(((1u32 + x0 as uint32) + x1 as uint32)) <= 511; 0 <= to_integer(x2 as uint32); to_integer(x2 as uint32) <= 255; };
  have to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) <= 766 by close() using { to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) == to_integer(((1u32 + x0 as uint32) + x1 as uint32)) + to_integer(x2 as uint32); 1 <= to_integer(((1u32 + x0 as uint32) + x1 as uint32)); to_integer(((1u32 + x0 as uint32) + x1 as uint32)) <= 511; 0 <= to_integer(x2 as uint32); to_integer(x2 as uint32) <= 255; };
@@ -57,7 +57,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) + to_integer(x3 as uint32));
   rewrite(to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)), (((1 + to_integer(x0 as int32)) + to_integer(x1 as int32)) + to_integer(x2 as int32)));
   rewrite(to_integer(x3 as uint32), to_integer(x3 as int32));
-  normalize();
+  close();
  }
  have 1 <= to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) by close() using { to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) == to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) + to_integer(x3 as uint32); 1 <= to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)); to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) <= 766; 0 <= to_integer(x3 as uint32); to_integer(x3 as uint32) <= 255; };
  have to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) <= 1021 by close() using { to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) == to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) + to_integer(x3 as uint32); 1 <= to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)); to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) <= 766; 0 <= to_integer(x3 as uint32); to_integer(x3 as uint32) <= 255; };
@@ -68,7 +68,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((x0 as uint32 * 4u32)) == (to_integer(x0 as int32) * 4) by {
   rewrite(to_integer((x0 as uint32 * 4u32)), to_integer(x0 as uint32) * to_integer(4u32));
   rewrite(to_integer(x0 as uint32), to_integer(x0 as int32));
-  normalize();
+  close();
  }
  have 0 <= to_integer((x0 as uint32 * 4u32)) by close() using { to_integer((x0 as uint32 * 4u32)) == to_integer(x0 as uint32) * to_integer(4u32); 0 <= to_integer(x0 as uint32); to_integer(x0 as uint32) <= 255; };
  have to_integer((x0 as uint32 * 4u32)) <= 1020 by close() using { to_integer((x0 as uint32 * 4u32)) == to_integer(x0 as uint32) * to_integer(4u32); 0 <= to_integer(x0 as uint32); to_integer(x0 as uint32) <= 255; };
@@ -77,7 +77,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((4u32 + (x0 as uint32 * 4u32))) == (4 + (to_integer(x0 as int32) * 4)) by {
   rewrite(to_integer((4u32 + (x0 as uint32 * 4u32))), to_integer(4u32) + to_integer((x0 as uint32 * 4u32)));
   rewrite(to_integer((x0 as uint32 * 4u32)), (to_integer(x0 as int32) * 4));
-  normalize();
+  close();
  }
  have 4 <= to_integer((4u32 + (x0 as uint32 * 4u32))) by close() using { to_integer((4u32 + (x0 as uint32 * 4u32))) == to_integer(4u32) + to_integer((x0 as uint32 * 4u32)); 0 <= to_integer((x0 as uint32 * 4u32)); to_integer((x0 as uint32 * 4u32)) <= 1020; };
  have to_integer((4u32 + (x0 as uint32 * 4u32))) <= 1024 by close() using { to_integer((4u32 + (x0 as uint32 * 4u32))) == to_integer(4u32) + to_integer((x0 as uint32 * 4u32)); 0 <= to_integer((x0 as uint32 * 4u32)); to_integer((x0 as uint32 * 4u32)) <= 1020; };
@@ -88,7 +88,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((x1 as uint32 * 4u32)) == (to_integer(x1 as int32) * 4) by {
   rewrite(to_integer((x1 as uint32 * 4u32)), to_integer(x1 as uint32) * to_integer(4u32));
   rewrite(to_integer(x1 as uint32), to_integer(x1 as int32));
-  normalize();
+  close();
  }
  have 0 <= to_integer((x1 as uint32 * 4u32)) by close() using { to_integer((x1 as uint32 * 4u32)) == to_integer(x1 as uint32) * to_integer(4u32); 0 <= to_integer(x1 as uint32); to_integer(x1 as uint32) <= 255; };
  have to_integer((x1 as uint32 * 4u32)) <= 1020 by close() using { to_integer((x1 as uint32 * 4u32)) == to_integer(x1 as uint32) * to_integer(4u32); 0 <= to_integer(x1 as uint32); to_integer(x1 as uint32) <= 255; };
@@ -97,7 +97,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((65521u32 - x1 as uint32)) == (65521 - to_integer(x1 as int32)) by {
   rewrite(to_integer((65521u32 - x1 as uint32)), to_integer(65521u32) - to_integer(x1 as uint32));
   rewrite(to_integer(x1 as uint32), to_integer(x1 as int32));
-  normalize();
+  close();
  }
  have 65266 <= to_integer((65521u32 - x1 as uint32)) by close() using { to_integer((65521u32 - x1 as uint32)) == to_integer(65521u32) - to_integer(x1 as uint32); 0 <= to_integer(x1 as uint32); to_integer(x1 as uint32) <= 255; };
  have to_integer((65521u32 - x1 as uint32)) <= 65521 by close() using { to_integer((65521u32 - x1 as uint32)) == to_integer(65521u32) - to_integer(x1 as uint32); 0 <= to_integer(x1 as uint32); to_integer(x1 as uint32) <= 255; };
@@ -107,7 +107,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))), to_integer((x1 as uint32 * 4u32)) + to_integer((65521u32 - x1 as uint32)));
   rewrite(to_integer((x1 as uint32 * 4u32)), (to_integer(x1 as int32) * 4));
   rewrite(to_integer((65521u32 - x1 as uint32)), (65521 - to_integer(x1 as int32)));
-  normalize();
+  close();
  }
  have 65266 <= to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) by close() using { to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) == to_integer((x1 as uint32 * 4u32)) + to_integer((65521u32 - x1 as uint32)); 0 <= to_integer((x1 as uint32 * 4u32)); to_integer((x1 as uint32 * 4u32)) <= 1020; 65266 <= to_integer((65521u32 - x1 as uint32)); to_integer((65521u32 - x1 as uint32)) <= 65521; };
  have to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) <= 66541 by close() using { to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) == to_integer((x1 as uint32 * 4u32)) + to_integer((65521u32 - x1 as uint32)); 0 <= to_integer((x1 as uint32 * 4u32)); to_integer((x1 as uint32 * 4u32)) <= 1020; 65266 <= to_integer((65521u32 - x1 as uint32)); to_integer((65521u32 - x1 as uint32)) <= 65521; };
@@ -117,7 +117,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))), to_integer((4u32 + (x0 as uint32 * 4u32))) + to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))));
   rewrite(to_integer((4u32 + (x0 as uint32 * 4u32))), (4 + (to_integer(x0 as int32) * 4)));
   rewrite(to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))), ((to_integer(x1 as int32) * 4) + (65521 - to_integer(x1 as int32))));
-  normalize();
+  close();
  }
  have 65270 <= to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) by close() using { to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) == to_integer((4u32 + (x0 as uint32 * 4u32))) + to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))); 4 <= to_integer((4u32 + (x0 as uint32 * 4u32))); to_integer((4u32 + (x0 as uint32 * 4u32))) <= 1024; 65266 <= to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))); to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) <= 66541; };
  have to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) <= 67565 by close() using { to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) == to_integer((4u32 + (x0 as uint32 * 4u32))) + to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))); 4 <= to_integer((4u32 + (x0 as uint32 * 4u32))); to_integer((4u32 + (x0 as uint32 * 4u32))) <= 1024; 65266 <= to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))); to_integer(((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) <= 66541; };
@@ -128,7 +128,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((x2 as uint32 * 4u32)) == (to_integer(x2 as int32) * 4) by {
   rewrite(to_integer((x2 as uint32 * 4u32)), to_integer(x2 as uint32) * to_integer(4u32));
   rewrite(to_integer(x2 as uint32), to_integer(x2 as int32));
-  normalize();
+  close();
  }
  have 0 <= to_integer((x2 as uint32 * 4u32)) by close() using { to_integer((x2 as uint32 * 4u32)) == to_integer(x2 as uint32) * to_integer(4u32); 0 <= to_integer(x2 as uint32); to_integer(x2 as uint32) <= 255; };
  have to_integer((x2 as uint32 * 4u32)) <= 1020 by close() using { to_integer((x2 as uint32 * 4u32)) == to_integer(x2 as uint32) * to_integer(4u32); 0 <= to_integer(x2 as uint32); to_integer(x2 as uint32) <= 255; };
@@ -137,7 +137,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((65521u32 - x2 as uint32)) == (65521 - to_integer(x2 as int32)) by {
   rewrite(to_integer((65521u32 - x2 as uint32)), to_integer(65521u32) - to_integer(x2 as uint32));
   rewrite(to_integer(x2 as uint32), to_integer(x2 as int32));
-  normalize();
+  close();
  }
  have 65266 <= to_integer((65521u32 - x2 as uint32)) by close() using { to_integer((65521u32 - x2 as uint32)) == to_integer(65521u32) - to_integer(x2 as uint32); 0 <= to_integer(x2 as uint32); to_integer(x2 as uint32) <= 255; };
  have to_integer((65521u32 - x2 as uint32)) <= 65521 by close() using { to_integer((65521u32 - x2 as uint32)) == to_integer(65521u32) - to_integer(x2 as uint32); 0 <= to_integer(x2 as uint32); to_integer(x2 as uint32) <= 255; };
@@ -148,7 +148,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer(((65521u32 - x2 as uint32) * 2u32)) == ((65521 - to_integer(x2 as int32)) * 2) by {
   rewrite(to_integer(((65521u32 - x2 as uint32) * 2u32)), to_integer((65521u32 - x2 as uint32)) * to_integer(2u32));
   rewrite(to_integer((65521u32 - x2 as uint32)), (65521 - to_integer(x2 as int32)));
-  normalize();
+  close();
  }
  have 130532 <= to_integer(((65521u32 - x2 as uint32) * 2u32)) by close() using { to_integer(((65521u32 - x2 as uint32) * 2u32)) == to_integer((65521u32 - x2 as uint32)) * to_integer(2u32); 65266 <= to_integer((65521u32 - x2 as uint32)); to_integer((65521u32 - x2 as uint32)) <= 65521; };
  have to_integer(((65521u32 - x2 as uint32) * 2u32)) <= 131042 by close() using { to_integer(((65521u32 - x2 as uint32) * 2u32)) == to_integer((65521u32 - x2 as uint32)) * to_integer(2u32); 65266 <= to_integer((65521u32 - x2 as uint32)); to_integer((65521u32 - x2 as uint32)) <= 65521; };
@@ -158,7 +158,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))), to_integer((x2 as uint32 * 4u32)) + to_integer(((65521u32 - x2 as uint32) * 2u32)));
   rewrite(to_integer((x2 as uint32 * 4u32)), (to_integer(x2 as int32) * 4));
   rewrite(to_integer(((65521u32 - x2 as uint32) * 2u32)), ((65521 - to_integer(x2 as int32)) * 2));
-  normalize();
+  close();
  }
  have 130532 <= to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) by close() using { to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) == to_integer((x2 as uint32 * 4u32)) + to_integer(((65521u32 - x2 as uint32) * 2u32)); 0 <= to_integer((x2 as uint32 * 4u32)); to_integer((x2 as uint32 * 4u32)) <= 1020; 130532 <= to_integer(((65521u32 - x2 as uint32) * 2u32)); to_integer(((65521u32 - x2 as uint32) * 2u32)) <= 131042; };
  have to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) <= 132062 by close() using { to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) == to_integer((x2 as uint32 * 4u32)) + to_integer(((65521u32 - x2 as uint32) * 2u32)); 0 <= to_integer((x2 as uint32 * 4u32)); to_integer((x2 as uint32 * 4u32)) <= 1020; 130532 <= to_integer(((65521u32 - x2 as uint32) * 2u32)); to_integer(((65521u32 - x2 as uint32) * 2u32)) <= 131042; };
@@ -168,7 +168,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))), to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) + to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))));
   rewrite(to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))), ((4 + (to_integer(x0 as int32) * 4)) + ((to_integer(x1 as int32) * 4) + (65521 - to_integer(x1 as int32)))));
   rewrite(to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))), ((to_integer(x2 as int32) * 4) + ((65521 - to_integer(x2 as int32)) * 2)));
-  normalize();
+  close();
  }
  have 195802 <= to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) by close() using { to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) == to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) + to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))); 65270 <= to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))); to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) <= 67565; 130532 <= to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))); to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) <= 132062; };
  have to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) <= 199627 by close() using { to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) == to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) + to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))); 65270 <= to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))); to_integer(((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32)))) <= 67565; 130532 <= to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))); to_integer(((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) <= 132062; };
@@ -180,7 +180,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((x3 as uint32 * 4u32)) == (to_integer(x3 as int32) * 4) by {
   rewrite(to_integer((x3 as uint32 * 4u32)), to_integer(x3 as uint32) * to_integer(4u32));
   rewrite(to_integer(x3 as uint32), to_integer(x3 as int32));
-  normalize();
+  close();
  }
  have 0 <= to_integer((x3 as uint32 * 4u32)) by close() using { to_integer((x3 as uint32 * 4u32)) == to_integer(x3 as uint32) * to_integer(4u32); 0 <= to_integer(x3 as uint32); to_integer(x3 as uint32) <= 255; };
  have to_integer((x3 as uint32 * 4u32)) <= 1020 by close() using { to_integer((x3 as uint32 * 4u32)) == to_integer(x3 as uint32) * to_integer(4u32); 0 <= to_integer(x3 as uint32); to_integer(x3 as uint32) <= 255; };
@@ -190,7 +190,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer((65521u32 - x3 as uint32)) == (65521 - to_integer(x3 as int32)) by {
   rewrite(to_integer((65521u32 - x3 as uint32)), to_integer(65521u32) - to_integer(x3 as uint32));
   rewrite(to_integer(x3 as uint32), to_integer(x3 as int32));
-  normalize();
+  close();
  }
  have 65266 <= to_integer((65521u32 - x3 as uint32)) by close() using { to_integer((65521u32 - x3 as uint32)) == to_integer(65521u32) - to_integer(x3 as uint32); 0 <= to_integer(x3 as uint32); to_integer(x3 as uint32) <= 255; };
  have to_integer((65521u32 - x3 as uint32)) <= 65521 by close() using { to_integer((65521u32 - x3 as uint32)) == to_integer(65521u32) - to_integer(x3 as uint32); 0 <= to_integer(x3 as uint32); to_integer(x3 as uint32) <= 255; };
@@ -202,7 +202,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  have to_integer(((65521u32 - x3 as uint32) * 3u32)) == ((65521 - to_integer(x3 as int32)) * 3) by {
   rewrite(to_integer(((65521u32 - x3 as uint32) * 3u32)), to_integer((65521u32 - x3 as uint32)) * to_integer(3u32));
   rewrite(to_integer((65521u32 - x3 as uint32)), (65521 - to_integer(x3 as int32)));
-  normalize();
+  close();
  }
  have 195798 <= to_integer(((65521u32 - x3 as uint32) * 3u32)) by close() using { to_integer(((65521u32 - x3 as uint32) * 3u32)) == to_integer((65521u32 - x3 as uint32)) * to_integer(3u32); 65266 <= to_integer((65521u32 - x3 as uint32)); to_integer((65521u32 - x3 as uint32)) <= 65521; };
  have to_integer(((65521u32 - x3 as uint32) * 3u32)) <= 196563 by close() using { to_integer(((65521u32 - x3 as uint32) * 3u32)) == to_integer((65521u32 - x3 as uint32)) * to_integer(3u32); 65266 <= to_integer((65521u32 - x3 as uint32)); to_integer((65521u32 - x3 as uint32)) <= 65521; };
@@ -212,7 +212,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))), to_integer((x3 as uint32 * 4u32)) + to_integer(((65521u32 - x3 as uint32) * 3u32)));
   rewrite(to_integer((x3 as uint32 * 4u32)), (to_integer(x3 as int32) * 4));
   rewrite(to_integer(((65521u32 - x3 as uint32) * 3u32)), ((65521 - to_integer(x3 as int32)) * 3));
-  normalize();
+  close();
  }
  have 195798 <= to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) by close() using { to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) == to_integer((x3 as uint32 * 4u32)) + to_integer(((65521u32 - x3 as uint32) * 3u32)); 0 <= to_integer((x3 as uint32 * 4u32)); to_integer((x3 as uint32 * 4u32)) <= 1020; 195798 <= to_integer(((65521u32 - x3 as uint32) * 3u32)); to_integer(((65521u32 - x3 as uint32) * 3u32)) <= 196563; };
  have to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) <= 197583 by close() using { to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) == to_integer((x3 as uint32 * 4u32)) + to_integer(((65521u32 - x3 as uint32) * 3u32)); 0 <= to_integer((x3 as uint32 * 4u32)); to_integer((x3 as uint32 * 4u32)) <= 1020; 195798 <= to_integer(((65521u32 - x3 as uint32) * 3u32)); to_integer(((65521u32 - x3 as uint32) * 3u32)) <= 196563; };
@@ -222,17 +222,17 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))), to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) + to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))));
   rewrite(to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))), (((4 + (to_integer(x0 as int32) * 4)) + ((to_integer(x1 as int32) * 4) + (65521 - to_integer(x1 as int32)))) + ((to_integer(x2 as int32) * 4) + ((65521 - to_integer(x2 as int32)) * 2))));
   rewrite(to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))), ((to_integer(x3 as int32) * 4) + ((65521 - to_integer(x3 as int32)) * 3)));
-  normalize();
+  close();
  }
  have 391600 <= to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) by close() using { to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) == to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) + to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))); 195802 <= to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))); to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) <= 199627; 195798 <= to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))); to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) <= 197583; };
  have to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) <= 397210 by close() using { to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) == to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) + to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))); 195802 <= to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))); to_integer((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32)))) <= 199627; 195798 <= to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))); to_integer(((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) <= 197583; };
  have to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) == 1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32) by close() using { to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)) == ((((1 + to_integer(x0 as int32)) + to_integer(x1 as int32)) + to_integer(x2 as int32)) + to_integer(x3 as int32)); };
- have to_integer(65521u32) != 0 by normalize();
+ have to_integer(65521u32) != 0 by close();
  apply(integer::uint32_remainder_to_integer((((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), 65521u32));
  have to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32) % 65521u32) == truncating_remainder(1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32), 65521) by {
   rewrite(to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32) % 65521u32), truncating_remainder(to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), 65521));
   rewrite(to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32)), 1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32));
-  normalize();
+  close();
  }
  have to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) == 4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32) + 393126 by close() using { to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))) == ((((4 + (to_integer(x0 as int32) * 4)) + ((to_integer(x1 as int32) * 4) + (65521 - to_integer(x1 as int32)))) + ((to_integer(x2 as int32) * 4) + ((65521 - to_integer(x2 as int32)) * 2))) + ((to_integer(x3 as int32) * 4) + ((65521 - to_integer(x3 as int32)) * 3))); };
  apply(integer::uint32_remainder_to_integer((((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))), 65521u32));
@@ -250,7 +250,7 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) % 65521u32), truncating_remainder(to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))), 65521));
   rewrite(to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32)))), 4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32) + 393126);
   rewrite(truncating_remainder(4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32) + 393126, 65521), truncating_remainder(4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32), 65521));
-  normalize();
+  close();
  }
  close();
  }

@@ -5,9 +5,9 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
-fn anchor(range: &MemoryRange) -> Option<Address> {
+fn anchor(range: &MemoryRange) -> Option<OldAddress> {
     let offset = crate::kernel::assumptions::memory_range_anchor(range)?;
-    Some(Address {
+    Some(OldAddress {
         base: range.base().base.clone(),
         offset,
     })
@@ -52,9 +52,9 @@ impl EqualityGraph {
         // Indexed condition applications already propagate operand unions and
         // retain exact source payloads. No independent alias graph is needed.
         for (a, b) in [(&anchors[0], &anchors[1]), (&anchors[1], &anchors[0])] {
-            let condition = ConditionTerm::uint64_equal(
-                MachineTerm::integer_address(a.clone()),
-                MachineTerm::integer_address(b.clone()),
+            let condition = OldConditionTerm::uint64_equal(
+                OldMachineTerm::integer_address(a.clone()),
+                OldMachineTerm::integer_address(b.clone()),
             );
             // Equal anchors and literal addresses can simplify to a constant.
             // They need no indexed application (and grant no new conclusion).
@@ -76,11 +76,11 @@ impl EqualityGraph {
     /// inequality that could discard the numeric separation conclusion.
     pub(in crate::kernel) fn address_separation_source(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
     ) -> Option<Proposition> {
         let (a, b) = match condition {
-            ConditionTerm::AddressEqual(a, b) => (a.as_ref(), b.as_ref()),
-            ConditionTerm::Compare {
+            OldConditionTerm::AddressEqual(a, b) => (a.as_ref(), b.as_ref()),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: a,
@@ -88,9 +88,9 @@ impl EqualityGraph {
             } => (a.address_pointer()?, b.address_pointer()?),
             _ => return None,
         };
-        let numeric = ConditionTerm::uint64_equal(
-            MachineTerm::integer_address(a.clone()),
-            MachineTerm::integer_address(b.clone()),
+        let numeric = OldConditionTerm::uint64_equal(
+            OldMachineTerm::integer_address(a.clone()),
+            OldMachineTerm::integer_address(b.clone()),
         );
         let mut state = self.state.lock().expect("equality graph");
         if state.separation_sources.is_empty() {

@@ -11,11 +11,11 @@ fn bound_variable_collection_keeps_shared_fold_endpoints_and_scopes() {
             let accumulator = Variable(1002001);
             let converted = Variable(1002002);
             let free_body = Variable(1002003);
-            let native = MachineTerm::Binary {
+            let native = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
-                left: Box::new(MachineTerm::Variable(item)),
-                right: Box::new(MachineTerm::IntegerToMachine {
+                left: Box::new(OldMachineTerm::Variable(item)),
+                right: Box::new(OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::Variable(converted).into(),
                     destination: format,
                 }),
@@ -31,8 +31,8 @@ fn bound_variable_collection_keeps_shared_fold_endpoints_and_scopes() {
                 );
             }
             let zero = match format {
-                MachineIntegerType::Int32 => MachineTerm::constant(0),
-                _ => MachineTerm::uint64_constant(0),
+                MachineIntegerType::Int32 => OldMachineTerm::constant(0),
+                _ => OldMachineTerm::uint64_constant(0),
             };
             let start = SharedIntegerRangeEndpoint::intern(zero);
             // Endpoint storage retains its legacy word observation type; the
@@ -97,7 +97,7 @@ fn fold_step_substitution_retains_shared_item_replacements() {
             let body = IntegerTerm::add(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     format,
-                    MachineTerm::Variable(item),
+                    OldMachineTerm::Variable(item),
                 )),
                 IntegerTerm::Variable(accumulator),
             );

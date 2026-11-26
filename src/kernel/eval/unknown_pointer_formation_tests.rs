@@ -1,7 +1,10 @@
 use super::*;
 
 fn pointer(id: u64) -> OldPointer {
-    OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    OldPointer::new(
+        OldAddress::symbolic(Variable(id)),
+        ProgramType::Int32Pointer,
+    )
 }
 
 fn view(value: &OldPointer, start: u32, end: u32) -> ResourceFact {
@@ -29,7 +32,7 @@ fn permits(
 
 fn permits_at(
     value: &OldPointer,
-    position: &Address,
+    position: &OldAddress,
     facts: &PureFactContext,
     resources: &ResourceContext,
 ) -> bool {
@@ -58,12 +61,12 @@ fn formation_requires_the_original_domain_and_includes_one_past() {
     assert!(permits(&p, 0, &root, &ResourceContext::new()));
     assert!(!permits(&p, 4, &root, &ResourceContext::new()));
     let numeric = root.clone().assume_condition(
-        ConditionTerm::address_equal(p.address().clone(), q.address().clone()),
+        OldConditionTerm::address_equal(p.address().clone(), q.address().clone()),
         true,
     );
     assert!(!permits(&p, 4, &numeric, &resources));
     let equality = Proposition::condition_is(
-        ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
+        OldConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
     let full = numeric.clone().assume_proposition(equality.clone());
@@ -106,14 +109,14 @@ fn member_coverage_does_not_follow_numeric_aliases() {
         ))
         .unwrap();
     let aliased = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(p.address().clone(), q.address().clone()),
+        OldConditionTerm::address_equal(p.address().clone(), q.address().clone()),
         true,
     );
     let numeric = aliased.clone().assume_proposition(coverage);
     let empty = ResourceContext::new();
     assert!(!permits(&p, 8, &numeric, &empty));
     let equality = Proposition::condition_is(
-        ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
+        OldConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
     let full = numeric.clone().assume_proposition(equality.clone());
@@ -157,7 +160,7 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
         .with_local("data", ProgramValue::Pointer(p.clone()))
         .with_local(
             "length",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(2)),
         );
     let function = program_function(
         ProgramType::Void,
@@ -174,8 +177,8 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
         &[
             ProgramExpression::Value(ProgramValue::Pointer(p.clone())),
             ProgramExpression::Value(
-                ProgramValue::UInt64(MachineTerm::uint64_constant(2))
-                    .complete_word(Address::symbolic(Variable(930_451))),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(2))
+                    .complete_word(OldAddress::symbolic(Variable(930_451))),
             ),
         ],
     )
@@ -252,15 +255,15 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     let start = 1u64 << 32;
     let range = MemoryRange::from_pointer_value_wide(
         &p,
-        MachineTerm::uint64_constant(start),
-        MachineTerm::uint64_constant(start + 2),
+        OldMachineTerm::uint64_constant(start),
+        OldMachineTerm::uint64_constant(start + 2),
         4,
     );
     let coverage = p.opaque_coverage_fact(&range).unwrap();
     let context = PureFactContext::new().assume_proposition(coverage.clone());
     let position = |index| {
         p.address()
-            .offset_by_typed_elements(MachineTerm::uint64_constant(index), 4, true, true)
+            .offset_by_typed_elements(OldMachineTerm::uint64_constant(index), 4, true, true)
     };
     assert!(context.opaque_pointer_covers(&p, &position(start + 1), 4));
     assert!(context.opaque_pointer_covers(&p, &position(start + 2), 0));
@@ -273,8 +276,8 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     assert!(!PureFactContext::new().opaque_pointer_covers(&p, &position(start + 1), 0));
     let record = MemoryRange::from_pointer_value_wide(
         &p,
-        MachineTerm::uint64_constant(0),
-        MachineTerm::uint64_constant(2),
+        OldMachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(2),
         16,
     );
     let context =
@@ -285,33 +288,36 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
 
 fn split_formation_fixture() -> (
     OldPointer,
-    Address,
+    OldAddress,
     PureFactContext,
     ResourceContext,
     ResourceFact,
 ) {
     let p = OldPointer::new(
-        Address {
+        OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(930_999)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4),
         },
         ProgramType::Int32Pointer,
     );
-    let from = MachineTerm::Variable(Variable(930_601));
-    let to = MachineTerm::Variable(Variable(930_602));
-    let i = MachineTerm::Variable(Variable(930_603));
+    let from = OldMachineTerm::Variable(Variable(930_601));
+    let to = OldMachineTerm::Variable(Variable(930_602));
+    let i = OldMachineTerm::Variable(Variable(930_603));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_than(0u32.into(), from.clone()),
+            OldConditionTerm::signed_less_than(0u32.into(), from.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(from.clone(), i.clone()),
+            OldConditionTerm::signed_less_equal(from.clone(), i.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(i.clone(), to.clone()), true)
         .assume_condition(
-            ConditionTerm::signed_less_equal(to.clone(), 8u32.into()),
+            OldConditionTerm::signed_less_than(i.clone(), to.clone()),
+            true,
+        )
+        .assume_condition(
+            OldConditionTerm::signed_less_equal(to.clone(), 8u32.into()),
             true,
         );
     let position = p.address().offset_by_elements(i, 4);
@@ -364,19 +370,19 @@ fn formation_selects_the_containing_symbolic_piece_beside_prefix_and_suffix_view
 fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
     for (wide, unsigned) in [(false, false), (true, false), (true, true)] {
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = MachineTerm::Variable(Variable(933_000));
-        let alias = MachineTerm::Variable(Variable(933_001));
+        let offset = OldMachineTerm::Variable(Variable(933_000));
+        let alias = OldMachineTerm::Variable(Variable(933_001));
         let constant = |n| match (wide, unsigned) {
-            (true, true) => MachineTerm::uint64_constant(n),
-            (true, false) => MachineTerm::int64_constant(n as i64),
-            (false, _) => MachineTerm::constant(n as u32),
+            (true, true) => OldMachineTerm::uint64_constant(n),
+            (true, false) => OldMachineTerm::int64_constant(n as i64),
+            (false, _) => OldMachineTerm::constant(n as u32),
         };
         let equal = |a, b| {
             Proposition::condition_is(
                 if wide {
-                    ConditionTerm::int64_equal(a, b)
+                    OldConditionTerm::int64_equal(a, b)
                 } else {
-                    ConditionTerm::equal(a, b)
+                    OldConditionTerm::equal(a, b)
                 },
                 true,
             )
@@ -401,7 +407,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         for (facts, expected_zero) in cases {
             let result = pointer_offset_by_elements_paths(
                 &ExecutionState::new(),
-                OldPointer::new(Address::null(), ProgramType::Int32Pointer),
+                OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer),
                 offset.clone(),
                 4,
                 unsigned,
@@ -417,7 +423,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
                 assert!(matches!(&result[0].outcome,
                     ExpressionOutcome::Value(ProgramValue::Pointer(value))
                         if value.address().is_in_null_block()
-                            && value.address() != &Address::null()));
+                            && value.address() != &OldAddress::null()));
             } else {
                 assert!(matches!(
                     &result[0].outcome,
@@ -432,17 +438,17 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
 fn a_registered_zero_index_permits_null_pointer_formation() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let address = Address::symbolic(Variable(933_100));
+    let address = OldAddress::symbolic(Variable(933_100));
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(MachineTerm::Variable(load), 0u32.into()),
+        OldConditionTerm::equal(OldMachineTerm::Variable(load), 0u32.into()),
         true,
     );
     let result = pointer_offset_by_elements_paths(
         &ExecutionState::new(),
-        OldPointer::new(Address::null(), ProgramType::Int32Pointer),
-        MachineTerm::read_named(
+        OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer),
+        OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),
             LoadKind::Int32,

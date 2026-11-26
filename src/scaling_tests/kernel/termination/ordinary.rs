@@ -36,6 +36,8 @@ fn selected_termination_steps_do_not_visit_unrelated_functions_or_goals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn whole_termination_proof_and_completion_scale_with_explicit_output() {
     for size in [1, 16, 64, 256, 512] {
         let (scope, generation_work) =

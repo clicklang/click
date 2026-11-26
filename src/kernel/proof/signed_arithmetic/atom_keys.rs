@@ -8,7 +8,7 @@ use SignedArithmeticAtomToken as Token;
 use std::collections::HashMap;
 
 fn constant(bits: u32) -> KernelTerm {
-    KernelTermImport::default().machine(T::Int32, &MachineTerm::constant(bits))
+    KernelTermImport::default().machine(T::Int32, &OldMachineTerm::constant(bits))
 }
 fn variable(variable: Variable) -> KernelTerm {
     if crate::kernel::is_load_variable(&variable)
@@ -73,9 +73,8 @@ pub(super) fn from_tokens(tokens: Vec<Token>) -> Option<SignedArithmeticAtom> {
             Token::Variable(value) => variable(value),
             Token::Narrow64Variable(value) => low_word(variable(value)),
             Token::Narrow64Expression => low_word(pending.pop()?),
-            Token::NativeConstant(bits) => {
-                KernelTermImport::default().machine(T::UInt64, &MachineTerm::uint64_constant(bits))
-            }
+            Token::NativeConstant(bits) => KernelTermImport::default()
+                .machine(T::UInt64, &OldMachineTerm::uint64_constant(bits)),
             Token::Binary(BitvectorBinaryOp::Machine(format, operator))
             | Token::NativeBinary(BitvectorBinaryOp::Machine(format, operator)) => {
                 let left = pending.pop()?;
@@ -278,7 +277,7 @@ pub(super) fn from_shared(root: &KernelTerm) -> Option<SignedArithmeticAtom> {
                 Head::Constant(v) => (constant(v), false, true),
                 Head::NativeConstant(v) => (
                     KernelTermImport::default()
-                        .machine(T::UInt64, &MachineTerm::uint64_constant(v)),
+                        .machine(T::UInt64, &OldMachineTerm::uint64_constant(v)),
                     false,
                     true,
                 ),
@@ -364,7 +363,7 @@ pub(super) fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
                     };
                     KernelTerm::retained_machine_operand(
                         MachineIntegerType::from_program_type(*ty)?,
-                        crate::kernel::MachineOperandView::Legacy(&canonical),
+                        crate::kernel::MachineOperandView::Old(&canonical),
                     )
                 }
                 KernelTermNode::MachineObservationInput { .. }
@@ -429,8 +428,8 @@ mod tests {
     #[test]
     fn shared_atom_keys_preserve_native_cast_width_and_opaque_rules() {
         let _session = VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(1006400));
-        let cast = |source, destination, value| MachineTerm::Cast {
+        let x = OldMachineTerm::Variable(Variable(1006400));
+        let cast = |source, destination, value| OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: source,
             to: destination,
@@ -438,7 +437,7 @@ mod tests {
         };
         let mut terms = vec![
             (T::Int32, x.clone()),
-            (T::UInt32, MachineTerm::uint32_constant(7)),
+            (T::UInt32, OldMachineTerm::uint32_constant(7)),
         ];
         for source in [
             T::Int8,
@@ -467,26 +466,26 @@ mod tests {
                 MachineBinaryOp::ShiftLeft,
                 MachineBinaryOp::ShiftRight,
             ] {
-                let node = MachineTerm::Binary {
+                let node = OldMachineTerm::Binary {
                     format,
                     op,
                     left: Box::new(x.clone()),
                     right: Box::new(if format == T::UInt64 {
-                        MachineTerm::uint64_constant(3)
+                        OldMachineTerm::uint64_constant(3)
                     } else {
-                        MachineTerm::constant(3)
+                        OldMachineTerm::constant(3)
                     }),
                 };
                 terms.push((format, node.clone()));
                 terms.push((
                     T::UInt32,
-                    MachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(node)),
+                    OldMachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(node)),
                 ));
             }
         }
         terms.push((
             T::UInt32,
-            MachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(x)),
+            OldMachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(x)),
         ));
         for (format, native) in terms {
             let shared = KernelTermImport::default()
@@ -501,7 +500,7 @@ mod tests {
                 Some(crate::kernel::eval::canonical_term(&native))
             } else if format.format().bits() < 32 {
                 Some(crate::kernel::eval::canonical_term(
-                    &MachineTerm::machine_integer_cast(format, T::Int32, native.clone()),
+                    &OldMachineTerm::machine_integer_cast(format, T::Int32, native.clone()),
                 ))
             } else {
                 None
@@ -520,9 +519,9 @@ mod tests {
     #[test]
     fn native_pure_application_keys_retain_argument_order() {
         let _session = VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(1006400));
-        let y = MachineTerm::Variable(Variable(1006401));
-        let call = |arguments| MachineTerm::PureFunctionApplication {
+        let x = OldMachineTerm::Variable(Variable(1006400));
+        let y = OldMachineTerm::Variable(Variable(1006401));
+        let call = |arguments| OldMachineTerm::PureFunctionApplication {
             name: "f".into(),
             arguments,
         };

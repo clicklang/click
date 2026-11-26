@@ -5,9 +5,9 @@ fn subrange_law_does_not_enumerate_the_interval() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         let constant = |n| {
             if format == MachineIntegerType::UInt64 {
-                MachineTerm::uint64_constant(n)
+                OldMachineTerm::uint64_constant(n)
             } else {
-                MachineTerm::constant(n as u32)
+                OldMachineTerm::constant(n as u32)
             }
         };
         let costs = [4u64, 64, 4096, 1_000_000].map(|length| {
@@ -15,7 +15,7 @@ fn subrange_law_does_not_enumerate_the_interval() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_subrange(
                     OldPointer::new(
-                        Address::symbolic(Variable(8_390_000)),
+                        OldAddress::symbolic(Variable(8_390_000)),
                         ProgramType::Int64Pointer,
                     ),
                     8,
@@ -47,11 +47,11 @@ fn elements_laws_do_not_walk_the_index_distance() {
             let costs = [4i32, 64, 4096, i32::MAX].map(|distance| {
                 let _session = crate::kernel::VerificationSession::enter();
                 let term = |n: i32| match format {
-                    MachineIntegerType::Int32 => MachineTerm::constant(n as u32),
-                    _ => MachineTerm::int64_constant(i64::from(n)),
+                    MachineIntegerType::Int32 => OldMachineTerm::constant(n as u32),
+                    _ => OldMachineTerm::int64_constant(i64::from(n)),
                 };
                 let base = OldPointer::new(
-                    Address::symbolic(Variable(8_390_001)),
+                    OldAddress::symbolic(Variable(8_390_001)),
                     ProgramType::Int64Pointer,
                 );
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -111,6 +111,8 @@ fn conjunction_construction_and_index_keys_do_not_rewalk_prefixes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
     fn cost(n: usize, right_nested: bool, ambient: usize, memory: bool) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
@@ -118,9 +120,9 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
         for i in 0..n {
             let leaf = SpecResource::Value(if memory {
                 Resource::Memory(MemoryRange::new_with_element_width(
-                    Address::symbolic(Variable(8_391_000)),
+                    OldAddress::symbolic(Variable(8_391_000)),
                     0u32.into(),
-                    MachineTerm::Variable(Variable(8_392_000 + i as u64)),
+                    OldMachineTerm::Variable(Variable(8_392_000 + i as u64)),
                     4,
                 ))
             } else {
@@ -179,7 +181,7 @@ fn viewable_restrict_does_not_walk_compositions_or_enumerate_memory() {
         }
         let memory = SymbolicMemory::new();
         let range = Resource::Memory(MemoryRange::new_with_element_width(
-            Address::symbolic(Variable(8_390_100)),
+            OldAddress::symbolic(Variable(8_390_100)),
             0u32.into(),
             size.into(),
             4,
@@ -199,9 +201,9 @@ fn element_containment_does_not_enumerate_its_interval() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         let constant = |n| {
             if format == MachineIntegerType::UInt64 {
-                MachineTerm::uint64_constant(n)
+                OldMachineTerm::uint64_constant(n)
             } else {
-                MachineTerm::constant(n as u32)
+                OldMachineTerm::constant(n as u32)
             }
         };
         let costs = [4u64, 64, 4096, 1_000_000].map(|length| {
@@ -209,7 +211,7 @@ fn element_containment_does_not_enumerate_its_interval() {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_contains_element(
                     OldPointer::new(
-                        Address::symbolic(Variable(8_390_002)),
+                        OldAddress::symbolic(Variable(8_390_002)),
                         ProgramType::Int64Pointer,
                     ),
                     8,
@@ -234,9 +236,9 @@ fn rebase_law_does_not_enumerate_its_interval() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         let constant = |n| {
             if format == MachineIntegerType::UInt64 {
-                MachineTerm::uint64_constant(n)
+                OldMachineTerm::uint64_constant(n)
             } else {
-                MachineTerm::constant(n as u32)
+                OldMachineTerm::constant(n as u32)
             }
         };
         let costs = [4u64, 64, 4096, 1_000_000].map(|length| {
@@ -244,7 +246,7 @@ fn rebase_law_does_not_enumerate_its_interval() {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::prove_separation_rebase(
                     OldPointer::new(
-                        Address::symbolic(Variable(8_390_003)),
+                        OldAddress::symbolic(Variable(8_390_003)),
                         ProgramType::Int64Pointer,
                     ),
                     8,

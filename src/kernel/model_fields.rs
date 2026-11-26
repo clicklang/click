@@ -22,7 +22,7 @@
 //! name. No kernel rule or premise depends on it.
 
 use crate::kernel::primitives::{
-    AlgebraicTerm, AlgebraicTermNode, InstanceId, IntegerTerm, MachineTerm, Variable,
+    AlgebraicTerm, AlgebraicTermNode, InstanceId, IntegerTerm, OldMachineTerm, Variable,
 };
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ pub(crate) fn algebraic_value_variable<'a>(
         }) => Some(*variable),
         crate::kernel::ResourceFieldValue::Program(value) => {
             match crate::kernel::spec::program_value_bitvector_term(value) {
-                Some(MachineTerm::Variable(variable)) => Some(variable),
+                Some(OldMachineTerm::Variable(variable)) => Some(variable),
                 _ => None,
             }
         }
@@ -248,7 +248,7 @@ pub(crate) fn entry_model_field_surface(variable: Variable) -> Option<String> {
 #[derive(Clone, Debug)]
 pub(crate) struct PopulationEntryCount {
     pub(crate) family: Arc<str>,
-    pub(crate) anchor: crate::kernel::Address,
+    pub(crate) anchor: crate::kernel::OldAddress,
     pub(crate) wildcards: usize,
     /// An exact member's arguments, anchor first, for the entry count of
     /// one member, `old(count(R(a, k)))`; `None` for a population's total.

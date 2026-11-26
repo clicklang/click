@@ -5,11 +5,11 @@ fn viewability_preservation_checks_only_the_selected_transition_and_facts() {
     for entry_present in [false, true] {
         let costs = [4, 16, 64, 256].map(|size| {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Address::symbolic(Variable(8_530_000));
+            let pointer = OldAddress::symbolic(Variable(8_530_000));
             let range = MemoryRange::new_wide(
                 pointer.clone(),
-                MachineTerm::uint64_constant(0),
-                MachineTerm::Variable(Variable(8_530_001)),
+                OldMachineTerm::uint64_constant(0),
+                OldMachineTerm::Variable(Variable(8_530_001)),
                 1,
             );
             let mut memory = SymbolicMemory::new();
@@ -17,7 +17,7 @@ fn viewability_preservation_checks_only_the_selected_transition_and_facts() {
             for i in 0..size {
                 // Grow the same range's history and unrelated facts together.
                 ambient.push(range.loadable_fact(&memory));
-                let other = Address::symbolic(Variable(8_531_000 + i));
+                let other = OldAddress::symbolic(Variable(8_531_000 + i));
                 ambient
                     .push(MemoryRange::new(other, 0u32.into(), 1u32.into()).loadable_fact(&memory));
                 memory = memory.store(pointer.clone(), crate::kernel::int32(i as u32));
@@ -135,7 +135,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
             let read = |point: &ProgramPoint| {
                 let bits = integer_bits(tests::observe_point(point, &address, value_type)).unwrap();
                 Box::new(if value_type == ProgramType::UInt8 {
-                    MachineTerm::machine_integer_cast(
+                    OldMachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
                         MachineIntegerType::Int32,
                         bits,
@@ -145,7 +145,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 })
             };
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: read(&after),
@@ -161,7 +161,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 // A one-byte separation must not preserve a four-byte read,
                 // even when both read types are present at the same address.
                 let wider = Proposition::condition_is(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         integer_bits(tests::observe_point(&after, &address, ProgramType::Int32))
                             .unwrap(),
                         integer_bits(tests::observe_point(&before, &address, ProgramType::Int32))
@@ -189,7 +189,7 @@ fn preservation_uses_selected_observations_without_scanning_the_registry() {
         for index in 0..unrelated {
             tests::observe(
                 &memory,
-                &Address::symbolic(Variable(8_410_000 + index)),
+                &OldAddress::symbolic(Variable(8_410_000 + index)),
                 ProgramType::Int32Pointer,
             );
         }
@@ -248,13 +248,13 @@ fn shared_branch_write_footprint_uses_only_its_arm_endpoints() {
         let mut memory = SymbolicMemory::new();
         for index in 0..history {
             memory = memory.store(
-                Address::symbolic(Variable(8_541_000 + index)),
+                OldAddress::symbolic(Variable(8_541_000 + index)),
                 crate::kernel::int32(0),
             );
         }
         let entry = ExecutionState::new().with_memory(memory);
-        let target = Address::symbolic(Variable(8_540_000));
-        let arm = |address: &Address, value| {
+        let target = OldAddress::symbolic(Variable(8_540_000));
+        let arm = |address: &OldAddress, value| {
             let exit = entry.clone().with_memory(
                 entry
                     .memory()
@@ -278,7 +278,7 @@ fn shared_branch_write_footprint_uses_only_its_arm_endpoints() {
         };
         let (left, left_effect) = arm(&target, 1);
         let (right, right_effect) = arm(&target, 2);
-        let (other, other_effect) = arm(&Address::symbolic(Variable(8_540_001)), 2);
+        let (other, other_effect) = arm(&OldAddress::symbolic(Variable(8_540_001)), 2);
         let (joined, cost) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::RegionFootprint::shared_branch_write(
                 "branch".into(),
@@ -324,7 +324,7 @@ fn simple_footprint_separation_does_not_walk_a_region_sequence() {
             true,
         ));
         let kept = Resource::Memory(MemoryRange::new_with_element_width(
-            Address::symbolic(Variable(8_390_100)),
+            OldAddress::symbolic(Variable(8_390_100)),
             0u32.into(),
             1u32.into(),
             4,
@@ -348,9 +348,9 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
         let state = ExecutionState::new();
         let range = |index: u64| {
             MemoryRange::new_with_element_width(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Variable(Variable(8_391_000 + index)),
+                    offset: OldAddressOffset::Variable(Variable(8_391_000 + index)),
                 },
                 0u32.into(),
                 4u32.into(),
@@ -415,7 +415,7 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
                 mutable_ranges: (0..count)
                     .map(|index| {
                         MemoryRange::new_with_element_width(
-                            Address::symbolic(Variable(8_392_000 + index)),
+                            OldAddress::symbolic(Variable(8_392_000 + index)),
                             0u32.into(),
                             4u32.into(),
                             1,
@@ -520,7 +520,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
             facts = facts.with_fact(Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
-                pointer: Address::symbolic(Variable(8_500_000 + i)),
+                pointer: OldAddress::symbolic(Variable(8_500_000 + i)),
                 value_type: *value_type,
             });
         }
@@ -548,7 +548,7 @@ fn preservation_separation_orientations_use_exact_indexes() {
                 let mut ambient = Vec::new();
                 for index in 0..size {
                     let other = Resource::Memory(MemoryRange::new_with_element_width(
-                        Address::symbolic(Variable(8_900_000 + index)),
+                        OldAddress::symbolic(Variable(8_900_000 + index)),
                         0u32.into(),
                         1u32.into(),
                         4,
@@ -603,7 +603,7 @@ fn wide_resource_field_preservation_scales_with_explicit_steps_not_ambient_insta
         let mut baseline = None;
         for instances in [4, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let value = MachineTerm::Variable(Variable(8_390_901));
+            let value = OldMachineTerm::Variable(Variable(8_390_901));
             let (preservation, goal) =
                 tests::resource_fixture_with_values(instances, format, value.clone(), value);
             for steps in [1, 4, 16, 64] {

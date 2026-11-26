@@ -217,11 +217,11 @@ fn indexed_store_bounds(
     }
     Some([
         Proposition::condition_is(
-            ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
+            OldConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
             true,
         ),
         Proposition::condition_is(
-            ConditionTerm::signed_less_than(index.clone(), range.end().clone()),
+            OldConditionTerm::signed_less_than(index.clone(), range.end().clone()),
             true,
         ),
     ])
@@ -466,18 +466,32 @@ fn program_update_expression(
     }
 }
 
+/// The storage `bytes` long at `pointer`: one element of a concrete size,
+/// or the bytes of a symbolic one.
+fn storage_range(pointer: &OldAddress, bytes: crate::kernel::LayoutSize) -> MemoryRange {
+    match bytes.bytes() {
+        Some(bytes) => MemoryRange::new_with_element_width(
+            pointer.clone(),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
+            bytes,
+        ),
+        None => MemoryRange::new_with_element_width(
+            pointer.clone(),
+            OldMachineTerm::constant(0),
+            bytes.term(),
+            1,
+        ),
+    }
+}
+
 pub(in crate::kernel) fn memory_write_storage_outcome(
     state: &ExecutionState,
-    pointer: &Address,
-    bytes: u32,
+    pointer: &OldAddress,
+    bytes: impl Into<crate::kernel::LayoutSize>,
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
-    let range = MemoryRange::new_with_element_width(
-        pointer.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
-        bytes,
-    );
+    let range = storage_range(pointer, bytes.into());
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &range, assumptions) {
         return Some(StatementOutcome::RuntimeError(error));
     }
@@ -489,7 +503,7 @@ pub(in crate::kernel) fn memory_write_storage_outcome(
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
     range: &MemoryRange,
-    storage_pointer: &Address,
+    storage_pointer: &OldAddress,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
 ) -> Option<StatementOutcome> {
@@ -803,7 +817,7 @@ fn write_program_lvalue_paths_for_initialization(
                 }
             }
             let mut state = state.clone();
-            sync_retained_stack_local(&mut state, &name, &value);
+            stage_retained_stack_local(&mut state, &name, &value);
             if let Some(pointer) = volatile_pointer {
                 facts.push(volatile_access_fact(
                     budget,
@@ -964,7 +978,7 @@ fn write_program_lvalue_paths_for_initialization(
             let pointer = authorized_range
                 .as_ref()
                 .filter(|_| {
-                    !matches!(pointer.offset, AddressOffset::Add(_, _))
+                    !matches!(pointer.offset.view(), OffsetView::Add(..))
                         && !matches!(pointer.base, AddressBase::Load(_))
                 })
                 .and_then(|range| {
@@ -1265,7 +1279,7 @@ fn write_program_lvalue_paths_for_initialization(
                     OldPointer::from_point_read(version, value_type, &written_pointer)
                 } else {
                     OldPointer::new(
-                        Address::canonical_read(
+                        OldAddress::canonical_read(
                             point.shared_memory(),
                             Some(&point),
                             &written_pointer,
@@ -1307,6 +1321,17 @@ fn end_aggregate_step_lifetimes(
     state: &ExecutionState,
     steps: &[u32],
 ) -> Result<ExecutionState, RuntimeError> {
+    let mut next = stage_aggregate_step_lifetimes(state, steps)?;
+    next.complete_staged_memory();
+    Ok(next)
+}
+
+/// [`end_aggregate_step_lifetimes`] as steps of the atomic region in
+/// progress, which completes them.
+fn stage_aggregate_step_lifetimes(
+    state: &ExecutionState,
+    steps: &[u32],
+) -> Result<ExecutionState, RuntimeError> {
     let mut next = state.clone();
     for step in steps {
         crate::instrumentation::record_deterministic_work(1);
@@ -1332,7 +1357,7 @@ fn end_aggregate_step_lifetimes(
             return Err(error);
         }
         retire_automatic_storage_owner(&mut next, &range);
-        next.set_memory(next.memory.without_local_block(&pointer.base));
+        next.stage_memory(next.memory.without_local_block(&pointer.base));
         next.retire_population_storage(&pointer.base)?;
     }
     next.end_step_results(steps);
@@ -1349,13 +1374,15 @@ fn execute_program_aggregate_step_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let layout = &result_layout.layout;
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Temporary(budget.allocate_kernel_variable()?.0),
-        offset: AddressOffset::constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     register_block_alignment(&pointer.base, layout.alignment_bytes());
+    // The temporary's allocation, the copy into it, and its freezing are
+    // the steps of this one region, installed together.
     let mut allocated = state.clone();
-    allocated.set_memory(allocated.memory.clone().with_classed_block(
+    allocated.stage_memory(allocated.memory.clone().with_classed_block(
         pointer.base.clone(),
         result_layout.declared_class.clone(),
         layout.size_bytes(),
@@ -1384,7 +1411,7 @@ fn execute_program_aggregate_step_paths(
     )?;
     for path in &mut paths {
         if let StatementOutcome::Normal(next) = &mut path.outcome {
-            next.set_memory(
+            next.stage_memory(
                 next.memory
                     .clone()
                     .freeze_aggregate_result(&pointer.base, None),
@@ -1397,6 +1424,7 @@ fn execute_program_aggregate_step_paths(
                 next.aggregate_step_objects.insert(*step, pointer.clone());
             }
         }
+        complete_staged_path(path);
     }
     Ok(paths)
 }
@@ -1409,8 +1437,8 @@ enum AggregateCopyDestination {
 
 fn memory_region_write_obligation_outcome(
     state: &ExecutionState,
-    pointer: &Address,
-    bytes: u32,
+    pointer: &OldAddress,
+    bytes: impl Into<crate::kernel::LayoutSize>,
     destination: &MemoryRange,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
@@ -1418,8 +1446,7 @@ fn memory_region_write_obligation_outcome(
     #[cfg(test)]
     let _fast =
         crate::kernel::search::FastOperationScope::enter("memory region write borrow check");
-    let storage =
-        MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
+    let storage = storage_range(pointer, bytes.into());
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
     {
         return Some(StatementOutcome::RuntimeError(error));
@@ -1483,7 +1510,7 @@ fn execute_program_aggregate_copy_paths(
             if let Some(refusal) = subobject_access_refusal(
                 source_pointer.address(),
                 &source_pointer,
-                layout.size_bytes(),
+                layout.size().extent(),
                 &facts,
                 &obligations,
                 &copy_assumptions,
@@ -1492,7 +1519,7 @@ fn execute_program_aggregate_copy_paths(
                 subobject_access_refusal(
                     target_pointer.address(),
                     &target_pointer,
-                    layout.size_bytes(),
+                    layout.size().extent(),
                     &facts,
                     &obligations,
                     &copy_assumptions,
@@ -1523,7 +1550,6 @@ fn execute_program_aggregate_copy_paths(
             let write_refusal = match destination {
                 AggregateCopyDestination::Assignment => {
                     // The byte slice covers the entire layout, including padding.
-                    let bytes = layout.size_bytes();
                     let byte_pointer = super::expression::cast_pointer_value(
                         target_pointer.clone(),
                         ProgramType::UInt8Pointer,
@@ -1531,13 +1557,16 @@ fn execute_program_aggregate_copy_paths(
                     let range = MemoryRange::from_pointer_value(
                         &byte_pointer,
                         0u32.into(),
-                        bytes.into(),
+                        layout
+                            .size()
+                            .bytes()
+                            .map_or_else(|| layout.size().term(), Into::into),
                         1,
                     );
                     memory_region_write_obligation_outcome(
                         state,
                         target_pointer.address(),
-                        bytes,
+                        layout.size(),
                         &range,
                         &copy_assumptions,
                         &mut obligations,
@@ -1546,7 +1575,7 @@ fn execute_program_aggregate_copy_paths(
                 AggregateCopyDestination::ResultTemporary => memory_write_storage_outcome(
                     state,
                     target_pointer.address(),
-                    layout.size_bytes(),
+                    layout.size(),
                     &copy_assumptions,
                 ),
             };
@@ -1586,7 +1615,8 @@ fn execute_program_aggregate_copy_paths(
                     continue;
                 }
             };
-            state.set_memory(next_memory);
+            // The copy is a step of the region in progress, which completes it.
+            state.stage_memory(next_memory);
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::Normal(Box::new(state)),
                 facts,
@@ -1635,8 +1665,8 @@ fn missing_aggregate_copy_write_resource(
             return Some(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
                     pointer,
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     bytes,
                 ),
             ));
@@ -1683,8 +1713,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(ResourceFact::view_memory(
                 MemoryRange::new_with_element_width(
                     source.offset_by_layout(field.offset()),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     crate::kernel::assumptions::read_candidate_byte_width(
                         field.program_type().byte_width(),
                     ),
@@ -1704,8 +1734,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(ResourceFact::view_memory(
                 MemoryRange::new_with_element_width(
                     pointer,
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     union.size_bytes(),
                 ),
             ));
@@ -1920,7 +1950,7 @@ fn execute_program_heap_allocate_to_paths(
         let pointer = loop {
             let identity = budget.allocate_kernel_variable()?;
             if !state.memory.heap_identity_in_use(identity.0) {
-                break Address::symbolic(identity);
+                break OldAddress::symbolic(identity);
             }
         };
         // A failure that ends the program leaves no execution to continue:
@@ -1942,15 +1972,15 @@ fn execute_program_heap_allocate_to_paths(
                 && effective_assumptions.decide(&enough_space) == Some(true))
             .then(|| class.clone())
         });
-        let mut success_state =
-            state
-                .clone()
-                .with_memory(state.memory.clone().with_pending_typed_heap_allocation(
-                    pointer.clone(),
-                    bytes,
-                    zeroed,
-                    object_class.clone(),
-                ));
+        // The allocation is a step of this region, which stores its result
+        // next: the region's one install takes both.
+        let mut success_state = state.clone();
+        success_state.stage_memory(state.memory.clone().with_pending_typed_heap_allocation(
+            pointer.clone(),
+            bytes,
+            zeroed,
+            object_class.clone(),
+        ));
         success_state.record_pending_population_storage_creation(pointer.base.clone());
         let assigned = target.finish(
             &success_state,
@@ -1974,7 +2004,7 @@ fn execute_program_heap_allocate_to_paths(
             // Its success already known, the allocation is a live block now.
             let outcome = match assigned_path.outcome {
                 StatementOutcome::Normal(state) if ends_program_on_failure => {
-                    StatementOutcome::Normal(Box::new(resolve_pending_heap_allocations_recording(
+                    let mut state = resolve_pending_heap_allocations_recording(
                         &state,
                         &assumptions_with_path_context(
                             assumptions,
@@ -1982,7 +2012,13 @@ fn execute_program_heap_allocate_to_paths(
                             &merged_obligations,
                         ),
                         &mut merged_obligations,
-                    )))
+                    );
+                    state.complete_staged_memory();
+                    StatementOutcome::Normal(Box::new(state))
+                }
+                StatementOutcome::Normal(mut state) => {
+                    state.complete_staged_memory();
+                    StatementOutcome::Normal(state)
                 }
                 outcome => outcome,
             };
@@ -1996,7 +2032,7 @@ fn execute_program_heap_allocate_to_paths(
     Ok(paths)
 }
 
-fn heap_allocation_element_width(state: &ExecutionState, base: &Address) -> u32 {
+fn heap_allocation_element_width(state: &ExecutionState, base: &OldAddress) -> u32 {
     state
         .locals
         .bindings
@@ -2031,7 +2067,7 @@ fn heap_range_element_width(size: &AllocationSize, requested_width: u32) -> u32 
 /// The owned range of a whole heap block, `base[0..count]` in the size's
 /// index kind, and its element width ([`heap_range_element_count`]).
 fn heap_block_range(
-    base: Address,
+    base: OldAddress,
     size: &AllocationSize,
     requested_width: u32,
 ) -> (MemoryRange, u32) {
@@ -2041,7 +2077,7 @@ fn heap_block_range(
 
 /// The element count and width of a whole heap block's owned range, in the
 /// size's format ([`AllocationSize::element_count`]).
-fn heap_range_element_count(size: &AllocationSize, requested_width: u32) -> (MachineTerm, u32) {
+fn heap_range_element_count(size: &AllocationSize, requested_width: u32) -> (OldMachineTerm, u32) {
     let element_width = heap_range_element_width(size, requested_width);
     let element_count = size
         .element_count(element_width)
@@ -2051,7 +2087,7 @@ fn heap_range_element_count(size: &AllocationSize, requested_width: u32) -> (Mac
 
 #[derive(Clone, Debug)]
 struct RequestedAllocationSize {
-    term: MachineTerm,
+    term: OldMachineTerm,
     unsigned: bool,
     /// The size's type admits values above `INT32_MAX` (`uint32`), so the
     /// facts must bound it to the signed 32-bit allocation size.
@@ -2068,7 +2104,7 @@ struct RequestedAllocationSize {
 
 impl RequestedAllocationSize {
     /// A 32-bit size of the given signedness.
-    fn int32(term: MachineTerm, unsigned: bool, needs_size_bound: bool) -> Self {
+    fn int32(term: OldMachineTerm, unsigned: bool, needs_size_bound: bool) -> Self {
         Self {
             term,
             unsigned,
@@ -2080,7 +2116,7 @@ impl RequestedAllocationSize {
 
     /// A symbolic 64-bit size as C's `size_t` argument: a `long` is read as
     /// its conversion, so a negative one is above `PTRDIFF_MAX`.
-    fn uint64(term: MachineTerm, wraps: bool) -> Self {
+    fn uint64(term: OldMachineTerm, wraps: bool) -> Self {
         Self {
             term,
             unsigned: true,
@@ -2096,9 +2132,9 @@ impl RequestedAllocationSize {
     /// bytes. `None` for a `long` count, whose product may be undefined.
     fn wrapped_product(&self, element_width: u32, assumptions: &PureFactContext) -> Option<Self> {
         (self.kind == AllocationSizeKind::UInt64 && self.wraps).then(|| {
-            let product = MachineTerm::uint64_multiply(
+            let product = OldMachineTerm::uint64_multiply(
                 self.term.clone(),
-                MachineTerm::uint64_constant(u64::from(element_width)),
+                OldMachineTerm::uint64_constant(u64::from(element_width)),
             );
             uint64_size_value(product, true, assumptions)
         })
@@ -2110,11 +2146,11 @@ impl RequestedAllocationSize {
     fn scaled(&self, element_width: u32) -> Self {
         let term = match self.kind {
             AllocationSizeKind::Int32 => {
-                MachineTerm::multiply(self.term.clone(), MachineTerm::constant(element_width))
+                OldMachineTerm::multiply(self.term.clone(), OldMachineTerm::constant(element_width))
             }
-            AllocationSizeKind::UInt64 => MachineTerm::uint64_multiply(
+            AllocationSizeKind::UInt64 => OldMachineTerm::uint64_multiply(
                 self.term.clone(),
-                MachineTerm::uint64_constant(u64::from(element_width)),
+                OldMachineTerm::uint64_constant(u64::from(element_width)),
             ),
         };
         Self {
@@ -2139,32 +2175,36 @@ impl RequestedAllocationSize {
     }
 
     /// `bytes <= self`, compared in the size's format and signedness.
-    fn at_least(&self, bytes: u32) -> ConditionTerm {
+    fn at_least(&self, bytes: u32) -> OldConditionTerm {
         match (self.kind, self.unsigned) {
             (AllocationSizeKind::UInt64, _) => uint64_size_at_least(&self.term, u64::from(bytes)),
-            (AllocationSizeKind::Int32, true) => {
-                ConditionTerm::unsigned_less_equal(MachineTerm::constant(bytes), self.term.clone())
-            }
-            (AllocationSizeKind::Int32, false) => {
-                ConditionTerm::signed_less_equal(MachineTerm::constant(bytes), self.term.clone())
-            }
+            (AllocationSizeKind::Int32, true) => OldConditionTerm::unsigned_less_equal(
+                OldMachineTerm::constant(bytes),
+                self.term.clone(),
+            ),
+            (AllocationSizeKind::Int32, false) => OldConditionTerm::signed_less_equal(
+                OldMachineTerm::constant(bytes),
+                self.term.clone(),
+            ),
         }
     }
 
     /// `self < bytes`, compared in the size's format and signedness.
-    fn less_than(&self, bytes: u32) -> ConditionTerm {
+    fn less_than(&self, bytes: u32) -> OldConditionTerm {
         match (self.kind, self.unsigned) {
             (AllocationSizeKind::UInt64, _) => {
                 let (count, bound) =
                     crate::kernel::reasoning::uint64_size_in_elements(&self.term, u64::from(bytes));
-                ConditionTerm::uint64_less_than(count.clone(), bound)
+                OldConditionTerm::uint64_less_than(count.clone(), bound)
             }
-            (AllocationSizeKind::Int32, true) => {
-                ConditionTerm::unsigned_less_than(self.term.clone(), MachineTerm::constant(bytes))
-            }
-            (AllocationSizeKind::Int32, false) => {
-                ConditionTerm::signed_less_than(self.term.clone(), MachineTerm::constant(bytes))
-            }
+            (AllocationSizeKind::Int32, true) => OldConditionTerm::unsigned_less_than(
+                self.term.clone(),
+                OldMachineTerm::constant(bytes),
+            ),
+            (AllocationSizeKind::Int32, false) => OldConditionTerm::signed_less_than(
+                self.term.clone(),
+                OldMachineTerm::constant(bytes),
+            ),
         }
     }
 }
@@ -2173,9 +2213,9 @@ impl RequestedAllocationSize {
 /// with a constant `k` is exact ([`uint64_allocation_size_bytes_are_exact`]), so
 /// the comparison is `ceil(bytes / k) <= n` over its element count, which
 /// the facts about `n` decide where the wrapping product would not.
-fn uint64_size_at_least(size: &MachineTerm, bytes: u64) -> ConditionTerm {
+fn uint64_size_at_least(size: &OldMachineTerm, bytes: u64) -> OldConditionTerm {
     let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size, bytes);
-    ConditionTerm::uint64_less_equal(bound, count.clone())
+    OldConditionTerm::uint64_less_equal(bound, count.clone())
 }
 
 /// The constant zeroed prefix of a reallocated block: the smaller of the old
@@ -2200,8 +2240,8 @@ fn realloc_zeroed_prefix(
         (None, Some(new)) => {
             let new = u32::try_from(new).ok()?;
             let shrinks = match old_prefix.kind() {
-                AllocationSizeKind::Int32 => ConditionTerm::unsigned_less_equal(
-                    MachineTerm::constant(new),
+                AllocationSizeKind::Int32 => OldConditionTerm::unsigned_less_equal(
+                    OldMachineTerm::constant(new),
                     old_prefix.bytes().clone(),
                 ),
                 AllocationSizeKind::UInt64 => {
@@ -2248,14 +2288,14 @@ fn allocation_size_value(
         ProgramValue::Int64(term) => Some(match exact_signed_size_value(&term, assumptions) {
             Some(value) => match u32::try_from(value) {
                 Ok(value) => {
-                    RequestedAllocationSize::int32(MachineTerm::constant(value), false, false)
+                    RequestedAllocationSize::int32(OldMachineTerm::constant(value), false, false)
                 }
                 Err(_) => RequestedAllocationSize::uint64(
-                    MachineTerm::uint64_constant(value as u64),
+                    OldMachineTerm::uint64_constant(value as u64),
                     false,
                 ),
             },
-            None => RequestedAllocationSize::uint64(MachineTerm::uint64_from_int64(term), false),
+            None => RequestedAllocationSize::uint64(OldMachineTerm::uint64_from_int64(term), false),
         }),
         ProgramValue::UInt64(term) => Some(uint64_size_value(term, true, assumptions)),
         ProgramValue::Int128(_)
@@ -2271,14 +2311,18 @@ fn allocation_size_value(
 /// A `uint64` size: a 32-bit constant size where the facts fix it to a
 /// value that fits `uint32` (D2), else a `uint64` size.
 fn uint64_size_value(
-    term: MachineTerm,
+    term: OldMachineTerm,
     wraps: bool,
     assumptions: &PureFactContext,
 ) -> RequestedAllocationSize {
     match exact_unsigned_size_value(&term, assumptions) {
         Some(value) => match u32::try_from(value) {
-            Ok(value) => RequestedAllocationSize::int32(MachineTerm::constant(value), false, false),
-            Err(_) => RequestedAllocationSize::uint64(MachineTerm::uint64_constant(value), wraps),
+            Ok(value) => {
+                RequestedAllocationSize::int32(OldMachineTerm::constant(value), false, false)
+            }
+            Err(_) => {
+                RequestedAllocationSize::uint64(OldMachineTerm::uint64_constant(value), wraps)
+            }
         },
         None => RequestedAllocationSize::uint64(term, wraps),
     }
@@ -2321,7 +2365,7 @@ fn heap_element_count_expression(
     }
 }
 
-fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) -> Option<i64> {
+fn exact_signed_size_value(term: &OldMachineTerm, assumptions: &PureFactContext) -> Option<i64> {
     if let Some(value) = term.int64_as_const() {
         return Some(value);
     }
@@ -2329,7 +2373,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
         return Some(value);
     }
     match term {
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Add,
             left,
@@ -2338,7 +2382,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
             exact_signed_size_value(left, assumptions)?
                 .checked_add(exact_signed_size_value(right, assumptions)?)?,
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Subtract,
             left,
@@ -2347,7 +2391,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
             exact_signed_size_value(left, assumptions)?
                 .checked_sub(exact_signed_size_value(right, assumptions)?)?,
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Multiply,
             left,
@@ -2360,7 +2404,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
     }
 }
 
-fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) -> Option<u64> {
+fn exact_unsigned_size_value(term: &OldMachineTerm, assumptions: &PureFactContext) -> Option<u64> {
     if let Some(value) = term.uint64_as_const() {
         return Some(value);
     }
@@ -2368,7 +2412,7 @@ fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) 
         return u64::try_from(value).ok();
     }
     match term {
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
             left,
@@ -2377,7 +2421,7 @@ fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) 
             exact_unsigned_size_value(left, assumptions)?
                 .wrapping_add(exact_unsigned_size_value(right, assumptions)?),
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Subtract,
             left,
@@ -2386,7 +2430,7 @@ fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) 
             exact_unsigned_size_value(left, assumptions)?
                 .wrapping_sub(exact_unsigned_size_value(right, assumptions)?),
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Multiply,
             left,
@@ -2404,9 +2448,9 @@ fn allocation_size_is_positive(
     assumptions: &PureFactContext,
 ) -> bool {
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_greater_than(size.term.clone(), MachineTerm::constant(0))
+        OldConditionTerm::unsigned_greater_than(size.term.clone(), OldMachineTerm::constant(0))
     } else {
-        ConditionTerm::signed_greater_than(size.term.clone(), MachineTerm::constant(0))
+        OldConditionTerm::signed_greater_than(size.term.clone(), OldMachineTerm::constant(0))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -2422,9 +2466,9 @@ fn allocation_size_fits_element_width(
 ) -> bool {
     let maximum = i32::MAX as u32 / element_width;
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_less_equal(size.term.clone(), MachineTerm::constant(maximum))
+        OldConditionTerm::unsigned_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
     } else {
-        ConditionTerm::signed_less_equal(size.term.clone(), MachineTerm::constant(maximum))
+        OldConditionTerm::signed_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -2446,17 +2490,17 @@ fn uint64_allocation_size_is_exact(
     element_count: bool,
     assumptions: &PureFactContext,
 ) -> bool {
-    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
-    let at_most = |term: &MachineTerm, width: u64| {
-        holds(ConditionTerm::uint64_less_equal(
+    let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
+    let at_most = |term: &OldMachineTerm, width: u64| {
+        holds(OldConditionTerm::uint64_less_equal(
             term.clone(),
-            MachineTerm::uint64_constant(i64::MAX as u64 / width),
+            OldMachineTerm::uint64_constant(i64::MAX as u64 / width),
         ))
     };
-    let positive = |term: &MachineTerm| {
-        holds(ConditionTerm::uint64_greater_than(
+    let positive = |term: &OldMachineTerm| {
+        holds(OldConditionTerm::uint64_greater_than(
             term.clone(),
-            MachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(0),
         ))
     };
     if element_count {
@@ -2473,20 +2517,20 @@ fn uint64_allocation_size_is_exact(
 /// of two symbolic factors is not one. `malloc` and a contract's
 /// `allocation(p, bytes)` admit a 64-bit size only under this decision.
 pub(in crate::kernel) fn uint64_allocation_size_bytes_are_exact(
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
-    let at_most = |term: &MachineTerm, width: u64| {
-        holds(ConditionTerm::uint64_less_equal(
+    let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
+    let at_most = |term: &OldMachineTerm, width: u64| {
+        holds(OldConditionTerm::uint64_less_equal(
             term.clone(),
-            MachineTerm::uint64_constant(i64::MAX as u64 / width),
+            OldMachineTerm::uint64_constant(i64::MAX as u64 / width),
         ))
     };
-    let positive = |term: &MachineTerm| {
-        holds(ConditionTerm::uint64_greater_than(
+    let positive = |term: &OldMachineTerm| {
+        holds(OldConditionTerm::uint64_greater_than(
             term.clone(),
-            MachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(0),
         ))
     };
     // A symbolic layout's size: an object type's size is at most
@@ -2614,7 +2658,7 @@ fn execute_program_realloc_result_paths(
         let old_argument = match old_value {
             ProgramValue::Pointer(pointer) => pointer,
             ProgramValue::Int32(bits) if bits.as_const() == Some(0) => {
-                OldPointer::new(Address::null(), target_type)
+                OldPointer::new(OldAddress::null(), target_type)
             }
             _ => {
                 paths.push(StatementExecutionPath::new(
@@ -2630,7 +2674,7 @@ fn execute_program_realloc_result_paths(
         // C specifies realloc(NULL, size) as an allocation. Reuse the
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
-        if old_pointer == Address::null() {
+        if old_pointer == OldAddress::null() {
             for allocation_path in execute_program_heap_allocate_to_paths(
                 state,
                 AllocationDestination::Value(target_type),
@@ -2799,7 +2843,7 @@ fn execute_program_realloc_result_paths(
                         ));
                         continue;
                     };
-                    Some(MachineTerm::constant(prefix))
+                    Some(OldMachineTerm::constant(prefix))
                 }
             };
 
@@ -2957,7 +3001,7 @@ fn execute_program_realloc_result_paths(
             let pending_pointer = loop {
                 let identity = budget.allocate_kernel_variable()?;
                 if !state.memory.heap_identity_in_use(identity.0) {
-                    break Address::symbolic(identity);
+                    break OldAddress::symbolic(identity);
                 }
             };
             // Save the call-entry borrow footprint. Only success retires the
@@ -2991,7 +3035,7 @@ fn execute_program_realloc_result_paths(
                         copied_cells: copied_cells
                             .into_iter()
                             .map(|(offset, value)| {
-                                (AddressOffset::Constant(i64::from(offset)), value)
+                                (OldAddressOffset::constant(i64::from(offset)), value)
                             })
                             .collect(),
                         initialized_prefix,
@@ -3048,7 +3092,7 @@ fn execute_program_heap_free_paths(
         let outcome = match outcome {
             ExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
                 ExpressionOutcome::Value(ProgramValue::typed_pointer(
-                    Address::null(),
+                    OldAddress::null(),
                     ProgramType::Int32Pointer,
                 ))
             }
@@ -3331,7 +3375,7 @@ fn execute_program_heap_free_paths(
             };
             if before != after {
                 facts.push(ExecutionPureFact::certified(Proposition::condition_is(
-                    ConditionTerm::pointer_equal(before, after),
+                    OldConditionTerm::pointer_equal(before, after),
                     true,
                 )));
             }
@@ -3368,6 +3412,9 @@ fn execute_program_heap_free_paths(
 
 /// Resolve one path, letting its caller record or discharge any retirement
 /// prerequisites before the corresponding old allocation is retired.
+/// Resolves `state`'s pending heap allocations whose success `assumptions`
+/// decide, as steps staged in the atomic region in progress
+/// ([`ExecutionState::stage_memory`]); the region completes them.
 pub(crate) fn resolve_pending_heap_allocations_with<E>(
     state: &ExecutionState,
     assumptions: &PureFactContext,
@@ -3403,7 +3450,7 @@ pub(crate) fn resolve_pending_heap_allocations_with<E>(
                 .clone()
                 .resolve_pending_heap_reallocation(&base, !is_null, assumptions)
                 .expect("collected pending reallocation should still exist");
-            state = state.with_memory(memory);
+            state.stage_memory(memory);
             let rebound = state
                 .locals
                 .bindings
@@ -3467,7 +3514,7 @@ pub(crate) fn resolve_pending_heap_allocations_with<E>(
             .clone()
             .resolve_pending_heap_allocation(&base, !is_null)
             .expect("collected pending allocation should still exist");
-        state = state.with_memory(memory);
+        state.stage_memory(memory);
         state.resolve_pending_population_storage_creation(
             &base.base,
             (!is_null).then(|| resolved_base.base.clone()),
@@ -3534,13 +3581,15 @@ pub(crate) fn resolve_pending_heap_allocations(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> ExecutionState {
-    resolve_pending_heap_allocations_with(state, assumptions, |obligation| {
+    let mut state = resolve_pending_heap_allocations_with(state, assumptions, |obligation| {
         assumptions
             .states_required_goal(obligation.proposition())
             .then_some(())
             .ok_or(obligation)
     })
-    .expect("test requires checked allocation retirement")
+    .expect("test requires checked allocation retirement");
+    state.complete_staged_memory();
+    state
 }
 
 fn has_live_thread_completion(state: &ExecutionState) -> bool {
@@ -3630,12 +3679,12 @@ fn execute_program_return_expression_paths(
                         let AddressBase::Symbolic(variable) = pointer.base else {
                             unreachable!("pending malloc results have symbolic heap identities");
                         };
-                        Address {
+                        OldAddress {
                             base: AddressBase::Heap(variable.0),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         }
                     } else {
-                        Address::null()
+                        OldAddress::null()
                     };
                     let outcome = if let Some(refusal) = return_authority_refusal(&resolved_state) {
                         refusal
@@ -3692,7 +3741,7 @@ fn execute_program_return_expression_paths(
 }
 
 fn pending_allocation_outcome_paths(
-    pointer: Address,
+    pointer: OldAddress,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -3823,6 +3872,17 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
     state: &ExecutionState,
     declared: &[BindingName],
 ) -> Result<ExecutionState, RuntimeError> {
+    let mut state = stage_scope_automatic_lifetimes(state, declared)?;
+    state.complete_staged_memory();
+    Ok(state)
+}
+
+/// [`end_scope_automatic_lifetimes`] as a step of the atomic region in
+/// progress, which completes it.
+fn stage_scope_automatic_lifetimes(
+    state: &ExecutionState,
+    declared: &[BindingName],
+) -> Result<ExecutionState, RuntimeError> {
     let mut state = state.clone();
     let mut memory = state.memory.clone();
     let mut retired = false;
@@ -3867,7 +3927,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
         state.locals.remove(name);
     }
     if retired {
-        state.set_memory(memory);
+        state.stage_memory(memory);
     }
     Ok(state)
 }
@@ -3998,7 +4058,6 @@ pub(in crate::kernel) fn execute_statement_paths(
             judgment,
         )? {
             let StatementExecutionPath {
-                call_parameters: _,
                 loop_invariant_correspondence: _,
                 call_result: _,
                 outcome,
@@ -4031,7 +4090,6 @@ pub(in crate::kernel) fn execute_statement_paths(
                 | StatementOutcome::VerificationDiverges
                 | StatementOutcome::UndefinedBehavior(_)
                 | StatementOutcome::RuntimeError(_)) => paths.push(StatementExecutionPath {
-                    call_parameters: None,
                     loop_invariant_correspondence: Default::default(),
                     call_result: None,
                     outcome,
@@ -4044,6 +4102,106 @@ pub(in crate::kernel) fn execute_statement_paths(
         budget.check_path_width(paths.len())?;
         return Ok(paths);
     }
+    #[cfg(test)]
+    let entry = state.path_link().id();
+    let mut paths = execute_statement_paths_leaf_dispatch(
+        state,
+        statement,
+        assumptions,
+        execution_context,
+        budget,
+        judgment,
+    )?;
+    // Each atomic region ends at its one new point: its staged memory steps
+    // are installed together here.
+    for path in &mut paths {
+        complete_staged_path(path);
+    }
+    #[cfg(test)]
+    assert_one_point_per_region(entry, statement, &paths);
+    Ok(paths)
+}
+
+/// An atomic region reaches at most one new point: each path's exit is its
+/// entry, or one point reached from the entry alone. A contract call reaches
+/// two, its effect point and then its exit (`call(f, j).effect`, a
+/// migration measure); a call executed through its body runs the callee's
+/// regions, which are checked as they run.
+#[cfg(test)]
+fn assert_one_point_per_region(
+    entry: Option<crate::kernel::program_point::ProgramPointId>,
+    statement: &ProgramStatement,
+    paths: &[StatementExecutionPath],
+) {
+    let Some(entry) = entry else {
+        return;
+    };
+    if matches!(
+        statement,
+        ProgramStatement::If { .. }
+            | ProgramStatement::Loop { .. }
+            | ProgramStatement::Switch { .. }
+            | ProgramStatement::TryCatchInt32 { .. }
+            | ProgramStatement::UnwindCleanup { .. }
+    ) {
+        return;
+    }
+    let is_call = matches!(
+        statement,
+        ProgramStatement::Call { .. }
+            | ProgramStatement::CallResult { .. }
+            | ProgramStatement::CallConstruct { .. }
+    );
+    let reached_from_entry = |link: &crate::kernel::program_point::PathLink| {
+        !link.predecessors().is_empty() && link.predecessor_ids().iter().all(|id| *id == entry)
+    };
+    for path in paths {
+        let (StatementOutcome::Normal(exit)
+        | StatementOutcome::LoopTestFalse(exit)
+        | StatementOutcome::Break(exit)
+        | StatementOutcome::Continue(exit)
+        | StatementOutcome::Jump { state: exit, .. }
+        | StatementOutcome::Return { state: exit, .. }
+        | StatementOutcome::Throw { state: exit, .. }) = &path.outcome
+        else {
+            continue;
+        };
+        let link = exit.path_link();
+        if link.id() == Some(entry) || reached_from_entry(link) {
+            continue;
+        }
+        if is_call {
+            if let [effect] = link.predecessors()
+                && effect.is_call_effect()
+            {
+                // A callee's static storage is materialized when its entry is
+                // built, at one point before the call's effect.
+                assert!(
+                    reached_from_entry(effect)
+                        || matches!(effect.predecessors(), [materialized] if reached_from_entry(materialized)),
+                    "{} reached its effect point through more than one new program point",
+                    verification_operation_name(statement)
+                );
+                continue;
+            }
+            // A call through the callee's body.
+            continue;
+        }
+        panic!(
+            "{} reached more than one new program point",
+            verification_operation_name(statement)
+        );
+    }
+}
+
+fn execute_statement_paths_leaf_dispatch(
+    state: &ExecutionState,
+    statement: &ProgramStatement,
+    assumptions: &PureFactContext,
+    execution_context: ExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     match judgment {
         // Profiling attributes a verification run's work to its leaf
         // statements; a branch and an abstracted loop are attributed to the
@@ -4112,7 +4270,6 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
             assumptions,
         )?;
         Some(StatementExecutionPath {
-            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: None,
             outcome: path.outcome,
@@ -4285,7 +4442,7 @@ fn execute_execution_statement_leaf_paths(
                             && let Some(bytes) = next
                                 .memory
                                 .block_size(&slot.base)
-                                .and_then(MachineTerm::as_const)
+                                .and_then(OldMachineTerm::as_const)
                         {
                             next.pending_thread_create = Some(pending.with_delta(
                                 super::super::threads::PendingThreadMemoryDelta::Declare {
@@ -4401,8 +4558,8 @@ fn execute_execution_statement_leaf_paths(
         )],
         ProgramStatement::EndAutomaticLifetimes { names, steps } => {
             vec![StatementExecutionPath::new(
-                match end_scope_automatic_lifetimes(state, names)
-                    .and_then(|next| end_aggregate_step_lifetimes(&next, steps))
+                match stage_scope_automatic_lifetimes(state, names)
+                    .and_then(|next| stage_aggregate_step_lifetimes(&next, steps))
                 {
                     Ok(state) => StatementOutcome::Normal(Box::new(state)),
                     Err(refusal) => StatementOutcome::RuntimeError(refusal),
@@ -4440,6 +4597,7 @@ fn execute_execution_statement_leaf_paths(
                 );
                 return match declared {
                     Ok(declared) => scalar_arrays::construct_const(
+                        state,
                         &declared,
                         name,
                         element_type,
@@ -4503,10 +4661,26 @@ fn execute_execution_statement_leaf_paths(
                         Vec::new(),
                     )]);
                 }
+                // A fresh block changes no cell the initializer reads, so it
+                // is read at the region's entry, unless it names the object
+                // being declared (`void *p = &p;`).
+                let mut mentioned = BTreeSet::new();
+                crate::kernel::termination::collect_program_expression_variables(
+                    expression,
+                    &mut mentioned,
+                );
+                let evaluation_state = if mentioned.contains(name) {
+                    declared.as_ref()
+                } else {
+                    state
+                };
                 let mut paths = Vec::new();
-                for path in
-                    evaluate_expression_value_paths(declared, expression, assumptions, budget)?
-                {
+                for path in evaluate_expression_value_paths(
+                    evaluation_state,
+                    expression,
+                    assumptions,
+                    budget,
+                )? {
                     match path.outcome {
                         ExpressionOutcome::Value(value) => {
                             let lvalue = LValue::local_with_qualifiers(
@@ -4554,9 +4728,12 @@ fn execute_execution_statement_leaf_paths(
                                 .expect("initialized scalar slot")
                                 .base
                                 .clone();
-                            state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
+                            state.stage_memory(state.memory.clone().freeze_declared_scalar(&block));
                         }
                     }
+                }
+                for path in &mut paths {
+                    complete_staged_path(path);
                 }
                 paths
             } else {
@@ -4574,16 +4751,16 @@ fn execute_execution_statement_leaf_paths(
                             .expect("declared automatic slot")
                             .base
                             .clone();
-                        state.set_memory(state.memory.clone().freeze_declared_object(&block, None));
+                        state.stage_memory(
+                            state.memory.clone().freeze_declared_object(&block, None),
+                        );
                         StatementOutcome::Normal(state)
                     }
                     outcome => outcome,
                 };
-                vec![StatementExecutionPath::new(
-                    outcome,
-                    Vec::new().into(),
-                    Vec::new(),
-                )]
+                let mut path = StatementExecutionPath::new(outcome, Vec::new().into(), Vec::new());
+                complete_staged_path(&mut path);
+                vec![path]
             }
         }
         ProgramStatement::DeclareAggregate {
@@ -4659,15 +4836,21 @@ fn execute_execution_statement_leaf_paths(
             target,
             source,
             layout,
-        } => execute_program_aggregate_copy_paths(
-            state,
-            target,
-            source,
-            layout,
-            AggregateCopyDestination::Assignment,
-            assumptions,
-            budget,
-        )?,
+        } => {
+            let mut paths = execute_program_aggregate_copy_paths(
+                state,
+                target,
+                source,
+                layout,
+                AggregateCopyDestination::Assignment,
+                assumptions,
+                budget,
+            )?;
+            for path in &mut paths {
+                complete_staged_path(path);
+            }
+            paths
+        }
         ProgramStatement::InitializeScalarArray {
             target,
             source,
@@ -4755,13 +4938,28 @@ fn execute_execution_statement_leaf_paths(
             budget,
         )?,
         ProgramStatement::Call {
+            cpp_binding: Some(binding),
+            arguments,
+            ..
+        } => super::super::loops::execute_cpp_binding_paths(
+            state,
+            &binding.contract,
+            arguments,
+            assumptions,
+            execution_context,
+            budget,
+        )?,
+        ProgramStatement::Call {
             function_name,
             arguments,
             callee,
+            dispatch,
+            ..
         } => execute_program_call_paths(
             state,
             None,
             function_name,
+            *dispatch,
             callee.as_ref(),
             arguments,
             assumptions,
@@ -4778,13 +4976,14 @@ fn execute_execution_statement_leaf_paths(
             result_type,
             result_aggregate_layout,
             result_pointee_constant: _,
+            dispatch,
             callee,
             ..
         } => {
             if let Some(expected) = result_aggregate_layout {
                 let actual = execution_context
                     .environment
-                    .get_function(function_name)
+                    .get_call_function(function_name, *dispatch)
                     .and_then(|function| function.return_aggregate_layout());
                 if actual != Some(expected) {
                     return Ok(vec![StatementExecutionPath::new(
@@ -4820,6 +5019,7 @@ fn execute_execution_statement_leaf_paths(
                     state,
                     Some(*call),
                     function_name,
+                    *dispatch,
                     callee.as_ref(),
                     arguments,
                     assumptions,
@@ -4918,10 +5118,10 @@ fn execute_execution_statement_leaf_paths(
             execute_program_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
         ProgramStatement::BuiltinConstantP { step } => {
-            let value = MachineTerm::Variable(budget.allocate_kernel_variable()?);
+            let value = OldMachineTerm::Variable(budget.allocate_kernel_variable()?);
             let equals = |constant| {
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::equal(value.clone(), MachineTerm::constant(constant)),
+                    OldConditionTerm::equal(value.clone(), OldMachineTerm::constant(constant)),
                     true,
                 ))
             };
@@ -5137,7 +5337,6 @@ fn execute_execution_statement_leaf_paths(
                 {
                     if thrown_state.locals.contains_name(binding) {
                         paths.push(StatementExecutionPath {
-                            call_parameters: None,
                             loop_invariant_correspondence: Default::default(),
                             call_result: None,
                             outcome: StatementOutcome::RuntimeError(
@@ -5581,7 +5780,7 @@ fn execute_program_switch_paths(
 
 fn execute_program_switch_dispatch_paths(
     state: &ExecutionState,
-    selector: &MachineTerm,
+    selector: &OldMachineTerm,
     selector_type: MachineIntegerType,
     cases: &[SwitchCase],
     case_index: usize,
@@ -5633,9 +5832,9 @@ fn execute_program_switch_dispatch_paths(
     // A case label holds its 32-bit pattern after conversion to the promoted
     // selector type, including -1 becoming UINT_MAX for an unsigned selector.
     let condition = if selector_type == MachineIntegerType::UInt32 {
-        ConditionTerm::uint32_equal(selector.clone(), MachineTerm::uint32_constant(value))
+        OldConditionTerm::uint32_equal(selector.clone(), OldMachineTerm::uint32_constant(value))
     } else {
-        ConditionTerm::equal(selector.clone(), MachineTerm::constant(value))
+        OldConditionTerm::equal(selector.clone(), OldMachineTerm::constant(value))
     };
     let mut paths = Vec::new();
     for condition_path in
@@ -6022,7 +6221,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
 fn local_declaration_pointer(
     state: &mut ExecutionState,
     name: &BindingName,
-) -> Result<Address, RuntimeError> {
+) -> Result<OldAddress, RuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
         && previous.base.is_local_block()
@@ -6036,14 +6235,18 @@ fn local_declaration_pointer(
             .memory
             .block_size(&previous.base)
             .cloned()
-            .unwrap_or(MachineTerm::Variable(Variable(u64::MAX)));
-        let old_range =
-            MemoryRange::new_with_element_width(previous.clone(), MachineTerm::constant(0), end, 1);
+            .unwrap_or(OldMachineTerm::Variable(Variable(u64::MAX)));
+        let old_range = MemoryRange::new_with_element_width(
+            previous.clone(),
+            OldMachineTerm::constant(0),
+            end,
+            1,
+        );
         if let Some(error) = state.automatic_storage_borrow_refusal(&previous.base) {
             return Err(error);
         }
         retire_automatic_storage_owner(state, &old_range);
-        state.set_memory(state.memory.without_local_block(&previous.base));
+        state.stage_memory(state.memory.without_local_block(&previous.base));
         return Ok(fresh_local_object_identity(state, name));
     }
     let unnumbered = SymbolicMemory::local_pointer(name);
@@ -6087,7 +6290,7 @@ pub(in crate::kernel) fn retire_automatic_storage_owner(
 /// counter is monotone and every generation it hands out is declared, so the
 /// first candidate is free; checking it is what makes the uniqueness
 /// invariant enforced at the one place it is created.
-fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -> Address {
+fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -> OldAddress {
     loop {
         let lifetime = state.next_local_lifetime();
         assert!(
@@ -6133,6 +6336,21 @@ fn note_declared_population_storage(
 /// over the fresh block: the declaration costs the element's cells, not the
 /// array's length. Where the memory refuses runs the cells are stored one by
 /// one, which leaves the same cells.
+/// Ends the atomic region a path's state is in: its staged memory steps
+/// move it to the region's one new point ([`ExecutionState::complete_staged_memory`]).
+fn complete_staged_path(path: &mut StatementExecutionPath) {
+    if let StatementOutcome::Normal(state)
+    | StatementOutcome::LoopTestFalse(state)
+    | StatementOutcome::Break(state)
+    | StatementOutcome::Continue(state)
+    | StatementOutcome::Jump { state, .. }
+    | StatementOutcome::Return { state, .. }
+    | StatementOutcome::Throw { state, .. } = &mut path.outcome
+    {
+        state.complete_staged_memory();
+    }
+}
+
 fn zero_fill_declared_array(
     mut state: ExecutionState,
     name: &BindingName,
@@ -6151,7 +6369,7 @@ fn zero_fill_declared_array(
     if state
         .memory
         .block_size(&slot.base)
-        .and_then(MachineTerm::as_const)
+        .and_then(OldMachineTerm::as_const)
         != Some(object_bytes)
     {
         return Err(RuntimeError::TypeMismatch);
@@ -6203,22 +6421,22 @@ fn zero_fill_declared_array(
     // initialized once the zero cells' values are forgotten: a run dropped
     // as a whole by a loop havoc or a store the facts cannot place then
     // costs one covering query, not its slots.
-    state.set_memory(memory.with_initialized_object(&slot, object_bytes));
+    state.stage_memory(memory.with_initialized_object(&slot, object_bytes));
     Ok(state)
 }
 
 /// A local array's frame owns its bytes, as a declared scalar's does, so the
 /// function can lend them to a callee that owns its buffer, such as
 /// `snprintf(tmp, sizeof(tmp), ...)`.
-fn own_local_array(state: &mut ExecutionState, pointer: &Address, bytes: u32) {
+fn own_local_array(state: &mut ExecutionState, pointer: &OldAddress, bytes: u32) {
     state.resources = state
         .resources
         .clone()
         .unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(
                 pointer.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(bytes),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(bytes),
                 1,
             ),
         ));
@@ -6282,7 +6500,7 @@ pub(in crate::kernel) fn declare_local(
         | ProgramType::Float64PointerPointer
         | ProgramType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
         ProgramType::Int32Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
@@ -6298,7 +6516,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt8Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length,
@@ -6314,7 +6532,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int8Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length,
@@ -6330,7 +6548,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int16Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(2),
@@ -6346,7 +6564,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt16Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(2),
@@ -6362,7 +6580,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt32Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
@@ -6378,7 +6596,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int64Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
@@ -6394,7 +6612,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int128Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(16),
@@ -6410,7 +6628,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt64Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
@@ -6426,7 +6644,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt128Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(16),
@@ -6442,7 +6660,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Float32Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
@@ -6458,7 +6676,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Float64Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
@@ -6474,7 +6692,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::PointerArray(element, length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(C_POINTER_BYTE_WIDTH),
@@ -6494,7 +6712,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
     };
-    state.set_memory(state.memory.clone().with_classed_scalar_block(
+    state.stage_memory(state.memory.clone().with_classed_scalar_block(
         pointer.base.clone(),
         byte_width,
         program_type,
@@ -6508,8 +6726,8 @@ pub(in crate::kernel) fn declare_local(
         }
         _ => MemoryRange::new_with_element_width(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(byte_width),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(byte_width),
             1,
         ),
     };
@@ -6566,7 +6784,7 @@ pub(in crate::kernel) fn declare_aggregate_local(
             layout.size(),
         ),
     };
-    state.set_memory(memory);
+    state.stage_memory(memory);
     state
         .locals
         .set_aggregate_object_at(name.clone(), layout.clone(), pointer.clone());
@@ -6615,7 +6833,7 @@ fn begin_aggregate_construction(
         }
         let variable = budget.allocate_kernel_variable()?;
         let value = crate::kernel::functions::symbolic_call_result(field.program_type(), variable);
-        state.set_memory(
+        state.stage_memory(
             state
                 .memory
                 .clone()
@@ -6648,13 +6866,13 @@ fn begin_aggregate_construction(
 /// comparison against that one object. No scan of the frame.
 pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     state: &mut ExecutionState,
-    pointer: &Address,
+    pointer: &OldAddress,
     value: &ProgramValue,
     assumptions: &PureFactContext,
 ) {
-    let slot = Address {
+    let slot = OldAddress {
         base: pointer.base.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     let Some(name) = state.locals.name_for_slot(&slot).cloned() else {
         return;
@@ -6679,7 +6897,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
 /// decides its current value and initialization; a postcondition is not a store.
 pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     state: &mut ExecutionState,
-    slot: &Address,
+    slot: &OldAddress,
     assumptions: &PureFactContext,
 ) {
     let Some(name) = state.locals.name_for_slot(slot).cloned() else {
@@ -6694,7 +6912,7 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
 fn refresh_scalar_local_binding(
     state: &mut ExecutionState,
     name: BindingName,
-    slot: Address,
+    slot: OldAddress,
     program_type: ProgramType,
     assumptions: &PureFactContext,
     after_call: bool,
@@ -6786,6 +7004,21 @@ pub(in crate::kernel) fn sync_stack_local(
     }
 }
 
+/// [`sync_retained_stack_local`] as a step of the atomic region in progress,
+/// which completes it.
+fn stage_retained_stack_local(
+    state: &mut ExecutionState,
+    name: &BindingName,
+    value: &ExecutionValue,
+) {
+    let Some(pointer) = state.locals.slot(name).cloned() else {
+        return;
+    };
+    if state.memory.has_block(&pointer.base) {
+        state.stage_memory(state.memory.clone().store_retained(pointer, value.clone()));
+    }
+}
+
 /// Keep the same retained value in a local and its memory-resident slot.
 pub(in crate::kernel) fn sync_retained_stack_local(
     state: &mut ExecutionState,
@@ -6804,17 +7037,19 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 /// block. Its subobject bounds, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
     value: &OldPointer,
-    base: &Address,
-    resolved: &Address,
+    base: &OldAddress,
+    resolved: &OldAddress,
 ) -> OldPointer {
     let resolved_value = value
         .map_pointers(|address| {
             if address == base {
                 resolved.clone()
-            } else if address.base == base.base && base.offset == AddressOffset::Constant(0) {
-                Address {
+            } else if address.base == base.base
+                && matches!(base.offset.view(), OffsetView::Constant(0))
+            {
+                OldAddress {
                     base: resolved.base.clone(),
-                    offset: AddressOffset::add(resolved.offset.clone(), address.offset.clone()),
+                    offset: OldAddressOffset::add(resolved.offset.clone(), address.offset.clone()),
                 }
             } else {
                 address.clone()

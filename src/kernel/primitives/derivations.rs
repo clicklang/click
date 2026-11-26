@@ -181,7 +181,7 @@ impl PropositionDerivation {
     /// prover: the quantified fact, concrete argument, and guard premises.
     pub fn forall_int32_instantiation(
         &self,
-    ) -> Option<(&Proposition, &MachineTerm, &[Proposition])> {
+    ) -> Option<(&Proposition, &OldMachineTerm, &[Proposition])> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::ForallInt32Instantiation(evidence),
@@ -843,8 +843,8 @@ impl PointerOffsetCongruenceEvidence {
 
     pub(in crate::kernel) fn checks(
         &self,
-        left: &AddressOffset,
-        right: &AddressOffset,
+        left: &OldAddressOffset,
+        right: &OldAddressOffset,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
@@ -862,7 +862,7 @@ impl PointerOffsetCongruenceEvidence {
                     return false;
                 };
                 let Some((premise_left, premise_right)) =
-                    condition.native_compat().pointer_offset_sides()
+                    condition.old_form().pointer_offset_sides()
                 else {
                     return false;
                 };
@@ -875,35 +875,35 @@ impl PointerOffsetCongruenceEvidence {
                 second,
                 swapped,
             } => {
-                let (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) =
-                    (left, right)
+                let (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) =
+                    (left.view(), right.view())
                 else {
                     return false;
                 };
                 let (right_first, right_second) = if *swapped {
-                    (right_b.as_ref(), right_a.as_ref())
+                    (right_b, right_a)
                 } else {
-                    (right_a.as_ref(), right_b.as_ref())
+                    (right_a, right_b)
                 };
                 first.checks(left_a, right_first, assumptions)
                     && second.checks(left_b, right_second, assumptions)
             }
             Self::Int32Scaled { byte_width, path } => {
                 let (
-                    AddressOffset::Int32Scaled {
-                        value: left,
+                    OffsetView::Int32Scaled {
+                        index: left,
                         byte_width: left_width,
                     },
-                    AddressOffset::Int32Scaled {
-                        value: right,
+                    OffsetView::Int32Scaled {
+                        index: right,
                         byte_width: right_width,
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                 else {
                     return false;
                 };
-                left_width == byte_width
-                    && right_width == byte_width
+                left_width == *byte_width
+                    && right_width == *byte_width
                     && assumptions.checks_exact_bitvector_equality_path_views(
                         path,
                         left.operand_view(),
@@ -915,20 +915,20 @@ impl PointerOffsetCongruenceEvidence {
                 equality,
             } => {
                 let (
-                    AddressOffset::Int32Scaled {
-                        value: left,
+                    OffsetView::Int32Scaled {
+                        index: left,
                         byte_width: left_width,
                     },
-                    AddressOffset::Int32Scaled {
-                        value: right,
+                    OffsetView::Int32Scaled {
+                        index: right,
                         byte_width: right_width,
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                 else {
                     return false;
                 };
-                left_width == byte_width
-                    && right_width == byte_width
+                left_width == *byte_width
+                    && right_width == *byte_width
                     && equality.checks_views(left.operand_view(), right.operand_view(), assumptions)
             }
             Self::Int64Scaled {
@@ -937,24 +937,24 @@ impl PointerOffsetCongruenceEvidence {
                 path,
             } => {
                 let (
-                    AddressOffset::Int64Scaled {
-                        value: left,
+                    OffsetView::Int64Scaled {
+                        index: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    AddressOffset::Int64Scaled {
-                        value: right,
+                    OffsetView::Int64Scaled {
+                        index: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                 else {
                     return false;
                 };
-                left_width == byte_width
-                    && right_width == byte_width
-                    && left_unsigned == unsigned
-                    && right_unsigned == unsigned
+                left_width == *byte_width
+                    && right_width == *byte_width
+                    && left_unsigned == *unsigned
+                    && right_unsigned == *unsigned
                     && assumptions.checks_exact_bitvector_equality_path_views(
                         path,
                         left.operand_view(),
@@ -1009,7 +1009,7 @@ impl SignedConstantEvidence {
         let Proposition::ConditionIs(condition, value) = source else {
             return None;
         };
-        let view = comparison_view(condition.native_compat(), *value)?;
+        let view = comparison_view(condition.old_form(), *value)?;
         if !matches!(
             view.format,
             MachineIntegerType::Int32 | MachineIntegerType::UInt32
@@ -1037,13 +1037,13 @@ impl SignedConstantEvidence {
 impl DirectBitvectorEqualityEvidence {
     pub(in crate::kernel) fn checks(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> bool {
         self.checks_views(
-            crate::kernel::MachineOperandView::Legacy(left),
-            crate::kernel::MachineOperandView::Legacy(right),
+            crate::kernel::MachineOperandView::Old(left),
+            crate::kernel::MachineOperandView::Old(right),
             assumptions,
         )
     }
@@ -1098,7 +1098,7 @@ impl DirectBitvectorEqualityEvidence {
                                         return None;
                                     };
                                     let view = crate::kernel::assumptions::order_view_at_format(
-                                        condition.native_compat(),
+                                        condition.old_form(),
                                         *truth,
                                         MachineIntegerType::Int32,
                                     )?;
@@ -1243,24 +1243,24 @@ impl LoadAddressCongruenceEvidence {
         assumptions: &PureFactContext,
     ) -> bool {
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = proposition.condition_native()
+        )) = proposition.old_condition()
         else {
             return false;
         };
         let (Some(left), Some(right)) = (
-            crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(left),
-            ),
-            crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(right),
-            ),
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Old(
+                left,
+            )),
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Old(
+                right,
+            )),
         ) else {
             return false;
         };
@@ -1292,7 +1292,7 @@ impl SignedOrderDerivationStep {
     ) -> Self {
         use super::super::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
         let retain = |operand| match operand {
-            MachineOperandView::Legacy(term) => Key::Written(term.clone()),
+            MachineOperandView::Old(term) => Key::Written(term.clone()),
             MachineOperandView::Shared(_) => Key::for_format(MachineIntegerType::Int32, operand),
         };
         Self {
@@ -1316,7 +1316,7 @@ impl SignedOrderDerivationStep {
         value: MachineOperandView<'_>,
     ) -> bool {
         use super::super::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
-        if let (Key::Written(left), MachineOperandView::Legacy(right)) = (endpoint, value) {
+        if let (Key::Written(left), MachineOperandView::Old(right)) = (endpoint, value) {
             left == right
         } else {
             Key::for_format(MachineIntegerType::Int32, endpoint.operand_view())
@@ -1332,16 +1332,16 @@ impl SignedOrderDerivationStep {
         Self::endpoint_matches(&self.upper, value)
     }
 
-    pub(in crate::kernel) fn lower_is(&self, value: &MachineTerm) -> bool {
-        self.lower_matches_view(MachineOperandView::Legacy(value))
+    pub(in crate::kernel) fn lower_is(&self, value: &OldMachineTerm) -> bool {
+        self.lower_matches_view(MachineOperandView::Old(value))
     }
 
-    pub(in crate::kernel) fn upper_is(&self, value: &MachineTerm) -> bool {
-        self.upper_matches_view(MachineOperandView::Legacy(value))
+    pub(in crate::kernel) fn upper_is(&self, value: &OldMachineTerm) -> bool {
+        self.upper_matches_view(MachineOperandView::Old(value))
     }
 
     /// Explicit compatibility output; checker consumers use `lower_view`.
-    pub fn lower(&self) -> &MachineTerm {
+    pub fn lower(&self) -> &OldMachineTerm {
         match &self.lower {
             super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Shared(term) => {
                 term.value()
@@ -1352,7 +1352,7 @@ impl SignedOrderDerivationStep {
         }
     }
 
-    pub fn upper(&self) -> &MachineTerm {
+    pub fn upper(&self) -> &OldMachineTerm {
         match &self.upper {
             super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Shared(term) => {
                 term.value()
@@ -1385,11 +1385,11 @@ impl BitvectorEqualityDerivationStep {
     }
 
     /// Explicit compatibility output for surface certificate construction.
-    pub fn source(&self) -> &MachineTerm {
+    pub fn source(&self) -> &OldMachineTerm {
         self.source.value()
     }
 
-    pub fn target(&self) -> &MachineTerm {
+    pub fn target(&self) -> &OldMachineTerm {
         self.target.value()
     }
 

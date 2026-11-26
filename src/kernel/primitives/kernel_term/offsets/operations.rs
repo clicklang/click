@@ -306,23 +306,23 @@ mod tests {
     use super::*;
     use crate::kernel::BooleanOperandView as B;
 
-    fn sources() -> Vec<AddressOffset> {
+    fn sources() -> Vec<OldAddressOffset> {
         let mut result = vec![
-            AddressOffset::Constant(0),
-            AddressOffset::Constant(1),
-            AddressOffset::Constant(i64::MAX),
-            AddressOffset::Variable(Variable(998001)),
+            OldAddressOffset::Constant(0),
+            OldAddressOffset::Constant(1),
+            OldAddressOffset::Constant(i64::MAX),
+            OldAddressOffset::Variable(Variable(998001)),
         ];
         for width in [0, -8, 4, 1 << 24, (1 << 24) + 1] {
             for bits in [
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(998002)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(998002)),
             ] {
-                result.push(AddressOffset::scaled_int32_node(bits, width));
+                result.push(OldAddressOffset::scaled_int32_node(bits, width));
             }
             for unsigned in [false, true] {
-                result.push(AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable(998003)),
+                result.push(OldAddressOffset::scaled_int64_node(
+                    OldMachineTerm::Variable(Variable(998003)),
                     width,
                     unsigned,
                 ));
@@ -330,9 +330,12 @@ mod tests {
         }
         for n in [30, 31, 32, 33] {
             let mut offset =
-                AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(998002)), 4);
+                OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998002)), 4);
             for _ in 0..n {
-                offset = AddressOffset::Add(Box::new(offset), Box::new(AddressOffset::Constant(1)));
+                offset = OldAddressOffset::Add(
+                    Box::new(offset),
+                    Box::new(OldAddressOffset::Constant(1)),
+                );
             }
             result.push(offset);
         }
@@ -351,7 +354,7 @@ mod tests {
                     shared.clone(),
                     KernelAddressOffset::import(b),
                 ]);
-                let expected = ConditionTerm::address_offset_equal(a.clone(), b.clone());
+                let expected = OldConditionTerm::address_offset_equal(a.clone(), b.clone());
                 assert_eq!(
                     KernelTermExport::condition(&root).unwrap(),
                     expected,
@@ -365,12 +368,12 @@ mod tests {
     fn offset_conditions_keep_raw_shape_and_substitution_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         for offset in sources() {
-            let source = ConditionTerm::AddressOffsetEqual(
-                Box::new(AddressOffset::Add(
-                    Box::new(AddressOffset::Constant(0)),
+            let source = OldConditionTerm::AddressOffsetEqual(
+                Box::new(OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Constant(0)),
                     Box::new(offset),
                 )),
-                Box::new(AddressOffset::Constant(5)),
+                Box::new(OldAddressOffset::Constant(5)),
             );
             let root = KernelTermImport::default().condition(&source);
             assert!(matches!(
@@ -383,7 +386,7 @@ mod tests {
             );
             assert!(B::Shared(&root).syntax_equal(B::Native(&source)));
             for from in [Variable(998002), Variable(998099)] {
-                let to = MachineTerm::constant(3);
+                let to = OldMachineTerm::constant(3);
                 let native = crate::kernel::reasoning::substitute_bitvector_variable_in_condition(
                     &source, from, &to,
                 );
@@ -397,7 +400,7 @@ mod tests {
                     format!("{native:?}")
                 );
             }
-            let pointer = Address::symbolic(Variable(998100));
+            let pointer = OldAddress::symbolic(Variable(998100));
             assert_eq!(
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
@@ -417,13 +420,13 @@ mod tests {
             .with_block("offset-other", 4);
         let after = before.clone().store(
             crate::kernel::SymbolicMemory::global_pointer("offset-other"),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let memory_a = crate::kernel::intern_memory(before);
         let memory_b = crate::kernel::intern_memory(after);
         for wide in [false, true] {
             let condition = |memory| {
-                let value = MachineTerm::read_named(
+                let value = OldMachineTerm::read_named(
                     memory,
                     Box::new(crate::kernel::SymbolicMemory::global_pointer(
                         "offset-condition",
@@ -435,13 +438,13 @@ mod tests {
                     },
                 );
                 let offset = if wide {
-                    AddressOffset::scaled_int64_node(value, 8, false)
+                    OldAddressOffset::scaled_int64_node(value, 8, false)
                 } else {
-                    AddressOffset::scaled_int32_node(value, 4)
+                    OldAddressOffset::scaled_int32_node(value, 4)
                 };
-                ConditionTerm::AddressOffsetEqual(
+                OldConditionTerm::AddressOffsetEqual(
                     Box::new(offset),
-                    Box::new(AddressOffset::Constant(0)),
+                    Box::new(OldAddressOffset::Constant(0)),
                 )
             };
             let a = condition(ProgramPoint::at(&memory_a));
@@ -449,7 +452,7 @@ mod tests {
             let ar = KernelTermImport::default().condition(&a);
             let br = KernelTermImport::default().condition(&b);
             for allowed in [false, true] {
-                let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+                let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
                 let expected =
                     crate::kernel::assumptions::conditions_equal_with_load_atoms(&a, &b, &loads);
                 assert_eq!(
@@ -488,16 +491,16 @@ mod identity_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let sources = [CScalarClass::Int, CScalarClass::Char].map(|class| {
-            ConditionTerm::AddressOffsetEqual(
-                Box::new(AddressOffset::scaled_int64_node(
-                    MachineTerm::IntegerAddress(
-                        Box::new(Address::symbolic(Variable(998400))),
+            OldConditionTerm::AddressOffsetEqual(
+                Box::new(OldAddressOffset::scaled_int64_node(
+                    OldMachineTerm::IntegerAddress(
+                        Box::new(OldAddress::symbolic(Variable(998400))),
                         crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
                     1,
                     true,
                 )),
-                Box::new(AddressOffset::Constant(0)),
+                Box::new(OldAddressOffset::Constant(0)),
             )
         });
         let roots = sources
@@ -510,12 +513,12 @@ mod identity_tests {
                 .syntax_equal(BooleanOperandView::Shared(&roots[1]))
         );
         for source in &sources {
-            let source = ConditionTerm::BoolEqual(
+            let source = OldConditionTerm::BoolEqual(
                 Box::new(source.clone()),
-                Box::new(ConditionTerm::Constant(false)),
+                Box::new(OldConditionTerm::Constant(false)),
             );
             let root = KernelTermImport::default().condition(&source);
-            let target = Address::symbolic(Variable(998401));
+            let target = OldAddress::symbolic(Variable(998401));
             let expected = crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
                 Variable(998400),
                 &target,

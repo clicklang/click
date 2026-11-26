@@ -3,19 +3,19 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
     for count in [0u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let opaque = OldPointer::new(
-            Address::symbolic(Variable(1013300)),
+            OldAddress::symbolic(Variable(1013300)),
             ProgramType::Int32Pointer,
         );
         let root = opaque.clone().with_root_bounds();
         let cached = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(opaque.clone(), root.clone()),
+            OldConditionTerm::pointer_equal(opaque.clone(), root.clone()),
             true,
         );
         for (pointer, context) in [(root, PureFactContext::new()), (opaque, cached)] {
             let facts: ExecutionFacts = (0..count)
                 .map(|i| {
                     ExecutionPureFact::new(Proposition::condition_is(
-                        ConditionTerm::Variable(Variable(1013400 + i)),
+                        OldConditionTerm::Variable(Variable(1013400 + i)),
                         true,
                     ))
                 })
@@ -60,14 +60,14 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
         // An unresolved domain is also a read-only miss. Access authority is
         // checked separately, using the context the caller already prepared.
         let unknown = OldPointer::new(
-            Address::symbolic(Variable(1013700)),
+            OldAddress::symbolic(Variable(1013700)),
             ProgramType::Int32Pointer,
         );
         let context = PureFactContext::new();
         let facts: ExecutionFacts = (0..count)
             .map(|i| {
                 ExecutionPureFact::new(Proposition::condition_is(
-                    ConditionTerm::Variable(Variable(1013800 + i)),
+                    OldConditionTerm::Variable(Variable(1013800 + i)),
                     true,
                 ))
             })

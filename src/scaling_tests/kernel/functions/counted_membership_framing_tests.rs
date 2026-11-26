@@ -6,9 +6,9 @@ use super::*;
 
 #[test]
 fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "counter".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new();
     let memory = SymbolicMemory::new().with_block("counter", 4);
@@ -113,7 +113,7 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
     let mut asking = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let object = |index: u64| Address::symbolic(Variable(782_000 + index));
+        let object = |index: u64| OldAddress::symbolic(Variable(782_000 + index));
         let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
             residual.unchecked_with_fact(ResourceFact::own_composite(
                 "boxed".into(),
@@ -124,8 +124,8 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
         let assumptions = PureFactContext::new();
         let written = MemoryRange::new(
             object(size + 1),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
             let kept = call_kept_ownership(&residual, &[boxed_definition()].into(), &assumptions);
@@ -151,9 +151,12 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
 fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
     let samples = [4u64, 16, 64, 256].map(|size| {
         let _session = VerificationSession::enter();
-        let argument = |index| Address {
+        let argument = |index| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(784_000 + index)), 4),
+            offset: OldAddressOffset::scale_int32(
+                OldMachineTerm::Variable(Variable(784_000 + index)),
+                4,
+            ),
         };
         let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
             residual.unchecked_with_fact(ResourceFact::own_composite(
@@ -165,17 +168,17 @@ fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
         let hit = argument(0);
         let assumptions = (0..size).fold(PureFactContext::new(), |facts, index| {
             facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     hit.clone(),
-                    Address::symbolic(Variable(786_000 + index)),
+                    OldAddress::symbolic(Variable(786_000 + index)),
                 ),
                 true,
             )
         });
         let written = MemoryRange::new(
             argument(1_001),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let kept = call_kept_ownership(&residual, &[boxed_definition()].into(), &assumptions);
         let after = SymbolicMemory::new().with_call_memory_havoc(
@@ -211,9 +214,12 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
     let mut recording = Vec::new();
     for size in [2u64, 4, 8, 16] {
         let _session = VerificationSession::enter();
-        let object = |index: u64| Address {
+        let object = |index: u64| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(783_000 + index)), 4),
+            offset: OldAddressOffset::scale_int32(
+                OldMachineTerm::Variable(Variable(783_000 + index)),
+                4,
+            ),
         };
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
             resources.unchecked_with_fact(ResourceFact::own_composite(
@@ -224,8 +230,8 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let cell = object(size + 1);
         let written = MemoryRange::new(
             cell.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let original = residual
             .clone()
@@ -273,7 +279,7 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
                     InstanceId::from_variable(Variable(8_600_000 + index)),
                     "boxed".into(),
                     vec![
-                        ProgramValue::pointer(Address::symbolic(Variable(8_610_000 + index)))
+                        ProgramValue::pointer(OldAddress::symbolic(Variable(8_610_000 + index)))
                             .into(),
                     ]
                     .into(),
@@ -313,7 +319,7 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
     for memory_bound in [false, true] {
         let samples = [4_u64, 16, 64].map(|size| {
             let _session = VerificationSession::enter();
-            let object = |index| Address::symbolic(Variable(8_700_000 + index));
+            let object = |index| OldAddress::symbolic(Variable(8_700_000 + index));
             let body = if memory_bound {
                 vec![
                     ResourceSpec::owned_memory(MemorySegment::new(

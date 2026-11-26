@@ -2,13 +2,13 @@ use super::*;
 
 #[test]
 fn copying_a_union_drops_destination_views_absent_from_source() {
-    let source = Address {
+    let source = OldAddress {
         base: "union-copy-source".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let destination = Address {
+    let destination = OldAddress {
         base: "union-copy-destination".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::with_unions(
         4,
@@ -35,7 +35,7 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
         .store_union(
             destination.clone(),
             ProgramType::Int32,
-            ProgramValue::Int32(MachineTerm::constant(0x5151)),
+            ProgramValue::Int32(OldMachineTerm::constant(0x5151)),
         );
 
     let copied = copy_aggregate_fields(memory, &source, &destination, &layout);
@@ -55,14 +55,14 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
 /// written only when `union_written`.
 fn forgotten_local_packet(
     union_written: bool,
-) -> (SymbolicMemory, Address, Address, AggregateLayout) {
-    let source = Address {
+) -> (SymbolicMemory, OldAddress, OldAddress, AggregateLayout) {
+    let source = OldAddress {
         base: "local:forgotten-packet-source".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let destination = Address {
+    let destination = OldAddress {
         base: "local:forgotten-packet-destination".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::with_unions(
         8,
@@ -83,20 +83,20 @@ fn forgotten_local_packet(
         .with_block(destination.base.clone(), 8)
         .store(
             source.clone(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
     if union_written {
         memory = memory.store_union(
             source.offset_by_bytes(4),
             ProgramType::Int32,
-            ProgramValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::Int32(OldMachineTerm::constant(2)),
         );
     }
     // `source[u] = …` for an index the facts do not place: every cell
     // and view of the block may be the one it writes.
-    let unplaced = Address {
+    let unplaced = OldAddress {
         base: source.base.clone(),
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(925_001)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(925_001)), 4),
     };
     let memory = memory.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new());
     assert!(memory.known_value(&source).is_none());
@@ -135,9 +135,9 @@ fn copying_a_never_written_union_member_stays_an_uninitialized_read() {
 #[test]
 fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "record_copy");
     let layout = AggregateLayout::new(
@@ -168,7 +168,7 @@ fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
     assert!(runs.next().is_none());
     assert_eq!(run.count(), 4);
     assert_eq!(run.source_point().id(), point.id());
-    let Some(ProgramValue::UInt32(MachineTerm::MemoryLoad(version, address, kind))) =
+    let Some(ProgramValue::UInt32(OldMachineTerm::MemoryLoad(version, address, kind))) =
         copied.known_value(&target.offset_by_bytes(8))
     else {
         panic!("a typed read from the caller's field");
@@ -181,9 +181,9 @@ fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
 #[test]
 fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "scalar_record_copy");
     let layout = AggregateLayout::new(
@@ -221,7 +221,7 @@ fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
         );
         let value = copied.known_value(&target.offset_by_bytes(offset)).unwrap();
         assert_eq!(value.program_type(), ty);
-        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+        let Some(OldMachineTerm::MemoryLoad(point, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value)
         else {
             panic!("expected a typed source read");
@@ -235,9 +235,9 @@ fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
 #[test]
 fn aggregate_copy_keeps_the_entry_version_of_an_uncached_opaque_field() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "opaque_record_copy");
     let parameter = crate::kernel::TypeParameterName::intern("CopyField");
@@ -272,14 +272,14 @@ fn aggregate_copy_keeps_the_entry_version_of_an_uncached_opaque_field() {
 #[test]
 fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "forgotten_record_copy");
     for value in [
         crate::kernel::uint8(17),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(42)),
     ] {
         let ty = value.program_type();
         let bytes = ty.byte_width();
@@ -299,7 +299,7 @@ fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
         let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
         let value = copied.known_value(&target).unwrap();
         assert_eq!(value.program_type(), ty);
-        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+        let Some(OldMachineTerm::MemoryLoad(point, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value)
         else {
             panic!("expected a typed source read");
@@ -313,9 +313,9 @@ fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
 #[test]
 fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let field = source.offset_by_bytes(8);
     let target = SymbolicMemory::frame_local_pointer(1, "pointer_record_copy");
@@ -328,7 +328,7 @@ fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
                 AggregateField::new("link", 8, ty),
             ],
         );
-        let domain = Address::symbolic(Variable(986_246));
+        let domain = OldAddress::symbolic(Variable(986_246));
         let value = OldPointer::new(domain.offset_by_bytes(4), ty).with_bounds(Some(
             crate::kernel::SubobjectBounds {
                 start: domain,
@@ -375,9 +375,9 @@ fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
 #[test]
 fn aggregate_copy_union_reads_keep_the_caller_versions() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let source_member = source.offset_by_bytes(8);
     let target = SymbolicMemory::frame_local_pointer(1, "union_record_copy");
@@ -406,7 +406,7 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
     );
 
     let copied = copy_aggregate_fields_checked_at(&initial, &source, &target, &layout).unwrap();
-    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+    let Some(ProgramValue::Int32(OldMachineTerm::MemoryLoad(point, address, kind))) =
         copied.known_union_value(&target_member, ProgramType::Int32)
     else {
         panic!("expected a typed caller word");
@@ -415,7 +415,7 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
     assert_eq!(point.read_version_id(), entry.program_point_id());
     assert_eq!(*address, source_member);
 
-    let domain = Address::symbolic(Variable(986_247));
+    let domain = OldAddress::symbolic(Variable(986_247));
     let value = OldPointer::new(domain.offset_by_bytes(4), pointer_type).with_bounds(Some(
         crate::kernel::SubobjectBounds {
             start: domain,
@@ -457,9 +457,9 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
 fn verified_aggregate_argument_keeps_caller_entry_read() {
     let _session = crate::kernel::VerificationSession::enter();
     let caller = ExecutionState::new().begin_function_entry_memory();
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         4,
@@ -486,7 +486,7 @@ fn verified_aggregate_argument_keeps_caller_entry_read() {
     .expect("bind a checked aggregate argument");
 
     let slot = bound.locals.slot("input").expect("private argument slot");
-    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+    let Some(ProgramValue::Int32(OldMachineTerm::MemoryLoad(point, address, kind))) =
         bound.memory().known_value(slot)
     else {
         panic!("expected a typed caller word");
@@ -507,7 +507,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     let source = SymbolicMemory::local_pointer("retained_copy_source");
     let target = SymbolicMemory::local_pointer("retained_copy_target");
     let pointer = OldPointer::new(
-        Address::symbolic(Variable(1027800)),
+        OldAddress::symbolic(Variable(1027800)),
         ProgramType::Int32Pointer,
     );
     let root = KernelTerm::shared_pointer_call(
@@ -575,7 +575,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     assert_eq!(value.shared(), Some(&root));
     let overwritten = copied.store(
         target.clone(),
-        ProgramValue::Int32(MachineTerm::constant(0)),
+        ProgramValue::Int32(OldMachineTerm::constant(0)),
     );
     assert!(
         overwritten

@@ -8,13 +8,13 @@ use super::arithmetic_special::ArithmeticRuleError as Error;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::machine_integer::conversion::{cast, integer_conversion};
-use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
+use crate::kernel::{OldConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, b))
         }
@@ -51,7 +51,7 @@ fn check_as_written(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Some((ConditionTerm::IntegerEqual(a, b), true)) = result.condition_native() else {
+    let Some((OldConditionTerm::IntegerEqual(a, b), true)) = result.old_condition() else {
         return Err(invalid());
     };
     // Two observations with one value reading (rule W: a widening's value
@@ -141,17 +141,17 @@ mod tests {
     use super::*;
 
     use crate::kernel::{
-        IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, MachineTerm, Variable,
+        IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, OldMachineTerm, Variable,
     };
     use num_bigint::BigInt;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::integer_less_equal(a, b), true)
+        Proposition::condition_is(OldConditionTerm::integer_less_equal(a, b), true)
     }
     fn inputs(source: Ty, destination: Ty) -> (Vec<Proposition>, Proposition) {
-        let value = MachineTerm::Variable(Variable(168_001));
+        let value = OldMachineTerm::Variable(Variable(168_001));
         let original = IntegerTerm::from_machine(source, value.clone()).unwrap();
-        let cast = MachineTerm::machine_integer_cast(source, destination, value);
+        let cast = OldMachineTerm::machine_integer_cast(source, destination, value);
         let observed = IntegerTerm::from_machine(destination, cast).unwrap();
         let (lo, hi) = destination.format().bounds();
         (
@@ -159,7 +159,7 @@ mod tests {
                 le(IntegerTerm::constant(lo), original.clone()),
                 le(original.clone(), IntegerTerm::constant(hi)),
             ],
-            Proposition::condition_is(ConditionTerm::integer_equal(observed, original), true),
+            Proposition::condition_is(OldConditionTerm::integer_equal(observed, original), true),
         )
     }
 
@@ -202,12 +202,12 @@ mod tests {
                     );
                     assert_eq!(expected == number, min <= number && number <= max);
                 }
-                let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native()
+                let Some((OldConditionTerm::IntegerEqual(a, b), true)) = goal.old_condition()
                 else {
                     unreachable!()
                 };
                 let reversed = Proposition::condition_is(
-                    ConditionTerm::integer_equal(b.as_ref().clone(), a.as_ref().clone()),
+                    OldConditionTerm::integer_equal(b.as_ref().clone(), a.as_ref().clone()),
                     true,
                 );
                 assert!(check_rule(vec![0, 1], &reversed, &premises).is_ok());
@@ -217,20 +217,21 @@ mod tests {
 
     #[test]
     fn integer_cast_identity_checks_normalized_nested_conversions() {
-        let variable = MachineTerm::Variable(Variable(168_001));
+        let variable = OldMachineTerm::Variable(Variable(168_001));
         for (source, intermediate, destination) in [
             (Ty::Int32, Ty::UInt32, Ty::UInt16),
             (Ty::UInt32, Ty::Int32, Ty::UInt16),
             (Ty::UInt8, Ty::UInt32, Ty::UInt16),
             (Ty::Int128, Ty::UInt64, Ty::Int32),
         ] {
-            let widened = MachineTerm::machine_integer_cast(source, intermediate, variable.clone());
+            let widened =
+                OldMachineTerm::machine_integer_cast(source, intermediate, variable.clone());
             let narrowed =
-                MachineTerm::machine_integer_cast(intermediate, destination, widened.clone());
+                OldMachineTerm::machine_integer_cast(intermediate, destination, widened.clone());
             let original = IntegerTerm::from_machine(intermediate, widened).unwrap();
             let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_equal(observed.clone(), original.clone()),
+                OldConditionTerm::integer_equal(observed.clone(), original.clone()),
                 true,
             );
             let premises = vec![
@@ -253,19 +254,22 @@ mod tests {
             if underlying.value_read() == original.value_read() {
                 continue;
             }
-            let wrong_goal =
-                Proposition::condition_is(ConditionTerm::integer_equal(observed, underlying), true);
+            let wrong_goal = Proposition::condition_is(
+                OldConditionTerm::integer_equal(observed, underlying),
+                true,
+            );
             assert!(check_rule(vec![0, 1], &wrong_goal, &premises).is_err());
         }
 
         // Widening after a truncation cannot be treated as a direct cast of the
         // pre-truncation value, even if that value fits the final destination.
-        let truncated = MachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, variable.clone());
-        let widened = MachineTerm::machine_integer_cast(Ty::UInt8, Ty::UInt16, truncated);
+        let truncated =
+            OldMachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, variable.clone());
+        let widened = OldMachineTerm::machine_integer_cast(Ty::UInt8, Ty::UInt16, truncated);
         let original = IntegerTerm::from_machine(Ty::UInt32, variable).unwrap();
         let observed = IntegerTerm::from_machine(Ty::UInt16, widened).unwrap();
         let goal = Proposition::condition_is(
-            ConditionTerm::integer_equal(observed, original.clone()),
+            OldConditionTerm::integer_equal(observed, original.clone()),
             true,
         );
         let premises = vec![
@@ -277,7 +281,7 @@ mod tests {
 
     #[test]
     fn integer_cast_identity_checks_unsigned_byte_readback_masks() {
-        let value = MachineTerm::Variable(Variable(168_001));
+        let value = OldMachineTerm::Variable(Variable(168_001));
         let original = IntegerTerm::from_machine(Ty::UInt32, value.clone()).unwrap();
         for destination in [Ty::UInt8, Ty::UInt16] {
             let mask = (1u32 << destination.format().bits()) - 1;
@@ -286,11 +290,11 @@ mod tests {
                     Int32,
                     BitwiseAnd,
                     Box::new(value.clone()),
-                    Box::new(MachineTerm::constant(mask)),
+                    Box::new(OldMachineTerm::constant(mask)),
                 );
                 let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
                 Proposition::condition_is(
-                    ConditionTerm::integer_equal(observed, original.clone()),
+                    OldConditionTerm::integer_equal(observed, original.clone()),
                     true,
                 )
             };
@@ -347,7 +351,7 @@ mod tests {
             assert!(check_rule(bounds, &goal, &premises).is_err());
         }
         let original =
-            IntegerTerm::from_machine(Ty::Int128, MachineTerm::Variable(Variable(168_001)))
+            IntegerTerm::from_machine(Ty::Int128, OldMachineTerm::Variable(Variable(168_001)))
                 .unwrap();
         let (lo, hi) = Ty::Int64.format().bounds();
         for altered in [
@@ -372,7 +376,10 @@ mod tests {
             ],
             vec![
                 Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(IntegerTerm::constant(lo), original.clone()),
+                    OldConditionTerm::integer_less_equal(
+                        IntegerTerm::constant(lo),
+                        original.clone(),
+                    ),
                     false,
                 ),
                 premises[1].clone(),
@@ -394,16 +401,21 @@ mod tests {
         use crate::kernel::SharedMachineIntegerTerm;
         let (premises, _) = inputs(Ty::Int128, Ty::Int64);
         let original =
-            IntegerTerm::from_machine(Ty::Int128, MachineTerm::Variable(Variable(168_001)))
+            IntegerTerm::from_machine(Ty::Int128, OldMachineTerm::Variable(Variable(168_001)))
                 .unwrap();
         for (ty, source, destination, value) in [
             (
                 Ty::Int32,
                 Ty::Int128,
                 Ty::Int64,
-                MachineTerm::Variable(Variable(168_001)),
+                OldMachineTerm::Variable(Variable(168_001)),
             ),
-            (Ty::Int64, Ty::Int128, Ty::Int64, MachineTerm::constant(1)),
+            (
+                Ty::Int64,
+                Ty::Int128,
+                Ty::Int64,
+                OldMachineTerm::constant(1),
+            ),
             (
                 Ty::Int64,
                 Ty::UInt128,
@@ -418,7 +430,7 @@ mod tests {
         ] {
             let cast = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 ty,
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: crate::kernel::MachineCastSpelling::Generic,
                     from: source,
                     to: destination,
@@ -426,7 +438,7 @@ mod tests {
                 },
             ));
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_equal(cast, original.clone()),
+                OldConditionTerm::integer_equal(cast, original.clone()),
                 true,
             );
             assert!(check_rule(vec![0, 1], &goal, &premises).is_err());

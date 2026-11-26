@@ -53,7 +53,8 @@ int32 read_back(int32 u, int32 c) {
     have loc[u] == 7 by { close(); }
     have loc[0] == 3 or loc[0] == 7 by {
         if u == 0 {
-            have loc[0] == 7 by { normalize() using { loc[u] == 7; u == 0; }; }
+            have &loc[0] == &loc[u] by { rewrite(u, 0); close(); }
+            have loc[0] == 7 by { rewrite(&loc[0], &loc[u]); close(); }
             close();
         } else {
             have separate(memory(loc[u]), memory(loc[0])) by {

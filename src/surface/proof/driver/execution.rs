@@ -435,7 +435,6 @@ fn checked_execution_arm_tactics_end(
                 tactic,
                 ProofTactic::ApplyFact(_)
                     | ProofTactic::ApplyTheorem(_)
-                    | ProofTactic::Transport { .. }
                     | ProofTactic::Have(_)
                     | ProofTactic::LetSatisfy(_)
             )
@@ -942,10 +941,6 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
         ProofTactic::Both(_) | ProofTactic::All(_) => {
             Some(PostExecutionTactic::Both(tactic.clone()))
         }
-        ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
-            source: source.clone(),
-            target: target.clone(),
-        }),
         ProofTactic::Solve => Some(PostExecutionTactic::Solve),
         ProofTactic::ImplicitSolve => Some(PostExecutionTactic::ImplicitSolve),
         ProofTactic::SolveUsing(solve) => Some(PostExecutionTactic::SolveUsing(solve.clone())),
@@ -1196,23 +1191,6 @@ fn apply_frontier_source_tactic<'a>(
         proof.driver().apply_fact_application(fact)?
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
-    } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-        match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
-            &(proof),
-            source,
-            target,
-        )? {
-            Ok(transported) => transported,
-            Err(source_refusal) => {
-                crate::kernel::search::ProofSearch::apply_planned_fact_transport(
-                    &proof,
-                    source,
-                    target,
-                    indexed.index,
-                    source_refusal.as_ref(),
-                )?
-            }
-        }
     } else if let Some(have) = frontier_have(&indexed.tactic) {
         let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
@@ -2344,7 +2322,7 @@ pub(in crate::surface::proof) fn source_have_error(
     let pointer_equality = matches!(&goal, Some(condition_source_0 @ Proposition::ConditionIs(
             _,
             true
-        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(_, _), _))));
+        )) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(_, _), _))));
     let detail = if pointer_equality {
         "missing pure fact: pointer equality is true".to_string()
     } else {
@@ -5052,25 +5030,6 @@ fn advance_linear_open_scope<'a>(
                 return decline();
             };
             scope = applied;
-            if indexed.source_index != owning_source_index
-                && let Some(site) = proof_site
-            {
-                let certificate = scope.certificate_since(&checkpoint)?;
-                record_proof_site_tactic_expansion(
-                    expansion_capture.as_deref_mut(),
-                    site,
-                    indexed.source_index,
-                    &certificate.to_proof_tactics(),
-                );
-            }
-            continue;
-        }
-        if let ProofTactic::Transport { source, target } = &indexed.tactic {
-            let checkpoint = scope.checkpoint();
-            let Some(transported) = scope.driver().try_fact_transport(source, target)? else {
-                return decline();
-            };
-            scope = transported;
             if indexed.source_index != owning_source_index
                 && let Some(site) = proof_site
             {

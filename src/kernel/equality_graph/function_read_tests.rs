@@ -3,13 +3,13 @@ use super::*;
 /// A function-pointer read is the cell's load, the same address base an
 /// object-pointer read of the cell has (`design/loads.md`, "Terms"); the
 /// function-pointer type is the decoding's.
-fn function_read(memory: &SharedMemory, address: &Address) -> Address {
-    Address::loaded_value(memory, address)
+fn function_read(memory: &SharedMemory, address: &OldAddress) -> OldAddress {
+    OldAddress::loaded_value(memory, address)
 }
 
 fn callback_value(name: &str) -> ProgramValue {
     ProgramValue::typed_pointer(
-        Address::function(name),
+        OldAddress::function(name),
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     )
 }
@@ -20,17 +20,17 @@ fn callback_value(name: &str) -> ProgramValue {
 #[test]
 fn a_function_pointer_read_of_its_stored_cell_is_the_stored_function() {
     let _session = crate::kernel::VerificationSession::enter();
-    let slot = Address {
+    let slot = OldAddress {
         base: "callback-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let target = Address::function("callback");
+    let target = OldAddress::function("callback");
     let memory =
         intern_memory(SymbolicMemory::new().store(slot.clone(), callback_value("callback")));
     let read = function_read(&memory, &slot);
     let empty = PureFactContext::new();
     assert!(empty.pointers_known_equal(&read, &target));
-    let replacement = Address::function("replacement");
+    let replacement = OldAddress::function("replacement");
     let after = intern_memory(
         memory
             .memory()
@@ -48,17 +48,17 @@ fn a_function_pointer_read_of_its_stored_cell_is_the_stored_function() {
 #[test]
 fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let slot = Address {
+    let slot = OldAddress {
         base: "callback-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let target = Address::function("callback");
+    let target = OldAddress::function("callback");
     let stored = callback_value("callback");
     let memory = intern_memory(SymbolicMemory::new().store(slot.clone(), stored.clone()));
-    let query = Address::symbolic(Variable(992001));
+    let query = OldAddress::symbolic(Variable(992001));
     let read = function_read(&memory, &query);
     let empty = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(slot.clone(), query.clone()),
+        OldConditionTerm::address_equal(slot.clone(), query.clone()),
         true,
     );
     assert!(
@@ -73,7 +73,7 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let before_alias = PureFactContext::new().assume_proposition(equation);
     assert!(!before_alias.pointers_known_equal(&read, &target));
     let after_alias = before_alias.assume_condition(
-        ConditionTerm::address_equal(slot.clone(), query.clone()),
+        OldConditionTerm::address_equal(slot.clone(), query.clone()),
         true,
     );
     assert!(after_alias.pointers_known_equal(&read, &target));
@@ -85,12 +85,12 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
             .store(slot.clone(), replacement.clone()),
     );
     let new_read = function_read(&after, &query);
-    assert!(!facts.pointers_known_equal(&new_read, &Address::function("replacement")));
+    assert!(!facts.pointers_known_equal(&new_read, &OldAddress::function("replacement")));
     let updated = facts.assume_proposition(
         crate::kernel::memory_history::store_value_equation(after.memory(), &slot, &replacement)
             .unwrap(),
     );
-    assert!(updated.pointers_known_equal(&new_read, &Address::function("replacement")));
+    assert!(updated.pointers_known_equal(&new_read, &OldAddress::function("replacement")));
     assert!(!updated.pointers_known_equal(&new_read, &target));
     assert!(updated.pointers_known_equal(&read, &target));
 }

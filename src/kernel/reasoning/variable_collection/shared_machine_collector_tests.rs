@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::{KernelTermExport, KernelTermImport, VerificationSession};
 
-fn shared(value: &MachineTerm, format: MachineIntegerType) -> SharedMachineIntegerTerm {
+fn shared(value: &OldMachineTerm, format: MachineIntegerType) -> SharedMachineIntegerTerm {
     let root = KernelTermImport::default()
         .machine_arithmetic(format, value)
         .unwrap();
@@ -30,19 +30,19 @@ fn shared_machine_collectors_preserve_carriers_binders_and_loads() {
                 IntegerTerm::var(accumulator).into(),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(accumulator),
+                    OldMachineTerm::Variable(accumulator),
                 ))
                 .into(),
             ),
         );
-        let converted = MachineTerm::IntegerToMachine {
+        let converted = OldMachineTerm::IntegerToMachine {
             value: folded.into(),
             destination: format,
         };
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
-            &Address::symbolic(Variable(989965)),
+            &OldAddress::symbolic(Variable(989965)),
             crate::kernel::LoadKind::Int32,
             4,
         );
@@ -50,10 +50,10 @@ fn shared_machine_collectors_preserve_carriers_binders_and_loads() {
             converted,
             crate::kernel::eval::registered_load_term_for_variable(&load).unwrap(),
         ] {
-            let native = MachineTerm::Binary {
+            let native = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
-                left: MachineTerm::Variable(machine_variable).into(),
+                left: OldMachineTerm::Variable(machine_variable).into(),
                 right: leaf.into(),
             };
             let machine = shared(&native, format);
@@ -121,14 +121,14 @@ fn shared_fold_endpoint_collectors_keep_outer_variables_and_inner_binders() {
     let outer = Variable(989971);
     let item = Variable(989972);
     let accumulator = Variable(989973);
-    let native = MachineTerm::Binary {
+    let native = OldMachineTerm::Binary {
         format,
         op: MachineBinaryOp::Add,
-        left: MachineTerm::Variable(outer).into(),
-        right: MachineTerm::Variable(item).into(),
+        left: OldMachineTerm::Variable(outer).into(),
+        right: OldMachineTerm::Variable(item).into(),
     };
     let machine = shared(&native, format);
-    let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+    let endpoint = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0))
         .with_shared_operand(machine.shared_operand().unwrap().clone())
         .unwrap();
     let fold = IntegerTerm::range_fold(
@@ -141,7 +141,7 @@ fn shared_fold_endpoint_collectors_keep_outer_variables_and_inner_binders() {
         item,
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::Variable(item),
+            OldMachineTerm::Variable(item),
         )),
     );
     let exports = KernelTermExport::machine_export_count();
@@ -180,7 +180,7 @@ fn shared_scope_maximum_covers_empty_syntax_and_extreme_identities() {
     use crate::kernel::{KernelTerm, KernelType};
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let literal = shared(&MachineTerm::constant(1), format);
+    let literal = shared(&OldMachineTerm::constant(1), format);
     assert_eq!(
         collect_machine_scope_summary(&literal, &mut Default::default()).max,
         0
@@ -212,14 +212,14 @@ fn machine_fold_endpoints_retain_mathematical_variables_in_conversions() {
         } else {
             MachineIntegerType::Int32
         };
-        let converted = MachineTerm::IntegerToMachine {
+        let converted = OldMachineTerm::IntegerToMachine {
             destination: format,
             value: IntegerTerm::var(item).into(),
         };
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int32, &converted)
             .unwrap();
-        let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+        let endpoint = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0))
             .with_shared_operand(root)
             .unwrap();
         let index = if unsigned {
@@ -257,14 +257,14 @@ fn machine_fold_endpoints_retain_mathematical_variables_in_conversions() {
 
 // The same carrier fixture enters through a scaled pointer index, not a scalar
 // observation: these edges must not implicitly Deref the shared operand.
-fn check_pointer_index_collectors(native: &MachineTerm, machine: &SharedMachineIntegerTerm) {
+fn check_pointer_index_collectors(native: &OldMachineTerm, machine: &SharedMachineIntegerTerm) {
     let offset = if machine.ty() == MachineIntegerType::Int32 {
-        AddressOffset::Int32Scaled {
+        OldAddressOffset::Int32Scaled {
             value: machine.clone(),
             byte_width: 4,
         }
     } else {
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value: machine.clone(),
             byte_width: 8,
             unsigned: true,

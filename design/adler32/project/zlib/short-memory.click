@@ -85,11 +85,11 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     }
     step(); step();
    } else {
-    have 0u64 <= len by normalize();
+    have 0u64 <= len by close();
     have 0u64 < len by {
      if 0u64 < len { close(); } else {
       have 0u64 == len;
-      have len == 0u64 by { rewrite(0u64, len); normalize(); }
+      have len == 0u64 by { rewrite(0u64, len); close(); }
       contradiction(len == 0u64);
      }
     }
@@ -141,8 +141,14 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(at(before_decrement, buf)[0] as int32) <= 255;
    };
    have to_integer(adler + at(before_decrement, buf)[0] as uint32 as uint64) == to_integer(adler) + to_integer(at(before_decrement, buf)[0] as uint32 as uint64);
+   // Carry the original byte range across the two accumulator stores.
+   have viewable(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])) by close();
    mark before_add;
    step();
+   have separate(statement(6).statement(0).statement(0).assignment(adler, 0).footprint, memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])) by close();
+   have viewable(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])) by {
+    preserve(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)]), statement(6).statement(0).statement(0).assignment(adler, 0));
+   }
    have adler == at(before_add, adler + at(before_decrement, buf)[0] as uint32 as uint64) by close();
    have to_integer(adler) == at(before_add, to_integer(adler + at(before_decrement, buf)[0] as uint32 as uint64)) by close() using { adler == at(before_add, adler + at(before_decrement, buf)[0] as uint32 as uint64); };
    have to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(at(before_decrement, buf)[0] as int32)) by close() using {
@@ -173,6 +179,10 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2 + adler) == to_integer(sum2) + to_integer(adler);
    mark before_sum;
    step_until(loop.back_edge);
+   have separate(statement(6).statement(0).statement(1).footprint, memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])) by close();
+   have viewable(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])) by {
+    preserve(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)]), statement(6).statement(0).statement(1));
+   }
    have to_integer(sum2) == at(before_sum, to_integer(sum2)) + to_integer(adler) by close();
    have 0 <= to_integer(sum2);
    have to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len)) by close() using {
@@ -235,10 +245,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     memory(at(before_decrement, buf)[1u64..at(before_decrement, len)]),
     memory(buf[0u64..len])
    ));
-   have viewable(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])) by {
-    transport(at(before_decrement, viewable(buf[0u64..len])),
-     viewable(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])));
-   }
    apply(separation::viewable_restrict(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)]), memory(buf[0u64..len])));
    have old(len) - len <= 15u64 by {
     have to_integer(old(len) - len) <= 15 by close() using {

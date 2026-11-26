@@ -4,12 +4,12 @@ use super::*;
 #[test]
 fn compound_guard_construction_visits_each_logical_node_once() {
     for size in [16, 64, 256, 1024] {
-        let mut guard = Proposition::condition_is(ConditionTerm::Variable(Variable(1)), true);
+        let mut guard = Proposition::condition_is(OldConditionTerm::Variable(Variable(1)), true);
         for index in 1..size {
             guard = Proposition::Or(
                 Box::new(guard),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Variable(Variable(index + 1)),
+                    OldConditionTerm::Variable(Variable(index + 1)),
                     true,
                 )),
             );

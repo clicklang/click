@@ -23,15 +23,15 @@ pub(super) fn symbolic_contract() -> ProgramFunction {
 }
 
 pub(super) fn symbolic_state() -> (ExecutionState, PureFactContext, ResourceFact) {
-    let pointer = Address::symbolic(Variable(8_940_000));
-    let end = MachineTerm::Variable(Variable(8_940_001));
+    let pointer = OldAddress::symbolic(Variable(8_940_000));
+    let end = OldMachineTerm::Variable(Variable(8_940_001));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(1u32.into(), end.clone()),
+            OldConditionTerm::signed_less_equal(1u32.into(), end.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(end.clone(), 16u32.into()),
+            OldConditionTerm::signed_less_equal(end.clone(), 16u32.into()),
             true,
         );
     let owner =
@@ -329,8 +329,8 @@ fn verified_pointer_output_frames_without_a_geometric_recipe() {
     let owner = |pointer, start: u32, end: u32| {
         ResourceFact::own_memory(MemoryRange::new(pointer, start.into(), end.into()))
     };
-    let p = Address::symbolic(Variable(8_944_000));
-    let held = owner(Address::symbolic(Variable(8_944_001)), 0, 1);
+    let p = OldAddress::symbolic(Variable(8_944_000));
+    let held = owner(OldAddress::symbolic(Variable(8_944_001)), 0, 1);
     let resources =
         ResourceContext::new().unchecked_with_facts([owner(p.clone(), 0, 1), held.clone()]);
     let state = ExecutionState::new()
@@ -410,7 +410,7 @@ pub(super) fn partitioned_input_contract(count: u32, duplicate: bool) -> Program
 #[test]
 fn constant_consumed_footprint_supplies_disjoint_fields_once() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Address::symbolic(Variable(8_945_000));
+    let p = OldAddress::symbolic(Variable(8_945_000));
     let facts = PureFactContext::new();
     let original = ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 4u32.into()));
     let state = ExecutionState::new()

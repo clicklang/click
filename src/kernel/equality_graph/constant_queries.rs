@@ -1,7 +1,7 @@
 //! Constant discovery uses shared class annotations. Contextual arithmetic
 //! retains selected exact source premises when implicit consulted premises are requested.
 use super::*;
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 use crate::kernel::assumptions::record_implicit_consulted_premises;
 use crate::kernel::{
     MachineCastSpelling as Cast, MachineOperandView as V, Proposition, PureFactContext,
@@ -26,9 +26,9 @@ impl EqualityGraph {
     pub(in crate::kernel) fn wide_constant(
         &self,
         context: &PureFactContext,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
     ) -> Option<u64> {
-        self.wide_constant_view(context, V::Legacy(term))
+        self.wide_constant_view(context, V::Old(term))
     }
 
     pub(in crate::kernel) fn wide_constant_view(
@@ -57,7 +57,7 @@ impl EqualityGraph {
                             crate::kernel::assumptions::implicit_consulted_premises_capturing(),
                         )
                     }),
-                V::Legacy(_) => None,
+                V::Old(_) => None,
             };
             if miss_key.is_some_and(|key| {
                 SHARED_WIDE_CONSTANT_MISSES.with(|memo| memo.borrow().contains(&key))
@@ -65,7 +65,7 @@ impl EqualityGraph {
                 return None;
             }
             let identity = match term {
-                V::Legacy(term) => (false, term as *const MachineTerm as usize as u64),
+                V::Old(term) => (false, term as *const OldMachineTerm as usize as u64),
                 V::Shared(term) => (true, term.id()),
             };
             if let Some(value) = memo.get(&identity) {
@@ -167,15 +167,15 @@ impl EqualityGraph {
             }
             if value.is_none() {
                 match term {
-                    V::Legacy(term) => {
+                    V::Old(term) => {
                         if let Some(neighbors) = context
                             .equality_graph
                             .admitted
                             .bitvector64_equality_facts
-                            .get(&crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(MachineIntegerType::UInt64, crate::kernel::MachineOperandView::Legacy(term)))
+                            .get(&crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(MachineIntegerType::UInt64, crate::kernel::MachineOperandView::Old(term)))
                         {
                             for (equal, fact) in neighbors.iter() {
-                                value = evaluate(context, V::Legacy(equal), active, memo);
+                                value = evaluate(context, V::Old(equal), active, memo);
                                 if value.is_some() {
                                     record_implicit_consulted_premises(
                                         context,
@@ -244,14 +244,14 @@ mod tests {
         let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
         let alias = SharedMachineIntegerTerm::from_shared(ty, var(995872)).unwrap();
         let source = Proposition::condition_is(
-            ConditionTerm::integer_equal(
+            OldConditionTerm::integer_equal(
                 IntegerTerm::Machine(operand.clone()),
                 IntegerTerm::Machine(alias.clone()),
             ),
             true,
         );
         let literal = Proposition::condition_is(
-            ConditionTerm::integer_equal(
+            OldConditionTerm::integer_equal(
                 IntegerTerm::Machine(alias),
                 IntegerTerm::constant(7.into()),
             ),
@@ -291,11 +291,11 @@ mod tests {
     fn wide_source_index_keeps_a_written_endpoint_when_canonicalization_changes_it() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let written = MachineTerm::Cast {
+        let written = OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: format,
             to: format,
-            value: Box::new(MachineTerm::Variable(Variable(995879))),
+            value: Box::new(OldMachineTerm::Variable(Variable(995879))),
         };
         assert_ne!(crate::kernel::canonical_term(&written), written);
         let operand = SharedMachineIntegerTerm::from_shared(
@@ -306,11 +306,11 @@ mod tests {
         )
         .unwrap();
         let source = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(written),
-                right: Box::new(MachineTerm::uint64_constant(7)),
+                right: Box::new(OldMachineTerm::uint64_constant(7)),
             },
             true,
         );
@@ -332,49 +332,49 @@ mod tests {
         for (ty, written, expected) in [
             (
                 Ty::Int64,
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::Int64From32,
-                    Box::new(MachineTerm::constant(u32::MAX)),
+                    Box::new(OldMachineTerm::constant(u32::MAX)),
                 ),
                 u64::MAX,
             ),
             (
                 Ty::UInt64,
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64FromInt32,
-                    Box::new(MachineTerm::constant(u32::MAX)),
+                    Box::new(OldMachineTerm::constant(u32::MAX)),
                 ),
                 u64::MAX,
             ),
             (
                 Ty::Int64,
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::Int64FromUInt32,
-                    Box::new(MachineTerm::uint32_constant(u32::MAX)),
+                    Box::new(OldMachineTerm::uint32_constant(u32::MAX)),
                 ),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64From32,
-                    Box::new(MachineTerm::uint32_constant(u32::MAX)),
+                    Box::new(OldMachineTerm::uint32_constant(u32::MAX)),
                 ),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64FromInt64,
-                    Box::new(MachineTerm::int64_constant(-3)),
+                    Box::new(OldMachineTerm::int64_constant(-3)),
                 ),
                 (-3i64) as u64,
             ),
             (
                 Ty::UInt32,
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
-                    Box::new(MachineTerm::uint64_constant(0x1234567887654321)),
+                    Box::new(OldMachineTerm::uint64_constant(0x1234567887654321)),
                 ),
                 0x87654321,
             ),
@@ -421,12 +421,12 @@ mod tests {
         ] {
             let literal = |value| {
                 if ty == Ty::Int64 {
-                    MachineTerm::int64_constant(value as i64)
+                    OldMachineTerm::int64_constant(value as i64)
                 } else {
-                    MachineTerm::uint64_constant(value)
+                    OldMachineTerm::uint64_constant(value)
                 }
             };
-            let written = MachineTerm::Binary {
+            let written = OldMachineTerm::Binary {
                 format: ty,
                 op,
                 left: Box::new(literal(a)),

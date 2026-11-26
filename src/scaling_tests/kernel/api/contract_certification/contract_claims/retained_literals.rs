@@ -5,7 +5,8 @@ fn retained_literal_completion_keys_keep_exact_literals_and_skip_compound_prefix
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let literal = KernelTermImport::default().machine(format, &MachineTerm::uint32_constant(3));
+        let literal =
+            KernelTermImport::default().machine(format, &OldMachineTerm::uint32_constant(3));
         let mut root = literal.clone();
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
@@ -21,7 +22,7 @@ fn retained_literal_completion_keys_keep_exact_literals_and_skip_compound_prefix
         let compound = outcome(root);
         let retained = outcome(literal);
         let native = FunctionOutcome::Return {
-            value: ProgramValue::UInt32(MachineTerm::uint32_constant(3)).into(),
+            value: ProgramValue::UInt32(OldMachineTerm::uint32_constant(3)).into(),
             state: Box::new(ExecutionState::new()),
         };
         let exports = KernelTermExport::machine_export_count();

@@ -19,6 +19,7 @@ use crate::kernel::binary_term;
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{
     bits32_constant, constant_u32, int64_constant, native_constant, uint64_constant,
 };
@@ -53,50 +54,50 @@ thread_local! {
 /// nothing; a refusal uses it to say which bound it could not show.
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAccessElementBound {
-    pub(crate) index: MachineTerm,
-    pub(crate) count: MachineTerm,
+    pub(crate) index: OldMachineTerm,
+    pub(crate) count: OldMachineTerm,
     pub(crate) stride: u32,
 }
 
 pub(crate) fn memory_access_element_bound(
     memory: &SymbolicMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     byte_width: u32,
 ) -> Option<MemoryAccessElementBound> {
     let size = memory.block_size(&pointer.base)?;
     let mut pending = vec![&pointer.offset];
-    let mut widest: Option<(&MachineTerm, u32)> = None;
+    let mut widest: Option<(SharedMachineIntegerTerm, u32)> = None;
     while let Some(term) = pending.pop() {
-        match term {
-            AddressOffset::Add(left, right) => {
+        match term.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            // A widened index is spelled as the C index it widens: a
-            // `uint32` index zero-extends to the 64-bit offset.
-            AddressOffset::Int32Scaled { value, byte_width }
-            | AddressOffset::Int64Scaled {
-                value, byte_width, ..
+            OffsetView::Int32Scaled { index, byte_width }
+            | OffsetView::Int64Scaled {
+                index, byte_width, ..
             } => {
-                let value = match value.structural_value() {
-                    cast_term!(UInt64From32, index) => index,
-                    value => value,
-                };
-                let stride = u32::try_from(*byte_width).ok()?;
-                if widest.is_none_or(|(_, widest)| stride > widest) {
-                    widest = Some((value, stride));
+                let stride = u32::try_from(byte_width).ok()?;
+                if widest.as_ref().is_none_or(|(_, widest)| stride > *widest) {
+                    widest = Some((index, stride));
                 }
             }
-            AddressOffset::Constant(_) => {}
-            AddressOffset::Variable(_) => return None,
+            OffsetView::Constant(_) => {}
+            OffsetView::Variable(_) => return None,
         }
     }
     let (index, stride) = widest?;
     if stride < byte_width {
         return None;
     }
+    // A widened index is spelled as the C index it widens: a `uint32` index
+    // zero-extends to the 64-bit offset.
+    let index = match index.structural_value() {
+        cast_term!(UInt64From32, index) => OldMachineTerm::clone(index),
+        value => value.clone(),
+    };
     Some(MemoryAccessElementBound {
-        index: index.clone(),
+        index,
         count: crate::kernel::reasoning::element_count_from_bytes(size, stride)?,
         stride,
     })
@@ -129,15 +130,15 @@ use contract_certification::contract_resource_condition_cases;
 #[cfg(test)]
 use contract_certification::prove_symbolic_program_function_verification_paths;
 
-pub fn int32(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn int32(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::Int32(bits.into())
 }
 
 /// The C `bool` value of a `bool` cell whose byte is the `uint8` term
 /// `byte`: the byte rule (Stage 5), the `Bool` `byte != 0` at `uint8`,
 /// carried as its cast (rule C1).
-pub fn bool_value(byte: impl Into<MachineTerm>) -> ProgramValue {
-    ProgramValue::of_bool(ConditionTerm::truth_of_bool_word(
+pub fn bool_value(byte: impl Into<OldMachineTerm>) -> ProgramValue {
+    ProgramValue::of_bool(OldConditionTerm::truth_of_bool_word(
         &byte.into().in_narrow_format(MachineIntegerType::UInt8),
     ))
 }
@@ -156,14 +157,14 @@ pub fn bool_value(byte: impl Into<MachineTerm>) -> ProgramValue {
 pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<Proposition>> {
     let cast = match value.numeric_value() {
         ProgramValue::Bool(word) => {
-            MachineTerm::bool_cast(MachineIntegerType::Int32, word.bool_cast_operand()?.clone())
+            OldMachineTerm::bool_cast(MachineIntegerType::Int32, word.bool_cast_operand()?.clone())
         }
         crate::kernel::integer64_c_value!(term) if term.bool_cast_operand().is_some() => {
             term.clone()
         }
         _ => return None,
     };
-    let MachineTerm::BoolCast { to, .. } = &cast else {
+    let OldMachineTerm::BoolCast { to, .. } = &cast else {
         return None;
     };
     // An 8- or 16-bit cast states its range in its own format.
@@ -175,9 +176,9 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
             )?)
         };
         let (zero, one) = (constant(0)?, constant(1)?);
-        let compare = |relation, constant: &MachineTerm| {
+        let compare = |relation, constant: &OldMachineTerm| {
             Proposition::condition_is(
-                ConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
+                OldConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
                 true,
             )
         };
@@ -195,28 +196,28 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
     let (zero, one) = if wide {
         if to.format().is_signed() {
             (
-                MachineTerm::int64_constant(0),
-                MachineTerm::int64_constant(1),
+                OldMachineTerm::int64_constant(0),
+                OldMachineTerm::int64_constant(1),
             )
         } else {
             (
-                MachineTerm::uint64_constant(0),
-                MachineTerm::uint64_constant(1),
+                OldMachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(1),
             )
         }
     } else {
-        (MachineTerm::constant(0), MachineTerm::constant(1))
+        (OldMachineTerm::constant(0), OldMachineTerm::constant(1))
     };
-    let equals = |constant: &MachineTerm| {
+    let equals = |constant: &OldMachineTerm| {
         Proposition::condition_is(
             if wide {
                 if to.format().is_signed() {
-                    ConditionTerm::int64_equal(cast.clone(), constant.clone())
+                    OldConditionTerm::int64_equal(cast.clone(), constant.clone())
                 } else {
-                    ConditionTerm::uint64_equal(cast.clone(), constant.clone())
+                    OldConditionTerm::uint64_equal(cast.clone(), constant.clone())
                 }
             } else {
-                ConditionTerm::equal(cast.clone(), constant.clone())
+                OldConditionTerm::equal(cast.clone(), constant.clone())
             },
             true,
         )
@@ -227,10 +228,10 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
     }
     Some(vec![
         Proposition::condition_is(
-            ConditionTerm::signed_greater_equal(cast.clone(), zero),
+            OldConditionTerm::signed_greater_equal(cast.clone(), zero),
             true,
         ),
-        Proposition::condition_is(ConditionTerm::signed_less_equal(cast.clone(), one), true),
+        Proposition::condition_is(OldConditionTerm::signed_less_equal(cast.clone(), one), true),
         disjunction,
     ])
 }
@@ -240,7 +241,7 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
 /// `[-32768, 32767]`. `None` for every other type, whose range is its word.
 pub(crate) fn program_narrow_integer_range(
     value: &ProgramValue,
-) -> Option<(&MachineTerm, i32, i32)> {
+) -> Option<(&OldMachineTerm, i32, i32)> {
     match value {
         ProgramValue::Int8(term) => Some((term, i32::from(i8::MIN), i32::from(i8::MAX))),
         ProgramValue::Int16(term) => Some((term, i32::from(i16::MIN), i32::from(i16::MAX))),
@@ -251,30 +252,30 @@ pub(crate) fn program_narrow_integer_range(
 }
 
 /// An `int8` value. A 32-bit constant given for it is read as its value's
-/// word (`MachineTerm::in_narrow_format`).
-pub fn int8(bits: impl Into<MachineTerm>) -> ProgramValue {
+/// word (`OldMachineTerm::in_narrow_format`).
+pub fn int8(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::Int8(bits.into().in_narrow_format(MachineIntegerType::Int8))
 }
 
 /// An `int16` value; see [`int8`].
-pub fn int16(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn int16(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::Int16(bits.into().in_narrow_format(MachineIntegerType::Int16))
 }
 
 /// A `uint8` value; see [`int8`].
-pub fn uint8(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn uint8(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::UInt8(bits.into().in_narrow_format(MachineIntegerType::UInt8))
 }
 
 /// A `uint16` value; see [`int8`].
-pub fn uint16(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn uint16(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::UInt16(bits.into().in_narrow_format(MachineIntegerType::UInt16))
 }
 
 /// A `uint32` value. A root 32-bit constant takes the `uint32` format
-/// (`MachineTerm::in_format32`), so it prints as itself.
+/// (`OldMachineTerm::in_format32`), so it prints as itself.
 #[track_caller]
-pub fn uint32(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn uint32(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     let bits = bits.into();
     if crate::kernel::machine_integer::format_audit::is_sign_free_word_operator(&bits) {
         crate::kernel::machine_integer::format_audit::record(
@@ -288,25 +289,27 @@ pub fn uint32(bits: impl Into<MachineTerm>) -> ProgramValue {
 /// A 64-bit value. A plain 32-bit constant, as `int64(-1)` writes, is widened
 /// to the 64-bit constant it denotes, sign-extended for `int64` and
 /// zero-extended for `uint64`, so the value's term has the value's width.
-pub fn int64(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn int64(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::Int64(match bits.into() {
-        bits32_constant!(bits) => MachineTerm::int64_constant(i64::from(constant_u32(bits) as i32)),
+        bits32_constant!(bits) => {
+            OldMachineTerm::int64_constant(i64::from(constant_u32(bits) as i32))
+        }
         term => term,
     })
 }
 
-pub fn uint64(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn uint64(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::UInt64(match bits.into() {
-        bits32_constant!(bits) => MachineTerm::uint64_constant(u64::from(constant_u32(bits))),
+        bits32_constant!(bits) => OldMachineTerm::uint64_constant(u64::from(constant_u32(bits))),
         term => term,
     })
 }
 
-pub fn float32(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn float32(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::Float32(bits.into())
 }
 
-pub fn float64(bits: impl Into<MachineTerm>) -> ProgramValue {
+pub fn float64(bits: impl Into<OldMachineTerm>) -> ProgramValue {
     ProgramValue::Float64(bits.into())
 }
 
@@ -315,7 +318,7 @@ pub fn float64(bits: impl Into<MachineTerm>) -> ProgramValue {
 /// materialization of loads embedded in the key and pointer forms.
 pub(crate) fn memory_holds_live_heap_allocation_at(
     memory: &super::SymbolicMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     assumptions: &PureFactContext,
 ) -> bool {
     memory.is_live_heap_address(pointer, assumptions)
@@ -345,10 +348,7 @@ pub fn program_condition_facts_match_for_transport(
         return false;
     };
     source_value == target_value
-        && assumptions.condition_matches(
-            source_condition.native_compat(),
-            target_condition.native_compat(),
-        )
+        && assumptions.condition_matches(source_condition.old_form(), target_condition.old_form())
 }
 
 /// The `transport` rule for one bare condition: `context` states it, it
@@ -359,10 +359,10 @@ fn condition_target_reaches(context: &PureFactContext, target: &Proposition) -> 
         return false;
     };
     context.proves_exact(target)
-        || contract_certification::condition_holds_by_memory_resolution(context, condition.native_compat(), *value)
+        || contract_certification::condition_holds_by_memory_resolution(context, condition.old_form(), *value)
         || contract_certification::condition_holds_by_instantiated_fact(
             context,
-            condition.native_compat(),
+            condition.old_form(),
             *value,
             &|premise| transport_premise_holds(context, premise),
         )
@@ -851,9 +851,9 @@ mod loop_exit_sharing_tests {
     #[test]
     fn retained_exit_context_records_opposite_truth_without_changing_parent() {
         use crate::kernel::proof::PureFactStore;
-        let condition = ConditionTerm::equal(
-            MachineTerm::Variable(Variable(9_901_100)),
-            MachineTerm::constant(0),
+        let condition = OldConditionTerm::equal(
+            OldMachineTerm::Variable(Variable(9_901_100)),
+            OldMachineTerm::constant(0),
         );
         let before = Proposition::condition_is(condition.clone(), true);
         let after = Proposition::condition_is(condition, false);
@@ -2020,79 +2020,79 @@ fn abstract_execution_state_for_join_across_with_policy(
                 .iter()
                 .all(|sibling| sibling.locals.get(name) == Some(value)),
         };
-        let abstract_value =
-            if stable {
-                value.clone()
-            } else {
-                match program_type {
-                    ProgramType::Void => continue,
-                    // A `Bool` the arms disagree on is a fresh `Bool` binder.
-                    ProgramType::Bool => ProgramValue::of_bool(ConditionTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::Int8 => int8(MachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::Int16 => int16(MachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::Int32 => int32(MachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::UInt32 => uint32(MachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::UInt8 => uint8(MachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::UInt16 => uint16(MachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                        Address::symbolic_function(join_variable(&mut variables, &mut budget)?),
-                        *program_type,
-                    ),
-                    ProgramType::Int8Array(_) => {
-                        unreachable!("array objects use LocalBinding::ArrayObject")
-                    }
-                    ProgramType::Int32Array(_)
-                    | ProgramType::UInt8Array(_)
-                    | ProgramType::Int16Array(_)
-                    | ProgramType::UInt16Array(_)
-                    | ProgramType::UInt32Array(_)
-                    | ProgramType::Int128Array(_)
-                    | ProgramType::Int64Array(_)
-                    | ProgramType::UInt128Array(_)
-                    | ProgramType::UInt64Array(_)
-                    | ProgramType::Float32Array(_)
-                    | ProgramType::Float64Array(_) => {
-                        unreachable!("array objects use LocalBinding::ArrayObject")
-                    }
-                    _ => ProgramValue::typed_pointer(
-                        Address::symbolic(join_variable(&mut variables, &mut budget)?),
-                        *program_type,
-                    ),
+        let abstract_value = if stable {
+            value.clone()
+        } else {
+            match program_type {
+                ProgramType::Void => continue,
+                // A `Bool` the arms disagree on is a fresh `Bool` binder.
+                ProgramType::Bool => ProgramValue::of_bool(OldConditionTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::Int8 => int8(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::Int16 => int16(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::Int32 => int32(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt32 => uint32(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt8 => uint8(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt16 => uint16(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
+                    OldAddress::symbolic_function(join_variable(&mut variables, &mut budget)?),
+                    *program_type,
+                ),
+                ProgramType::Int8Array(_) => {
+                    unreachable!("array objects use LocalBinding::ArrayObject")
                 }
-                .into()
-            };
+                ProgramType::Int32Array(_)
+                | ProgramType::UInt8Array(_)
+                | ProgramType::Int16Array(_)
+                | ProgramType::UInt16Array(_)
+                | ProgramType::UInt32Array(_)
+                | ProgramType::Int128Array(_)
+                | ProgramType::Int64Array(_)
+                | ProgramType::UInt128Array(_)
+                | ProgramType::UInt64Array(_)
+                | ProgramType::Float32Array(_)
+                | ProgramType::Float64Array(_) => {
+                    unreachable!("array objects use LocalBinding::ArrayObject")
+                }
+                _ => ProgramValue::typed_pointer(
+                    OldAddress::symbolic(join_variable(&mut variables, &mut budget)?),
+                    *program_type,
+                ),
+            }
+            .into()
+        };
         preserved_blocks.insert(slot.base.clone());
         abstract_objects.push((name.clone(), abstract_value, *program_type));
     }
@@ -2257,8 +2257,8 @@ fn branch_memory_delta_requirements(
         }
         let range = MemoryRange::new_with_element_width(
             pointer,
-            MachineTerm::constant(0),
-            MachineTerm::constant(byte_width),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(byte_width),
             1,
         );
         requirements.extend(ledger.memory_access_requirement(&range));
@@ -2373,6 +2373,7 @@ pub fn program_call_value(
             result_type: None,
             result_aggregate_layout: None,
             result_pointee_constant: false,
+            dispatch: CallDispatch::Direct,
             callee: None,
         },
         result,
@@ -2430,6 +2431,8 @@ pub fn program_call(
         function_name: function_name.into(),
         arguments,
         callee: None,
+        dispatch: crate::kernel::CallDispatch::Direct,
+        cpp_binding: None,
     }
 }
 
@@ -3813,7 +3816,7 @@ pub(crate) fn execution_state_with_assumed_mutex_inputs(
 
 pub(crate) fn program_mutex_guard_resource(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::guard_resource(state, mutex, abstract_entry)
@@ -3821,7 +3824,7 @@ pub(crate) fn program_mutex_guard_resource(
 
 pub(crate) fn program_mutex_live_resource(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::live_resource(state, mutex, abstract_entry)
@@ -3830,7 +3833,7 @@ pub(crate) fn program_mutex_live_resource(
 /// Construct a contract requirement; this does not establish ownership.
 pub(crate) fn program_mutex_use_resource_with_type(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     protected: ResourceDescription,
 ) -> ResourceFact {
     let fact = program_mutex_use_resource(state, mutex);
@@ -3841,7 +3844,10 @@ pub(crate) fn program_mutex_use_resource_with_type(
     ResourceFact::own(Resource::MutexUse(identity))
 }
 
-pub(crate) fn program_mutex_use_resource(state: &ExecutionState, mutex: &Address) -> ResourceFact {
+pub(crate) fn program_mutex_use_resource(
+    state: &ExecutionState,
+    mutex: &OldAddress,
+) -> ResourceFact {
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
@@ -4301,7 +4307,7 @@ fn install_borrowed_contract_inputs(
                     BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
-        // Address-backed aggregate parameters and compiler-created local
+        // OldAddress-backed aggregate parameters and compiler-created local
         // arrays are storage owned by this activation. Their bounded views
         // use the existing local-storage check at each call; they are not
         // caller-supplied shared borrows and therefore need no external root.
@@ -4779,7 +4785,7 @@ pub fn proposition_and(left: Proposition, right: Proposition) -> Proposition {
 
 pub fn proposition_and_all(mut propositions: Vec<Proposition>) -> Proposition {
     if propositions.is_empty() {
-        return Proposition::condition_is(ConditionTerm::Constant(true), true);
+        return Proposition::condition_is(OldConditionTerm::Constant(true), true);
     }
     while propositions.len() > 1 {
         let mut next = Vec::with_capacity(propositions.len().div_ceil(2));
@@ -4798,7 +4804,7 @@ pub fn proposition_and_all(mut propositions: Vec<Proposition>) -> Proposition {
 pub fn substitute_int32_variable_in_proposition(
     proposition: &Proposition,
     variable: Variable,
-    value: MachineTerm,
+    value: OldMachineTerm,
 ) -> Proposition {
     substitute_bitvector_variable_in_proposition(proposition, variable, &value)
 }
@@ -4811,17 +4817,13 @@ pub fn substitute_int32_variable_in_proposition(
 pub fn forall_instantiation_candidate_values(
     quantified: &Proposition,
     target: &Proposition,
-) -> Vec<MachineTerm> {
+) -> Vec<OldMachineTerm> {
     let Proposition::ForAll { var, body, .. } = quantified else {
         return Vec::new();
     };
     let mut candidates = match target {
         Proposition::ConditionIs(condition, _) => {
-            PureFactContext::guided_forall_condition_candidates(
-                **var,
-                body,
-                condition.native_compat(),
-            )
+            PureFactContext::guided_forall_condition_candidates(**var, body, condition.old_form())
         }
         _ => BTreeSet::new(),
     };
@@ -4848,7 +4850,7 @@ pub fn forall_instantiation_candidate_values(
 pub fn forall_guided_instantiation_candidate_values(
     quantified: &Proposition,
     target: &Proposition,
-) -> Vec<MachineTerm> {
+) -> Vec<OldMachineTerm> {
     let Proposition::ForAll {
         var, sort, body, ..
     } = quantified
@@ -4857,13 +4859,9 @@ pub fn forall_guided_instantiation_candidate_values(
     };
     match target {
         Proposition::ConditionIs(condition, _) => {
-            PureFactContext::guided_forall_condition_candidates(
-                **var,
-                body,
-                condition.native_compat(),
-            )
-            .into_iter()
-            .collect()
+            PureFactContext::guided_forall_condition_candidates(**var, body, condition.old_form())
+                .into_iter()
+                .collect()
         }
         Proposition::MemoryReadDefined {
             pointer,
@@ -4894,26 +4892,26 @@ pub fn forall_guided_instantiation_candidate_values(
 /// instantiation and closing tactic still check the guards and read point.
 fn guided_byte_read_index(
     binder: Variable,
-    pattern: &Address,
-    pointer: &Address,
-) -> Option<MachineTerm> {
+    pattern: &OldAddress,
+    pointer: &OldAddress,
+) -> Option<OldMachineTerm> {
     crate::instrumentation::record_deterministic_work(1);
-    let (base_offset, index_offset) = match &pattern.offset {
-        AddressOffset::Add(base, index) => ((**base).clone(), index.as_ref()),
-        index => (AddressOffset::Constant(0), index),
+    let (base_offset, index_offset) = match pattern.offset.view() {
+        OffsetView::Add(base, index) => (base.clone(), index),
+        _ => (OldAddressOffset::constant(0), &pattern.offset),
     };
-    let AddressOffset::Int64Scaled {
-        value,
+    let OffsetView::Int64Scaled {
+        index: value,
         byte_width: 1,
         unsigned: true,
-    } = index_offset
+    } = index_offset.view()
     else {
         return None;
     };
     if value.operand_view().variable() != Some(&binder) {
         return None;
     }
-    let base = Address {
+    let base = OldAddress {
         base: pattern.base.clone(),
         offset: base_offset,
     };
@@ -4922,8 +4920,8 @@ fn guided_byte_read_index(
     index
         .variable()
         .copied()
-        .map(MachineTerm::Variable)
-        .or_else(|| index.uint64_constant().map(MachineTerm::uint64_constant))
+        .map(OldMachineTerm::Variable)
+        .or_else(|| index.uint64_constant().map(OldMachineTerm::uint64_constant))
 }
 
 /// Chooses a variable identity absent from both the free variables and logical
@@ -4980,8 +4978,8 @@ pub fn program_max_state(a: ProgramValue, b: ProgramValue) -> ExecutionState {
 }
 
 #[cfg(test)]
-pub fn program_max_lt_condition(a: MachineTerm, b: MachineTerm) -> ConditionTerm {
-    ConditionTerm::signed_less_than(a, b)
+pub fn program_max_lt_condition(a: OldMachineTerm, b: OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::signed_less_than(a, b)
 }
 
 #[cfg(test)]
@@ -5258,7 +5256,6 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
                 &path.obligations,
             ));
             SymbolicExecutionPath {
-                call_parameters: path.call_parameters,
                 descent_step: None,
                 completion_origin: None,
                 call_result: path.call_result,
@@ -5602,7 +5599,6 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                 &path.obligations,
             ));
             SymbolicExecutionPath {
-                call_parameters: path.call_parameters,
                 descent_step: crate::kernel::DescentStep::under_state(environment, &state),
                 completion_origin: None,
                 call_result: path.call_result,
@@ -5805,6 +5801,8 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
     prepare_contract_resources: bool,
 ) -> SymbolicExecution {
     let defer_conditional_resource_effect = function_has_conditional_resource_effect(&function);
+    let (state, arguments) =
+        super::functions::prepare_external_aggregate_arguments(&state, &function, arguments);
     let paths = match execute_program_function_paths_with_contract_resources(
         &state,
         &function,
@@ -5843,7 +5841,6 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
                 &path.obligations,
             ));
             SymbolicExecutionPath {
-                call_parameters: None,
                 descent_step: None,
                 completion_origin: None,
                 call_result: None,
@@ -6215,14 +6212,14 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn branch_memory_delta_uses_the_full_changed_cell_width() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let escrow = ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         ));
         let support = ResourceContext::new()
             .unchecked_with_fact(escrow.clone())
@@ -6236,17 +6233,17 @@ mod proof_case_evidence_tests {
         let base = SymbolicMemory::new()
             .with_block("arg", 8)
             .store(pointer.clone(), int32(0));
-        let later_byte = Address {
+        let later_byte = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(1),
+            offset: OldAddressOffset::Constant(1),
         };
         let changed = base.clone().store(later_byte, int32(1));
         let mut requirements = BTreeSet::new();
         branch_memory_delta_requirements(&base, &changed, &ledger, &mut requirements).unwrap();
         let changed_range = MemoryRange::new_with_element_width(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(1),
+                offset: OldAddressOffset::Constant(1),
             },
             0u32.into(),
             4u32.into(),
@@ -6692,16 +6689,16 @@ fn checked_int32_reassociated_add_domain_as_written(
             .each_ref()
             .map(|operand| operand.operand_view())
     } else if let Some((
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left,
             right,
         },
         false,
-    )) = (goal).condition_native()
+    )) = (goal).old_condition()
     {
-        [View::Legacy(left), View::Legacy(right)]
+        [View::Old(left), View::Old(right)]
     } else {
         return false;
     };
@@ -6713,14 +6710,14 @@ fn checked_int32_reassociated_add_domain_as_written(
     }
     let checks = |a: View<'_>, [b, c]: [View<'_>; 2]| {
         let sum = match [a, b] {
-            [View::Legacy(a), View::Legacy(b)] => crate::kernel::SharedMachineIntegerTerm::intern(
+            [View::Old(a), View::Old(b)] => crate::kernel::SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::add(a.clone(), b.clone()),
+                OldMachineTerm::add(a.clone(), b.clone()),
             ),
             operands => {
                 let roots = operands.map(|operand| match operand {
                     View::Shared(root) => root.clone(),
-                    View::Legacy(value) => crate::kernel::KernelTermImport::default()
+                    View::Old(value) => crate::kernel::KernelTermImport::default()
                         .machine(MachineIntegerType::Int32, value),
                 });
                 crate::kernel::SharedMachineIntegerTerm::from_shared(
@@ -6736,7 +6733,7 @@ fn checked_int32_reassociated_add_domain_as_written(
                     // boundary until they acquire shared operand identities.
                     crate::kernel::SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        MachineTerm::add(
+                        OldMachineTerm::add(
                             a.retain(MachineIntegerType::Int32).value().clone(),
                             b.retain(MachineIntegerType::Int32).value().clone(),
                         ),
@@ -6839,15 +6836,17 @@ pub fn checked_owned_resource_count_lower_bound(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
             [
-                MachineOperandView::Legacy(&quantity),
-                MachineOperandView::Legacy(&count),
+                MachineOperandView::Old(&quantity),
+                MachineOperandView::Old(&count),
             ],
         ),
         true,
     );
     {
-        let reversed =
-            Proposition::condition_is(ConditionTerm::signed_greater_equal(count, quantity), true);
+        let reversed = Proposition::condition_is(
+            OldConditionTerm::signed_greater_equal(count, quantity),
+            true,
+        );
         if !proposition_holds_without_facts(&conclusion)
             && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
             && !checked_facts.proves_exact(&reversed)
@@ -6875,8 +6874,8 @@ pub fn prove_owned_resource_quantity_nonnegative(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
             [
-                MachineOperandView::Legacy(&MachineTerm::constant(0)),
-                MachineOperandView::Legacy(&quantity),
+                MachineOperandView::Old(&OldMachineTerm::constant(0)),
+                MachineOperandView::Old(&quantity),
             ],
         ),
         true,
@@ -6896,8 +6895,8 @@ pub(crate) fn population_observations_equal(left: &ExecutionState, right: &Execu
 
 #[cfg(test)]
 pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
-    let a_bits = MachineTerm::Variable(a);
-    let b_bits = MachineTerm::Variable(b);
+    let a_bits = OldMachineTerm::Variable(a);
+    let b_bits = OldMachineTerm::Variable(b);
     let a_value = int32(a_bits.clone());
     let b_value = int32(b_bits.clone());
     let condition = program_max_lt_condition(a_bits.clone(), b_bits.clone());
@@ -6932,8 +6931,8 @@ pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Th
 
 #[cfg(test)]
 pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theorem> {
-    let a_bits = MachineTerm::Variable(a);
-    let b_bits = MachineTerm::Variable(b);
+    let a_bits = OldMachineTerm::Variable(a);
+    let b_bits = OldMachineTerm::Variable(b);
     let a_value = int32(a_bits.clone());
     let b_value = int32(b_bits.clone());
     let condition = program_max_lt_condition(a_bits, b_bits);
@@ -6968,17 +6967,17 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
 
 /// Two signed int32 values are equal when the first is no greater than the
 /// second and is not strictly less than it.
-pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Theorem {
+pub fn prove_int32_le_antisymmetric(left: OldMachineTerm, right: OldMachineTerm) -> Theorem {
     let le_premise = Proposition::condition_is(
-        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+        OldConditionTerm::signed_less_equal(left.clone(), right.clone()),
         true,
     );
     let reverse_le_premise = Proposition::condition_is(
-        ConditionTerm::signed_less_equal(right.clone(), left.clone()),
+        OldConditionTerm::signed_less_equal(right.clone(), left.clone()),
         true,
     );
     let conclusion = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
@@ -7043,10 +7042,13 @@ pub fn prove_population_member_count_zero(
     )?;
     Some(implication(
         [Proposition::condition_is(
-            ConditionTerm::equal(total, MachineTerm::constant(0)),
+            OldConditionTerm::equal(total, OldMachineTerm::constant(0)),
             true,
         )],
-        Proposition::condition_is(ConditionTerm::equal(member, MachineTerm::constant(0)), true),
+        Proposition::condition_is(
+            OldConditionTerm::equal(member, OldMachineTerm::constant(0)),
+            true,
+        ),
     ))
 }
 
@@ -7059,14 +7061,14 @@ fn shifted_fold_endpoint(
 ) -> SharedIntegerRangeEndpoint {
     use crate::kernel::{KernelTermImport, MachineOperandView as V};
     let one = match format {
-        MachineIntegerType::Int32 => MachineTerm::constant(1),
-        MachineIntegerType::UInt64 => MachineTerm::uint64_constant(1),
+        MachineIntegerType::Int32 => OldMachineTerm::constant(1),
+        MachineIntegerType::UInt64 => OldMachineTerm::uint64_constant(1),
         _ => unreachable!("machine fold endpoint format"),
     };
     let operand = endpoint.machine_operand().operand_view();
     let root = match operand {
-        V::Legacy(term) => {
-            return SharedIntegerRangeEndpoint::intern(MachineTerm::machine_binary(
+        V::Old(term) => {
+            return SharedIntegerRangeEndpoint::intern(OldMachineTerm::machine_binary(
                 format,
                 operation,
                 term.clone(),
@@ -7082,7 +7084,7 @@ fn shifted_fold_endpoint(
         operand
             .uint64_constant()
             .map(|bits| {
-                KernelTermImport::default().machine(format, &MachineTerm::uint64_constant(bits))
+                KernelTermImport::default().machine(format, &OldMachineTerm::uint64_constant(bits))
             })
             .unwrap_or(root)
     } else {
@@ -7103,7 +7105,7 @@ fn fold_endpoint_order(
     relation: CompareRelation,
     left: &SharedIntegerRangeEndpoint,
     right: &SharedIntegerRangeEndpoint,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     crate::kernel::machine_integer::comparison::condition_for_operand_views(
         format,
         relation,
@@ -7136,14 +7138,14 @@ pub fn prove_integer_range_fold_empty(
             start,
         ),
         IntegerRangeFoldIndex::Integer { start, end } => {
-            ConditionTerm::integer_less_equal(end.as_ref().clone(), start.as_ref().clone())
+            OldConditionTerm::integer_less_equal(end.as_ref().clone(), start.as_ref().clone())
         }
     };
     let fold = IntegerTerm::range_fold(index, initial.clone(), accumulator, item, body);
     implication(
         [Proposition::condition_is(guard, true)],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(fold.into(), initial.into()),
+            OldConditionTerm::IntegerEqual(fold.into(), initial.into()),
             true,
         ),
     )
@@ -7180,7 +7182,7 @@ pub fn prove_integer_range_fold_append(
                 CompareRelation::LessThan,
                 [
                     end.machine_operand().operand_view(),
-                    crate::kernel::MachineOperandView::Legacy(&MachineTerm::constant(
+                    crate::kernel::MachineOperandView::Old(&OldMachineTerm::constant(
                         i32::MAX as u32,
                     )),
                 ],
@@ -7219,7 +7221,7 @@ pub fn prove_integer_range_fold_append(
                 CompareRelation::LessThan,
                 [
                     end.machine_operand().operand_view(),
-                    crate::kernel::MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                    crate::kernel::MachineOperandView::Old(&OldMachineTerm::uint64_constant(
                         u64::MAX,
                     )),
                 ],
@@ -7240,7 +7242,7 @@ pub fn prove_integer_range_fold_append(
         IntegerRangeFoldIndex::Integer { start, end } => {
             let increment = IntegerTerm::add(end.as_ref().clone(), IntegerTerm::constant_i64(1));
             let guard =
-                ConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone());
+                OldConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone());
             let extended = IntegerRangeFoldIndex::Integer {
                 start: start.clone(),
                 end: increment.into(),
@@ -7269,7 +7271,7 @@ pub fn prove_integer_range_fold_append(
     Some(implication(
         [guard],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(extended_fold.into(), stepped.into()),
+            OldConditionTerm::IntegerEqual(extended_fold.into(), stepped.into()),
             true,
         ),
     ))
@@ -7391,14 +7393,14 @@ pub fn substitute_integer_term_in_proposition(
     }
 
     fn walk_condition(
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
         memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
-    ) -> ConditionTerm {
+    ) -> OldConditionTerm {
         let mut rebuild =
-            |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
+            |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> OldConditionTerm,
              left: &SharedIntegerTerm,
              right: &SharedIntegerTerm,
              changed: &mut bool| {
@@ -7408,23 +7410,23 @@ pub fn substitute_integer_term_in_proposition(
                 )
             };
         match condition {
-            ConditionTerm::IntegerLessThan(left, right) => {
-                rebuild(ConditionTerm::IntegerLessThan, left, right, changed)
+            OldConditionTerm::IntegerLessThan(left, right) => {
+                rebuild(OldConditionTerm::IntegerLessThan, left, right, changed)
             }
-            ConditionTerm::IntegerLessEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerLessEqual, left, right, changed)
+            OldConditionTerm::IntegerLessEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerLessEqual, left, right, changed)
             }
-            ConditionTerm::IntegerGreaterThan(left, right) => {
-                rebuild(ConditionTerm::IntegerGreaterThan, left, right, changed)
+            OldConditionTerm::IntegerGreaterThan(left, right) => {
+                rebuild(OldConditionTerm::IntegerGreaterThan, left, right, changed)
             }
-            ConditionTerm::IntegerGreaterEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerGreaterEqual, left, right, changed)
+            OldConditionTerm::IntegerGreaterEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerGreaterEqual, left, right, changed)
             }
-            ConditionTerm::IntegerEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerEqual, left, right, changed)
+            OldConditionTerm::IntegerEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerEqual, left, right, changed)
             }
-            ConditionTerm::IntegerNotEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerNotEqual, left, right, changed)
+            OldConditionTerm::IntegerNotEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerNotEqual, left, right, changed)
             }
             condition => condition.clone(),
         }
@@ -7439,7 +7441,7 @@ pub fn substitute_integer_term_in_proposition(
     ) -> Proposition {
         match proposition {
             Proposition::ConditionIs(condition, expected) => Proposition::condition_is(
-                walk_condition(condition.native_compat(), from, to, changed, memo),
+                walk_condition(condition.old_form(), from, to, changed, memo),
                 *expected,
             ),
             Proposition::And(left, right) => Proposition::And(
@@ -7477,7 +7479,7 @@ pub fn substitute_integer_term_in_proposition(
 /// that law; all of its guards still become ordinary checked obligations.
 pub(crate) fn integer_range_fold_predecessor_guard(
     index: &IntegerRangeFoldIndex,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     let (prior, _) = integer_range_fold_predecessor_index(index)?;
     Some(match prior {
         IntegerRangeFoldIndex::Int32 { start, end } => fold_endpoint_order(
@@ -7493,7 +7495,7 @@ pub(crate) fn integer_range_fold_predecessor_guard(
             &end,
         ),
         IntegerRangeFoldIndex::Integer { start, end } => {
-            ConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone())
+            OldConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone())
         }
     })
 }
@@ -7556,15 +7558,15 @@ pub fn integer_range_fold_predecessor_application(
             )?)
         }
         PureFunctionArgument::Value(ProgramValue::Int32(endpoint)) => {
-            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::subtract(
+            PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::subtract(
                 endpoint.clone(),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             )))
         }
         PureFunctionArgument::Value(ProgramValue::UInt64(endpoint)) => {
-            PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::uint64_subtract(
+            PureFunctionArgument::Value(ProgramValue::UInt64(OldMachineTerm::uint64_subtract(
                 endpoint.clone(),
-                MachineTerm::uint64_constant(1),
+                OldMachineTerm::uint64_constant(1),
             )))
         }
         _ => return None,
@@ -7614,7 +7616,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
         body.clone(),
     );
     let whole_is_fold = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(whole.clone().into(), fold.clone().into()),
+        OldConditionTerm::IntegerEqual(whole.clone().into(), fold.clone().into()),
         true,
     );
     let Some(prior) = prior else {
@@ -7628,7 +7630,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
                 Box::new(guard.as_ref().clone()),
             )],
             Proposition::condition_is(
-                ConditionTerm::IntegerEqual(whole.into(), initial.into()),
+                OldConditionTerm::IntegerEqual(whole.into(), initial.into()),
                 true,
             ),
         ));
@@ -7648,8 +7650,8 @@ pub fn prove_integer_range_fold_over_equal_terms(
     let Proposition::Implies(guard, conclusion) = append.proposition() else {
         return Err("the Integer fold append law is not a guarded theorem");
     };
-    let Some((ConditionTerm::IntegerEqual(extended, _), true)) =
-        conclusion.as_ref().condition_native()
+    let Some((OldConditionTerm::IntegerEqual(extended, _), true)) =
+        conclusion.as_ref().old_condition()
     else {
         return Err("the Integer fold append law did not conclude an equation");
     };
@@ -7665,7 +7667,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
     let prior_fold =
         IntegerTerm::range_fold(predecessor_index, initial, accumulator, item, body.clone());
     let prior_is_fold = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(prior.clone().into(), prior_fold.into()),
+        OldConditionTerm::IntegerEqual(prior.clone().into(), prior_fold.into()),
         true,
     );
     let stepped = crate::kernel::reasoning::instantiate_integer_range_fold_step(
@@ -7688,7 +7690,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
             Box::new(guard.as_ref().clone()),
         )],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(whole.into(), stepped.into()),
+            OldConditionTerm::IntegerEqual(whole.into(), stepped.into()),
             true,
         ),
     ))
@@ -7996,7 +7998,7 @@ pub fn contract_refinement_context(
     if pointer.program_type() != target.function_pointer_type()
         || pointer.program_type() != source.function_pointer_type()
         || !matches!(pointer.address().base, AddressBase::FunctionSymbolic(_))
-        || pointer.address().offset != AddressOffset::Constant(0)
+        || !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
     {
         return None;
     }
@@ -8073,10 +8075,9 @@ pub(crate) fn prove_program_function_contract_refinement(
         || pointer != &context.pointer
         || pointer.program_type() != context.contract.function_pointer_type()
         || values.len() != context.contract.value_arguments().len()
-        || !values
-            .iter()
-            .zip(context.contract.value_arguments())
-            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term.native_compat() == value))
+        || !values.iter().zip(context.contract.value_arguments()).all(
+            |(term, value)| matches!(term, Term::ProgramValue(term) if term.old_form() == value),
+        )
     {
         return None;
     }
@@ -8157,6 +8158,8 @@ pub(crate) fn prove_executed_contract_refinement(
             function_name: callback.name().to_string(),
             arguments,
             callee: None,
+            dispatch: crate::kernel::CallDispatch::Direct,
+            cpp_binding: None,
         }
     } else {
         let (call, result) = program_call_value(0, callback.name(), arguments);
@@ -8215,7 +8218,7 @@ pub(crate) fn prove_executed_contract_refinement(
     };
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.address().offset != AddressOffset::Constant(0)
+        || !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
     {
         return None;
     }
@@ -8263,7 +8266,7 @@ fn executed_conclusion_values(
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.native_compat().clone()),
+            Term::ProgramValue(value) => Some(value.old_form().clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
@@ -8364,6 +8367,8 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
             function_name: callee_name.to_string(),
             arguments,
             callee: None,
+            dispatch: crate::kernel::CallDispatch::Direct,
+            cpp_binding: None,
         }
     } else {
         let (call, result) = program_call_value(0, callee_name, arguments);
@@ -8395,7 +8400,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     }
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.address().offset != AddressOffset::Constant(0)
+        || !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
     {
         return None;
     }
@@ -8405,45 +8410,45 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
 }
 
 fn rewrite_int32_term_by_exact_equality(
-    term: &MachineTerm,
-    from: &MachineTerm,
-    to: &MachineTerm,
-) -> MachineTerm {
+    term: &OldMachineTerm,
+    from: &OldMachineTerm,
+    to: &OldMachineTerm,
+) -> OldMachineTerm {
     if term == from {
         return to.clone();
     }
-    let binary = |left: &MachineTerm, right: &MachineTerm| {
+    let binary = |left: &OldMachineTerm, right: &OldMachineTerm| {
         (
             rewrite_int32_term_by_exact_equality(left, from, to),
             rewrite_int32_term_by_exact_equality(right, from, to),
         )
     };
     match term {
-        MachineTerm::ThreadHandle(_) => term.clone(),
-        MachineTerm::Cast {
+        OldMachineTerm::ThreadHandle(_) => term.clone(),
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..
         } => term.clone(),
 
         binary_term!(Int32, Add, left, right) => {
             let (left, right) = binary(left, right);
-            MachineTerm::add(left, right)
+            OldMachineTerm::add(left, right)
         }
         binary_term!(Int32, Subtract, left, right) => {
             let (left, right) = binary(left, right);
-            MachineTerm::subtract(left, right)
+            OldMachineTerm::subtract(left, right)
         }
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
-        } => MachineTerm::If {
+        } => OldMachineTerm::If {
             condition: condition.clone(),
             then_term: Box::new(rewrite_int32_term_by_exact_equality(then_term, from, to)),
             else_term: Box::new(rewrite_int32_term_by_exact_equality(else_term, from, to)),
         },
-        MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::rebuild_pure_application(
+        OldMachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::rebuild_pure_application(
                 name.clone(),
                 arguments
                     .iter()
@@ -8451,13 +8456,13 @@ fn rewrite_int32_term_by_exact_equality(
                     .collect(),
             )
         }
-        MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {
+        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
             term.clone()
         }
         bits32_constant!(_)
-        | MachineTerm::Variable(_)
-        | MachineTerm::MemoryLoad(_, _, _)
-        | MachineTerm::IntegerAddress(_, _)
+        | OldMachineTerm::Variable(_)
+        | OldMachineTerm::MemoryLoad(_, _, _)
+        | OldMachineTerm::IntegerAddress(_, _)
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
@@ -8469,9 +8474,9 @@ fn rewrite_int32_term_by_exact_equality(
         | cast_term!(UInt64FromInt64, _)
         | crate::kernel::binary_wide_term!(..)
         | crate::kernel::unary_wide_term!(..)
-        | MachineTerm::RangeFold { .. }
-        | MachineTerm::BoolCast { .. }
-        | MachineTerm::IntegerToMachine { .. } => term.clone(),
+        | OldMachineTerm::RangeFold { .. }
+        | OldMachineTerm::BoolCast { .. }
+        | OldMachineTerm::IntegerToMachine { .. } => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => op.build_raw(
                 rewrite_int32_term_by_exact_equality(left, from, to),
@@ -8510,26 +8515,26 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
     for rewrite in rewrites {
         crate::kernel::proof::fact_reasoning::exactly_available_fact(&rewrite, &requirements)?;
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: from,
                 right: to,
             },
             true,
-        )) = rewrite.condition_native()
+        )) = rewrite.old_condition()
         else {
             return None;
         };
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = goal.condition_native()
+        )) = goal.old_condition()
         else {
             return None;
         };
@@ -8539,7 +8544,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
             return None;
         }
         goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(rewritten_left),
@@ -8553,18 +8558,18 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
 
 /// Observe unsigned machine division in Integer arithmetic. Both domains
 /// explicitly exclude a zero divisor; no no-wrap premise is needed.
-pub fn prove_uint32_divide_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
+pub fn prove_uint32_divide_to_integer(left: OldMachineTerm, right: OldMachineTerm) -> Theorem {
     prove_uint32_integer_division_bridge(left, right, false)
 }
 
 /// Observe unsigned machine remainder in nonnegative Integer arithmetic.
-pub fn prove_uint32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
+pub fn prove_uint32_remainder_to_integer(left: OldMachineTerm, right: OldMachineTerm) -> Theorem {
     prove_uint32_integer_division_bridge(left, right, true)
 }
 
 fn prove_uint32_integer_division_bridge(
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
     remainder: bool,
 ) -> Theorem {
     let observe = |value| {
@@ -8574,26 +8579,26 @@ fn prove_uint32_integer_division_bridge(
     let dividend = observe(left.clone());
     let divisor = observe(right.clone());
     let native_nonzero = Proposition::condition_is(
-        ConditionTerm::equal(right.clone(), MachineTerm::constant(0)),
+        OldConditionTerm::equal(right.clone(), OldMachineTerm::constant(0)),
         false,
     );
     let integer_nonzero = Proposition::condition_is(
-        ConditionTerm::integer_not_equal(divisor.clone(), IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_not_equal(divisor.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
     let (machine, exact) = if remainder {
         (
-            MachineTerm::unsigned_remainder(left, right),
+            OldMachineTerm::unsigned_remainder(left, right),
             IntegerTerm::TruncatingRemainder(dividend.into(), divisor.into()),
         )
     } else {
         (
-            MachineTerm::unsigned_divide(left, right),
+            OldMachineTerm::unsigned_divide(left, right),
             IntegerTerm::TruncatingQuotient(dividend.into(), divisor.into()),
         )
     };
     let conclusion = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+        OldConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
     implication([native_nonzero, integer_nonzero], conclusion)
@@ -8604,8 +8609,8 @@ fn prove_uint32_integer_division_bridge(
 /// disjoint, and the high shift must preserve all bits.
 pub fn prove_unsigned_pack_u16_to_integer(
     ty: MachineIntegerType,
-    low: MachineTerm,
-    high: MachineTerm,
+    low: OldMachineTerm,
+    high: OldMachineTerm,
 ) -> Option<Theorem> {
     prove_unsigned_pack_u16_in_order_to_integer(ty, low, high, false)
 }
@@ -8613,16 +8618,16 @@ pub fn prove_unsigned_pack_u16_to_integer(
 /// The same disjoint-field packing law for `(high << 16) | low`.
 pub fn prove_unsigned_pack_u16_high_first_to_integer(
     ty: MachineIntegerType,
-    low: MachineTerm,
-    high: MachineTerm,
+    low: OldMachineTerm,
+    high: OldMachineTerm,
 ) -> Option<Theorem> {
     prove_unsigned_pack_u16_in_order_to_integer(ty, low, high, true)
 }
 
 fn prove_unsigned_pack_u16_in_order_to_integer(
     ty: MachineIntegerType,
-    low: MachineTerm,
-    high: MachineTerm,
+    low: OldMachineTerm,
+    high: OldMachineTerm,
     high_first: bool,
 ) -> Option<Theorem> {
     let (packed, low_bound, high_bound) = match ty {
@@ -8635,20 +8640,26 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
                     UInt32,
                     ShiftLeft,
                     high.clone().into(),
-                    MachineTerm::uint32_constant(16).into(),
+                    OldMachineTerm::uint32_constant(16).into(),
                 )
                 .into(),
             ),
-            ConditionTerm::unsigned_less_equal(low.clone(), MachineTerm::constant(65535)),
-            ConditionTerm::unsigned_less_equal(high.clone(), MachineTerm::constant(65535)),
+            OldConditionTerm::unsigned_less_equal(low.clone(), OldMachineTerm::constant(65535)),
+            OldConditionTerm::unsigned_less_equal(high.clone(), OldMachineTerm::constant(65535)),
         ),
         MachineIntegerType::UInt64 => (
-            MachineTerm::uint64_bitwise_or(
+            OldMachineTerm::uint64_bitwise_or(
                 low.clone(),
-                MachineTerm::uint64_shift_left(high.clone(), MachineTerm::int64_constant(16)),
+                OldMachineTerm::uint64_shift_left(high.clone(), OldMachineTerm::int64_constant(16)),
             ),
-            ConditionTerm::uint64_less_equal(low.clone(), MachineTerm::uint64_constant(65535)),
-            ConditionTerm::uint64_less_equal(high.clone(), MachineTerm::uint64_constant(65535)),
+            OldConditionTerm::uint64_less_equal(
+                low.clone(),
+                OldMachineTerm::uint64_constant(65535),
+            ),
+            OldConditionTerm::uint64_less_equal(
+                high.clone(),
+                OldMachineTerm::uint64_constant(65535),
+            ),
         ),
         _ => return None,
     };
@@ -8661,13 +8672,13 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
                     UInt32,
                     ShiftLeft,
                     high.clone().into(),
-                    MachineTerm::uint32_constant(16).into(),
+                    OldMachineTerm::uint32_constant(16).into(),
                 )
                 .into(),
                 low.clone().into(),
             ),
-            MachineIntegerType::UInt64 => MachineTerm::uint64_bitwise_or(
-                MachineTerm::uint64_shift_left(high.clone(), MachineTerm::int64_constant(16)),
+            MachineIntegerType::UInt64 => OldMachineTerm::uint64_bitwise_or(
+                OldMachineTerm::uint64_shift_left(high.clone(), OldMachineTerm::int64_constant(16)),
                 low.clone(),
             ),
             _ => unreachable!("packing accepts unsigned word types"),
@@ -8689,24 +8700,27 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
             Proposition::condition_is(low_bound, true),
             Proposition::condition_is(high_bound, true),
         ],
-        Proposition::condition_is(ConditionTerm::integer_equal(observe(packed)?, exact), true),
+        Proposition::condition_is(
+            OldConditionTerm::integer_equal(observe(packed)?, exact),
+            true,
+        ),
     ))
 }
 
 /// Recover the low word of `(high << 16) | low` for two bounded uint16 fields.
 /// The bounds are part of the issued theorem, never inferred from its operands.
-pub fn prove_uint32_unpack_uint16_low(low: MachineTerm, high: MachineTerm) -> Theorem {
+pub fn prove_uint32_unpack_uint16_low(low: OldMachineTerm, high: OldMachineTerm) -> Theorem {
     prove_uint32_unpack_uint16_word(low, high, false)
 }
 
 /// Recover the high word using an unsigned (logical) right shift and mask.
-pub fn prove_uint32_unpack_uint16_high(low: MachineTerm, high: MachineTerm) -> Theorem {
+pub fn prove_uint32_unpack_uint16_high(low: OldMachineTerm, high: OldMachineTerm) -> Theorem {
     prove_uint32_unpack_uint16_word(low, high, true)
 }
 
 fn prove_uint32_unpack_uint16_word(
-    low: MachineTerm,
-    high: MachineTerm,
+    low: OldMachineTerm,
+    high: OldMachineTerm,
     high_word: bool,
 ) -> Theorem {
     // Each bound confines the field to 16 bits. Shifting high left 16 then
@@ -8720,7 +8734,7 @@ fn prove_uint32_unpack_uint16_word(
             UInt32,
             ShiftLeft,
             high.clone().into(),
-            MachineTerm::uint32_constant(16).into()
+            OldMachineTerm::uint32_constant(16).into()
         )
         .into(),
         low.clone().into(),
@@ -8730,7 +8744,7 @@ fn prove_uint32_unpack_uint16_word(
             UInt32,
             ShiftRight,
             packed.into(),
-            MachineTerm::uint32_constant(16).into()
+            OldMachineTerm::uint32_constant(16).into()
         )
     } else {
         packed
@@ -8739,54 +8753,55 @@ fn prove_uint32_unpack_uint16_word(
         UInt32,
         BitwiseAnd,
         selected.into(),
-        MachineTerm::uint32_constant(65535).into()
+        OldMachineTerm::uint32_constant(65535).into()
     );
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
             Proposition::condition_is(
-                ConditionTerm::unsigned_less_equal(low, MachineTerm::constant(65535)),
+                OldConditionTerm::unsigned_less_equal(low, OldMachineTerm::constant(65535)),
                 true,
             ),
             Proposition::condition_is(
-                ConditionTerm::unsigned_less_equal(high, MachineTerm::constant(65535)),
+                OldConditionTerm::unsigned_less_equal(high, OldMachineTerm::constant(65535)),
                 true,
             ),
         ],
-        Proposition::condition_is(ConditionTerm::uint32_equal(extracted, exact), true),
+        Proposition::condition_is(OldConditionTerm::uint32_equal(extracted, exact), true),
     )
 }
 
 /// Recover a bounded uint16 field from the LP64 C packing expression.
 /// Both bounds are necessary: no operand may overlap the other field.
 fn prove_uint64_unpack_uint16_word(
-    low: MachineTerm,
-    high: MachineTerm,
+    low: OldMachineTerm,
+    high: OldMachineTerm,
     high_word: bool,
 ) -> Theorem {
-    let packed = MachineTerm::uint64_bitwise_or(
+    let packed = OldMachineTerm::uint64_bitwise_or(
         low.clone(),
-        MachineTerm::uint64_shift_left(high.clone(), MachineTerm::int64_constant(16)),
+        OldMachineTerm::uint64_shift_left(high.clone(), OldMachineTerm::int64_constant(16)),
     );
     let selected = if high_word {
-        MachineTerm::uint64_logical_shift_right(packed, MachineTerm::int64_constant(16))
+        OldMachineTerm::uint64_logical_shift_right(packed, OldMachineTerm::int64_constant(16))
     } else {
         packed
     };
-    let extracted = MachineTerm::uint64_bitwise_and(selected, MachineTerm::uint64_constant(65535));
+    let extracted =
+        OldMachineTerm::uint64_bitwise_and(selected, OldMachineTerm::uint64_constant(65535));
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
             Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(low, MachineTerm::uint64_constant(65535)),
+                OldConditionTerm::uint64_less_equal(low, OldMachineTerm::uint64_constant(65535)),
                 true,
             ),
             Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(high, MachineTerm::uint64_constant(65535)),
+                OldConditionTerm::uint64_less_equal(high, OldMachineTerm::uint64_constant(65535)),
                 true,
             ),
         ],
-        Proposition::condition_is(ConditionTerm::uint64_equal(extracted, exact), true),
+        Proposition::condition_is(OldConditionTerm::uint64_equal(extracted, exact), true),
     )
 }
 
@@ -8795,8 +8810,8 @@ fn prove_uint64_unpack_uint16_word(
 /// in both evaluation domains, but impose no bound on the dividend.
 pub fn prove_uint64_integer_bridge(
     name: &str,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) -> Option<Theorem> {
     if name == "click::integer::uint64_pack_uint16_to_integer" {
         return prove_unsigned_pack_u16_to_integer(MachineIntegerType::UInt64, left, right);
@@ -8824,16 +8839,16 @@ pub fn prove_uint64_integer_bridge(
     let a = observe(left.clone());
     let b = observe(right.clone());
     let native_nonzero = Proposition::condition_is(
-        ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_equal(right.clone(), OldMachineTerm::uint64_constant(0)),
         false,
     );
     let integer_nonzero = Proposition::condition_is(
-        ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
     let (machine, exact) = if name == "click::integer::uint64_divide_to_integer" {
         (
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Divide,
                 left: left.into(),
@@ -8843,7 +8858,7 @@ pub fn prove_uint64_integer_bridge(
         )
     } else {
         (
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Remainder,
                 left: left.into(),
@@ -8853,7 +8868,7 @@ pub fn prove_uint64_integer_bridge(
         )
     };
     let conclusion = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+        OldConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
     Some(implication([native_nonzero, integer_nonzero], conclusion))
@@ -8862,7 +8877,7 @@ pub fn prove_uint64_integer_bridge(
 /// Exact mathematical remainder of a defined signed 32-bit operation.
 /// Both zero division and MIN / -1 are excluded by the native definedness
 /// premise, even though mathematical remainder itself has no overflow.
-pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
+pub fn prove_int32_remainder_to_integer(left: OldMachineTerm, right: OldMachineTerm) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
             .expect("typed operands have exact Integer interpretations")
@@ -8870,7 +8885,7 @@ pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -
     let native_defined =
         Proposition::signed_division_defined(MachineIntegerType::Int32, &left, &right);
     let integer_nonzero = Proposition::condition_is(
-        ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
         true,
     );
     let exact = IntegerTerm::truncating_remainder(observe(left.clone()), observe(right.clone()));
@@ -8878,7 +8893,7 @@ pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -
     implication(
         [native_defined, integer_nonzero],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+            OldConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
             true,
         ),
     )
@@ -8897,7 +8912,7 @@ fn implication<const N: usize>(premises: [Proposition; N], conclusion: Propositi
 }
 
 #[cfg(test)]
-fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
+fn uint32_implication(premise: OldConditionTerm, conclusion: OldConditionTerm) -> Theorem {
     implication(
         [Proposition::condition_is(premise, true)],
         Proposition::condition_is(conclusion, true),
@@ -8906,9 +8921,9 @@ fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theo
 
 #[cfg(test)]
 fn uint32_transitivity(
-    first: ConditionTerm,
-    second: ConditionTerm,
-    conclusion: ConditionTerm,
+    first: OldConditionTerm,
+    second: OldConditionTerm,
+    conclusion: OldConditionTerm,
 ) -> Theorem {
     implication(
         [
@@ -8922,37 +8937,43 @@ fn uint32_transitivity(
 /// Unsigned non-strict order followed by strict order is strict order.
 #[cfg(test)]
 pub fn prove_uint32_le_lt_transitive(
-    first: MachineTerm,
-    middle: MachineTerm,
-    last: MachineTerm,
+    first: OldMachineTerm,
+    middle: OldMachineTerm,
+    last: OldMachineTerm,
 ) -> Theorem {
     uint32_transitivity(
-        ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
-        ConditionTerm::unsigned_less_than(middle, last.clone()),
-        ConditionTerm::unsigned_less_than(first, last),
+        OldConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
+        OldConditionTerm::unsigned_less_than(middle, last.clone()),
+        OldConditionTerm::unsigned_less_than(first, last),
     )
 }
 
 /// `lower < greater` and `greater > lower` are one uint32 order.
 #[cfg(test)]
-pub fn prove_uint32_lt_implies_reversed_gt(lower: MachineTerm, greater: MachineTerm) -> Theorem {
+pub fn prove_uint32_lt_implies_reversed_gt(
+    lower: OldMachineTerm,
+    greater: OldMachineTerm,
+) -> Theorem {
     uint32_implication(
-        ConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
-        ConditionTerm::unsigned_greater_than(greater, lower),
+        OldConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
+        OldConditionTerm::unsigned_greater_than(greater, lower),
     )
 }
 
 /// `greater >= lower` and `lower <= greater` are one uint32 order.
 #[cfg(test)]
-pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineTerm) -> Theorem {
+pub fn prove_uint32_ge_implies_reversed_le(
+    greater: OldMachineTerm,
+    lower: OldMachineTerm,
+) -> Theorem {
     uint32_implication(
-        ConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
-        ConditionTerm::unsigned_less_equal(lower, greater),
+        OldConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
+        OldConditionTerm::unsigned_less_equal(lower, greater),
     )
 }
 
 #[cfg(test)]
-pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
+pub fn prove_memory_load(memory: SymbolicMemory, pointer: OldAddress) -> Theorem {
     let outcome = match memory.known_retained_value(&pointer) {
         Some(value) => ExpressionOutcome::Value(value),
         None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
@@ -8967,7 +8988,7 @@ pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
 #[cfg(test)]
 pub fn prove_memory_load_after_store_same(
     memory: SymbolicMemory,
-    pointer: Address,
+    pointer: OldAddress,
     value: ProgramValue,
 ) -> Theorem {
     let stored = memory.store(pointer.clone(), value.clone());
@@ -8981,9 +9002,9 @@ pub fn prove_memory_load_after_store_same(
 #[cfg(test)]
 pub fn prove_memory_load_after_store_other(
     memory: SymbolicMemory,
-    stored_pointer: Address,
+    stored_pointer: OldAddress,
     stored_value: ProgramValue,
-    loaded_pointer: Address,
+    loaded_pointer: OldAddress,
 ) -> Option<Theorem> {
     if stored_pointer == loaded_pointer {
         return None;
@@ -9009,11 +9030,11 @@ mod retained_fold_law_tests {
         KernelTerm, KernelTermExport, KernelTermImport, KernelType, VerificationSession,
     };
 
-    fn endpoint(native: &MachineTerm) -> SharedIntegerRangeEndpoint {
+    fn endpoint(native: &OldMachineTerm) -> SharedIntegerRangeEndpoint {
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int32, native)
             .unwrap();
-        SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+        SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0))
             .with_shared_operand(root)
             .unwrap()
     }
@@ -9024,13 +9045,13 @@ mod retained_fold_law_tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             let constant = |n| {
                 if format == MachineIntegerType::Int32 {
-                    MachineTerm::constant(n as u32)
+                    OldMachineTerm::constant(n as u32)
                 } else {
-                    MachineTerm::uint64_constant(n)
+                    OldMachineTerm::uint64_constant(n)
                 }
             };
-            let x = MachineTerm::Variable(Variable(1005000));
-            let raw = |op, a, b| MachineTerm::Binary {
+            let x = OldMachineTerm::Variable(Variable(1005000));
+            let raw = |op, a, b| OldMachineTerm::Binary {
                 format,
                 op,
                 left: Box::new(a),
@@ -9047,11 +9068,11 @@ mod retained_fold_law_tests {
                 raw(MachineBinaryOp::Add, constant(2), constant(3)),
             ];
             if format == MachineIntegerType::UInt64 {
-                cases.push(MachineTerm::Cast {
+                cases.push(OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: MachineIntegerType::Int32,
                     to: format,
-                    value: Box::new(MachineTerm::constant(7)),
+                    value: Box::new(OldMachineTerm::constant(7)),
                 });
             }
             for native in cases {
@@ -9060,8 +9081,12 @@ mod retained_fold_law_tests {
                     let exports = KernelTermExport::machine_export_count();
                     let shifted = shifted_fold_endpoint(&end, format, operation);
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
-                    let expected =
-                        MachineTerm::machine_binary(format, operation, native.clone(), constant(1));
+                    let expected = OldMachineTerm::machine_binary(
+                        format,
+                        operation,
+                        native.clone(),
+                        constant(1),
+                    );
                     assert_eq!(
                         shifted.value(),
                         &expected,
@@ -9091,10 +9116,10 @@ mod retained_lowering_result_tests {
         let expressions = [
             SpecExpression::Add(
                 Box::new(SpecExpression::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(999992)),
+                    OldMachineTerm::Variable(Variable(999992)),
                 ))),
                 Box::new(SpecExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ))),
             ),
             SpecExpression::IntegerToMachine {

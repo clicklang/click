@@ -375,37 +375,6 @@ pub(super) fn append_execution_effect_facts(
     target.extend_shared(&source.selected(&accepted));
 }
 
-pub(super) fn fact_transport_transition_facts(
-    facts: &(impl ExecutionFactSource + ?Sized),
-    source: &Proposition,
-) -> ExecutionFacts {
-    let source_memories = program_condition_fact_memories(source);
-    let matching_effect = facts.fact_iter().position(|fact| {
-        let before = match fact.proposition() {
-            Proposition::MemoryMutatesOnly { before, .. }
-            | Proposition::MemoryEffectSummary { before, .. }
-            | Proposition::HeapAllocationFreed { before, .. } => before,
-            _ => return false,
-        };
-        source_memories.contains(before)
-    });
-    let Some(start) = matching_effect else {
-        return facts.persistent_facts();
-    };
-    let end = facts
-        .fact_iter()
-        .skip(start + 1)
-        .position(|fact| is_memory_effect_proposition(fact.proposition()))
-        .map(|offset| start + 1 + offset)
-        .unwrap_or(facts.len());
-    facts
-        .fact_iter()
-        .skip(start)
-        .take(end - start)
-        .cloned()
-        .collect()
-}
-
 fn is_memory_effect_proposition(proposition: &Proposition) -> bool {
     matches!(
         proposition,
@@ -1062,6 +1031,29 @@ pub(super) fn record_code_region_program_state(
         }
         CodeRegion::Statement(index) => CodeRegionRef::Region(index),
     };
+    // A contract call's exit is reached from its effect point, which the
+    // call's reads before its exit are made at: it is named with the exit,
+    // with the locals of the call's entry, which the call has not changed
+    // there.
+    if kind == ProgramPointKind::Exit
+        && let CodeRegionRef::Region(index) = point_region
+    {
+        let entry = recorded_states
+            .get(&ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Entry,
+            })
+            .cloned();
+        if let Some(effect) = state.call_effect_state(entry.as_ref()) {
+            recorded_states.insert(
+                ProgramPointRef {
+                    region: point_region.clone(),
+                    kind: ProgramPointKind::Effect,
+                },
+                effect,
+            );
+        }
+    }
     recorded_states.insert(
         ProgramPointRef {
             region: point_region,
@@ -1752,27 +1744,6 @@ pub(super) fn checked_returned_call_value(
     .cloned()
 }
 
-fn record_call_parameters(
-    execution: &mut ExecutionProofState,
-    function_block: &FunctionBlock,
-    statement_index: usize,
-    call_parameters: Option<&crate::kernel::CallParameters>,
-) {
-    if let Some(parameters) = call_parameters {
-        record_statement_program_state(
-            &mut execution.presentation.recorded_states,
-            function_block,
-            statement_index,
-            ProgramPointKind::Parameters,
-            parameters.state().clone(),
-        );
-        execution.presentation.surface_record.last_call_parameters = Some(ProgramPointRef {
-            region: CodeRegionRef::Region(statement_index),
-            kind: ProgramPointKind::Parameters,
-        });
-    }
-}
-
 /// Record one of the two transitions retained by
 /// [`prepare_call_outcome_split`].  This is intentionally a recorder, not an
 /// evaluator: the theorem, outcome, facts, and borrow evidence all come from
@@ -1861,13 +1832,6 @@ pub(super) fn apply_prepared_call_outcome_transition(
         prepared.statement_index,
         ProgramPointKind::Exit,
         *next_state.clone(),
-    );
-
-    record_call_parameters(
-        execution,
-        function_block,
-        prepared.statement_index,
-        transition.call_parameters.as_ref(),
     );
 
     if is_throw {
@@ -2141,7 +2105,7 @@ fn execute_step_from_frontier_position_selecting_path(
     {
         return Err(ClickError::new(format!(
             "`step({}, {{ ... }})` requires a call to `{}` at the current frontier",
-            transport.function, transport.function
+            transport.target, transport.target
         )));
     }
     if matches!(source_region.kind, SourceStatementKind::If { .. }) {
@@ -2268,7 +2232,12 @@ fn execute_step_from_frontier_position_selecting_path(
         } else {
             &step_statement
         };
+        use crate::kernel::CallBinderTarget;
         let called = match selected_statement {
+            ProgramStatement::Call { cpp_binding: Some(binding), arguments, .. } => {
+                matches!(&transport.target, CallBinderTarget::CppBinding(contract) if contract == &binding.contract)
+                    .then_some(arguments.len())
+            }
             ProgramStatement::Call {
                 function_name,
                 arguments,
@@ -2283,27 +2252,28 @@ fn execute_step_from_frontier_position_selecting_path(
                 function_name,
                 arguments,
                 ..
-            } => Some((function_name.as_str(), arguments.len())),
+            } => {
+                let named_contract = function_environment.selected_call_contract.as_ref();
+                (transport.names_call_to(function_name)
+                    || matches!(&transport.target, CallBinderTarget::Function(name) if Some(name) == named_contract))
+                    .then_some(arguments.len())
+            }
             _ => None,
         };
         match called {
-            Some((name, arity))
-                if transport.names_call_to(name)
-                    || function_environment.selected_call_contract.as_deref()
-                        == Some(transport.function.as_ref()) =>
-            {
+            Some(arity) => {
                 if arity != transport.arity {
                     return Err(ClickError::new(format!(
-                        "`{name}` is called with {arity} argument(s) here, but the step writes {}",
-                        transport.arity
+                        "`{}` takes {arity} argument(s) here, but the step writes {}",
+                        transport.target, transport.arity
                     )));
                 }
             }
             _ => {
                 return Err(ClickError::new(format!(
                     "`step({}, {{ ... }})` requires a call to `{}` at the current frontier; next operation: {}",
-                    transport.function,
-                    transport.function,
+                    transport.target,
+                    transport.target,
                     describe_statement_head(&step_statement)
                 )));
             }
@@ -3198,12 +3168,6 @@ fn execute_step_from_frontier_position_selecting_path(
             .presentation
             .recorded_states
             .record_read_events(statement_index, &execution_pure_facts);
-        record_call_parameters(
-            execution,
-            function_block,
-            statement_index,
-            transition.call_parameters.as_ref(),
-        );
         if matches!(outcome, StatementOutcome::Normal(_))
             && let Some(result) = &transition.call_result
         {
@@ -3812,7 +3776,7 @@ pub(super) fn condition_path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, SyntaxProposition)> {
+) -> Option<(OldConditionTerm, SyntaxProposition)> {
     let cases = path_facts
         .iter()
         .map(|path_facts| PathCase { path_facts })
@@ -3925,9 +3889,9 @@ fn path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, SyntaxProposition)> {
+) -> Option<(OldConditionTerm, SyntaxProposition)> {
     let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
-    let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
+    let decides = |case: &PathCase<'_>, condition: &OldConditionTerm, value: bool| {
         case.path_facts
             .contains(&Proposition::condition_is(condition.clone(), value))
     };
@@ -3941,7 +3905,7 @@ fn path_case_split_condition(
             let splits = [true, false].into_iter().all(|value| {
                 cases
                     .iter()
-                    .any(|case| decides(case, condition.native_compat(), value))
+                    .any(|case| decides(case, condition.old_form(), value))
             });
             let undecided = [true, false]
                 .into_iter()
@@ -3949,18 +3913,18 @@ fn path_case_split_condition(
             (splits && undecided).then_some(condition)
         })
         .collect::<Vec<_>>();
-    let decided_by_every_case = |condition: &ConditionTerm| {
+    let decided_by_every_case = |condition: &OldConditionTerm| {
         cases
             .iter()
             .all(|case| decides(case, condition, true) || decides(case, condition, false))
     };
     candidates
         .iter()
-        .filter(|condition| decided_by_every_case(condition.native_compat()))
+        .filter(|condition| decided_by_every_case(condition.old_form()))
         .chain(
             candidates
                 .iter()
-                .filter(|condition| !decided_by_every_case(condition.native_compat())),
+                .filter(|condition| !decided_by_every_case(condition.old_form())),
         )
         .find_map(|condition| {
             let surface = synthesize_surface_proposition(
@@ -3971,7 +3935,7 @@ fn path_case_split_condition(
                 ),
                 state,
             )?;
-            Some((condition.native_compat().clone(), surface))
+            Some((condition.old_form().clone(), surface))
         })
 }
 
@@ -4517,7 +4481,7 @@ fn word_store_source(
     outcome: &StatementOutcome,
     exit_point: &ProgramPointRef,
 ) -> Option<SyntaxProposition> {
-    use crate::kernel::{MachineTerm, ProgramType, ProgramValue};
+    use crate::kernel::{OldMachineTerm, ProgramType, ProgramValue};
 
     let (pointer, value) = match statement {
         ProgramStatement::Store { pointer, value }
@@ -4559,7 +4523,9 @@ fn word_store_source(
             SyntaxTerm::Binding(index.source_spelling()?.to_owned())
         }
         Some(
-            index @ ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Constant { .. })),
+            index @ ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Constant {
+                ..
+            })),
         ) => SyntaxTerm::ProgramExpression(index.clone()),
         _ => return None,
     };

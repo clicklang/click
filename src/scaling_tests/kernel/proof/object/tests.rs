@@ -30,9 +30,9 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
     let checks = [0, 1].map(|value| {
         LoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
+                left: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(value))),
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
+                right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(value))),
             },
             None,
             None,
@@ -145,7 +145,8 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
             .body
             .as_mut()
             .unwrap()
-            .goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
+            .goal =
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true);
         assert!(
             root(facts, wrong)
                 .validate_checked_invariant_lowerings(&checks, &[])
@@ -190,9 +191,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
     let checks = vec![
         LoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                left: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
             },
             None,
             None,
@@ -272,9 +273,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         );
         let changed_checks = vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
+                left: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(1))),
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
+                right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(1))),
             },
             None,
             None,
@@ -324,7 +325,8 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
             .body
             .as_mut()
             .unwrap()
-            .goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
+            .goal =
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true);
         assert!(
             root(facts.clone(), incomplete)
                 .validate_checked_invariant_lowerings(&checks, &[])
@@ -382,7 +384,9 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
             &(0..size)
                 .map(|i| Proposition::Predicate {
                     name: format!("unrelated_match_{i}"),
-                    arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(i)).into())],
+                    arguments: vec![Term::Bitvector32(
+                        OldMachineTerm::Variable(Variable(i)).into(),
+                    )],
                 })
                 .collect::<Vec<_>>(),
         );
@@ -391,9 +395,9 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(
                     Proposition::condition_is(
-                        crate::kernel::ConditionTerm::equal(
-                            MachineTerm::Variable(Variable(1)),
-                            MachineTerm::Variable(Variable(1)),
+                        crate::kernel::OldConditionTerm::equal(
+                            OldMachineTerm::Variable(Variable(1)),
+                            OldMachineTerm::Variable(Variable(1)),
                         ),
                         true,
                     ),
@@ -434,7 +438,10 @@ fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
             (),
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(
-                    Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+                    Proposition::condition_is(
+                        crate::kernel::OldConditionTerm::Constant(true),
+                        true,
+                    ),
                     (),
                 )),
                 ProofBranchState {
@@ -456,12 +463,12 @@ fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
 
 #[test]
 fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
-    use crate::kernel::{ConditionTerm, MachineIntegerType};
+    use crate::kernel::{MachineIntegerType, OldConditionTerm};
     type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
     let binder = Variable(186);
     let body = Proposition::Predicate {
         name: "holds".into(),
-        arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
+        arguments: vec![Term::Bitvector32(OldMachineTerm::Variable(binder).into())],
     };
     let goal = crate::kernel::quantifiers::test_forall(
         Default::default(),
@@ -473,13 +480,13 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
         let ambient = (0..size)
             .map(|index| {
                 Proposition::condition_is(
-                    ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(if related {
+                    OldConditionTerm::signed_less_than(
+                        OldMachineTerm::Variable(if related {
                             binder
                         } else {
                             Variable(700_000 + index)
                         }),
-                        MachineTerm::constant(1000 + index as u32),
+                        OldMachineTerm::constant(1000 + index as u32),
                     ),
                     true,
                 )
@@ -527,7 +534,7 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
 /// share its variable. Exercise both success and refusal in cold contexts.
 #[test]
 fn known_computation_work_ignores_related_and_unrelated_facts() {
-    use crate::kernel::{ConditionTerm, IntegerTerm};
+    use crate::kernel::{IntegerTerm, OldConditionTerm};
     let mut hits = Vec::new();
     let mut misses = Vec::new();
     for size in [16u64, 64, 256] {
@@ -538,14 +545,14 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
                 .flat_map(|i| {
                     [
                         Proposition::condition_is(
-                            ConditionTerm::integer_equal(
+                            OldConditionTerm::integer_equal(
                                 variable.clone(),
                                 IntegerTerm::var(Variable(883_000 + i)),
                             ),
                             true,
                         ),
                         Proposition::condition_is(
-                            ConditionTerm::integer_equal(
+                            OldConditionTerm::integer_equal(
                                 IntegerTerm::var(Variable(884_000 + i)),
                                 IntegerTerm::var(Variable(885_000 + i)),
                             ),
@@ -558,7 +565,7 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
         let successor = IntegerTerm::add(variable.clone(), IntegerTerm::constant_i64(1));
         for (condition, expected, costs) in [
             (
-                ConditionTerm::IntegerGreaterThan(
+                OldConditionTerm::IntegerGreaterThan(
                     successor.clone().into(),
                     variable.clone().into(),
                 ),
@@ -566,7 +573,7 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
                 &mut hits,
             ),
             (
-                ConditionTerm::IntegerEqual(successor.into(), variable.into()),
+                OldConditionTerm::IntegerEqual(successor.into(), variable.into()),
                 false,
                 &mut misses,
             ),
@@ -589,10 +596,12 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn literal_constructor_field_known_work_scales_with_the_goal() {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
-        AlgebraicValueType, AlgebraicVariantType, ConditionTerm, ProgramType, ProgramValue,
+        AlgebraicValueType, AlgebraicVariantType, OldConditionTerm, ProgramType, ProgramValue,
         VerificationSession,
     };
     let mut costs = Vec::new();
@@ -620,7 +629,7 @@ fn literal_constructor_field_known_work_scales_with_the_goal() {
         };
         let field = |value| AlgebraicValue::Program(ProgramValue::Int32(value));
         let constructor = |last| {
-            let mut fields = vec![field(MachineTerm::constant(0)); count - 1];
+            let mut fields = vec![field(OldMachineTerm::constant(0)); count - 1];
             fields.push(field(last));
             AlgebraicTerm {
                 algebraic_type: ty.clone(),
@@ -632,21 +641,21 @@ fn literal_constructor_field_known_work_scales_with_the_goal() {
         };
         let goal = |last| {
             Proposition::condition_is(
-                ConditionTerm::AlgebraicEqual(
-                    Box::new(constructor(MachineTerm::constant(0))),
+                OldConditionTerm::AlgebraicEqual(
+                    Box::new(constructor(OldMachineTerm::constant(0))),
                     Box::new(constructor(last)),
                 ),
                 false,
             )
         };
-        let distinct = goal(MachineTerm::constant(1));
-        let symbolic = goal(MachineTerm::Variable(Variable(970103)));
+        let distinct = goal(OldMachineTerm::constant(1));
+        let symbolic = goal(OldMachineTerm::Variable(Variable(970103)));
         let mut samples = [Vec::new(), Vec::new()];
         for size in [0, 16, 64, 256] {
             let facts = (0..size)
                 .flat_map(|index| {
                     [
-                        goal(MachineTerm::Variable(Variable(970104 + index))),
+                        goal(OldMachineTerm::Variable(Variable(970104 + index))),
                         Proposition::Predicate {
                             name: format!("unrelated_{index}"),
                             arguments: vec![],
@@ -686,7 +695,7 @@ fn literal_constructor_field_known_work_scales_with_the_goal() {
 
 #[test]
 fn computed_negations_known_work_scales_with_the_goal() {
-    use crate::kernel::{ConditionTerm, IntegerTerm, VerificationSession};
+    use crate::kernel::{IntegerTerm, OldConditionTerm, VerificationSession};
 
     let mut goal_costs = Vec::new();
     for leaves in [4, 16, 64] {
@@ -695,9 +704,9 @@ fn computed_negations_known_work_scales_with_the_goal() {
             let _session = VerificationSession::enter();
             let variable = IntegerTerm::var(Variable(972_000));
             let equal = |left, right| {
-                Proposition::condition_is(ConditionTerm::integer_equal(left, right), true)
+                Proposition::condition_is(OldConditionTerm::integer_equal(left, right), true)
             };
-            let false_atom = Proposition::condition_is(ConditionTerm::Constant(false), true);
+            let false_atom = Proposition::condition_is(OldConditionTerm::Constant(false), true);
             let unknown = equal(variable.clone(), IntegerTerm::constant_i64(0));
             let goal = |tail| {
                 let disjunction = (1..leaves).fold(tail, |right, _| {
@@ -748,30 +757,30 @@ fn computed_negations_known_work_scales_with_the_goal() {
 
 #[test]
 fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
-    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType, OldConditionTerm};
     let mut samples = [Vec::new(), Vec::new()];
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let dividend = MachineTerm::Variable(Variable(970500));
+        let dividend = OldMachineTerm::Variable(Variable(970500));
         let strict_bound = |left, right| {
             Proposition::condition_is(
-                ConditionTerm::machine_compare(format, CompareRelation::LessThan, left, right),
+                OldConditionTerm::machine_compare(format, CompareRelation::LessThan, left, right),
                 true,
             )
         };
-        let remainder = MachineTerm::Binary {
+        let remainder = OldMachineTerm::Binary {
             format,
             op: MachineBinaryOp::Remainder,
             left: Box::new(dividend.clone()),
-            right: Box::new(MachineTerm::uint64_constant(1000)),
+            right: Box::new(OldMachineTerm::uint64_constant(1000)),
         };
         let facts = (0..size)
             .flat_map(|index| {
                 [
                     strict_bound(
                         dividend.clone(),
-                        MachineTerm::Variable(Variable(971000 + index)),
+                        OldMachineTerm::Variable(Variable(971000 + index)),
                     ),
                     Proposition::Predicate {
                         name: format!("unrelated_{index}"),
@@ -783,7 +792,7 @@ fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
         let facts = PureFactStore::from_ordered(&facts);
         for ((bound, expected), costs) in [(1000, true), (999, false)].into_iter().zip(&mut samples)
         {
-            let goal = strict_bound(remainder.clone(), MachineTerm::uint64_constant(bound));
+            let goal = strict_bound(remainder.clone(), OldMachineTerm::uint64_constant(bound));
             let proof = known_computation_proof(goal, facts.clone());
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 proof.apply_known(PropositionKnownContext::Exact)
@@ -802,29 +811,29 @@ fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
 
 #[test]
 fn unsigned_remainder_dividend_bound_known_work_ignores_context_growth() {
-    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType, OldConditionTerm};
     let mut samples = [Vec::new(), Vec::new()];
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let dividend = MachineTerm::Variable(Variable(975_500));
-        let divisor = MachineTerm::Variable(Variable(975_501));
+        let dividend = OldMachineTerm::Variable(Variable(975_500));
+        let divisor = OldMachineTerm::Variable(Variable(975_501));
         let relation = |relation, left, right| {
             Proposition::condition_is(
-                ConditionTerm::machine_compare(ty, relation, left, right),
+                OldConditionTerm::machine_compare(ty, relation, left, right),
                 true,
             )
         };
         let positive = |value| {
             relation(
                 CompareRelation::LessThan,
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
                 value,
             )
         };
         let goal = relation(
             CompareRelation::LessEqual,
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Remainder,
                 left: Box::new(dividend.clone()),
@@ -838,7 +847,7 @@ fn unsigned_remainder_dividend_bound_known_work_ignores_context_growth() {
                     relation(
                         CompareRelation::LessThan,
                         divisor.clone(),
-                        MachineTerm::Variable(Variable(976_000 + index)),
+                        OldMachineTerm::Variable(Variable(976_000 + index)),
                     ),
                     Proposition::Predicate {
                         name: format!("unrelated_{index}"),
@@ -874,24 +883,24 @@ fn unsigned_remainder_dividend_bound_known_work_ignores_context_growth() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: signed quotient hit and miss scaling took 0.6s"]
 fn signed_quotient_sign_known_work_ignores_context_growth() {
-    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType, OldConditionTerm};
     let mut samples = [Vec::new(), Vec::new()];
     for size in [8, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let n = MachineTerm::Variable(Variable(977_500));
-        let d = MachineTerm::Variable(Variable(977_501));
-        let zero = MachineTerm::constant(0);
+        let n = OldMachineTerm::Variable(Variable(977_500));
+        let d = OldMachineTerm::Variable(Variable(977_501));
+        let zero = OldMachineTerm::constant(0);
         let relation = |relation, left, right, truth| {
             Proposition::condition_is(
-                ConditionTerm::machine_compare(ty, relation, left, right),
+                OldConditionTerm::machine_compare(ty, relation, left, right),
                 truth,
             )
         };
         let goal = relation(
             CompareRelation::LessEqual,
             zero.clone(),
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Divide,
                 left: Box::new(n.clone()),
@@ -907,7 +916,7 @@ fn signed_quotient_sign_known_work_ignores_context_growth() {
             facts.push(relation(
                 CompareRelation::LessThan,
                 d.clone(),
-                MachineTerm::Variable(Variable(978_000 + index)),
+                OldMachineTerm::Variable(Variable(978_000 + index)),
                 true,
             ));
             facts.push(Proposition::Predicate {
@@ -921,7 +930,7 @@ fn signed_quotient_sign_known_work_ignores_context_growth() {
                 facts.with_fact(relation(
                     CompareRelation::Equal,
                     n.clone(),
-                    MachineTerm::constant(i32::MIN as u32),
+                    OldMachineTerm::constant(i32::MIN as u32),
                     false,
                 ))
             } else {
@@ -945,15 +954,15 @@ fn signed_quotient_sign_known_work_ignores_context_growth() {
 
 #[test]
 fn unchanged_machine_fold_known_work_ignores_context_growth() {
-    use crate::kernel::{CompareRelation, ConditionTerm, MachineIntegerType};
+    use crate::kernel::{CompareRelation, MachineIntegerType, OldConditionTerm};
     let _session = crate::kernel::VerificationSession::enter();
-    let seed = MachineTerm::Variable(Variable(984_001));
-    let end = MachineTerm::Variable(Variable(984_002));
+    let seed = OldMachineTerm::Variable(Variable(984_001));
+    let end = OldMachineTerm::Variable(Variable(984_002));
     let accumulator = Variable(984_003);
     let item = Variable(984_004);
     let comparison = |relation, left, right| {
         Proposition::condition_is(
-            ConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right),
+            OldConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right),
             true,
         )
     };
@@ -964,7 +973,7 @@ fn unchanged_machine_fold_known_work_ignores_context_growth() {
                     comparison(
                         CompareRelation::LessEqual,
                         end.clone(),
-                        MachineTerm::Variable(Variable(985_000 + index)),
+                        OldMachineTerm::Variable(Variable(985_000 + index)),
                     ),
                     Proposition::Predicate {
                         name: format!("unrelated_{index}"),
@@ -975,13 +984,13 @@ fn unchanged_machine_fold_known_work_ignores_context_growth() {
             .collect::<Vec<_>>();
         let facts = PureFactStore::from_ordered(&facts);
         [accumulator, item].map(|body| {
-            let fold = MachineTerm::RangeFold {
-                start: Box::new(MachineTerm::constant(0)),
+            let fold = OldMachineTerm::RangeFold {
+                start: Box::new(OldMachineTerm::constant(0)),
                 end: Box::new(end.clone()),
                 initial: Box::new(seed.clone()),
                 accumulator,
                 item,
-                body: Box::new(MachineTerm::Variable(body)),
+                body: Box::new(OldMachineTerm::Variable(body)),
             };
             let goal = comparison(CompareRelation::Equal, fold, seed.clone());
             let proof = known_computation_proof(goal, facts.clone());
@@ -1001,18 +1010,18 @@ fn unchanged_machine_fold_known_work_ignores_context_growth() {
 
 #[test]
 fn unfolded_machine_range_known_work_ignores_context_growth() {
-    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType, OldConditionTerm};
     let _session = crate::kernel::VerificationSession::enter();
     let ty = MachineIntegerType::UInt64;
-    let input = MachineTerm::Variable(Variable(996_001));
-    let word = MachineTerm::uint64_constant;
+    let input = OldMachineTerm::Variable(Variable(996_001));
+    let word = OldMachineTerm::uint64_constant;
     let guard =
-        ConditionTerm::machine_compare(ty, CompareRelation::LessThan, input.clone(), word(10));
-    let decimal_length = MachineTerm::logical_machine_binary(
+        OldConditionTerm::machine_compare(ty, CompareRelation::LessThan, input.clone(), word(10));
+    let decimal_length = OldMachineTerm::logical_machine_binary(
         ty,
         MachineBinaryOp::Add,
         word(1),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition: guard.into(),
             then_term: word(0).into(),
             else_term: word(1).into(),
@@ -1023,7 +1032,7 @@ fn unfolded_machine_range_known_work_ignores_context_growth() {
             .flat_map(|i| {
                 [
                     Proposition::condition_is(
-                        ConditionTerm::machine_compare(
+                        OldConditionTerm::machine_compare(
                             ty,
                             CompareRelation::LessEqual,
                             input.clone(),
@@ -1041,7 +1050,7 @@ fn unfolded_machine_range_known_work_ignores_context_growth() {
         let facts = PureFactStore::from_ordered(&facts);
         [2, 1].map(|bound| {
             let goal = Proposition::condition_is(
-                ConditionTerm::machine_compare(
+                OldConditionTerm::machine_compare(
                     ty,
                     CompareRelation::LessEqual,
                     decimal_length.clone(),
@@ -1066,7 +1075,7 @@ fn unfolded_machine_range_known_work_ignores_context_growth() {
 
 #[test]
 fn known_computation_work_is_linear_in_shared_integer_terms() {
-    use crate::kernel::{ConditionTerm, IntegerTerm};
+    use crate::kernel::{IntegerTerm, OldConditionTerm};
     let mut costs = Vec::new();
     for depth in [16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -1077,7 +1086,7 @@ fn known_computation_work_is_linear_in_shared_integer_terms() {
         let successor = IntegerTerm::add(term.as_ref().clone(), IntegerTerm::constant_i64(1));
         let proof = known_computation_proof(
             Proposition::condition_is(
-                ConditionTerm::IntegerGreaterThan(successor.into(), term),
+                OldConditionTerm::IntegerGreaterThan(successor.into(), term),
                 true,
             ),
             PureFactStore::default(),
@@ -1187,13 +1196,14 @@ fn known_quantified_identity_uses_selected_keys() {
                 name: "quantified_identity".into(),
                 arguments: vec![
                     Term::ProgramValue(
-                        (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(
+                        (crate::kernel::ProgramValue::Int32(OldMachineTerm::Variable(Variable(
                             binder,
                         ))))
                         .into(),
                     ),
                     Term::ProgramValue(
-                        (crate::kernel::ProgramValue::Int32(MachineTerm::constant(index))).into(),
+                        (crate::kernel::ProgramValue::Int32(OldMachineTerm::constant(index)))
+                            .into(),
                     ),
                 ],
             },
@@ -1268,13 +1278,14 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
                 name: "selected_body".into(),
                 arguments: vec![
                     Term::ProgramValue(
-                        (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(
+                        (crate::kernel::ProgramValue::Int32(OldMachineTerm::Variable(Variable(
                             binder,
                         ))))
                         .into(),
                     ),
                     Term::ProgramValue(
-                        (crate::kernel::ProgramValue::Int32(MachineTerm::constant(value))).into(),
+                        (crate::kernel::ProgramValue::Int32(OldMachineTerm::constant(value)))
+                            .into(),
                     ),
                 ],
             },
@@ -1355,20 +1366,20 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
 #[test]
 fn known_compound_comparison_work_is_linear_in_selected_clauses() {
     use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
-    use crate::kernel::{ConditionTerm, KernelTermExport};
+    use crate::kernel::{KernelTermExport, OldConditionTerm};
     let mut costs = Vec::new();
     for size in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let clause = |id: u64, shared| {
             let leaf = |bound| {
-                let native = ConditionTerm::equal(
-                    MachineTerm::Binary {
+                let native = OldConditionTerm::equal(
+                    OldMachineTerm::Binary {
                         format: crate::kernel::MachineIntegerType::Int32,
                         op: crate::kernel::MachineBinaryOp::Add,
-                        left: Box::new(MachineTerm::Variable(Variable(989_000 + id))),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: Box::new(OldMachineTerm::Variable(Variable(989_000 + id))),
+                        right: Box::new(OldMachineTerm::constant(1)),
                     },
-                    MachineTerm::constant(bound),
+                    OldMachineTerm::constant(bound),
                 );
                 Proposition::condition_is(
                     if shared {
@@ -1404,30 +1415,30 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
 #[test]
 fn automatic_object_separation_ignores_ambient_address_facts() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, ConditionTerm, LocalBindingId, LocalFunctionId,
-        LocalStorageInstance, MemoryRange, Resource, Variable,
+        AddressBase, LocalBindingId, LocalFunctionId, LocalStorageInstance, MemoryRange,
+        OldAddress, OldAddressOffset, OldConditionTerm, Resource, Variable,
     };
 
     let _session = crate::kernel::VerificationSession::enter();
     let function = LocalFunctionId::new(Some("separation.c".into()), "f".into());
-    let local = |index| Address {
+    let local = |index| OldAddress {
         base: AddressBase::AutomaticLocal {
             binding: LocalBindingId::new(function.clone(), false, index, None),
             instance: LocalStorageInstance::Implicit,
         },
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let selected = local(0);
-    let incoming = Address {
+    let incoming = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address::symbolic(Variable(1));
+    let alias = OldAddress::symbolic(Variable(1));
     let resource = |pointer| {
         Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             pointer,
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
             4,
         )))
     };
@@ -1447,12 +1458,15 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
     ];
     let samples = [4u64, 16, 64, 256].map(|size| {
         let mut facts = vec![Proposition::condition_is(
-            ConditionTerm::address_equal(selected.clone(), alias.clone()),
+            OldConditionTerm::address_equal(selected.clone(), alias.clone()),
             true,
         )];
         for i in 0..size {
             facts.push(Proposition::condition_is(
-                ConditionTerm::address_equal(alias.clone(), Address::symbolic(Variable(10 + i))),
+                OldConditionTerm::address_equal(
+                    alias.clone(),
+                    OldAddress::symbolic(Variable(10 + i)),
+                ),
                 true,
             ));
             facts.push(Proposition::Predicate {
@@ -1484,22 +1498,22 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
 
 #[test]
 fn selected_match_conditionals_known_work_ignores_context_growth() {
-    use crate::kernel::{CompareRelation, ConditionTerm, MachineIntegerType};
+    use crate::kernel::{CompareRelation, MachineIntegerType, OldConditionTerm};
     let _session = crate::kernel::VerificationSession::enter();
-    let payload = MachineTerm::Variable(Variable(986_000));
-    let expected = MachineTerm::Variable(Variable(986_001));
+    let payload = OldMachineTerm::Variable(Variable(986_000));
+    let expected = OldMachineTerm::Variable(Variable(986_001));
     let compare = |relation, left, right| {
-        ConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right)
+        OldConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right)
     };
-    let conditional = |left, right, then_term| MachineTerm::If {
-        condition: Box::new(ConditionTerm::Compare {
+    let conditional = |left, right, then_term| OldMachineTerm::If {
+        condition: Box::new(OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
             right: Box::new(right),
         }),
         then_term: Box::new(then_term),
-        else_term: Box::new(MachineTerm::constant(0)),
+        else_term: Box::new(OldMachineTerm::constant(0)),
     };
     let measurements = [8, 32, 64].map(|size| {
         let facts = (0..size)
@@ -1509,7 +1523,7 @@ fn selected_match_conditionals_known_work_ignores_context_growth() {
                         compare(
                             CompareRelation::LessEqual,
                             payload.clone(),
-                            MachineTerm::Variable(Variable(987_000 + index)),
+                            OldMachineTerm::Variable(Variable(987_000 + index)),
                         ),
                         true,
                     ),
@@ -1528,11 +1542,11 @@ fn selected_match_conditionals_known_work_ignores_context_growth() {
                 conditional(
                     payload.clone(),
                     guard_value.clone(),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ),
             );
             let goal = Proposition::condition_is(
-                compare(CompareRelation::Equal, nested, MachineTerm::constant(1)),
+                compare(CompareRelation::Equal, nested, OldMachineTerm::constant(1)),
                 true,
             );
             let proof = known_computation_proof(goal, facts.clone());
@@ -1553,18 +1567,19 @@ fn selected_match_conditionals_known_work_ignores_context_growth() {
 #[test]
 fn pointer_index_projection_looks_up_only_its_full_width_bound() {
     use crate::kernel::proof::fact_reasoning::{known_bridge_leaf, pointer_projection_source};
-    use crate::kernel::{AddressOffset, ConditionTerm, VerificationSession};
+    use crate::kernel::{OldAddressOffset, OldConditionTerm, VerificationSession};
     let _session = VerificationSession::enter();
-    let index = MachineTerm::Variable(Variable(970_020));
-    let narrow = AddressOffset::scaled_int32_node(MachineTerm::uint32_from_64(index.clone()), 4);
-    let wide = AddressOffset::scaled_int64_node(index.clone(), 4, true);
+    let index = OldMachineTerm::Variable(Variable(970_020));
+    let narrow =
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::uint32_from_64(index.clone()), 4);
+    let wide = OldAddressOffset::scaled_int64_node(index.clone(), 4, true);
     let at_parameter =
-        |offset| AddressOffset::add(AddressOffset::Variable(Variable(970_021)), offset);
-    let compare = ConditionTerm::address_offset_equal(at_parameter(narrow), at_parameter(wide));
+        |offset| OldAddressOffset::add(OldAddressOffset::Variable(Variable(970_021)), offset);
+    let compare = OldConditionTerm::address_offset_equal(at_parameter(narrow), at_parameter(wide));
     let wide = pointer_projection_source(&compare).unwrap();
     let goal = Proposition::condition_is(compare, true);
     let exact = Proposition::condition_is(
-        ConditionTerm::IntegerLessEqual(
+        OldConditionTerm::IntegerLessEqual(
             wide.into(),
             crate::kernel::IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
         ),
@@ -1574,9 +1589,9 @@ fn pointer_index_projection_looks_up_only_its_full_width_bound() {
         let mut premises = Vec::new();
         for i in 0..size {
             premises.push(Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     index.clone(),
-                    MachineTerm::uint64_constant(4_000_000_000 + i),
+                    OldMachineTerm::uint64_constant(4_000_000_000 + i),
                 ),
                 true,
             ));
@@ -1611,11 +1626,12 @@ fn pointer_index_projection_looks_up_only_its_full_width_bound() {
 fn known_constructor_order_looks_up_only_the_selected_payload_bound() {
     use crate::kernel::{
         AlgebraicBitvectorMatchArm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
-        CompareRelation, ConditionTerm, KernelMatch, MachineIntegerType, ProgramType, ProgramValue,
+        CompareRelation, KernelMatch, MachineIntegerType, OldConditionTerm, ProgramType,
+        ProgramValue,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let payload = MachineTerm::Variable(Variable(986_001));
-    let binding = MachineTerm::Variable(Variable(986_002));
+    let payload = OldMachineTerm::Variable(Variable(986_001));
+    let binding = OldMachineTerm::Variable(Variable(986_002));
     let field = |term| AlgebraicValue::Program(ProgramValue::Int32(term));
     let mut scrutinee =
         KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
@@ -1623,7 +1639,7 @@ fn known_constructor_order_looks_up_only_the_selected_payload_bound() {
         variant: "Arm".into(),
         fields: vec![field(payload.clone())],
     };
-    let matched = MachineTerm::AlgebraicMatch {
+    let matched = OldMachineTerm::AlgebraicMatch {
         scrutinee: Box::new(scrutinee),
         arms: vec![AlgebraicBitvectorMatchArm {
             variant: "Arm".into(),
@@ -1634,11 +1650,11 @@ fn known_constructor_order_looks_up_only_the_selected_payload_bound() {
     };
     let bound = |term, upper| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(term),
-                right: Box::new(MachineTerm::constant(upper)),
+                right: Box::new(OldMachineTerm::constant(upper)),
             },
             true,
         )
@@ -1648,7 +1664,7 @@ fn known_constructor_order_looks_up_only_the_selected_payload_bound() {
         for index in 0..size {
             premises.push(bound(payload.clone(), 100 + index));
             premises.push(bound(
-                MachineTerm::Variable(Variable(987_000 + u64::from(index))),
+                OldMachineTerm::Variable(Variable(987_000 + u64::from(index))),
                 9,
             ));
         }

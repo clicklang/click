@@ -85,10 +85,6 @@ pub(super) struct SurfaceRecord {
     /// The statement entry the most recent step recorded, which later
     /// state-qualified facts resolve against.
     pub(super) last_step_entry: Option<ProgramPointRef>,
-    /// The parameter point (`R.parameter(name)`) the most recent call step
-    /// recorded: a step that prepares a call proves the call's requirements
-    /// at its pre-state with this point named.
-    pub(super) last_call_parameters: Option<ProgramPointRef>,
     pub(super) path_choices: Vec<SurfacePathChoice>,
     pub(super) blocker: Option<String>,
     /// Source facts recorded by checked `have` nodes on this path. A prepared
@@ -1639,12 +1635,6 @@ pub(super) enum PostExecutionTactic {
     },
     Apply(TheoremApplication),
     Have(ProofHave),
-    /// A bare `transport`, which searches for its premises. A written
-    /// `rewrite` is a leaf.
-    Transport {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-    },
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
     /// focused outcome `Proof` to decide the condition, then applies only the
@@ -2052,7 +2042,6 @@ pub(super) fn post_execution_tactic_timing(
                 "control"
             },
         ),
-        PostExecutionTactic::Transport { .. } => ("transport", "smart"),
         PostExecutionTactic::Solve => ("solve", "smart"),
         PostExecutionTactic::SolveUsing(_) => ("close", "smart"),
         PostExecutionTactic::ImplicitSolve => ("implicit tail", "smart"),

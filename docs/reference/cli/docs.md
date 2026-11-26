@@ -53,10 +53,10 @@ a written step. That closer is smart,
 and its refusal points at `click docs tracing`. A control tactic such as `have` prints only its
 entry, since its refusal comes from a tactic it contains.
 
-A failed search for frame evidence in `transport(P, Q)` reports:
+A failed search in `close()` reports:
 
 ```text
-refused by: `transport` (smart: it may miss; if the goal holds, prove it through smaller steps)
+refused by: `close` (smart: it may miss; if the goal holds, prove it through smaller steps)
 ```
 
 ## Exit status

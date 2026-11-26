@@ -1347,16 +1347,16 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     crate::kernel::substitute_int32_variable_in_proposition(
                         &body,
                         *var,
-                        crate::kernel::MachineTerm::Variable(chosen),
+                        crate::kernel::OldMachineTerm::Variable(chosen),
                     )
                 }
                 Sort::ProgramPointer(program_type)
                 | Sort::ProgramObjectPointer(program_type, _) => {
                     let pointer =
                         if matches!(program_type, crate::kernel::ProgramType::FunctionPointer(_)) {
-                            crate::kernel::Address::symbolic_function(chosen)
+                            crate::kernel::OldAddress::symbolic_function(chosen)
                         } else {
-                            crate::kernel::Address::symbolic(chosen)
+                            crate::kernel::OldAddress::symbolic(chosen)
                         };
                     crate::kernel::substitute_pointer_variable_in_proposition(&body, *var, &pointer)
                 }
@@ -2254,7 +2254,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             members.pop()
         }
         .unwrap_or(Proposition::condition_is(
-            crate::kernel::ConditionTerm::Constant(true),
+            crate::kernel::OldConditionTerm::Constant(true),
             true,
         ));
         let introductions = obligations()
@@ -2997,7 +2997,7 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
 mod tests {
     use super::*;
     use crate::kernel::proof::PropositionObligation;
-    use crate::kernel::{MachineTerm, Sort, Term, Variable};
+    use crate::kernel::{OldMachineTerm, Sort, Term, Variable};
 
     fn known_computation_proof(
         goal: Proposition,
@@ -3020,7 +3020,7 @@ mod tests {
         use crate::instrumentation::measure_deterministic_work;
         use crate::kernel::{
             AlgebraicBitvectorMatchArm, AlgebraicTerm, AlgebraicTermNode, AlgebraicType,
-            AlgebraicValue, ConditionTerm, IntegerTerm, MachineIntegerType, ProgramValue,
+            AlgebraicValue, IntegerTerm, MachineIntegerType, OldConditionTerm, ProgramValue,
             VerificationSession,
         };
         let _session = VerificationSession::enter();
@@ -3028,12 +3028,12 @@ mod tests {
         let guard = Variable(10);
         let zero = IntegerTerm::constant_i64(0);
         let conditional = |binder, body| {
-            observe(MachineTerm::If {
-                condition: Box::new(ConditionTerm::integer_equal(
-                    observe(MachineTerm::Variable(guard)),
+            observe(OldMachineTerm::If {
+                condition: Box::new(OldConditionTerm::integer_equal(
+                    observe(OldMachineTerm::Variable(guard)),
                     zero.clone(),
                 )),
-                then_term: Box::new(MachineTerm::AlgebraicMatch {
+                then_term: Box::new(OldMachineTerm::AlgebraicMatch {
                     scrutinee: Box::new(AlgebraicTerm {
                         algebraic_type: AlgebraicType::parameter("Payload".into()),
                         node: AlgebraicTermNode::Variable(Variable(11)),
@@ -3041,18 +3041,18 @@ mod tests {
                     arms: vec![AlgebraicBitvectorMatchArm {
                         variant: "Item".into(),
                         bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                            MachineTerm::Variable(Variable(binder)),
+                            OldMachineTerm::Variable(Variable(binder)),
                         ))],
-                        body: MachineTerm::Variable(Variable(body)),
+                        body: OldMachineTerm::Variable(Variable(body)),
                         binding_names: Default::default(),
                     }],
                 }),
-                else_term: Box::new(MachineTerm::constant(0)),
+                else_term: Box::new(OldMachineTerm::constant(0)),
             })
         };
         let equality = |right| {
             Proposition::condition_is(
-                ConditionTerm::integer_equal(conditional(12, 12), right),
+                OldConditionTerm::integer_equal(conditional(12, 12), right),
                 true,
             )
         };
@@ -3064,9 +3064,9 @@ mod tests {
             for n in 0..size {
                 for left in [guard, Variable(1_000 + n)] {
                     facts = facts.with_fact(Proposition::condition_is(
-                        ConditionTerm::integer_less_than(
-                            observe(MachineTerm::Variable(left)),
-                            observe(MachineTerm::Variable(2_000 + n)),
+                        OldConditionTerm::integer_less_than(
+                            observe(OldMachineTerm::Variable(left)),
+                            observe(OldMachineTerm::Variable(Variable(2_000 + n))),
                         ),
                         true,
                     ));
@@ -3086,18 +3086,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn checked_product_bounds_use_exact_citations_as_fact_sets_grow() {
         use crate::instrumentation::measure_deterministic_work;
-        use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, VerificationSession};
+        use crate::kernel::{
+            IntegerTerm, MachineIntegerType, OldConditionTerm, VerificationSession,
+        };
         let _session = VerificationSession::enter();
         let observe = |value| {
-            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(value))
+            IntegerTerm::from_machine(MachineIntegerType::Int32, OldMachineTerm::Variable(value))
                 .unwrap()
         };
         let x = Variable(10);
         let y = Variable(11);
         let goal = Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(
+            OldConditionTerm::integer_greater_equal(
                 IntegerTerm::multiply(observe(x), observe(y)),
                 IntegerTerm::constant_i64(i64::from(i32::MIN)),
             ),
@@ -3112,7 +3116,7 @@ mod tests {
                 // Grow the orders mentioning x as well as the unrelated fact set.
                 for lhs in [x, Variable(1_000 + n)] {
                     facts = facts.with_fact(Proposition::condition_is(
-                        ConditionTerm::integer_less_than(
+                        OldConditionTerm::integer_less_than(
                             observe(lhs),
                             observe(Variable(2_000 + n)),
                         ),
@@ -3135,9 +3139,10 @@ mod tests {
 
     #[test]
     fn known_computation_keeps_logical_introductions_explicit() {
-        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
+        let truth =
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true);
         let falsehood =
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true);
         for goal in [
             Proposition::Implies(Box::new(falsehood.clone()), Box::new(truth.clone())),
             crate::kernel::quantifiers::test_forall(
@@ -3165,7 +3170,7 @@ mod tests {
             Proposition::And(Box::new(truth.clone()), Box::new(truth.clone())),
             Proposition::Or(
                 Box::new(Proposition::condition_is(
-                    crate::kernel::ConditionTerm::Constant(false),
+                    crate::kernel::OldConditionTerm::Constant(false),
                     true,
                 )),
                 Box::new(truth),
@@ -3202,14 +3207,14 @@ mod tests {
             "unused".into(),
             Variable(42),
             Sort::Integer,
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
         )
     }
 
     #[test]
     fn integer_choices_and_obtain_choose_witnesses() {
         let source = unused_integer_existential();
-        let goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
+        let goal = Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true);
         let proof = integer_choice_proof(
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source)),
@@ -3249,7 +3254,7 @@ mod tests {
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source))
                 .with_reserved_variables([Variable::witness(ceiling - 1)]),
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
         );
         assert!(matches!(
             exhausted.check_integer_exists_choice(&source, Variable(3_000_000)),
@@ -3270,7 +3275,7 @@ mod tests {
                 Default::default(),
                 binder,
                 Sort::Integer,
-                Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+                Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             ),
         );
         let mut introduced = None;
@@ -3303,7 +3308,7 @@ mod tests {
         let proof = integer_choice_proof(
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source)),
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
         );
         let opened = proof
             .check_exists_bindings(&source, 2, Variable(3_000_000))
@@ -3328,7 +3333,7 @@ mod tests {
             Variable(41),
             Sort::Integer,
             Proposition::condition_is(
-                crate::kernel::ConditionTerm::IntegerEqual(
+                crate::kernel::OldConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(Variable(41)).into(),
                     crate::kernel::IntegerTerm::var(Variable(41)).into(),
                 ),
@@ -3340,7 +3345,7 @@ mod tests {
         let goal = Proposition::And(
             Box::new(source.clone()),
             Box::new(Proposition::condition_is(
-                crate::kernel::ConditionTerm::IntegerEqual(
+                crate::kernel::OldConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(collision).into(),
                     crate::kernel::IntegerTerm::var(collision).into(),
                 ),
@@ -3373,7 +3378,7 @@ mod tests {
             Variable(51),
             Sort::Integer,
             Proposition::condition_is(
-                crate::kernel::ConditionTerm::IntegerEqual(
+                crate::kernel::OldConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(Variable(51)).into(),
                     crate::kernel::IntegerTerm::var(Variable(51)).into(),
                 ),
@@ -3419,9 +3424,9 @@ mod tests {
     fn a_freshened_universal_witness_never_takes_a_program_identity() {
         let bound = Variable(2_000_000);
         let body = Proposition::condition_is(
-            crate::kernel::ConditionTerm::signed_less_equal(
-                MachineTerm::constant(0),
-                MachineTerm::Variable(bound),
+            crate::kernel::OldConditionTerm::signed_less_equal(
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(bound),
             ),
             true,
         );
@@ -3451,9 +3456,9 @@ mod tests {
         // A second introduction beside the first must not name it again.
         let second = facts
             .with_fact(Proposition::condition_is(
-                crate::kernel::ConditionTerm::signed_less_equal(
-                    MachineTerm::constant(0),
-                    MachineTerm::Variable(witness),
+                crate::kernel::OldConditionTerm::signed_less_equal(
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::Variable(witness),
                 ),
                 true,
             ))
@@ -3467,14 +3472,14 @@ mod tests {
     }
 
     /// The pointer-sorted introduction takes its witness from the same range,
-    /// for the same reason: `Address::symbolic(v)` over a C identity is a
+    /// for the same reason: `OldAddress::symbolic(v)` over a C identity is a
     /// pointer the function already has a name for.
     #[test]
     fn a_freshened_pointer_witness_never_takes_a_program_identity() {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
-            arguments: vec![Term::Bitvector32(MachineTerm::constant(0).into())],
+            arguments: vec![Term::Bitvector32(OldMachineTerm::constant(0).into())],
         };
         let reserving = crate::kernel::quantifiers::test_forall(
             Default::default(),
@@ -3498,8 +3503,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            Address, AddressOffset, ConditionTerm, ExecutionState, IntegerRangeFoldIndex,
-            IntegerTerm, MachineIntegerType, ProgramValue, SharedIntegerRangeEndpoint,
+            ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddress,
+            OldAddressOffset, OldConditionTerm, ProgramValue, SharedIntegerRangeEndpoint,
             SymbolicMemory,
         };
         type TestProof = ProofObject<
@@ -3538,31 +3543,31 @@ mod tests {
                 Proposition::Implies(
                     Box::new(Proposition::And(
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
-                                left: Box::new(MachineTerm::constant(0)),
-                                right: Box::new(MachineTerm::Variable(variable)),
+                                left: Box::new(OldMachineTerm::constant(0)),
+                                right: Box::new(OldMachineTerm::Variable(variable)),
                             },
                             true,
                         )),
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
-                                left: Box::new(MachineTerm::Variable(variable)),
-                                right: Box::new(MachineTerm::constant(16)),
+                                left: Box::new(OldMachineTerm::Variable(variable)),
+                                right: Box::new(OldMachineTerm::constant(16)),
                             },
                             true,
                         )),
                     )),
                     Box::new(Proposition::MemoryLoadable {
                         memory,
-                        base: Address {
+                        base: OldAddress {
                             base: "alpha".into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         },
-                        bytes: (MachineTerm::Variable(variable)).into(),
+                        bytes: (OldMachineTerm::Variable(variable)).into(),
                         wide: false,
                     }),
                 ),
@@ -3587,8 +3592,8 @@ mod tests {
         let fold = |accumulator, item| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                    end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+                    start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+                    end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(2)),
                 },
                 IntegerTerm::constant_i64(0),
                 accumulator,
@@ -3597,21 +3602,21 @@ mod tests {
                     IntegerTerm::var(accumulator),
                     IntegerTerm::from_machine(
                         MachineIntegerType::Int32,
-                        MachineTerm::Variable(item),
+                        OldMachineTerm::Variable(item),
                     )
                     .unwrap(),
                 ),
             )
         };
         let fold_fact = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::var(Variable(50)).into(),
                 fold(Variable(51), Variable(52)).into(),
             ),
             true,
         );
         let fold_goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::var(Variable(50)).into(),
                 fold(Variable(61), Variable(62)).into(),
             ),
@@ -3632,11 +3637,11 @@ mod tests {
         );
 
         let changed = before.clone().store(
-            Address {
+            OldAddress {
                 base: "alpha".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         assert!(
             root(
@@ -3654,8 +3659,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            Address, AddressOffset, ExecutionState, LoopInvariantCheck, ProgramType, ProgramValue,
-            SpecExpression, SpecPoint, SpecProposition,
+            ExecutionState, LoopInvariantCheck, OldAddress, OldAddressOffset, ProgramType,
+            ProgramValue, SpecExpression, SpecPoint, SpecProposition,
         };
         type TestProof = ProofObject<
             (),
@@ -3666,9 +3671,9 @@ mod tests {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                 crate::kernel::OldPointer::new(
-                    Address {
+                    OldAddress {
                         base: "unallocated".into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     ProgramType::Int32Pointer,
                 ),
@@ -3737,7 +3742,8 @@ mod tests {
 
     #[test]
     fn completed_proposition_retains_whether_it_relied_on_root_assumptions() {
-        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
+        let truth =
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true);
         for assumed in [false, true] {
             let branch = ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(truth.clone(), ())),
@@ -3761,7 +3767,7 @@ mod tests {
             assert_eq!(checked.is_closed(), !assumed);
             assert_eq!(checked.proposition(), &truth);
             let falsehood =
-                Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
+                Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true);
             let guarded =
                 Proposition::Implies(Box::new(falsehood.clone()), Box::new(truth.clone()));
             let weakened = checked.with_implication_prefix(&guarded, 1).unwrap();
@@ -3785,7 +3791,7 @@ mod tests {
         let binder = Variable(186);
         let body = Proposition::Predicate {
             name: "holds".to_string(),
-            arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
+            arguments: vec![Term::Bitvector32(OldMachineTerm::Variable(binder).into())],
         };
         let goal = crate::kernel::quantifiers::test_forall(
             Default::default(),
@@ -3827,7 +3833,9 @@ mod tests {
             obligation.proposition(),
             &Proposition::Predicate {
                 name: "holds".to_string(),
-                arguments: vec![Term::Bitvector32(MachineTerm::Variable(introduced).into())],
+                arguments: vec![Term::Bitvector32(
+                    OldMachineTerm::Variable(introduced).into()
+                )],
             }
         );
     }

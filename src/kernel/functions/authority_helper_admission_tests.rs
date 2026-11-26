@@ -4,9 +4,9 @@ use super::*;
 fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
     let samples = [(2, 16), (64, 64), (65536, 256)].map(|(amount, unrelated)| {
         let pointer = ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -20,7 +20,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             name: "member".into(),
             arguments: vec![pointer.clone().into()].into(),
         };
-        let member = ResourceFact::own_quantity(resource, MachineTerm::constant(amount));
+        let member = ResourceFact::own_quantity(resource, OldMachineTerm::constant(amount));
         let mut entry = ExecutionState::new()
             .with_population_creation_tracking()
             .with_local("p", pointer)
@@ -33,9 +33,9 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             let other = ResourceDescription::new(
                 "unrelated".into(),
                 vec![
-                    ProgramValue::pointer(Address {
+                    ProgramValue::pointer(OldAddress {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::Variable(Variable(950_000 + index as u64)),
+                        offset: OldAddressOffset::Variable(Variable(950_000 + index as u64)),
                     })
                     .into(),
                 ]
@@ -119,13 +119,16 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let count = events.observe_symbolic(&description).unwrap().entry_count;
         let assumptions = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(count.clone(), MachineTerm::constant(amount)),
+                OldConditionTerm::signed_greater_equal(
+                    count.clone(),
+                    OldMachineTerm::constant(amount),
+                ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     count,
-                    MachineTerm::constant((i32::MAX - 1) as u32),
+                    OldMachineTerm::constant((i32::MAX - 1) as u32),
                 ),
                 true,
             );
@@ -135,7 +138,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                     &AddressBase::ExternalArgument,
                     &description,
                     false,
-                    &MachineTerm::constant(amount),
+                    &OldMachineTerm::constant(amount),
                     &assumptions,
                 )
                 .unwrap()
@@ -145,7 +148,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                     &AddressBase::ExternalArgument,
                     &description,
                     true,
-                    &MachineTerm::constant(amount - 1),
+                    &OldMachineTerm::constant(amount - 1),
                     &assumptions,
                 )
                 .unwrap()
@@ -198,9 +201,9 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
 
 #[test]
 fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "payload".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("payload", 4);
     let assumptions = PureFactContext::new();
@@ -928,7 +931,7 @@ fn resource_expansion_diagnostics_bound_the_named_frontier() {
     let resources = ResourceContext::new().unchecked_with_facts((0..32).map(|id| {
         ResourceFact::own(Resource::Composite {
             name: format!("resource_{id}_{}", "x".repeat(1000)),
-            arguments: vec![ProgramValue::pointer(Address::null()).into()].into(),
+            arguments: vec![ProgramValue::pointer(OldAddress::null()).into()].into(),
         })
     }));
     let diagnostic = bounded_contract_resource_frontier(&resources);

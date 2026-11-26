@@ -43,13 +43,13 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
         for index in 0..size {
             context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
         }
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
-        let source = ConditionTerm::signed_less_than(sum(var(0)), var(size + 2));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
+        let source = OldConditionTerm::signed_less_than(sum(var(0)), var(size + 2));
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let target = ConditionTerm::signed_less_than(sum(var(index)), var(size + 2));
+                let target = OldConditionTerm::signed_less_than(sum(var(index)), var(size + 2));
                 assert!(context.condition_matches(&source, &target));
             }
         });
@@ -62,17 +62,17 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
 fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "resolved-int32-scale".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let memory = intern_memory(
             SymbolicMemory::new()
                 .with_block("resolved-int32-scale", 4)
                 .store(pointer.clone(), ProgramValue::Int32(sum(var(0)))),
         );
-        let load = MachineTerm::Variable(load_variable_for_cell_with_origin(
+        let load = OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             &memory,
             &pointer,
             crate::kernel::LoadKind::Int32,
@@ -99,11 +99,11 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
 fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let pointer = |offset| Address {
+        let pointer = |offset| OldAddress {
             base: "two-resolved-int32-scale".into(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let memory = intern_memory(
             SymbolicMemory::new()
                 .with_block("two-resolved-int32-scale", 8)
@@ -111,7 +111,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
                 .store(pointer(4), ProgramValue::Int32(sum(var(size)))),
         );
         let load = |offset| {
-            MachineTerm::Variable(load_variable_for_cell_with_origin(
+            OldMachineTerm::Variable(load_variable_for_cell_with_origin(
                 &memory,
                 &pointer(offset),
                 crate::kernel::LoadKind::Int32,
@@ -137,10 +137,12 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let resource = |value| Resource::Composite {
             name: "indexed-value-scale".into(),
             arguments: vec![ProgramValue::Int32(sum(value)).into()].into(),
@@ -175,7 +177,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
             ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let instance = |value| {
             Resource::Instance(
                 ResourceInstance::new(
@@ -183,7 +185,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
                     "instance-value-scale".into(),
                     vec![ProgramValue::Int32(sum(value)).into()].into(),
                     schema.clone(),
-                    vec![ProgramValue::Int32(MachineTerm::constant(3)).into()].into(),
+                    vec![ProgramValue::Int32(OldMachineTerm::constant(3)).into()].into(),
                 )
                 .unwrap(),
             )
@@ -213,7 +215,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
 fn typed_int32_value_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let left = ProgramValue::Int32(sum(var(0)));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -235,10 +237,12 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn certified_int32_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let left = sum(var(0));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -269,13 +273,15 @@ fn graph_equal_addend_matching_scales_without_the_legacy_index() {
         }
         let fixed = var(size + 2);
         let last = var(size + 3);
-        let left = MachineTerm::add(MachineTerm::add(var(0), fixed.clone()), last.clone());
+        let left = OldMachineTerm::add(OldMachineTerm::add(var(0), fixed.clone()), last.clone());
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let right =
-                    MachineTerm::add(var(index), MachineTerm::add(fixed.clone(), last.clone()));
+                let right = OldMachineTerm::add(
+                    var(index),
+                    OldMachineTerm::add(fixed.clone(), last.clone()),
+                );
                 assert!(context.bitvector_add_terms_proven_equal(&left, &right));
             }
         });
@@ -285,6 +291,8 @@ fn graph_equal_addend_matching_scales_without_the_legacy_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn int32_context_insertion_and_forks_scale_with_indexed_work() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -334,9 +342,9 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
     fn sample(size: usize) -> (PureFactContext, usize) {
         std::thread::spawn(move || {
             let _session = VerificationSession::enter();
-            let address = Address {
+            let address = OldAddress {
                 base: "selected".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let mut memory = SymbolicMemory::new().with_block("selected", 4);
             for i in 0..size {
@@ -344,15 +352,16 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
             }
             let memory = intern_memory(memory.store(
                 address.clone(),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));
-            let load = MachineTerm::read_named(
+            let load = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 crate::kernel::LoadKind::Int32,
             );
             crate::instrumentation::measure_deterministic_work(|| {
-                PureFactContext::new().assume_condition(eq(&load, &MachineTerm::constant(7)), true)
+                PureFactContext::new()
+                    .assume_condition(eq(&load, &OldMachineTerm::constant(7)), true)
             })
         })
         .join()
@@ -373,7 +382,14 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn offset_premise_shallow_decision_and_forks_scale() {
-    let add = |v| binary_node!(Int32, Add, Box::new(v), Box::new(MachineTerm::constant(1)));
+    let add = |v| {
+        binary_node!(
+            Int32,
+            Add,
+            Box::new(v),
+            Box::new(OldMachineTerm::constant(1))
+        )
+    };
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let mut parent = PureFactContext::new();
@@ -382,9 +398,9 @@ fn offset_premise_shallow_decision_and_forks_scale() {
             crate::instrumentation::measure_deterministic_work(|| {
                 for i in 0..size {
                     parent = parent.clone().assume_condition(
-                        ConditionTerm::address_offset_equal(
-                            AddressOffset::scale_int32(var(i), 4),
-                            AddressOffset::scale_int32(var(i + 1), 4),
+                        OldConditionTerm::address_offset_equal(
+                            OldAddressOffset::scale_int32(var(i), 4),
+                            OldAddressOffset::scale_int32(var(i + 1), 4),
                         ),
                         true,
                     );
@@ -419,6 +435,8 @@ fn offset_premise_shallow_decision_and_forks_scale() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn shared_constant_discovery_scales_with_the_admitted_chain() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -431,7 +449,7 @@ fn shared_constant_discovery_scales_with_the_admitted_chain() {
             }
             context = context
                 .clone()
-                .assume_condition(eq(&var(size), &MachineTerm::constant(37)), true);
+                .assume_condition(eq(&var(size), &OldMachineTerm::constant(37)), true);
             assert_eq!(
                 context.known_signed_constant_after_normalization(&var(0)),
                 Some(37)
@@ -446,15 +464,15 @@ fn exact_alias_enumeration_ignores_unrelated_sources() {
     let mut previous = None;
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let a = Address::symbolic(Variable(960_000));
-        let b = Address::symbolic(Variable(960_001));
+        let a = OldAddress::symbolic(Variable(960_000));
+        let b = OldAddress::symbolic(Variable(960_001));
         let mut context = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(a.clone(), b.clone()), true);
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
-                    Address::symbolic(Variable(970_000 + 2 * i)),
-                    Address::symbolic(Variable(970_001 + 2 * i)),
+                OldConditionTerm::address_equal(
+                    OldAddress::symbolic(Variable(970_000 + 2 * i)),
+                    OldAddress::symbolic(Variable(970_001 + 2 * i)),
                 ),
                 true,
             );
@@ -481,16 +499,18 @@ fn unrelated_wide_inputs_do_not_disable_selected_atomic_matching() {
         let mut context = PureFactContext::new()
             .assume_condition(eq(&var(980_000), &var(980_001)), true)
             .assume_condition(
-                ConditionTerm::signed_less_than(var(980_001), var(980_002)),
+                OldConditionTerm::signed_less_than(var(980_001), var(980_002)),
                 true,
             );
         for i in 0..size {
-            context = context
-                .assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 10_000)), true);
+            context = context.assume_condition(
+                OldConditionTerm::uint64_equal(var(i), var(i + 10_000)),
+                true,
+            );
         }
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.has_matching_condition_fact_for_memory_resolution(
-                &ConditionTerm::signed_less_than(var(980_000), var(980_002)),
+                &OldConditionTerm::signed_less_than(var(980_000), var(980_002)),
                 true,
             )
         });
@@ -508,9 +528,9 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
     let mut baseline = None;
     for size in [4u64, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let parameter = |i| Address {
+        let parameter = |i| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(var(i), 4),
+            offset: OldAddressOffset::scale_int32(var(i), 4),
         };
         let write = parameter(990_000);
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
@@ -520,9 +540,9 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_offset_equal(
-                    AddressOffset::scale_int32(var(i), 4),
-                    AddressOffset::scale_int32(var(i + 10_000), 4),
+                OldConditionTerm::address_offset_equal(
+                    OldAddressOffset::scale_int32(var(i), 4),
+                    OldAddressOffset::scale_int32(var(i + 10_000), 4),
                 ),
                 true,
             );
@@ -541,6 +561,8 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -550,16 +572,18 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
         }
         let pointer = |id| {
             OldPointer::new(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(var(id), 4),
+                    offset: OldAddressOffset::scale_int32(var(id), 4),
                 },
                 ProgramType::Int32Pointer,
             )
         };
         for (a, b) in [(941_010, 941_011), (941_011, 941_012)] {
-            context = context
-                .assume_condition(ConditionTerm::pointer_equal(pointer(a), pointer(b)), true);
+            context = context.assume_condition(
+                OldConditionTerm::pointer_equal(pointer(a), pointer(b)),
+                true,
+            );
         }
         let (class, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.recorded_equality_class(&var(941_010))
@@ -578,9 +602,9 @@ fn constant_queries_ignore_other_state_candidates() {
         let mut samples = Vec::new();
         for size in [4u64, 8, 16, 32] {
             let _session = VerificationSession::enter();
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: "constant-bridge-scale".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let query = var(880_000);
             let mut context = PureFactContext::new();
@@ -593,7 +617,7 @@ fn constant_queries_ignore_other_state_candidates() {
             for index in 0..2 * size {
                 let mut address = pointer.clone();
                 if !same_address && index >= size {
-                    address.offset = AddressOffset::Constant(4 * (index - size + 1) as i64);
+                    address.offset = OldAddressOffset::Constant(4 * (index - size + 1) as i64);
                 }
                 memory = memory.with_call_memory_havoc(
                     Variable(881_000 + index),
@@ -606,7 +630,7 @@ fn constant_queries_ignore_other_state_candidates() {
                     &PureFactContext::new(),
                     None,
                 );
-                let load = MachineTerm::read_named(
+                let load = OldMachineTerm::read_named(
                     ProgramPoint::at(&(intern_memory(memory.clone()))),
                     Box::new(address),
                     LoadKind::Int32,
@@ -616,7 +640,7 @@ fn constant_queries_ignore_other_state_candidates() {
                     unknown_reads.push(load);
                 } else {
                     context = context.assume_condition(
-                        eq(&load, &MachineTerm::constant((index - size + 1) as u32)),
+                        eq(&load, &OldMachineTerm::constant((index - size + 1) as u32)),
                         true,
                     );
                 }
@@ -659,9 +683,9 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let write = Address {
+        let write = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(var(990_000), 4),
+            offset: OldAddressOffset::scale_int32(var(990_000), 4),
         };
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new(write.clone(), 0u32.into(), 1u32.into()),
@@ -670,9 +694,9 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         for i in 0..size {
-            let read = MachineTerm::read_named(
+            let read = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address::symbolic(Variable(920_000 + i))),
+                Box::new(OldAddress::symbolic(Variable(920_000 + i))),
                 LoadKind::Int32,
             );
             context = context.assume_condition(eq(&read, &var(930_000 + i)), true);
@@ -683,9 +707,9 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         samples.push((size, found, work));
         // The selected coordinate must still be rejected when a read equality
         // explicitly mentions it, even though unrelated reads are harmless.
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(Address::symbolic(Variable(940_000))),
+            Box::new(OldAddress::symbolic(Variable(940_000))),
             LoadKind::Int32,
         );
         let relevant = context
@@ -696,7 +720,7 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         assert!(
             context
                 .equality_graph
-                .offset_has_source_dependencies(&AddressOffset::scale_int32(read, 4))
+                .offset_has_source_dependencies(&OldAddressOffset::scale_int32(read, 4))
         );
     }
     eprintln!("read-fact count, shortcut available, query work: {samples:?}");

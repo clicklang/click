@@ -6,9 +6,12 @@ use super::*;
 
 fn parameter_pointer(variable: u64) -> OldPointer {
     OldPointer::new(
-        Address {
+        OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(variable)),
+                4,
+            ),
         },
         ProgramType::Int32Pointer,
     )

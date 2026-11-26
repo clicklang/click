@@ -1046,14 +1046,14 @@ impl<'a> Proof<'a> {
         if let SyntaxProposition::Loadable { segment } = &body_surface
             && let Some((_, start, end)) = segment.surface_range()
             && let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt64,
                     relation: CompareRelation::LessEqual,
                     left: _,
                     right: limit,
                 },
                 true,
-            )) = (kernel).condition_native()
+            )) = (kernel).old_condition()
             && let uint64_constant!(limit) = limit.as_ref()
         {
             // A zero-based span is stored as its end. Its spelling must
@@ -1075,7 +1075,7 @@ impl<'a> Proof<'a> {
                 },
                 operator: ComparisonOperator::LessEqual,
                 right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::UInt64(MachineTerm::uint64_constant(constant_u64(*limit))),
+                    ProgramValue::UInt64(OldMachineTerm::uint64_constant(constant_u64(*limit))),
                 )),
             };
             if self

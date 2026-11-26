@@ -1,10 +1,10 @@
 use super::*;
 use crate::kernel::mutexes::MutexContext;
 
-fn address(index: usize) -> Address {
-    Address {
+fn address(index: usize) -> OldAddress {
+    OldAddress {
         base: format!("typed-held-{index}").into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 fn observe(state: &ExecutionState, assumptions: &PureFactContext) -> SpecPropositionPath {
@@ -30,7 +30,7 @@ fn held_observes_protocol_without_creating_ownership() {
         .unwrap();
     assert_eq!(
         observe(initial.state(), &PureFactContext::new()).proposition,
-        Proposition::condition_is(ConditionTerm::Constant(false), true)
+        Proposition::condition_is(OldConditionTerm::Constant(false), true)
     );
     let locked = initial
         .acquire_current(&address(0), &PureFactContext::new())
@@ -49,7 +49,7 @@ fn held_observes_protocol_without_creating_ownership() {
     let path = observe(&missing, &PureFactContext::new());
     assert_eq!(
         path.proposition,
-        Proposition::condition_is(ConditionTerm::Constant(true), true)
+        Proposition::condition_is(OldConditionTerm::Constant(true), true)
     );
     assert!(path.obligations.is_empty());
     assert!(

@@ -12,13 +12,13 @@ pub(in crate::kernel) type OrderOperand = super::super::checked_scalar_facts::Sc
 
 pub(in crate::kernel::assumptions) fn retain_order_operand(view: V<'_>) -> OrderOperand {
     match view {
-        V::Legacy(term) => OrderOperand::Written(term.clone()),
+        V::Old(term) => OrderOperand::Written(term.clone()),
         V::Shared(_) => OrderOperand::for_format(MachineIntegerType::Int32, view),
     }
 }
 
 pub(in crate::kernel::assumptions) fn retained_order_fact(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     truth: bool,
 ) -> Option<OrderFact> {
     let view = order_view_at_format(condition, truth, MachineIntegerType::Int32)?;
@@ -62,14 +62,14 @@ impl OrderKind {
     /// The order condition `lower < upper` (strict) or `lower <= upper`.
     pub(in crate::kernel) fn order(
         self,
-        lower: MachineTerm,
-        upper: MachineTerm,
+        lower: OldMachineTerm,
+        upper: OldMachineTerm,
         strict: bool,
-    ) -> ConditionTerm {
+    ) -> OldConditionTerm {
         match (self, strict) {
             (Self::Signed32, _) => order_condition(lower, upper, strict),
-            (Self::Unsigned32, true) => ConditionTerm::unsigned_less_than(lower, upper),
-            (Self::Unsigned32, false) => ConditionTerm::unsigned_less_equal(lower, upper),
+            (Self::Unsigned32, true) => OldConditionTerm::unsigned_less_than(lower, upper),
+            (Self::Unsigned32, false) => OldConditionTerm::unsigned_less_equal(lower, upper),
         }
     }
 }
@@ -119,7 +119,7 @@ impl PureFactContext {
     ) {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                if let Some(order_fact) = retained_order_fact(condition.native_compat(), *value) {
+                if let Some(order_fact) = retained_order_fact(condition.old_form(), *value) {
                     order_facts.push(order_fact);
                 }
             }
@@ -148,10 +148,10 @@ impl PureFactContext {
                 self.guard_is_decided(left) && self.guard_is_decided(right)
             }
             Proposition::ConditionIs(condition, value) => {
-                PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
-                    || self.exact_condition_value(condition.native_compat()) == Some(*value)
+                PureFactContext::decide_intrinsically(condition.old_form()) == Some(*value)
+                    || self.exact_condition_value(condition.old_form()) == Some(*value)
                     || !self.should_defer_non_exact_condition_reasoning()
-                        && self.decide(condition.native_compat()) == Some(*value)
+                        && self.decide(condition.old_form()) == Some(*value)
             }
             _ => self.proves_exact(guard),
         }
@@ -266,10 +266,10 @@ impl PureFactContext {
     #[cfg(test)]
     pub(in crate::kernel) fn has_upper_bound_below(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
-        self.has_upper_bound_below_views(V::Legacy(left), V::Legacy(right))
+        self.has_upper_bound_below_views(V::Old(left), V::Old(right))
     }
 
     pub(in crate::kernel) fn has_upper_bound_below_views(&self, left: V<'_>, right: V<'_>) -> bool {
@@ -289,10 +289,10 @@ impl PureFactContext {
     /// `left <= right`.
     pub(in crate::kernel) fn has_upper_bound_at_or_below(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
-        self.has_upper_bound_at_or_below_views(V::Legacy(left), V::Legacy(right))
+        self.has_upper_bound_at_or_below_views(V::Old(left), V::Old(right))
     }
 
     pub(in crate::kernel) fn has_upper_bound_at_or_below_views(
@@ -345,7 +345,7 @@ impl PureFactContext {
                 shared_signed_const_add(upper.operand_view(), addend).is_some_and(|upper| {
                     self.bound_proves_order_views(
                         OrderKind::Signed32,
-                        V::Legacy(&upper),
+                        V::Old(&upper),
                         right,
                         !strict,
                     )
@@ -368,12 +368,7 @@ impl PureFactContext {
             .into_iter()
             .any(|(upper, _)| {
                 shared_signed_const_add(upper.operand_view(), addend).is_some_and(|upper| {
-                    self.bound_proves_order_views(
-                        OrderKind::Signed32,
-                        V::Legacy(&upper),
-                        right,
-                        false,
-                    )
+                    self.bound_proves_order_views(OrderKind::Signed32, V::Old(&upper), right, false)
                 })
             })
     }
@@ -413,7 +408,7 @@ impl PureFactContext {
             let Some(shifted) = (upper as i32).checked_sub(subtrahend_value) else {
                 return false;
             };
-            let shifted = MachineTerm::constant(shifted as u32);
+            let shifted = OldMachineTerm::constant(shifted as u32);
             // `base < upper` gives `base - c < upper - c`; `base <= upper`
             // gives `base - c <= upper - c`.
             self.decide_operand_comparison(
@@ -423,7 +418,7 @@ impl PureFactContext {
                 } else {
                     Relation::LessEqual
                 },
-                V::Legacy(&shifted),
+                V::Old(&shifted),
                 right,
             ) == Some(true)
         })
@@ -454,7 +449,7 @@ impl PureFactContext {
             let Some(shifted) = (lower as i32).checked_sub(subtrahend_value) else {
                 return false;
             };
-            let shifted = MachineTerm::constant(shifted as u32);
+            let shifted = OldMachineTerm::constant(shifted as u32);
             self.decide_operand_comparison(
                 MachineIntegerType::Int32,
                 if strict_goal && !strict_fact {
@@ -463,7 +458,7 @@ impl PureFactContext {
                     Relation::LessEqual
                 },
                 bound,
-                V::Legacy(&shifted),
+                V::Old(&shifted),
             ) == Some(true)
         })
     }
@@ -544,14 +539,14 @@ impl PureFactContext {
         // Only written terms have a separate canonical spelling. Shared roots
         // are queried directly; their endpoint keys preserve DAG identity.
         let canonical = match term {
-            V::Legacy(term) => Some(crate::kernel::eval::canonical_term(term)),
+            V::Old(term) => Some(crate::kernel::eval::canonical_term(term)),
             V::Shared(_) => None,
         };
         let mut keys = vec![term];
-        if let (V::Legacy(written), Some(canonical)) = (term, canonical.as_ref())
+        if let (V::Old(written), Some(canonical)) = (term, canonical.as_ref())
             && written != canonical
         {
-            keys.push(V::Legacy(canonical));
+            keys.push(V::Old(canonical));
         }
         let mut bounds = Vec::new();
         for key in keys {
@@ -607,9 +602,7 @@ impl PureFactContext {
             };
         }
         let condition = match (lower, upper) {
-            (V::Legacy(lower), V::Legacy(upper)) => {
-                kind.order(lower.clone(), upper.clone(), strict)
-            }
+            (V::Old(lower), V::Old(upper)) => kind.order(lower.clone(), upper.clone(), strict),
             _ => {
                 let format = match kind {
                     OrderKind::Signed32 => MachineIntegerType::Int32,
@@ -643,10 +636,10 @@ impl PureFactContext {
     /// `left > right`.
     pub(in crate::kernel) fn has_lower_bound_above(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
-        self.has_lower_bound_above_views(V::Legacy(left), V::Legacy(right))
+        self.has_lower_bound_above_views(V::Old(left), V::Old(right))
     }
 
     pub(in crate::kernel) fn has_lower_bound_above_views(&self, left: V<'_>, right: V<'_>) -> bool {
@@ -668,10 +661,10 @@ impl PureFactContext {
     /// `left >= right`.
     pub(in crate::kernel) fn has_lower_bound_at_or_above(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
-        self.has_lower_bound_at_or_above_views(V::Legacy(left), V::Legacy(right))
+        self.has_lower_bound_at_or_above_views(V::Old(left), V::Old(right))
     }
 
     pub(in crate::kernel) fn has_lower_bound_at_or_above_views(
@@ -711,7 +704,7 @@ impl PureFactContext {
                     self.bound_proves_order_views(
                         OrderKind::Signed32,
                         right,
-                        V::Legacy(&lower),
+                        V::Old(&lower),
                         !strict,
                     )
                 })
@@ -736,26 +729,21 @@ impl PureFactContext {
             .into_iter()
             .any(|(lower, _)| {
                 shared_signed_const_add(lower.operand_view(), addend).is_some_and(|lower| {
-                    self.bound_proves_order_views(
-                        OrderKind::Signed32,
-                        right,
-                        V::Legacy(&lower),
-                        false,
-                    )
+                    self.bound_proves_order_views(OrderKind::Signed32, right, V::Old(&lower), false)
                 })
             })
     }
 
     fn constant_bounds_for_search_view(&self, term: V<'_>, upper: bool) -> Vec<(u32, bool)> {
         let canonical = match term {
-            V::Legacy(term) => Some(crate::kernel::eval::canonical_term(term)),
+            V::Old(term) => Some(crate::kernel::eval::canonical_term(term)),
             V::Shared(_) => None,
         };
         let mut keys = vec![term];
-        if let (V::Legacy(written), Some(canonical)) = (term, canonical.as_ref())
+        if let (V::Old(written), Some(canonical)) = (term, canonical.as_ref())
             && written != canonical
         {
-            keys.push(V::Legacy(canonical));
+            keys.push(V::Old(canonical));
         }
         let mut bounds = Vec::new();
         for key in keys {
@@ -782,12 +770,12 @@ impl PureFactContext {
         subtract: bool,
     ) -> Option<bool> {
         use crate::kernel::machine_integer::{Operation, definedness::OverflowQueryView};
-        let literal = MachineTerm::constant(offset);
-        if let V::Legacy(base) = base {
+        let literal = OldMachineTerm::constant(offset);
+        if let V::Old(base) = base {
             let condition = if subtract {
-                ConditionTerm::signed_subtract_overflows(base.clone(), literal)
+                OldConditionTerm::signed_subtract_overflows(base.clone(), literal)
             } else {
-                ConditionTerm::signed_add_overflows(base.clone(), literal)
+                OldConditionTerm::signed_add_overflows(base.clone(), literal)
             };
             return self.decide(&condition);
         }
@@ -798,7 +786,7 @@ impl PureFactContext {
             } else {
                 Operation::Add
             },
-            [base, V::Legacy(&literal)],
+            [base, V::Old(&literal)],
         )?;
         self.decide_overflow_query(&query)
     }
@@ -850,7 +838,7 @@ impl PureFactContext {
                 let Proposition::ConditionIs(condition, true) = bound else {
                     unreachable!()
                 };
-                self.known_condition_value(condition.native_compat()) == Some(true)
+                self.known_condition_value(condition.old_form()) == Some(true)
             })
         };
         // Preserve the native add-domain rule's two written operand orders.
@@ -877,7 +865,7 @@ impl PureFactContext {
 
     pub(super) fn decide_signed_constant_offset_order(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
     ) -> Option<bool> {
         use crate::kernel::machine_integer::comparison::comparison_view;
         let view = comparison_view(condition, true)?;
@@ -978,13 +966,13 @@ impl SelectedFacts<'_> {
 // These consumers need only a literal or one additive root, never a boxed
 // expansion of a retained bound.
 
-fn shared_signed_const_add(term: V<'_>, addend: u32) -> Option<MachineTerm> {
+fn shared_signed_const_add(term: V<'_>, addend: u32) -> Option<OldMachineTerm> {
     let sum = (term.word32_constant()? as i32).checked_add(i32::try_from(addend).ok()?)?;
-    Some(MachineTerm::constant(sum as u32))
+    Some(OldMachineTerm::constant(sum as u32))
 }
 
 fn shared_successor_of(term: V<'_>, right: V<'_>) -> bool {
-    if let (V::Legacy(term), V::Legacy(right)) = (term, right) {
+    if let (V::Old(term), V::Old(right)) = (term, right) {
         return term.add_const_base(1).is_some_and(|base| base == *right);
     }
     let Some((format, crate::kernel::MachineBinaryOp::Add, [left, right_operand])) = term.binary()
@@ -999,8 +987,8 @@ fn shared_successor_of(term: V<'_>, right: V<'_>) -> bool {
         Key::for_format(MachineIntegerType::Int32, operand)
             == Key::for_format(MachineIntegerType::Int32, right)
     };
-    (right_operand.literal() == Some(MachineTerm::constant(1)) && same(left))
-        || (left.literal() == Some(MachineTerm::constant(1)) && same(right_operand))
+    (right_operand.literal() == Some(OldMachineTerm::constant(1)) && same(left))
+        || (left.literal() == Some(OldMachineTerm::constant(1)) && same(right_operand))
 }
 
 #[cfg(test)]
@@ -1112,15 +1100,15 @@ mod shared_bound_tests {
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::equal(MachineTerm::Variable(a), MachineTerm::constant(1)),
+                OldConditionTerm::equal(OldMachineTerm::Variable(a), OldMachineTerm::constant(1)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(MachineTerm::Variable(b), MachineTerm::constant(2)),
+                OldConditionTerm::equal(OldMachineTerm::Variable(b), OldMachineTerm::constant(2)),
                 true,
             );
         for (limit, expected) in [(4, true), (3, false)] {
-            let query = ConditionTerm::integer_less_than(
+            let query = OldConditionTerm::integer_less_than(
                 IntegerTerm::Machine(operand.clone()),
                 IntegerTerm::constant(limit.into()),
             );
@@ -1142,7 +1130,7 @@ mod shared_bound_tests {
         let root = KernelTerm::variable(KernelType::Program(Ty::Int32.program_type()), variable);
         let base = SharedMachineIntegerTerm::from_shared(Ty::Int32, root.clone()).unwrap();
         let literal = crate::kernel::KernelTermImport::default()
-            .machine_arithmetic(Ty::Int32, &MachineTerm::constant(1))
+            .machine_arithmetic(Ty::Int32, &OldMachineTerm::constant(1))
             .unwrap();
         for (op, operation) in [
             (Op::Add, Operation::Add),
@@ -1156,9 +1144,9 @@ mod shared_bound_tests {
             let b = IntegerTerm::Machine(base.clone());
             let t = IntegerTerm::Machine(term.clone());
             let query = if op == Op::Add {
-                ConditionTerm::integer_less_than(b.clone(), t)
+                OldConditionTerm::integer_less_than(b.clone(), t)
             } else {
-                ConditionTerm::integer_less_than(t, b.clone())
+                OldConditionTerm::integer_less_than(t, b.clone())
             };
             let parent = PureFactContext::new();
             assert_eq!(parent.decide_signed_constant_offset_order(&query), None);
@@ -1187,9 +1175,9 @@ mod shared_bound_tests {
             }
             if op == Op::Subtract {
                 let excluded = parent.clone().assume_condition(
-                    ConditionTerm::equal(
-                        MachineTerm::Variable(variable),
-                        MachineTerm::constant(i32::MIN as u32),
+                    OldConditionTerm::equal(
+                        OldMachineTerm::Variable(variable),
+                        OldMachineTerm::constant(i32::MIN as u32),
                     ),
                     false,
                 );
@@ -1199,14 +1187,14 @@ mod shared_bound_tests {
             let endpoint = if op == Op::Add { i32::MAX } else { i32::MIN };
             let safe = parent.clone().assume_condition(
                 if op == Op::Add {
-                    ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(variable),
-                        MachineTerm::constant(endpoint as u32),
+                    OldConditionTerm::signed_less_than(
+                        OldMachineTerm::Variable(variable),
+                        OldMachineTerm::constant(endpoint as u32),
                     )
                 } else {
-                    ConditionTerm::signed_greater_than(
-                        MachineTerm::Variable(variable),
-                        MachineTerm::constant(endpoint as u32),
+                    OldConditionTerm::signed_greater_than(
+                        OldMachineTerm::Variable(variable),
+                        OldMachineTerm::constant(endpoint as u32),
                     )
                 },
                 true,
@@ -1214,9 +1202,9 @@ mod shared_bound_tests {
             assert_eq!(safe.decide(&query), Some(true));
             assert!(!term.has_boxed_operand());
             let overflowing = parent.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(variable),
-                    MachineTerm::constant(endpoint as u32),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(variable),
+                    OldMachineTerm::constant(endpoint as u32),
                 ),
                 true,
             );
@@ -1244,14 +1232,14 @@ mod shared_bound_tests {
             ],
         );
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
-        let x = MachineTerm::Variable(Variable(994103));
-        let y = MachineTerm::Variable(Variable(994104));
+        let x = OldMachineTerm::Variable(Variable(994103));
+        let y = OldMachineTerm::Variable(Variable(994104));
         let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
-        let first = ConditionTerm::integer_less_equal(
+        let first = OldConditionTerm::integer_less_equal(
             observe(x.clone()),
             IntegerTerm::Machine(operand.clone()),
         );
-        let second = ConditionTerm::integer_less_equal(
+        let second = OldConditionTerm::integer_less_equal(
             IntegerTerm::Machine(operand.clone()),
             observe(y.clone()),
         );
@@ -1281,17 +1269,17 @@ mod shared_offset_bound_consumers {
     fn shared_shifted_bounds_require_domains_and_keep_strictness() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let written = MachineTerm::Binary {
+        let written = OldMachineTerm::Binary {
             format,
             op: MachineBinaryOp::Add,
-            left: MachineTerm::Variable(Variable(998701)).into(),
-            right: MachineTerm::Variable(Variable(998702)).into(),
+            left: OldMachineTerm::Variable(Variable(998701)).into(),
+            right: OldMachineTerm::Variable(Variable(998702)).into(),
         };
         let root = KernelTermImport::default()
             .machine_arithmetic(format, &written)
             .unwrap();
         let two = KernelTermImport::default()
-            .machine_arithmetic(format, &MachineTerm::constant(2))
+            .machine_arithmetic(format, &OldMachineTerm::constant(2))
             .unwrap();
         let shifted = |op| {
             SharedMachineIntegerTerm::from_shared(
@@ -1304,63 +1292,56 @@ mod shared_offset_bound_consumers {
         let sub = shifted(MachineBinaryOp::Subtract);
         let parent = PureFactContext::new();
         let upper_only = parent.clone().assume_condition(
-            ConditionTerm::signed_less_equal(written.clone(), MachineTerm::constant(10)),
+            OldConditionTerm::signed_less_equal(written.clone(), OldMachineTerm::constant(10)),
             true,
         );
         let bounded = upper_only.clone().assume_condition(
-            ConditionTerm::signed_greater_equal(written, MachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(written, OldMachineTerm::constant(0)),
             true,
         );
-        let eight = MachineTerm::constant(8);
-        let twelve = MachineTerm::constant(12);
-        let two = MachineTerm::constant(2);
-        let negative_two = MachineTerm::constant((-2i32) as u32);
-        assert!(
-            bounded.has_add_const_upper_bound_at_or_below_views(
-                add.operand_view(),
-                V::Legacy(&twelve)
-            )
-        );
-        assert!(
-            !bounded.has_add_const_upper_bound_below_views(add.operand_view(), V::Legacy(&twelve))
-        );
+        let eight = OldMachineTerm::constant(8);
+        let twelve = OldMachineTerm::constant(12);
+        let two = OldMachineTerm::constant(2);
+        let negative_two = OldMachineTerm::constant((-2i32) as u32);
         assert!(
             bounded
-                .has_add_const_lower_bound_at_or_above_views(add.operand_view(), V::Legacy(&two))
+                .has_add_const_upper_bound_at_or_below_views(add.operand_view(), V::Old(&twelve))
         );
         assert!(
-            !bounded.has_add_const_lower_bound_above_views(add.operand_view(), V::Legacy(&two))
+            !bounded.has_add_const_upper_bound_below_views(add.operand_view(), V::Old(&twelve))
         );
+        assert!(
+            bounded.has_add_const_lower_bound_at_or_above_views(add.operand_view(), V::Old(&two))
+        );
+        assert!(!bounded.has_add_const_lower_bound_above_views(add.operand_view(), V::Old(&two)));
         assert!(bounded.has_subtract_const_upper_bound_views(
             sub.operand_view(),
-            V::Legacy(&eight),
+            V::Old(&eight),
             false
         ));
         assert!(!bounded.has_subtract_const_upper_bound_views(
             sub.operand_view(),
-            V::Legacy(&eight),
+            V::Old(&eight),
             true
         ));
         assert!(bounded.has_subtract_const_lower_bound_views(
             sub.operand_view(),
-            V::Legacy(&negative_two),
+            V::Old(&negative_two),
             false
         ));
         assert!(!bounded.has_subtract_const_lower_bound_views(
             sub.operand_view(),
-            V::Legacy(&negative_two),
+            V::Old(&negative_two),
             true
         ));
         assert!(!upper_only.has_subtract_const_upper_bound_views(
             sub.operand_view(),
-            V::Legacy(&eight),
+            V::Old(&eight),
             false
         ));
         assert!(
-            !parent.has_add_const_upper_bound_at_or_below_views(
-                add.operand_view(),
-                V::Legacy(&twelve)
-            )
+            !parent
+                .has_add_const_upper_bound_at_or_below_views(add.operand_view(), V::Old(&twelve))
         );
         assert!(!add.has_boxed_operand());
         assert!(!sub.has_boxed_operand());

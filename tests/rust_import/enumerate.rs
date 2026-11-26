@@ -12,6 +12,8 @@ fn prepared_enumeration() -> click::languages::rust::PreparedRustImport {
 /// index each iteration yields is `iter.count`, and the element is the one
 /// at `iter.as_slice()`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.9s in the parallel gate"]
 fn charon_enumerated_slice_loops_verify_from_their_count() {
     ProgramVerificationSession::new_program_prepared(SIDECAR, prepared_enumeration())
         .unwrap_or_else(|error| panic!("{error:?}"));
@@ -31,6 +33,8 @@ fn rejects_enumeration_mutation(before: &str, after: &str, function: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 9.5s in the parallel gate"]
 fn charon_enumeration_rejects_shifted_yielded_index() {
     // The index yielded is the count before the element is counted.
     rejects_enumeration_mutation(

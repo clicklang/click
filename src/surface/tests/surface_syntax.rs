@@ -387,7 +387,7 @@ fn parser_rejects_excessive_parenthesis_depth_with_a_source_diagnostic() {
 fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
     let supported_not = "not ".repeat(32);
     let supported_source = format!(
-        "theorem shallow() {{ requires {supported_not}0 == 0; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem shallow() {{ requires {supported_not}0 == 0; ensures 0 == 0 by {{ close(); }} }}"
     );
     let supported = parse(&supported_source).expect("the supported unary boundary should validate");
     verify_click_theorems(&supported_source)
@@ -467,9 +467,9 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
             .contains("bracket nesting exceeds Click's supported depth")
     );
 
-    let mut proof_body = String::from("normalize();");
+    let mut proof_body = String::from("close();");
     for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
-        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
     }
     let proof_error = parser::parse_file_items(&format!(
         "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {proof_body} }} }}"
@@ -620,7 +620,7 @@ fn surface_depths_survive_consumption(
         quantifier_body = format!("forall (q{index}: Integer) {{ {quantifier_body} }}");
     }
     let quantifier_source = format!(
-        "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by {{ close(); }} }}"
     );
     verify_click_theorems(&quantifier_source)
         .expect("the supported quantifier boundary should verify");
@@ -658,9 +658,9 @@ fn surface_depths_survive_consumption(
     drop(sequence_file);
 
     let proof_goal = "0 == 0";
-    let mut proof_body = String::from("normalize();");
+    let mut proof_body = String::from("close();");
     for _ in 0..structural_depth - 2 {
-        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
     }
     let proof_source =
         format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}");
@@ -696,7 +696,7 @@ fn surface_depths_survive_consumption(
         format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
     });
     let conditional_source = format!(
-        "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by {{ close(); }} }}"
     );
     verify_click_theorems(&conditional_source)
         .expect("the supported conditional boundary should verify");
@@ -1235,7 +1235,7 @@ fn parses_and_prints_pure_function_unfold() {
             requires n <= 0;
             ensures clamp(n) == 0 by {
                 unfold(clamp(n));
-                normalize();
+                close();
             }
         }
     "#;
@@ -1312,7 +1312,8 @@ fn parses_and_prints_solve_using_premise_lists() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.7s in the parallel gate"]
 fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let source = r#"
         theorem signed_compound_certificate(n: int32) {
@@ -1394,7 +1395,8 @@ fn float_reflexive_smart_expansion_replays_as_known() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     let source = r#"
         theorem signed_smart_double(n: int32) {
@@ -1431,7 +1433,8 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_12")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn signed_arithmetic_using_requires_every_needed_exact_premise() {
     let source = r#"
         theorem signed_missing_explicit_premise(n: int32) {
@@ -1522,7 +1525,8 @@ fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let source = r#"
         theorem defined_addition(a: int32, b: int32) {
@@ -1885,7 +1889,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
     let surface = SyntaxProposition::And(Box::new(left.clone()), Box::new(right.clone()));
     let values = ProgramValueBindings::from([(
         "x".to_string(),
-        ProgramValue::Int32(MachineTerm::Variable(Variable(42))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(42))),
     )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -1936,13 +1940,13 @@ fn records_checked_surface_forms_for_lowered_propositions() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_15")]
 fn surface_synthesis_qualifies_a_c_local_named_result() {
-    let local = MachineTerm::Variable(Variable(42));
+    let local = OldMachineTerm::Variable(Variable(42));
     let proposition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(local.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -1968,9 +1972,9 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         "#,
     )
     .expect("struct pointer parameter should parse");
-    let pool = Address {
+    let pool = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let proposition = Proposition::Predicate {
         name: "valid_pool".to_string(),
@@ -2005,9 +2009,9 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
 fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     let function =
         syntax::parse_function("void lock(int32* m) {}").expect("parameter should parse");
-    let mutex = Address {
+    let mutex = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let synthesize = |name: String, arguments: Vec<Term>| {
         synthesize_surface_proposition(
@@ -2028,7 +2032,7 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
             vec![
                 state.clone(),
                 Term::ProgramValue(
-                    (ProgramValue::pointer(Address::function("compare".to_string()))).into()
+                    (ProgramValue::pointer(OldAddress::function("compare".to_string()))).into()
                 ),
             ],
         ),
@@ -2067,22 +2071,22 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         "#,
     )
     .expect("struct parameter layout should parse");
-    let owner = Address {
+    let owner = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let proposition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -2106,27 +2110,27 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     ));
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
-    let data_pointer = MachineTerm::read_named(
+    let data_pointer = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
     );
-    let first_data_cell = Address {
+    let first_data_cell = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(data_pointer, 4),
+        offset: OldAddressOffset::scaled_int32_node(data_pointer, 4),
     };
     let proposition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -2294,7 +2298,7 @@ theorem reflexive_pair() {
     let explicit = r#"
 theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by {
-        all { 1 == 1 => { normalize(); } 2 == 2 => { normalize(); } }
+        all { 1 == 1 => { close(); } 2 == 2 => { close(); } }
     }
 }
 "#;
@@ -2326,7 +2330,7 @@ theorem reflexive_choice() {
     let explicit_left = r#"
 theorem reflexive_choice() {
     ensures 1 == 1 or 2 == 3 by {
-        have 1 == 1 by { normalize(); }
+        have 1 == 1 by { close(); }
         close();
     }
 }
@@ -2336,7 +2340,7 @@ theorem reflexive_choice() {
     let explicit_right = r#"
 theorem reflexive_choice() {
     ensures 2 == 3 or 1 == 1 by {
-        have 1 == 1 by { normalize(); }
+        have 1 == 1 by { close(); }
         close();
     }
 }
@@ -2501,8 +2505,8 @@ fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
         operator: ComparisonOperator::Equal,
         right: current_int(1),
     };
-    let kernel = Proposition::condition_is(ConditionTerm::Constant(true), true);
-    let wrong = Proposition::condition_is(ConditionTerm::Constant(false), true);
+    let kernel = Proposition::condition_is(OldConditionTerm::Constant(true), true);
+    let wrong = Proposition::condition_is(OldConditionTerm::Constant(false), true);
     let mut spellings = SurfacePropositionMap::default();
     spellings.record_lowering(&current, &kernel).unwrap();
     spellings.record_lowering(&retained_state, &kernel).unwrap();
@@ -2530,8 +2534,8 @@ fn recorded_surface_fact_resolves_only_one_available_kernel_fact() {
         operator: ComparisonOperator::Equal,
         right: current_int(1),
     };
-    let first = Proposition::condition_is(ConditionTerm::Constant(true), true);
-    let second = Proposition::condition_is(ConditionTerm::Constant(false), false);
+    let first = Proposition::condition_is(OldConditionTerm::Constant(true), true);
+    let second = Proposition::condition_is(OldConditionTerm::Constant(false), false);
     let mut spellings = SurfacePropositionMap::default();
     spellings.record_lowering(&surface, &first).unwrap();
     spellings.record_lowering(&surface, &second).unwrap();
@@ -2553,7 +2557,7 @@ fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
                 operator: ComparisonOperator::Equal,
                 right: current_int(index),
             },
-            Proposition::condition_is(ConditionTerm::Variable(Variable(index.into())), true),
+            Proposition::condition_is(OldConditionTerm::Variable(Variable(index.into())), true),
         )
     }
 
@@ -3279,14 +3283,14 @@ fn integer_datatype_match_iota_survives_function_substitution_and_recheck() {
             } == observe(value) by {
                 unfold(make(value));
                 unfold(observe(value));
-                normalize();
+                close();
             }
         }
     "#;
     let verified = verify_click_theorems(source).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     let rechecked = source.replace(
-        "by {\n                unfold(make(value));\n                unfold(observe(value));\n                normalize();\n            }",
+        "by {\n                unfold(make(value));\n                unfold(observe(value));\n                close();\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).unwrap();
@@ -3312,20 +3316,20 @@ fn integer_datatype_match_numeral_arm_inherits_integer_result_and_rechecks() {
         theorem extraction(value: Integer) {
             ensures project(Box::Wrapped(value)) == value by {
                 unfold(project(Box::Wrapped(value)));
-                normalize();
+                close();
             }
         }
         theorem arithmetic_match() {
             ensures match Box::Empty {
                 Box::Empty => 0,
                 Box::Wrapped(inner) => inner + 1,
-            } == 0 by { normalize(); }
+            } == 0 by { close(); }
         }
     "#;
     let verified = verify_click_theorems(source).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     let rechecked = source.replace(
-        "by {\n                unfold(project(Box::Wrapped(value)));\n                normalize();\n            }",
+        "by {\n                unfold(project(Box::Wrapped(value)));\n                close();\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).unwrap();
@@ -3346,14 +3350,14 @@ fn integer_match_constructor_fields_retain_unused_conversion_definedness() {
                 Pair::Make(unused, kept) => kept,
             } == 0 by {
                 unfold(make(value));
-                normalize();
+                close();
             }
         }
     "#;
     let verified = verify_click_theorems(source).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     let rechecked = source.replace(
-        "by {\n                unfold(make(value));\n                normalize();\n            }",
+        "by {\n                unfold(make(value));\n                close();\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).unwrap();
@@ -3413,7 +3417,7 @@ fn symbolic_integer_datatype_match_does_not_capture_outer_binding() {
             ensures match boxed {
                 Box::Empty => to_integer(0),
                 Box::Wrapped(value) => value,
-            } == value by { normalize(); }
+            } == value by { close(); }
         }
     "#;
     let error =
@@ -3585,7 +3589,8 @@ fn loop_diverges_round_trips_through_expansion() {
 /// The marker withholds whole-function termination evidence even when the
 /// function ranks some of its loops.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_26")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_diverges_function_never_yields_termination_evidence() {
     let c_source = r#"
             int32 drain_then_wait(int32 n, int32 x) {
@@ -4060,7 +4065,8 @@ fn a_reference_parameter_does_not_match_a_c_pointer() {
 /// Two different clauses that return overlapping memory are refused where
 /// the contract is set up, naming both places, with or without a proof.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_29")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_contract_cannot_return_overlapping_places() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
@@ -4495,14 +4501,15 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, OldPointer, ProgramType,
+        AddressBase, MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm, OldPointer,
+        ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
     let parameters = functions[0].parameters();
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("range_base".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
         OldPointer::new(base.clone(), ProgramType::Int32Pointer),
@@ -4520,8 +4527,8 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     ] {
         let range = MemoryRange::new_with_element_width(
             base.clone(),
-            MachineTerm::constant(low),
-            MachineTerm::constant(high),
+            OldMachineTerm::constant(low),
+            OldMachineTerm::constant(high),
             width,
         );
         assert_eq!(
@@ -4728,7 +4735,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         verifying "alpha.c";
         verifying "beta.c";
         contract int32 One() { ensures result == 1; }
-        int32 callback() { ensures result == 1; } by { step_until(function.exit); normalize(); }
+        int32 callback() { ensures result == 1; } by { step_until(function.exit); close(); }
         theorem callback_contract() {
             ensures One(&callback) by { unfold(One(&callback)); close(); }
         }
@@ -4768,10 +4775,10 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
             (0..end).fold(0, |acc, k| { acc + to_integer(bytes[k] as int32) })
         }
         theorem three_hundred_is_big() {
-            ensures big(300u32) by { unfold(big(300u32)); normalize(); }
+            ensures big(300u32) by { unfold(big(300u32)); close(); }
         }
         theorem three_hundred_keeps_its_low_byte() {
-            ensures low(300u32) == 44 by { unfold(low(300u32)); normalize(); }
+            ensures low(300u32) == 44 by { unfold(low(300u32)); close(); }
         }
         theorem a_comparison_is_a_bool_value(b: bool) {
             requires b == (5u32 > 3u32);
@@ -4784,15 +4791,16 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
     let error = verify_c_sources(
         "verifying \"bytes.rs\"; function big(x: u32) -> bool { x > 255u32 }
          theorem two_hundred_is_big() {
-             ensures big(200u32) by { unfold(big(200u32)); normalize(); }
+             ensures big(200u32) by { unfold(big(200u32)); close(); }
          }",
         &rust_source,
     )
     .expect_err("200 is not big");
     assert!(
-        error.message.contains("did not normalize to true"),
+        error.message().contains("could not establish")
+            && error.message().contains("200u32 > 255u32"),
         "{}",
-        error.message
+        error.message()
     );
     let error = verify_c_sources(
         "verifying \"bytes.rs\"; theorem wrong(b: bool) {
@@ -5173,7 +5181,9 @@ fn a_cpp_class_function_is_its_object_field() {
         class Shape { function size(this) -> int32; } \
         extern int Shape::area(int scale) const { ensures result == size(this) + scale; } \
         int total(const Shape& shape, int scale) { ensures result == size(shape) + scale; } \
-        class Square : Shape { function size(this) -> int32 { this->side } }";
+        class Square : Shape { function size(this) -> int32 { this->side } } \
+        extern int Shape::object() const { ensures result == size(this); } \
+        extern void lend(int* p) { owns held: Shape::object(p); }";
     use crate::languages::interface::{InterfaceType, RecordLayout};
 
     let layout = |fields, size| RecordLayout::from_explicit_fields(fields, size, 8).unwrap();
@@ -5200,16 +5210,34 @@ fn a_cpp_class_function_is_its_object_field() {
     let object = file
         .resource_definitions()
         .iter()
-        .find(|definition| definition.name() == "Shape__object")
+        .find(|definition| definition.name() == "Shape::object")
         .expect("the class's object is declared");
     assert!(object.is_sealed());
-    let names = file
+    let lend = file
         .function_blocks()
         .iter()
-        .map(|block| block.signature().name().to_string())
-        .collect::<Vec<_>>();
-    for name in ["Square__click_pack__Shape", "Square__click_unpack__Shape"] {
-        assert!(names.iter().any(|found| found == name), "{name}: {names:?}");
+        .find(|block| block.signature().name() == "lend")
+        .expect("the contract that names the object explicitly");
+    assert!(matches!(
+        lend.requires(),
+        [Requirement::Resource(ResourceClause::Named { resource, .. })]
+            if matches!(resource.as_ref(), ResourceClause::Declared { name, .. } if name == object.name())
+    ));
+    assert!(file.function_blocks().iter().any(|block| {
+        crate::languages::cpp::names::cpp_display_name(block.signature().name()).as_deref()
+            == Some("Shape::object")
+    }));
+    use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+    let conversion = CppObjectConversion::new("Square", "Shape");
+    for kind in CppBindingKind::ALL {
+        let binding = CppBindingContract {
+            conversion: conversion.clone(),
+            kind,
+        };
+        assert!(
+            file.cpp_bindings.written.contains_key(&binding),
+            "{binding}"
+        );
     }
     for (from, to, expected) in [
         (
@@ -5240,20 +5268,20 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         right: current_int(1),
     };
     let stated = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(984_500))),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::Variable(Variable(984_500))),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
         true,
     );
     let side = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(984_501))),
-            right: Box::new(MachineTerm::constant(7)),
+            left: Box::new(OldMachineTerm::Variable(Variable(984_501))),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -5272,7 +5300,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         forms.kernels_containing_conjunct(&side).collect::<Vec<_>>(),
         vec![&lowered]
     );
-    let unrelated = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let unrelated = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     assert_eq!(forms.kernels_containing_conjunct(&unrelated).count(), 0);
     // A written conjunction records its conjuncts as pairs, not containment.
     let left = SyntaxProposition::Comparison {
@@ -5281,11 +5309,11 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         right: current_int(2),
     };
     let left_kernel = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(984_502))),
-            right: Box::new(MachineTerm::constant(2)),
+            left: Box::new(OldMachineTerm::Variable(Variable(984_502))),
+            right: Box::new(OldMachineTerm::constant(2)),
         },
         true,
     );
@@ -5306,13 +5334,13 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
     for (ty, one, operator, authored) in [
         (
             "int32",
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
             "-",
             "to_integer(hi - 1) < to_integer(hi)",
         ),
         (
             "uint64",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
             "+",
             "to_integer(hi) < to_integer(hi + 1u64)",
         ),
@@ -5350,17 +5378,17 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_34")]
 fn synthesized_signed_difference_preserves_its_type_without_literals() {
-    let less_equal = |left, right| ConditionTerm::Compare {
+    let less_equal = |left, right| OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),
         right: Box::new(right),
     };
-    let hi = MachineTerm::Variable(Variable(984_600));
-    let lo = MachineTerm::Variable(Variable(984_601));
-    let difference = MachineTerm::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
+    let hi = OldMachineTerm::Variable(Variable(984_600));
+    let lo = OldMachineTerm::Variable(Variable(984_601));
+    let difference = OldMachineTerm::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
     let original =
-        Proposition::condition_is(less_equal(MachineTerm::constant(0), difference), true);
+        Proposition::condition_is(less_equal(OldMachineTerm::constant(0), difference), true);
     let state = ExecutionState::new()
         .with_local("hi", ProgramValue::Int32(hi.clone()))
         .with_local("lo", ProgramValue::Int32(lo.clone()));
@@ -5377,11 +5405,11 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     let mut bounds = Vec::new();
     for term in [hi.clone(), lo.clone()] {
         bounds.push(Proposition::condition_is(
-            less_equal(MachineTerm::constant(0), term.clone()),
+            less_equal(OldMachineTerm::constant(0), term.clone()),
             true,
         ));
         bounds.push(Proposition::condition_is(
-            less_equal(term, MachineTerm::constant(100)),
+            less_equal(term, OldMachineTerm::constant(100)),
             true,
         ));
     }
@@ -5405,7 +5433,7 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     };
     let retained = Proposition::condition_is(
         crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(
-            condition.native_compat(),
+            condition.old_form(),
         )
         .unwrap(),
         *truth,
@@ -5464,21 +5492,15 @@ test_batches! {
         rejects_removed_fold_tactic_syntax,
         parses_and_prints_solve_using_premise_lists,
     ],
-    surface_syntax_batch_09: [
-        signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal,
-    ],
     surface_syntax_batch_11: [
         float_reflexive_smart_expansion_replays_as_known,
-        signed_arithmetic_smart_planner_expands_to_ordinary_proof,
     ],
     surface_syntax_batch_12: [
-        signed_arithmetic_using_requires_every_needed_exact_premise,
         integer_arithmetic_uses_checked_unified_certificate_without_replanning,
         integer_arithmetic_using_proves_a_chain_longer_than_three_premises,
         integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra,
     ],
     surface_syntax_batch_13: [
-        signed_arithmetic_smart_planner_preserves_explicit_definedness,
         verifies_pure_theorem_definition,
         pure_bare_apply_builds_a_checked_proof_object_certificate,
         pure_solve_exposes_explicit_arithmetic_steps,
@@ -5558,7 +5580,6 @@ test_batches! {
         diverges_must_follow_throws_in_a_signature,
         external_contracts_accept_diverges_and_still_reject_decreases,
         loop_diverges_round_trips_through_expansion,
-        a_diverges_function_never_yields_termination_evidence,
     ],
     surface_syntax_batch_27: [
         parses_built_in_expressions_on_either_comparison_side,
@@ -5574,7 +5595,6 @@ test_batches! {
         a_reference_parameter_does_not_match_a_c_pointer,
     ],
     surface_syntax_batch_29: [
-        a_contract_cannot_return_overlapping_places,
         a_hidden_record_needs_its_child_declared_first,
         a_rust_sidecar_compares_a_bitwise_operand_without_parentheses,
         a_rust_sidecar_states_its_signature_in_rust_syntax,
@@ -5622,7 +5642,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
             constant: false,
             pointee_constant: false,
             initializer: Some(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(7),
+                OldMachineTerm::constant(7),
             ))),
             zero_fill: None,
             declared_class: None,
@@ -5656,7 +5676,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         .unwrap();
     let values = ProgramValueBindings::from([(
         "i".to_string(),
-        ProgramValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(OldMachineTerm::constant(7)),
     )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);

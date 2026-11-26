@@ -430,7 +430,12 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
   let ih = induct(suffix);
   if suffix <= 0 {
    have suffix == 0 by { close() using { 0 <= suffix; suffix <= 0; }; }
-   have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix, 0); normalize(); }
+   have to_integer(prefix + suffix) == to_integer(prefix) by {
+    apply(integer::int32_add_to_integer(prefix, suffix));
+    rewrite(to_integer(prefix + suffix), to_integer(prefix) + to_integer(suffix));
+    rewrite(suffix, 0);
+    close();
+   }
    apply(adler_sum_empty(bytes + prefix, 0));
    have adler_byte_sum(bytes + prefix, suffix) == 0 by { rewrite(suffix, 0); close(); }
    rewrite(to_integer(prefix + suffix), to_integer(prefix));
@@ -505,7 +510,12 @@ theorem adler_weighted_concat(bytes: uint8[], prefix: int32, suffix: int32, weig
   have to_integer(weight_end - prefix) == to_integer(weight_end) - to_integer(prefix);
   if suffix <= 0 {
    have suffix == 0 by { close() using { 0 <= suffix; suffix <= 0; }; }
-   have to_integer(prefix + suffix) == to_integer(prefix) by { rewrite(suffix, 0); normalize(); }
+   have to_integer(prefix + suffix) == to_integer(prefix) by {
+    apply(integer::int32_add_to_integer(prefix, suffix));
+    rewrite(to_integer(prefix + suffix), to_integer(prefix) + to_integer(suffix));
+    rewrite(suffix, 0);
+    close();
+   }
    apply(adler_sum_empty(bytes + prefix, weight_end - prefix));
    have adler_weighted_sum(bytes + prefix, suffix, weight_end - prefix) == 0 by { rewrite(suffix, 0); close(); }
    rewrite(to_integer(prefix + suffix), to_integer(prefix));

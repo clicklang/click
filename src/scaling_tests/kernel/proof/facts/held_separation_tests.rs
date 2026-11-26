@@ -58,6 +58,8 @@ fn held_field_separation_does_not_visit_unrelated_owners() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn held_separation_transitive_alias_uses_the_shared_resource_index() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
@@ -71,7 +73,10 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
             range.base().clone()
         };
         let link = |a, b| {
-            Proposition::condition_is(ConditionTerm::address_equal(pointer(a), pointer(b)), true)
+            Proposition::condition_is(
+                OldConditionTerm::address_equal(pointer(a), pointer(b)),
+                true,
+            )
         };
         let mut facts = PureFactStore::from_ordered(&[link(0, size + 1), link(size + 1, size + 2)]);
         for index in 0..size {
@@ -137,6 +142,8 @@ fn exact_partition_known_does_not_treat_supported_views_as_independent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn separation_carrier_key_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {

@@ -437,6 +437,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn callback_fold_append_and_memory_expansions_recheck() {
         let proof = "by { unfold(total(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1)); close(); }";
         let source = format!(
@@ -535,6 +537,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn proposition_lambda_proofs_expand_and_recheck_without_search() {
         let cases = [
             (
@@ -826,6 +830,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn memory_lambda_application_checks_permissions_and_definedness() {
         for (requires, body) in [
             ("", "p[i]"),
@@ -866,6 +872,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn memory_lambda_store_proofs_expand_and_recheck() {
         let c = [("write.c", "void write(int32* p) { p[0] = 5; }")];
         for body in ["p[i] == 5", "to_integer(p[i]) == 5"] {

@@ -869,15 +869,6 @@ fn advance_execution_proof_statement(
                 if let Some(result) = &transition.call_result {
                     recorded_states.record_call_transition_result(statement_index, result.clone());
                 }
-                if let Some(parameters) = &transition.call_parameters {
-                    record_code_region_program_state(
-                        &mut recorded_states,
-                        environment.function_block,
-                        CodeRegion::Statement(statement_index),
-                        ProgramPointKind::Parameters,
-                        parameters.state().clone(),
-                    );
-                }
             }
             if matches!(statement, ProgramStatement::Loop { .. }) {
                 let loop_index = loop_index.expect("a loop statement has a checked loop index");
@@ -1063,7 +1054,7 @@ fn loop_entry_branches(
         entries: &[crate::kernel::LoopPreservationContext],
         guards: &[BTreeSet<Proposition>],
         indices: Vec<usize>,
-        mut decided: BTreeSet<crate::kernel::ConditionTerm>,
+        mut decided: BTreeSet<crate::kernel::OldConditionTerm>,
         environment: &ExecutionProofEnvironment<'_>,
         loop_index: usize,
     ) -> Result<LoopEntryBranches, ClickError> {
@@ -1075,7 +1066,7 @@ fn loop_entry_branches(
             let Proposition::ConditionIs(condition, _) = fact else {
                 continue;
             };
-            if decided.contains(condition.native_compat()) {
+            if decided.contains(condition.old_form()) {
                 continue;
             }
             let positive = Proposition::condition_is(condition.clone(), true);
@@ -1092,7 +1083,7 @@ fn loop_entry_branches(
             if yes.len() + no.len() != indices.len() {
                 continue;
             }
-            decided.insert((condition.clone()).native_compat().clone());
+            decided.insert((condition.clone()).old_form().clone());
             if yes.is_empty() || no.is_empty() {
                 continue;
             }

@@ -143,7 +143,7 @@ fn external_array_copy_statement_retains_the_uncached_source_point() {
         assert!(runs.next().is_none());
         assert_eq!(run.source_point().id(), point.id());
         assert_eq!(run.count(), count);
-        let ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::MemoryLoad(
+        let ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::MemoryLoad(
             version,
             address,
             LoadKind::UInt32,
@@ -167,9 +167,9 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
     for siblings in [1, 64, 2048] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = external(935_000);
-        let target = Address {
+        let target = OldAddress {
             base: "local:indexed-copy".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new()
             .with_block(target.base.clone(), 16)

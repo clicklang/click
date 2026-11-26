@@ -13,7 +13,7 @@ fn hash_of(value: &impl std::hash::Hash) -> u64 {
 #[test]
 fn a_32_bit_size_hashes_and_prints_as_its_bytes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let bytes = MachineTerm::Variable(Variable(7));
+    let bytes = OldMachineTerm::Variable(Variable(7));
     let narrow = AllocationSize::int32(bytes.clone());
     let wide = AllocationSize::new(bytes.clone(), AllocationSizeKind::UInt64);
     assert_eq!(hash_of(&narrow), hash_of(&bytes));
@@ -27,14 +27,17 @@ fn a_32_bit_size_hashes_and_prints_as_its_bytes() {
 #[test]
 fn allocation_tokens_and_ranges_carry_the_allocation_size_kind() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(3),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     for (size, value_is_wide, range_kind) in [
         (AllocationSize::int32(16), false, RangeIndexKind::Int32),
         (
-            AllocationSize::new(MachineTerm::uint64_constant(16), AllocationSizeKind::UInt64),
+            AllocationSize::new(
+                OldMachineTerm::uint64_constant(16),
+                AllocationSizeKind::UInt64,
+            ),
             true,
             RangeIndexKind::UInt64,
         ),
@@ -61,25 +64,28 @@ fn allocation_tokens_and_ranges_carry_the_allocation_size_kind() {
 #[test]
 fn a_64_bit_size_counts_its_elements_at_uint64() {
     let _session = crate::kernel::VerificationSession::enter();
-    let n = MachineTerm::Variable(Variable(7));
+    let n = OldMachineTerm::Variable(Variable(7));
     let wide = |bytes| AllocationSize::new(bytes, AllocationSizeKind::UInt64);
-    let product = wide(MachineTerm::uint64_multiply(
+    let product = wide(OldMachineTerm::uint64_multiply(
         n.clone(),
-        MachineTerm::uint64_constant(4),
+        OldMachineTerm::uint64_constant(4),
     ));
     assert_eq!(product.element_count(4), Some(n.clone()));
     assert_eq!(product.element_count(8), None);
     assert_eq!(product.element_count(1), Some(product.bytes().clone()));
-    let constant = wide(MachineTerm::uint64_constant(1 << 35));
+    let constant = wide(OldMachineTerm::uint64_constant(1 << 35));
     assert_eq!(
         constant.element_count(8),
-        Some(MachineTerm::uint64_constant(1 << 32))
+        Some(OldMachineTerm::uint64_constant(1 << 32))
     );
     assert_eq!(
-        wide(MachineTerm::uint64_constant((1 << 35) + 2)).element_count(4),
+        wide(OldMachineTerm::uint64_constant((1 << 35) + 2)).element_count(4),
         None
     );
-    let narrow = AllocationSize::int32(MachineTerm::multiply(n.clone(), MachineTerm::constant(4)));
+    let narrow = AllocationSize::int32(OldMachineTerm::multiply(
+        n.clone(),
+        OldMachineTerm::constant(4),
+    ));
     assert_eq!(narrow.element_count(4), Some(n.clone()));
     assert_eq!(
         AllocationSize::int32(product.bytes().clone()).element_count(4),
@@ -90,8 +96,8 @@ fn a_64_bit_size_counts_its_elements_at_uint64() {
 #[test]
 fn allocation_size_rewrite_keeps_the_mappers_exact_call_argument_payload() {
     let _session = crate::kernel::VerificationSession::enter();
-    let argument = MachineTerm::Variable(Variable(10993631));
-    let inner = |argument| MachineTerm::ClickFunctionApplication {
+    let argument = OldMachineTerm::Variable(Variable(10993631));
+    let inner = |argument| OldMachineTerm::ClickFunctionApplication {
         name: "size_payload".into(),
         arguments: vec![argument],
     };
@@ -116,7 +122,7 @@ fn allocation_size_rewrite_keeps_the_mappers_exact_call_argument_payload() {
         after.structural_value(),
         "producer payloads differ"
     );
-    let outer = |argument| MachineTerm::ClickFunctionApplication {
+    let outer = |argument| OldMachineTerm::ClickFunctionApplication {
         name: "size_wrapper".into(),
         arguments: vec![PureFunctionArgument::SharedMachine(argument)],
     };
@@ -127,7 +133,7 @@ fn allocation_size_rewrite_keeps_the_mappers_exact_call_argument_payload() {
         "native equality observes the argument ID"
     );
     let mapped = AllocationSize::int32(original).map_bytes(|_| replacement);
-    let MachineTerm::ClickFunctionApplication { arguments, .. } = mapped.bytes() else {
+    let OldMachineTerm::ClickFunctionApplication { arguments, .. } = mapped.bytes() else {
         panic!("call");
     };
     let PureFunctionArgument::SharedMachine(actual) = &arguments[0] else {

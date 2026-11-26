@@ -88,7 +88,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointers = [1, 2, 3].map(|id| {
         ProgramValue::typed_pointer(
-            Address::symbolic(Variable(880_000 + id)),
+            OldAddress::symbolic(Variable(880_000 + id)),
             ProgramType::Int32Pointer,
         )
     });
@@ -96,7 +96,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
         let ProgramValue::Pointer(pointer) = value else {
             unreachable!()
         };
-        AlgebraicValue::Program(ProgramValue::UInt64(MachineTerm::integer_address(
+        AlgebraicValue::Program(ProgramValue::UInt64(OldMachineTerm::integer_address(
             pointer.address().clone(),
         )))
     };

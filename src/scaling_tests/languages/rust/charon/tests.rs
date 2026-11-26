@@ -51,6 +51,8 @@ fn charon_shared_iterator_lowering_and_first_read_work_are_independent_of_length
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_owned_array_construction_and_moves_have_bounded_work_at_large_lengths() {
     let mut samples = Vec::new();
     for length in [4, 1024, 1_000_000] {
@@ -158,6 +160,8 @@ fn charon_owned_array_construction_and_moves_have_bounded_work_at_large_lengths(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_nonuniform_sparse_states_have_bounded_work_at_large_lengths() {
     let mut samples = Vec::new();
     for length in [4u32, 1024, 1_000_000] {
@@ -244,6 +248,8 @@ fn charon_nonuniform_sparse_states_have_bounded_work_at_large_lengths() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_array_field_layout_and_verification_work_are_independent_of_length() {
     let mut samples = Vec::new();
     for length in [4, 1024, 1_000_000] {
@@ -325,6 +331,8 @@ fn charon_chunk_metadata_work_is_independent_of_input_length() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn charon_slice_metadata_verification_work_is_independent_of_length() {
     let export = decode(SLICE_ARTIFACT, "slices.rs", SLICE_SOURCE).unwrap();
     let prepared = super::super::super::import::prepared_for_test(export).unwrap();

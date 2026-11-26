@@ -1,12 +1,13 @@
 use super::*;
 use crate::kernel::binary_term;
+use crate::kernel::{OffsetTree as _, OffsetView};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct EvaluatedContractSegment {
     pub(in crate::surface) source: ContractSegment,
-    pub(in crate::surface) base: Address,
-    pub(in crate::surface) start: MachineTerm,
-    pub(in crate::surface) end: MachineTerm,
+    pub(in crate::surface) base: OldAddress,
+    pub(in crate::surface) start: OldMachineTerm,
+    pub(in crate::surface) end: OldMachineTerm,
     pub(in crate::surface) element_width: u32,
 }
 
@@ -47,7 +48,7 @@ pub(in crate::surface) fn evaluate_requirement_segment_base(
     parameter_binding: ParameterBinding<'_>,
     entry_state: &ExecutionState,
     segment: &ContractSegment,
-) -> Result<Address, String> {
+) -> Result<OldAddress, String> {
     let parameter_values = parameter_values_named(
         parameter_binding,
         &crate::surface::lowering::contract_segment_referenced_names(segment),
@@ -111,7 +112,7 @@ fn evaluate_segment_bounds(
 
 pub(in crate::surface) fn segment_contains_pointer(
     segment: &EvaluatedContractSegment,
-    pointer: &Address,
+    pointer: &OldAddress,
     assumptions: &PureFactContext,
 ) -> bool {
     let Some(index) = pointer_element_index_from_base_with_width(
@@ -135,19 +136,19 @@ pub(in crate::surface) fn segment_contains_pointer(
 }
 #[cfg(test)]
 pub(in crate::surface) fn pointer_element_index_from_base(
-    pointer: &Address,
-    base: &Address,
+    pointer: &OldAddress,
+    base: &OldAddress,
     assumptions: &PureFactContext,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     pointer_element_index_from_base_with_width(pointer, base, 4, assumptions)
 }
 
 fn pointer_element_index_from_base_with_width(
-    pointer: &Address,
-    base: &Address,
+    pointer: &OldAddress,
+    base: &OldAddress,
     element_width: u32,
     assumptions: &PureFactContext,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     if pointer.base != base.base {
         return None;
     }
@@ -155,22 +156,22 @@ fn pointer_element_index_from_base_with_width(
     if pointer.offset == base.offset
         || pointer_offsets_equal_for_effect(&pointer.offset, &base.offset, assumptions)
     {
-        return Some(MachineTerm::constant(0));
+        return Some(OldMachineTerm::constant(0));
     }
 
-    if base.offset == AddressOffset::Constant(0) {
+    if matches!(base.offset.view(), OffsetView::Constant(0)) {
         return element_index_from_pointer_offset(&pointer.offset, element_width);
     }
 
-    match &pointer.offset {
-        AddressOffset::Add(left, right)
-            if left.as_ref() == &base.offset
+    match pointer.offset.view() {
+        OffsetView::Add(left, right)
+            if left == &base.offset
                 || pointer_offsets_equal_for_effect(left, &base.offset, assumptions) =>
         {
             element_index_from_pointer_offset(right, element_width)
         }
-        AddressOffset::Add(left, right)
-            if right.as_ref() == &base.offset
+        OffsetView::Add(left, right)
+            if right == &base.offset
                 || pointer_offsets_equal_for_effect(right, &base.offset, assumptions) =>
         {
             element_index_from_pointer_offset(left, element_width)
@@ -189,42 +190,40 @@ fn pointer_element_index_from_base_with_width(
 }
 
 fn pointer_offsets_equal_for_effect(
-    left: &AddressOffset,
-    right: &AddressOffset,
+    left: &OldAddressOffset,
+    right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     program_pointer_offsets_proven_equal_for_effect(left, right, assumptions)
 }
 
 fn element_index_from_pointer_offset(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     element_width: u32,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     if element_width == 0 {
         return None;
     }
-    match offset {
-        AddressOffset::Constant(offset) if offset % i64::from(element_width) == 0 => {
+    match offset.view() {
+        OffsetView::Constant(offset) if offset % i64::from(element_width) == 0 => {
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
-                .then_some(MachineTerm::constant((index as i32) as u32))
+                .then_some(OldMachineTerm::constant((index as i32) as u32))
         }
-        AddressOffset::Int32Scaled { value, byte_width }
-            if *byte_width == i64::from(element_width) =>
-        {
-            Some(value.structural_value().clone())
+        OffsetView::Int32Scaled { index, byte_width } if byte_width == i64::from(element_width) => {
+            Some(index.structural_value().clone())
         }
-        AddressOffset::Int64Scaled {
-            value, byte_width, ..
-        } if *byte_width == i64::from(element_width) => Some(value.structural_value().clone()),
-        AddressOffset::Add(left, right) if left.as_ref() == &AddressOffset::Constant(0) => {
+        OffsetView::Int64Scaled {
+            index, byte_width, ..
+        } if byte_width == i64::from(element_width) => Some(index.structural_value().clone()),
+        OffsetView::Add(left, right) if matches!(left.view(), OffsetView::Constant(0)) => {
             element_index_from_pointer_offset(right, element_width)
         }
-        AddressOffset::Add(left, right) if right.as_ref() == &AddressOffset::Constant(0) => {
+        OffsetView::Add(left, right) if matches!(right.view(), OffsetView::Constant(0)) => {
             element_index_from_pointer_offset(left, element_width)
         }
-        AddressOffset::Add(left, right) => Some(bitvector32_add(
+        OffsetView::Add(left, right) => Some(bitvector32_add(
             element_index_from_pointer_offset(left, element_width)?,
             element_index_from_pointer_offset(right, element_width)?,
         )),
@@ -232,11 +231,11 @@ fn element_index_from_pointer_offset(
     }
 }
 fn bitvector_index_relative_to_base(
-    pointer_index: MachineTerm,
-    base_index: MachineTerm,
-) -> MachineTerm {
+    pointer_index: OldMachineTerm,
+    base_index: OldMachineTerm,
+) -> OldMachineTerm {
     if pointer_index == base_index {
-        return MachineTerm::constant(0);
+        return OldMachineTerm::constant(0);
     }
     if let binary_term!(Int32, Add, left, right) = &pointer_index {
         if left.as_ref() == &base_index {

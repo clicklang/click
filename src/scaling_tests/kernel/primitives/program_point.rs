@@ -3,24 +3,24 @@ use super::*;
 #[test]
 fn external_displacements_and_heap_indexes_use_only_their_selected_storage() {
     let _session = crate::kernel::VerificationSession::enter();
-    let parameter = Address {
+    let parameter = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(38_151)),
+        offset: OldAddressOffset::Variable(Variable(38_151)),
     };
-    let other_parameter = Address {
-        offset: AddressOffset::Variable(Variable(38_152)),
+    let other_parameter = OldAddress {
+        offset: OldAddressOffset::Variable(Variable(38_152)),
         ..parameter.clone()
     };
-    let heap = Address {
+    let heap = OldAddress {
         base: AddressBase::Heap(38_153),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let start =
         ExecutionState::new().with_memory(SymbolicMemory::new().with_block(heap.base.clone(), 8));
-    let store = |state: &ExecutionState, address: &Address, bits| {
+    let store = |state: &ExecutionState, address: &OldAddress, bits| {
         state.clone().with_memory(state.memory().clone().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(bits)),
+            ProgramValue::Int32(OldMachineTerm::constant(bits)),
         ))
     };
     let p_written = store(&start, &parameter, 1);
@@ -69,7 +69,7 @@ fn external_displacements_and_heap_indexes_use_only_their_selected_storage() {
             .is_some()
     );
 
-    let symbolic_heap = Address {
+    let symbolic_heap = OldAddress {
         base: heap.base.clone(),
         offset: parameter.offset.clone(),
     };
@@ -97,8 +97,8 @@ fn pending_successor_lookup_ignores_recorded_log_length() {
         let mut memory = start.memory().clone();
         for _ in 0..count {
             memory = memory
-                .store(slot(), ProgramValue::Int32(MachineTerm::constant(1)))
-                .store(slot(), ProgramValue::Int32(MachineTerm::constant(0)));
+                .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(1)))
+                .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(0)));
         }
         let moved = start.clone().with_materialized_memory(memory);
         assert_eq!(moved.memory(), start.memory());
@@ -132,7 +132,7 @@ fn sealed_batch_read_lookup_ignores_the_number_of_effects() {
         for index in 1..=count {
             memory = memory.store(
                 first.offset_by_bytes(index * 4),
-                ProgramValue::Int32(MachineTerm::constant(index)),
+                ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
         }
         let (sealed, seal_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -154,7 +154,7 @@ fn sealed_batch_read_lookup_ignores_the_number_of_effects() {
         assert_eq!(newer.read_version_id(), sealed.program_point_id());
         assert_eq!(
             newer.indexed_integer_store_bits(),
-            Some(&MachineTerm::constant(1))
+            Some(&OldMachineTerm::constant(1))
         );
         samples.push((count, seal_work, read_work));
     }
@@ -178,7 +178,7 @@ fn joining_one_changed_cell_uses_shared_index_branches() {
         for index in 0..count {
             memory = memory.store(
                 slot.offset_by_bytes(4 * index),
-                ProgramValue::Int32(MachineTerm::constant(index)),
+                ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
         }
         let mut current = start.with_memory(memory);
@@ -188,7 +188,7 @@ fn joining_one_changed_cell_uses_shared_index_branches() {
             let write = |value| {
                 current.clone().with_memory(current.memory().clone().store(
                     changed.clone(),
-                    ProgramValue::Int32(MachineTerm::constant(value)),
+                    ProgramValue::Int32(OldMachineTerm::constant(value)),
                 ))
             };
             let left = write(1);
@@ -228,9 +228,9 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
     for count in [16, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = slot();
-        let target = Address {
+        let target = OldAddress {
             base: "local:target".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
@@ -241,7 +241,7 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
         for index in 0..count {
             memory = memory.store(
                 slot.offset_by_bytes(4 * index),
-                ProgramValue::Int32(MachineTerm::constant(index)),
+                ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
         }
         let written = start.with_memory(memory);
@@ -291,11 +291,11 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
 #[test]
 fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = Address {
+    let cell = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(38_154)),
+        offset: OldAddressOffset::Variable(Variable(38_154)),
     };
-    let target = Address::symbolic(Variable(38_155));
+    let target = OldAddress::symbolic(Variable(38_155));
     let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
         .with_bounds(Some(SubobjectBounds::constant(target, 4)));
     let state = ExecutionState::new();
@@ -311,7 +311,7 @@ fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores
         for bits in 0..count {
             state = state.clone().with_memory(state.memory().clone().store(
                 cell.offset_by_bytes(8),
-                ProgramValue::Int32(MachineTerm::constant(bits)),
+                ProgramValue::Int32(OldMachineTerm::constant(bits)),
             ));
         }
         let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -335,7 +335,7 @@ fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores
 
     let partial = written.clone().with_memory(written.memory().clone().store(
         cell.offset_by_bytes(4),
-        ProgramValue::Int32(MachineTerm::constant(0)),
+        ProgramValue::Int32(OldMachineTerm::constant(0)),
     ));
     assert!(
         partial
@@ -352,11 +352,11 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
     let object = flag.offset_by_bytes(8);
     let callback = flag.offset_by_bytes(16);
     let sibling = flag.offset_by_bytes(24);
-    let target = Address::symbolic(Variable(38_143));
+    let target = OldAddress::symbolic(Variable(38_143));
     let pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
         .with_bounds(Some(SubobjectBounds::constant(target, 4)));
     let function = OldPointer::new(
-        Address::function("callback_target"),
+        OldAddress::function("callback_target"),
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     );
     let start =
@@ -375,7 +375,7 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
         for value in 0..count {
             state = state.clone().with_memory(state.memory().clone().store(
                 sibling.clone(),
-                ProgramValue::Int32(MachineTerm::constant(value)),
+                ProgramValue::Int32(OldMachineTerm::constant(value)),
             ));
         }
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -417,7 +417,10 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
     );
     let partial = written.clone().with_memory(written.memory().clone().store(
         object.offset_by_bytes(4),
-        ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0)),
+        ProgramValue::UInt8(OldMachineTerm::narrow_constant(
+            MachineIntegerType::UInt8,
+            0,
+        )),
     ));
     assert!(
         partial
@@ -548,9 +551,9 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
 
     let _session = crate::kernel::VerificationSession::enter();
     let entry = ExecutionState::new().begin_function_entry_memory();
-    let cell = Address {
+    let cell = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let local = slot();
     let declared = entry
@@ -558,15 +561,15 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
         .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
     let accumulator = Variable(38_231);
     let item = Variable(38_232);
-    let symbolic_cell = Address {
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(item), 4),
+    let symbolic_cell = OldAddress {
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(item), 4),
         ..cell.clone()
     };
-    let read = |source: &ProgramPoint, address: &Address| {
+    let read = |source: &ProgramPoint, address: &OldAddress| {
         let point = source
             .entry_integer_version(address, LoadKind::Int32)
             .unwrap();
-        MachineTerm::read_named(point, Box::new(address.clone()), LoadKind::Int32)
+        OldMachineTerm::read_named(point, Box::new(address.clone()), LoadKind::Int32)
     };
     let observation = |term| IntegerTerm::from_machine(MachineIntegerType::Int32, term).unwrap();
     let expected = read(&entry.program_point(), &cell);
@@ -577,14 +580,14 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
         for value in 0..count {
             state = state.clone().with_memory(state.memory().clone().store(
                 local.clone(),
-                ProgramValue::Int32(MachineTerm::constant(value)),
+                ProgramValue::Int32(OldMachineTerm::constant(value)),
             ));
         }
         let body = read(&state.program_point(), &symbolic_cell);
         let integer_body = observation(body.clone());
         let ((native, integer), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let zero = MachineTerm::constant(0);
-            let one = MachineTerm::constant(1);
+            let zero = OldMachineTerm::constant(0);
+            let one = OldMachineTerm::constant(1);
             let native = crate::kernel::reasoning::order_reasoning::instantiate_range_fold_step(
                 &body,
                 accumulator,
@@ -618,9 +621,9 @@ fn generic_entry_cells_and_compact_runs_keep_the_same_version_across_local_store
     let _session = crate::kernel::VerificationSession::enter();
     let parameter = crate::kernel::TypeParameterName::intern("PointNamedCell");
     let ty = ProgramType::Parameter(parameter);
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let cell = base.offset_by_bytes(ty.byte_width());
     let entry = ExecutionState::new().begin_function_entry_memory();
@@ -645,7 +648,7 @@ fn generic_entry_cells_and_compact_runs_keep_the_same_version_across_local_store
         for value in 0..count {
             state = state.clone().with_memory(state.memory().clone().store(
                 local.clone(),
-                ProgramValue::Int32(MachineTerm::constant(value)),
+                ProgramValue::Int32(OldMachineTerm::constant(value)),
             ));
         }
         let source = state.program_point();
@@ -705,7 +708,7 @@ fn a_static_scalar_entry_version_ignores_disjoint_writes_in_its_block() {
             state
                 .memory()
                 .clone()
-                .store(address, ProgramValue::Int32(MachineTerm::constant(bits))),
+                .store(address, ProgramValue::Int32(OldMachineTerm::constant(bits))),
         )
     };
     let mut samples = Vec::new();
@@ -801,7 +804,7 @@ fn a_static_scalar_entry_version_ignores_disjoint_call_ranges_in_its_block() {
             panic!("expected a symbolic int32 value");
         };
         let value = value.native();
-        let ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, LoadKind::Int32)) =
+        let ProgramValue::Int32(OldMachineTerm::MemoryLoad(point, address, LoadKind::Int32)) =
             value.as_ref()
         else {
             panic!("expected a typed int32 load");
@@ -821,20 +824,20 @@ fn a_static_scalar_entry_version_ignores_disjoint_call_ranges_in_its_block() {
 #[test]
 fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = Address {
+    let cell = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let entry = ExecutionState::new().begin_function_entry_memory();
-    let store = |state: &ExecutionState, address: Address, bits| {
+    let store = |state: &ExecutionState, address: OldAddress, bits| {
         state.clone().with_memory(
             state
                 .memory()
                 .clone()
-                .store(address, ProgramValue::Int32(MachineTerm::constant(bits))),
+                .store(address, ProgramValue::Int32(OldMachineTerm::constant(bits))),
         )
     };
-    let read = |state: &ExecutionState, address: &Address| {
+    let read = |state: &ExecutionState, address: &OldAddress| {
         state
             .program_point()
             .entry_integer_version(address, LoadKind::Int32)
@@ -860,15 +863,15 @@ fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
         assert!(read(&store(&state, cell.offset_by_bytes(2), 0), &cell).is_none());
         assert!(read(&store(&state, cell.clone(), 0), &cell).is_none());
         // A write from another parameter origin may alias the cell.
-        let other_origin = Address {
+        let other_origin = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(38_901)),
+            offset: OldAddressOffset::Variable(Variable(38_901)),
         };
         assert!(read(&store(&state, other_origin, 0), &cell).is_none());
         // A write through a pointer of unknown storage may too.
         assert!(
             read(
-                &store(&state, Address::symbolic(Variable(38_902)), 0),
+                &store(&state, OldAddress::symbolic(Variable(38_902)), 0),
                 &cell
             )
             .is_none()

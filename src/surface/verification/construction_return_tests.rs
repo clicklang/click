@@ -213,6 +213,8 @@ struct Node factory(int32 input) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_construction_return_keeps_raw_offset_and_member_views_distinct() {
     let sources = context_with_member_view(true, false);
     let error = verify_program_with_context(
@@ -235,6 +237,8 @@ fn native_construction_return_keeps_raw_offset_and_member_views_distinct() {
 // not mark an unwritten field initialized. Keep the value claim independent
 // of the fields so this exercises construction completion itself.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_construction_return_contracts_require_complete_initialization() {
     let safety_only = r#"verifying "construction.c";
 struct Node factory(int32 input) { ensures input == input; }

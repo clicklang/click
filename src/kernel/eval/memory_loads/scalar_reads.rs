@@ -1,6 +1,6 @@
 //! Exact read descriptions and the version identities used to compare them.
 //!
-//! `MachineTerm::memory_read` constructs the exact descriptor. Selecting a
+//! `OldMachineTerm::memory_read` constructs the exact descriptor. Selecting a
 //! comparison identity is a separate legacy operation: it may choose another
 //! memory state, but never mutates the descriptor it receives. Observation
 //! publication is separate from both. The parent module retains the existing
@@ -12,10 +12,10 @@ use super::*;
 /// Constructing this view performs no version selection or registry lookup.
 #[derive(Clone, Copy)]
 pub(super) struct ScalarReadDescriptor<'a> {
-    term: &'a MachineTerm,
+    term: &'a OldMachineTerm,
     point: &'a ProgramPoint,
     memory: &'a SharedMemory,
-    pointer: &'a Address,
+    pointer: &'a OldAddress,
     kind: LoadKind,
     narrow_bytes: Option<u32>,
 }
@@ -30,7 +30,7 @@ impl<'a> ScalarReadDescriptor<'a> {
         self.point
     }
 
-    pub(super) fn address(&self) -> &'a Address {
+    pub(super) fn address(&self) -> &'a OldAddress {
         self.pointer
     }
 
@@ -38,8 +38,8 @@ impl<'a> ScalarReadDescriptor<'a> {
         self.narrow_bytes
     }
 
-    pub(super) fn from_term(term: &'a MachineTerm) -> Option<Self> {
-        let MachineTerm::MemoryLoad(memory, pointer, kind) = term else {
+    pub(super) fn from_term(term: &'a OldMachineTerm) -> Option<Self> {
+        let OldMachineTerm::MemoryLoad(memory, pointer, kind) = term else {
             return None;
         };
         Some(Self {
@@ -66,14 +66,14 @@ impl<'a> ScalarReadDescriptor<'a> {
 /// still retain selected version reads, rather than their original descriptors.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct ScalarReadComparisonIdentity(MachineTerm);
+pub(super) struct ScalarReadComparisonIdentity(OldMachineTerm);
 
 impl ScalarReadComparisonIdentity {
-    pub(super) fn as_legacy_read(&self) -> &MachineTerm {
+    pub(super) fn as_legacy_read(&self) -> &OldMachineTerm {
         &self.0
     }
 
-    pub(super) fn into_legacy_read(self) -> MachineTerm {
+    pub(super) fn into_legacy_read(self) -> OldMachineTerm {
         self.0
     }
 }
@@ -96,30 +96,30 @@ pub(super) fn select_comparison_identity(
     } = read;
     let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
     let candidate = match &canonical {
-        MachineTerm::Variable(variable) => registered_load_term_for_variable(variable)
+        OldMachineTerm::Variable(variable) => registered_load_term_for_variable(variable)
             .filter(
-                |read| matches!(read, MachineTerm::MemoryLoad(_, address, kind) if address.as_ref() == original_pointer && *kind == original_kind),
+                |read| matches!(read, OldMachineTerm::MemoryLoad(_, address, kind) if address.as_ref() == original_pointer && *kind == original_kind),
             )
             .unwrap_or_else(|| bits.clone()),
-        MachineTerm::MemoryLoad(memory, pointer, kind) if pointer.as_ref() == original_pointer && *kind == original_kind => {
+        OldMachineTerm::MemoryLoad(memory, pointer, kind) if pointer.as_ref() == original_pointer && *kind == original_kind => {
             let held = memory
                 .memory()
                 .known_value(pointer)
                 .and_then(|value| crate::kernel::spec::program_value_bitvector_term(&value))
                 .and_then(|held| match held {
-                    MachineTerm::Variable(variable) => registered_load_term_for_variable(&variable),
-                    read @ MachineTerm::MemoryLoad(..) => Some(read),
+                    OldMachineTerm::Variable(variable) => registered_load_term_for_variable(&variable),
+                    read @ OldMachineTerm::MemoryLoad(..) => Some(read),
                     _ => None,
                 })
                 .filter(|held| {
-                    matches!(held, MachineTerm::MemoryLoad(_, at, held_kind)
+                    matches!(held, OldMachineTerm::MemoryLoad(_, at, held_kind)
                     if at.address() == pointer.address() && held_kind == kind)
                 });
             held.unwrap_or(canonical)
         }
         _ => bits.clone(),
     };
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = candidate else {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = candidate else {
         unreachable!("selected scalar read")
     };
     let recorded_bytes = narrow_bytes
@@ -140,7 +140,7 @@ pub(super) fn select_comparison_identity(
     )
     .unwrap_or_else(|| memory.into());
     (
-        ScalarReadComparisonIdentity(MachineTerm::read_named(version, pointer, kind)),
+        ScalarReadComparisonIdentity(OldMachineTerm::read_named(version, pointer, kind)),
         recorded_bytes,
     )
 }
@@ -152,7 +152,7 @@ pub(super) fn record_comparison_observation(
     origin: &ProgramPoint,
     observed_bytes: Option<u32>,
 ) {
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = identity.as_legacy_read() else {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = identity.as_legacy_read() else {
         unreachable!("selected scalar read identity");
     };
     // The identity is memory-named; place it where the read's own point is.

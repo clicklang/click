@@ -11,7 +11,7 @@ theorem adler_u16_observation(value: uint16) {
   close() using { 0 <= to_integer(value as uint32); to_integer(value as uint32) <= 65535; };
   }
   rewrite(to_integer(value), to_integer(value as uint32));
-  normalize();
+  close();
  }
 }
 

@@ -32,7 +32,7 @@ impl Carrier {
             matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
                     _,
                     _,
-                ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
+                ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::LessThan
                             | CompareRelation::LessEqual
@@ -48,55 +48,55 @@ impl Carrier {
         match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, _)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessThan,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessEqual,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::GreaterThan,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::GreaterEqual,
                         ..
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 Some(Self::UInt64)
             }
             condition_source_0 @ Proposition::ConditionIs(_, _)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::LessThan,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::LessEqual,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::GreaterThan,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::GreaterEqual,
                         ..
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 Some(Self::Int64)
             }
@@ -117,20 +117,18 @@ impl Carrier {
     pub(super) fn typed_literals(self, expression: &SyntaxTerm) -> SyntaxTerm {
         match expression {
             SyntaxTerm::IntegerLiteral(text) => {
-                let value = match self {
-                    Self::UInt64 => text
-                        .parse::<u64>()
-                        .ok()
-                        .map(|value| ProgramValue::UInt64(MachineTerm::uint64_constant(value))),
-                    Self::Int64 => text
-                        .parse::<i64>()
-                        .ok()
-                        .map(|value| ProgramValue::Int64(MachineTerm::int64_constant(value))),
-                    Self::UInt32 => text
-                        .parse::<u32>()
-                        .ok()
-                        .map(|value| ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
-                };
+                let value =
+                    match self {
+                        Self::UInt64 => text.parse::<u64>().ok().map(|value| {
+                            ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))
+                        }),
+                        Self::Int64 => text.parse::<i64>().ok().map(|value| {
+                            ProgramValue::Int64(OldMachineTerm::int64_constant(value))
+                        }),
+                        Self::UInt32 => text.parse::<u32>().ok().map(|value| {
+                            ProgramValue::UInt32(OldMachineTerm::uint32_constant(value))
+                        }),
+                    };
                 value
                     .map(|value| SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)))
                     .unwrap_or_else(|| expression.clone())

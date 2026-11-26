@@ -6,16 +6,18 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::proof::pure_theorems::PureTheoremContext;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn failed_integer_bridge_does_not_construct_unused_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
-        let value = MachineTerm::Variable(Variable(910_001));
+        let value = OldMachineTerm::Variable(Variable(910_001));
         let written = SyntaxTerm::ProgramExpression(ProgramExpression::Variable("x".into()));
         let mut facts = Vec::new();
         let mut surfaces = SurfacePropositionMap::default();
         for index in 0..size {
             let fact = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(value.clone()),
@@ -56,7 +58,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         let lowering = Proof::for_pure_goal(
             "unprovable bridge",
             &facts,
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
             &context,
             definitions,
             &theorems,
@@ -122,19 +124,21 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn disequality_refutation_work_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let (k, j, y) = (
-            MachineTerm::Variable(Variable(911_001)),
-            MachineTerm::Variable(Variable(911_002)),
-            MachineTerm::Variable(Variable(911_003)),
+            OldMachineTerm::Variable(Variable(911_001)),
+            OldMachineTerm::Variable(Variable(911_002)),
+            OldMachineTerm::Variable(Variable(911_003)),
         );
         let written =
             |name: &str| SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.into()));
         let mut surfaces = SurfacePropositionMap::default();
         let order = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(k.clone()),
@@ -150,7 +154,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
         // never reads.
         for index in 0..size {
             let fact = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(y.clone()),
@@ -192,7 +196,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
         let lowering = Proof::for_pure_goal(
             "disequality",
             &facts,
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
             &context,
             definitions,
             &theorems,
@@ -238,7 +242,7 @@ fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut root = KernelTermImport::default()
-                .machine(format, &MachineTerm::Variable(Variable(995454)));
+                .machine(format, &OldMachineTerm::Variable(Variable(995454)));
             let leaf = root.clone();
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
@@ -252,7 +256,7 @@ fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
                     .into()
             };
             let proposition = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(side(root), side(leaf)),
+                OldConditionTerm::IntegerEqual(side(root), side(leaf)),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
@@ -279,7 +283,7 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
     let mut samples = Vec::new();
     for depth in [4, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(Variable(995941));
+        let pointer = OldAddress::symbolic(Variable(995941));
         let before = SymbolicMemory::new();
         let after = before
             .clone()
@@ -307,7 +311,7 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
                 root = KernelTermImport::default().machine_call(format, &application);
             }
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
                     left: Box::new(root.machine_conversion_leaf().unwrap().clone()),

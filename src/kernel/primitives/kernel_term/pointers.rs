@@ -214,7 +214,7 @@ impl SharedPointer {
     pub(crate) fn import_produced(value: &OldPointer) -> Self {
         Self::import_addresses(value, SharedAddress::import_produced)
     }
-    fn import_addresses(value: &OldPointer, address: fn(&Address) -> SharedAddress) -> Self {
+    fn import_addresses(value: &OldPointer, address: fn(&OldAddress) -> SharedAddress) -> Self {
         Self::new(KernelPointer {
             address: address(&value.address),
             provenance: address(&value.provenance),
@@ -229,7 +229,7 @@ impl SharedPointer {
                             start: address(&bounds.start),
                             width: KernelTerm::retained_machine_operand(
                                 MachineIntegerType::Int32,
-                                MachineOperandView::Legacy(&bounds.width),
+                                MachineOperandView::Old(&bounds.width),
                             ),
                         }),
                         within: member.within.as_deref().map(address),
@@ -349,7 +349,7 @@ impl KernelTerm {
         // Read the retained address in place; no native copy is made.
         let null = pointer.pointer_payload().is_some_and(|value| {
             let address = value.node().address.node();
-            address.base.native_atom() == &Address::null().base
+            address.base.native_atom() == &OldAddress::null().base
                 && matches!(address.offset.node(), KernelAddressOffset::Constant(0))
         });
         let point = if null {
@@ -423,15 +423,15 @@ mod tests {
     pub(super) fn complete_source() -> OldPointer {
         let class = CAccessClass::Scalar(CScalarClass::Int);
         OldPointer {
-            address: Address::symbolic(Variable(1000001)),
-            provenance: Arc::new(Address::symbolic(Variable(1000002))),
+            address: OldAddress::symbolic(Variable(1000001)),
+            provenance: Arc::new(OldAddress::symbolic(Variable(1000002))),
             array: ArrayObject::from_parts(
                 true,
                 Some(SubobjectBounds {
-                    start: Address::symbolic(Variable(1000004)),
-                    width: MachineTerm::Variable(Variable(1000005)),
+                    start: OldAddress::symbolic(Variable(1000004)),
+                    width: OldMachineTerm::Variable(Variable(1000005)),
                 }),
-                Some(Arc::new(Address::symbolic(Variable(1000003)))),
+                Some(Arc::new(OldAddress::symbolic(Variable(1000003)))),
             ),
             program_type: ProgramType::VoidPointer,
             qualifiers: Some(Arc::new(PointerQualifiers {

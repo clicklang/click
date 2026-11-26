@@ -16,9 +16,9 @@ fn fold_laws_retain_cold_shared_endpoint_dags() {
                 );
             }
             let zero = if format == MachineIntegerType::Int32 {
-                MachineTerm::constant(0)
+                OldMachineTerm::constant(0)
             } else {
-                MachineTerm::uint64_constant(0)
+                OldMachineTerm::uint64_constant(0)
             };
             let start = endpoint(&zero);
             let end = start
@@ -32,7 +32,7 @@ fn fold_laws_retain_cold_shared_endpoint_dags() {
             let accumulator = Variable(1005102);
             let body = IntegerTerm::add(
                 IntegerTerm::Variable(accumulator),
-                IntegerTerm::from_machine(format, MachineTerm::Variable(item)).unwrap(),
+                IntegerTerm::from_machine(format, OldMachineTerm::Variable(item)).unwrap(),
             );
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

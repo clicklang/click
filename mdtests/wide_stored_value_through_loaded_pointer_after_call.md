@@ -15,6 +15,7 @@ void caller(struct Node *p, struct Node *q) {
 ```
 
 ```click
+import click::separation;
 verifying "flat.c";
 spec enum Tag { Here }
 resource tag(p: struct Node*) { field model: Tag; owns p->tag; fact model == Tag::Here; }
@@ -29,9 +30,25 @@ void caller(struct Node *p, struct Node *q) {
     step(); step(); step();
     have r->tag == 7;
     have r == q;
+    have q->tag == 7 by {
+        rewrite(q, r);
+        close();
+    }
+    have separate(before, memory(q->tag)) by close();
+    mark before_call;
     let {after: after} = step(helper, {before: before});
+    have contains(at(before_call, before), statement(2).footprint) by close();
+    apply(separation::contains_refl(memory(q->tag)));
+    apply(separation::separate_restrict(at(before_call, before), memory(q->tag), statement(2).footprint, memory(q->tag)));
+    have q->tag == at(before_call, q->tag) by {
+        preserve(memory(q->tag), statement(2));
+    }
     have r == q;
-    have r->tag == 7 by { normalize() using { r == q; }; }
+    have r->tag == 7 by {
+        rewrite(r, q);
+        rewrite(q->tag, at(before_call, q->tag));
+        close();
+    }
 }
 ```
 

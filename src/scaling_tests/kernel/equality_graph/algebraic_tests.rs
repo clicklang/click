@@ -64,6 +64,8 @@ fn algebraic_closure_lookup_does_not_scan_unrelated_models() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = model_type(
@@ -71,7 +73,7 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
         AlgebraicValueType::Program(ProgramType::Int32),
     );
     let (a, b) = (variable(&ty, 80), variable(&ty, 81));
-    let getter = |model| MachineTerm::ClickFunctionApplication {
+    let getter = |model| OldMachineTerm::ClickFunctionApplication {
         name: "pending".into(),
         arguments: vec![PureFunctionArgument::Algebraic(model)],
     };
@@ -80,20 +82,20 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
         let mut base = PureFactContext::new();
         for index in 0..size {
             base = base.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1000 + index)),
-                    MachineTerm::constant(7),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(1000 + index)),
+                    OldMachineTerm::constant(7),
                 ),
                 true,
             );
         }
         base = base
             .assume_condition(
-                ConditionTerm::equal(getter(a.clone()), MachineTerm::constant(1)),
+                OldConditionTerm::equal(getter(a.clone()), OldMachineTerm::constant(1)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(getter(b.clone()), MachineTerm::constant(0)),
+                OldConditionTerm::equal(getter(b.clone()), OldMachineTerm::constant(0)),
                 true,
             );
         let (child, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -168,8 +170,8 @@ fn constructor_class_joins_skip_ambient_constructor_classes() {
             crate::instrumentation::measure_deterministic_work(|| {
                 graph.add_algebraic_equality(&variable(&ty, 100), &variable(&ty, 101));
                 assert!(graph.are_int32_equal(
-                    &MachineTerm::Variable(Variable(10000)),
-                    &MachineTerm::Variable(Variable(10001)),
+                    &OldMachineTerm::Variable(Variable(10000)),
+                    &OldMachineTerm::Variable(Variable(10001)),
                 ));
             })
         });
@@ -202,8 +204,8 @@ fn constructor_class_chains_join_fields_in_linear_work() {
             }
         });
         assert!(graph.are_int32_equal(
-            &MachineTerm::Variable(Variable(10000)),
-            &MachineTerm::Variable(Variable(10000 + size - 1)),
+            &OldMachineTerm::Variable(Variable(10000)),
+            &OldMachineTerm::Variable(Variable(10000 + size - 1)),
         ));
         work
     });

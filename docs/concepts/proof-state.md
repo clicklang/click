@@ -51,12 +51,11 @@ about the current state. The rule is fixed and cheap:
   ownership (two owned resources are disjoint, including memory owned through
   a resource's footprint). The check does not search.
 - A fact about a cell the context cannot prove untouched is not lost, but it
-  remains a fact about the pre-step point. Relating it to the current state afterwards takes
-  an explicit `transport`, which may do more reasoning because that operation
-  names the relationship to establish.
+  remains a fact about the pre-step point. Use `have` to establish the
+  current fact, with a frame proof if the closer needs help.
 - Comparing two terms never does frame reasoning. Two load variables for
-  one cell on either side of an effect are equal only because a step or a
-  `transport` carried the fact across.
+  one cell on either side of an effect are equal when a step or a frame
+  proof established that equality.
 
 A logical read through an opaque pointer proved equal to an admitted
 footprint's address uses that footprint's representation, including constant

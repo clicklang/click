@@ -21,8 +21,8 @@
 // substructure through `Arc` without ever crossing a thread boundary.
 #![allow(clippy::arc_with_non_send_sync)]
 // Tests compiled only for nightly can share helpers with the fast gate.
-// The ordinary configurations still check for dead code.
-#![cfg_attr(all(test, feature = "fast-gate"), allow(dead_code))]
+// The ordinary configurations still check for dead code and unused imports.
+#![cfg_attr(all(test, feature = "fast-gate"), allow(dead_code, unused_imports))]
 
 // The verifier allocates and frees persistent-map nodes and terms at a high
 // rate; glibc malloc and free were about a fifth of all verifier time.

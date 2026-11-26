@@ -115,9 +115,9 @@ fn evaluated_sequence_keeps_the_existing_program_producer() {
 fn sequence_native_identity_order_hash_and_debug_are_unchanged() {
     use std::hash::{Hash, Hasher};
     let _session = VerificationSession::enter();
-    let word = MachineTerm::Variable(Variable(10993402));
+    let word = OldMachineTerm::Variable(Variable(10993402));
     let call = |argument| {
-        ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+        ProgramValue::UInt32(OldMachineTerm::ClickFunctionApplication {
             name: "sequence_input".into(),
             arguments: vec![argument],
         })
@@ -129,11 +129,11 @@ fn sequence_native_identity_order_hash_and_debug_are_unchanged() {
         call(PureFunctionArgument::SharedMachine(
             SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, word),
         )),
-        ProgramValue::Bool(MachineTerm::constant(2)),
-        ProgramValue::Float32(MachineTerm::uint32_constant(0x7fc00123)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+        ProgramValue::Bool(OldMachineTerm::constant(2)),
+        ProgramValue::Float32(OldMachineTerm::uint32_constant(0x7fc00123)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
         ProgramValue::typed_pointer(
-            Address::symbolic(Variable(10993403)),
+            OldAddress::symbolic(Variable(10993403)),
             ProgramType::Int32Pointer,
         ),
     ];
@@ -179,7 +179,7 @@ fn sequence_substitution_and_collection_keep_shared_producers() {
     let unchanged = crate::kernel::reasoning::substitute_bitvector_variable_in_term(
         &value,
         Variable(10993405),
-        &MachineTerm::constant(7),
+        &OldMachineTerm::constant(7),
     );
     let Term::Sequence(sequence) = unchanged else {
         panic!("sequence")
@@ -191,7 +191,7 @@ fn sequence_substitution_and_collection_keep_shared_producers() {
     let changed = crate::kernel::reasoning::substitute_bitvector_variable_in_term(
         &value,
         variable,
-        &MachineTerm::constant(7),
+        &OldMachineTerm::constant(7),
     );
     let Term::Sequence(sequence) = &changed else {
         panic!("sequence")
@@ -204,7 +204,7 @@ fn sequence_substitution_and_collection_keep_shared_producers() {
     let native = Term::Sequence(SequenceTerm {
         element_type: Some(ProgramType::UInt32),
         node: std::sync::Arc::new(SequenceTermNode::Literal(
-            vec![ProgramValue::UInt32(MachineTerm::Variable(variable))].into(),
+            vec![ProgramValue::UInt32(OldMachineTerm::Variable(variable))].into(),
         )),
     });
     assert_eq!(
@@ -212,7 +212,7 @@ fn sequence_substitution_and_collection_keep_shared_producers() {
         crate::kernel::reasoning::substitute_bitvector_variable_in_term(
             &native,
             variable,
-            &MachineTerm::constant(7)
+            &OldMachineTerm::constant(7)
         )
     );
 }

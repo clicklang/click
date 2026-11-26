@@ -2,16 +2,16 @@ use super::*;
 
 #[test]
 fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(8_991_700),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let range = MemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
     let facts = PureFactContext::new();
     for (quantity, readable) in [
-        (MachineTerm::constant(0), false),
-        (MachineTerm::Variable(Variable(8_991_701)), false),
-        (MachineTerm::constant(1), true),
+        (OldMachineTerm::constant(0), false),
+        (OldMachineTerm::Variable(Variable(8_991_701)), false),
+        (OldMachineTerm::constant(1), true),
     ] {
         let supplied = ResourceFact::own_quantity(Resource::Memory(range.clone()), quantity);
         let supply =
@@ -25,24 +25,24 @@ fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
 
 #[test]
 fn memory_waiter_requires_a_whole_range_supplier() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-adjacent".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let wide = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(2),
     ));
     let left = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let right = ResourceFact::view_memory(MemoryRange::new(
         base,
-        MachineTerm::constant(1),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(1),
+        OldMachineTerm::constant(2),
     ));
     let assumptions = PureFactContext::new();
     let mut dependencies = vec![Vec::new()];
@@ -102,9 +102,9 @@ fn memory_waiter_requires_a_whole_range_supplier() {
 /// `MemoryBlock` index would produce `size * size` visits here.
 #[test]
 fn same_block_disjoint_waiters_use_interval_candidates() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-disjoint".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let samples = [4_usize, 8, 16, 32]
             .into_iter()
@@ -115,8 +115,8 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
                     let start = (index * 2) as u32;
                     let dependency = ResourceFact::view_memory(MemoryRange::new(
                         base.clone(),
-                        MachineTerm::constant(start),
-                        MachineTerm::constant(start + 1),
+                        OldMachineTerm::constant(start),
+                        OldMachineTerm::constant(start + 1),
                     ));
                     resource_clause_register_waiters(
                         index,
@@ -130,8 +130,8 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
                     let start = (index * 2) as u32;
                     let supplied = ResourceFact::view_memory(MemoryRange::new(
                         base.clone(),
-                        MachineTerm::constant(start),
-                        MachineTerm::constant(start + 1),
+                        OldMachineTerm::constant(start),
+                        OldMachineTerm::constant(start + 1),
                     ));
                     let candidates = waiters.candidates_for_supplied(&supplied);
                     candidate_visits += candidates.len();
@@ -154,23 +154,23 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
 #[test]
 fn comparable_constant_bases_share_interval_space() {
     let block = AddressBase::Concrete("resource-clause-base-aware".to_string());
-    let dependency_base = Address {
+    let dependency_base = OldAddress {
         base: block.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let supplied_base = Address {
+    let supplied_base = OldAddress {
         base: block,
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         dependency_base,
-        MachineTerm::constant(2),
-        MachineTerm::constant(3),
+        OldMachineTerm::constant(2),
+        OldMachineTerm::constant(3),
     ));
     let supplied = ResourceFact::view_memory(MemoryRange::new(
         supplied_base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let mut dependencies = vec![Vec::new()];
     let mut waiters = ResourceClauseWaiterIndex::default();
@@ -183,20 +183,20 @@ fn comparable_constant_bases_share_interval_space() {
 
 #[test]
 fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-byte-space".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base.clone(),
-        MachineTerm::constant(8),
-        MachineTerm::constant(12),
+        OldMachineTerm::constant(8),
+        OldMachineTerm::constant(12),
         1,
     ));
     let supplied = ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base,
-        MachineTerm::constant(2),
-        MachineTerm::constant(3),
+        OldMachineTerm::constant(2),
+        OldMachineTerm::constant(3),
         4,
     ));
     let mut dependencies = vec![Vec::new()];
@@ -210,19 +210,19 @@ fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
 
 #[test]
 fn symbolic_memory_waiters_keep_conservative_block_fallback() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-symbolic".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::Variable(Variable(9_901)),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::Variable(Variable(9_901)),
     ));
     let supplied = ResourceFact::view_memory(MemoryRange::new(
         base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let mut dependencies = vec![Vec::new()];
     let mut waiters = ResourceClauseWaiterIndex::default();
@@ -235,19 +235,19 @@ fn symbolic_memory_waiters_keep_conservative_block_fallback() {
 
 #[test]
 fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-fallback-lifetime".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let symbolic_supplied = ResourceFact::view_memory(MemoryRange::new(
         base,
-        MachineTerm::constant(0),
-        MachineTerm::Variable(Variable(9_902)),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::Variable(Variable(9_902)),
     ));
     let mut dependencies = vec![Vec::new()];
     let mut waiters = ResourceClauseWaiterIndex::default();
@@ -270,7 +270,7 @@ fn retrying_a_composite_clause_keeps_the_point_of_its_nested_bound_read() {
 
     let _session = crate::kernel::VerificationSession::enter();
     let slot = SymbolicMemory::global_pointer("retry_bound");
-    let target = Address::symbolic(Variable(8_991_709));
+    let target = OldAddress::symbolic(Variable(8_991_709));
     let ty = ProgramType::Int32Pointer;
     let definitions = [
         CompositeResourceDefinition::new(
@@ -337,7 +337,7 @@ fn retrying_a_composite_clause_keeps_the_point_of_its_nested_bound_read() {
             fact.is_view() && fact.memory_range().is_some_and(|range| {
                 range.base() == &target
                     && matches!(
-                        range.end(), MachineTerm::MemoryLoad(at, address, LoadKind::Int32)
+                        range.end(), OldMachineTerm::MemoryLoad(at, address, LoadKind::Int32)
                             if **address == slot && at.read_version_id() == state.program_point_id()
                     )
             })

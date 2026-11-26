@@ -1419,37 +1419,6 @@ fn resource_opening_selection_stays_in_search() {
 }
 
 #[test]
-fn live_transport_planning_stays_in_search() {
-    let path = "src/surface/proof/proof_object/execution_statements.rs";
-    for source in [
-        "impl Proof { fn apply_planned_fact_transport(&self) {} }",
-        "impl Proof { fn apply_planned_fact_transport_inner(&self) {} }",
-        "impl Proof { fn transport(&self) { ProofSearch::apply_planned_fact_transport(self, source, target); } }",
-    ] {
-        let file = syn::parse_file(source).unwrap();
-        assert!(
-            proof_search_boundary::check(path, &file).is_err(),
-            "{source}"
-        );
-    }
-}
-
-#[test]
-fn outcome_transport_planning_stays_in_search() {
-    let path = "src/surface/proof/proof_object/execution_statements.rs";
-    for source in [
-        "impl Proof { fn apply_planned_outcome_fact_transport(&self) {} }",
-        "impl Proof { fn transport(&self) { ProofSearch::apply_planned_outcome_fact_transport(self, source, target); } }",
-    ] {
-        let file = syn::parse_file(source).unwrap();
-        assert!(
-            proof_search_boundary::check(path, &file).is_err(),
-            "{source}"
-        );
-    }
-}
-
-#[test]
 fn smart_arithmetic_dispatch_is_separate_from_operation_search() {
     let path = "src/surface/proof/driver/steps.rs";
     let source = "impl ProofDriver { fn apply_step_without_outcome_wrapping(&self) { ProofSearch::apply_arithmetic_using(self.proof, premises); ProofSearch::try_wide_arithmetic_using(self.proof, premises); } }";

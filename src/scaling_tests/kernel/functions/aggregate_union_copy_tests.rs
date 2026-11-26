@@ -10,9 +10,9 @@ use super::*;
 fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
     for count in [4u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Address {
+        let source = OldAddress {
             base: "aggregate-argument-source".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let layout = AggregateLayout::new(
             count * 4,
@@ -73,13 +73,13 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
     let mut samples = Vec::new();
     for count in [4u32, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Address {
+        let source = OldAddress {
             base: "local:aggregate-array-source".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let destination = Address {
+        let destination = OldAddress {
             base: "local:aggregate-array-target".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let layout = AggregateLayout::new(
             count * 4,
@@ -123,7 +123,7 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         // An unplaced store invalidates the compact source run and its
         // concrete last-lane override. The immutable copy is disjoint,
         // and every forgotten source byte remains initialized.
-        let unplaced = source.offset_by_elements(MachineTerm::Variable(Variable(925_002)), 4);
+        let unplaced = source.offset_by_elements(OldMachineTerm::Variable(Variable(925_002)), 4);
         let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
             changed.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
         });

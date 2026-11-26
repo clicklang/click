@@ -193,9 +193,9 @@ mod tests {
             variant: "Arm".into(),
             fields: vec![
                 AlgebraicValue::Program(ProgramValue::Pointer(pointer)),
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::add(
-                    MachineTerm::Variable(Variable(999671)),
-                    MachineTerm::constant(1),
+                AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::add(
+                    OldMachineTerm::Variable(Variable(999671)),
+                    OldMachineTerm::constant(1),
                 ))),
             ],
         };
@@ -206,7 +206,7 @@ mod tests {
     fn common_algebraic_equality_preserves_native_identity_and_exact_payloads() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999670)),
+            OldAddress::symbolic(Variable(999670)),
             ProgramType::Int32Pointer,
         );
         let a = constructor(pointer.clone());
@@ -217,8 +217,8 @@ mod tests {
         let exports = KernelTermExport::machine_export_count();
         assert!(ar.algebraic_syntax_equal(&br));
         let conditions = [
-            ConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
-            ConditionTerm::AlgebraicEqual(Box::new(b.clone()), Box::new(a.clone())),
+            OldConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
+            OldConditionTerm::AlgebraicEqual(Box::new(b.clone()), Box::new(a.clone())),
         ];
         let roots = conditions
             .each_ref()
@@ -257,8 +257,8 @@ mod tests {
         let a = KernelMatch::test_scrutinee(vec![]);
         let mut b = a.clone();
         b.node = AlgebraicTermNode::Variable(Variable(999673));
-        let condition = ConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone()));
-        let reversed = ConditionTerm::AlgebraicEqual(Box::new(b), Box::new(a));
+        let condition = OldConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone()));
+        let reversed = OldConditionTerm::AlgebraicEqual(Box::new(b), Box::new(a));
         assert_ne!(condition, reversed);
         let root = KernelTermImport::default().condition(&condition);
         let reverse = KernelTermImport::default().condition(&reversed);
@@ -275,16 +275,16 @@ mod tests {
     fn common_algebraic_equality_observation_matches_native_guard_keys() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999672)),
+            OldAddress::symbolic(Variable(999672)),
             ProgramType::Int32Pointer,
         );
-        let native = ConditionTerm::AlgebraicEqual(
+        let native = OldConditionTerm::AlgebraicEqual(
             Box::new(constructor(pointer.clone())),
             Box::new(constructor(pointer)),
         );
         let condition = KernelTermImport::default().condition(&native);
         let format = MachineIntegerType::Int32;
-        let branches = [MachineTerm::constant(1), MachineTerm::constant(2)];
+        let branches = [OldMachineTerm::constant(1), OldMachineTerm::constant(2)];
         let common = KernelTerm::machine_if_shared(
             format,
             [
@@ -297,7 +297,7 @@ mod tests {
         let observed = SharedMachineIntegerTerm::observe_shared(format, common).unwrap();
         let native = SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::If {
+            OldMachineTerm::If {
                 condition: Box::new(native),
                 then_term: Box::new(branches[0].clone()),
                 else_term: Box::new(branches[1].clone()),

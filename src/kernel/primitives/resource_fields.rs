@@ -101,7 +101,7 @@ impl StoredResourceField {
     fn native(&self) -> ResourceFieldValue<'_> {
         match self {
             Self::Input(value) => value.into(),
-            Self::Program(value) => ResourceFieldValue::Program(value.native_compat()),
+            Self::Program(value) => ResourceFieldValue::Program(value.old_form()),
             Self::Integer(root) => {
                 ResourceFieldValue::Integer(root.integer_native_compat().expect("Integer field"))
             }
@@ -457,10 +457,10 @@ mod tests {
     #[test]
     fn field_views_preserve_native_identity_order_hash_and_debug() {
         let _session = VerificationSession::enter();
-        let word = MachineTerm::Variable(Variable(10993302));
+        let word = OldMachineTerm::Variable(Variable(10993302));
         let call = |arg| {
             AlgebraicValue::Program(ProgramValue::UInt32(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "field_input".into(),
                     arguments: vec![arg],
                 },
@@ -473,19 +473,19 @@ mod tests {
             call(PureFunctionArgument::SharedMachine(
                 SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, word),
             )),
-            AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::Constant {
+            AlgebraicValue::Program(ProgramValue::Bool(OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 2,
             })),
-            AlgebraicValue::Program(ProgramValue::Float32(MachineTerm::uint32_constant(
+            AlgebraicValue::Program(ProgramValue::Float32(OldMachineTerm::uint32_constant(
                 0x7fc00123,
             ))),
-            AlgebraicValue::Program(ProgramValue::Float64(MachineTerm::uint64_constant(
+            AlgebraicValue::Program(ProgramValue::Float64(OldMachineTerm::uint64_constant(
                 0x8000000000000000,
             ))),
             AlgebraicValue::Integer(IntegerTerm::Variable(Variable(10993303))),
             AlgebraicValue::Program(ProgramValue::typed_pointer(
-                Address::symbolic(Variable(10993304)),
+                OldAddress::symbolic(Variable(10993304)),
                 ProgramType::Int32Pointer,
             )),
         ];
@@ -504,9 +504,9 @@ mod tests {
                 assert_eq!(fields.cmp(&stored), native.cmp(&other));
             }
         }
-        let value = AlgebraicValue::Program(ProgramValue::UInt32(MachineTerm::Variable(Variable(
-            10993305,
-        ))));
+        let value = AlgebraicValue::Program(ProgramValue::UInt32(OldMachineTerm::Variable(
+            Variable(10993305),
+        )));
         let fields = ResourceFieldValues::from(vec![value.clone()]);
         let minted = ResourceFieldValues::from_minted(vec![value]);
         assert_eq!(fields, minted);
@@ -517,7 +517,7 @@ mod tests {
     fn field_projection_retains_the_existing_program_producer() {
         let _session = VerificationSession::enter();
         let fields = ResourceFieldValues::from_minted(vec![AlgebraicValue::Program(
-            ProgramValue::UInt32(MachineTerm::Variable(Variable(10993306))),
+            ProgramValue::UInt32(OldMachineTerm::Variable(Variable(10993306))),
         )]);
         let root = fields.program_value(0).unwrap().shared().unwrap().clone();
         let value = instance(fields, ProgramType::UInt32);
@@ -572,7 +572,7 @@ mod tests {
             };
             let variable = Variable(10993307);
             let fields = ResourceFieldValues::from_minted(vec![AlgebraicValue::Program(wrap(
-                MachineTerm::Variable(variable),
+                OldMachineTerm::Variable(variable),
             ))]);
             let root = fields.program_value(0).unwrap().shared().unwrap().clone();
             let proposition = Proposition::ResourceViewable {
@@ -580,13 +580,13 @@ mod tests {
                 resource: Box::new(Resource::Instance(instance(fields, ty))),
             };
             for (from, expected) in [
-                (Variable(10993308), wrap(MachineTerm::Variable(variable))),
-                (variable, wrap(MachineTerm::constant(7))),
+                (Variable(10993308), wrap(OldMachineTerm::Variable(variable))),
+                (variable, wrap(OldMachineTerm::constant(7))),
             ] {
                 let mapped = crate::kernel::substitute_int32_variable_in_proposition(
                     &proposition,
                     from,
-                    MachineTerm::constant(7),
+                    OldMachineTerm::constant(7),
                 );
                 let Proposition::ResourceViewable { resource, .. } = mapped else {
                     unreachable!()

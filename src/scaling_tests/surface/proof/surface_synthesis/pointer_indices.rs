@@ -26,13 +26,13 @@ fn pointer_surface_index_readers_retain_shared_dags() {
             let value =
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root.clone())
                     .unwrap();
-            let base = Address {
+            let base = OldAddress {
                 base: AddressBase::Concrete("surface-index-dag".into()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: base.base.clone(),
-                offset: AddressOffset::Int32Scaled {
+                offset: OldAddressOffset::Int32Scaled {
                     value,
                     byte_width: 4,
                 },

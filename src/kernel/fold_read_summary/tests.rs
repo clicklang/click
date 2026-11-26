@@ -6,6 +6,11 @@ use super::*;
 use crate::kernel::VerificationSession;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+fn enter_fold_read_test() -> VerificationSession {
+    clear_fold_read_summaries();
+    VerificationSession::enter()
+}
+
 const ACCUMULATOR: Variable = Variable(3_200_000);
 const ITEM: Variable = Variable(3_200_001);
 
@@ -14,11 +19,11 @@ fn name(text: &str) -> SpecExpression {
 }
 
 fn int(value: u32) -> SpecExpression {
-    SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value)))
+    SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(value)))
 }
 
 fn item() -> SpecExpression {
-    SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(ITEM)))
+    SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(ITEM)))
 }
 
 fn read_at(elements: SpecExpression) -> SpecExpression {
@@ -328,9 +333,9 @@ fn a_second_array_or_a_non_int32_parameter_declines() {
 }
 
 #[test]
-fn a_changed_body_under_one_name_poisons_the_session_and_a_new_session_rechecks() {
+fn a_changed_body_under_one_name_poisons_the_registry_until_reset() {
     {
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         register_fold_read_definition(definition(unmarked_body()));
         assert!(registered_fold_read_summary("unmarked").is_ok());
         // Re-registering the same body is idempotent.
@@ -349,9 +354,9 @@ fn a_changed_body_under_one_name_poisons_the_session_and_a_new_session_rechecks(
         );
     }
     {
-        // A fresh session forgets the old body, and a body that reads outside
+        // A fresh registry forgets the old body, and a body that reads outside
         // its interval gets no summary under the same name.
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         assert_eq!(
             registered_fold_read_summary("unmarked"),
             Err(FoldReadUnavailable::NotRegistered)
@@ -376,41 +381,41 @@ fn a_changed_body_under_one_name_poisons_the_session_and_a_new_session_rechecks(
 // Framing
 // ---------------------------------------------------------------------------
 
-fn bv(variable: u32) -> MachineTerm {
-    MachineTerm::Variable(Variable(u64::from(variable)))
+fn bv(variable: u32) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(u64::from(variable)))
 }
 
 /// An `int32` array parameter's base, spelled as the kernel spells one.
-fn parameter_base(variable: u32) -> Address {
-    Address {
+fn parameter_base(variable: u32) -> OldAddress {
+    OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(bv(variable), 4),
+        offset: OldAddressOffset::scale_int32(bv(variable), 4),
     }
 }
 
-fn element(base: &Address, index: MachineTerm) -> Address {
-    Address {
+fn element(base: &OldAddress, index: OldMachineTerm) -> OldAddress {
+    OldAddress {
         base: base.base.clone(),
-        offset: AddressOffset::add(base.offset.clone(), AddressOffset::scale_int32(index, 4)),
+        offset: OldAddressOffset::add(base.offset.clone(), OldAddressOffset::scale_int32(index, 4)),
     }
 }
 
-fn byte_offset(pointer: &Address, bytes: i64) -> Address {
-    Address {
+fn byte_offset(pointer: &OldAddress, bytes: i64) -> OldAddress {
+    OldAddress {
         base: pointer.base.clone(),
-        offset: AddressOffset::add(pointer.offset.clone(), AddressOffset::Constant(bytes)),
+        offset: OldAddressOffset::add(pointer.offset.clone(), OldAddressOffset::Constant(bytes)),
     }
 }
 
 fn one() -> ProgramValue {
-    ProgramValue::Int32(MachineTerm::constant(1))
+    ProgramValue::Int32(OldMachineTerm::constant(1))
 }
 
 fn application(
     memory: &SymbolicMemory,
-    base: &Address,
-    start: MachineTerm,
-    end: MachineTerm,
+    base: &OldAddress,
+    start: OldMachineTerm,
+    end: OldMachineTerm,
 ) -> SharedPureApplication {
     SharedPureApplication::intern(
         "unmarked".into(),
@@ -429,12 +434,12 @@ fn application(
     )
 }
 
-fn fact(condition: ConditionTerm) -> Proposition {
+fn fact(condition: OldConditionTerm) -> Proposition {
     Proposition::condition_is(condition, true)
 }
 
-fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
-    fact(ConditionTerm::Compare {
+fn le(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
+    fact(OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),
@@ -442,8 +447,8 @@ fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
     })
 }
 
-fn lt(left: MachineTerm, right: MachineTerm) -> Proposition {
-    fact(ConditionTerm::Compare {
+fn lt(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
+    fact(OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
         left: Box::new(left),
@@ -486,13 +491,13 @@ fn is_store_refusal(result: &Result<usize, FoldFrameRefusal>) -> bool {
 
 #[test]
 fn a_store_at_the_exact_upper_endpoint_misses_the_prefix() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
-    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
-    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
+    let old = application(&before, &v, OldMachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, OldMachineTerm::constant(0), bv(HI));
     assert_eq!(frame(&old, &new, &[]), Ok(1));
     // Symmetric: the rule proves an equality.
     assert_eq!(frame(&new, &old, &[]), Ok(1));
@@ -500,12 +505,12 @@ fn a_store_at_the_exact_upper_endpoint_misses_the_prefix() {
 
 #[test]
 fn a_store_inside_the_range_is_refused() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
     // `v[hi - 1]`, the last cell of `[lo, hi)`.
-    let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
+    let last = OldMachineTerm::subtract(bv(HI), OldMachineTerm::constant(1));
     let after = before.clone().store(element(&v, last.clone()), one());
     let old = application(&before, &v, bv(LO), bv(HI));
     let new = application(&after, &v, bv(LO), bv(HI));
@@ -525,7 +530,7 @@ fn a_store_inside_the_range_is_refused() {
 
 #[test]
 fn a_store_below_a_nonzero_lower_endpoint_needs_its_order_fact() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
@@ -543,13 +548,13 @@ fn a_store_below_a_nonzero_lower_endpoint_needs_its_order_fact() {
 
 #[test]
 fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
     let old = application(&before, &v, bv(LO), bv(HI));
-    let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
-    let wide = ProgramValue::Int64(MachineTerm::int64_constant(0));
+    let last = OldMachineTerm::subtract(bv(HI), OldMachineTerm::constant(1));
+    let wide = ProgramValue::Int64(OldMachineTerm::int64_constant(0));
     // An eight-byte store at `v + 4*(hi - 1)` covers the last cell and the
     // endpoint cell. Nothing may separate it, even with `hi - 1 >= lo`.
     let after = before
@@ -578,7 +583,7 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     let new = application(&after, &v, bv(LO), bv(HI));
     assert!(is_store_refusal(&frame(&old, &new, &[lt(bv(J), bv(LO))])));
     // A two-byte store in the top half of the cell below the start misses it.
-    let below = MachineTerm::subtract(bv(LO), MachineTerm::constant(1));
+    let below = OldMachineTerm::subtract(bv(LO), OldMachineTerm::constant(1));
     let after = before.clone().store(
         byte_offset(&element(&v, below.clone()), 2),
         crate::kernel::int16(7),
@@ -589,30 +594,30 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
 
 #[test]
 fn an_alias_needs_a_stated_separation_with_checked_membership() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let a = parameter_base(V);
     let b = parameter_base(W);
     let before = SymbolicMemory::new();
     let after = before.clone().store(element(&b, bv(J)), one());
-    let old = application(&before, &a, MachineTerm::constant(0), bv(N));
-    let new = application(&after, &a, MachineTerm::constant(0), bv(N));
+    let old = application(&before, &a, OldMachineTerm::constant(0), bv(N));
+    let new = application(&after, &a, OldMachineTerm::constant(0), bv(N));
     // Distinct parameter names establish nothing: `a` and `b` may be one
     // object.
     assert!(is_store_refusal(&frame(&old, &new, &[])));
     let separate = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
             bv(N),
         ))),
         right: Box::new(Resource::Memory(MemoryRange::new(
             b.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
             bv(N),
         ))),
     };
-    let in_b = [le(MachineTerm::constant(0), bv(J)), lt(bv(J), bv(N))];
+    let in_b = [le(OldMachineTerm::constant(0), bv(J)), lt(bv(J), bv(N))];
     let mut facts = vec![separate.clone()];
     facts.extend(in_b.iter().cloned());
     assert_eq!(frame(&old, &new, &facts), Ok(1));
@@ -623,27 +628,32 @@ fn an_alias_needs_a_stated_separation_with_checked_membership() {
         std::slice::from_ref(&separate)
     )));
     // And the interval inside the other: `[0, n + 1)` is not inside `[0, n)`.
-    let longer = MachineTerm::add(bv(N), MachineTerm::constant(1));
-    let old_longer = application(&before, &a, MachineTerm::constant(0), longer.clone());
-    let new_longer = application(&after, &a, MachineTerm::constant(0), longer);
+    let longer = OldMachineTerm::add(bv(N), OldMachineTerm::constant(1));
+    let old_longer = application(&before, &a, OldMachineTerm::constant(0), longer.clone());
+    let new_longer = application(&after, &a, OldMachineTerm::constant(0), longer);
     assert!(is_store_refusal(&frame(&old_longer, &new_longer, &facts)));
 }
 
 #[test]
 fn changed_endpoints_or_base_pointers_are_not_framed() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
-    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
-    let longer = MachineTerm::add(bv(HI), MachineTerm::constant(1));
-    let changed_end = application(&after, &v, MachineTerm::constant(0), longer);
+    let old = application(&before, &v, OldMachineTerm::constant(0), bv(HI));
+    let longer = OldMachineTerm::add(bv(HI), OldMachineTerm::constant(1));
+    let changed_end = application(&after, &v, OldMachineTerm::constant(0), longer);
     assert!(matches!(
         frame(&old, &changed_end, &[]),
         Err(FoldFrameRefusal::ApplicationsDiffer { .. })
     ));
-    let changed_base = application(&after, &parameter_base(W), MachineTerm::constant(0), bv(HI));
+    let changed_base = application(
+        &after,
+        &parameter_base(W),
+        OldMachineTerm::constant(0),
+        bv(HI),
+    );
     assert!(matches!(
         frame(&old, &changed_base, &[]),
         Err(FoldFrameRefusal::ApplicationsDiffer { .. })
@@ -652,7 +662,7 @@ fn changed_endpoints_or_base_pointers_are_not_framed() {
 
 #[test]
 fn an_empty_fold_crosses_any_store_only_when_emptiness_is_checked() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
@@ -668,26 +678,26 @@ fn an_empty_fold_crosses_any_store_only_when_emptiness_is_checked() {
 
 #[test]
 fn a_lifetime_end_of_the_array_is_never_crossed() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let block = AddressBase::from("local:f:buffer");
-    let base = Address {
+    let base = OldAddress {
         base: block.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let declared = SymbolicMemory::new().with_block(block.clone(), 16);
     let ended = declared.without_local_block(&block);
     let old = application(
         &declared,
         &base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(0),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(0),
     );
     let new = application(
         &ended,
         &base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(0),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(0),
     );
     // Even an empty fold keeps the conservative lifetime rule.
     assert!(matches!(
@@ -704,25 +714,25 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
     let old = application(
         &both,
         &base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(2),
     );
     let new = application(
         &other_ended,
         &base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(2),
     );
     assert_eq!(frame(&old, &new, &[]), Ok(1));
 }
 
 #[test]
 fn a_call_is_framed_only_by_its_checked_write_set() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
-    let havoc = |start: MachineTerm, end: MachineTerm| {
+    let havoc = |start: OldMachineTerm, end: OldMachineTerm| {
         before.clone().with_call_memory_havoc(
             Variable(2_000),
             &[MemoryRange::new(v.clone(), start, end)],
@@ -730,10 +740,10 @@ fn a_call_is_framed_only_by_its_checked_write_set() {
             None,
         )
     };
-    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
+    let old = application(&before, &v, OldMachineTerm::constant(0), bv(HI));
     // The callee may write `[hi, n)`: outside the prefix, once `hi <= n`.
     let after = havoc(bv(HI), bv(N));
-    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, OldMachineTerm::constant(0), bv(HI));
     assert_eq!(frame(&old, &new, &[le(bv(HI), bv(N))]), Ok(1));
     // A reversed write set is not read as empty.
     assert!(matches!(
@@ -742,10 +752,10 @@ fn a_call_is_framed_only_by_its_checked_write_set() {
     ));
     // `[hi - 1, n)` writes the last cell.
     let after = havoc(
-        MachineTerm::subtract(bv(HI), MachineTerm::constant(1)),
+        OldMachineTerm::subtract(bv(HI), OldMachineTerm::constant(1)),
         bv(N),
     );
-    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, OldMachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &new, &[le(bv(HI), bv(N))]),
         Err(FoldFrameRefusal::StepNotShownOutside { step: "call", .. })
@@ -757,24 +767,24 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     let v = parameter_base(V);
     // A state built in an earlier session carries no derivation here.
     let foreign = {
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         SymbolicMemory::new().store(
             element(&v, bv(HI)),
-            ProgramValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::Int32(OldMachineTerm::constant(2)),
         )
     };
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     let base = SymbolicMemory::new();
     let left = base.clone().store(element(&v, bv(HI)), one());
     let right = base.clone().store(
-        Address {
+        OldAddress {
             base: AddressBase::from("local:f:other"),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         one(),
     );
-    let old = application(&left, &v, MachineTerm::constant(0), bv(HI));
-    let new = application(&right, &v, MachineTerm::constant(0), bv(HI));
+    let old = application(&left, &v, OldMachineTerm::constant(0), bv(HI));
+    let new = application(&right, &v, OldMachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &new, &[]),
         Err(FoldFrameRefusal::NoSummary {
@@ -789,15 +799,15 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     // A sibling that wrote inside the prefix does not.
     let inside = base
         .clone()
-        .store(element(&v, MachineTerm::constant(0)), one());
-    let inside = application(&inside, &v, MachineTerm::constant(0), bv(HI));
+        .store(element(&v, OldMachineTerm::constant(0)), one());
+    let inside = application(&inside, &v, OldMachineTerm::constant(0), bv(HI));
     assert!(is_store_refusal(&frame(
         &old,
         &inside,
-        &[lt(MachineTerm::constant(0), bv(HI))]
+        &[lt(OldMachineTerm::constant(0), bv(HI))]
     )));
     // A state with no recorded history reaches no common state.
-    let foreign = application(&foreign, &v, MachineTerm::constant(0), bv(HI));
+    let foreign = application(&foreign, &v, OldMachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &foreign, &[]),
         Err(FoldFrameRefusal::UnrelatedStates { .. })
@@ -806,7 +816,7 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
 
 #[test]
 fn a_declined_definition_frames_nothing_even_across_an_unrelated_store() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     // `peek` reads `v[hi]` in its body: exactly the cell a store at the
     // endpoint writes. Its support is not narrowed to the fold's range.
     let peek = fold(
@@ -819,8 +829,8 @@ fn a_declined_definition_frames_nothing_even_across_an_unrelated_store() {
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
-    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
-    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
+    let old = application(&before, &v, OldMachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, OldMachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &new, &[]),
         Err(FoldFrameRefusal::NoSummary {
@@ -832,7 +842,7 @@ fn a_declined_definition_frames_nothing_even_across_an_unrelated_store() {
 
 #[test]
 fn a_transport_rewrites_only_fold_application_states() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new();
@@ -840,17 +850,17 @@ fn a_transport_rewrites_only_fold_application_states() {
     let old = IntegerTerm::PureFunctionApplication(application(
         &before,
         &v,
-        MachineTerm::constant(0),
+        OldMachineTerm::constant(0),
         bv(HI),
     ));
     let new = IntegerTerm::PureFunctionApplication(application(
         &after,
         &v,
-        MachineTerm::constant(0),
+        OldMachineTerm::constant(0),
         bv(HI),
     ));
     let equals = |term: &IntegerTerm, value: i64| {
-        fact(ConditionTerm::IntegerEqual(
+        fact(OldConditionTerm::IntegerEqual(
             term.clone().into(),
             IntegerTerm::constant_i64(value).into(),
         ))
@@ -870,11 +880,11 @@ fn a_transport_rewrites_only_fold_application_states() {
         Err(FoldFrameRefusal::NothingToFrame)
     );
     // The equality form: `old == old` carries to `old == new`.
-    let reflexive = fact(ConditionTerm::IntegerEqual(
+    let reflexive = fact(OldConditionTerm::IntegerEqual(
         old.clone().into(),
         old.clone().into(),
     ));
-    let bridged = fact(ConditionTerm::IntegerEqual(
+    let bridged = fact(OldConditionTerm::IntegerEqual(
         old.clone().into(),
         new.clone().into(),
     ));
@@ -903,17 +913,17 @@ fn assert_linear(axis: &str, samples: &[(usize, usize)]) {
 
 #[test]
 fn an_offset_pointer_is_read_by_its_exact_byte_offset() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     // `w = v + 1`, so `w[i - 2]` is `v + 4 + 4*(i - 2)`: the last cell of
     // `[0, i)`. The offset is read exactly, constant included.
     let w = byte_offset(&v, 4);
-    let index = MachineTerm::subtract(bv(HI), MachineTerm::constant(2));
+    let index = OldMachineTerm::subtract(bv(HI), OldMachineTerm::constant(2));
     let before = SymbolicMemory::new();
     let after = before.clone().store(element(&w, index.clone()), one());
-    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
-    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
+    let old = application(&before, &v, OldMachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, OldMachineTerm::constant(0), bv(HI));
     // With the index at or past the end, the write starts past the range.
     assert_eq!(frame(&old, &new, &[le(bv(HI), index.clone())]), Ok(1));
     // Without a fact the write is not placed at all.
@@ -967,7 +977,7 @@ fn byte_fold_summary_checks_the_read_type_and_stride() {
 
 #[test]
 fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     let mut parameters = parameters();
     parameters[0].1 = ProgramType::UInt8Pointer;
     let read = SpecExpression::MemoryLoad {
@@ -990,9 +1000,9 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             SpecIntegerExpression::FromMachine(Box::new(read)),
         ),
     ));
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(bv(V), 1),
+        offset: OldAddressOffset::scale_int32(bv(V), 1),
     };
     let at = |memory: &SymbolicMemory, element_type| {
         SharedPureApplication::intern(
@@ -1003,8 +1013,8 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
                     pointer: ProgramValue::typed_pointer(base.clone(), ProgramType::UInt8Pointer),
                     element_type,
                 },
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(0))),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(2))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::constant(2))),
             ],
         )
     };
@@ -1069,11 +1079,11 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
 // Native write sets and separation ranges must not enter signed fold arithmetic.
 #[test]
 fn wide_ranges_refuse_signed_fold_framing_rules() {
-    let base = Address::symbolic(Variable(984_100));
+    let base = OldAddress::symbolic(Variable(984_100));
     let wide = MemoryRange::new_wide(
         base.clone(),
-        MachineTerm::uint64_constant(0),
-        MachineTerm::uint64_constant(1 << 33),
+        OldMachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(1 << 33),
         4,
     );
     let narrow = MemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
@@ -1099,7 +1109,7 @@ mod scaling_tests {
 
 #[test]
 fn fold_transport_crosses_unconditional_cache_forgetting_but_not_an_overlapping_store() {
-    let _session = VerificationSession::enter();
+    let _session = enter_fold_read_test();
     register_unmarked();
     let v = parameter_base(V);
     let before = SymbolicMemory::new().with_seeded_cells(
@@ -1132,8 +1142,11 @@ fn fold_transport_crosses_unconditional_cache_forgetting_but_not_an_overlapping_
 #[test]
 fn shared_fold_indices_require_exact_bounds_without_export() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
-    let _session = VerificationSession::enter();
-    let native = MachineTerm::add(MachineTerm::Variable(ITEM), MachineTerm::Variable(ITEM));
+    let _session = enter_fold_read_test();
+    let native = OldMachineTerm::add(
+        OldMachineTerm::Variable(ITEM),
+        OldMachineTerm::Variable(ITEM),
+    );
     let x = KernelTerm::variable(KernelType::Program(ProgramType::Int32), ITEM);
     let root = KernelTerm::machine_binary_shared(
         MachineIntegerType::Int32,
@@ -1141,20 +1154,26 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         [x.clone(), x],
     );
     let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
-    let base = Address {
+    let base = OldAddress {
         base: "retained_fold_indices".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointer = base.offset_by_shared_elements(index, 4);
     let interval = FoldReadInterval {
         memory: SymbolicMemory::new(),
         base,
-        start: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(0)),
-        end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(4)),
+        start: SharedMachineIntegerTerm::index(
+            MachineIntegerType::Int32,
+            OldMachineTerm::constant(0),
+        ),
+        end: SharedMachineIntegerTerm::index(
+            MachineIntegerType::Int32,
+            OldMachineTerm::constant(4),
+        ),
         element_width: 4,
     };
     let bound = Proposition::condition_is(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(4), native),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(4), native),
         true,
     );
     let empty = PureFactContext::new();

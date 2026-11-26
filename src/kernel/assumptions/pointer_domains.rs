@@ -26,9 +26,9 @@ pub(in crate::kernel) enum PointerDomainSource<'a> {
     Retained {
         bounds: Option<&'a SubobjectBounds>,
         known: bool,
-        opaque: Option<&'a Address>,
+        opaque: Option<&'a OldAddress>,
     },
-    BoundsOwner(&'a Address),
+    BoundsOwner(&'a OldAddress),
 }
 
 impl<'a> From<&'a OldPointer> for PointerDomainSource<'a> {
@@ -84,7 +84,7 @@ impl PureFactContext {
     /// whether this pointer may reach them are separate questions.
     fn access_provenance_matches_span(
         &self,
-        required: (&Address, Option<&Address>),
+        required: (&OldAddress, Option<&OldAddress>),
         available: &MemoryRange,
         fits: impl FnOnce(&SubobjectBounds) -> bool,
     ) -> bool {
@@ -115,8 +115,8 @@ impl PureFactContext {
     /// the bytes being accessed, not the width or carrier of the holding.
     pub(in crate::kernel) fn access_provenance_matches_bytes(
         &self,
-        required: (&Address, Option<&Address>),
-        pointer: &Address,
+        required: (&OldAddress, Option<&OldAddress>),
+        pointer: &OldAddress,
         bytes: u32,
         available: &MemoryRange,
     ) -> bool {
@@ -141,7 +141,7 @@ impl PureFactContext {
     /// Match a clause's complete requested range to a supplier.
     pub(in crate::kernel) fn access_provenance_matches_range(
         &self,
-        required: (&Address, Option<&Address>),
+        required: (&OldAddress, Option<&OldAddress>),
         range: &MemoryRange,
         available: &MemoryRange,
     ) -> bool {
@@ -192,7 +192,7 @@ impl PureFactContext {
     #[cfg(test)]
     pub(in crate::kernel) fn access_provenance_match(
         &self,
-        required: (&Address, Option<&Address>),
+        required: (&OldAddress, Option<&OldAddress>),
         range: &MemoryRange,
     ) -> bool {
         self.access_provenance_matches_range(required, range, range)
@@ -204,10 +204,13 @@ mod tests {
     use super::*;
 
     fn pointer(id: u64) -> OldPointer {
-        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+        OldPointer::new(
+            OldAddress::symbolic(Variable(id)),
+            ProgramType::Int32Pointer,
+        )
     }
     fn equal(facts: PureFactContext, a: &OldPointer, b: &OldPointer) -> PureFactContext {
-        facts.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
+        facts.assume_condition(OldConditionTerm::pointer_equal(a.clone(), b.clone()), true)
     }
     fn member(parent: &OldPointer) -> OldPointer {
         parent
@@ -274,7 +277,7 @@ mod tests {
         let selected = member(&parent);
         let returned = pointer(997_012);
         let numeric = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(returned.address().clone(), selected.address().clone()),
+            OldConditionTerm::address_equal(returned.address().clone(), selected.address().clone()),
             true,
         );
         assert_eq!(numeric.pointer_domain(&returned), PointerDomain::Unknown);
@@ -292,12 +295,12 @@ mod tests {
     fn pointer_domain_reads_only_admitted_metadata_for_a_stored_pointer() {
         let _session = crate::kernel::VerificationSession::enter();
         let selected = member(&pointer(997_041));
-        let cell = Address::symbolic(Variable(997_042));
+        let cell = OldAddress::symbolic(Variable(997_042));
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
         let read = OldPointer::from_read(
-            Address::loaded_value(&memory, &cell),
+            OldAddress::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,
@@ -395,15 +398,15 @@ mod tests {
         let facts = equal(PureFactContext::new(), &returned, &selected);
         let held = MemoryRange::from_pointer_value_wide(
             &selected,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1),
             4,
         );
         assert!(facts.access_provenance_match(returned.access_provenance(), &held));
         let outside = MemoryRange::from_pointer_value_wide(
             &selected,
-            MachineTerm::uint64_constant(1 << 32),
-            MachineTerm::uint64_constant((1 << 32) + 1),
+            OldMachineTerm::uint64_constant(1 << 32),
+            OldMachineTerm::uint64_constant((1 << 32) + 1),
             4,
         );
         assert!(!facts.access_provenance_match(returned.access_provenance(), &outside));

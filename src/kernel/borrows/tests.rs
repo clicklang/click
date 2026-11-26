@@ -1,5 +1,7 @@
 use super::*;
-use crate::kernel::{Address, AddressOffset, ConditionTerm, Resource, ResourceFact, Variable};
+use crate::kernel::{
+    OldAddress, OldAddressOffset, OldConditionTerm, Resource, ResourceFact, Variable,
+};
 
 fn owned(name: &str) -> ResourceFact {
     ResourceFact::own(Resource::Token {
@@ -36,7 +38,7 @@ fn participants() -> (BorrowLedger, BorrowParticipantId, BorrowParticipantId) {
 
 fn opaque_memory_borrow_fixture() -> (ResourceFact, CheckedResourceFact) {
     let pointer = crate::kernel::OldPointer::new(
-        Address::symbolic(Variable(9_819_001)),
+        OldAddress::symbolic(Variable(9_819_001)),
         crate::kernel::ProgramType::Int32Pointer,
     );
     let owner =
@@ -184,24 +186,24 @@ fn borrowed_contract_input_is_read_only_and_cannot_be_closed_or_recovered() {
 
 fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Variable(Variable(variable)),
+            offset: crate::kernel::OldAddressOffset::Variable(Variable(variable)),
         },
-        MachineTerm::constant(start),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(start),
+        OldMachineTerm::constant(end),
         width,
     )
 }
 
 fn local_job_range() -> MemoryRange {
     MemoryRange::new_with_element_width(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "local:job".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
         4,
     )
 }
@@ -392,12 +394,12 @@ fn symbolic_and_concrete_borrows_fail_closed_across_the_index_boundary() {
 /// A concrete block range at one offset, at an explicit element width.
 fn buffer_range(start: u32, end: u32, width: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
-        MachineTerm::constant(start),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(start),
+        OldMachineTerm::constant(end),
         width,
     )
 }
@@ -956,9 +958,9 @@ fn ending_a_reborrow_of_a_byteless_composite_borrow_keeps_the_barrier_armed() {
 
 fn mutex_owner(epoch: Option<u64>) -> ResourceFact {
     ResourceFact::own(Resource::MutexLive(crate::kernel::MutexIdentity {
-        mutex: crate::kernel::Address {
+        mutex: crate::kernel::OldAddress {
             base: "mutex".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         epoch,
     }))
@@ -995,7 +997,7 @@ fn assumed_use_initializations_cannot_be_exchanged_between_sibling_roots() {
     let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let support = backing(&owned("same principal input"));
-    let mutex = Address::symbolic(Variable(901));
+    let mutex = OldAddress::symbolic(Variable(901));
     let (left, left_input) = ledger
         .borrowed_mutex_use_input(holder, support, mutex.clone())
         .unwrap();
@@ -1250,11 +1252,11 @@ fn mutex_contract_input_return_requires_unsplit_unit_ownership() {
         ResourceFact::View(fact.resource().clone()),
         ResourceFact::Own(
             fact.resource().clone(),
-            Box::new(MachineTerm::constant(0).into()),
+            Box::new(OldMachineTerm::constant(0).into()),
         ),
         ResourceFact::Own(
             fact.resource().clone(),
-            Box::new(MachineTerm::constant(2).into()),
+            Box::new(OldMachineTerm::constant(2).into()),
         ),
     ] {
         assert!(
@@ -1314,7 +1316,7 @@ fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
     let mut evidence = BorrowTransitionEvidence::BorrowedMutexUseRoot {
         holder,
         support: backing(&owned("input")),
-        mutex: Address::symbolic(Variable(4321)),
+        mutex: OldAddress::symbolic(Variable(4321)),
         protected: None,
         initialization: super::super::mutexes::MutexInitializationId::fresh().unwrap(),
         scope: BorrowScopeId {
@@ -1346,7 +1348,7 @@ fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
             .borrowed_mutex_use_input(
                 foreign,
                 backing(&owned("input")),
-                Address::symbolic(Variable(4321))
+                OldAddress::symbolic(Variable(4321))
             )
             .is_err()
     );
@@ -2849,12 +2851,12 @@ pub(super) fn checked(fact: ResourceFact) -> CheckedResourceFact {
 
 pub(super) fn memory(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = crate::kernel::MemoryRange::new(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
-        crate::kernel::MachineTerm::constant(start),
-        crate::kernel::MachineTerm::constant(end),
+        crate::kernel::OldMachineTerm::constant(start),
+        crate::kernel::OldMachineTerm::constant(end),
     );
     if own {
         ResourceFact::own_memory(range)
@@ -3237,7 +3239,7 @@ fn composite_planner_keeps_other_counted_token_units_usable() {
         name: "unit".into(),
         arguments: Vec::new().into(),
     };
-    let owned_units = ResourceFact::own_quantity(token.clone(), MachineTerm::constant(3));
+    let owned_units = ResourceFact::own_quantity(token.clone(), OldMachineTerm::constant(3));
     let view = ResourceFact::View(token);
     let caller = ResourceContext::new().unchecked_with_fact(owned_units.clone());
     let plan = plan_stable_view_transfer(
@@ -3255,7 +3257,7 @@ fn composite_planner_keeps_other_counted_token_units_usable() {
                 name: "unit".into(),
                 arguments: Vec::new().into(),
             },
-            MachineTerm::constant(2),
+            OldMachineTerm::constant(2),
         ),
         &assumptions,
     ));
@@ -3622,11 +3624,11 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
     );
 }
 
-fn symbolic_memory(start: MachineTerm, end: MachineTerm, own: bool) -> ResourceFact {
+fn symbolic_memory(start: OldMachineTerm, end: OldMachineTerm, own: bool) -> ResourceFact {
     let range = crate::kernel::MemoryRange::new(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         start,
         end,
@@ -3818,7 +3820,7 @@ fn joint_planner_empty_views_need_no_backing_or_borrow() {
     let assumptions = PureFactContext::new();
     let resources = ResourceContext::new();
     let (ledger, caller, callee) = participants();
-    let endpoint = MachineTerm::Variable(Variable(71_003));
+    let endpoint = OldMachineTerm::Variable(Variable(71_003));
     for view in [
         memory(0, 0, false),
         symbolic_memory(endpoint.clone(), endpoint, false),
@@ -3860,11 +3862,11 @@ fn joint_planner_proven_empty_owners_need_no_supplier_or_effect() {
     let assumptions = PureFactContext::new();
     let resources = ResourceContext::new();
     let (ledger, caller, callee) = participants();
-    let end = MachineTerm::Variable(Variable(71_004));
+    let end = OldMachineTerm::Variable(Variable(71_004));
     let range = symbolic_memory(0u32.into(), end.clone(), true);
     let empty = assumptions
         .clone()
-        .assume_condition(ConditionTerm::equal(end, 0u32.into()), true);
+        .assume_condition(OldConditionTerm::equal(end, 0u32.into()), true);
     for role in [ResourceTransferRole::Borrow, ResourceTransferRole::Consume] {
         let mut requirement = checked(range.clone());
         requirement.role = role;
@@ -3899,8 +3901,8 @@ fn joint_planner_refuses_an_uncovered_symbolic_view_without_consuming_state() {
     let (ledger, caller, callee) = participants();
     let before = ledger.clone();
     let symbolic = symbolic_memory(
-        MachineTerm::Variable(Variable(71_001)),
-        MachineTerm::constant(4),
+        OldMachineTerm::Variable(Variable(71_001)),
+        OldMachineTerm::constant(4),
         false,
     );
     // Nothing bounds the symbolic start, so the concrete owner does not
@@ -3922,11 +3924,11 @@ fn joint_planner_refuses_an_uncovered_symbolic_view_without_consuming_state() {
 #[test]
 fn joint_planner_backs_a_covered_symbolic_view_with_its_whole_owner() {
     let assumptions = PureFactContext::new();
-    let end = MachineTerm::Variable(Variable(71_002));
-    let owner = symbolic_memory(MachineTerm::constant(0), end.clone(), true);
+    let end = OldMachineTerm::Variable(Variable(71_002));
+    let owner = symbolic_memory(OldMachineTerm::constant(0), end.clone(), true);
     let caller_resources = ResourceContext::new().unchecked_with_fact(owner.clone());
     let (ledger, caller, callee) = participants();
-    let view = symbolic_memory(MachineTerm::constant(0), end, false);
+    let view = symbolic_memory(OldMachineTerm::constant(0), end, false);
     let plan = plan_stable_view_transfer(
         &caller_resources,
         &[checked(view.clone())],
@@ -3957,12 +3959,12 @@ fn joint_planner_backs_a_covered_symbolic_view_with_its_whole_owner() {
 #[test]
 fn joint_planner_shares_one_borrow_between_two_covered_symbolic_views() {
     let assumptions = PureFactContext::new();
-    let end = MachineTerm::Variable(Variable(71_003));
-    let owner = symbolic_memory(MachineTerm::constant(0), end.clone(), true);
+    let end = OldMachineTerm::Variable(Variable(71_003));
+    let owner = symbolic_memory(OldMachineTerm::constant(0), end.clone(), true);
     let caller_resources = ResourceContext::new().unchecked_with_fact(owner);
     let (ledger, caller, callee) = participants();
-    let first = symbolic_memory(MachineTerm::constant(0), end.clone(), false);
-    let second = symbolic_memory(MachineTerm::constant(0), end, false);
+    let first = symbolic_memory(OldMachineTerm::constant(0), end.clone(), false);
+    let second = symbolic_memory(OldMachineTerm::constant(0), end, false);
     let plan = plan_stable_view_transfer(
         &caller_resources,
         &[checked(first), checked(second)],
@@ -4340,26 +4342,26 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
 
 #[test]
 fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
-    let base = crate::kernel::Address::symbolic(Variable(72_000));
-    let alias = crate::kernel::Address::symbolic(Variable(72_001));
-    let offset = MachineTerm::Variable(Variable(72_002));
+    let base = crate::kernel::OldAddress::symbolic(Variable(72_000));
+    let alias = crate::kernel::OldAddress::symbolic(Variable(72_001));
+    let offset = OldMachineTerm::Variable(Variable(72_002));
     let empty = PureFactContext::new();
     let assumptions = empty
         .clone()
         .assume_condition(
-            crate::kernel::ConditionTerm::address_equal(
+            crate::kernel::OldConditionTerm::address_equal(
                 alias.clone(),
                 base.offset_by_elements(offset.clone(), 1),
             ),
             true,
         )
         .assume_condition(
-            crate::kernel::ConditionTerm::signed_less_equal(0u32.into(), offset.clone()),
+            crate::kernel::OldConditionTerm::signed_less_equal(0u32.into(), offset.clone()),
             true,
         )
         .assume_condition(
-            crate::kernel::ConditionTerm::signed_less_equal(
-                MachineTerm::add(offset, 4u32.into()),
+            crate::kernel::OldConditionTerm::signed_less_equal(
+                OldMachineTerm::add(offset, 4u32.into()),
                 16u32.into(),
             ),
             true,
@@ -4554,12 +4556,12 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
     for same_block in [false, true] {
         let pointer = |id| {
             if same_block {
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Variable(Variable(id)),
+                    offset: OldAddressOffset::Variable(Variable(id)),
                 }
             } else {
-                Address::symbolic(Variable(id))
+                OldAddress::symbolic(Variable(id))
             }
         };
         let owned_base = pointer(10_001);
@@ -4574,13 +4576,13 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
         let mut work = Vec::new();
         for aliases in [4, 16, 64] {
             let mut facts = PureFactContext::new().assume_condition(
-                ConditionTerm::address_equal(viewed_base.clone(), owned_base.offset_by_bytes(8)),
+                OldConditionTerm::address_equal(viewed_base.clone(), owned_base.offset_by_bytes(8)),
                 true,
             );
             for i in 0..aliases {
                 for (base, id) in [(&owned_base, 11_000 + i), (&viewed_base, 12_000 + i)] {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(base.clone(), pointer(id)),
+                        OldConditionTerm::address_equal(base.clone(), pointer(id)),
                         true,
                     );
                 }
@@ -4620,24 +4622,24 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
 #[test]
 fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     let (ledger, owner, reader) = participants();
-    let protected_base = Address {
+    let protected_base = OldAddress {
         base: AddressBase::Symbolic(Variable(702)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let protected = ResourceFact::own_memory(MemoryRange::new(
         protected_base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     ));
     let opening = lend_test(&ledger, owner, reader, protected);
     let ledger = ledger.apply(&opening.transition).unwrap();
 
-    let query_base = Address {
+    let query_base = OldAddress {
         base: AddressBase::Symbolic(Variable(703)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
+        OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4647,8 +4649,8 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     );
     let query = MemoryRange::new(
         query_base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     );
 
     assert_eq!(
@@ -4667,25 +4669,25 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
 #[test]
 fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
     let (ledger, owner, reader) = participants();
-    let protected_base = Address {
+    let protected_base = OldAddress {
         base: AddressBase::Symbolic(Variable(704)),
-        offset: AddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)),
     };
     let protected = MemoryRange::new_with_element_width(
         protected_base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
         4,
     );
     let opening = lend_test(&ledger, owner, reader, ResourceFact::own_memory(protected));
     let ledger = ledger.apply(&opening.transition).unwrap();
 
-    let query_base = Address {
+    let query_base = OldAddress {
         base: AddressBase::Symbolic(Variable(705)),
-        offset: AddressOffset::Variable(Variable(701)),
+        offset: OldAddressOffset::Variable(Variable(701)),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
+        OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4695,8 +4697,8 @@ fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
     );
     let query = MemoryRange::new_with_element_width(
         query_base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
         4,
     );
 
@@ -4858,12 +4860,12 @@ fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
         );
     }
     let original = memory(0, 32, false);
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(991_123)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(
+        OldConditionTerm::address_equal(
             alias.clone(),
             original.memory_range().unwrap().base().clone(),
         ),
@@ -4966,7 +4968,7 @@ fn equal_returned_composite_occurrences_keep_independent_holds() {
 #[test]
 fn a_failed_selected_return_permission_does_not_retry_a_wider_description() {
     let (ledger, owner, reader) = participants();
-    let p = Address::symbolic(Variable(8_916_000));
+    let p = OldAddress::symbolic(Variable(8_916_000));
     let view = |start: u32, end: u32| {
         ResourceFact::view_memory(MemoryRange::new(p.clone(), start.into(), end.into()))
     };

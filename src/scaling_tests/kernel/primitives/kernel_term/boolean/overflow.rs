@@ -29,7 +29,7 @@ fn overflow_conditions_reuse_shared_numeric_dags() {
                 crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                     &source,
                     Variable(999902),
-                    &MachineTerm::constant(1)
+                    &OldMachineTerm::constant(1)
                 ),
                 Some(source.clone())
             );
@@ -37,7 +37,7 @@ fn overflow_conditions_reuse_shared_numeric_dags() {
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &nested,
                     Variable(999902),
-                    &Address::null()
+                    &OldAddress::null()
                 ),
                 Some(nested)
             );

@@ -1,9 +1,9 @@
 use super::*;
 
-fn local_pointer() -> Address {
-    Address {
+fn local_pointer() -> OldAddress {
+    OldAddress {
         base: AddressBase::Concrete("local:caller:x".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
@@ -26,12 +26,12 @@ fn uninitialized_cell_spec() -> ResourceSpec {
     )
 }
 
-fn caller_state(pointer: &Address) -> ExecutionState {
+fn caller_state(pointer: &OldAddress) -> ExecutionState {
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
         Resource::Memory(MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         )),
     ));
     ExecutionState::new()
@@ -43,7 +43,7 @@ fn caller_state(pointer: &Address) -> ExecutionState {
 fn apply(
     function: ProgramFunction,
     state: &ExecutionState,
-    pointer: &Address,
+    pointer: &OldAddress,
 ) -> Vec<FunctionPath> {
     let environment =
         ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
@@ -131,22 +131,26 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
 fn aliased_byte_output_fixture(
     size: u32,
     initialized_output: bool,
-) -> (ExecutionState, ProgramFunction, PureFactContext, Address) {
+) -> (ExecutionState, ProgramFunction, PureFactContext, OldAddress) {
     let word = SymbolicMemory::local_pointer("output-word");
-    let alias = Address::symbolic(Variable(987_000));
+    let alias = OldAddress::symbolic(Variable(987_000));
     let mut memory =
         SymbolicMemory::new().with_declared_scalar_block(word.base.clone(), 4, ProgramType::UInt32);
     let mut assumptions = PureFactContext::new();
     let mut previous = alias.clone();
     for i in 0..size {
-        let next = Address::symbolic(Variable(987_001 + u64::from(i)));
-        assumptions = assumptions
-            .assume_condition(ConditionTerm::address_equal(previous, next.clone()), true);
+        let next = OldAddress::symbolic(Variable(987_001 + u64::from(i)));
+        assumptions = assumptions.assume_condition(
+            OldConditionTerm::address_equal(previous, next.clone()),
+            true,
+        );
         previous = next;
         memory = memory.with_block(format!("unrelated-output-{i}"), 4);
     }
-    assumptions =
-        assumptions.assume_condition(ConditionTerm::address_equal(previous, word.clone()), true);
+    assumptions = assumptions.assume_condition(
+        OldConditionTerm::address_equal(previous, word.clone()),
+        true,
+    );
     let segment = MemorySegment::new(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(0),
@@ -188,18 +192,21 @@ fn byte_output_initializes_the_concrete_storage_held_through_an_alias() {
         let mut budget = ExecutionBudget::new();
         budget.install_program_byte_order(ByteOrder::Little);
         let mut post_state = state.clone();
-        initialize_produced_memory(
+        let (_, words) = initialize_produced_memory(
             &state,
             &state,
             function.contract_interface(),
             &mut post_state,
             &assumptions,
-            &mut facts,
             &mut budget,
             false,
         )
         .unwrap()
         .unwrap();
+        // The call's exit takes the staged initialization; the produced
+        // words' equations are made there.
+        post_state.complete_staged_memory();
+        produced_word_equations(&post_state, &words, &mut facts, &budget);
         assert_eq!(
             post_state.memory().has_initialized_bytes_at(&word, 4),
             initialized

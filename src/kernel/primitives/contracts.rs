@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
 impl ProgramParameter {
@@ -2489,8 +2489,8 @@ impl MemoryRange {
         };
         let mut range = Self::new_with_element_width(
             base.address().clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(0),
             element_width,
         )
         .with_pointer_carrier(base);
@@ -2504,7 +2504,7 @@ impl MemoryRange {
         (&self.start_bound, &self.end_bound)
     }
 
-    pub fn new(base: Address, start: MachineTerm, end: MachineTerm) -> Self {
+    pub fn new(base: OldAddress, start: OldMachineTerm, end: OldMachineTerm) -> Self {
         Self::new_with_element_width(base, start, end, 4)
     }
 
@@ -2514,9 +2514,9 @@ impl MemoryRange {
     /// int32-only kernel callers. New ranges produced from typed C input
     /// should use this constructor instead.
     pub(crate) fn new_with_element_width(
-        base: Address,
-        start: MachineTerm,
-        end: MachineTerm,
+        base: OldAddress,
+        start: OldMachineTerm,
+        end: OldMachineTerm,
         element_width: u32,
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
@@ -2567,7 +2567,7 @@ impl MemoryRange {
     /// The object and field this range is exactly, when it is all the bytes
     /// of one field of a symbolic layout: at `object + offsetof(L, f)`,
     /// spanning `f`'s extent, in bytes or in whole elements.
-    pub(crate) fn symbolic_field(&self) -> Option<(Address, super::SymbolicLayoutName, u32)> {
+    pub(crate) fn symbolic_field(&self) -> Option<(OldAddress, super::SymbolicLayoutName, u32)> {
         let (rest, layout, field) =
             super::SymbolicLayoutName::field_displacement(&self.base.offset)?;
         let extent = layout.field_extent(field);
@@ -2592,9 +2592,9 @@ impl MemoryRange {
         };
         exact.then(|| {
             (
-                Address {
+                OldAddress {
                     base: self.base.base.clone(),
-                    offset: rest.cloned().unwrap_or(AddressOffset::Constant(0)),
+                    offset: rest.cloned().unwrap_or(OldAddressOffset::constant(0)),
                 },
                 layout,
                 field,
@@ -2606,8 +2606,8 @@ impl MemoryRange {
     /// whichever address spelling the resource algebra subsequently selects.
     pub(crate) fn from_pointer_value(
         value: &OldPointer,
-        start: MachineTerm,
-        end: MachineTerm,
+        start: OldMachineTerm,
+        end: OldMachineTerm,
         element_width: u32,
     ) -> Self {
         Self::new_with_element_width(value.address().clone(), start, end, element_width)
@@ -2616,8 +2616,8 @@ impl MemoryRange {
 
     pub(crate) fn from_pointer_value_wide(
         value: &OldPointer,
-        start: MachineTerm,
-        end: MachineTerm,
+        start: OldMachineTerm,
+        end: OldMachineTerm,
         element_width: u32,
     ) -> Self {
         Self::new_wide(value.address().clone(), start, end, element_width)
@@ -2654,7 +2654,7 @@ impl MemoryRange {
         self
     }
 
-    pub(in crate::kernel) fn carrier_owner(&self) -> Option<&std::sync::Arc<Address>> {
+    pub(in crate::kernel) fn carrier_owner(&self) -> Option<&std::sync::Arc<OldAddress>> {
         self.carrier.owner()
     }
 
@@ -2668,7 +2668,7 @@ impl MemoryRange {
 
     pub(in crate::kernel) fn with_bounds_owner(
         mut self,
-        origin: Option<std::sync::Arc<Address>>,
+        origin: Option<std::sync::Arc<OldAddress>>,
         known: bool,
     ) -> Self {
         self.carrier = ArrayObject::from_parts(known, None, origin);
@@ -2677,7 +2677,7 @@ impl MemoryRange {
 
     pub(in crate::kernel) fn with_provenance(
         mut self,
-        provenance: std::sync::Arc<Address>,
+        provenance: std::sync::Arc<OldAddress>,
     ) -> Self {
         self.provenance = provenance;
         self
@@ -2696,7 +2696,7 @@ impl MemoryRange {
         self
     }
 
-    pub(in crate::kernel) fn access_provenance(&self) -> (&Address, Option<&Address>) {
+    pub(in crate::kernel) fn access_provenance(&self) -> (&OldAddress, Option<&OldAddress>) {
         (
             &self.provenance,
             match &self.carrier {
@@ -2708,7 +2708,7 @@ impl MemoryRange {
 
     /// Retained identity metadata for diagnostic rendering only. Reading this
     /// view performs no inference, normalization, or proof-state traversal.
-    pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Address, Option<&Address>, bool) {
+    pub(crate) fn diagnostic_pointer_metadata(&self) -> (&OldAddress, Option<&OldAddress>, bool) {
         (
             &self.provenance,
             self.carrier.owner().map(|owner| &**owner),
@@ -2746,20 +2746,20 @@ impl MemoryRange {
                 self.start_bound.as_const().is_none() || self.end_bound.as_const().is_none()
             }
             RangeIndexKind::UInt64 => {
-                self.start_bound.native_compat().uint64_as_const().is_none()
-                    || self.end_bound.native_compat().uint64_as_const().is_none()
+                self.start_bound.old_form().uint64_as_const().is_none()
+                    || self.end_bound.old_form().uint64_as_const().is_none()
             }
         }
     }
 
     /// The address of the range's first element, in its own index kind.
-    pub(crate) fn start_pointer(&self) -> Address {
+    pub(crate) fn start_pointer(&self) -> OldAddress {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
-                .offset_by_elements(self.start_bound.native_compat().clone(), self.element_width),
+                .offset_by_elements(self.start_bound.old_form().clone(), self.element_width),
             RangeIndexKind::UInt64 => self.base.offset_by_typed_elements(
-                self.start_bound.native_compat().clone(),
+                self.start_bound.old_form().clone(),
                 self.element_width,
                 true,
                 true,
@@ -2768,13 +2768,13 @@ impl MemoryRange {
     }
 
     /// The address one past the range's last element, in its own kind.
-    pub(crate) fn end_pointer(&self) -> Address {
+    pub(crate) fn end_pointer(&self) -> OldAddress {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
-                .offset_by_elements(self.end_bound.native_compat().clone(), self.element_width),
+                .offset_by_elements(self.end_bound.old_form().clone(), self.element_width),
             RangeIndexKind::UInt64 => self.base.offset_by_typed_elements(
-                self.end_bound.native_compat().clone(),
+                self.end_bound.old_form().clone(),
                 self.element_width,
                 true,
                 true,
@@ -2784,13 +2784,9 @@ impl MemoryRange {
 
     /// The bounds as signed 32-bit indices, or nothing for a wide range: for
     /// a reader that answers "unknown" where it cannot read the bounds.
-    pub(crate) fn int32_bounds(&self) -> Option<(&MachineTerm, &MachineTerm)> {
-        (self.kind == RangeIndexKind::Int32).then(|| {
-            (
-                self.start_bound.native_compat(),
-                self.end_bound.native_compat(),
-            )
-        })
+    pub(crate) fn int32_bounds(&self) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
+        (self.kind == RangeIndexKind::Int32)
+            .then(|| (self.start_bound.old_form(), self.end_bound.old_form()))
     }
 
     /// That this range's memory is live in `memory`. An `Int32` range
@@ -2822,16 +2818,16 @@ impl MemoryRange {
                 format,
                 if wide {
                     wide_loadable_byte_count(
-                        MachineTerm::uint64_subtract(
-                            end.native_compat().clone(),
-                            start.native_compat().clone(),
+                        OldMachineTerm::uint64_subtract(
+                            end.old_form().clone(),
+                            start.old_form().clone(),
                         ),
                         self.element_width,
                     )
                 } else {
                     memory_range_byte_count(
-                        start.native_compat().clone(),
-                        end.native_compat().clone(),
+                        start.old_form().clone(),
+                        end.old_form().clone(),
                         self.element_width,
                     )
                 },
@@ -2847,7 +2843,7 @@ impl MemoryRange {
             if matches!(b, Some(uint64_constant!(0))) {
                 root(left)
             } else if matches!((left.variable(), right.variable()), (Some(a), Some(b)) if a == b) {
-                root(MachineOperandView::Legacy(&MachineTerm::uint64_constant(0)))
+                root(MachineOperandView::Old(&OldMachineTerm::uint64_constant(0)))
             } else if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Add, [inner, added])) =
                 left.binary()
                 && let (Some(uint64_constant!(a)), Some(uint64_constant!(b))) =
@@ -2856,7 +2852,7 @@ impl MemoryRange {
             {
                 root(inner)
             } else if let (Some(uint64_constant!(a)), Some(uint64_constant!(b))) = (a, b) {
-                root(MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                root(MachineOperandView::Old(&OldMachineTerm::uint64_constant(
                     constant_u64(a).wrapping_sub(constant_u64(b)),
                 )))
             } else {
@@ -2871,7 +2867,7 @@ impl MemoryRange {
                 if let (Some(bits32_constant!(a)), Some(bits32_constant!(b))) =
                     (left.literal(), right.literal())
                 {
-                    break root(MachineOperandView::Legacy(&MachineTerm::constant(
+                    break root(MachineOperandView::Old(&OldMachineTerm::constant(
                         constant_u32(a).wrapping_sub(constant_u32(b)),
                     )));
                 }
@@ -2879,7 +2875,7 @@ impl MemoryRange {
                     break root(left);
                 }
                 if crate::kernel::shared_machine_syntax_equal(&root(left), &root(right)) {
-                    break root(MachineOperandView::Legacy(&MachineTerm::constant(0)));
+                    break root(MachineOperandView::Old(&OldMachineTerm::constant(0)));
                 }
                 if let (
                     Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [a, x])),
@@ -2903,19 +2899,19 @@ impl MemoryRange {
         } else if !wide
             && let Some(bits32_constant!(a)) = MachineOperandView::Shared(&count).literal()
         {
-            root(MachineOperandView::Legacy(&MachineTerm::constant(
+            root(MachineOperandView::Old(&OldMachineTerm::constant(
                 constant_u32(a).wrapping_mul(self.element_width),
             )))
         } else {
             let width = if wide {
-                MachineTerm::uint64_constant(u64::from(self.element_width))
+                OldMachineTerm::uint64_constant(u64::from(self.element_width))
             } else {
-                MachineTerm::constant(self.element_width)
+                OldMachineTerm::constant(self.element_width)
             };
             KernelTerm::machine_binary_shared(
                 format,
                 MachineBinaryOp::Multiply,
-                [count, root(MachineOperandView::Legacy(&width))],
+                [count, root(MachineOperandView::Old(&width))],
             )
         };
         StoredMachineTerm::from_value(ExecutionValue::Shared(result)).expect("machine count")
@@ -2924,21 +2920,14 @@ impl MemoryRange {
     /// The bound terms themselves, in either kind: for a traversal that
     /// reads their structure (the variables in them, a substitution into
     /// them) and never the numbers they denote.
-    pub(crate) fn bound_terms(&self) -> (&MachineTerm, &MachineTerm) {
-        (
-            self.start_bound.native_compat(),
-            self.end_bound.native_compat(),
-        )
+    pub(crate) fn bound_terms(&self) -> (&OldMachineTerm, &OldMachineTerm) {
+        (self.start_bound.old_form(), self.end_bound.old_form())
     }
 
     /// The bounds of a wide range, which no signed 32-bit reader may take.
-    pub(crate) fn wide_bounds(&self) -> Option<(&MachineTerm, &MachineTerm)> {
-        (self.kind == RangeIndexKind::UInt64).then(|| {
-            (
-                self.start_bound.native_compat(),
-                self.end_bound.native_compat(),
-            )
-        })
+    pub(crate) fn wide_bounds(&self) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
+        (self.kind == RangeIndexKind::UInt64)
+            .then(|| (self.start_bound.old_form(), self.end_bound.old_form()))
     }
 
     /// A reader of signed 32-bit bounds met a wide range. It was never
@@ -2960,7 +2949,7 @@ impl MemoryRange {
     /// use this bounded, derived view without introducing a second resource
     /// representation. The returned pointer is the first byte of the range;
     /// the second value is its byte length.
-    pub(crate) fn byte_footprint(&self) -> (Address, MachineTerm) {
+    pub(crate) fn byte_footprint(&self) -> (OldAddress, OldMachineTerm) {
         (
             self.start_pointer(),
             memory_range_byte_count(self.start().clone(), self.end().clone(), self.element_width),
@@ -2972,7 +2961,7 @@ impl MemoryRange {
     }
 
     /// Rebase a range without changing the domain of either endpoint.
-    pub(crate) fn with_base(&self, base: Address) -> Self {
+    pub(crate) fn with_base(&self, base: OldAddress) -> Self {
         Self {
             base,
             ..self.clone()
@@ -2981,7 +2970,12 @@ impl MemoryRange {
 
     /// Rebuilds a range with different bounds while preserving its element
     /// coordinate system.
-    pub(crate) fn with_bounds(&self, base: Address, start: MachineTerm, end: MachineTerm) -> Self {
+    pub(crate) fn with_bounds(
+        &self,
+        base: OldAddress,
+        start: OldMachineTerm,
+        end: OldMachineTerm,
+    ) -> Self {
         Self {
             kind: self.kind,
             formation_coverage: self.formation_coverage.clone(),
@@ -3009,7 +3003,7 @@ impl MemoryRange {
     /// Any other shape answers nothing, and the caller keeps its per-cell
     /// check. The work is proportional to the guard and the pointer.
     pub(crate) fn guarded_quantified_cells(
-        pointer: &Address,
+        pointer: &OldAddress,
         variable: Variable,
         guard: &Proposition,
         element_width: u32,
@@ -3017,24 +3011,24 @@ impl MemoryRange {
         let is_variable = |term: &crate::kernel::SharedMachineIntegerTerm| {
             term.operand_view().variable() == Some(&variable)
         };
-        let (base_offset, scaled) = match &pointer.offset {
-            AddressOffset::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
-            scaled => (AddressOffset::Constant(0), scaled),
+        let (base_offset, scaled) = match pointer.offset.view() {
+            OffsetView::Add(base, scaled) => (base.clone(), scaled),
+            _ => (OldAddressOffset::constant(0), &pointer.offset),
         };
-        let kind = match scaled {
-            AddressOffset::Int32Scaled { value, .. } if is_variable(value) => RangeIndexKind::Int32,
-            AddressOffset::Int64Scaled {
-                value,
+        let kind = match scaled.view() {
+            OffsetView::Int32Scaled { index, .. } if is_variable(&index) => RangeIndexKind::Int32,
+            OffsetView::Int64Scaled {
+                index,
                 unsigned: true,
                 ..
-            } if is_variable(value) => RangeIndexKind::UInt64,
+            } if is_variable(&index) => RangeIndexKind::UInt64,
             _ => return None,
         };
-        let base = Address {
+        let base = OldAddress {
             base: pointer.base.clone(),
             offset: base_offset,
         };
-        let index = MachineTerm::Variable(variable);
+        let index = OldMachineTerm::Variable(variable);
         let reconstructed = match kind {
             RangeIndexKind::Int32 => base.offset_by_elements(index, element_width),
             RangeIndexKind::UInt64 => {
@@ -3044,7 +3038,8 @@ impl MemoryRange {
         if &reconstructed != pointer {
             return None;
         }
-        let mut lower = (kind == RangeIndexKind::UInt64).then_some(MachineTerm::uint64_constant(0));
+        let mut lower =
+            (kind == RangeIndexKind::UInt64).then_some(OldMachineTerm::uint64_constant(0));
         let mut upper = None;
         let mut pending = vec![guard];
         while let Some(conjunct) = pending.pop() {
@@ -3053,51 +3048,49 @@ impl MemoryRange {
                     pending.push(left);
                     pending.push(right);
                 }
-                Proposition::ConditionIs(condition, true) => {
-                    match (kind, condition.native_compat()) {
-                        (
-                            RangeIndexKind::Int32,
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessEqual,
-                                left: lo,
-                                right: v,
-                            },
-                        )
-                        | (
-                            RangeIndexKind::UInt64,
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::UInt64,
-                                relation: CompareRelation::LessEqual,
-                                left: lo,
-                                right: v,
-                            },
-                        ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
-                            lower = Some(lo.as_ref().clone())
-                        }
-                        (
-                            RangeIndexKind::Int32,
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessThan,
-                                left: v,
-                                right: hi,
-                            },
-                        )
-                        | (
-                            RangeIndexKind::UInt64,
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::UInt64,
-                                relation: CompareRelation::LessThan,
-                                left: v,
-                                right: hi,
-                            },
-                        ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
-                            upper = Some(hi.as_ref().clone())
-                        }
-                        _ => {}
+                Proposition::ConditionIs(condition, true) => match (kind, condition.old_form()) {
+                    (
+                        RangeIndexKind::Int32,
+                        OldConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: lo,
+                            right: v,
+                        },
+                    )
+                    | (
+                        RangeIndexKind::UInt64,
+                        OldConditionTerm::Compare {
+                            format: MachineIntegerType::UInt64,
+                            relation: CompareRelation::LessEqual,
+                            left: lo,
+                            right: v,
+                        },
+                    ) if matches!(v.as_ref(), OldMachineTerm::Variable(actual) if *actual == variable) => {
+                        lower = Some(lo.as_ref().clone())
                     }
-                }
+                    (
+                        RangeIndexKind::Int32,
+                        OldConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessThan,
+                            left: v,
+                            right: hi,
+                        },
+                    )
+                    | (
+                        RangeIndexKind::UInt64,
+                        OldConditionTerm::Compare {
+                            format: MachineIntegerType::UInt64,
+                            relation: CompareRelation::LessThan,
+                            left: v,
+                            right: hi,
+                        },
+                    ) if matches!(v.as_ref(), OldMachineTerm::Variable(actual) if *actual == variable) => {
+                        upper = Some(hi.as_ref().clone())
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -3123,12 +3116,12 @@ impl MemoryRange {
 
     /// The bytes an access of `extent` at `pointer` reaches: a byte count,
     /// or a whole object of abstract type ([`Self::access`]).
-    pub(crate) fn of_access(pointer: &Address, extent: super::AccessExtent) -> Self {
+    pub(crate) fn of_access(pointer: &OldAddress, extent: super::AccessExtent) -> Self {
         match extent {
             super::AccessExtent::Bytes(bytes) => Self::new_with_element_width(
                 pointer.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
                 bytes,
             ),
             super::AccessExtent::Object(parameter) => {
@@ -3141,18 +3134,18 @@ impl MemoryRange {
     /// reaches: one element of the type's width, or, for a value of an
     /// abstract type, its whole object, `[pointer, pointer + sizeof(T))`,
     /// whose size is the type's and no number Click knows.
-    pub(crate) fn access(pointer: Address, program_type: ProgramType) -> Self {
+    pub(crate) fn access(pointer: OldAddress, program_type: ProgramType) -> Self {
         match program_type {
             ProgramType::Parameter(parameter) if parameter.has_abstract_size() => Self::new_wide(
                 pointer,
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
                 parameter.size_term(),
                 1,
             ),
             other => Self::new_with_element_width(
                 pointer,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
                 other.byte_width(),
             ),
         }
@@ -3161,12 +3154,12 @@ impl MemoryRange {
     /// The bytes of a whole object of `size` at `pointer`: `[0, size)` bytes,
     /// or for a symbolic layout `[0, sizeof(S))`, the range a value of the
     /// struct held whole reaches.
-    pub(crate) fn object(pointer: Address, size: super::LayoutSize) -> Self {
+    pub(crate) fn object(pointer: OldAddress, size: super::LayoutSize) -> Self {
         match size {
             super::LayoutSize::Bytes(bytes) => Self::new_with_element_width(
                 pointer,
-                MachineTerm::constant(0),
-                MachineTerm::constant(bytes),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(bytes),
                 1,
             ),
             super::LayoutSize::Of(layout) => {
@@ -3190,9 +3183,9 @@ impl MemoryRange {
 
     /// A range whose bounds are unsigned 64-bit element indices.
     pub(crate) fn new_wide(
-        base: Address,
-        start: MachineTerm,
-        end: MachineTerm,
+        base: OldAddress,
+        start: OldMachineTerm,
+        end: OldMachineTerm,
         element_width: u32,
     ) -> Self {
         Self {
@@ -3201,20 +3194,20 @@ impl MemoryRange {
         }
     }
 
-    pub fn base(&self) -> &Address {
+    pub fn base(&self) -> &OldAddress {
         &self.base
     }
 
     #[track_caller]
-    pub fn start(&self) -> &MachineTerm {
+    pub fn start(&self) -> &OldMachineTerm {
         self.assert_int32();
-        self.start_bound.native_compat()
+        self.start_bound.old_form()
     }
 
     #[track_caller]
-    pub fn end(&self) -> &MachineTerm {
+    pub fn end(&self) -> &OldMachineTerm {
         self.assert_int32();
-        self.end_bound.native_compat()
+        self.end_bound.old_form()
     }
 
     /// The write set of memory no clause names: the largest valid span at
@@ -3235,15 +3228,15 @@ impl MemoryRange {
     /// answer it through [`Self::is_unnamed_footprint`].
     pub(crate) fn unnamed_footprint() -> Self {
         Self::new_with_element_width(
-            Address {
+            OldAddress {
                 base: super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::constant(0),
             },
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
             // Endpoints are `int32` values: this is the largest span whose
             // guards hold, so no consumer that assumes a held range's span
             // guards can meet a false one here.
-            MachineTerm::constant(i32::MAX as u32),
+            OldMachineTerm::constant(i32::MAX as u32),
             1,
         )
     }
@@ -3257,7 +3250,7 @@ impl MemoryRange {
 /// Whether a range or segment based at `base` is
 /// [`MemoryRange::unnamed_footprint`]: the reserved block is spelled nowhere
 /// else.
-pub(crate) fn is_unnamed_footprint_base(base: &Address) -> bool {
+pub(crate) fn is_unnamed_footprint_base(base: &OldAddress) -> bool {
     base.base == super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK)
 }
 
@@ -3270,22 +3263,22 @@ pub(crate) const UNNAMED_FOOTPRINT_BLOCK: super::Variable = super::Variable(u64:
 /// [`memory_range_byte_count_guards`] whenever the range is supplied by a
 /// contract or resource clause, since the arithmetic itself is modular.
 pub(crate) fn memory_range_byte_count(
-    start: MachineTerm,
-    end: MachineTerm,
+    start: OldMachineTerm,
+    end: OldMachineTerm,
     element_width: u32,
-) -> MachineTerm {
+) -> OldMachineTerm {
     assert!(element_width > 0, "memory element width must be positive");
     let element_count = canonical_subtract(end, start);
-    canonical_multiply(element_count, MachineTerm::constant(element_width))
+    canonical_multiply(element_count, OldMachineTerm::constant(element_width))
 }
 
-fn canonical_subtract(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+fn canonical_subtract(left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left).wrapping_sub(constant_u32(*right)))
+            OldMachineTerm::constant(constant_u32(*left).wrapping_sub(constant_u32(*right)))
         }
         (_, bits32_constant!(0)) => left,
-        _ if left == right => MachineTerm::constant(0),
+        _ if left == right => OldMachineTerm::constant(0),
         (
             binary_term!(Int32, Add, left_base, left_addend),
             binary_term!(Int32, Add, right_base, right_addend),
@@ -3296,14 +3289,14 @@ fn canonical_subtract(left: MachineTerm, right: MachineTerm) -> MachineTerm {
     }
 }
 
-fn canonical_multiply(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+fn canonical_multiply(left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left).wrapping_mul(constant_u32(*right)))
+            OldMachineTerm::constant(constant_u32(*left).wrapping_mul(constant_u32(*right)))
         }
         (_, bits32_constant!(1)) => left,
         (int32_constant!(1), _) => right,
-        (_, bits32_constant!(0)) | (int32_constant!(0), _) => MachineTerm::constant(0),
+        (_, bits32_constant!(0)) | (int32_constant!(0), _) => OldMachineTerm::constant(0),
         _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
     }
 }
@@ -3319,7 +3312,7 @@ pub(crate) fn memory_range_element_count_limit(element_width: u32) -> u32 {
 
 /// A range's element count as a term: the same difference
 /// [`memory_range_byte_count`] scales, unscaled.
-pub(crate) fn memory_range_element_count(range: &MemoryRange) -> MachineTerm {
+pub(crate) fn memory_range_element_count(range: &MemoryRange) -> OldMachineTerm {
     canonical_subtract(range.end().clone(), range.start().clone())
 }
 
@@ -3346,19 +3339,19 @@ pub(crate) fn element_count_limit_constrains_int32(element_width: u32) -> bool {
 /// of the condition a user can write down, and the form every diagnostic about
 /// a missing span should print.
 pub(crate) fn memory_range_element_count_guards(
-    element_count: MachineTerm,
+    element_count: OldMachineTerm,
     element_width: u32,
 ) -> Vec<Proposition> {
     assert!(element_width > 0, "memory element width must be positive");
     let mut guards = vec![Proposition::condition_is(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), element_count.clone()),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), element_count.clone()),
         true,
     )];
     if element_count_limit_constrains_int32(element_width) {
         guards.push(Proposition::condition_is(
-            ConditionTerm::signed_less_equal(
+            OldConditionTerm::signed_less_equal(
                 element_count,
-                MachineTerm::constant(memory_range_element_count_limit(element_width)),
+                OldMachineTerm::constant(memory_range_element_count_limit(element_width)),
             ),
             true,
         ));
@@ -3388,8 +3381,8 @@ pub(crate) enum MemoryRangeSpan {
 /// a 32-bit physical byte span. Ranges must be forward and fit in `u32`
 /// bytes after scaling by their element width.
 pub(crate) fn memory_range_byte_count_span(
-    start: MachineTerm,
-    end: MachineTerm,
+    start: OldMachineTerm,
+    end: OldMachineTerm,
     element_width: u32,
 ) -> MemoryRangeSpan {
     assert!(element_width > 0, "memory element width must be positive");
@@ -3411,7 +3404,7 @@ pub(crate) fn memory_range_byte_count_span(
             byte_limit: u32::MAX,
         };
     }
-    let forward = ConditionTerm::signed_less_equal(start.clone(), end.clone());
+    let forward = OldConditionTerm::signed_less_equal(start.clone(), end.clone());
     // The count is the `int32` difference of the endpoints; `fits` reads
     // its bits as a `uint32` count, which is σ of it. Given `start <= end`
     // the true difference lies in `[0, 2^32)`, and σ of the wrapped `int32`
@@ -3419,13 +3412,13 @@ pub(crate) fn memory_range_byte_count_span(
     // the count's own `int32` order is not (it wraps past `2^31 - 1`, which
     // the one-byte limit exceeds).
     let element_count = canonical_subtract(end, start);
-    let fits = ConditionTerm::unsigned_less_equal(
-        MachineTerm::sign_cast32(
+    let fits = OldConditionTerm::unsigned_less_equal(
+        OldMachineTerm::sign_cast32(
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
             element_count,
         ),
-        MachineTerm::constant(memory_range_element_count_limit(element_width)),
+        OldMachineTerm::constant(memory_range_element_count_limit(element_width)),
     );
     MemoryRangeSpan::Guards(vec![
         Proposition::condition_is(forward, true),
@@ -3439,7 +3432,7 @@ pub(crate) fn memory_range_byte_count_span(
 /// read back at element granularity. The inverse of
 /// [`memory_range_byte_count`], on the term only: it neither simplifies nor
 /// consults facts.
-pub(crate) fn scaled_span_element_width(bytes: &MachineTerm) -> Option<u32> {
+pub(crate) fn scaled_span_element_width(bytes: &OldMachineTerm) -> Option<u32> {
     let binary_term!(Int32, Multiply, left, right) = bytes else {
         return None;
     };
@@ -3460,7 +3453,7 @@ pub(crate) fn scaled_span_element_width(bytes: &MachineTerm) -> Option<u32> {
 /// unscaled one is a byte range. A constant count is neither: a cell's width
 /// or a constant range's size is already a true count of bytes, and its
 /// validity is decided where it was lowered.
-pub(crate) fn stated_span_element_width(bytes: &MachineTerm) -> Option<u32> {
+pub(crate) fn stated_span_element_width(bytes: &OldMachineTerm) -> Option<u32> {
     scaled_span_element_width(bytes).or_else(|| bytes.as_const().is_none().then_some(1))
 }
 
@@ -3528,8 +3521,8 @@ fn collect_stated_loadable_span_guards(
             if !every_spelling {
                 return;
             }
-            let (elements, width) = match bytes.native_compat() {
-                MachineTerm::Binary {
+            let (elements, width) = match bytes.old_form() {
+                OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
                     left: elements,
@@ -3543,12 +3536,12 @@ fn collect_stated_loadable_span_guards(
                         _ => return,
                     }
                 }
-                _ => (bytes.native_compat(), 1),
+                _ => (bytes.old_form(), 1),
             };
             let guard = Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     elements.clone(),
-                    MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
+                    OldMachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
                 ),
                 true,
             );
@@ -3557,18 +3550,17 @@ fn collect_stated_loadable_span_guards(
             }
         }
         Proposition::MemoryLoadable { bytes, .. } => {
-            let Some(element_width) = stated_span_element_width(bytes.native_compat()) else {
+            let Some(element_width) = stated_span_element_width(bytes.old_form()) else {
                 return;
             };
-            let Some(element_count) = crate::kernel::reasoning::element_count_from_bytes(
-                bytes.native_compat(),
-                element_width,
-            ) else {
+            let Some(element_count) =
+                crate::kernel::reasoning::element_count_from_bytes(bytes.old_form(), element_width)
+            else {
                 return;
             };
             let endpoints = if every_spelling {
                 memory_range_byte_count_guards(
-                    MachineTerm::constant(0),
+                    OldMachineTerm::constant(0),
                     element_count.clone(),
                     element_width,
                 )
@@ -3604,13 +3596,13 @@ pub(crate) fn memory_range_span_guards(range: &MemoryRange) -> Vec<Proposition> 
     ) {
         MemoryRangeSpan::ConstantValid => Vec::new(),
         MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )],
         MemoryRangeSpan::Guards(guards) if range.element_width() == 1 => guards,
         MemoryRangeSpan::Guards(_) => {
             let mut guards = vec![Proposition::condition_is(
-                ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
+                OldConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
                 true,
             )];
             for guard in memory_range_element_count_guards(
@@ -3638,7 +3630,7 @@ pub(crate) fn memory_range_span_guards(range: &MemoryRange) -> Vec<Proposition> 
 /// A range bound's value as an `int32` index, when it is a constant that
 /// fits one: the only 64-bit bound a narrow range takes
 /// ([`wide_range_bounds`]).
-pub(crate) fn narrow_range_constant(value: &ProgramValue) -> Option<MachineTerm> {
+pub(crate) fn narrow_range_constant(value: &ProgramValue) -> Option<OldMachineTerm> {
     let value = value.numeric_value();
     let constant = match value {
         ProgramValue::Int32(bits32_constant!(bits)) => i64::from(constant_u32(*bits) as i32),
@@ -3647,13 +3639,13 @@ pub(crate) fn narrow_range_constant(value: &ProgramValue) -> Option<MachineTerm>
         _ => return None,
     };
     let constant = i32::try_from(constant).ok()?;
-    Some(MachineTerm::constant(constant as u32))
+    Some(OldMachineTerm::constant(constant as u32))
 }
 
 pub(crate) fn wide_range_bounds(
     start: &ProgramValue,
     end: &ProgramValue,
-) -> Option<(MachineTerm, MachineTerm)> {
+) -> Option<(OldMachineTerm, OldMachineTerm)> {
     let start = start.numeric_value();
     let end = end.numeric_value();
 
@@ -3663,17 +3655,17 @@ pub(crate) fn wide_range_bounds(
         // unsigned 64-bit value. A negative one becomes larger than any
         // span the range's guards allow, so the range denotes memory only
         // when its bounds are nonnegative.
-        ProgramValue::Int32(bits32_constant!(bits)) => Some(MachineTerm::uint64_constant(
+        ProgramValue::Int32(bits32_constant!(bits)) => Some(OldMachineTerm::uint64_constant(
             constant_u32(*bits) as i32 as i64 as u64,
         )),
-        ProgramValue::Int32(term) => Some(MachineTerm::legacy_cast(
+        ProgramValue::Int32(term) => Some(OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt64FromInt32,
             Box::new(term.clone()),
         )),
         ProgramValue::Int64(int64_constant!(value)) => {
-            Some(MachineTerm::uint64_constant(constant_i64(*value) as u64))
+            Some(OldMachineTerm::uint64_constant(constant_i64(*value) as u64))
         }
-        ProgramValue::Int64(term) => Some(MachineTerm::legacy_cast(
+        ProgramValue::Int64(term) => Some(OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt64FromInt64,
             Box::new(term.clone()),
         )),
@@ -3696,26 +3688,29 @@ pub(crate) fn wide_range_bounds(
 /// The byte count of a wide liveness fact over `elements` elements of
 /// `width` bytes: the count itself at width one, and otherwise the product
 /// with the width on the right, so the two parts can be read back.
-pub(crate) fn wide_loadable_byte_count(elements: MachineTerm, width: u32) -> MachineTerm {
+pub(crate) fn wide_loadable_byte_count(elements: OldMachineTerm, width: u32) -> OldMachineTerm {
     if width == 1 {
         return elements;
     }
-    MachineTerm::Binary {
+    OldMachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Multiply,
         left: Box::new(elements),
-        right: Box::new(MachineTerm::uint64_constant(u64::from(width))),
+        right: Box::new(OldMachineTerm::uint64_constant(u64::from(width))),
     }
 }
 
 /// The element count of a wide liveness fact's byte count, for elements of
 /// `width` bytes; nothing when the count was not written for that width.
-pub(crate) fn wide_loadable_element_count(bytes: &MachineTerm, width: u32) -> Option<&MachineTerm> {
+pub(crate) fn wide_loadable_element_count(
+    bytes: &OldMachineTerm,
+    width: u32,
+) -> Option<&OldMachineTerm> {
     if width == 1 {
         return Some(bytes);
     }
     match bytes {
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Multiply,
             left: elements,
@@ -3736,11 +3731,14 @@ fn wide_memory_range_span_guards(range: &MemoryRange) -> Option<Vec<Proposition>
     let limit = i64::MAX as u64 / u64::from(range.element_width());
     Some(vec![
         Proposition::condition_is(
-            ConditionTerm::uint64_less_equal(start.clone(), end.clone()),
+            OldConditionTerm::uint64_less_equal(start.clone(), end.clone()),
             true,
         ),
         Proposition::condition_is(
-            ConditionTerm::uint64_less_equal(end.clone(), MachineTerm::uint64_constant(limit)),
+            OldConditionTerm::uint64_less_equal(
+                end.clone(),
+                OldMachineTerm::uint64_constant(limit),
+            ),
             true,
         ),
     ])
@@ -3782,14 +3780,14 @@ pub(crate) fn admitted_memory_range_span_facts(range: &MemoryRange) -> Vec<Propo
 /// constant range becomes the impossible guard, which refuses wherever the
 /// caller discharges guards.
 pub(crate) fn memory_range_byte_count_guards(
-    start: MachineTerm,
-    end: MachineTerm,
+    start: OldMachineTerm,
+    end: OldMachineTerm,
     element_width: u32,
 ) -> Vec<Proposition> {
     match memory_range_byte_count_span(start, end, element_width) {
         MemoryRangeSpan::ConstantValid => Vec::new(),
         MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )],
         MemoryRangeSpan::Guards(guards) => guards,
@@ -4068,14 +4066,29 @@ impl ExecutionEnvironment {
 
     /// [`Self::with_selected_call_binders`] with runtime type binders.
     pub(crate) fn with_selected_call_binders_and_types(
-        mut self,
+        self,
         function: &str,
         arity: usize,
         bindings: ResourceBindings,
         type_arguments: BTreeMap<Variable, crate::kernel::ResourceDescription>,
     ) -> Self {
+        self.with_call_binder_target(
+            CallBinderTarget::Function(function.into()),
+            arity,
+            bindings,
+            type_arguments,
+        )
+    }
+
+    pub(crate) fn with_call_binder_target(
+        mut self,
+        target: CallBinderTarget,
+        arity: usize,
+        bindings: ResourceBindings,
+        type_arguments: BTreeMap<Variable, crate::kernel::ResourceDescription>,
+    ) -> Self {
         self.selected_call_binders = Some(std::sync::Arc::new(CallBinderTransport {
-            function: std::sync::Arc::from(function),
+            target,
             arity,
             bindings: std::sync::Arc::new(bindings),
             type_arguments: std::sync::Arc::new(type_arguments),
@@ -4101,6 +4114,57 @@ impl ExecutionEnvironment {
 
     pub(crate) fn get_function_contract(&self, name: &str) -> Option<&FunctionContract> {
         self.function_contracts.get(name)
+    }
+
+    pub(crate) fn with_cpp_binding_rule(
+        mut self,
+        contract: CppBindingContract,
+        rule: ExternalFunctionRule,
+    ) -> Self {
+        Arc::make_mut(&mut self.cpp_binding_rules).insert(contract, rule);
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
+        self
+    }
+
+    pub(crate) fn get_cpp_binding_rule(
+        &self,
+        contract: &CppBindingContract,
+    ) -> Option<&ExternalFunctionRule> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.cpp_binding_rules.get(contract)
+    }
+
+    pub(crate) fn get_cpp_binding_function(
+        &self,
+        binding: &CppBindingContract,
+    ) -> Option<&ProgramFunction> {
+        self.get_cpp_binding_rule(binding)
+            .map(|rule| &rule.function)
+    }
+
+    pub(crate) fn with_cpp_virtual_rule(mut self, rule: ExternalFunctionRule) -> Self {
+        Arc::make_mut(&mut self.cpp_virtual_rules).insert(rule.function.name().to_owned(), rule);
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
+        self
+    }
+
+    pub(in crate::kernel) fn get_cpp_virtual_rule(
+        &self,
+        method: &str,
+    ) -> Option<&ExternalFunctionRule> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.cpp_virtual_rules.get(method)
+    }
+
+    pub(crate) fn get_call_function(
+        &self,
+        name: &str,
+        dispatch: CallDispatch,
+    ) -> Option<&ProgramFunction> {
+        match dispatch {
+            CallDispatch::Direct => self.get_function(name),
+            CallDispatch::CppVirtual => self.get_cpp_virtual_rule(name).map(|rule| &rule.function),
+        }
     }
 
     pub fn with_external_function_rule(mut self, rule: ExternalFunctionRule) -> Self {
@@ -4232,17 +4296,23 @@ impl ExecutionEnvironment {
                 .resource_ensures()
                 .iter()
                 .any(|resource| resource.guard().is_some())
-        }) || self.external_function_rules.values().any(|rule| {
-            rule.function
-                .resource_ensures()
-                .iter()
-                .any(|resource| resource.guard().is_some())
-        }) || self.verified_function_rules.values().any(|rule| {
-            rule.function
-                .resource_ensures()
-                .iter()
-                .any(|resource| resource.guard().is_some())
-        })
+        }) || self
+            .external_function_rules
+            .values()
+            .chain(self.cpp_virtual_rules.values())
+            .chain(self.cpp_binding_rules.values())
+            .any(|rule| {
+                rule.function
+                    .resource_ensures()
+                    .iter()
+                    .any(|resource| resource.guard().is_some())
+            })
+            || self.verified_function_rules.values().any(|rule| {
+                rule.function
+                    .resource_ensures()
+                    .iter()
+                    .any(|resource| resource.guard().is_some())
+            })
     }
 
     pub(in crate::kernel) fn recursion_anchor(&self) -> Option<&RecursionAnchor> {
@@ -4261,6 +4331,8 @@ impl ExecutionEnvironment {
     pub(crate) fn shares_project_storage_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.functions, &other.functions)
             && std::sync::Arc::ptr_eq(&self.function_contracts, &other.function_contracts)
+            && Arc::ptr_eq(&self.cpp_virtual_rules, &other.cpp_virtual_rules)
+            && Arc::ptr_eq(&self.cpp_binding_rules, &other.cpp_binding_rules)
             && std::sync::Arc::ptr_eq(
                 &self.external_function_rules,
                 &other.external_function_rules,
@@ -4318,7 +4390,12 @@ impl ExecutionEnvironment {
         };
         !calls.iter().any(|callee| {
             crate::kernel::termination::charge_termination_work(1);
-            callee.ends_with("#indirect") || anchor.ranks_call_to(callee)
+            match callee {
+                crate::kernel::termination::CallDependency::Named(callee) => {
+                    callee.ends_with("#indirect") || anchor.ranks_call_to(callee)
+                }
+                crate::kernel::termination::CallDependency::CppVirtual(_) => false,
+            }
         }) || rule.recursion_anchor.as_deref() == Some(anchor)
     }
 
@@ -4396,7 +4473,7 @@ impl ExecutionEnvironment {
                                 }) || resource_context_has_symbolic_range_read(
                                     state.resources(),
                                     base,
-                                    bytes.native_compat(),
+                                    bytes.old_form(),
                                     assumptions,
                                 ))
                             }
@@ -4493,31 +4570,31 @@ mod guarded_quantified_cell_tests {
         Variable(2_000_000)
     }
 
-    fn holds(condition: ConditionTerm) -> Proposition {
+    fn holds(condition: OldConditionTerm) -> Proposition {
         Proposition::condition_is(condition, true)
     }
 
-    fn variable(variable: Variable) -> Box<MachineTerm> {
-        Box::new(MachineTerm::Variable(variable))
+    fn variable(variable: Variable) -> Box<OldMachineTerm> {
+        Box::new(OldMachineTerm::Variable(variable))
     }
 
     /// `p + v` for a byte array `p`, indexed by an unsigned 64-bit `v`.
-    fn wide_cell(base: &Address) -> Address {
-        base.offset_by_typed_elements(MachineTerm::Variable(index()), 1, true, true)
+    fn wide_cell(base: &OldAddress) -> OldAddress {
+        base.offset_by_typed_elements(OldMachineTerm::Variable(index()), 1, true, true)
     }
 
-    fn parameter() -> Address {
-        Address {
+    fn parameter() -> OldAddress {
+        OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(7)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(7)), 1),
         }
     }
 
     #[test]
     fn an_unsigned_guard_names_the_range_from_zero() {
         let base = parameter();
-        let length = MachineTerm::Variable(Variable(8));
-        let guard = holds(ConditionTerm::Compare {
+        let length = OldMachineTerm::Variable(Variable(8));
+        let guard = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),
@@ -4527,7 +4604,7 @@ mod guarded_quantified_cell_tests {
             MemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
             Some(MemoryRange::new_wide(
                 base,
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
                 length,
                 1
             ))
@@ -4538,9 +4615,9 @@ mod guarded_quantified_cell_tests {
     fn a_guard_in_another_comparison_or_on_the_binder_names_nothing() {
         let base = parameter();
         let cell = wide_cell(&base);
-        let length = Box::new(MachineTerm::Variable(Variable(8)));
+        let length = Box::new(OldMachineTerm::Variable(Variable(8)));
         // A signed comparison does not bound an unsigned 64-bit index.
-        let signed = holds(ConditionTerm::Compare {
+        let signed = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: variable(index()),
@@ -4551,11 +4628,11 @@ mod guarded_quantified_cell_tests {
             None
         );
         // An upper bound that mentions the binder is not one fixed range.
-        let circular = holds(ConditionTerm::Compare {
+        let circular = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),
-            right: Box::new(MachineTerm::Binary {
+            right: Box::new(OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: variable(index()),
@@ -4567,7 +4644,7 @@ mod guarded_quantified_cell_tests {
             None
         );
         // A stride other than the read's width is not that range's element.
-        let bound = holds(ConditionTerm::Compare {
+        let bound = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),
@@ -4578,9 +4655,9 @@ mod guarded_quantified_cell_tests {
             None
         );
         // A base that moves with the binder is not one fixed range.
-        let moving = wide_cell(&Address {
+        let moving = wide_cell(&OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(index()), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(index()), 1),
         });
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),
@@ -4605,13 +4682,13 @@ mod retained_loadable_count_tests {
             };
             let constant = |x| {
                 if wide {
-                    MachineTerm::uint64_constant(x)
+                    OldMachineTerm::uint64_constant(x)
                 } else {
-                    MachineTerm::constant(x as u32)
+                    OldMachineTerm::constant(x as u32)
                 }
             };
-            let x = MachineTerm::Variable(Variable(10993700));
-            let add = |a, b| MachineTerm::Binary {
+            let x = OldMachineTerm::Variable(Variable(10993700));
+            let add = |a, b| OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
                 left: Box::new(a),
@@ -4621,9 +4698,9 @@ mod retained_loadable_count_tests {
                 constant(0),
                 constant(1),
                 constant(7),
-                MachineTerm::uint32_constant(0),
-                MachineTerm::uint32_constant(1),
-                MachineTerm::uint32_constant(7),
+                OldMachineTerm::uint32_constant(0),
+                OldMachineTerm::uint32_constant(1),
+                OldMachineTerm::uint32_constant(7),
                 x.clone(),
                 add(x.clone(), constant(1)),
                 add(x.clone(), constant(7)),
@@ -4633,7 +4710,7 @@ mod retained_loadable_count_tests {
                     for end in &inputs {
                         let expected = if wide {
                             wide_loadable_byte_count(
-                                MachineTerm::uint64_subtract(end.clone(), start.clone()),
+                                OldMachineTerm::uint64_subtract(end.clone(), start.clone()),
                                 width,
                             )
                         } else {
@@ -4643,24 +4720,24 @@ mod retained_loadable_count_tests {
                             for retain_end in [false, true] {
                                 let mut range = if wide {
                                     MemoryRange::new_wide(
-                                        Address::symbolic(Variable(10993701)),
+                                        OldAddress::symbolic(Variable(10993701)),
                                         start.clone(),
                                         end.clone(),
                                         width,
                                     )
                                 } else {
                                     MemoryRange::new_with_element_width(
-                                        Address::symbolic(Variable(10993701)),
+                                        OldAddress::symbolic(Variable(10993701)),
                                         start.clone(),
                                         end.clone(),
                                         width,
                                     )
                                 };
-                                let retained = |term: &MachineTerm| {
+                                let retained = |term: &OldMachineTerm| {
                                     StoredMachineTerm::from_value(ExecutionValue::Shared(
                                         KernelTerm::retained_machine_operand(
                                             format,
-                                            MachineOperandView::Legacy(term),
+                                            MachineOperandView::Old(term),
                                         ),
                                     ))
                                     .unwrap()
@@ -4673,7 +4750,7 @@ mod retained_loadable_count_tests {
                                 }
                                 let actual = range.loadable_byte_count();
                                 assert_eq!(
-                                    actual.native_compat(),
+                                    actual.old_form(),
                                     &expected,
                                     "wide={wide}, width={width}, start={start:?}, end={end:?}"
                                 );

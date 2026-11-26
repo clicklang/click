@@ -4,16 +4,16 @@ use super::*;
 fn exact_pointer_read_reuses_the_indexed_store_across_local_history() {
     let work = [4u32, 16, 64, 256].map(|count| {
         let _session = VerificationSession::enter();
-        let slot = Address {
+        let slot = OldAddress {
             base: "local:pointer-holding-slot".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let unrelated = Address {
+        let unrelated = OldAddress {
             base: "local:unrelated-scalar".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let value_type = ProgramType::Int32Pointer;
-        let target = OldPointer::new(Address::symbolic(Variable(989_013)), value_type);
+        let target = OldPointer::new(OldAddress::symbolic(Variable(989_013)), value_type);
         let mut state = ExecutionState::new().with_memory(
             SymbolicMemory::new()
                 .with_block(slot.base.clone(), value_type.byte_width())
@@ -52,18 +52,18 @@ fn exact_pointer_read_reuses_the_indexed_store_across_local_history() {
 fn stored_address_base_queries_scale_with_new_read_definitions() {
     fn work(steps: u64, unrelated: u64) -> usize {
         let _session = VerificationSession::enter();
-        let target = Address {
+        let target = OldAddress {
             base: AddressBase::Heap(989_010),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let other = AddressBase::Heap(989_011);
-        let slot = Address::symbolic(Variable(989_012));
+        let slot = OldAddress::symbolic(Variable(989_012));
         let mut memory = SymbolicMemory::new()
             .with_block(target.base.clone(), 8)
             .with_block(other.clone(), 8);
         for index in 0..unrelated {
             memory = memory.store(
-                Address::symbolic(Variable(990_000 + index)),
+                OldAddress::symbolic(Variable(990_000 + index)),
                 ProgramValue::Int32(0u32.into()),
             );
         }
@@ -74,7 +74,7 @@ fn stored_address_base_queries_scale_with_new_read_definitions() {
                 slot.clone(),
                 ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
             );
-            pointer = Address::loaded_value(&intern_memory_ref(&memory), &slot);
+            pointer = OldAddress::loaded_value(&intern_memory_ref(&memory), &slot);
             reads.push(pointer.clone());
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -100,9 +100,9 @@ fn stored_address_base_queries_scale_with_new_read_definitions() {
 fn structural_read_comparison_forms_scale_with_selected_observations() {
     fn work(selected: u64, unrelated: u64) -> usize {
         let _session = VerificationSession::enter();
-        let address = |index| Address {
+        let address = |index| OldAddress {
             base: AddressBase::Heap(index),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new();
         for index in 0..selected + unrelated {
@@ -111,14 +111,14 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         let memory = intern_memory(memory);
         let goals: Vec<_> = (0..selected)
             .map(|index| {
-                let read = MachineTerm::read_named(
+                let read = OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(address(index)),
                     LoadKind::Int32,
                 );
                 let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, read).unwrap();
                 Proposition::condition_is(
-                    ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
+                    OldConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
                     true,
                 )
             })
@@ -150,9 +150,9 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
 fn algebraic_read_comparison_forms_scale_with_selected_observations() {
     fn work(selected: u64, unrelated: u64) -> usize {
         let _session = VerificationSession::enter();
-        let address = |index| Address {
+        let address = |index| OldAddress {
             base: AddressBase::Heap(index),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         // A library instance, as Surface registers it: opaque, of fixed width.
         TypeParameterName::declare_library_instance("SliceIter<uint8>");
@@ -185,7 +185,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                     },
                 };
                 Proposition::condition_is(
-                    ConditionTerm::AlgebraicEqual(Box::new(read), Box::new(stored(index))),
+                    OldConditionTerm::AlgebraicEqual(Box::new(read), Box::new(stored(index))),
                     true,
                 )
             })
@@ -195,7 +195,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                 assert_eq!(
                     comparison_form(goal),
                     Some(Proposition::condition_is(
-                        ConditionTerm::AlgebraicEqual(
+                        OldConditionTerm::AlgebraicEqual(
                             Box::new(stored(index)),
                             Box::new(stored(index))
                         ),

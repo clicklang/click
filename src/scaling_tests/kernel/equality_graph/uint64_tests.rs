@@ -12,12 +12,12 @@ fn integer_address_queries_ignore_unrelated_equations_and_reuse_definitions() {
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_uint64_equality(
-                &MachineTerm::Variable(Variable(i)),
-                &MachineTerm::Variable(Variable(i + 10_000)),
+                &OldMachineTerm::Variable(Variable(i)),
+                &OldMachineTerm::Variable(Variable(i + 10_000)),
             );
         }
-        let bits = MachineTerm::Variable(Variable(960_004));
-        let decoded = Address::from_integer_address(bits.clone());
+        let bits = OldMachineTerm::Variable(Variable(960_004));
+        let decoded = OldAddress::from_integer_address(bits.clone());
         assert!(graph.are_uint64_equal(&raw_address(&decoded), &bits));
         let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -41,15 +41,15 @@ fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let p = Address::symbolic(Variable(940_001));
-        let q = Address::symbolic(Variable(940_002));
-        let a = MachineTerm::Variable(Variable(940_003));
-        let b = MachineTerm::Variable(Variable(940_004));
+        let p = OldAddress::symbolic(Variable(940_001));
+        let q = OldAddress::symbolic(Variable(940_002));
+        let a = OldMachineTerm::Variable(Variable(940_003));
+        let b = OldMachineTerm::Variable(Variable(940_004));
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_uint64_equality(
-                &MachineTerm::Variable(Variable(i)),
-                &MachineTerm::Variable(Variable(i + 10_000)),
+                &OldMachineTerm::Variable(Variable(i)),
+                &OldMachineTerm::Variable(Variable(i + 10_000)),
             );
         }
         graph.add_uint64_equality(&a, &packed(&b, &p));
@@ -69,26 +69,28 @@ fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn range_values_and_constants_resolve_long_wide_equality_chains() {
-    use crate::kernel::{ConditionTerm, PureFactContext};
+    use crate::kernel::{OldConditionTerm, PureFactContext};
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let var = |i| MachineTerm::Variable(Variable(950_000 + i));
+        let var = |i| OldMachineTerm::Variable(Variable(950_000 + i));
         let mut facts = PureFactContext::new();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
                 facts = facts
                     .clone()
-                    .assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 1)), true);
+                    .assume_condition(OldConditionTerm::uint64_equal(var(i), var(i + 1)), true);
             }
             facts = facts.clone().assume_condition(
-                ConditionTerm::uint64_equal(var(size), MachineTerm::uint64_constant(37)),
+                OldConditionTerm::uint64_equal(var(size), OldMachineTerm::uint64_constant(37)),
                 true,
             );
             assert_eq!(facts.wide_constant_from_equalities(&var(0)), Some(37));
             assert!(facts.uint64_values_equal_for_range_resolution(
                 &var(0),
-                &MachineTerm::uint64_constant(37)
+                &OldMachineTerm::uint64_constant(37)
             ));
         });
         assert!(work < 300 * size as usize, "size={size}, work={work}");
@@ -96,31 +98,33 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_aliases() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
         let mut memory = SymbolicMemory::new().with_block("cells", 8 * (size as u32 + 1));
-        let cell = |i: u64| Address {
+        let cell = |i: u64| OldAddress {
             base: "cells".into(),
-            offset: AddressOffset::Constant(8 * i as i64),
+            offset: OldAddressOffset::Constant(8 * i as i64),
         };
         for i in 0..=size {
             memory = memory.store(
                 cell(i),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(i)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(i)),
             );
         }
         let memory = intern_memory(memory);
         let mut context = PureFactContext::new();
         for i in 0..size {
-            let other = Address::symbolic(Variable(970_000 + i));
+            let other = OldAddress::symbolic(Variable(970_000 + i));
             context = context.assume_proposition(alias(&other, &cell(i)));
         }
-        let read_at = Address::symbolic(Variable(979_999));
+        let read_at = OldAddress::symbolic(Variable(979_999));
         context = context.assume_proposition(alias(&read_at, &cell(size)));
         let read = word(&memory, &read_at, 8);
-        let stored = MachineTerm::uint64_constant(size);
+        let stored = OldMachineTerm::uint64_constant(size);
         context = context.assume_proposition(
             crate::kernel::memory_history::store_value_equation(
                 memory.memory(),
@@ -148,16 +152,16 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let stored_at = Address {
+        let stored_at = OldAddress {
             base: "cells".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = intern_memory(SymbolicMemory::new().with_block("cells", 8).store(
             stored_at.clone(),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)),
         ));
         let mut context = PureFactContext::new();
-        let link = |i: u64| Address::symbolic(Variable(972_000 + i));
+        let link = |i: u64| OldAddress::symbolic(Variable(972_000 + i));
         context = context.assume_proposition(alias(&link(0), &stored_at));
         for i in 1..=size {
             context = context.assume_proposition(alias(&link(i), &link(i - 1)));
@@ -166,7 +170,7 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
             crate::kernel::memory_history::store_value_equation(
                 memory.memory(),
                 &stored_at,
-                &ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
+                &ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)),
             )
             .unwrap(),
         );
@@ -174,12 +178,12 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
         let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .equality_graph
-                .are_uint64_equal(&read, &MachineTerm::uint64_constant(7))
+                .are_uint64_equal(&read, &OldMachineTerm::uint64_constant(7))
         });
         assert!(ok);
         samples.push((size, work));
     }
-    // Address congruence selects the recorded equation without enumerating aliases.
+    // OldAddress congruence selects the recorded equation without enumerating aliases.
     assert!(
         samples.windows(2).all(|pair| pair[1].1 == pair[0].1),
         "{samples:?}"
@@ -192,25 +196,25 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
     let mut related = Vec::new();
     for size in [16_u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let read_at = Address::symbolic(Variable(973_000));
+        let read_at = OldAddress::symbolic(Variable(973_000));
         let mut memory = SymbolicMemory::new().with_block("other", 8 * size as u32);
         let mut graph = EqualityGraph::default();
         // One unresolved read of `read_at` in each of `size` states.
         for i in 0..size {
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: "other".into(),
-                    offset: AddressOffset::Constant(8 * i as i64),
+                    offset: OldAddressOffset::Constant(8 * i as i64),
                 },
-                ProgramValue::UInt64(MachineTerm::uint64_constant(i)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(i)),
             );
             let read = word(&intern_memory(memory.clone()), &read_at, 8);
-            assert!(!graph.are_uint64_equal(&read, &MachineTerm::uint64_constant(99)));
+            assert!(!graph.are_uint64_equal(&read, &OldMachineTerm::uint64_constant(99)));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_equality(
-                &Address::symbolic(Variable(974_000)),
-                &Address::symbolic(Variable(974_001)),
+                &OldAddress::symbolic(Variable(974_000)),
+                &OldAddress::symbolic(Variable(974_001)),
             );
         });
         if let Some(previous) = unrelated {
@@ -218,10 +222,10 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
         }
         unrelated = Some(work);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            graph.add_equality(&Address::symbolic(Variable(974_002)), &read_at);
+            graph.add_equality(&OldAddress::symbolic(Variable(974_002)), &read_at);
             graph.are_uint64_equal(
-                &MachineTerm::uint64_constant(1),
-                &MachineTerm::uint64_constant(1),
+                &OldMachineTerm::uint64_constant(1),
+                &OldMachineTerm::uint64_constant(1),
             );
         });
         related.push((size, work));
@@ -235,25 +239,27 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let word = |i: u64| MachineTerm::Variable(Variable(975_000 + i));
+        let word = |i: u64| OldMachineTerm::Variable(Variable(975_000 + i));
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_proposition(fact(word(i), word(i + 2_000)));
         }
         let read = word(9_000);
         let recorded = word(9_001);
-        let address = MachineTerm::integer_address(Address::symbolic(Variable(976_000)));
+        let address = OldMachineTerm::integer_address(OldAddress::symbolic(Variable(976_000)));
         context = context
             .assume_proposition(fact(recorded.clone(), address))
             .assume_proposition(fact(read.clone(), recorded.clone()));
         let (endpoints, work) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .equality_graph
-                .wide_equation_endpoints_equal_to(crate::kernel::MachineOperandView::Legacy(&read))
+                .wide_equation_endpoints_equal_to(crate::kernel::MachineOperandView::Old(&read))
         });
         assert!(endpoints.contains(&recorded), "{endpoints:?}");
         if let Some(previous) = previous {
@@ -276,17 +282,17 @@ fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let name = MachineTerm::Variable(Variable(984101));
+        let name = OldMachineTerm::Variable(Variable(984101));
         let mut root = KernelTermImport::default()
             .machine_arithmetic(ty, &name)
             .unwrap();
         let base = root.clone();
         let one = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::uint64_constant(1))
+            .machine_arithmetic(ty, &OldMachineTerm::uint64_constant(1))
             .unwrap();
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
-        let address = MachineTerm::integer_address(Address::symbolic(Variable(984102)));
+        let address = OldMachineTerm::integer_address(OldAddress::symbolic(Variable(984102)));
         let mut context = PureFactContext::new().assume_proposition(fact(name.clone(), address));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -297,7 +303,7 @@ fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
                     [root, one.clone()],
                 );
                 context = context.assume_condition(
-                    ConditionTerm::integer_equal(observe(root.clone()), observe(base.clone())),
+                    OldConditionTerm::integer_equal(observe(root.clone()), observe(base.clone())),
                     true,
                 );
                 let endpoints = context
@@ -391,15 +397,15 @@ fn machine_observation_round_trip_ignores_unrelated_equalities() {
         let mut graph = EqualityGraph::default();
         for index in 0..size {
             graph.add_uint64_equality(
-                &MachineTerm::Variable(Variable(980000 + index)),
-                &MachineTerm::Variable(Variable(981000 + index)),
+                &OldMachineTerm::Variable(Variable(980000 + index)),
+                &OldMachineTerm::Variable(Variable(981000 + index)),
             );
         }
-        let source = MachineTerm::PureFunctionApplication {
+        let source = OldMachineTerm::PureFunctionApplication {
             name: "opaque_round_trip_scaling".into(),
-            arguments: vec![MachineTerm::Variable(Variable(989831))],
+            arguments: vec![OldMachineTerm::Variable(Variable(989831))],
         };
-        let converted = MachineTerm::IntegerToMachine {
+        let converted = OldMachineTerm::IntegerToMachine {
             destination: MachineIntegerType::UInt64,
             value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::UInt64,
@@ -409,7 +415,9 @@ fn machine_observation_round_trip_ignores_unrelated_equalities() {
         };
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(graph.are_uint64_equal(&converted, &source));
-            assert!(!graph.are_uint64_equal(&converted, &MachineTerm::Variable(Variable(989832))));
+            assert!(
+                !graph.are_uint64_equal(&converted, &OldMachineTerm::Variable(Variable(989832)))
+            );
         });
         samples.push(work);
     }

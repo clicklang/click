@@ -28,45 +28,45 @@ impl KernelTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn pointers() -> Vec<Address> {
+    fn pointers() -> Vec<OldAddress> {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("raw-pointer", 8),
         );
         let mut values = vec![
-            Address::null(),
-            Address::symbolic(Variable(999001)),
-            Address {
+            OldAddress::null(),
+            OldAddress::symbolic(Variable(999001)),
+            OldAddress {
                 base: AddressBase::FunctionSymbolic(Variable(999001)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalObject(Variable(999001)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
-            Address::loaded_value(
+            OldAddress::loaded_value(
                 &memory,
                 &crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             ),
-            Address::from_integer_address(MachineTerm::Variable(Variable(999002))),
-            Address {
+            OldAddress::from_integer_address(OldMachineTerm::Variable(Variable(999002))),
+            OldAddress {
                 base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "raw_pointer_call".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                        MachineTerm::Variable(Variable(999002)),
+                        OldMachineTerm::Variable(Variable(999002)),
                     ))],
                 )),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
         ];
         let base = values.clone();
         for pointer in base {
-            values.push(Address {
+            values.push(OldAddress {
                 base: pointer.base,
-                offset: AddressOffset::Add(
-                    Box::new(AddressOffset::Constant(0)),
-                    Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(999002)),
+                offset: OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Constant(0)),
+                    Box::new(OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::Variable(Variable(999002)),
                         4,
                     )),
                 ),
@@ -82,10 +82,10 @@ mod tests {
         for a in &values {
             for b in &values {
                 let shared = [SharedAddress::import(a), SharedAddress::import(b)];
-                let expected = ConditionTerm::address_equal(a.clone(), b.clone());
+                let expected = OldConditionTerm::address_equal(a.clone(), b.clone());
                 let actual = KernelTerm::address_equal(shared);
                 assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
-                let raw = ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()));
+                let raw = OldConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()));
                 let root = KernelTermImport::default().condition(&raw);
                 assert!(matches!(root.node(), KernelTermNode::AddressEqual { .. }));
                 assert_eq!(
@@ -103,24 +103,25 @@ mod tests {
     #[test]
     fn raw_pointer_condition_substitutions_preserve_native_policy() {
         let _session = crate::kernel::VerificationSession::enter();
-        let target = Address {
+        let target = OldAddress {
             base: AddressBase::Symbolic(Variable(999010)),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(1)),
-                Box::new(AddressOffset::Constant(2)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(1)),
+                Box::new(OldAddressOffset::Constant(2)),
             ),
         };
         for pointer in pointers() {
-            let source = ConditionTerm::AddressEqual(Box::new(pointer), Box::new(Address::null()));
+            let source =
+                OldConditionTerm::AddressEqual(Box::new(pointer), Box::new(OldAddress::null()));
             for source in [
                 source.clone(),
-                ConditionTerm::BoolEqual(
+                OldConditionTerm::BoolEqual(
                     Box::new(source),
-                    Box::new(ConditionTerm::Constant(false)),
+                    Box::new(OldConditionTerm::Constant(false)),
                 ),
             ] {
                 let root = KernelTermImport::default().condition(&source);
-                let bits = MachineTerm::constant(3);
+                let bits = OldMachineTerm::constant(3);
                 let expected = crate::kernel::reasoning::substitute_bitvector_variable_in_condition(
                     &source,
                     Variable(999002),
@@ -170,18 +171,18 @@ mod tests {
             let block = AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "raw_pointer_metadata".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(
-                    MachineTerm::IntegerAddress(
-                        Box::new(Address::symbolic(Variable(999020))),
+                    OldMachineTerm::IntegerAddress(
+                        Box::new(OldAddress::symbolic(Variable(999020))),
                         AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
                 ))],
             ));
-            let source = ConditionTerm::AddressEqual(
-                Box::new(Address {
+            let source = OldConditionTerm::AddressEqual(
+                Box::new(OldAddress {
                     base: block,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
-                Box::new(Address::null()),
+                Box::new(OldAddress::null()),
             );
             KernelTermImport::default().condition(&source)
         });
@@ -191,9 +192,9 @@ mod tests {
                 .syntax_equal(BooleanOperandView::Shared(&roots[1]))
         );
         let one = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
         let zero = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0));
         let observations = roots.map(|guard| {
             SharedMachineIntegerTerm::observe_shared(
                 MachineIntegerType::Int32,
@@ -214,13 +215,13 @@ mod tests {
             .with_block("offset-other", 4);
         let after = before.clone().store(
             crate::kernel::SymbolicMemory::global_pointer("offset-other"),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let memory_a = crate::kernel::intern_memory(before);
         let memory_b = crate::kernel::intern_memory(after);
         for wide in [false, true] {
             let condition = |memory| {
-                let value = MachineTerm::read_named(
+                let value = OldMachineTerm::read_named(
                     memory,
                     Box::new(crate::kernel::SymbolicMemory::global_pointer(
                         "offset-condition",
@@ -232,16 +233,16 @@ mod tests {
                     },
                 );
                 let offset = if wide {
-                    AddressOffset::scaled_int64_node(value, 8, false)
+                    OldAddressOffset::scaled_int64_node(value, 8, false)
                 } else {
-                    AddressOffset::scaled_int32_node(value, 4)
+                    OldAddressOffset::scaled_int32_node(value, 4)
                 };
-                ConditionTerm::AddressEqual(
-                    Box::new(Address {
+                OldConditionTerm::AddressEqual(
+                    Box::new(OldAddress {
                         base: AddressBase::Symbolic(Variable(999030)),
                         offset,
                     }),
-                    Box::new(Address::null()),
+                    Box::new(OldAddress::null()),
                 )
             };
             let a = condition(ProgramPoint::at(&memory_a));
@@ -249,7 +250,7 @@ mod tests {
             let ar = KernelTermImport::default().condition(&a);
             let br = KernelTermImport::default().condition(&b);
             for allowed in [false, true] {
-                let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+                let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
                 let expected =
                     crate::kernel::assumptions::conditions_equal_with_load_atoms(&a, &b, &loads);
                 assert_eq!(

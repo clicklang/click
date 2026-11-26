@@ -3,30 +3,55 @@
 use super::*;
 
 pub(super) fn initialize_program_function_globals_owned(
+    state: ExecutionState,
+    function: &ProgramFunction,
+    initialize_missing_storage: bool,
+) -> ExecutionState {
+    initialize_program_function_globals_with(state, function, initialize_missing_storage, false)
+}
+
+/// The static storage a contract call's callee reads, materialized as it
+/// builds the callee's entry: one step of the call in progress, installed
+/// together at one point before the callee's requirements are read.
+pub(super) fn initialize_callee_globals(
+    state: &ExecutionState,
+    function: &ProgramFunction,
+) -> ExecutionState {
+    let mut state = initialize_program_function_globals_with(state.clone(), function, false, true);
+    state.complete_staged_memory();
+    state
+}
+
+fn initialize_program_function_globals_with(
     mut state: ExecutionState,
     function: &ProgramFunction,
     initialize_missing_storage: bool,
+    stage: bool,
 ) -> ExecutionState {
     for literal in function.string_literals() {
         let slot = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(
+            state.set_or_stage_memory(
                 state
                     .memory
                     .clone()
                     .with_read_only_block(slot.base.clone(), literal.bytes().len() as u32),
+                stage,
             );
             for (offset, byte) in literal.bytes().iter().copied().enumerate() {
                 if crate::instrumentation::deadline_exceeded() {
                     break;
                 }
-                state.set_memory(state.memory.clone().store(
-                    Address {
-                        base: slot.base.clone(),
-                        offset: AddressOffset::Constant(offset as i64),
-                    },
-                    literal.element_value(byte),
-                ));
+                state.set_or_stage_memory(
+                    state.memory.clone().store(
+                        OldAddress {
+                            base: slot.base.clone(),
+                            offset: OldAddressOffset::constant(offset as i64),
+                        },
+                        literal.element_value(byte),
+                    ),
+                    stage,
+                );
             }
         }
         let value = ExecutionValue::from(ProgramValue::typed_pointer(
@@ -40,8 +65,8 @@ pub(super) fn initialize_program_function_globals_owned(
         Arc::make_mut(&mut state.literal_values).insert(literal.identity().clone(), value.into());
         let literal_resource = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             slot,
-            MachineTerm::constant(0),
-            MachineTerm::constant(literal.bytes().len() as u32),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(literal.bytes().len() as u32),
             1,
         ));
         if !function.is_program_entry()
@@ -59,18 +84,22 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::global_pointer(global.kernel_name());
         register_block_alignment(&slot.base, global.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global.declared_class(),
-                global.program_type().byte_width(),
-                global.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global.declared_class(),
+                    global.program_type().byte_width(),
+                    global.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global.is_constant() {
-                state.set_memory(
+                state.set_or_stage_memory(
                     state
                         .memory
                         .clone()
                         .store(slot.clone(), global.initial_value().clone()),
+                    stage,
                 );
             }
         }
@@ -110,19 +139,25 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(global_array.element_type().byte_width())
             .expect("validated C global array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global_array.declared_class(),
-                bytes,
-                global_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global_array.declared_class(),
+                    bytes,
+                    global_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global_array.is_constant() {
-                state.set_memory(store_array_contents(
-                    state.memory.clone(),
-                    &slot,
-                    global_array.element_type(),
-                    global_array.initial_values(),
-                ));
+                state.set_or_stage_memory(
+                    store_array_contents(
+                        state.memory.clone(),
+                        &slot,
+                        global_array.element_type(),
+                        global_array.initial_values(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -148,23 +183,28 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::global_pointer(global_aggregate.kernel_name());
         register_block_alignment(&slot.base, global_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global_aggregate.declared_class.clone(),
-                global_aggregate.layout().size_bytes(),
-                global_aggregate.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global_aggregate.declared_class.clone(),
+                    global_aggregate.layout().size_bytes(),
+                    global_aggregate.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global_aggregate.is_constant() {
-                state.set_memory(zero_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate.layout(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_fields(state.memory.clone(), &slot, global_aggregate.layout()),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        global_aggregate.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_aggregate_object_at_with_constant(
@@ -195,24 +235,33 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(global_aggregate_array.layout().size_bytes())
             .expect("validated C global aggregate array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global_aggregate_array.declared_class.clone(),
-                bytes,
-                global_aggregate_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global_aggregate_array.declared_class.clone(),
+                    bytes,
+                    global_aggregate_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global_aggregate_array.is_constant() {
-                state.set_memory(zero_aggregate_array_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate_array.layout(),
-                    global_aggregate_array.length(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate_array.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_array_fields(
+                        state.memory.clone(),
+                        &slot,
+                        global_aggregate_array.layout(),
+                        global_aggregate_array.length(),
+                    ),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        global_aggregate_array.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -241,22 +290,26 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::static_pointer(function.name(), static_local.kernel_name());
         register_block_alignment(&slot.base, static_local.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                static_local.program_type().byte_width(),
-                static_local.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    static_local.program_type().byte_width(),
+                    static_local.is_constant(),
+                ),
+                stage,
+            );
             // A qualified resource can materialize the cell before this
             // function's storage declaration is installed. Adding block
             // metadata must not overwrite that existing value.
             if (initialize_missing_storage || static_local.is_constant())
                 && state.memory.known_value(&slot).is_none()
             {
-                state.set_memory(
+                state.set_or_stage_memory(
                     state
                         .memory
                         .clone()
                         .store(slot.clone(), static_local.initial_value().clone()),
+                    stage,
                 );
             }
         }
@@ -297,18 +350,24 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(static_array.element_type().byte_width())
             .expect("validated C static local array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                bytes,
-                static_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    bytes,
+                    static_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || static_array.is_constant() {
-                state.set_memory(store_array_contents(
-                    state.memory.clone(),
-                    &slot,
-                    static_array.element_type(),
-                    static_array.initial_values(),
-                ));
+                state.set_or_stage_memory(
+                    store_array_contents(
+                        state.memory.clone(),
+                        &slot,
+                        static_array.element_type(),
+                        static_array.initial_values(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -334,22 +393,27 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::static_pointer(function.name(), static_aggregate.kernel_name());
         register_block_alignment(&slot.base, static_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                static_aggregate.layout().size_bytes(),
-                static_aggregate.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    static_aggregate.layout().size_bytes(),
+                    static_aggregate.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || static_aggregate.is_constant() {
-                state.set_memory(zero_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate.layout(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_fields(state.memory.clone(), &slot, static_aggregate.layout()),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        static_aggregate.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_aggregate_object_at_with_constant(
@@ -381,23 +445,32 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(static_aggregate_array.layout().size_bytes())
             .expect("validated C static aggregate array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                bytes,
-                static_aggregate_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    bytes,
+                    static_aggregate_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || static_aggregate_array.is_constant() {
-                state.set_memory(zero_aggregate_array_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate_array.layout(),
-                    static_aggregate_array.length(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate_array.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_array_fields(
+                        state.memory.clone(),
+                        &slot,
+                        static_aggregate_array.layout(),
+                        static_aggregate_array.length(),
+                    ),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        static_aggregate_array.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -435,7 +508,7 @@ pub(super) fn initialize_program_function_globals_owned(
 /// [`CellRun`]: crate::kernel::primitives::CellRun
 pub(super) fn store_array_contents(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     element_type: ProgramType,
     contents: &crate::kernel::ArrayContents,
 ) -> SymbolicMemory {
@@ -528,7 +601,7 @@ pub(super) fn aggregate_zero_fields(
             _ => continue,
         };
         let zero = if matches!(field.program_type(), ProgramType::PointerArray(_, _)) {
-            ProgramValue::typed_pointer(Address::null(), element_type)
+            ProgramValue::typed_pointer(OldAddress::null(), element_type)
         } else {
             match element_type {
                 ProgramType::Parameter(_) | ProgramType::ParameterPointer(_) => {
@@ -541,8 +614,8 @@ pub(super) fn aggregate_zero_fields(
                 ProgramType::UInt8 => uint8(0),
                 ProgramType::UInt16 => uint16(0),
                 ProgramType::UInt32 => uint32(0),
-                ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(0)),
-                ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+                ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(0)),
+                ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
                 ProgramType::Int128 => MachineIntegerType::Int128
                     .constant_value(
                         MachineIntegerConstant::from_signed(MachineIntegerType::Int128.format(), 0)
@@ -558,8 +631,8 @@ pub(super) fn aggregate_zero_fields(
                         .unwrap(),
                     )
                     .unwrap(),
-                ProgramType::Float32 => ProgramValue::Float32(MachineTerm::constant(0)),
-                ProgramType::Float64 => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+                ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::constant(0)),
+                ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
                 ProgramType::Int128Pointer
                 | ProgramType::UInt128Pointer
                 | ProgramType::Int128PointerPointer
@@ -577,7 +650,7 @@ pub(super) fn aggregate_zero_fields(
                 | ProgramType::Float64PointerPointer
                 | ProgramType::Pointer
                 | ProgramType::FunctionPointer(_) => {
-                    ProgramValue::typed_pointer(Address::null(), element_type)
+                    ProgramValue::typed_pointer(OldAddress::null(), element_type)
                 }
                 ProgramType::Int8Array(_) => {
                     continue;
@@ -622,7 +695,7 @@ pub(super) fn aggregate_zero_fields(
 
 pub(super) fn zero_aggregate_fields(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     layout: &AggregateLayout,
 ) -> SymbolicMemory {
     for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
@@ -670,7 +743,7 @@ pub(super) fn zero_union_member_value(program_type: ProgramType) -> Option<Progr
         | ProgramType::Int32PointerPointer
         | ProgramType::UInt8PointerPointer
         | ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Address::null(), program_type)
+            ProgramValue::typed_pointer(OldAddress::null(), program_type)
         }
         _ => return None,
     })
@@ -678,7 +751,7 @@ pub(super) fn zero_union_member_value(program_type: ProgramType) -> Option<Progr
 
 pub(super) fn initialize_aggregate_fields(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     initializers: &[AggregateInitializer],
 ) -> SymbolicMemory {
     for initializer in initializers {
@@ -741,7 +814,7 @@ pub(super) fn aggregate_array_zero_runs(
 
 pub(super) fn zero_aggregate_array_fields(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     layout: &AggregateLayout,
     length: u32,
 ) -> SymbolicMemory {
@@ -864,7 +937,7 @@ pub(super) fn aggregate_argument_read_refusal(
 /// through the ordinary load path.
 pub(super) fn aggregate_copy_reads_uninitialized(
     memory: &SymbolicMemory,
-    source: &Address,
+    source: &OldAddress,
     layout: &AggregateLayout,
 ) -> bool {
     // Mirror the carried-field classification in `copy_aggregate_fields`: a
@@ -995,7 +1068,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
 /// symbolic load rather than stale storage.
 pub(super) fn uninitialized_aggregate_copy_source_cell(
     memory: &SymbolicMemory,
-    source_field: &Address,
+    source_field: &OldAddress,
     element_type: ProgramType,
 ) -> bool {
     if memory.known_value(source_field).is_some()
@@ -1032,7 +1105,7 @@ pub(super) fn uninitialized_aggregate_copy_source_cell(
 /// as for external storage, so the destination is initialized too.
 pub(super) fn aggregate_copy_source_holds_nothing(
     memory: &SymbolicMemory,
-    source_field: &Address,
+    source_field: &OldAddress,
     element_type: ProgramType,
 ) -> bool {
     // Static storage is initialized for the whole run: a field function entry
@@ -1054,8 +1127,8 @@ pub(super) fn aggregate_copy_source_holds_nothing(
 /// other modules must use this checked form.
 pub(in crate::kernel) fn copy_aggregate_fields_checked_at(
     state: &ExecutionState,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
     // Caller storage predates this function's locals. Earlier field stores
@@ -1075,8 +1148,8 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked_at(
 #[cfg(test)]
 pub(in crate::kernel) fn copy_aggregate_fields_checked(
     memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
     copy_aggregate_fields_checked_from(memory, source, destination, layout, None)
@@ -1084,8 +1157,8 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
 
 fn copy_aggregate_fields_checked_from(
     memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
     source_state: Option<&ExecutionState>,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
@@ -1116,8 +1189,8 @@ fn copy_aggregate_fields_checked_from(
 // images use the raw form because their incoming aggregate values are evaluated.
 pub(super) fn copy_aggregate_fields(
     memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
 ) -> SymbolicMemory {
     copy_aggregate_fields_from(memory, source, destination, layout, None)
@@ -1125,8 +1198,8 @@ pub(super) fn copy_aggregate_fields(
 
 pub(super) fn copy_aggregate_fields_from(
     mut memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
     source_state: Option<&ExecutionState>,
 ) -> SymbolicMemory {
@@ -1251,22 +1324,23 @@ pub(super) fn copy_aggregate_fields_from(
                         | ProgramType::UInt8Pointer
                         | ProgramType::UInt32Pointer
                         | ProgramType::Int32PointerPointer
-                        | ProgramType::UInt8PointerPointer => {
-                            Some(ProgramValue::typed_pointer(Address::null(), element_type))
-                        }
+                        | ProgramType::UInt8PointerPointer => Some(ProgramValue::typed_pointer(
+                            OldAddress::null(),
+                            element_type,
+                        )),
                         ProgramType::UInt16 => Some(uint16(0)),
                         ProgramType::UInt32 => Some(uint32(0)),
                         ProgramType::Int64 => {
-                            Some(ProgramValue::Int64(MachineTerm::int64_constant(0)))
+                            Some(ProgramValue::Int64(OldMachineTerm::int64_constant(0)))
                         }
                         ProgramType::UInt64 => {
-                            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(0)))
+                            Some(ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)))
                         }
                         ProgramType::Float32 => {
-                            Some(ProgramValue::Float32(MachineTerm::constant(0)))
+                            Some(ProgramValue::Float32(OldMachineTerm::constant(0)))
                         }
                         ProgramType::Float64 => {
-                            Some(ProgramValue::Float64(MachineTerm::uint64_constant(0)))
+                            Some(ProgramValue::Float64(OldMachineTerm::uint64_constant(0)))
                         }
                         _ => None,
                     };
@@ -1391,7 +1465,7 @@ pub(super) fn copy_aggregate_fields_from(
 
 fn copy_retained_aggregate_union_member<'a>(
     memory: &SymbolicMemory,
-    source_field: &Address,
+    source_field: &OldAddress,
     element_type: ProgramType,
     captured_point: impl Fn() -> Option<&'a ProgramPoint>,
 ) -> Option<ExecutionValue> {
@@ -1464,17 +1538,19 @@ fn copy_retained_aggregate_union_member<'a>(
             | ProgramType::FunctionPointer(_) => {
                 let pointer = if matches!(element_type, ProgramType::FunctionPointer(_)) {
                     match load {
-                        MachineTerm::Variable(variable) => Address::symbolic_function(variable),
-                        load => Address {
+                        OldMachineTerm::Variable(variable) => {
+                            OldAddress::symbolic_function(variable)
+                        }
+                        load => OldAddress {
                             base: source_field.base.clone(),
-                            offset: AddressOffset::scale_int32(load, 1),
+                            offset: OldAddressOffset::scale_int32(load, 1),
                         },
                     }
                 } else {
                     let pointee_type = element_type.pointee_type()?;
-                    Address {
+                    OldAddress {
                         base: source_field.base.clone(),
-                        offset: AddressOffset::scale_int32(
+                        offset: OldAddressOffset::scale_int32(
                             load,
                             i64::from(pointee_type.byte_width()),
                         ),

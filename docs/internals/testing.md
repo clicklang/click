@@ -404,6 +404,14 @@ ratchets over the whole corpus. On 2026-10-15 the warm local gate took 11.7
 minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
+On 2026-11-25 the cold local gate took 30m40s on Claude Code cloud: an 8m40s
+build, 602s of unit/API tests and 682s of fixtures. The merge queue's test
+shards had grown from 1,753 test-seconds on 2026-10-26 to 3,128; tests present
+in both runs were only 16% slower, and the rest came from new tests that never
+met the half-second rule. Applying the rule to that run's timings sent 921
+unit tests, 215 batched cases and 924 mdtests to nightly, about 1,900 of the
+2,377 unit test-seconds and 1,650 of the 2,305 mdtest file-seconds. Where a
+test module would have lost every gate test, its fastest stayed.
 
 ### Nightly report
 
@@ -525,6 +533,28 @@ The GitHub Actions samples use standard `ubuntu-24.04` hosted runners; their
 logs do not establish an exact CPU model or memory allocation, so the cloud
 resource values above must not be attributed to those runners. Their dates,
 checked-out revisions, and workflow links are recorded below.
+
+### Memory and disk in cloud sessions
+
+One rustc compiling Click takes about 7 GB. A cargo command that compiles the
+library and a test crate at once, such as `cargo test`, `cargo build --lib
+--tests`, or nextest selecting `--lib` with `--test mdtests`, runs two of them:
+on 2026-11-26 a default `cargo test --no-run` peaked at 15.5 GB of the 16 GB
+with two compiles of 7.6 and 6.0 GB. Without swap the kernel kills one of
+them. The `click` environment's setup script therefore adds 8 GB of
+compressed swap in RAM (zram), which absorbed that build's overflow in up to
+1.25 GB of compressed pages. Check that it is present with
+`cat /proc/swaps`; with it, keep the default build jobs and incremental
+compilation instead of `-j1` or `CARGO_INCREMENTAL=0`.
+
+Disk is a per-session allowance, often 40 GB or less, and `df` shows the
+remaining part of it. Cargo's incremental cache is most of `target/`: each
+build configuration keeps its own 3-5 GB, and each worktree has its own
+`target/`. One session's `target/` reached 20 GB from the gate's test build,
+a default `cargo check` and a default `cargo test` build. Delete a worktree's
+`target/` when its task ends, and on "No space left on device" delete
+`target/debug/incremental` of the configurations not in use; the next build
+of one of them is then a full Click build.
 
 ### Measurement evidence
 
@@ -1869,7 +1899,7 @@ that class to prescribe the next action:
   diagnostic only and produces no expansion command. Failed smart search has
   no successful proof. Decompose the proof into smaller or explicit steps.
   A search that ignores or badly overshoots its enforced bound is a tooling
-  bug. Smart sites include written `close()`, `step_until`, and `transport`,
+  bug. Smart sites include written `close()` and `step_until`,
   as well as the implicit tail and closer (see
   [`click profile`](../reference/cli/profile.md#report-interpretation)).
 - `SIMPLE` steps are deterministic checked operations. Do not expand them;

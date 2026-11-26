@@ -1,14 +1,14 @@
 //! Borrow exact pointer payloads and written addresses during certification.
 use super::*;
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, KernelAddressOffset, OldPointer, RetainedPointerMetadata,
-    SharedAddress, SharedAddressOffset, SharedPointer,
+    AddressBase, KernelAddressOffset, OffsetTree, OffsetView, OldAddress, OldAddressOffset,
+    OldPointer, RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 use std::borrow::Cow;
 
 #[derive(Clone, Copy)]
 enum BorrowedAddress<'a> {
-    Native(&'a Address),
+    Native(&'a OldAddress),
     Shared(&'a SharedAddress),
 }
 impl<'a> BorrowedAddress<'a> {
@@ -25,7 +25,7 @@ impl<'a> BorrowedAddress<'a> {
 
 #[derive(Clone, Copy)]
 enum Offset<'a> {
-    Native(&'a AddressOffset),
+    Native(&'a OldAddressOffset),
     Shared(&'a SharedAddressOffset),
 }
 enum OffsetNode<'a> {
@@ -37,12 +37,25 @@ enum OffsetNode<'a> {
         unsigned: bool,
         byte_width: i64,
         ty: MachineIntegerType,
-        value: Operand<'a>,
+        value: ScaledIndex<'a>,
     },
+}
+/// A scaled offset's index: a native offset's view owns its retained index;
+/// a shared offset's index operand borrows from the offset.
+enum ScaledIndex<'a> {
+    Native(crate::kernel::SharedMachineIntegerTerm),
+    Shared(Operand<'a>),
+}
+impl ScaledIndex<'_> {
+    fn operand(&self) -> Operand<'_> {
+        match self {
+            Self::Native(index) => index.operand_view(),
+            Self::Shared(operand) => *operand,
+        }
+    }
 }
 impl<'a> Offset<'a> {
     fn node(self) -> Option<OffsetNode<'a>> {
-        use AddressOffset as P;
         use KernelAddressOffset as K;
         use OffsetNode as V;
         let shared_index = |value: &'a KernelTerm| {
@@ -53,33 +66,35 @@ impl<'a> Offset<'a> {
             // The native offset exporter preserves opaque index payloads as
             // native operands. Do not grant them shared-root identity here.
             let operand = if let Some(native) = value.retained_machine_input() {
-                Operand::Legacy(native)
+                Operand::Old(native)
             } else {
                 Operand::Shared(value)
             };
             Some((ty, operand))
         };
         Some(match self {
-            Self::Native(P::Constant(value)) => V::Constant(*value),
-            Self::Native(P::Variable(value)) => V::Variable(*value),
-            Self::Native(P::Add(a, b)) => V::Add([Self::Native(a), Self::Native(b)]),
-            Self::Native(P::Int32Scaled { value, byte_width }) => V::Scaled {
-                wide: false,
-                unsigned: false,
-                byte_width: *byte_width,
-                ty: value.ty(),
-                value: value.operand_view(),
-            },
-            Self::Native(P::Int64Scaled {
-                value,
-                byte_width,
-                unsigned,
-            }) => V::Scaled {
-                wide: true,
-                unsigned: *unsigned,
-                byte_width: *byte_width,
-                ty: value.ty(),
-                value: value.operand_view(),
+            Self::Native(offset) => match offset.view() {
+                OffsetView::Constant(value) => V::Constant(value),
+                OffsetView::Variable(value) => V::Variable(value),
+                OffsetView::Add(a, b) => V::Add([Self::Native(a), Self::Native(b)]),
+                OffsetView::Int32Scaled { index, byte_width } => V::Scaled {
+                    wide: false,
+                    unsigned: false,
+                    byte_width,
+                    ty: index.ty(),
+                    value: ScaledIndex::Native(index),
+                },
+                OffsetView::Int64Scaled {
+                    index,
+                    byte_width,
+                    unsigned,
+                } => V::Scaled {
+                    wide: true,
+                    unsigned,
+                    byte_width,
+                    ty: index.ty(),
+                    value: ScaledIndex::Native(index),
+                },
             },
             Self::Shared(value) => match value.node() {
                 K::Constant(value) => V::Constant(*value),
@@ -92,7 +107,7 @@ impl<'a> Offset<'a> {
                         unsigned: false,
                         byte_width: *byte_width,
                         ty,
-                        value,
+                        value: ScaledIndex::Shared(value),
                     }
                 }
                 K::Int64Scaled {
@@ -106,7 +121,7 @@ impl<'a> Offset<'a> {
                         unsigned: *unsigned,
                         byte_width: *byte_width,
                         ty,
-                        value,
+                        value: ScaledIndex::Shared(value),
                     }
                 }
             },
@@ -158,7 +173,7 @@ impl<'a> Value<'a> {
             Self::Native(value) => value.bounds().map(|bounds| {
                 (
                     BorrowedAddress::Native(&bounds.start),
-                    Operand::Legacy(&bounds.width),
+                    Operand::Old(&bounds.width),
                 )
             }),
             Self::Shared(value) => value.node().array.bounds().map(|bounds| {
@@ -229,7 +244,7 @@ impl Comparison {
             (None, None) => None,
         }
     }
-    pub(super) fn pointer(&mut self, a: &Address, b: &Address) -> bool {
+    pub(super) fn pointer(&mut self, a: &OldAddress, b: &OldAddress) -> bool {
         self.addresses(BorrowedAddress::Native(a), BorrowedAddress::Native(b))
     }
     pub(super) fn shared_addresses(&mut self, a: &SharedAddress, b: &SharedAddress) -> bool {
@@ -259,13 +274,13 @@ impl Comparison {
                 // Export only this selected width, never the complete pointer;
                 // a shared identity shortcut would admit additional widths.
                 let native = |value| match value {
-                    Operand::Legacy(value) => Cow::Borrowed(value),
+                    Operand::Old(value) => Cow::Borrowed(value),
                     Operand::Shared(root) => Cow::Owned(
                         crate::kernel::KernelTermExport::machine(root).expect("bounds width"),
                     ),
                 };
                 let (aw, bw) = (native(aw), native(bw));
-                self.machine(Operand::Legacy(&aw), Operand::Legacy(&bw))
+                self.machine(Operand::Old(&aw), Operand::Old(&bw))
             }
             (None, None) => true,
             _ => false,
@@ -319,7 +334,7 @@ impl Comparison {
                         value: bv,
                     }),
                 ) if (aw, au, ab, at) == (bw, bu, bb, bt) => {
-                    if !self.machine(av, bv) {
+                    if !self.machine(av.operand(), bv.operand()) {
                         return false;
                     }
                 }

@@ -78,7 +78,7 @@ void spin(struct cell* node, int32 n) {
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Sign::Pos(value) });
-                    have c.model == old(c.model) by { normalize(); }
+                    have c.model == old(c.model) by { close() using {}; }
                 },
             }
         }
@@ -89,5 +89,5 @@ void spin(struct cell* node, int32 n) {
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

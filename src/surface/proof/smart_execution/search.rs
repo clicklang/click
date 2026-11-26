@@ -275,95 +275,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_recorded_footprint_preservation(search_input, source, target)
     }
 
-    /// Tries the bounded source-local form of mid-execution fact transport on
-    /// this immutable execution Proof. The smart operation checks the empty
-    /// candidate and the source's own explicit form; it never scans the
-    /// ambient fact set. Richer premise discovery remains unavailable until
-    /// it has a relevance index rather than an environment-wide scan.
-    pub(in crate::surface::proof) fn try_execution_fact_transport(
-        search_input: &Proof<'a>,
-        source: &SyntaxProposition,
-        target: &SyntaxProposition,
-    ) -> Result<Option<Proof<'a>>, ClickError> {
-        #[cfg(test)]
-        crate::kernel::search::record_discovery("try_execution_fact_transport");
-        Ok(
-            crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
-                search_input,
-                source,
-                target,
-            )?
-            .ok(),
-        )
-    }
-
-    /// The bounded source-local form of mid-execution fact transport, as
-    /// [`Self::try_execution_fact_transport`], keeping the refusal of its
-    /// last candidate: the frame check with the source as its
-    /// only premise. A bare `transport` whose premise planner then fails
-    /// reports that refusal, which names what the frame could not carry
-    /// (`fact_transport_planning_failure`). Keeping it costs nothing: the
-    /// check already ran.
-    pub(in crate::surface::proof) fn try_execution_fact_transport_or_refusal(
-        search_input: &Proof<'a>,
-        source: &SyntaxProposition,
-        target: &SyntaxProposition,
-    ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
-        #[cfg(test)]
-        crate::kernel::search::record_discovery("try_execution_fact_transport_or_refusal");
-        if crate::instrumentation::replay_forbids_discovery("fact transport search") {
-            return Err(search_input.step_error("fact transport discovery needs explicit premises"));
-        }
-        let ProofContext::Execution(_) = search_input.context.as_ref() else {
-            return Err(search_input
-                .step_error("execution fact-transport search requires an execution proof"));
-        };
-        let execution = search_input.execution().ok_or_else(|| {
-            search_input.step_error("execution fact-transport search lost its semantic frontier")
-        })?;
-        if execution.core.frontier.is_at_function_entry() {
-            return Err(search_input.step_error(
-                "`transport` requires a current statement frontier after at least one execution step",
-            ));
-        }
-        // A focused function outcome is planned against its returned state;
-        // a bare exit frontier has no state to transport into.
-        if execution.core.frontier.is_at_function_exit()
-            && search_input.focused_outcome_data().is_none()
-        {
-            return Ok(Err(None));
-        }
-        match crate::kernel::search::ProofSearch::fact_transport_candidate_search(
-            search_input,
-            source,
-            target,
-            std::iter::once(source.clone()),
-        ) {
-            Ok(Ok(proof)) => Ok(Ok(proof)),
-            Ok(Err(refusal)) if !crate::instrumentation::deadline_exceeded() => Ok(Err(refusal)),
-            Ok(Err(refusal)) => {
-                // A budget stop is a failure of this written operation, not
-                // an abandoned candidate. Retain the checked predecessor.
-                search_input.record_certification_failure_trace(search_input.claim_label(), 0);
-                Err(search_input.attach_step_diagnostic(search_input.step_error(format!(
-                    "execution-frontier fact transport has no explicit surface-premise certificate: {}",
-                    refusal
-                        .as_ref()
-                        .map(|error| error.raw_summary())
-                        .unwrap_or("no candidate was checked")
-                ))))
-            }
-            Err(error) if crate::instrumentation::deadline_exceeded() => {
-                search_input.record_certification_failure_trace(search_input.claim_label(), 0);
-                Err(search_input.attach_step_diagnostic(error))
-            }
-            Err(_) => Ok(Err(None)),
-        }
-    }
-
-    /// Ordinary search misses carry no outer diagnostic: smart callers
-    /// discard them. The checked candidate refusals remain available to
-    /// the execution planner that needs to report a written operation.
+    /// Search for an ordinary proof from explicitly selected facts.
     pub(in crate::surface::proof) fn try_fact_transport_from_candidates(
         search_input: &Proof<'a>,
         source: &SyntaxProposition,
@@ -372,110 +284,59 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_fact_transport_from_candidates");
-        Ok(
-            crate::kernel::search::ProofSearch::fact_transport_candidate_search(
-                search_input,
-                source,
-                target,
-                candidates,
-            )?
-            .ok(),
-        )
+        Self::fact_transport_candidate_search(search_input, source, target, candidates)
     }
 
-    /// The candidate search behind [`Self::try_fact_transport_from_candidates`].
-    /// A refusal is the last candidate's refusal, if any candidate was checked;
-    /// the outer error is a stopped search.
+    /// Construct a proof from the named candidates and the retained execution
+    /// evidence. Every successful route records ordinary proof steps.
     pub(in crate::surface::proof) fn fact_transport_candidate_search(
         search_input: &Proof<'a>,
         source: &SyntaxProposition,
         target: &SyntaxProposition,
         candidates: impl IntoIterator<Item = SyntaxProposition>,
-    ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
+    ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("fact_transport_candidate_search");
         if crate::instrumentation::replay_forbids_discovery("fact transport search") {
             return Err(search_input.step_error("fact transport discovery needs explicit premises"));
         }
-        // A known source and target need only an ordinary lookup. Construct
-        // that proof directly, before any history or legacy premise planning.
+        check_verification_deadline()?;
         let source_fact =
             search_input.lower_surface_proposition_direct(source, "known transport source")?;
-        if search_input.facts().pure_known_available(&source_fact) {
-            match search_input
-                .driver()
-                .apply_ordinary_transport_steps(target, vec![ProofStep::Known])
-            {
-                Ok(proof) => return Ok(Ok(proof)),
-                Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
-                Err(_) => {}
-            }
+        if search_input.facts().pure_known_available(&source_fact)
+            && let Some(proof) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_ordinary_transport_steps(target, vec![ProofStep::Known]),
+            )?
+        {
+            return Ok(Some(proof));
         }
         if let Some(proof) =
             Self::try_recorded_footprint_preservation(search_input, source, target)?
         {
-            return Ok(Ok(proof));
+            return Ok(Some(proof));
         }
         if let Some(proof) = Self::try_history_indexed_equalities(search_input, source, target)? {
-            return Ok(Ok(proof));
+            return Ok(Some(proof));
         }
-        let apply = |premises: Vec<SyntaxProposition>| {
-            search_input
-                .driver()
-                .apply_step(ProofStep::CompatibilityFactTransport {
-                    source: source.clone(),
-                    target: target.clone(),
-                    premises,
-                })
-        };
+        if search_input.surface_goal() == Some(target)
+            && let Some(proof) = Self::try_struct_field_store_bridge(search_input, target, false)?
+        {
+            return Ok(Some(proof));
+        }
         let mut selected = Vec::new();
-        let mut last_error = None;
-        let mut selected_proof = match apply(Vec::new()) {
-            Ok(proof) => Some(proof),
-            Err(error) => {
-                last_error = Some(error);
-                check_verification_deadline()?;
-                None
-            }
-        };
-        if selected_proof.is_none() {
-            for candidate in candidates {
-                check_verification_deadline()?;
-                if selected.contains(&candidate) {
-                    continue;
-                }
-                selected.push(candidate);
-                match apply(selected.clone()) {
-                    Ok(proof) => {
-                        selected_proof = Some(proof);
-                        break;
-                    }
-                    Err(error) => {
-                        last_error = Some(error);
-                        check_verification_deadline()?;
-                    }
-                }
-            }
-        }
-        let Some(mut selected_proof) = selected_proof else {
-            return Ok(Err(last_error));
-        };
-        let mut index = 0;
-        while index < selected.len() {
+        for candidate in candidates {
             check_verification_deadline()?;
-            let mut reduced = selected.clone();
-            reduced.remove(index);
-            match apply(reduced.clone()) {
-                Ok(proof) => {
-                    selected = reduced;
-                    selected_proof = proof;
-                }
-                Err(_) => {
-                    check_verification_deadline()?;
-                    index += 1;
-                }
-            }
+            crate::instrumentation::record_deterministic_work(1);
+            selected.push(candidate);
         }
-        Ok(Ok(selected_proof))
+        Self::try_direct_selected_fact_transport(
+            search_input,
+            source,
+            target,
+            &selected,
+            &source_fact,
+        )
     }
 }

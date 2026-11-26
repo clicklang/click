@@ -69,6 +69,31 @@ distinguish those operations through the statement's existing atomic region
 selectors. A diagnostic points to the written update and identifies the
 operation that failed. [Program regions and points](../reference/language/index.md#at)
 
+Each atomic region is one transition: it reaches at most one new program
+point, its exit, from its entry. A region that changes memory in several steps
+stages each one (`ExecutionState::stage_memory`) and installs them together:
+the next install takes every staged step, and the leaf executor completes each
+path it returns (`complete_staged_memory`). A staged state stands between
+points, so a region reads only at its entry or its exit. A declaration's
+initializer is read at the region's entry, which the fresh block leaves
+unchanged, unless it names the object being declared. Test builds assert the
+rule for every leaf statement (`assert_one_point_per_region`).
+
+A contract call reaches two points: its effect point (`call(f, j).effect`,
+`ExecutionState::complete_staged_memory_as_call_effect`), once every value it
+writes is in place, and then its exit, after its effects on initialization,
+liveness and allocation. The call's reads before its exit, such as the
+provisional ensures that decide its allocation effects and its coordinate
+ensures, are made at the effect point; its produced words' equations are made
+at the exit. Every value is the same at both, so `.effect` is a migration
+measure, to be removed once reads are named by the write that made their
+value. A callee's static storage is materialized at one point before the
+effect (`initialize_callee_globals`). A call's mutex protocol steps, a
+helper's exchange and each typed use's forgetting, are steps of the call
+(`mutexes::ProtocolSite::InCall`): they read at the call's entry, where the
+callee's effects leave the protected footprint as it was, and stage their
+memory into the effect point.
+
 Review frontend and lowering changes against these checks.
 
 - Statement selectors still resolve to the same written constructs. Changes
@@ -116,15 +141,22 @@ Review frontend and lowering changes against these checks.
   (`source_statements.rs`). The layout refuses a function whose region count
   differs from its sites' count, rather than guess.
   Source-layout result locals preserve allocation naming.
-  A call that copies a by-value aggregate argument into its parameter object
-  names that copy `<region>.parameter(name)`: the call producer hands back
-  the memory just after the copies, with only those parameters bound
-  (`kernel::CallParameters`), and the step records it as the region's
-  parameter point (`ProgramPointKind::Parameters`). The callee's contract
-  reads the copy there, so a step that prepares the call exposes that point at
-  its pre-state while it proves the call's requirements, and the source-backed
-  requirement Surface form substitutes `R.parameter(name)` for the parameter.
-  Reads through it are resolved from the recorded layout when lowered.
+  A by-value aggregate argument is copied into its parameter object by the
+  frontend, in regions of their own before the call: the object is a
+  prepared argument local of the caller, tagged with the callee parameter it
+  is passed as (`LocalBindingId::prepared_argument_for`), declared and then
+  initialized by an aggregate copy, and its lifetime ends when the call
+  returns. C, C++ and Rust all prepare such arguments (a Rust drop operand is
+  already its call's prepared object), and the kernel refuses a program call
+  whose by-value aggregate argument is not a prepared object
+  (`bind_contract_arguments`, `AggregateArgumentBinding::Call`): only a
+  proof's entry builds its own input objects. The call itself is one
+  transition, so its `.entry` is the callee's entry. The source layout maps each call region's parameters to their
+  objects from the program text (`call_parameter_object`, `prepared_parameter`),
+  so `<region>.parameter(name)` names the object like a local, from its
+  allocation on, and any fact about it, a separation goal for the copy's
+  write included, raises to that spelling. The source-backed requirement
+  Surface form substitutes `R.parameter(name)` for the parameter.
   In the function's own proof the parameter is the input itself: the entry
   declares its object holding its own entry values
   (`kernel::program_function_input_objects_state`), so `p.f` names the value and
@@ -502,7 +534,7 @@ Lowering never folds a comparison of two literals.
   `address(p) == address(p)` retains its `int64` address-word comparison.
   Lowering and the producers whose results must match a lowered goal
   (`preserve`) build the pointer equality with
-  `ConditionTerm::logical_pointer_equal`. A pointer equality raises as
+  `OldConditionTerm::logical_pointer_equal`. A pointer equality raises as
   contract `p == q`, which lowers back to it; the weaker
   `address(p) == address(q)` is the address-word equality a C comparison
   states (`design/pointer-subobject-bounds.md`, Phase B). A `AddressEqual`

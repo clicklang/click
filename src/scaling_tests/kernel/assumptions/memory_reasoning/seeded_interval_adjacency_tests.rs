@@ -7,9 +7,9 @@ use super::*;
 #[test]
 fn materialized_run_adjacency_preserves_holes_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: "run-adjacency".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let source = crate::kernel::intern_memory(SymbolicMemory::new());
     let context = PureFactContext::new();
@@ -35,7 +35,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
                 context.adjacent_loadable_region_facts(
                     &memory,
                     &base,
-                    &MachineTerm::constant(size + 1),
+                    &OldMachineTerm::constant(size + 1),
                 )
             });
             assert_eq!(facts.is_some(), missing.is_none());
@@ -43,7 +43,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
                 let goal = Proposition::MemoryLoadable {
                     memory,
                     base: base.clone(),
-                    bytes: (MachineTerm::constant(size + 1)).into(),
+                    bytes: (OldMachineTerm::constant(size + 1)).into(),
                     wide: false,
                 };
                 let derivation = crate::kernel::search::ProofSearch::derive_atomic_proposition(

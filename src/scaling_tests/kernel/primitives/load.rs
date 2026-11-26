@@ -8,10 +8,10 @@ use crate::kernel::{
     Variable,
 };
 
-fn cell(index: u64) -> Address {
-    Address {
+fn cell(index: u64) -> OldAddress {
+    OldAddress {
         base: AddressBase::Concrete("local:load-cells".into()),
-        offset: AddressOffset::Constant(8 * index as i64),
+        offset: OldAddressOffset::Constant(8 * index as i64),
     }
 }
 
@@ -101,9 +101,9 @@ fn one_load_per_cell_regardless_of_exactness_or_type() {
         ProgramType::Pointer,
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     ];
-    let slot = Address {
+    let slot = OldAddress {
         base: AddressBase::Concrete("local:load-slot".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for reads in [4usize, 64, 512] {
@@ -113,7 +113,7 @@ fn one_load_per_cell_regardless_of_exactness_or_type() {
         let written = start.clone().with_memory(start.memory().clone().store(
             slot.clone(),
             ProgramValue::Pointer(OldPointer::new(
-                Address::symbolic(Variable(984_001)),
+                OldAddress::symbolic(Variable(984_001)),
                 ProgramType::Int32Pointer,
             )),
         ));

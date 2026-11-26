@@ -5,15 +5,17 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn projection_context_attachment_does_not_scan_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let (head, definition, memory, mut facts, _) = fixture();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(890_000 + i * 2)),
-                    MachineTerm::Variable(Variable(890_001 + i * 2)),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(890_000 + i * 2)),
+                    OldMachineTerm::Variable(Variable(890_001 + i * 2)),
                 ),
                 true,
             );
@@ -22,7 +24,7 @@ fn projection_context_attachment_does_not_scan_unrelated_facts() {
             crate::instrumentation::measure_deterministic_work(|| {
                 let context = projection_context(&head, &definition, &memory, &facts);
                 let children = prior_child(context, &head);
-                let alias = Address::symbolic(Variable(881_002));
+                let alias = OldAddress::symbolic(Variable(881_002));
                 assert!(
                     children
                         .concrete_read_entries(&alias, 4, &facts)
@@ -55,16 +57,16 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
         let mut ambient = ResourceContext::new();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(891_000 + i * 2)),
-                    MachineTerm::Variable(Variable(891_001 + i * 2)),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(891_000 + i * 2)),
+                    OldMachineTerm::Variable(Variable(891_001 + i * 2)),
                 ),
                 true,
             );
             ambient = ambient.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                Address::symbolic(Variable(895_000 + i)),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldAddress::symbolic(Variable(895_000 + i)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )));
         }
         let state = ExecutionState::new()
@@ -79,7 +81,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
                     "frontier expansion must not import ambient authority"
                 );
                 let children = prior_child(context, &head);
-                let alias = Address::symbolic(Variable(881_002));
+                let alias = OldAddress::symbolic(Variable(881_002));
                 assert!(
                     children
                         .concrete_read_entries(&alias, 4, &facts)
@@ -88,7 +90,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
                 );
                 assert!(children.permits_memory_read(&alias, 4, &facts));
                 assert!(!children.permits_memory_read(
-                    &Address::symbolic(Variable(895_000)),
+                    &OldAddress::symbolic(Variable(895_000)),
                     4,
                     &facts
                 ));
@@ -113,9 +115,9 @@ fn frontier_coverage_does_not_scan_unrelated_equality_facts() {
         let (_, _, _, mut facts, _) = fixture();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(899_000 + i * 2)),
-                    MachineTerm::Variable(Variable(899_001 + i * 2)),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(899_000 + i * 2)),
+                    OldMachineTerm::Variable(Variable(899_001 + i * 2)),
                 ),
                 true,
             );
@@ -128,7 +130,7 @@ fn frontier_coverage_does_not_scan_unrelated_equality_facts() {
                     coverage_context(available, std::slice::from_ref(&wanted), &facts);
                 assert!(
                     input
-                        .concrete_write_entries(&Address::symbolic(Variable(881_002)), 4, &facts)
+                        .concrete_write_entries(&OldAddress::symbolic(Variable(881_002)), 4, &facts)
                         .unwrap()
                         .exact()
                 );
@@ -157,9 +159,9 @@ fn resource_satisfaction_does_not_scan_unrelated_resources_or_equalities() {
         let mut available = vec![coverage_piece(881_000, 1, 3)];
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(899_000 + i * 2)),
-                    MachineTerm::Variable(Variable(899_001 + i * 2)),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(899_000 + i * 2)),
+                    OldMachineTerm::Variable(Variable(899_001 + i * 2)),
                 ),
                 true,
             );
@@ -197,9 +199,9 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
         let (head, definition, _, mut facts, _) = fixture();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(899_000 + i * 2)),
-                    MachineTerm::Variable(Variable(899_001 + i * 2)),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(899_000 + i * 2)),
+                    OldMachineTerm::Variable(Variable(899_001 + i * 2)),
                 ),
                 true,
             );
@@ -217,7 +219,7 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
             crate::instrumentation::measure_deterministic_work(|| {
                 let fresh = ResourceContext::new_with_equalities(&facts)
                     .unchecked_with_fact(coverage_piece(881_000, 0, 1));
-                let alias = Address::symbolic(Variable(881_002));
+                let alias = OldAddress::symbolic(Variable(881_002));
                 assert!(
                     fresh
                         .concrete_write_entries(&alias, 4, &facts)

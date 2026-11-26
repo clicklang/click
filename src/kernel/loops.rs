@@ -197,6 +197,7 @@ pub(super) fn execute_program_call_construct_paths(
         &selected,
         None,
         function_name,
+        CallDispatch::Direct,
         None,
         arguments,
         assumptions,
@@ -217,12 +218,34 @@ pub(super) fn execute_program_call_paths(
     state: &ExecutionState,
     result_call: Option<u32>,
     function_name: &str,
+    dispatch: CallDispatch,
     callee: Option<&Callee>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    if dispatch == CallDispatch::CppVirtual {
+        let environment = execution_context.environment;
+        let Some(rule) = environment.get_cpp_virtual_rule(function_name) else {
+            return Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                    "virtual call to `{function_name}` requires a virtual interface contract"
+                ))),
+                Vec::new().into(),
+                Vec::new(),
+            )]);
+        };
+        return execute_cpp_external_transition(
+            state,
+            rule,
+            None,
+            arguments,
+            assumptions,
+            environment,
+            budget,
+        );
+    }
     // A call through a function pointer calls whatever the pointer holds.
     if let Some(callee) = callee {
         let paths = indirect_call_statement_paths(execute_program_indirect_call_paths(
@@ -371,31 +394,106 @@ pub(super) fn execute_program_call_paths(
         assumptions,
         execution_context,
         budget,
-    )?
-    .into_iter()
-    .map(|path| StatementExecutionPath {
-        call_parameters: path.call_parameters.clone(),
-        loop_invariant_correspondence: Default::default(),
-        call_result: match &path.outcome {
-            FunctionOutcome::Return { value, .. } if value.program_type() != ProgramType::Void => {
-                Some(value.clone())
-            }
-            _ => None,
-        },
-        outcome: match path.outcome {
-            FunctionOutcome::Return { state, .. } => StatementOutcome::Normal(state),
-            FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
-            FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
-            FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
-                StatementOutcome::UndefinedBehavior(undefined_behavior)
-            }
-            FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
-        },
-        facts: path.facts,
-        obligations: path.obligations,
-        borrow_evidence: path.borrow_evidence,
-    })
-    .collect::<Vec<_>>();
+    )?;
+    call_statement_paths(paths, budget)
+}
+
+pub(super) fn execute_cpp_binding_paths(
+    state: &ExecutionState,
+    binding: &CppBindingContract,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    execution_context: ExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let environment = execution_context.environment;
+    let Some(rule) = environment.get_cpp_binding_rule(binding) else {
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                "missing contract for {binding}"
+            ))),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    };
+    execute_cpp_external_transition(
+        state,
+        rule,
+        Some(binding),
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )
+}
+
+fn execute_cpp_external_transition(
+    state: &ExecutionState,
+    rule: &ExternalFunctionRule,
+    binding: Option<&CppBindingContract>,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    if environment.selected_call_contract.is_some() {
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
+                "step(Contract) requires a function-pointer call".into(),
+            )),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    }
+    if super::functions::contract_reaches_population(rule.function.contract_interface())
+        && !super::functions::authority_preserves_assumed_resource_contract(
+            rule.function.contract_interface(),
+        )
+    {
+        return Ok(vec![authority_call_refusal_path()]);
+    }
+    let paths = super::functions::execute_external_function_rule(
+        state,
+        rule,
+        binding,
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )?;
+    call_statement_paths(paths, budget)
+}
+
+fn call_statement_paths(
+    paths: Vec<FunctionPath>,
+    budget: &ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let paths = paths
+        .into_iter()
+        .map(|path| StatementExecutionPath {
+            loop_invariant_correspondence: Default::default(),
+            call_result: match &path.outcome {
+                FunctionOutcome::Return { value, .. }
+                    if value.program_type() != ProgramType::Void =>
+                {
+                    Some(value.clone())
+                }
+                _ => None,
+            },
+            outcome: match path.outcome {
+                FunctionOutcome::Return { state, .. } => StatementOutcome::Normal(state),
+                FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
+                FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
+                FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
+                    StatementOutcome::UndefinedBehavior(undefined_behavior)
+                }
+                FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+            },
+            facts: path.facts,
+            obligations: path.obligations,
+            borrow_evidence: path.borrow_evidence,
+        })
+        .collect::<Vec<_>>();
     budget.check_path_width(paths.len())?;
     Ok(paths)
 }
@@ -431,7 +529,7 @@ fn unbound_modeled_pthread_call(
 /// otherwise joining immediately after a parent write could preserve it.
 fn freshen_shared_mutex_payload(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
@@ -465,6 +563,7 @@ fn freshen_shared_mutex_payload(
         &environment.modeled_mutex_definition_list,
         assumptions,
         budget,
+        super::mutexes::ProtocolSite::Own,
     )
     .map_err(|error| error.into_runtime_error(mutex))
 }
@@ -502,7 +601,7 @@ fn execute_modeled_pthread_mutex_paths(
                 )
             ) =>
         {
-            transport.function.as_ref() == contract.function_name
+            matches!(&transport.target, CallBinderTarget::Function(name) if name.as_ref() == contract.function_name)
                 && transport.arity == contract.arity
                 && transport.bindings.iter().all(|(identity, _)| {
                     contract
@@ -862,7 +961,7 @@ fn execute_modeled_pthread_mutex_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            ProgramValue::Int32(MachineTerm::constant(0)),
+                            ProgramValue::Int32(OldMachineTerm::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -877,10 +976,9 @@ fn execute_modeled_pthread_mutex_paths(
             }
         };
         paths.push(StatementExecutionPath {
-            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, StatementOutcome::Normal(_))
-                .then(|| ProgramValue::Int32(MachineTerm::constant(0)).into()),
+                .then(|| ProgramValue::Int32(OldMachineTerm::constant(0)).into()),
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -926,14 +1024,14 @@ fn modeled_pthread_handle_store(
 
 fn modeled_pthread_indeterminate_handle(
     mut state: ExecutionState,
-    slot: &Address,
+    slot: &OldAddress,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<ExecutionState> {
     let range = MemoryRange::new_with_element_width(
         slot.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
         8,
     );
     let marker = budget.allocate_kernel_variable()?;
@@ -1096,7 +1194,7 @@ fn execute_modeled_pthread_create_paths(
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
-                                ProgramValue::UInt64(MachineTerm::uint64_constant(0));
+                                ProgramValue::UInt64(OldMachineTerm::uint64_constant(0));
                             let slot = &path.values[0];
                             let checked_success = modeled_pthread_handle_store(
                                 success.parent(),
@@ -1132,7 +1230,7 @@ fn execute_modeled_pthread_create_paths(
                                     budget,
                                 )?;
                                 let status =
-                                    MachineTerm::Variable(budget.allocate_kernel_variable()?);
+                                    OldMachineTerm::Variable(budget.allocate_kernel_variable()?);
                                 let result = ProgramValue::Int32(status.clone());
                                 call_result = Some(result.clone());
                                 let ModeledCreateStatus::CallResult(call) = status_destination
@@ -1255,7 +1353,7 @@ fn execute_modeled_pthread_join_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            ProgramValue::Int32(MachineTerm::constant(0)),
+                            ProgramValue::Int32(OldMachineTerm::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1273,7 +1371,7 @@ fn execute_modeled_pthread_join_paths(
         };
         paths.push(
             StatementExecutionPath::new(outcome, path.facts, path.obligations)
-                .with_call_result(Some(ProgramValue::Int32(MachineTerm::constant(0)))),
+                .with_call_result(Some(ProgramValue::Int32(OldMachineTerm::constant(0)))),
         );
     }
     budget.check_path_width(paths.len())?;
@@ -1284,7 +1382,6 @@ fn indirect_call_statement_paths(paths: Vec<FunctionPath>) -> Vec<StatementExecu
     paths
         .into_iter()
         .map(|path| StatementExecutionPath {
-            call_parameters: path.call_parameters.clone(),
             loop_invariant_correspondence: Default::default(),
             call_result: match &path.outcome {
                 FunctionOutcome::Return { value, .. }
@@ -1339,7 +1436,7 @@ fn execute_program_indirect_call_paths(
         } = target_path;
         let target_names = match outcome {
             ExpressionOutcome::Value(ProgramValue::Pointer(pointer))
-                if pointer.offset == AddressOffset::Constant(0) =>
+                if matches!(pointer.offset.view(), OffsetView::Constant(0)) =>
             {
                 match &pointer.base {
                     AddressBase::Function(name)
@@ -1486,7 +1583,6 @@ fn execute_program_indirect_call_paths(
                 call_path.facts = merged_facts;
                 call_path.obligations = merged_obligations;
                 paths.push(FunctionPath {
-                    call_parameters: None,
                     outcome: call_path.outcome,
                     facts: call_path.facts,
                     obligations: call_path.obligations,
@@ -1675,8 +1771,8 @@ pub(crate) fn loop_binder_state_components_match_at_back_edge(
 
 fn check_loop_guard_custody(
     state: &ExecutionState,
-    mutex: &Address,
-    held: &ConditionTerm,
+    mutex: &OldAddress,
+    held: &OldConditionTerm,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
     let ledger = state
@@ -1788,7 +1884,7 @@ fn condition_path_is_ruled_out(
         let Proposition::ConditionIs(condition, value) = fact.proposition() else {
             return false;
         };
-        condition_value_is_proven(assumptions, condition.native_compat(), !value)
+        condition_value_is_proven(assumptions, condition.old_form(), !value)
     })
 }
 
@@ -1799,7 +1895,7 @@ fn condition_path_is_ruled_out(
 /// condition, not a logical proof search over unrelated ambient facts.
 pub(super) fn condition_is_decided(
     assumptions: &PureFactContext,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<bool> {
     assumptions
         .exact_condition_value(condition)
@@ -1807,13 +1903,13 @@ pub(super) fn condition_is_decided(
         .or_else(|| assumptions.difference_decision(condition, &[]))
 }
 
-fn condition_is_decided_true(assumptions: &PureFactContext, condition: &ConditionTerm) -> bool {
+fn condition_is_decided_true(assumptions: &PureFactContext, condition: &OldConditionTerm) -> bool {
     condition_is_decided(assumptions, condition) == Some(true)
 }
 
 fn condition_value_is_proven(
     assumptions: &PureFactContext,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> bool {
     condition_is_decided(assumptions, condition) == Some(value)
@@ -1822,41 +1918,41 @@ fn condition_value_is_proven(
                 .is_some_and(|complement| condition_is_decided_true(assumptions, &complement)))
 }
 
-fn condition_complement(condition: &ConditionTerm) -> Option<ConditionTerm> {
+fn condition_complement(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
-        } => Some(ConditionTerm::signed_greater_equal(
+        } => Some(OldConditionTerm::signed_greater_equal(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
-        } => Some(ConditionTerm::signed_greater_than(
+        } => Some(OldConditionTerm::signed_greater_than(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
-        } => Some(ConditionTerm::signed_less_equal(
+        } => Some(OldConditionTerm::signed_less_equal(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
-        } => Some(ConditionTerm::signed_less_than(
+        } => Some(OldConditionTerm::signed_less_than(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
@@ -1869,7 +1965,7 @@ fn loop_state_components_match_at_back_edge_inner(
     next_state: &ExecutionState,
     composite_resource_definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-    checked_mutexes: &[Address],
+    checked_mutexes: &[OldAddress],
 ) -> Result<(), String> {
     let mut changed = Vec::new();
     if !top_state
@@ -1934,7 +2030,7 @@ fn loop_state_components_match_at_back_edge_inner(
                 || next
                     .and_then(|value| value.pointer())
                     .is_some_and(|pointer| {
-                        assumptions.pointers_known_equal(pointer.address(), &Address::null())
+                        assumptions.pointers_known_equal(pointer.address(), &OldAddress::null())
                     })
             {
                 return None;
@@ -2136,7 +2232,7 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
     // the negation of this fact" is one lookup. Asking every earlier fact of
     // every earlier path instead compared each pair of paths, fact by fact:
     // a hundred exits of a long loop body spent most of the join here.
-    let mut earlier: std::collections::HashSet<(&ConditionTerm, bool)> =
+    let mut earlier: std::collections::HashSet<(&OldConditionTerm, bool)> =
         std::collections::HashSet::new();
     for own in &ordered {
         crate::instrumentation::record_deterministic_work(own.len());
@@ -2144,14 +2240,14 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
             .iter()
             .filter(|fact| match fact {
                 Proposition::ConditionIs(condition, value) => {
-                    !earlier.contains(&(condition.native_compat(), !*value))
+                    !earlier.contains(&(condition.old_form(), !*value))
                 }
                 _ => true,
             })
             .collect::<Vec<_>>();
         for fact in own.iter() {
             if let Proposition::ConditionIs(condition, value) = fact {
-                earlier.insert((condition.native_compat(), *value));
+                earlier.insert((condition.old_form(), *value));
             }
         }
         let mut own = if narrowed.is_empty() {
@@ -2298,7 +2394,7 @@ fn join_loop_exit_paths(
                         // Dropping this conjunct weakens the path disjunction
                         // and keeps its pure successor facts spellable.
                         && !matches!(proposition, Proposition::ResourceComposition(_))
-                        && !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
+                        && !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(actual), _)) if (actual == expected)))
                 })
                 .cloned()
                 .collect::<Vec<_>>()
@@ -2582,7 +2678,6 @@ fn join_loop_exits(
         Default::default()
     };
     Some(StatementExecutionPath {
-        call_parameters: None,
         loop_invariant_correspondence,
         call_result: None,
         outcome: StatementOutcome::Normal(Box::new(exit_state)),
@@ -2929,11 +3024,11 @@ fn indexed_loop_exit_load_equality(
     else {
         return None;
     };
-    if let Some(answer) = context.exact_condition_value(condition.native_compat()) {
+    if let Some(answer) = context.exact_condition_value(condition.old_form()) {
         return Some(answer == expected);
     }
-    match condition.native_compat() {
-        ConditionTerm::Compare {
+    match condition.old_form() {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
@@ -2942,7 +3037,7 @@ fn indexed_loop_exit_load_equality(
             if context.int32_values_known_equal(left, right) {
                 return Some(true);
             }
-            let constant = |term: &MachineTerm| {
+            let constant = |term: &OldMachineTerm| {
                 term.as_const().or_else(|| {
                     context
                         .equality_graph
@@ -2950,7 +3045,7 @@ fn indexed_loop_exit_load_equality(
                         .keys()
                         .find_map(|condition| {
                             crate::instrumentation::record_deterministic_work(1);
-                            let ConditionTerm::Compare {
+                            let OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                                 relation: CompareRelation::Equal,
                                 left: a,
@@ -2971,7 +3066,7 @@ fn indexed_loop_exit_load_equality(
             };
             Some(constant(left)? == constant(right)?)
         }
-        ConditionTerm::AddressEqual(left, right) if expected => {
+        OldConditionTerm::AddressEqual(left, right) if expected => {
             context.pointers_known_equal(left, right).then_some(true)
         }
         _ => None,
@@ -2999,7 +3094,7 @@ mod contract_exit_join_tests;
 #[derive(Clone, Debug, Default)]
 struct LoopExitRestatement {
     equations: Vec<Proposition>,
-    renamings: Vec<(Variable, MachineTerm)>,
+    renamings: Vec<(Variable, OldMachineTerm)>,
     /// For each binder argument or field of algebraic sort that the join
     /// renamed: the term this exit held there, and the successor's name.
     /// The held value is a term, not only a symbol: one exit may hold the
@@ -3027,7 +3122,7 @@ impl LoopExitRestatement {
                     )
                 }),
         );
-        if let (Some(MachineTerm::Variable(from)), Some(to)) =
+        if let (Some(OldMachineTerm::Variable(from)), Some(to)) =
             (scalar_bitvector(held), scalar_bitvector(fresh))
         {
             self.renamings.push((*from, to.clone()));
@@ -3172,14 +3267,14 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
     match equation {
         Proposition::Equal(left, right) => left == right,
         Proposition::ConditionIs(condition, value) => {
-            PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
+            PureFactContext::decide_intrinsically(condition.old_form()) == Some(*value)
         }
         _ => false,
     }
 }
 
 /// The scalar term a C value carries, for the one-variable renaming above.
-fn scalar_bitvector(value: &ProgramValue) -> Option<&MachineTerm> {
+fn scalar_bitvector(value: &ProgramValue) -> Option<&OldMachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::Int8(term) => Some(term),
@@ -3364,7 +3459,7 @@ fn loop_exit_local_arguments(
                     let ProgramValue::Pointer(pointer) = value else {
                         return None;
                     };
-                    Some(ProgramValue::UInt64(MachineTerm::integer_address(
+                    Some(ProgramValue::UInt64(OldMachineTerm::integer_address(
                         pointer.address().clone(),
                     )))
                 } else {
@@ -3576,7 +3671,7 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
 struct LoopExitAbstraction<'a> {
     locals: &'a [(BindingName, ProgramType)],
     uninitialized: &'a [BindingName],
-    cells: &'a BTreeSet<Address>,
+    cells: &'a BTreeSet<OldAddress>,
     bookkeeping: bool,
 }
 
@@ -3855,7 +3950,7 @@ fn abstract_loop_exit_locals(
 fn abstract_loop_exit_memory(
     successor: &mut ExecutionState,
     exits: &[ExecutionState],
-    resynced: &BTreeSet<Address>,
+    resynced: &BTreeSet<OldAddress>,
     no_binders: bool,
     declared_memory: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -3864,7 +3959,7 @@ fn abstract_loop_exit_memory(
     join_requirements: &mut Vec<ProofObligation>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> Result<BTreeSet<Address>, String> {
+) -> Result<BTreeSet<OldAddress>, String> {
     let mut memory = successor.memory().clone();
     if exits.iter().any(|state| {
         !state
@@ -3955,8 +4050,8 @@ fn abstract_loop_exit_memory(
             }
             let range = MemoryRange::new_with_element_width(
                 pointer.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(byte_width),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(byte_width),
                 1,
             );
             join_requirements.extend(loop_borrow_separation(
@@ -3998,8 +4093,8 @@ fn loop_exit_cell_pin_value(value: &ProgramValue, context: &PureFactContext) -> 
         ProgramValue::Int32(term) | ProgramValue::UInt32(term) => {
             match crate::kernel::assumptions::exact_signed_constant(term, context) {
                 Some(constant) => match value {
-                    ProgramValue::Int32(_) => int32(MachineTerm::constant(constant as u32)),
-                    _ => uint32(MachineTerm::constant(constant as u32)),
+                    ProgramValue::Int32(_) => int32(OldMachineTerm::constant(constant as u32)),
+                    _ => uint32(OldMachineTerm::constant(constant as u32)),
                 },
                 None => value.clone(),
             }
@@ -4049,21 +4144,21 @@ fn fresh_loop_local_value(
     }
     let variable = variables.next_in(budget)?;
     Ok(Some(match program_type {
-        ProgramType::Bool => ProgramValue::Bool(MachineTerm::Variable(variable)),
-        ProgramType::Int8 => int8(MachineTerm::Variable(variable)),
-        ProgramType::Int16 => int16(MachineTerm::Variable(variable)),
-        ProgramType::Int32 => int32(MachineTerm::Variable(variable)),
-        ProgramType::UInt8 => uint8(MachineTerm::Variable(variable)),
-        ProgramType::UInt16 => uint16(MachineTerm::Variable(variable)),
-        ProgramType::UInt32 => uint32(MachineTerm::Variable(variable)),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(variable))
-            .complete_word(Address::symbolic(variable)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(variable))
-            .complete_word(Address::symbolic(variable)),
-        ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
-        ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
+        ProgramType::Bool => ProgramValue::Bool(OldMachineTerm::Variable(variable)),
+        ProgramType::Int8 => int8(OldMachineTerm::Variable(variable)),
+        ProgramType::Int16 => int16(OldMachineTerm::Variable(variable)),
+        ProgramType::Int32 => int32(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt8 => uint8(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt16 => uint16(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt32 => uint32(OldMachineTerm::Variable(variable)),
+        ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::Variable(variable))
+            .complete_word(OldAddress::symbolic(variable)),
+        ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::Variable(variable))
+            .complete_word(OldAddress::symbolic(variable)),
+        ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::Variable(variable)),
+        ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::Variable(variable)),
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic_function(variable), program_type)
         }
         // A local holding a spec value, a Rust enum, a `Vec` or a library
         // iterator, takes a fresh value of its own type.
@@ -4074,7 +4169,7 @@ fn fresh_loop_local_value(
         // A pointer local reassigned in the body (`p = p + 1`) must not keep
         // its entry value across the abstract iteration, exactly as the join
         // abstraction treats it; an invariant must relate it.
-        _ => ProgramValue::typed_pointer(Address::symbolic(variable), program_type),
+        _ => ProgramValue::typed_pointer(OldAddress::symbolic(variable), program_type),
     }))
 }
 
@@ -4559,7 +4654,6 @@ fn execute_program_loop_exit_paths(
     // `return` reach contract certification at all.
     for exit in return_exits {
         paths.push(StatementExecutionPath {
-            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: None,
             outcome: StatementOutcome::Return {
@@ -5710,7 +5804,6 @@ pub(super) fn collect_loop_preservation_summary(
                                 &final_path_obligations,
                             );
                             final_exit_paths.push(StatementExecutionPath {
-                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: StatementOutcome::Normal(Box::new(
@@ -5788,7 +5881,6 @@ pub(super) fn collect_loop_preservation_summary(
                                 &exit_obligations,
                             );
                             final_exit_paths.push(StatementExecutionPath {
-                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: StatementOutcome::Return {
@@ -5823,7 +5915,6 @@ pub(super) fn collect_loop_preservation_summary(
                                 &exit_obligations,
                             );
                             final_exit_paths.push(StatementExecutionPath {
-                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: StatementOutcome::Jump {
@@ -5870,13 +5961,13 @@ pub(super) fn collect_loop_preservation_summary(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EvaluatedMemorySegment {
-    pub(super) base: Address,
-    pub(super) provenance: std::sync::Arc<Address>,
+    pub(super) base: OldAddress,
+    pub(super) provenance: std::sync::Arc<OldAddress>,
     /// The array object of the pointer that names the segment, without
     /// bounds of its own.
     pub(super) carrier: crate::kernel::primitives::ArrayObject,
-    pub(super) start: MachineTerm,
-    pub(super) end: MachineTerm,
+    pub(super) start: OldMachineTerm,
+    pub(super) end: OldMachineTerm,
     pub(super) element_width: u32,
     pub(super) kind: RangeIndexKind,
     pub(super) formation_coverage: std::sync::Arc<[Proposition]>,
@@ -6369,7 +6460,7 @@ pub(super) fn prepare_loop_top_state(
     // iterated fact counts every element it could ever hold), so a cell the
     // function owns can sit inside it without being writable; the partition
     // at entry is what keeps it apart.
-    let kept_by_function = |pointer: &Address, bytes: u32| {
+    let kept_by_function = |pointer: &OldAddress, bytes: u32| {
         withheld.as_ref().is_some_and(|withheld| {
             assumptions.access_held_by_owned_member(withheld, pointer, bytes)
         })
@@ -7842,12 +7933,12 @@ pub(super) fn collect_loop_effect_check_obligations(
             };
             !has_disjoint_effect_summary
                 || !explicit_atomic_equality_from_memory_derivations(
-                    &MachineTerm::read_named(
+                    &OldMachineTerm::read_named(
                         before_state.memory_named_point(),
                         pointer.clone(),
                         kind,
                     ),
-                    &MachineTerm::read_named(
+                    &OldMachineTerm::read_named(
                         after_state.memory_named_point(),
                         pointer.clone(),
                         kind,
@@ -8426,7 +8517,7 @@ fn evaluate_loop_effect_segment_value_retained_capturing(
 
 pub(super) fn loop_effect_segment_contains_pointer(
     segment: &EvaluatedMemorySegment,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -8465,18 +8556,18 @@ pub(super) fn loop_effect_segment_contains_range(
     let range_start = crate::kernel::assumptions::index_binary(
         MachineBinaryOp::Add,
         base_index.operand_view(),
-        MachineOperandView::Legacy(range.start()),
+        MachineOperandView::Old(range.start()),
     );
     let range_end = crate::kernel::assumptions::index_binary(
         MachineBinaryOp::Add,
         base_index.operand_view(),
-        MachineOperandView::Legacy(range.end()),
+        MachineOperandView::Old(range.end()),
     );
     condition_is_decided_true(
         assumptions,
         &crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&segment.start),
+            MachineOperandView::Old(&segment.start),
             range_start.operand_view(),
         ),
     ) && condition_is_decided_true(
@@ -8484,12 +8575,12 @@ pub(super) fn loop_effect_segment_contains_range(
         &crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
             range_end.operand_view(),
-            MachineOperandView::Legacy(&segment.end),
+            MachineOperandView::Old(&segment.end),
         ),
     )
 }
 
-pub(super) fn is_loop_effect_relevant_pointer(pointer: &Address) -> bool {
+pub(super) fn is_loop_effect_relevant_pointer(pointer: &OldAddress) -> bool {
     !pointer.base.is_local_block() && !pointer.base.is_havoc_block()
 }
 
@@ -8498,8 +8589,8 @@ pub(super) fn is_loop_effect_relevant_pointer(pointer: &Address) -> bool {
 /// `Debug` of the pointer or of symbolic bounds is lowering state rather than
 /// anything the reader wrote. Constant bounds are the one part worth printing.
 fn describe_loop_footprint_range(
-    start: &MachineTerm,
-    end: &MachineTerm,
+    start: &OldMachineTerm,
+    end: &OldMachineTerm,
     element_width: u32,
 ) -> String {
     match (start.as_const(), end.as_const()) {
@@ -8540,8 +8631,8 @@ pub(super) fn push_false_loop_effect_obligation(
 
 pub(super) fn false_equals_true_proposition() -> Proposition {
     Proposition::Equal(
-        Term::Condition(ConditionTerm::Constant(false).into()),
-        Term::Condition(ConditionTerm::Constant(true).into()),
+        Term::Condition(OldConditionTerm::Constant(false).into()),
+        Term::Condition(OldConditionTerm::Constant(true).into()),
     )
 }
 
@@ -8610,7 +8701,7 @@ fn assume_invariant_checks_explained(
     let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations.clone());
     let mut head_facts = prefix_facts.persistent_facts();
     head_facts.push(ExecutionPureFact::new(Proposition::condition_is(
-        ConditionTerm::IntegerLessEqual(
+        OldConditionTerm::IntegerLessEqual(
             IntegerTerm::constant(0.into()).into(),
             iterations.clone().into(),
         ),
@@ -9055,7 +9146,7 @@ pub(super) fn havoc_loop_modified_locals(
     let memory = if may_write_memory {
         // Keep only scalar stack local cells (constructed above); every other
         // concrete cell could have been
-        // overwritten by the loop body through a pointer. Address-escaped
+        // overwritten by the loop body through a pointer. OldAddress-escaped
         // locals were havoced above, so their preserved cells now hold fresh
         // symbolic values rather than stale ones.
         // Cells under an active stable-view borrow are stable across the loop
@@ -9455,8 +9546,8 @@ fn loop_written_automatic_objects(
             };
             Some(MemoryRange::new_with_element_width(
                 slot.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(bytes),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(bytes),
                 1,
             ))
         })
@@ -9917,8 +10008,8 @@ pub(crate) fn memory_range_bounds_refusal(
 
 fn range_bounds_refusal(
     base: &OldPointer,
-    start: &MachineTerm,
-    end: &MachineTerm,
+    start: &OldMachineTerm,
+    end: &OldMachineTerm,
     element_width: u32,
     kind: RangeIndexKind,
     assumptions: &PureFactContext,
@@ -9964,7 +10055,7 @@ fn range_bounds_refusal(
         return refusal();
     };
     let element_width = i64::from(element_width);
-    let proves = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let proves = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
     let offset = offset.checking_cast_operand(MachineIntegerType::Int64);
     let compare = |left: MachineOperandView<'_>, right: MachineOperandView<'_>| {
         crate::kernel::machine_integer::comparison::condition_for_operand_views(
@@ -9975,17 +10066,19 @@ fn range_bounds_refusal(
     };
     match kind {
         RangeIndexKind::Int32 => {
-            let start = MachineTerm::int64_from_32(start.clone());
-            let end = MachineTerm::int64_from_32(end.clone());
-            if proves(ConditionTerm::int64_signed_less_equal(
+            let start = OldMachineTerm::int64_from_32(start.clone());
+            let end = OldMachineTerm::int64_from_32(end.clone());
+            if proves(OldConditionTerm::int64_signed_less_equal(
                 end.clone(),
                 start.clone(),
             )) {
                 return None;
             }
-            let byte = |index: MachineTerm| {
-                let product =
-                    MachineTerm::int64_multiply(index, MachineTerm::int64_constant(element_width));
+            let byte = |index: OldMachineTerm| {
+                let product = OldMachineTerm::int64_multiply(
+                    index,
+                    OldMachineTerm::int64_constant(element_width),
+                );
                 let root = crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
                     MachineIntegerType::Int64,
                     MachineBinaryOp::Add,
@@ -9995,17 +10088,17 @@ fn range_bounds_refusal(
                     ),
                     crate::kernel::KernelTerm::retained_machine_operand(
                         MachineIntegerType::Int64,
-                        MachineOperandView::Legacy(&product),
+                        MachineOperandView::Old(&product),
                     ),
                 );
                 MachineOperandView::Shared(&root).retain(MachineIntegerType::Int64)
             };
             let inside = proves(compare(
-                MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
+                MachineOperandView::Old(&OldMachineTerm::int64_constant(0)),
                 byte(start).operand_view(),
             )) && proves(compare(
                 byte(end).operand_view(),
-                MachineOperandView::Legacy(&MachineTerm::int64_constant(width)),
+                MachineOperandView::Old(&OldMachineTerm::int64_constant(width)),
             ));
             (!inside).then(refusal).flatten()
         }
@@ -10014,9 +10107,9 @@ fn range_bounds_refusal(
         RangeIndexKind::UInt64 => {
             let offset = offset.operand_view().int64_constant()?.max(0);
             let room = u64::try_from((width - offset) / element_width.max(1)).ok()?;
-            let inside = proves(ConditionTerm::uint64_less_equal(
+            let inside = proves(OldConditionTerm::uint64_less_equal(
                 end.clone(),
-                MachineTerm::uint64_constant(room),
+                OldMachineTerm::uint64_constant(room),
             ));
             (!inside).then(refusal).flatten()
         }
@@ -10042,27 +10135,29 @@ mod pointer_domain_clause_tests {
     fn clause_ranges_check_admitted_member_bounds_without_rewriting_the_base() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldPointer::new(
-            Address::symbolic(Variable(1013200)),
+            OldAddress::symbolic(Variable(1013200)),
             ProgramType::Int32Pointer,
         );
         let selected = base.clone().with_bounds(Some(SubobjectBounds {
             start: base.address().clone(),
             width: 4u32.into(),
         }));
-        let context = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(base.clone(), selected), true);
+        let context = PureFactContext::new().assume_condition(
+            OldConditionTerm::pointer_equal(base.clone(), selected),
+            true,
+        );
         for (end, refused) in [(0, false), (1, false), (2, true)] {
             for wide in [false, true] {
                 let (start, end, kind) = if wide {
                     (
-                        MachineTerm::uint64_constant(0),
-                        MachineTerm::uint64_constant(end),
+                        OldMachineTerm::uint64_constant(0),
+                        OldMachineTerm::uint64_constant(end),
                         RangeIndexKind::UInt64,
                     )
                 } else {
                     (
                         0u32.into(),
-                        MachineTerm::constant(end as u32),
+                        OldMachineTerm::constant(end as u32),
                         RangeIndexKind::Int32,
                     )
                 };

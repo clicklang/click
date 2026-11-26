@@ -19,7 +19,7 @@ fn growing_shared_range_certificates_reuse_endpoints_without_exports() {
                 );
                 let observation =
                     SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
-                let condition = ConditionTerm::integer_less_equal(
+                let condition = OldConditionTerm::integer_less_equal(
                     IntegerTerm::Machine(observation.clone()),
                     IntegerTerm::constant_i64(7),
                 );

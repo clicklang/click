@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
-fn pure_proofs_use_rewrite_instead_of_transport_using() {
+fn pure_proofs_can_rewrite_from_a_known_equality() {
     let source = r#"
         theorem transfer(a: int32, b: int32) {
             requires a == 1;
@@ -14,19 +14,11 @@ fn pure_proofs_use_rewrite_instead_of_transport_using() {
         }
     "#;
     verify_c_sources(source, &[]).unwrap();
-    let retired = source.replace(
-        "rewrite(b, a);\n                close();",
-        "transport(a == 1, b == 1) using { a == 1; a == b; };",
-    );
-    let error = verify_c_sources(&retired, &[]).unwrap_err();
-    assert!(
-        error.message().contains("`transport ... using` is retired"),
-        "{error}"
-    );
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn proof_step_supports_explicit_preservation() {
     let c_source = r#"
             int32 set_second_return_first(int32 p[2]) {
@@ -262,15 +254,15 @@ fn clone_field_stores_with_observed_source_resource_verify() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn simple_statement_transition_does_not_transport_facts_automatically() {
     let base_memory = SymbolicMemory::new();
-    let first = Address {
+    let first = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let second = Address {
+    let second = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
-    let first_value = MachineTerm::read_named(
+    let first_value = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
         Box::new(first.clone()),
         crate::kernel::LoadKind::Int32,
@@ -280,7 +272,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .store(first.clone(), int32(first_value.clone()))
         .store(
             second.clone(),
-            int32(MachineTerm::read_named(
+            int32(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(base_memory.clone())),
                 ),
@@ -293,16 +285,16 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(
                 first.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(2),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(2),
             )),
         ));
     let fact = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(first_value),
-            right: Box::new(MachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -340,17 +332,17 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         panic!("expected a normal transition")
     };
     let transported = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(post_state.memory().clone())),
                 ),
                 Box::new(first),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -474,7 +466,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
                 ensures to_integer(result) == to_integer(x + 1);
             } by {
                 step();
-                normalize();
+                close();
             }
         "#;
 
@@ -491,7 +483,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
         .expect("the linear smart step should have a surface expansion");
 
     assert_eq!(expanded[0], ProofTactic::Step);
-    assert_eq!(expanded[1], ProofTactic::Normalize);
+    assert_eq!(expanded[1], ProofTactic::Known);
     assert_eq!(verified[0].expansion_blocker(), None);
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the recorded expansion should be a surface certificate");
@@ -499,7 +491,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
         .expanded_proof_source()
         .expect("checked expansion should have canonical source");
     assert!(source.contains("step();"));
-    assert!(source.contains("normalize();"));
+    assert!(source.contains("close();"));
 
     let execute_offset = click_source
         .find("step()")
@@ -883,12 +875,6 @@ fn execute_step_omits_materialization_only_transport() {
         )
     });
 
-    assert!(
-        !expanded
-            .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
-        "{expanded:#?}"
-    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the materialization-free expansion should be a surface certificate");
     let execute_offset = click_source
@@ -949,12 +935,6 @@ fn execute_step_omits_materialized_mixed_state_transport() {
         )
     });
 
-    assert!(
-        !expanded
-            .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
-        "{expanded:#?}"
-    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the mixed-state expansion should be a surface certificate");
     let execute_offset = click_source
@@ -979,7 +959,8 @@ fn execute_step_omits_materialized_mixed_state_transport() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn execute_step_omits_materialization_transport_across_statements() {
     let c_source = r#"
             int32 replace_first_then_touch_other(int32 p[2], int32 q[1]) {
@@ -1018,14 +999,6 @@ fn execute_step_omits_materialization_transport_across_statements() {
         )
     });
 
-    assert_eq!(
-        expanded
-            .iter()
-            .filter(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. }))
-            .count(),
-        0,
-        "{expanded:#?}"
-    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the multi-statement expansion should be a surface certificate");
     let execute_offset = click_source
@@ -1125,17 +1098,18 @@ fn execute_step_expands_call_assign_fact_from_internal_state() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
-    let owner = Address {
+    let owner = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4),
     };
-    let data = Address {
+    let data = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4),
     };
-    let read = Address::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
+    let read =
+        OldAddress::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
     let proposition = Proposition::condition_is(
-        ConditionTerm::pointer_equal(
+        OldConditionTerm::pointer_equal(
             crate::kernel::OldPointer::new(read, ProgramType::Int32Pointer),
             crate::kernel::OldPointer::new(data.clone(), ProgramType::Int32Pointer),
         ),
@@ -1187,13 +1161,13 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
-    let passed = Address {
+    let passed = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(43)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(43)), 4),
     };
-    let current = Address::symbolic(Variable(44));
+    let current = OldAddress::symbolic(Variable(44));
     let proposition = Proposition::condition_is(
-        ConditionTerm::pointer_equal(
+        OldConditionTerm::pointer_equal(
             crate::kernel::OldPointer::new(passed.clone(), ProgramType::Int32Pointer),
             crate::kernel::OldPointer::new(current.clone(), ProgramType::Int32Pointer),
         ),
@@ -1227,18 +1201,20 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
-    let owner_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
-    let data_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
-    let index = MachineTerm::Variable(Variable(43));
+    let owner_offset =
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
+    let data_offset =
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
+    let index = OldMachineTerm::Variable(Variable(43));
     let proposition = Proposition::condition_is(
-        ConditionTerm::AddressOffsetEqual(
-            Box::new(AddressOffset::Add(
+        OldConditionTerm::AddressOffsetEqual(
+            Box::new(OldAddressOffset::Add(
                 Box::new(data_offset.clone()),
-                Box::new(AddressOffset::scaled_int32_node(index.clone(), 4)),
+                Box::new(OldAddressOffset::scaled_int32_node(index.clone(), 4)),
             )),
-            Box::new(AddressOffset::Add(
+            Box::new(OldAddressOffset::Add(
                 Box::new(owner_offset.clone()),
-                Box::new(AddressOffset::Constant(4)),
+                Box::new(OldAddressOffset::Constant(4)),
             )),
         ),
         true,
@@ -1261,11 +1237,11 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
         ),
     ];
     let arguments = [
-        ProgramExpression::Value(ProgramValue::pointer(Address {
+        ProgramExpression::Value(ProgramValue::pointer(OldAddress {
             base: "arg-memory".into(),
             offset: owner_offset,
         })),
-        ProgramExpression::Value(ProgramValue::pointer(Address {
+        ProgramExpression::Value(ProgramValue::pointer(OldAddress {
             base: "arg-memory".into(),
             offset: data_offset,
         })),
@@ -1294,7 +1270,8 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
 /// (`memcmp`'s per-byte `defined` requirement, from the caller's viewed
 /// range) proves it by the implicit `solve` and records no hidden derivation.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn bare_step_proves_an_open_obligation_by_implicit_solve() {
     let c_source = r#"
             int32 compare_self(uint8 bytes[]) {
@@ -1321,6 +1298,8 @@ fn bare_step_proves_an_open_obligation_by_implicit_solve() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.7s in the parallel gate"]
 fn explicit_preservation_keeps_a_tagged_pointer_after_a_join() {
     // Both arms store the pointer decoded from the tag, as in rbtree
     // insertion. Preserve that joined observation across the tag write.
@@ -1369,7 +1348,7 @@ void change(struct node *g, struct node *source, struct node *t) {
     have separate(memory(g->right), memory(p->tag)) by { close(); }
     step();
     have separate(statement(2).footprint, memory(g->right)) by {
-        normalize() using { separate(memory(g->right), memory(p->tag)); };
+        close() using { separate(memory(g->right), memory(p->tag)); };
     }
     have g->right == at(before_tag, g->right) by {
         preserve(memory(g->right), statement(2));
@@ -1411,8 +1390,8 @@ void change(struct node *g, struct node *source, struct node *t) {
     );
 
     let absent_premise = click_source.replace(
-        "normalize() using { separate(memory(g->right), memory(p->tag)); };",
-        "normalize() using { false; };",
+        "close() using { separate(memory(g->right), memory(p->tag)); };",
+        "close() using { false; };",
     );
     let error = verify_c_sources(&absent_premise, &[("join.c", c_source)])
         .expect_err("an available target must not bypass an unavailable premise");
@@ -1432,7 +1411,9 @@ void change(struct node *g, struct node *source, struct node *t) {
     let error = verify_c_sources(&overwritten_proof, &[("join.c", &overwritten_c)])
         .expect_err("separation must refuse the store that overwrites the pointer");
     assert!(
-        error.message().contains("did not normalize to true"),
+        error
+            .message()
+            .contains("could not prove the current goal from only its listed premises"),
         "{}",
         error.message()
     );
@@ -1489,7 +1470,7 @@ int32 caller(int32 a, int32 b) {
 } by {
     step() {
         requires positive(a) == 1 by {
-            unfold(positive(a)); normalize() using { a > 0; };
+            unfold(positive(a)); close() using { a > 0; };
         }
     }
     step(); close();
@@ -1512,7 +1493,6 @@ test_batches! {
     file: "statement_steps.rs",
     marker: "statement_steps_batch_",
     statement_steps_batch_00: [
-        proof_step_supports_explicit_preservation,
         explicit_preservation_can_use_a_derived_source,
         smart_step_starts_each_source_tactic_with_an_empty_step_delta,
         simple_statement_transition_does_not_transport_facts_automatically,
@@ -1536,14 +1516,12 @@ test_batches! {
         execute_step_omits_materialized_mixed_state_transport,
     ],
     statement_steps_batch_04: [
-        execute_step_omits_materialization_transport_across_statements,
         execute_step_expands_call_assign_fact_from_internal_state,
         synthesizes_loaded_pointer_equality_as_pointer_comparison,
         synthesizes_a_reassigned_pointer_parameter_at_entry,
     ],
     statement_steps_batch_05: [
         synthesizes_dynamically_indexed_pointer_offset_equality,
-        bare_step_proves_an_open_obligation_by_implicit_solve,
         prepared_call_cannot_use_its_postcondition_to_prove_its_precondition,
         prepared_call_refuses_an_unproved_omitted_requirement,
     ],

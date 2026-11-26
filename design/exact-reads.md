@@ -93,9 +93,9 @@ meaning depend on how the text was produced. `exact` composes instead:
 - `exact(place)` lowers the place's address as usual. It then builds the read
   at the exact memory of the state in scope, with the same constructor
   evaluation uses for that state, and does not call the version walk.
-- For an integer cell this is `MachineTerm::MemoryLoad(ProgramPoint::unplaced(state),
+- For an integer cell this is `OldMachineTerm::MemoryLoad(ProgramPoint::unplaced(state),
   address, kind)`. Lowering skips `canonical_scalar_read`.
-- For a pointer cell this is `Address::loaded_value(state.unchanged_bytes_source(), address)`.
+- For a pointer cell this is `OldAddress::loaded_value(state.unchanged_bytes_source(), address)`.
   An exact pointer read is named by the state's unchanged-bytes source, as
   `Pointer::from_read` already names provenance: a step that changes only
   cached knowledge, not bytes, keeps the read's identity. The
@@ -197,7 +197,7 @@ Each step is one PR, measured with the raise-lower audit and
    fall toward zero, with `unraised` limited to the no-program-point states.
 4. **No-program-point states**, if step 3 shows any remain.
 
-Separately, and first: `ConditionTerm::pointer_equal` should route a comparison
+Separately, and first: `OldConditionTerm::pointer_equal` should route a comparison
 with null to `address_equal`, as lowering of `p == 0` already does. This is
 independent of everything above and correct under either naming. It removes
 about 30 pointer `differs` (`0 == p` raised, `p == 0` lowered). Two

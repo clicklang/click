@@ -8,13 +8,13 @@ fn certified_fact_merge_work(
     let prefix: ExecutionFacts = (0..prefix_size)
         .map(|i| {
             ExecutionPureFact::new(Proposition::condition_is(
-                ConditionTerm::signed_less_equal(
-                    MachineTerm::Variable(Variable(if related {
+                OldConditionTerm::signed_less_equal(
+                    OldMachineTerm::Variable(Variable(if related {
                         1025100
                     } else {
                         1024100 + i as u64
                     })),
-                    MachineTerm::constant(i as u32 + 8),
+                    OldMachineTerm::constant(i as u32 + 8),
                 ),
                 true,
             ))
@@ -24,9 +24,9 @@ fn certified_fact_merge_work(
     let produced: ExecutionFacts = (0..additions)
         .map(|i| {
             ExecutionPureFact::certified(Proposition::condition_is(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1025100 + i as u64)),
-                    MachineTerm::constant(7),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(1025100 + i as u64)),
+                    OldMachineTerm::constant(7),
                 ),
                 true,
             ))

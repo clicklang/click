@@ -14,17 +14,17 @@ fn call(format: MachineIntegerType, name: &str) -> KernelTerm {
     let application = SharedPureApplication::intern(
         name.into(),
         vec![PureFunctionArgument::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(995810)),
+            OldMachineTerm::Variable(Variable(995810)),
         ))],
     );
     KernelTermImport::default().machine_call(format, &application)
 }
 // Oracle-only materialization: argument carrier choice is not a change to
 // the call's typed value. Production readers keep these handles retained.
-fn native_term(value: &MachineTerm) -> MachineTerm {
+fn native_term(value: &OldMachineTerm) -> OldMachineTerm {
     match value {
-        MachineTerm::ClickFunctionApplication { name, arguments } => {
-            MachineTerm::ClickFunctionApplication {
+        OldMachineTerm::ClickFunctionApplication { name, arguments } => {
+            OldMachineTerm::ClickFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
                     .iter()
@@ -48,12 +48,12 @@ fn native_term(value: &MachineTerm) -> MachineTerm {
                     .collect(),
             }
         }
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling,
             from,
             to,
             value,
-        } => MachineTerm::Cast {
+        } => OldMachineTerm::Cast {
             spelling: *spelling,
             from: *from,
             to: *to,
@@ -83,22 +83,22 @@ fn native_domain(value: &Proposition) -> Proposition {
             Proposition::Or(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
         Proposition::ConditionIs(c, t) => Proposition::condition_is(
-            match c.native_compat() {
-                ConditionTerm::IntegerEqual(a, b) => {
-                    ConditionTerm::integer_equal(native_integer(a), native_integer(b))
+            match c.old_form() {
+                OldConditionTerm::IntegerEqual(a, b) => {
+                    OldConditionTerm::integer_equal(native_integer(a), native_integer(b))
                 }
-                ConditionTerm::IntegerLessEqual(a, b) => {
-                    ConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
+                OldConditionTerm::IntegerLessEqual(a, b) => {
+                    OldConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
                 }
-                ConditionTerm::IntegerGreaterEqual(a, b) => {
-                    ConditionTerm::integer_greater_equal(native_integer(a), native_integer(b))
+                OldConditionTerm::IntegerGreaterEqual(a, b) => {
+                    OldConditionTerm::integer_greater_equal(native_integer(a), native_integer(b))
                 }
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation,
                     left,
                     right,
-                } => ConditionTerm::Compare {
+                } => OldConditionTerm::Compare {
                     format: *format,
                     relation: *relation,
                     left: Box::new(native_term(left)),
@@ -215,7 +215,7 @@ fn common_call_root_readings_keep_wide_refusals_and_borrow_arguments() {
         let root = call(format, "borrowed_call");
         let exports = KernelTermExport::machine_export_count();
         let leaf = root.machine_conversion_leaf().unwrap();
-        let MachineTerm::ClickFunctionApplication { arguments, .. } = leaf else {
+        let OldMachineTerm::ClickFunctionApplication { arguments, .. } = leaf else {
             panic!()
         };
         assert!(matches!(
@@ -225,7 +225,7 @@ fn common_call_root_readings_keep_wide_refusals_and_borrow_arguments() {
         assert!(std::ptr::eq(leaf, root.machine_conversion_leaf().unwrap()));
         assert_eq!(
             MachineOperandView::Shared(&root).root_width(),
-            MachineOperandView::Legacy(leaf).root_width()
+            MachineOperandView::Old(leaf).root_width()
         );
         assert_eq!(
             MachineOperandView::Shared(&root).accepts_cast_operand(format),
@@ -342,7 +342,7 @@ fn produced_paths(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressi
 #[test]
 fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
     let _session = VerificationSession::enter();
-    let input = SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(995830))));
+    let input = SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(995830))));
     for format in FORMATS
         .into_iter()
         .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
@@ -434,7 +434,7 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
     let child = root.children()[0].clone();
     let exports = KernelTermExport::machine_export_count();
     let native = paths.pop().unwrap().value.into_native();
-    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native
+    let ProgramValue::Int32(OldMachineTerm::ClickFunctionApplication { arguments, .. }) = native
     else {
         panic!()
     };
@@ -449,7 +449,7 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
 fn actual_call_arithmetic_keeps_native_values_and_definedness() {
     let _session = VerificationSession::enter();
     let call = call_expression(MachineIntegerType::Int32, vec![]);
-    let one = SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1)));
+    let one = SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(1)));
     for expression in [
         SpecExpression::Add(Box::new(call.clone()), Box::new(one.clone())),
         SpecExpression::Divide(Box::new(one.clone()), Box::new(call.clone())),
@@ -515,7 +515,7 @@ fn actual_call_comparisons_preserve_native_fact_forms() {
         let actual = produced_paths(&expression, false).pop().unwrap().value;
         let expected = produced_paths(&expression, true).pop().unwrap().value;
         let other =
-            SpecValue::Native(format.value_from_term(MachineTerm::Variable(Variable(995832))));
+            SpecValue::Native(format.value_from_term(OldMachineTerm::Variable(Variable(995832))));
         for op in [
             ComparisonOperator::Equal,
             ComparisonOperator::NotEqual,
@@ -550,9 +550,9 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
     {
         let pointer = OldPointer::new(
             if null {
-                Address::null()
+                OldAddress::null()
             } else {
-                Address::symbolic(Variable(1025100))
+                OldAddress::symbolic(Variable(1025100))
             },
             ProgramType::Int32Pointer,
         )
@@ -705,15 +705,15 @@ fn boolean_call_handoffs_retain_nested_boolean_arguments() {
 #[test]
 fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
     let _session = VerificationSession::enter();
-    let condition = ConditionTerm::Variable(Variable(999440));
-    let native = ProgramValue::Bool(MachineTerm::bool_cast(
+    let condition = OldConditionTerm::Variable(Variable(999440));
+    let native = ProgramValue::Bool(OldMachineTerm::bool_cast(
         MachineIntegerType::UInt8,
         condition.clone(),
     ));
     let left = SpecValue::Shared(KernelTermImport::default().condition(&condition));
-    let right_condition = ConditionTerm::Variable(Variable(999441));
+    let right_condition = OldConditionTerm::Variable(Variable(999441));
     let right = SpecValue::Shared(KernelTermImport::default().condition(&right_condition));
-    let guard = Proposition::condition_is(ConditionTerm::Variable(Variable(999442)), false);
+    let guard = Proposition::condition_is(OldConditionTerm::Variable(Variable(999442)), false);
     let combined = SpecValue::conditional(&guard, &left, &right, true)
         .unwrap()
         .unwrap();
@@ -747,13 +747,13 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
     }
     for right in [
         right,
-        SpecValue::Native(ProgramValue::Bool(MachineTerm::Variable(Variable(999443)))),
-        SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_cast(
+        SpecValue::Native(ProgramValue::Bool(OldMachineTerm::Variable(Variable(999443)))),
+        SpecValue::Native(ProgramValue::Bool(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::Constant(true),
+            OldConditionTerm::Constant(true),
         ))),
-        SpecValue::Shared(KernelTermImport::default().condition(&ConditionTerm::Constant(false))),
-        SpecValue::Native(ProgramValue::Int32(MachineTerm::constant(1))),
+        SpecValue::Shared(KernelTermImport::default().condition(&OldConditionTerm::Constant(false))),
+        SpecValue::Native(ProgramValue::Int32(OldMachineTerm::constant(1))),
     ] {
         for op in [
             ComparisonOperator::Equal,
@@ -772,13 +772,13 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
 #[test]
 fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
     let _session = VerificationSession::enter();
-    let local = Address {
+    let local = OldAddress {
         base: "local:unrelated".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let argument = SpecPureFunctionArgument::ArrayRef {
         point: SpecPoint::Current,
@@ -837,17 +837,17 @@ fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
 #[test]
 fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
     let _session = VerificationSession::enter();
-    let array = Address {
+    let array = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let local = Address {
+    let local = OldAddress {
         base: "local:callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "local:other-callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
     let entry = ExecutionState::new().begin_function_entry_memory();
@@ -861,7 +861,7 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
             .with_block(other.base.clone(), 4),
     );
     let assumptions = PureFactContext::new();
-    let call = |state: &ExecutionState, changed: &Address, index| {
+    let call = |state: &ExecutionState, changed: &OldAddress, index| {
         state.memory().clone().with_call_memory_havoc(
             Variable(index),
             &[
@@ -900,7 +900,7 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
         .with_memory(declared.memory().clone().store(array, int32(9)));
     let symbolic = declared.clone().with_memory(call(
         &declared,
-        &Address::symbolic(Variable(1011401)),
+        &OldAddress::symbolic(Variable(1011401)),
         1011402,
     ));
     for changed in [can_write, symbolic] {
@@ -966,7 +966,7 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
     assert_eq!(version(&written, &g_argument), version(&entry, &g_argument));
 
     let assumptions = PureFactContext::new();
-    let call = |state: &ExecutionState, address: &Address, id| {
+    let call = |state: &ExecutionState, address: &OldAddress, id| {
         state
             .clone()
             .with_memory(state.memory().clone().with_call_memory_havoc(
@@ -992,7 +992,7 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
     });
     assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
 
-    let unknown = call(&written, &Address::symbolic(Variable(1013500)), 1013501);
+    let unknown = call(&written, &OldAddress::symbolic(Variable(1013500)), 1013501);
     assert!(
         unknown
             .program_point()
@@ -1005,7 +1005,7 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
 fn heap_array_versions_ignore_disjoint_local_stores() {
     let _session = VerificationSession::enter();
     let other = SymbolicMemory::local_pointer("unrelated");
-    let request = Address::symbolic(Variable(1013830));
+    let request = OldAddress::symbolic(Variable(1013830));
     let entry = ExecutionState::new().begin_function_entry_memory();
     let pending = entry.clone().with_memory(
         entry
@@ -1086,7 +1086,7 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
             .with_block(other.base.clone(), 4),
     );
     let assumptions = PureFactContext::new();
-    let call = |state: &ExecutionState, address: &Address, id| {
+    let call = |state: &ExecutionState, address: &OldAddress, id| {
         state
             .clone()
             .with_memory(state.memory().clone().with_call_memory_havoc(
@@ -1103,7 +1103,7 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
             .clone()
             .with_memory(state.memory().clone().store(array.clone(), int32(7)))
     };
-    let unknown = call(&declared, &Address::symbolic(Variable(1013600)), 1013601);
+    let unknown = call(&declared, &OldAddress::symbolic(Variable(1013600)), 1013601);
     assert!(
         unknown
             .program_point()
@@ -1147,7 +1147,7 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
 #[test]
 fn pure_function_array_keeps_its_selected_point_without_an_indexed_version() {
     let _session = VerificationSession::enter();
-    let array = Address::symbolic(Variable(1013811));
+    let array = OldAddress::symbolic(Variable(1013811));
     let argument = SpecPureFunctionArgument::ArrayRef {
         point: SpecPoint::Current,
         pointer: SpecExpression::Value(ProgramValue::typed_pointer(
@@ -1198,7 +1198,7 @@ fn pure_function_array_keeps_its_selected_point_without_an_indexed_version() {
 #[test]
 fn declared_predicate_array_keeps_its_selected_point_without_an_indexed_version() {
     let _session = VerificationSession::enter();
-    let array = Address::symbolic(Variable(1013810));
+    let array = OldAddress::symbolic(Variable(1013810));
     let arguments = [SpecPredicateArgument::ArrayRef {
         point: SpecPoint::Current,
         pointer: SpecExpression::Value(ProgramValue::typed_pointer(
@@ -1243,13 +1243,13 @@ fn declared_predicate_array_keeps_its_selected_point_without_an_indexed_version(
 #[test]
 fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
-    let array = Address {
+    let array = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let local = Address {
+    let local = OldAddress {
         base: "local:callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let arguments = [SpecPredicateArgument::ArrayRef {
         point: SpecPoint::Current,
@@ -1288,7 +1288,7 @@ fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     assert_eq!(entry.memory(), independent.memory());
     assert_ne!(expected, lower(&independent));
 
-    let call = |state: &ExecutionState, changed: &Address, index| {
+    let call = |state: &ExecutionState, changed: &OldAddress, index| {
         state
             .clone()
             .with_memory(state.memory().clone().with_call_memory_havoc(

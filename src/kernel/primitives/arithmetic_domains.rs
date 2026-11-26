@@ -2,29 +2,29 @@
 //! operation's explicit operands; deciding these propositions is separate.
 use super::*;
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// The two ordinary equalities describing the exceptional signed quotient
     /// or remainder pair. C promotes narrow operands before reaching this helper.
     pub(crate) fn signed_division_exception_tests(
         format: MachineIntegerType,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> [Self; 2] {
         let (minimum, minus_one) = match format {
             MachineIntegerType::Int8 | MachineIntegerType::Int16 => {
                 let bits = format.format().bits();
                 (
-                    MachineTerm::narrow_constant(format, 1 << (bits - 1)),
-                    MachineTerm::narrow_constant(format, (1 << bits) - 1),
+                    OldMachineTerm::narrow_constant(format, 1 << (bits - 1)),
+                    OldMachineTerm::narrow_constant(format, (1 << bits) - 1),
                 )
             }
             MachineIntegerType::Int32 => (
-                MachineTerm::constant(i32::MIN as u32),
-                MachineTerm::constant(u32::MAX),
+                OldMachineTerm::constant(i32::MIN as u32),
+                OldMachineTerm::constant(u32::MAX),
             ),
             MachineIntegerType::Int64 => (
-                MachineTerm::int64_constant(i64::MIN),
-                MachineTerm::int64_constant(-1),
+                OldMachineTerm::int64_constant(i64::MIN),
+                OldMachineTerm::int64_constant(-1),
             ),
             _ => unreachable!("unsupported signed division format"),
         };
@@ -38,11 +38,11 @@ impl ConditionTerm {
 impl Proposition {
     pub(crate) fn signed_division_exclusion(
         format: MachineIntegerType,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> Self {
         let [minimum, minus_one] =
-            ConditionTerm::signed_division_exception_tests(format, left, right);
+            OldConditionTerm::signed_division_exception_tests(format, left, right);
         Self::Or(
             Box::new(Self::condition_is(minimum, false)),
             Box::new(Self::condition_is(minus_one, false)),
@@ -58,20 +58,20 @@ impl Proposition {
     ) -> Self {
         let (minimum, minus_one) = match format {
             MachineIntegerType::Int32 => (
-                MachineTerm::constant(i32::MIN as u32),
-                MachineTerm::constant(u32::MAX),
+                OldMachineTerm::constant(i32::MIN as u32),
+                OldMachineTerm::constant(u32::MAX),
             ),
             MachineIntegerType::Int64 => (
-                MachineTerm::int64_constant(i64::MIN),
-                MachineTerm::int64_constant(-1),
+                OldMachineTerm::int64_constant(i64::MIN),
+                OldMachineTerm::int64_constant(-1),
             ),
             _ => unreachable!("native signed division uses int32 or int64"),
         };
-        let compare = |view, constant: &MachineTerm| {
+        let compare = |view, constant: &OldMachineTerm| {
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 format,
                 CompareRelation::Equal,
-                [view, MachineOperandView::Legacy(constant)],
+                [view, MachineOperandView::Old(constant)],
             )
         };
         Self::Or(
@@ -82,17 +82,22 @@ impl Proposition {
 
     pub(crate) fn signed_division_defined(
         format: MachineIntegerType,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> Self {
         let zero = match format {
-            MachineIntegerType::Int32 => MachineTerm::constant(0),
-            MachineIntegerType::Int64 => MachineTerm::int64_constant(0),
+            MachineIntegerType::Int32 => OldMachineTerm::constant(0),
+            MachineIntegerType::Int64 => OldMachineTerm::int64_constant(0),
             _ => unreachable!("native signed division uses int32 or int64"),
         };
         Self::And(
             Box::new(Self::condition_is(
-                ConditionTerm::machine_compare(format, CompareRelation::Equal, right.clone(), zero),
+                OldConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::Equal,
+                    right.clone(),
+                    zero,
+                ),
                 false,
             )),
             Box::new(Self::signed_division_exclusion(format, left, right)),
@@ -112,16 +117,16 @@ impl Proposition {
         if let IntegerTerm::Machine(value) = &exact
             && format.format().contains(value.ty().format())
         {
-            return Self::condition_is(ConditionTerm::Constant(true), true);
+            return Self::condition_is(OldConditionTerm::Constant(true), true);
         }
         let (minimum, maximum) = format.format().bounds();
         Self::And(
             Box::new(Self::condition_is(
-                ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
+                OldConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
                 true,
             )),
             Box::new(Self::condition_is(
-                ConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
+                OldConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
                 true,
             )),
         )
@@ -130,14 +135,14 @@ impl Proposition {
     pub(crate) fn signed_arithmetic_domain(
         format: MachineIntegerType,
         op: MachineBinaryOp,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> Self {
         Self::signed_arithmetic_domain_views(
             format,
             op,
-            MachineOperandView::Legacy(left),
-            MachineOperandView::Legacy(right),
+            MachineOperandView::Old(left),
+            MachineOperandView::Old(right),
         )
     }
 
@@ -178,8 +183,8 @@ impl Proposition {
             crate::instrumentation::record_deterministic_work(1);
             match part {
                 condition_source_0 @ Proposition::ConditionIs(_, expected)
-                    if let Some((ConditionTerm::Constant(actual), _)) =
-                        condition_source_0.condition_native()
+                    if let Some((OldConditionTerm::Constant(actual), _)) =
+                        condition_source_0.old_condition()
                         && (*actual == expected) =>
                 {
                     None
@@ -206,7 +211,7 @@ impl Proposition {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// A total representability comparison. The enclosing shift domain checks
     /// the original count; masking here makes the bound itself well-defined
     /// even when that original count is invalid.
@@ -216,7 +221,10 @@ impl ConditionTerm {
         count: MachineOperandView<'_>,
         unsigned_count: bool,
     ) -> Self {
-        if matches!(left.literal(), Some(MachineTerm::Constant { bits: 0, .. })) {
+        if matches!(
+            left.literal(),
+            Some(OldMachineTerm::Constant { bits: 0, .. })
+        ) {
             return Self::Constant(true);
         }
         let comparison_format = match (format, unsigned_count) {
@@ -236,11 +244,11 @@ impl ConditionTerm {
                 left.machine_constant_reading(),
                 right.machine_constant_reading(),
             ) {
-                let value = MachineTerm::machine_binary(
+                let value = OldMachineTerm::machine_binary(
                     comparison_format,
                     op,
-                    a.legacy_term(),
-                    b.legacy_term(),
+                    a.old_term(),
+                    b.old_term(),
                 );
                 KernelTerm::retained_native_machine_operand(comparison_format, &value)
             } else {
@@ -285,18 +293,18 @@ impl ConditionTerm {
 
     pub(crate) fn signed_shift_result_fits(
         format: MachineIntegerType,
-        left: MachineTerm,
-        count: MachineTerm,
+        left: OldMachineTerm,
+        count: OldMachineTerm,
         unsigned_count: bool,
     ) -> Self {
-        if matches!(left, MachineTerm::Constant { bits: 0, .. }) {
+        if matches!(left, OldMachineTerm::Constant { bits: 0, .. }) {
             return Self::Constant(true);
         }
         if unsigned_count {
             return Self::signed_shift_result_fits_views(
                 format,
-                MachineOperandView::Legacy(&left),
-                MachineOperandView::Legacy(&count),
+                MachineOperandView::Old(&left),
+                MachineOperandView::Old(&count),
                 true,
             );
         }
@@ -305,13 +313,13 @@ impl ConditionTerm {
                 .expect("shift bound fits")
         };
         let bits = format.format().bits();
-        let masked = MachineTerm::machine_binary(
+        let masked = OldMachineTerm::machine_binary(
             format,
             MachineBinaryOp::BitwiseAnd,
             count,
             constant((bits - 1).into()),
         );
-        let bound = MachineTerm::machine_binary(
+        let bound = OldMachineTerm::machine_binary(
             format,
             MachineBinaryOp::ShiftRight,
             constant(if bits == 32 {
@@ -333,21 +341,21 @@ mod construction_tests {
     fn domain_construction_retains_symbolic_truths_for_obligation_discharge() {
         let value = IntegerTerm::from_machine(
             MachineIntegerType::Int64,
-            MachineTerm::Variable(Variable(987000)),
+            OldMachineTerm::Variable(Variable(987000)),
         )
         .unwrap();
         // An already written symbolic bound stays a proposition. The domain
         // builder's root-type rule below does not fold ordinary comparisons.
         let domain = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::integer_less_equal(
+                OldConditionTerm::integer_less_equal(
                     value.clone(),
                     IntegerTerm::constant_i64(i64::MAX),
                 ),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
+                OldConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
                 true,
             )),
         );
@@ -362,12 +370,12 @@ mod construction_tests {
         );
         assert_eq!(
             Proposition::arithmetic_domain([
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
-                Proposition::condition_is(ConditionTerm::Constant(false), false),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(false), false),
             ]),
             None
         );
-        let falsehood = Proposition::condition_is(ConditionTerm::Constant(false), true);
+        let falsehood = Proposition::condition_is(OldConditionTerm::Constant(false), true);
         assert_eq!(
             Proposition::arithmetic_domain([falsehood.clone()]),
             Some(falsehood)
@@ -386,10 +394,11 @@ mod construction_tests {
             (Ty::Int32, Ty::UInt32, false),
         ] {
             let value =
-                IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(987001))).unwrap();
+                IntegerTerm::from_machine(source, OldMachineTerm::Variable(Variable(987001)))
+                    .unwrap();
             let range = Proposition::arithmetic_result_range(destination, value);
             assert_eq!(
-                matches!(&range, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))),
+                matches!(&range, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _)))),
                 fits
             );
         }
@@ -405,25 +414,25 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         use MachineIntegerType::{Int64, UInt64};
         for bits in [0, 1, 7, i64::MAX as u64, 1u64 << 63, u64::MAX - 6, u64::MAX] {
-            let raw = MachineTerm::uint64_constant(bits);
+            let raw = OldMachineTerm::uint64_constant(bits);
             let root = KernelTermImport::default().machine(Int64, &raw);
-            let signed = MachineTerm::int64_constant(bits as i64);
+            let signed = OldMachineTerm::int64_constant(bits as i64);
             for op in [
                 MachineBinaryOp::Add,
                 MachineBinaryOp::Subtract,
                 MachineBinaryOp::Multiply,
             ] {
                 for swapped in [false, true] {
-                    let other = MachineTerm::Variable(Variable(1_990_000));
+                    let other = OldMachineTerm::Variable(Variable(1_990_000));
                     let (left, right) = if swapped {
                         (
-                            MachineOperandView::Legacy(&other),
+                            MachineOperandView::Old(&other),
                             MachineOperandView::Shared(&root),
                         )
                     } else {
                         (
                             MachineOperandView::Shared(&root),
-                            MachineOperandView::Legacy(&other),
+                            MachineOperandView::Old(&other),
                         )
                     };
                     let expected = if swapped {

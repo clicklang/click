@@ -44,7 +44,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
         EraseOutcome::Balanced(t) => {
             have erase_out_rb(EraseOutcome::Balanced(t)) == 1 by { rewrite(EraseOutcome::Balanced(t), out.model); close(); }
             have is_rb_root(t) == 1 by { unfold(erase_out_rb(EraseOutcome::Balanced(t))); close(); }
-            have erase_out_tree(EraseOutcome::Balanced(t)) == t by { unfold(erase_out_tree(EraseOutcome::Balanced(t))); normalize(); }
+            have erase_out_tree(EraseOutcome::Balanced(t)) == t by { unfold(erase_out_tree(EraseOutcome::Balanced(t))); close(); }
             have rb_tree_parent_consistent(t) == 1 by {
                 rewrite(t, erase_out_tree(EraseOutcome::Balanced(t))); rewrite(EraseOutcome::Balanced(t), out.model); close();
             }
@@ -54,7 +54,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
             have erase_repaired(erase_outcome(old(tree.model), old(up.model))) == t by {
                 rewrite(erase_outcome(old(tree.model), old(up.model)), out.model);
                 rewrite(out.model, EraseOutcome::Balanced(t));
-                unfold(erase_repaired(EraseOutcome::Balanced(t))); normalize();
+                unfold(erase_repaired(EraseOutcome::Balanced(t))); close();
             }
             let { whole: whole } = unfold(out);
             have rebalance == 0;
@@ -68,7 +68,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
                 unfold(black_height(RbTree::Empty)); close();
             }
             have erase_out_tree(EraseOutcome::Deficit(c)) == plug(c, RbTree::Empty) by {
-                unfold(erase_out_tree(EraseOutcome::Deficit(c))); normalize();
+                unfold(erase_out_tree(EraseOutcome::Deficit(c))); close();
             }
             have rb_tree_parent_consistent(plug(c, RbTree::Empty)) == 1 by {
                 rewrite(plug(c, RbTree::Empty), erase_out_tree(EraseOutcome::Deficit(c)));
@@ -81,7 +81,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
             have erase_repaired(erase_outcome(old(tree.model), old(up.model))) == erase_flips_red_all_result(c, RbTree::Empty) by {
                 rewrite(erase_outcome(old(tree.model), old(up.model)), out.model);
                 rewrite(out.model, EraseOutcome::Deficit(c));
-                unfold(erase_repaired(EraseOutcome::Deficit(c))); normalize();
+                unfold(erase_repaired(EraseOutcome::Deficit(c))); close();
             }
             let { deficit: deficit } = unfold(out);
             have rebalance != 0;

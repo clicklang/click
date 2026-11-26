@@ -9,10 +9,10 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64, 128] {
-        let term = |index| MachineTerm::Variable(Variable(9_320_000 + index));
+        let term = |index| OldMachineTerm::Variable(Variable(9_320_000 + index));
         let equality = |left, right| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(term(left)),
@@ -54,12 +54,12 @@ fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
 fn solve_reduces_connected_pointer_premises_before_spelling() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64, 128] {
-        let pointer = |index| Address::symbolic(Variable(index));
+        let pointer = |index| OldAddress::symbolic(Variable(index));
         let left = pointer(1);
         let middle = pointer(2);
         let right = pointer(3);
         let equality = |left, right| {
-            Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
+            Proposition::condition_is(OldConditionTerm::address_equal(left, right), true)
         };
         let first = equality(left.clone(), middle.clone());
         let second = equality(middle.clone(), right.clone());
@@ -112,23 +112,23 @@ fn solve_reduces_connected_pointer_premises_before_spelling() {
 fn solve_retains_recorded_load_address_equality_premises() {
     let mut samples = Vec::new();
     for count in [8u64, 16, 32, 64, 128] {
-        let term = |index: u64| MachineTerm::Variable(Variable(9_330_000 + index));
+        let term = |index: u64| OldMachineTerm::Variable(Variable(9_330_000 + index));
         let memory = intern_memory(SymbolicMemory::new().with_block("indexed", 8));
         let load = |offset| {
-            crate::kernel::canonical_term(&MachineTerm::read_named(
+            crate::kernel::canonical_term(&OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "indexed".into(),
                     offset,
                 }),
                 LoadKind::Int32,
             ))
         };
-        let indexed = load(AddressOffset::scaled_int32_node(term(0), 4));
-        let first = load(AddressOffset::Constant(0));
+        let indexed = load(OldAddressOffset::scaled_int32_node(term(0), 4));
+        let first = load(OldAddressOffset::Constant(0));
         let equality = |left, right| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(left),
@@ -137,7 +137,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
                 true,
             )
         };
-        let required = equality(term(0), MachineTerm::constant(0));
+        let required = equality(term(0), OldMachineTerm::constant(0));
         let mut context = PureFactContext::new().assume_proposition(required.clone());
         for index in 1..count {
             context = context.assume_proposition(equality(term(0), term(index)));
@@ -157,18 +157,20 @@ fn solve_retains_recorded_load_address_equality_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_view_prefix_retains_only_its_order_path() {
     let mut samples = Vec::new();
     for count in [32, 64, 128, 256] {
-        let n = MachineTerm::Variable(Variable(9_340_000));
-        let middle = MachineTerm::Variable(Variable(9_340_001));
+        let n = OldMachineTerm::Variable(Variable(9_340_000));
+        let middle = OldMachineTerm::Variable(Variable(9_340_001));
         let le = |left, right| {
-            Proposition::condition_is(ConditionTerm::uint64_less_equal(left, right), true)
+            Proposition::condition_is(OldConditionTerm::uint64_less_equal(left, right), true)
         };
-        let first = le(MachineTerm::uint64_constant(1), middle.clone());
+        let first = le(OldMachineTerm::uint64_constant(1), middle.clone());
         let second = le(middle, n.clone());
         let memory = SymbolicMemory::new();
-        let base = Address::symbolic(Variable(9_340_002));
+        let base = OldAddress::symbolic(Variable(9_340_002));
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
@@ -183,7 +185,7 @@ fn native_view_prefix_retains_only_its_order_path() {
             base,
             bytes: crate::kernel::StoredMachineTerm::new(
                 crate::kernel::MachineIntegerType::UInt64,
-                MachineTerm::uint64_constant(1),
+                OldMachineTerm::uint64_constant(1),
             ),
             wide: true,
         };
@@ -193,7 +195,7 @@ fn native_view_prefix_retains_only_its_order_path() {
             .assume_proposition(second.clone());
         for bound in 2..2 + count {
             context =
-                context.assume_proposition(le(n.clone(), MachineTerm::uint64_constant(bound)));
+                context.assume_proposition(le(n.clone(), OldMachineTerm::uint64_constant(bound)));
         }
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::search::ProofSearch::derive_solve_atomic_proposition(&(context), &goal)
@@ -223,15 +225,15 @@ fn native_view_prefix_retains_only_its_order_path() {
 fn solve_retains_common_base_pointer_equality_for_load_congruence() {
     let mut samples = Vec::new();
     for count in [8u64, 16, 32, 64, 128] {
-        let pointer = |index| Address {
+        let pointer = |index| OldAddress {
             base: "indexed".into(),
-            offset: AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(9_340_000 + index)),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(9_340_000 + index)),
                 4,
             ),
         };
         let equality = |left, right| {
-            Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
+            Proposition::condition_is(OldConditionTerm::address_equal(left, right), true)
         };
         let required = equality(pointer(0), pointer(1));
         let mut context = PureFactContext::new().assume_proposition(required.clone());
@@ -242,15 +244,15 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
         let load = |index| {
             let mut at = pointer(index);
             at.offset =
-                AddressOffset::Add(Box::new(at.offset), Box::new(AddressOffset::Constant(4)));
-            crate::kernel::canonical_term(&MachineTerm::read_named(
+                OldAddressOffset::Add(Box::new(at.offset), Box::new(OldAddressOffset::Constant(4)));
+            crate::kernel::canonical_term(&OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at),
                 LoadKind::Int32,
             ))
         };
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(0)),

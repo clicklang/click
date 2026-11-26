@@ -17,7 +17,7 @@ fn proof(steps: &str) -> String {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn explicit_contract_closing_uses_ordinary_known_steps() {
-    let source = proof("normalize(); close(); close(); close();");
+    let source = proof("close(); close(); close(); close();");
     let mut verified = without_implicit_solve(|| verify_c_sources(&source, C))
         .unwrap_or_else(|error| panic!("{}", error.message()));
     // Reuse the completed artifact: losing its ordinary root must refuse,
@@ -61,7 +61,7 @@ fn per_clause_contract_closing_expands_after_its_source_proof() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
 fn omitted_finalization_steps_run_in_checked_only_replay() {
     for count in 0..=3 {
-        let source = proof(&format!("normalize(); {}", "close(); ".repeat(count)))
+        let source = proof(&format!("close(); {}", "close(); ".repeat(count)))
             .replace("step_until(function.exit);", "step();");
         crate::surface::check_audit_claim("value.contract", true, || {
             verify_c_sources(&source, C).map_err(|error| error.report())
@@ -82,7 +82,7 @@ fn omitted_finalization_steps_run_in_checked_only_replay() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn written_close_closes_only_one_selected_closing_goal() {
-    let source = proof("normalize(); close(); normalize();");
+    let source = proof("close(); close(); close() using {};");
     let error = without_implicit_solve(|| verify_c_sources(&source, C)).unwrap_err();
     assert!(
         error
@@ -102,6 +102,8 @@ fn expansion_omits_finalization_after_an_explicit_claim_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn expansion_closes_each_rewritten_postcondition() {
     let inputs = [("closing.c", "int32 value(int32 *p) { return *p; }")];
     let source = r#"
@@ -136,7 +138,7 @@ fn proposition_closers_name_the_pending_closing_goal() {
         "close() using {};",
         "all { true => { close(); } true => { close(); } }",
     ] {
-        let source = proof(&format!("normalize(); {closer}"));
+        let source = proof(&format!("close(); {closer}"));
         let error = verify_c_sources(&source, C).unwrap_err();
         assert!(
             error.message().contains("requires a proposition goal"),
@@ -159,11 +161,11 @@ fn footprint_refusal_names_the_goal_and_the_closing_operation() {
     )];
     for (steps, expected) in [
         (
-            "normalize();",
+            "close();",
             "contract finalization could not prove the write footprint obligation",
         ),
         (
-            "normalize(); close(); close(); close();",
+            "close(); close(); close(); close();",
             "this tactic could not prove the write footprint obligation",
         ),
     ] {
@@ -223,7 +225,8 @@ const SOURCE_CELLS_C: &[(&str, &str)] = &[(
 )];
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn grouped_source_only_claims_complete_and_expand_as_ordinary_proofs() {
     let source = source_only_clauses(true, 1);
     verify_c_sources(&source, SOURCE_CELLS_C).unwrap();
@@ -283,7 +286,8 @@ fn an_empty_loop_summary_does_not_publish_concrete_exit_evidence() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_03")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn completed_descent_covers_a_concretely_avoided_recursive_loop() {
     let c = [(
         "retained_descent.c",
@@ -320,7 +324,8 @@ fn retained_context_does_not_discharge_an_unproved_recursive_descent() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_03")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn reassigned_numeric_parameter_descent_expands_into_ordinary_steps() {
     let c = [(
         "numeric_descent.c",
@@ -375,14 +380,11 @@ test_batches! {
         footprint_refusal_names_the_goal_and_the_closing_operation,
     ],
     contract_closing_batch_02: [
-        grouped_source_only_claims_complete_and_expand_as_ordinary_proofs,
         separate_source_only_clauses_complete_their_own_cells,
         proving_one_source_only_clause_cannot_cover_a_false_sibling,
         concrete_and_avoided_loops_need_no_summary_measure,
     ],
     contract_closing_batch_03: [
-        completed_descent_covers_a_concretely_avoided_recursive_loop,
         retained_context_does_not_discharge_an_unproved_recursive_descent,
-        reassigned_numeric_parameter_descent_expands_into_ordinary_steps,
     ],
 }

@@ -66,7 +66,7 @@ void overwrite(struct node* p, struct node* q) {
     mark before_word_0;
     step();
     have separate(statement(0).region(0).footprint, memory(p->word)) by {
-        normalize() using { };
+        close() using { };
     }
     have p->word == at(before_word_0, p->word) by {
         preserve(memory(p->word), statement(0).region(0));
@@ -77,7 +77,7 @@ void overwrite(struct node* p, struct node* q) {
     mark before_word_1;
     step();
     have separate(statement(0).region(1).footprint, memory(p->word)) by {
-        normalize() using { };
+        close() using { };
     }
     have p->word == at(before_word_1, p->word) by {
         preserve(memory(p->word), statement(0).region(1));
@@ -89,7 +89,7 @@ void overwrite(struct node* p, struct node* q) {
     have separate(memory((&next->value)[0..1]), memory(p->word));
     step();
     have separate(statement(1).footprint, memory(p->word)) by {
-        normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
+        close() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
     }
     have p->word == at(before_word_2, p->word) by {
         preserve(memory(p->word), statement(1));
@@ -125,7 +125,7 @@ int32 caller(struct node* p, struct node* q) {
     mark before_word_0;
     step();
     have separate(statement(0).region(0).footprint, memory(p->word)) by {
-        normalize() using { };
+        close() using { };
     }
     have p->word == at(before_word_0, p->word) by {
         preserve(memory(p->word), statement(0).region(0));
@@ -136,7 +136,7 @@ int32 caller(struct node* p, struct node* q) {
     mark before_word_1;
     step();
     have separate(statement(0).region(1).footprint, memory(p->word)) by {
-        normalize() using { };
+        close() using { };
     }
     have p->word == at(before_word_1, p->word) by {
         preserve(memory(p->word), statement(0).region(1));
@@ -148,7 +148,7 @@ int32 caller(struct node* p, struct node* q) {
     have separate(memory((&next->value)[0..1]), memory(p->word));
     step();
     have separate(statement(1).footprint, memory(p->word)) by {
-        normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
+        close() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
     }
     have p->word == at(before_word_2, p->word) by {
         preserve(memory(p->word), statement(1));

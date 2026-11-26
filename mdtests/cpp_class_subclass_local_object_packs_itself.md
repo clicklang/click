@@ -2,7 +2,7 @@
 
 `Square` is a base of `BigSquare`, so a `Square&` holds the `Shape` object
 of whichever class it refers to. `caller`'s local `sq` is a complete
-`Square`, so the importer places `Square__click_pack_const__Square` where it
+`Square`, so Click checks a reference binding where it
 is passed as a `const Square&`, making the object from `sq`'s memory with
 `Square`'s definitions.
 
@@ -72,7 +72,7 @@ int caller(int scale) {
     step();
     fold(Whole(sq));
     unfold(Whole(sq));
-    let { object_resource(): packed } = step(Square__click_pack_const__Square);
+    let { object_resource(): packed } = step(call(through_square, 0).argument(0).binding);
 }
 ```
 

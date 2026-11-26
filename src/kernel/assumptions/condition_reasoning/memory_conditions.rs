@@ -11,10 +11,10 @@ impl PureFactContext {
     /// loaded pointer. Structurally different conditions never match.
     pub fn conditions_equal_modulo_proven_states(
         &self,
-        left: &ConditionTerm,
-        right: &ConditionTerm,
+        left: &OldConditionTerm,
+        right: &OldConditionTerm,
     ) -> bool {
-        if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) =
+        if let (OldConditionTerm::PointerEqual(a, b), OldConditionTerm::PointerEqual(c, d)) =
             (left, right)
         {
             let same_value =
@@ -42,10 +42,10 @@ impl PureFactContext {
     /// it is reserved for target-selected candidates, not broad matching.
     pub(crate) fn conditions_equal_modulo_origin_unchanged(
         &self,
-        left: &ConditionTerm,
-        right: &ConditionTerm,
+        left: &OldConditionTerm,
+        right: &OldConditionTerm,
     ) -> bool {
-        if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) =
+        if let (OldConditionTerm::PointerEqual(a, b), OldConditionTerm::PointerEqual(c, d)) =
             (left, right)
         {
             let same_value =
@@ -77,15 +77,15 @@ impl PureFactContext {
 
     fn load_atoms_equal_modulo_origin_unchanged(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
         // An explicitly held equality is frame evidence for either read
         // representation. Query the existing graph authority before origin
         // checks; no new memory search is introduced here.
         let word_read = |term| {
             matches!(crate::kernel::eval::viewed_as_memory_load(term),
-                Some(MachineTerm::MemoryLoad(_, _, kind)) if kind.is_word32())
+                Some(OldMachineTerm::MemoryLoad(_, _, kind)) if kind.is_word32())
         };
         if word_read(left) && word_read(right) && self.int32_values_known_equal(left, right) {
             return true;
@@ -95,8 +95,8 @@ impl PureFactContext {
         left == right
             || match (left, right) {
                 (
-                    MachineTerm::MemoryLoad(_, left_pointer, left_kind),
-                    MachineTerm::MemoryLoad(_, right_pointer, right_kind),
+                    OldMachineTerm::MemoryLoad(_, left_pointer, left_kind),
+                    OldMachineTerm::MemoryLoad(_, right_pointer, right_kind),
                 ) => {
                     left_pointer.address() == right_pointer.address()
                         && left_kind == right_kind
@@ -109,7 +109,7 @@ impl PureFactContext {
             || self.memory_loads_proven_equal(left, right)
     }
 
-    pub(crate) fn proves_condition_exact(&self, condition: &ConditionTerm, value: bool) -> bool {
+    pub(crate) fn proves_condition_exact(&self, condition: &OldConditionTerm, value: bool) -> bool {
         self.condition_facts.get(condition) == Some(&value)
     }
 
@@ -120,10 +120,10 @@ impl PureFactContext {
     /// address are candidates, since a matching fact loads the same one.
     pub(in crate::kernel) fn proves_algebraic_condition_modulo_states(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) -> bool {
-        let ConditionTerm::AlgebraicEqual(left, right) = condition else {
+        let OldConditionTerm::AlgebraicEqual(left, right) = condition else {
             return false;
         };
         let mut variables = BTreeSet::new();
@@ -150,10 +150,10 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn memory_loads_proven_equal(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
-        let checked_load_equality = |left: &MachineTerm, right: &MachineTerm| {
+        let checked_load_equality = |left: &OldMachineTerm, right: &OldMachineTerm| {
             let atomic = || {
                 let (Some(left), Some(right)) = (
                     crate::kernel::eval::viewed_as_memory_load(left),
@@ -173,16 +173,16 @@ impl PureFactContext {
         }
         // This resolver also handles 8-bit, 16-bit, and 64-bit loads. Only a
         // four-byte integer read may use the int32 graph for its value.
-        let is_four_byte_load = |load: &MachineTerm| match load {
-            MachineTerm::Variable(variable) => {
+        let is_four_byte_load = |load: &OldMachineTerm| match load {
+            OldMachineTerm::Variable(variable) => {
                 crate::kernel::registered_load_kind_for_variable(variable)
                     .is_some_and(LoadKind::is_word32)
             }
-            MachineTerm::MemoryLoad(_, _, kind) => kind.is_word32(),
+            OldMachineTerm::MemoryLoad(_, _, kind) => kind.is_word32(),
             _ => false,
         };
         let graph_proves_resolved_int32 =
-            |load: &MachineTerm, resolved: &MachineTerm, other: &MachineTerm| {
+            |load: &OldMachineTerm, resolved: &OldMachineTerm, other: &OldMachineTerm| {
                 is_four_byte_load(load) && self.int32_values_known_equal(resolved, other)
             };
         if let Some(resolved_left) = self.resolve_memory_load_term(left) {
@@ -212,7 +212,7 @@ impl PureFactContext {
         &self,
         left: &SymbolicMemory,
         right: &SymbolicMemory,
-        pointer: &Address,
+        pointer: &OldAddress,
     ) -> bool {
         // Memories match up to the load's pointer, not exactly, so every
         // effect fact is a candidate; other proposition facts are not.
@@ -300,15 +300,15 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn resolve_memory_load_term(
         &self,
-        term: &MachineTerm,
-    ) -> Option<MachineTerm> {
+        term: &OldMachineTerm,
+    ) -> Option<OldMachineTerm> {
         // A load variable resolves as the load it represents: the cell it reads
         // may be decided by this context's facts (a bound index proven
         // distinct from every stored cell) even though the variable was
         // created without them. The result is canonical so a resolution
         // to an earlier state's load compares by canonical form.
         let viewed = crate::kernel::eval::viewed_as_memory_load(term)?;
-        let MachineTerm::MemoryLoad(memory, pointer, kind) = &viewed else {
+        let OldMachineTerm::MemoryLoad(memory, pointer, kind) = &viewed else {
             return None;
         };
         let value = match self
@@ -321,7 +321,7 @@ impl PureFactContext {
             // decoding at the state's own point.
             ProgramValue::Parameter(value) => match value.node {
                 AlgebraicTermNode::MemoryLoad { point, pointer } => {
-                    crate::kernel::MachineTerm::read_named(point, *pointer, *kind)
+                    crate::kernel::OldMachineTerm::read_named(point, *pointer, *kind)
                 }
                 _ => return None,
             },
@@ -358,7 +358,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn resolve_memory_load_value(
         &self,
         point: &crate::kernel::ProgramPoint,
-        pointer: &Address,
+        pointer: &OldAddress,
         kind: LoadKind,
     ) -> Option<ProgramValue> {
         let memory = point.memory();
@@ -372,25 +372,26 @@ impl PureFactContext {
         // load unresolved. Runs use compact slot selection even for symbolic
         // indexes: an unresolved alias is not a reason to enumerate the array.
         let mut unresolved_alias = false;
-        let mut first_equal: Option<(Address, ProgramValue)> = None;
+        let mut first_equal: Option<(OldAddress, ProgramValue)> = None;
         let normalized = std::cell::OnceCell::new();
-        let consider = |cell_pointer: &Address,
-                        value: &ProgramValue,
-                        first_equal: &mut Option<(Address, ProgramValue)>| {
-            if pointers_proven_distinct_for_memory_resolution(cell_pointer, pointer, self) {
-                return false;
-            }
-            if pointers_proven_equal_for_memory_resolution(cell_pointer, pointer, self) {
-                if first_equal
-                    .as_ref()
-                    .is_none_or(|(earlier, _)| cell_pointer < earlier)
-                {
-                    *first_equal = Some((cell_pointer.clone(), value.clone()));
+        let consider =
+            |cell_pointer: &OldAddress,
+             value: &ProgramValue,
+             first_equal: &mut Option<(OldAddress, ProgramValue)>| {
+                if pointers_proven_distinct_for_memory_resolution(cell_pointer, pointer, self) {
+                    return false;
                 }
-                return true;
-            }
-            true
-        };
+                if pointers_proven_equal_for_memory_resolution(cell_pointer, pointer, self) {
+                    if first_equal
+                        .as_ref()
+                        .is_none_or(|(earlier, _)| cell_pointer < earlier)
+                    {
+                        *first_equal = Some((cell_pointer.clone(), value.clone()));
+                    }
+                    return true;
+                }
+                true
+            };
         // A cell or run outside the load's alias candidates is in a block
         // proven distinct from it, which `consider` and
         // `run_slots_resolving_load` answer as elsewhere, so only the
@@ -558,9 +559,9 @@ mod tests {
                 .with_block("held-read-right", 4),
         );
         let read = |block: &str| {
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: block.into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -569,8 +570,8 @@ mod tests {
                 4,
             );
             (
-                MachineTerm::Variable(variable),
-                MachineTerm::read_named(
+                OldMachineTerm::Variable(variable),
+                OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(pointer),
                     LoadKind::Int32,
@@ -581,7 +582,7 @@ mod tests {
         let (right_name, right_raw) = read("held-read-right");
         let empty = PureFactContext::new();
         let held = empty.clone().assume_condition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left_name.clone()),

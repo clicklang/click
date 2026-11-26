@@ -1944,7 +1944,7 @@ mod tests {
     fn loop_entry_refusal_bounds_unexecuted_preservation_source() {
         let source = format!(
             "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0).entry);\nloop {{ invariant i == 1; maintain by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
-            "have 0 == 0 by { normalize(); }\n".repeat(300)
+            "have 0 == 0 by { close(); }\n".repeat(300)
         );
         let (root, path) = temporary_project(
             "loop-entry-excerpt",
@@ -1993,35 +1993,21 @@ mod tests {
 
     #[test]
     #[ignore = "nightly: 0.5s in the parallel gate"]
-    fn refused_transport_names_the_cell_and_prints_checked_effects() {
+    fn refused_preserve_names_the_cell_and_missing_separation() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/loop_binder_instance_footprint_includes_its_memory.md");
         let report =
             entry_with([fixture.display().to_string()]).expect_err("the loop may write the cell");
         assert!(
-            report.contains("effect facts relating states at this frontier"),
+            report.contains("preserve separation is not exactly available"),
             "{report}"
         );
-        assert!(report.contains("checked source (holds)"), "{report}");
-        assert!(report.contains("checked target (wanted)"), "{report}");
         assert!(
-            report.contains(
-                "transport label definitions (shared by checked source, target, and effects)"
-            ),
+            report.contains("preserve(memory(occupied[start]), loop(0));"),
             "{report}"
         );
-        assert!(report.contains("loop effect: may write"), "{report}");
-        assert!(report.contains("store to occupied[start]"), "{report}");
+        assert!(report.contains("required evidence: at(<state A>, occupied[start]) == at(statement(1).exit, occupied[start])"), "{report}");
         assert!(report.contains("i >= end"), "{report}");
-        assert!(report.contains("at(pre, occupied[start])"), "{report}");
-        assert!(!report.contains("lowered target"), "{report}");
-        assert_eq!(
-            report
-                .matches("some effect facts have no exact Click spelling")
-                .count(),
-            0,
-            "{report}"
-        );
     }
 
     #[test]
@@ -2158,13 +2144,13 @@ resource choice() { field model: Choice; }
 tactic choose() { owns x: choice(); ensures 0 == 0; } by {
     match x.model {
         Choice::First => {
-            have 0 == 0 by { normalize(); }
+            have 0 == 0 by { close(); }
         },
         Choice::Second => {
-            have 0 == 0 by { normalize(); }
+            have 0 == 0 by { close(); }
         },
         Choice::Third => {
-            have 0 == 0 by { normalize(); }
+            have 0 == 0 by { close(); }
         },
     }
 }
@@ -2226,12 +2212,12 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
             step();
         }
     }
-    step(); normalize();
+    step(); close();
 }
 void plain(int32 n) { requires n >= 0; ensures 0 == 0; } by {
     have n >= 0 by { close(); }
     apply(positive(0));
-    step_until(function.exit); normalize();
+    step_until(function.exit); close();
 }
 "#;
         let (root, path) = temporary_project(
@@ -2280,7 +2266,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             r#"        initialize by close();
         maintain by { step(); }
     }
-    have 0 == 1 by { normalize(); }
+    have 0 == 1 by { close(); }
     step_until(function.exit); close();
 }
 "#,
@@ -3043,7 +3029,7 @@ int32 read_first(int32 m) {
             r#"verifying "program.c";
                int32 f(int32 x) { ensures result == x; } by {
                    step();
-                   close();
+                   close() using { result == x; };
                }
             "#,
         );
@@ -3061,14 +3047,14 @@ int32 read_first(int32 m) {
                     entry_with(arguments)
                 },
             )
-            .expect_err("the written solve has no work allowance")
+            .expect_err("the selected-premise closer has no work allowance")
         };
         let error = verify(&[]);
         let trace = verify(&["--trace-proof", "f"]);
         fs::remove_dir_all(&root).unwrap();
         assert!(error.starts_with("unsuccessful search"), "{error}");
         assert!(
-            error.contains("tactic `solve`") && error.contains("smart work budget"),
+            error.contains("tactic `close`") && error.contains("smart work budget"),
             "{error}"
         );
         assert!(error.contains("goal: result == x"), "{error}");

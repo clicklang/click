@@ -5,10 +5,10 @@ use crate::kernel::effective_type::{CAccessClass, CStructClass};
 fn class() -> CAccessClass {
     CAccessClass::Struct(CStructClass::opaque("node"))
 }
-fn pointer(id: u64) -> Address {
-    Address::symbolic(Variable(870_000 + id))
+fn pointer(id: u64) -> OldAddress {
+    OldAddress::symbolic(Variable(870_000 + id))
 }
-fn value(pointer: &Address, checked: bool) -> ProgramValue {
+fn value(pointer: &OldAddress, checked: bool) -> ProgramValue {
     let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
     if checked {
         value.with_pointer_object_class(Some(class()))
@@ -16,16 +16,16 @@ fn value(pointer: &Address, checked: bool) -> ProgramValue {
         value
     }
 }
-fn source(name: &str, pointer: &Address) -> Proposition {
+fn source(name: &str, pointer: &OldAddress) -> Proposition {
     Proposition::Predicate {
         name: name.into(),
         arguments: vec![Term::ProgramValue((value(pointer, true)).into())],
     }
 }
-fn equal(a: &Address, b: &Address) -> Proposition {
-    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+fn equal(a: &OldAddress, b: &OldAddress) -> Proposition {
+    Proposition::condition_is(OldConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
-fn can_type(context: &PureFactContext, pointer: &Address) -> bool {
+fn can_type(context: &PureFactContext, pointer: &OldAddress) -> bool {
     crate::kernel::spec::refine_object_pointer_argument(
         &mut value(pointer, false),
         &class(),
@@ -33,7 +33,7 @@ fn can_type(context: &PureFactContext, pointer: &Address) -> bool {
         context,
     )
 }
-fn model_source(pointer: &Address, condition: bool) -> Proposition {
+fn model_source(pointer: &OldAddress, condition: bool) -> Proposition {
     let ty = super::algebraic_tests::model_type(
         "Ref",
         AlgebraicValueType::ObjectPointer(ProgramType::Int32Pointer, class()),
@@ -48,7 +48,7 @@ fn model_source(pointer: &Address, condition: bool) -> Proposition {
     };
     if condition {
         Proposition::condition_is(
-            ConditionTerm::AlgebraicEqual(Box::new(variable), Box::new(constructor)),
+            OldConditionTerm::AlgebraicEqual(Box::new(variable), Box::new(constructor)),
             true,
         )
     } else {
@@ -62,17 +62,17 @@ fn model_source(pointer: &Address, condition: bool) -> Proposition {
 #[test]
 fn integer_address_word_aliases_do_not_supply_an_object_type() {
     let _session = VerificationSession::enter();
-    let a = MachineTerm::Variable(Variable(880_010));
-    let b = MachineTerm::Variable(Variable(880_011));
-    let p = Address::from_integer_address(a.clone());
-    let q = Address::from_integer_address(b.clone());
+    let a = OldMachineTerm::Variable(Variable(880_010));
+    let b = OldMachineTerm::Variable(Variable(880_011));
+    let p = OldAddress::from_integer_address(a.clone());
+    let q = OldAddress::from_integer_address(b.clone());
     let context = PureFactContext::new()
         .assume_proposition(source("typed", &p))
-        .assume_condition(ConditionTerm::uint64_equal(a, b), true);
+        .assume_condition(OldConditionTerm::uint64_equal(a, b), true);
     assert!(can_type(&context, &p));
     assert!(context.equality_graph.are_uint64_equal(
-        &MachineTerm::IntegerAddress(Box::new(p), AddressObjectClass::NONE),
-        &MachineTerm::IntegerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
+        &OldMachineTerm::IntegerAddress(Box::new(p), AddressObjectClass::NONE),
+        &OldMachineTerm::IntegerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
     ));
     assert!(!can_type(&context, &q));
 }
@@ -96,9 +96,9 @@ fn object_type_evidence_follows_early_and_late_pointer_merges() {
         assert!(can_type(&context, &r));
         assert!(!can_type(
             &context,
-            &Address {
+            &OldAddress {
                 base: r.base.clone(),
-                offset: AddressOffset::Constant(4)
+                offset: OldAddressOffset::Constant(4)
             }
         ));
         let other = CAccessClass::Struct(CStructClass::opaque("other"));
@@ -164,7 +164,7 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
     let context = PureFactContext::new();
     context
         .equality_graph
-        .are_algebraic_equal(a.native_compat(), b.native_compat());
+        .are_algebraic_equal(a.old_form(), b.old_form());
     assert!(!can_type(&context, &p));
     let alternatives = context.clone().assume_proposition(Proposition::Or(
         Box::new(model),
@@ -188,8 +188,8 @@ fn object_type_evidence_does_not_bridge_changed_read_states() {
     let changed = memory
         .clone()
         .store(slot.clone(), value(&pointer(10), false));
-    let before = Address::loaded_value(&memory.into(), &slot);
-    let after = Address::loaded_value(&changed.into(), &slot);
+    let before = OldAddress::loaded_value(&memory.into(), &slot);
+    let after = OldAddress::loaded_value(&changed.into(), &slot);
     let context = PureFactContext::new().assume_proposition(source("old_read", &before));
     assert!(can_type(&context, &before));
     assert!(!can_type(&context, &after));
@@ -247,7 +247,7 @@ fn checked_pointer_value_equalities_retain_their_scoped_type_receipts() {
         unreachable!()
     };
     let equality = Proposition::condition_is(
-        ConditionTerm::PointerEqual(Box::new(p_value), Box::new(q_value)),
+        OldConditionTerm::PointerEqual(Box::new(p_value), Box::new(q_value)),
         true,
     );
     let parent = PureFactContext::new();

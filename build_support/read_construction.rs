@@ -4,11 +4,11 @@
 //! A read term's name decides which reads the prover treats as one term, so
 //! reads are to be built by one constructor each:
 //!
-//! - integer and float reads, `MachineTerm::MemoryLoad(..)`, by
-//!   `MachineTerm::read_named` (and `MachineTerm::memory_read`, which calls it);
+//! - integer and float reads, `OldMachineTerm::MemoryLoad(..)`, by
+//!   `OldMachineTerm::read_named` (and `OldMachineTerm::memory_read`, which calls it);
 //! - their operands, the producer's `ReadPoint(..)` and the `LoadCell { .. }`
 //!   that holds the read's interned load, by `read_operands`, which only
-//!   `MachineTerm::read_named` calls (`design/loads.md`, step 3a);
+//!   `OldMachineTerm::read_named` calls (`design/loads.md`, step 3a);
 //! - loads, `Load { .. }`, by `Load::at`, and pointer bases,
 //!   `AddressBase::Load(..)`, by `Load::base`.
 //!
@@ -48,7 +48,7 @@ pub(super) enum Form {
 impl Form {
     fn spelling(self) -> &'static str {
         match self {
-            Self::MemoryLoad => "`MachineTerm::MemoryLoad(..)`",
+            Self::MemoryLoad => "`OldMachineTerm::MemoryLoad(..)`",
             Self::ReadOperands => "`read_operands(..)` calls",
             Self::ReadPoint => "`ReadPoint(..)`",
             Self::LoadCell => "`LoadCell { .. }`",
@@ -68,7 +68,7 @@ impl Form {
     /// What to do instead of adding one more of this form.
     fn advice(self) -> &'static str {
         match self {
-            Self::MemoryLoad | Self::ReadOperands => "build them with `MachineTerm::read_named`",
+            Self::MemoryLoad | Self::ReadOperands => "build them with `OldMachineTerm::read_named`",
             Self::ReadPoint | Self::LoadCell => "build them with `read_operands`",
             Self::Load => "build them with `Load::at`",
             Self::LoadBase => "build them with `Load::base`",
@@ -91,7 +91,7 @@ impl Form {
 /// Direct constructions per file and form. Lower an entry when converting
 /// sites; never raise one.
 const BASELINE: &[(&str, Form, usize)] = &[
-    // `MachineTerm::read_named` itself, which builds the read's operands
+    // `OldMachineTerm::read_named` itself, which builds the read's operands
     // with `read_operands`.
     (
         "src/kernel/primitives/machine_integer.rs",
@@ -201,7 +201,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
         1,
     ),
     (
-        "src/surface/proof/fixed_state_proofs/fact_transport.rs",
+        "src/surface/proof/fixed_state_proofs/path_condition.rs",
         Form::UnplacedPoint,
         1,
     ),

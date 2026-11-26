@@ -1,17 +1,17 @@
 #[test]
 fn disjoint_write_range_visits_are_charged_even_for_distinct_blocks() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "local:read".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new();
     for size in [1usize, 8, 32, 64] {
         let ranges: Vec<_> = (0..size)
             .map(|index| {
                 MemoryRange::new_with_element_width(
-                    Address {
+                    OldAddress {
                         base: format!("local:write-{index}").into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     0u32.into(),
                     4u32.into(),

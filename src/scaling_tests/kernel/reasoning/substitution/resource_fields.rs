@@ -69,14 +69,14 @@ fn mixed_resource_fields_substitute_without_exporting_the_integer_dag() {
         let substituted_pointer = substitute_pointer_variable_in_resource(
             &resource,
             variable,
-            &Address::symbolic(Variable(987318)),
+            &OldAddress::symbolic(Variable(987318)),
         );
         assert_eq!(field(substituted_pointer), original);
         let (substituted_word, work) = crate::instrumentation::measure_deterministic_work(|| {
             substitute_bitvector_variable_in_resource(
                 &resource,
                 variable,
-                &MachineTerm::uint64_constant(7),
+                &OldMachineTerm::uint64_constant(7),
             )
         });
         assert_eq!(

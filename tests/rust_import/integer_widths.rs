@@ -7,6 +7,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/integer-widths/wid
 /// scrutinees import at their widths and verify; each arithmetic step that
 /// could overflow owes Rust's panic check.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6.1s in the parallel gate"]
 fn charon_integer_widths_verify_with_their_panic_checks() {
     let p = Project::from_fixture("design/charon-trial/integer-widths");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
@@ -56,6 +58,8 @@ fn charon_integer_widths_verify_with_their_panic_checks() {
 /// so the fixture's `deposit` reads its `i64` and `u64` fields as one cell
 /// each; a claim that the untouched field changes is refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn charon_whole_record_owns_covers_a_64_bit_field_load() {
     let p = Project::from_fixture("design/charon-trial/integer-widths");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
@@ -132,6 +136,8 @@ fn check_remainder_guards(ty: &str, maximum: &str, controls: bool) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn charon_u8_remainder_guards_match_contracts() {
     check_remainder_guards("u8", "255", false);
 }

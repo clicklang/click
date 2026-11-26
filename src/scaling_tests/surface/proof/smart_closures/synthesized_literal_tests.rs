@@ -19,11 +19,11 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
         0,
         &[],
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::constant(0)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         ),
@@ -40,11 +40,11 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
         let premises = (0..size)
             .map(|index| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(8_179_000 + index))),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: Box::new(OldMachineTerm::Variable(Variable(8_179_000 + index))),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     true,
                 )
@@ -66,10 +66,10 @@ fn reflexive_pointer_metadata_does_not_search_state_history() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let pointer = Address::symbolic(Variable(8_179_830));
+    let pointer = OldAddress::symbolic(Variable(8_179_830));
     let state = ExecutionState::new().with_local("p", ProgramValue::pointer(pointer.clone()));
     let reflexive = Proposition::condition_is(
-        ConditionTerm::AddressEqual(Box::new(pointer.clone()), Box::new(pointer)),
+        OldConditionTerm::AddressEqual(Box::new(pointer.clone()), Box::new(pointer)),
         true,
     );
     let equivalent = Proposition::Not(Box::new(match &reflexive {
@@ -99,7 +99,7 @@ fn reflexive_pointer_metadata_does_not_search_state_history() {
             "reflexive pointer metadata",
             0,
             &facts,
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&state, &state, None, &retained_states),
             Some(&anchor),

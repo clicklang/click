@@ -6,7 +6,7 @@ use SyntaxTerm as E;
 
 fn number(n: u64) -> E {
     E::ProgramExpression(ProgramExpression::Value(crate::kernel::uint64(
-        MachineTerm::uint64_constant(n),
+        OldMachineTerm::uint64_constant(n),
     )))
 }
 fn eq(a: E, b: E) -> SyntaxProposition {
@@ -169,7 +169,7 @@ impl Words<'_, '_> {
         if ty == MachineIntegerType::UInt64 {
             return Ok(
                 crate::kernel::proof::arithmetic_special::unsigned_word_constant_for_discovery(
-                    crate::kernel::MachineOperandView::Legacy(word),
+                    crate::kernel::MachineOperandView::Old(word),
                 ),
             );
         }
@@ -342,7 +342,7 @@ impl Words<'_, '_> {
             };
             let expanded = address(add(
                 pointer,
-                E::ProgramExpression(ProgramExpression::Value(int32(MachineTerm::constant(
+                E::ProgramExpression(ProgramExpression::Value(int32(OldMachineTerm::constant(
                     index as u32,
                 )))),
             ));
@@ -443,7 +443,7 @@ impl Words<'_, '_> {
         }
         let native = self.input.capture_native_argument(e)?;
         let unsigned = match native.numeric_value() {
-            ProgramValue::UInt64(word) => crate::kernel::MachineOperandView::Legacy(word)
+            ProgramValue::UInt64(word) => crate::kernel::MachineOperandView::Old(word)
                 .binary()
                 .is_some_and(|(ty, _, _)| ty == MachineIntegerType::UInt64),
             _ => false,
@@ -471,14 +471,14 @@ impl Words<'_, '_> {
                 let captured = self.input.capture_native_argument(source)?;
                 if let ProgramValue::UInt64(value) = captured.numeric_value() {
                     atoms.push((
-                        crate::kernel::MachineOperandView::Legacy(value)
+                        crate::kernel::MachineOperandView::Old(value)
                             .retain(MachineIntegerType::UInt64),
                         source.clone(),
                     ));
                 }
             }
             if let Some(expanded) = self.project_word(
-                crate::kernel::MachineOperandView::Legacy(word),
+                crate::kernel::MachineOperandView::Old(word),
                 &atoms,
                 true,
                 depth + 1,
@@ -807,7 +807,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_recorded_allocation_alignment");
-        let Some((condition, _)) = input.goal().and_then(Proposition::condition_native) else {
+        let Some((condition, _)) = input.goal().and_then(Proposition::old_condition) else {
             return Ok(None);
         };
         let Some((pointer, _)) =
@@ -853,7 +853,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_address_words_using");
         if let Some(goal) = input.goal()
-            && goal.condition_native().is_some_and(|(condition, _)| {
+            && goal.old_condition().is_some_and(|(condition, _)| {
                 crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
                     .is_some()
             })
@@ -879,10 +879,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Proposition::ConditionIs(c, _) = p else {
                 return false;
             };
-            crate::kernel::machine_integer::comparison::structural_comparison_view(
-                c.native_compat(),
-            )
-            .is_some_and(|v| v.format.format().bits() == 64)
+            crate::kernel::machine_integer::comparison::structural_comparison_view(c.old_form())
+                .is_some_and(|v| v.format.format().bits() == 64)
         });
         if !native_word_goal {
             return Ok(None);
@@ -941,7 +939,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for premise in premises {
             let kernel = input.lower_cited_surface_proposition(premise, "address-word relation")?;
-            let word_relation = matches!(&kernel,Proposition::ConditionIs(c,true) if crate::kernel::machine_integer::comparison::structural_comparison_view(c.native_compat()).is_some_and(|v|v.format.format().bits()==64));
+            let word_relation = matches!(&kernel,Proposition::ConditionIs(c,true) if crate::kernel::machine_integer::comparison::structural_comparison_view(c.old_form()).is_some_and(|v|v.format.format().bits()==64));
             if !word_relation {
                 continue;
             }

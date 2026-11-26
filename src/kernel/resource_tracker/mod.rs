@@ -140,7 +140,7 @@ pub(crate) enum TrackedResource<'a> {
     /// the separated set, never grow it. A value of abstract type reaches its
     /// whole object, `sizeof(T)` bytes ([`AccessExtent::Object`]).
     Cell {
-        pointer: &'a Address,
+        pointer: &'a OldAddress,
         bytes: AccessExtent,
     },
     /// A whole memory block, as a pure function reads it through an array
@@ -214,7 +214,7 @@ impl TrackedResource<'_> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OwnedResource {
     Cell {
-        pointer: Address,
+        pointer: OldAddress,
         bytes: AccessExtent,
     },
     Block(AddressBase),
@@ -310,17 +310,17 @@ impl Stop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Change {
     /// One address was assigned.
-    Store { pointer: Address },
+    Store { pointer: OldAddress },
     /// A compact range of cell values was recorded. The edge does not
     /// distinguish input materialization from a source-level range write.
-    CellsSeeded { pointer: Address },
+    CellsSeeded { pointer: OldAddress },
     /// A call may have written the ranges it declared.
     Call { ranges: Vec<MemoryRange> },
     /// A loop may have written the ranges its checked effect summary
     /// declared, or anything at all when it declared none.
     Loop { ranges: Option<Vec<MemoryRange>> },
     /// One heap allocation's lifetime ended.
-    Free { allocation: Address },
+    Free { allocation: OldAddress },
     /// A fresh heap block became live.
     Allocation { block: AddressBase },
     /// An allocation request has no resolved address yet.
@@ -328,7 +328,7 @@ pub(crate) enum Change {
     /// Allocation claims moved across a contract boundary.
     ContractAllocationClaims,
     /// A contract consumed an allocation and did not guarantee continuity.
-    ContractRetirement { allocation: Address },
+    ContractRetirement { allocation: OldAddress },
     /// A block entered the memory model.
     Declaration { block: AddressBase },
     /// An automatic-storage object was retired.
@@ -533,7 +533,7 @@ impl Explanation {
 
 thread_local! {
     static PATH_CELL_VERSION_MEMO: std::cell::RefCell<
-        std::collections::HashMap<(ProgramPointId, Address, AccessExtent), PathLink>,
+        std::collections::HashMap<(ProgramPointId, OldAddress, AccessExtent), PathLink>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -554,7 +554,7 @@ thread_local! {
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn cell_version_on_path(
     at: &PathLink,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<PathLink> {
     at.id()?;
@@ -734,7 +734,7 @@ pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Opt
 /// for pays no second walk.
 #[track_caller]
 pub(crate) fn last_same_named_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
     at: &ProgramPoint,
 ) -> Option<LastSame> {
@@ -751,7 +751,7 @@ pub(crate) fn last_same_named_cell(
 #[track_caller]
 pub(crate) fn last_same_cell_memory(
     memory: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<(SharedMemory, Stop)> {
     let version = legacy_walk_audit::counted(&TrackedResource::Cell { pointer, bytes }, || {
@@ -1241,7 +1241,7 @@ struct NamedCellVersion {
 
 pub(super) fn cell_last_same_version_point(
     memory: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<SharedMemory> {
     cell_last_same_version(memory, pointer, bytes).map(|version| version.memory)
@@ -1249,7 +1249,7 @@ pub(super) fn cell_last_same_version_point(
 
 fn cell_last_same_version(
     memory: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<NamedCellVersion> {
     // Assumption-free and a function of the interned state, the pointer,
@@ -1400,7 +1400,7 @@ fn cell_last_same_version(
 /// `assumptions` hold.
 pub(crate) fn cell_value_on_path(
     at: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<crate::kernel::ExecutionValue> {
@@ -1422,7 +1422,7 @@ pub(crate) fn cell_value_on_path(
 #[track_caller]
 pub(crate) fn static_cell_unwritten_since_entry_on_path(
     at: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<(SharedMemory, SharedMemory)> {
@@ -1450,7 +1450,7 @@ pub(crate) fn static_cell_unwritten_since_entry_on_path(
 thread_local! {
     static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
-            (crate::kernel::SharedMemory, Address, AccessExtent),
+            (crate::kernel::SharedMemory, OldAddress, AccessExtent),
             Option<NamedCellVersion>,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1478,7 +1478,7 @@ pub(crate) fn reads_of_proposition(fact: &Proposition) -> Vec<ResourceRead> {
 fn collect_proposition_reads(fact: &Proposition, reads: &mut Vec<ResourceRead>) {
     match fact {
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_reads(condition.native_compat(), reads)
+            collect_condition_reads(condition.old_form(), reads)
         }
         Proposition::Equal(left, right) => {
             collect_term_reads(left, reads);
@@ -1500,21 +1500,21 @@ fn collect_proposition_reads(fact: &Proposition, reads: &mut Vec<ResourceRead>) 
 
 fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
     match term {
-        Term::Condition(condition) => collect_condition_reads(condition.native_compat(), reads),
-        Term::Bitvector32(term) => collect_bitvector_reads(term.native_compat(), reads),
-        Term::Integer(term) => collect_integer_term_reads(term.native_compat(), reads),
+        Term::Condition(condition) => collect_condition_reads(condition.old_form(), reads),
+        Term::Bitvector32(term) => collect_bitvector_reads(term.old_form(), reads),
+        Term::Integer(term) => collect_integer_term_reads(term.old_form(), reads),
         Term::PointerOffset(offset) => {
             if let Some(root) = offset.root() {
                 collect_shared_offset_reads(root, reads);
             } else {
-                collect_offset_reads(offset.native_compat(), reads);
+                collect_offset_reads(offset.old_form(), reads);
             }
         }
         Term::Algebraic(term) => {
-            term.native_compat()
+            term.old_form()
                 .for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
-        Term::ProgramValue(value) => collect_value_reads(value.native_compat(), reads),
+        Term::ProgramValue(value) => collect_value_reads(value.old_form(), reads),
         _ => {}
     }
 }
@@ -1628,15 +1628,15 @@ fn collect_condition_operand_reads(
     });
 }
 
-fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRead>) {
+fn collect_condition_reads(condition: &OldConditionTerm, reads: &mut Vec<ResourceRead>) {
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_reads(pointer, reads);
             }
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_machine_operand(|term| collect_operand_reads(term, reads));
             right.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
@@ -1644,25 +1644,25 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             collect_integer_reads(left, reads);
             collect_integer_reads(right, reads);
         }
-        ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => {
+        OldConditionTerm::Float32(float) | OldConditionTerm::Float64(float) => {
             float.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_offset_reads(left, reads);
             collect_offset_reads(right, reads);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_reads(left, reads);
             collect_pointer_reads(right, reads);
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }
         // As a word-valued Click application: not entered.
-        ConditionTerm::BoolApplication(_) => {}
-        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolApplication(_) => {}
+        OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
             for child in condition.bool_children() {
                 collect_condition_reads(child, reads);
             }
@@ -1672,7 +1672,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
 
 /// A loaded pointer reads the complete pointer cell its name was defined at,
 /// at the point that name embeds, as an offset's load variable reads its cell.
-fn collect_pointer_reads(pointer: &Address, reads: &mut Vec<ResourceRead>) {
+fn collect_pointer_reads(pointer: &OldAddress, reads: &mut Vec<ResourceRead>) {
     collect_address_base_reads(&pointer.base, reads);
     collect_offset_reads(&pointer.offset, reads);
 }
@@ -1701,16 +1701,16 @@ fn collect_shared_offset_reads(
     });
 }
 
-fn collect_offset_reads(offset: &AddressOffset, reads: &mut Vec<ResourceRead>) {
+fn collect_offset_reads(offset: &OldAddressOffset, reads: &mut Vec<ResourceRead>) {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            AddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
-                collect_operand_reads(value.operand_view(), reads)
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                collect_operand_reads(index.operand_view(), reads)
             }
             _ => {}
         }
@@ -1856,11 +1856,11 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
     }
 }
 
-fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
+fn collect_bitvector_reads(term: &OldMachineTerm, reads: &mut Vec<ResourceRead>) {
     match term {
-        MachineTerm::MemoryLoad(..) | MachineTerm::Variable(_) => {
+        OldMachineTerm::MemoryLoad(..) | OldMachineTerm::Variable(_) => {
             if let Some(read) = crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(term),
+                crate::kernel::MachineOperandView::Old(term),
             ) {
                 push_read(
                     reads,
@@ -1878,7 +1878,7 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
         }
         unary_term!(Bits32, BitwiseNot, inner)
         | cast_term!(Int64From32, inner)
-        | MachineTerm::Cast {
+        | OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: inner,
             ..
@@ -1888,7 +1888,7 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
         | cast_term!(Int64FromUInt32, inner)
         | cast_term!(UInt64FromInt32, inner)
         | cast_term!(UInt64FromInt64, inner) => collect_bitvector_reads(inner, reads),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,

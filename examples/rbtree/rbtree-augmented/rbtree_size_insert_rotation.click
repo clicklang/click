@@ -76,7 +76,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
         SizedInsertThreePhase::After(g, p) => {
             have sized_three_pending(state.phase) != 1 by {
                 rewrite(state.phase, SizedInsertThreePhase::After(g, p));
-                unfold(sized_three_pending(SizedInsertThreePhase::After(g, p))); normalize();
+                unfold(sized_three_pending(SizedInsertThreePhase::After(g, p))); close();
             }
             contradiction(sized_three_pending(state.phase) == 1);
         },
@@ -87,7 +87,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 SizedTree::Node(p, g, Color::Red, 2,
                     SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), SizedTree::Empty) by {
                 rewrite(tree.model, sized_three_before(g, p, node));
-                unfold(sized_three_before(g, p, node)); normalize();
+                unfold(sized_three_before(g, p, node)); close();
             }
             let { metadata: g_size, left: parent_tree, right: g_right } = unfold(tree);
             let { metadata: p_size, left: focus, right: p_right } = unfold(parent_tree);
@@ -95,11 +95,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             unfold(color_bit(Color::Red));
             have (node->__rb_parent_color & 1) == 0 by {
                 rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
-                rewrite(color_bit(Color::Red), 0); normalize();
+                rewrite(color_bit(Color::Red), 0); close();
             }
             have node->__rb_parent_color == address(p) by {
                 rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1), 0); normalize();
+                rewrite((node->__rb_parent_color & 1), 0); close();
             }
             have g->rb_left == p by close();
             have ((g->rb_left->__rb_parent_color & ~3) as (struct rb_node*)) == g by close();
@@ -149,14 +149,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             let g_right = fold(sized_at(0), { model: SizedTree::Empty });
             let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), metadata: p_size, left: focus, right: p_right });
             have sized_parent_is(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), g) == 1 by {
-                unfold(sized_parent_is(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), g)); normalize();
+                unfold(sized_parent_is(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), g)); close();
             }
             unfold(sized_value(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)));
             unfold(sized_value(SizedTree::Empty));
             have to_integer(3) == 1 + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty))) + to_integer(sized_value(SizedTree::Empty)) by {
                 rewrite(sized_value(SizedTree::Node(p, g, Color::Red, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty)), 2);
                 rewrite(sized_value(SizedTree::Empty), 0);
-                normalize();
+                close();
             }
             let tree = fold(sized_at(g), { model: old(state.model), metadata: g_size, left: parent_tree, right: g_right });
             let state = fold(sized_insert_three_at(node, root), { phase: SizedInsertThreePhase::Before(g, p), model: old(state.model), tree: tree });
@@ -181,7 +181,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         SizedTree::Node(p, g, Color::Red, 2,
                             SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Empty), SizedTree::Empty) by {
                         rewrite(loop_tree.model, sized_three_before(g, p, node));
-                        unfold(sized_three_before(g, p, node)); normalize();
+                        unfold(sized_three_before(g, p, node)); close();
                     }
                     let { metadata: g_size, left: parent_tree, right: g_right } = unfold(loop_tree);
                     let { metadata: p_size, left: focus, right: p_right } = unfold(parent_tree);
@@ -194,12 +194,12 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->__rb_parent_color == address(g) by {
                         rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
                         rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
-                        rewrite(color_bit(Color::Red), 0); normalize();
+                        rewrite(color_bit(Color::Red), 0); close();
                     }
                     have g->__rb_parent_color == 1 by {
                         rewrite(g->__rb_parent_color, address(0) + (g->__rb_parent_color & 1));
                         rewrite((g->__rb_parent_color & 1), color_bit(Color::Black));
-                        rewrite(color_bit(Color::Black), 1); normalize();
+                        rewrite(color_bit(Color::Black), 1); close();
                     }
                     let rotating_word = fold(sized_rotation_entry_word(g), {
                         up: 0 as (int32*), word: 1u64, color: Color::Black
@@ -249,29 +249,29 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->rb_right == g by close();
                     have parent == p by { close(); }
                     have parent->__rb_parent_color == 1 by close();
-                    transport(parent->__rb_parent_color == 1, p->__rb_parent_color == 1);
+                    have p->__rb_parent_color == 1 by { close(); }
                     have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
-                        rewrite(p->__rb_parent_color, 1); normalize();
+                        rewrite(p->__rb_parent_color, 1); close();
                     }
                     have p->__rb_parent_color == (p->__rb_parent_color & 1) by {
-                        rewrite(p->__rb_parent_color, 1); normalize();
+                        rewrite(p->__rb_parent_color, 1); close();
                     }
                     have (p->__rb_parent_color & 1) == color_bit(Color::Black) by {
                         rewrite(p->__rb_parent_color, 1);
-                        rewrite(color_bit(Color::Black), 1); normalize();
+                        rewrite(color_bit(Color::Black), 1); close();
                     }
                     have sized_parent_is(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), p) == 1 by {
-                        unfold(sized_parent_is(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), p)); normalize();
+                        unfold(sized_parent_is(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), p)); close();
                     }
                     have sized_parent_is(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty), p) == 1 by {
-                        unfold(sized_parent_is(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty), p)); normalize();
+                        unfold(sized_parent_is(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty), p)); close();
                     }
                     have to_integer(sized_value(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))) == 2 + to_integer(sized_value(sized_left(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)))) + to_integer(sized_value(sized_right(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)))) + to_integer(sized_value(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))) by {
                         unfold(sized_value(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)));
                         unfold(sized_left(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)));
                         unfold(sized_right(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)));
                         unfold(sized_value(SizedTree::Empty));
-                        unfold(sized_value(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))); normalize();
+                        unfold(sized_value(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))); close();
                     }
                     let rotated = fold(sized_rotation_right_at(g, p), {
                         model: SizedTree::Node(p, 0, Color::Black, 2,
@@ -286,23 +286,23 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have 0 <= sized_value(sized_left(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))))) by {
                         rewrite(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty));
                         rewrite(sized_left(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty);
-                        rewrite(sized_value(SizedTree::Empty), 0); normalize();
+                        rewrite(sized_value(SizedTree::Empty), 0); close();
                     }
                     have 0 <= sized_value(sized_right(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))))) by {
                         rewrite(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty));
                         rewrite(sized_right(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty);
-                        rewrite(sized_value(SizedTree::Empty), 0); normalize();
+                        rewrite(sized_value(SizedTree::Empty), 0); close();
                     }
                     have sized_value(sized_right(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))))) <= 2147483646 by {
                         rewrite(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty));
                         rewrite(sized_right(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty);
-                        rewrite(sized_value(SizedTree::Empty), 0); normalize();
+                        rewrite(sized_value(SizedTree::Empty), 0); close();
                     }
                     have sized_value(sized_left(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))))) <= 2147483646 - sized_value(sized_right(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))))) by {
                         rewrite(sized_right(SizedTree::Node(p, 0, Color::Black, 2, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty))), SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty));
                         rewrite(sized_left(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty);
                         rewrite(sized_right(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty);
-                        rewrite(sized_value(SizedTree::Empty), 0); normalize();
+                        rewrite(sized_value(SizedTree::Empty), 0); close();
                     }
                     let { checked: checked } = step(RotateTreeRight, { tree: rotated });
                     have sized_shape(checked.model) == sized_three_after(g, p, node) by {
@@ -311,7 +311,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_shape(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)));
                         unfold(sized_shape(SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)));
                         unfold(sized_shape(SizedTree::Empty));
-                        unfold(sized_three_after(g, p, node)); normalize();
+                        unfold(sized_three_after(g, p, node)); close();
                     }
                     let state = fold(sized_insert_three_at(node, root), {
                         phase: SizedInsertThreePhase::After(g, p), model: checked.model,

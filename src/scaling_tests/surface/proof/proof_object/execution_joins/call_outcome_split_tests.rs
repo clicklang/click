@@ -83,8 +83,8 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
     .unwrap();
     let function_block = &click_file.function_blocks()[0];
     let arguments = vec![
-        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_112)))),
-        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_113)))),
+        ProgramExpression::Value(bool_value(OldMachineTerm::Variable(Variable(80_112)))),
+        ProgramExpression::Value(bool_value(OldMachineTerm::Variable(Variable(80_113)))),
     ];
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -99,11 +99,11 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         let facts = (0..size)
             .map(|index| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::Variable(Variable(81_000 + index))),
-                        right: Box::new(MachineTerm::constant(index as u32)),
+                        left: Box::new(OldMachineTerm::Variable(Variable(81_000 + index))),
+                        right: Box::new(OldMachineTerm::constant(index as u32)),
                     },
                     true,
                 )

@@ -1,12 +1,7 @@
-# A bare `transport` inside a `have` is refused by the premise planner
+# A `have` refuses a possibly overwritten read
 
-The write `p[i] = 7` may store to `p[1]`, so the entry fact `p[1] == 6` does
-not survive it. Neither source-local candidate checks, and the premise planner,
-which cites only the source, runs over the frontier the `have` was opened on.
-Its refusal is the answer, the same one the bare `transport` gets between
-top-level steps, not a report that the `have` lost the execution frontier: the
-source-local check's refusal, which names the store to `p[i]` the frame could
-not cross.
+The write `p[i] = 7` may store to `p[1]`. The nested proof still has the
+execution frontier and refuses to conclude that the entry value survived.
 
 ```c filename=w.c
 int32 put(int32 p[3], int32 i) {
@@ -25,11 +20,11 @@ int32 put(int32 p[3], int32 i) {
 } by {
     step();
     have p[1] == 6 by {
-        transport(at(function.entry, p[1] == 6), p[1] == 6);
+        close();
     }
 }
 ```
 
 ```expect
-fail: `transport` found no frame evidence carrying its source fact to the target's state
+fail: the store to `p[i]` may have written it
 ```

@@ -112,6 +112,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
     let mut library_contracts = String::new();
     let mut library_models = BTreeSet::new();
     let mut overload_paths = BTreeMap::new();
+    let mut cpp_binding_conversions = BTreeSet::new();
     for (source, execution) in parts {
         for function in &execution.functions {
             crate::instrumentation::record_deterministic_work(1);
@@ -122,6 +123,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
                 continue;
             };
             let kept = &functions[index];
+            let virtual_use = kept.has_cpp_virtual_call() || function.has_cpp_virtual_call();
             let display = crate::languages::display_source_names(&name).into_owned();
             match (
                 kept.prelowered_kernel_function().is_some(),
@@ -165,6 +167,9 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
                     }
                 }
             }
+            if virtual_use && !functions[index].has_cpp_virtual_call() {
+                functions[index] = functions[index].clone().with_cpp_virtual_call();
+            }
         }
         for (name, layout) in &execution.layouts {
             crate::instrumentation::record_deterministic_work(1);
@@ -205,6 +210,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
             }
         }
         library_models.extend(execution.library_models.iter().cloned());
+        cpp_binding_conversions.extend(execution.cpp_binding_conversions.iter().cloned());
         overload_paths.extend(
             execution
                 .overload_paths
@@ -219,6 +225,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
         library_models,
         record_spellings,
         overload_paths,
+        cpp_binding_conversions,
     })
 }
 

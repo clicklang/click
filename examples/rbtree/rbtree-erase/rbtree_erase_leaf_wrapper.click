@@ -53,7 +53,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
             unfold(l); unfold(r);
             have rb_color(old(tree.model)) == color by {
                 rewrite(old(tree.model), RbTree::Node(id, parent_model, color, left, right));
-                unfold(rb_color(RbTree::Node(id, parent_model, color, left, right))); normalize();
+                unfold(rb_color(RbTree::Node(id, parent_model, color, left, right))); close();
             }
             apply(erase_context_parent(up.model, id, parent_model, color, left, right));
             have ctx_consistent(old(up.model), RbTree::Empty, 0) == 1 by { rewrite(old(up.model), up.model); close(); }
@@ -63,7 +63,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite(old(tree.model), RbTree::Node(id, parent_model, color, left, right));
                     rewrite(color, Color::Black); rewrite(left, RbTree::Empty);
                     unfold(black_height(RbTree::Node(id, parent_model, Color::Black, RbTree::Empty, right)));
-                    unfold(black_height(RbTree::Empty)); normalize();
+                    unfold(black_height(RbTree::Empty)); close();
                 }
                 have ctx_rb(old(up.model), Nat::Succ(Nat::Zero), Color::Black) == 1 by {
                     rewrite(Nat::Succ(Nat::Zero), black_height(old(tree.model)));
@@ -74,11 +74,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite(rb_color(old(tree.model)), color);
                     rewrite(color, Color::Black);
                     unfold(erase_leaf_result(old(up.model), Color::Black));
-                    normalize() using {};
+                    close() using {};
                 }
                 have (node->__rb_parent_color & 1) == 1 by {
                     rewrite((node->__rb_parent_color & 1), color_bit(color));
-                    rewrite(color, Color::Black); unfold(color_bit(Color::Black)); normalize();
+                    rewrite(color, Color::Black); unfold(color_bit(Color::Black)); close();
                 }
                 step_until(region(10).entry);
                 have parent == parent_model;
@@ -110,14 +110,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         have erase_flips_red_all_result(remaining.model, RbTree::Empty) == plug(remaining.model, RbTree::Empty) by {
                             rewrite(remaining.model, Context::Top);
                             unfold(erase_flips_red_all_result(Context::Top, RbTree::Empty));
-                            unfold(plug(Context::Top, RbTree::Empty)); normalize();
+                            unfold(plug(Context::Top, RbTree::Empty)); close();
                         }
                         have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(remaining.model, RbTree::Empty) by {
                             rewrite(plug(remaining.model, RbTree::Empty), erase_flips_red_all_result(remaining.model, RbTree::Empty)); close();
                         }
                         have is_rb_root(plug(remaining.model, RbTree::Empty)) == 1 by {
                             rewrite(remaining.model, Context::Top); unfold(plug(Context::Top, RbTree::Empty));
-                            unfold(is_rb_root(RbTree::Empty)); unfold(is_rb(RbTree::Empty)); unfold(rb_root_black(RbTree::Empty)); normalize();
+                            unfold(is_rb_root(RbTree::Empty)); unfold(is_rb(RbTree::Empty)); unfold(rb_root_black(RbTree::Empty)); close();
                         }
                         with(erase_callbacks(augment)) { step_until(function.exit); }
                         let hole = fold(rb_at(0), { model: RbTree::Empty });
@@ -173,7 +173,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite(old(tree.model), RbTree::Node(id, parent_model, color, left, right));
                     rewrite(color, Color::Red); rewrite(left, RbTree::Empty);
                     unfold(black_height(RbTree::Node(id, parent_model, Color::Red, RbTree::Empty, right)));
-                    unfold(black_height(RbTree::Empty)); normalize();
+                    unfold(black_height(RbTree::Empty)); close();
                 }
                 have ctx_rb(old(up.model), Nat::Zero, Color::Red) == 1 by {
                     rewrite(Nat::Zero, black_height(old(tree.model)));
@@ -182,11 +182,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 }
                 have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(old(up.model), RbTree::Empty) by {
                     rewrite(rb_color(old(tree.model)), color); rewrite(color, Color::Red);
-                    unfold(erase_leaf_result(old(up.model), Color::Red)); normalize();
+                    unfold(erase_leaf_result(old(up.model), Color::Red)); close();
                 }
                 have (node->__rb_parent_color & 1) == 0 by {
                     rewrite((node->__rb_parent_color & 1), color_bit(color));
-                    rewrite(color, Color::Red); unfold(color_bit(Color::Red)); normalize();
+                    rewrite(color, Color::Red); unfold(color_bit(Color::Red)); close();
                 }
                 step_until(region(10).entry);
                 have ctx_node_is(up.model, parent) == 1;

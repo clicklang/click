@@ -1,30 +1,30 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn pointer(id: u64) -> Address {
-    Address::symbolic(Variable(990_000 + id))
+fn pointer(id: u64) -> OldAddress {
+    OldAddress::symbolic(Variable(990_000 + id))
 }
-fn range(p: &Address, start: u32, end: u32) -> MemoryRange {
+fn range(p: &OldAddress, start: u32, end: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(p.clone(), start.into(), end.into(), 8)
 }
-fn separate(a: &Address, b: &Address) -> Proposition {
+fn separate(a: &OldAddress, b: &OldAddress) -> Proposition {
     Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(range(a, 0, 1))),
         right: Box::new(Resource::Memory(range(b, 0, 1))),
     }
 }
 
-fn numeric(a: &Address, b: &Address) -> ConditionTerm {
-    ConditionTerm::uint64_equal(
-        MachineTerm::integer_address(a.clone()),
-        MachineTerm::integer_address(b.clone()),
+fn numeric(a: &OldAddress, b: &OldAddress) -> OldConditionTerm {
+    OldConditionTerm::uint64_equal(
+        OldMachineTerm::integer_address(a.clone()),
+        OldMachineTerm::integer_address(b.clone()),
     )
 }
-fn different(a: &Address, b: &Address) -> Proposition {
+fn different(a: &OldAddress, b: &OldAddress) -> Proposition {
     Proposition::condition_is(numeric(a, b), false)
 }
-fn alias(a: &Address, b: &Address) -> Proposition {
-    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+fn alias(a: &OldAddress, b: &OldAddress) -> Proposition {
+    Proposition::condition_is(OldConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
         left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
             0u32.into(),
-            MachineTerm::Variable(Variable(990_050)),
+            OldMachineTerm::Variable(Variable(990_050)),
         ))),
         right: Box::new(Resource::Memory(range(&b, 0, 1))),
     };
@@ -123,7 +123,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
             .unchecked_with_fact(ResourceFact::view_memory(range(&b, 0, 1))),
     );
     let unequal = Proposition::condition_is(
-        ConditionTerm::PointerEqual(
+        OldConditionTerm::PointerEqual(
             Box::new(OldPointer::new(a.clone(), ProgramType::Int32Pointer)),
             Box::new(OldPointer::new(b.clone(), ProgramType::Int32Pointer)),
         ),
@@ -156,7 +156,7 @@ mod scaling_tests {
 #[test]
 fn constant_anchor_comparisons_do_not_require_an_application_node() {
     let _session = VerificationSession::enter();
-    let p = Address::null();
+    let p = OldAddress::null();
     let context = PureFactContext::new().assume_proposition(separate(&p, &p));
     assert!(!context.addresses_separated_by_class(&numeric(&p, &p)));
 }

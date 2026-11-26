@@ -6,8 +6,8 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{
-    BitvectorUnaryOp as U, CarrierWidth as W, ConditionTerm as C, MachineTerm as T, ProgramType,
-    ProgramValue, PureFunctionArgument as A, SharedPureApplication,
+    BitvectorUnaryOp as U, CarrierWidth as W, OldConditionTerm as C, OldMachineTerm as T,
+    ProgramType, ProgramValue, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_op};
@@ -256,7 +256,7 @@ impl TermClasses {
                 crate::kernel::MachineOperandView::Shared(term) => {
                     self.intern_shared_machine(term, width)
                 }
-                crate::kernel::MachineOperandView::Legacy(term) => {
+                crate::kernel::MachineOperandView::Old(term) => {
                     self.intern_typed_machine(term, width)
                 }
             });
@@ -312,7 +312,7 @@ impl TermClasses {
                 *observed = true;
                 match machine.operand_view() {
                     V::Shared(term) => self.intern_shared_machine(term, W::Bits32),
-                    V::Legacy(term) => self.intern_int32(term),
+                    V::Old(term) => self.intern_int32(term),
                 }
             }
             I::Constant(value) => {
@@ -1339,15 +1339,15 @@ impl TermClasses {
                     }
                     if let ProgramValue::Pointer(pointer) = value {
                         let address = self.numeric_address(pointer.address());
-                        // Address, allocation origin and selected bounds are
+                        // OldAddress, allocation origin and selected bounds are
                         // distinct congruence operands. Only a complete value
                         // equality merges the latter two domains.
                         let root = self.provenance_node(pointer.provenance());
                         let bounds = self.bounds_node(pointer);
                         let metadata = pointer
                             .clone()
-                            .with_address(crate::kernel::Address::null())
-                            .with_provenance(std::sync::Arc::new(crate::kernel::Address::null()))
+                            .with_address(crate::kernel::OldAddress::null())
+                            .with_provenance(std::sync::Arc::new(crate::kernel::OldAddress::null()))
                             .with_root_bounds();
                         let head = self.opaque_argument(&A::Value(ProgramValue::Pointer(metadata)));
                         let node = self.intern_node(Node::Apply(head, root));
@@ -1432,7 +1432,7 @@ impl TermClasses {
     /// this adds at most five nodes and one merge whatever the operand's
     /// size, and a nested narrow cast is interned once. Its nodes are the
     /// ones the constructors' spelling of the word interns
-    /// (`MachineTerm::bitwise_and`, `bitwise_xor`, `subtract`), so the
+    /// (`OldMachineTerm::bitwise_and`, `bitwise_xor`, `subtract`), so the
     /// written `x & 255u32` meets the cast's class.
     pub(super) fn narrow_cast_node(
         &mut self,
@@ -1714,8 +1714,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn merge_pointer_read_domains(
         &mut self,
-        a: &crate::kernel::Address,
-        b: &crate::kernel::Address,
+        a: &crate::kernel::OldAddress,
+        b: &crate::kernel::OldAddress,
     ) -> bool {
         if self.read_domains.equal(a, b) {
             return false;
@@ -1749,8 +1749,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn merge_provenance(
         &mut self,
-        a: &crate::kernel::Address,
-        b: &crate::kernel::Address,
+        a: &crate::kernel::OldAddress,
+        b: &crate::kernel::OldAddress,
     ) -> bool {
         let a = self.provenance_node(a);
         let b = self.provenance_node(b);
@@ -1759,8 +1759,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn provenance_equal(
         &mut self,
-        a: &crate::kernel::Address,
-        b: &crate::kernel::Address,
+        a: &crate::kernel::OldAddress,
+        b: &crate::kernel::OldAddress,
     ) -> bool {
         let a = self.provenance_node(a);
         let b = self.provenance_node(b);
@@ -1870,13 +1870,13 @@ impl TermClasses {
         node
     }
 
-    fn bounds_owner_node(&mut self, origin: &crate::kernel::Address) -> u64 {
+    fn bounds_owner_node(&mut self, origin: &crate::kernel::OldAddress) -> u64 {
         let node = self.bounds_owner_node_without_calls(origin);
         self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallBounds);
         node
     }
 
-    fn bounds_owner_node_without_calls(&mut self, origin: &crate::kernel::Address) -> u64 {
+    fn bounds_owner_node_without_calls(&mut self, origin: &crate::kernel::OldAddress) -> u64 {
         let origin = self.read_domains.representative(origin);
         if let Some(node) = self.bounds_origin_nodes.get(&origin) {
             return *node;
@@ -1905,7 +1905,7 @@ impl TermClasses {
     /// and witness maintenance belongs to producers, never this query.
     pub(in crate::kernel::equality_graph) fn opaque_pointer_domain(
         &self,
-        origin: &crate::kernel::Address,
+        origin: &crate::kernel::OldAddress,
     ) -> crate::kernel::assumptions::PointerDomain {
         use crate::kernel::assumptions::PointerDomain;
         crate::instrumentation::record_deterministic_work(1);
@@ -1924,7 +1924,7 @@ impl TermClasses {
     #[cfg(test)]
     pub(in crate::kernel::equality_graph) fn bounds_owner_is_root(
         &mut self,
-        origin: &crate::kernel::Address,
+        origin: &crate::kernel::OldAddress,
     ) -> bool {
         let bounds = self.bounds_owner_node(origin);
         let root = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootBounds));
@@ -1934,8 +1934,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn bounds_owners_equal(
         &mut self,
-        a: &crate::kernel::Address,
-        b: &crate::kernel::Address,
+        a: &crate::kernel::OldAddress,
+        b: &crate::kernel::OldAddress,
     ) -> bool {
         let a = self.bounds_owner_node(a);
         let b = self.bounds_owner_node(b);
@@ -1943,7 +1943,7 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
-    fn provenance_node(&mut self, origin: &crate::kernel::Address) -> u64 {
+    fn provenance_node(&mut self, origin: &crate::kernel::OldAddress) -> u64 {
         let node = self.provenance_node_without_calls(origin);
         self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallProvenance);
         node
@@ -1954,7 +1954,7 @@ impl TermClasses {
     /// selected identity definition so nested calls stay iterative.
     fn retain_pointer_call_component(
         &mut self,
-        origin: &crate::kernel::Address,
+        origin: &crate::kernel::OldAddress,
         component: u64,
         tag: ArgumentTag,
     ) {
@@ -1966,7 +1966,7 @@ impl TermClasses {
         if application.integer_address_bits().is_some() {
             return;
         }
-        if origin.offset != AddressOffset::Constant(0) {
+        if !matches!(origin.offset.view(), OffsetView::Constant(0)) {
             return;
         }
         let key = Node::PointerFunctionIdentity(application.clone());
@@ -1981,7 +1981,7 @@ impl TermClasses {
         self.close_with_affine_definition(vec![(component, projected)], true);
     }
 
-    fn provenance_node_without_calls(&mut self, origin: &crate::kernel::Address) -> u64 {
+    fn provenance_node_without_calls(&mut self, origin: &crate::kernel::OldAddress) -> u64 {
         // Congruence here uses the cell a complete pointer was read from.
         // Equality of the loaded pointer's numeric address never merges this
         // node with a different value origin.
@@ -2074,9 +2074,7 @@ impl TermClasses {
             crate::kernel::MachineOperandView::Shared(term) => {
                 self.intern_shared_machine(term, width)
             }
-            crate::kernel::MachineOperandView::Legacy(term) => {
-                self.intern_typed_machine(term, width)
-            }
+            crate::kernel::MachineOperandView::Old(term) => self.intern_typed_machine(term, width),
         };
         let (left, right) = (operand(left), operand(right));
         Some(self.intern_node(Node::Condition(kind, left, right)))
@@ -2098,8 +2096,8 @@ impl TermClasses {
                 *format,
                 *relation,
                 [
-                    crate::kernel::MachineOperandView::Legacy(left),
-                    crate::kernel::MachineOperandView::Legacy(right),
+                    crate::kernel::MachineOperandView::Old(left),
+                    crate::kernel::MachineOperandView::Old(right),
                 ],
             );
         }
@@ -2434,7 +2432,7 @@ impl TermClasses {
             return self.admit_machine_comparison(
                 *format,
                 *relation,
-                [V::Legacy(left), V::Legacy(right)],
+                [V::Old(left), V::Old(right)],
                 value,
             );
         }
@@ -2465,7 +2463,7 @@ impl TermClasses {
             Self::machine_comparison_width(
                 *format,
                 CompareRelation::Equal,
-                [V::Legacy(left), V::Legacy(right)]
+                [V::Old(left), V::Old(right)]
             ),
             W::Bits8 | W::Bits16
         )
@@ -2537,7 +2535,7 @@ impl TermClasses {
                 crate::kernel::MachineOperandView::Shared(term) => {
                     self.intern_shared_machine(term, width)
                 }
-                crate::kernel::MachineOperandView::Legacy(term) => {
+                crate::kernel::MachineOperandView::Old(term) => {
                     self.intern_typed_machine(term, width)
                 }
             });
@@ -2634,7 +2632,7 @@ impl TermClasses {
             crate::kernel::MachineOperandView::Shared(term) => {
                 self.intern_shared_machine(term, W::Bits32)
             }
-            crate::kernel::MachineOperandView::Legacy(term) => self.intern_int32(term),
+            crate::kernel::MachineOperandView::Old(term) => self.intern_int32(term),
         });
         let node = self.intern_node(Node::Condition(
             ConditionKind::Int32AddOverflow,
@@ -2664,7 +2662,7 @@ impl TermClasses {
             return self.knows_machine_comparison(
                 *format,
                 *relation,
-                [V::Legacy(left), V::Legacy(right)],
+                [V::Old(left), V::Old(right)],
                 value,
             );
         }

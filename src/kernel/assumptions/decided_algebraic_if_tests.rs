@@ -44,16 +44,16 @@ pub(super) fn some(variable: u64) -> AlgebraicTerm {
     term(AlgebraicTermNode::Constructor {
         variant: "Some".into(),
         fields: vec![AlgebraicValue::Program(ProgramValue::UInt32(
-            MachineTerm::Variable(Variable(variable)),
+            OldMachineTerm::Variable(Variable(variable)),
         ))],
     })
 }
-pub(super) fn tag(variable: u64) -> ConditionTerm {
-    ConditionTerm::Compare {
+pub(super) fn tag(variable: u64) -> OldConditionTerm {
+    OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(MachineTerm::Variable(Variable(variable))),
-        right: Box::new(MachineTerm::constant(0)),
+        left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+        right: Box::new(OldMachineTerm::constant(0)),
     }
 }
 /// `if tag == 0 { None } else { Some(payload) }`, a Rust option's view.
@@ -67,12 +67,12 @@ pub(super) fn view(tag_variable: u64, payload: u64) -> AlgebraicTerm {
 pub(super) fn equal(left: AlgebraicTerm, right: AlgebraicTerm) -> Proposition {
     Proposition::Equal(Term::Algebraic(left.into()), Term::Algebraic(right.into()))
 }
-fn values_equal(left: u64, right: u64) -> ConditionTerm {
-    ConditionTerm::Compare {
+fn values_equal(left: u64, right: u64) -> OldConditionTerm {
+    OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(MachineTerm::Variable(Variable(left))),
-        right: Box::new(MachineTerm::Variable(Variable(right))),
+        left: Box::new(OldMachineTerm::Variable(Variable(left))),
+        right: Box::new(OldMachineTerm::Variable(Variable(right))),
     }
 }
 
@@ -122,11 +122,11 @@ fn decided_native_guards_reduce_shared_remainders_without_export() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let ty = MachineIntegerType::UInt64;
-    let n = MachineTerm::uint64_add(
-        MachineTerm::Variable(Variable(985201)),
-        MachineTerm::Variable(Variable(985202)),
+    let n = OldMachineTerm::uint64_add(
+        OldMachineTerm::Variable(Variable(985201)),
+        OldMachineTerm::Variable(Variable(985202)),
     );
-    let guard = ConditionTerm::uint64_less_than(n.clone(), MachineTerm::uint64_constant(5));
+    let guard = OldConditionTerm::uint64_less_than(n.clone(), OldMachineTerm::uint64_constant(5));
     let selected = term(AlgebraicTermNode::If {
         condition: guard.into(),
         then_term: none().into(),
@@ -145,17 +145,17 @@ fn decided_native_guards_reduce_shared_remainders_without_export() {
         )
     };
     let proposition = Proposition::condition_is(
-        ConditionTerm::integer_equal(
-            observe(MachineTerm::uint64_remainder(
+        OldConditionTerm::integer_equal(
+            observe(OldMachineTerm::uint64_remainder(
                 n.clone(),
-                MachineTerm::uint64_constant(5),
+                OldMachineTerm::uint64_constant(5),
             )),
             IntegerTerm::constant_i64(0),
         ),
         true,
     );
     let expected = Proposition::condition_is(
-        ConditionTerm::integer_equal(observe(n), IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_equal(observe(n), IntegerTerm::constant_i64(0)),
         true,
     );
     let exports = KernelTermExport::machine_export_count();

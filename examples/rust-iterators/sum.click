@@ -14,6 +14,14 @@ theorem pointer_association(base: const uint8*, p: uint64, q: uint64) {
         close() using { to_integer(p + q) == to_integer(p) + to_integer(q); };
     }
 }
+theorem read_same_byte(base: const uint8*, alias: const uint8*) {
+    requires base == alias;
+    requires viewable(memory(*base));
+    ensures *alias == *base by {
+        rewrite(alias, base);
+        close();
+    }
+}
 fn sum(bytes: &[u8]) -> i32 {
     requires bytes.len() <= 1000u64;
     views bytes[0..bytes.len()];
@@ -56,14 +64,26 @@ fn sum(bytes: &[u8]) -> i32 {
                     close();
                 }
                 have to_integer(bytes.len() - iter.len()) + 1 <= 18446744073709551615;
+                have viewable(bytes[0u64..bytes.len()]) by {
+                    observe(bytes[0u64..bytes.len()]);
+                }
+                have bytes.len() - iter.len() < bytes.len();
+                have contains(memory(bytes[0u64..bytes.len()]), memory(bytes[(bytes.len() - iter.len())])) by {
+                    apply(click::separation::contains_element(bytes, 0u64, bytes.len(), bytes.len() - iter.len()));
+                }
+                have viewable(memory(bytes[(bytes.len() - iter.len())])) by {
+                    apply(click::separation::viewable_restrict(memory(bytes[0u64..bytes.len()]), memory(bytes[(bytes.len() - iter.len())])));
+                }
+                have *iter.as_slice() == bytes[(bytes.len() - iter.len())] by {
+                    apply(read_same_byte(bytes + (bytes.len() - iter.len()), iter.as_slice()));
+                    close();
+                }
                 step_until(loop(0).statement(0).entry);
                 have iter.len() == at(iteration, iter.len()) - 1u64;
                 have iter.as_slice() == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64;
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
-                have at(iteration, bytes[(bytes.len() - iter.len())]) == byte by {
-                    rewrite(at(iteration, bytes + (bytes.len() - iter.len())), at(iteration, iter.as_slice()));
-                    normalize() using {};
-                }
+                have at(iteration, *iter.as_slice()) == byte;
+                have at(iteration, bytes[(bytes.len() - iter.len())]) == byte;
                 have defined(total + byte as i32) by {
                     close() using { 0 <= total; to_integer(total) <= 255000; };
                 }

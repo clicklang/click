@@ -423,6 +423,8 @@ impl FunctionSourceRequirements {
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub(in crate::surface) struct FunctionSourceRegistry {
     functions: PersistentMap<String, FunctionSourceRequirements>,
+    cpp_bindings:
+        std::sync::Arc<BTreeMap<crate::kernel::CppBindingContract, FunctionSourceRequirements>>,
     claim_entries: ClaimEntryCache,
     program: Option<crate::kernel::ProgramContractBodies>,
 }
@@ -506,9 +508,35 @@ impl FunctionSourceRegistry {
         }
         Ok(Self {
             functions,
+            cpp_bindings: Default::default(),
             claim_entries: ClaimEntryCache::default(),
             program: None,
         })
+    }
+
+    pub(in crate::surface) fn with_cpp_bindings(
+        mut self,
+        bindings: &BTreeMap<crate::kernel::CppBindingContract, FunctionBlock>,
+    ) -> Self {
+        self.cpp_bindings = std::sync::Arc::new(
+            bindings
+                .iter()
+                .map(|(key, block)| {
+                    (
+                        key.clone(),
+                        FunctionSourceRequirements::from_function_block(block),
+                    )
+                })
+                .collect(),
+        );
+        self
+    }
+
+    pub(in crate::surface) fn cpp_binding(
+        &self,
+        key: &crate::kernel::CppBindingContract,
+    ) -> Option<&FunctionSourceRequirements> {
+        self.cpp_bindings.get(key)
     }
 
     /// Register the exact source-to-execution name mapping during preparation,
@@ -532,6 +560,7 @@ impl FunctionSourceRegistry {
     pub(in crate::surface) fn for_contract_proof(&self) -> Self {
         Self {
             functions: self.functions.clone(),
+            cpp_bindings: self.cpp_bindings.clone(),
             claim_entries: ClaimEntryCache::default(),
             program: None,
         }
@@ -674,7 +703,7 @@ mod tests {
     fn principal_facts(count: usize) -> Vec<Proposition> {
         (0..count)
             .map(|index| {
-                Proposition::condition_is(ConditionTerm::Variable(Variable(index as u64)), true)
+                Proposition::condition_is(OldConditionTerm::Variable(Variable(index as u64)), true)
             })
             .collect()
     }

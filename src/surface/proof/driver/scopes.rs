@@ -393,36 +393,6 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
-    /// Runs bare fact-transport search on the scope's current checked body.
-    /// Failed candidate descendants are discarded by `Proof`; the enclosing
-    /// scope receives only the successful retained proof.
-    pub(in crate::surface::proof) fn try_fact_transport(
-        &self,
-        source: &SyntaxProposition,
-        target: &SyntaxProposition,
-    ) -> Result<Option<ProofScope<'a>>, ClickError> {
-        let driver_proof = self.proof;
-        if driver_proof.body.is_at_function_exit() {
-            return Ok(None);
-        }
-        let Some(body) = crate::kernel::search::ProofSearch::try_execution_fact_transport(
-            &(driver_proof.body),
-            source,
-            target,
-        )?
-        else {
-            return Ok(None);
-        };
-        let mut next = driver_proof.clone();
-        for fact in body.added_facts() {
-            if !next.introduced_facts.contains(fact) {
-                next.introduced_facts.push(fact.clone());
-            }
-        }
-        next.body = body;
-        Ok(Some(next))
-    }
-
     /// Runs `step_until` on checked descendants and stops before the
     /// selected source statement.
     pub(in crate::surface::proof) fn try_execute_until(

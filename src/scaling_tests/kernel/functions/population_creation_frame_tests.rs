@@ -123,9 +123,9 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
         let mut samples = Vec::new();
         for count in [4_u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(7_993_000)),
+                offset: OldAddressOffset::Variable(Variable(7_993_000)),
             };
             let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
             let member = ResourceSpec::composite(
@@ -189,17 +189,17 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                 ResourceContext::new().unchecked_with_facts([head.clone(), authority.clone()]);
             let mut retained = Vec::new();
             for index in 0..count {
-                let other = Address::symbolic(Variable(7_993_100 + index));
+                let other = OldAddress::symbolic(Variable(7_993_100 + index));
                 if aliases {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(pointer.clone(), other),
+                        OldConditionTerm::address_equal(pointer.clone(), other),
                         true,
                     );
                 } else {
                     let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                         other,
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(1),
+                        OldMachineTerm::constant(0),
+                        OldMachineTerm::constant(1),
                         4,
                     ));
                     resources = resources.unchecked_with_fact(owner.clone());
@@ -239,8 +239,8 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                     .contains_exact_representation(&ResourceFact::own_memory(
                         MemoryRange::new_with_element_width(
                             pointer,
-                            MachineTerm::constant(0),
-                            MachineTerm::constant(1),
+                            OldMachineTerm::constant(0),
+                            OldMachineTerm::constant(1),
                             4
                         ),
                     ))

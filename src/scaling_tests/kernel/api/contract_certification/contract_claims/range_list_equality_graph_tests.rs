@@ -8,19 +8,19 @@ use super::*;
 fn certified_range_list_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address::symbolic(Variable(9200));
+        let base = OldAddress::symbolic(Variable(9200));
         let range = |value| {
             MemoryRange::new(
                 base.clone(),
-                MachineTerm::add(value, MachineTerm::constant(1)),
-                MachineTerm::constant(16),
+                OldMachineTerm::add(value, OldMachineTerm::constant(1)),
+                OldMachineTerm::constant(16),
             )
         };
         let left = range(var(0));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context =
-                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+                context.assume_condition(OldConditionTerm::equal(var(index), var(index + 1)), true);
         }
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();

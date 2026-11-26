@@ -5,33 +5,33 @@ use crate::kernel::assumptions::PointerDomain;
 fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Address {
+        let field = OldAddress {
             base: "opaque-frame".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let base = SymbolicMemory::new();
-        let raw = Address::symbolic(Variable(995_080));
+        let raw = OldAddress::symbolic(Variable(995_080));
         let previous = OldPointer::new(
-            Address::loaded_value(&intern_memory_ref(&base), &field),
+            OldAddress::loaded_value(&intern_memory_ref(&base), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw.clone());
         let alias = OldPointer::new(
-            Address::symbolic(Variable(995_081)),
+            OldAddress::symbolic(Variable(995_081)),
             ProgramType::Int32Pointer,
         );
         assert!(!alias.bounds_are_known());
         let context = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(previous, alias), true);
+            .assume_condition(OldConditionTerm::pointer_equal(previous, alias), true);
         let mut memory = base;
         for index in 0..size {
             memory = memory.store(
                 field.clone().offset_by_bytes((8 + index * 8) as u32),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(index)),
             );
         }
         let current = OldPointer::new(
-            Address::loaded_value(&intern_memory_ref(&memory), &field),
+            OldAddress::loaded_value(&intern_memory_ref(&memory), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);
@@ -51,12 +51,14 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Address::symbolic(Variable(963_000 + id));
+        let pointer = |id| OldAddress::symbolic(Variable(963_000 + id));
         let value = |id| OldPointer::new(pointer(id), ProgramType::Int32Pointer);
         let mut facts = PureFactContext::new();
         for index in 1..=size {
-            facts =
-                facts.assume_condition(ConditionTerm::pointer_equal(value(0), value(index)), true);
+            facts = facts.assume_condition(
+                OldConditionTerm::pointer_equal(value(0), value(index)),
+                true,
+            );
         }
         assert!(facts.provenance_equal(&pointer(0), &pointer(size)));
         assert!(facts.bounds_owners_equal(&pointer(0), &pointer(size)));
@@ -80,28 +82,28 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Address::symbolic(Variable(964_000));
-        let raw = Address::symbolic(Variable(964_001));
+        let field = OldAddress::symbolic(Variable(964_000));
+        let raw = OldAddress::symbolic(Variable(964_001));
         let alias = OldPointer::new(
-            Address::symbolic(Variable(964_002)),
+            OldAddress::symbolic(Variable(964_002)),
             ProgramType::Int32Pointer,
         );
         let mut facts = PureFactContext::new();
         for index in 0..size {
             let memory = SymbolicMemory::new().store(
                 field.offset_by_bytes(8),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(index)),
             );
             let source = OldPointer::new(
-                Address::loaded_value(&intern_memory_ref(&memory), &field),
+                OldAddress::loaded_value(&intern_memory_ref(&memory), &field),
                 ProgramType::Int32Pointer,
             )
             .with_address(raw.clone());
-            facts =
-                facts.assume_condition(ConditionTerm::pointer_equal(source, alias.clone()), true);
+            facts = facts
+                .assume_condition(OldConditionTerm::pointer_equal(source, alias.clone()), true);
         }
         let current = OldPointer::new(
-            Address::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),
+            OldAddress::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);

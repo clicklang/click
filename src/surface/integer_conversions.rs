@@ -76,6 +76,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn integer_order_axioms_apply_without_certificates_or_search() {
         let source = r#"
 import click::integer;
@@ -96,7 +98,7 @@ theorem scaled(x: Integer, y: Integer, k: Integer) {
 theorem rounded(x: Integer) {
     requires x * 2 <= 5;
     ensures x <= 2 by {
-        have (2 * 2) + 1 == 5 by { normalize(); }
+        have (2 * 2) + 1 == 5 by { close(); }
         have x * 2 <= (2 * 2) + 1 by {
             rewrite((2 * 2) + 1, 5);
             close();
@@ -122,6 +124,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn divisor_sign_identities_require_their_explicit_nonzero_guard() {
         for (name, goal) in [
             (
@@ -397,6 +401,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn integer_order_axioms_refuse_missing_guards_and_unrelated_conclusions() {
         for (name, parameters, arguments, premises, goal) in [
             (
@@ -446,6 +452,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn selected_integer_sum_expands_to_an_ordinary_law_application() {
         let source = "theorem sum(a: Integer, b: Integer, c: Integer, d: Integer) { requires a <= b; requires c <= d; ensures a + c <= b + d by { close() using { a <= b; c <= d; }; } }";
         let expanded = expand_c_claim_source_by_label(source, &[], "sum.ensures_0").unwrap();
@@ -544,6 +552,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn int32_remainder_bridge_requires_definedness_and_expands() {
         let source = "import click::integer; theorem remainder(a: int32, b: int32) { requires defined(a % b); requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)) by { apply(integer::int32_remainder_to_integer(a, b)); } }";
         verify_c_sources(source, &[]).unwrap();
@@ -564,6 +574,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.0s in the parallel gate"]
     fn uint32_product_bound_guard_expands_and_rejects_wrapped_or_signed_bounds() {
         let source = "import click::integer; theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(integer::uint32_multiply_guard_by_integer_bound(a, b)); } }";
         verify_c_sources(source, &[]).unwrap();
@@ -585,6 +597,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn scalar_casts_keep_byte_read_width_in_definedness() {
         let c = "int32 read(const uint8* p) { return (int32)p[0]; }";
         let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined(p[0] as int32); }";
@@ -605,6 +619,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn integer_conversion_domains_survive_datatype_wrappers() {
         for value in [
             "Box::Wrapped(to_integer(x + 1))",
@@ -624,6 +640,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.5s in the parallel gate"]
     fn integer_machine_round_trip_laws_require_both_bounds_and_expand() {
         for (target, lower, upper) in [
             ("int8", "-128", "127"),
@@ -657,6 +675,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     /// no library law in scope; the expansion replays with no search. Each
     /// bound is needed, and a bound past the format's range is refused.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn solve_reads_an_integer_conversion_back_at_every_format() {
         for (target, lower, upper) in [
             ("int8", "-128", "127"),
@@ -685,6 +705,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn conversion_obligations_survive_right_operand_composition() {
         for expression in [
             "1 + to_integer(x + 1)",
@@ -701,6 +723,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn forward_conversion_conditionals_preserve_the_argument_domain() {
         let expression = "if c == 0 { x + 1 } else { y + 1 }";
         let source = format!(
@@ -731,6 +755,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn forward_conversion_memory_requires_ownership_and_definedness() {
         let c = "int32 read(int32* p) { return *p; }";
         let source = "verifying \"read.c\"; int32 read(int32* p) { owns p[0..1]; requires defined(p[0] + 1); ensures to_integer(p[0] + 1) == to_integer(p[0] + 1); }";
@@ -745,6 +771,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn forward_conversion_keeps_intermediate_overflow_obligations() {
         // `defined((x + 1) + 1)` claims the outer addition; the inner one is
         // its own conjunct.
@@ -765,6 +793,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn forward_conversion_requires_symbolic_argument_definedness() {
         for proof in ["normalize()", "close()"] {
             let source = format!(
@@ -788,6 +818,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn integer_bounds_establish_c_add_definedness_without_circular_assumptions() {
         let source = "import click::integer; theorem safety(a: int32, b: int32) { requires to_integer(a) + to_integer(b) >= -2147483648; requires to_integer(a) + to_integer(b) <= 2147483647; ensures defined(a + b) by { apply(integer::int32_add_defined_by_integer_bounds(a, b)); } }";
         verify_c_sources(source, &[]).unwrap();
@@ -803,6 +835,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn integer_machine_operation_laws_require_definedness() {
         for (name, operator) in [
             ("click::integer::int32_add_to_integer", "+"),
@@ -821,6 +855,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn uint32_small_remainder_expands_and_requires_strict_unsigned_evidence() {
         let source = "import click::integer; theorem lane(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value by { apply(integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor)); } }";
         verify_c_sources(source, &[]).unwrap();
@@ -844,6 +880,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn uint32_remainder_bound_expands_and_requires_a_nonzero_divisor() {
         let source = "import click::integer; theorem bridge(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures to_integer(value % divisor) < to_integer(divisor) by { apply(integer::uint32_remainder_less_than_divisor(value, divisor)); } }";
         verify_c_sources(source, &[]).unwrap();
@@ -860,6 +898,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn uint32_integer_bounds_do_not_distribute_wrapping_or_define_zero_division() {
         for invalid in [
             "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value) <= 2147483647 by { apply(integer::uint32_to_integer_bounds(value)); } }",
@@ -878,6 +918,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn uint32_integer_order_bridges_recheck_expansion_and_require_evidence() {
         for (name, premise, conclusion) in [
             (
@@ -922,6 +964,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn integer_order_observation_requires_the_c_guard_and_rechecks_expansion() {
         let source = "import click::integer; theorem bridge(left: int32, right: int32) { requires left <= right; ensures to_integer(left) <= to_integer(right) by { apply(integer::int32_less_equal_to_integer(left, right)); } }";
         verify_c_sources(source, &[]).unwrap();
@@ -949,6 +993,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn integer_datatype_match_reduces_known_constructor() {
         let source = r#"
             spec enum Box { Empty, Wrapped(Integer), }
@@ -962,6 +1008,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn deferred_integer_function_c_arguments_keep_mandatory_definedness() {
         let unguarded = "function f(x: int32) -> Integer { to_integer(x) }\n\
             theorem call(x: int32) { ensures f(x + 1) == f(x + 1) by close(); }";
@@ -985,6 +1033,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn deferred_integer_function_argument_domains_cover_division_and_branches() {
         for proof in ["close()", "normalize()"] {
             let division = format!(
@@ -1042,6 +1092,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn wide_integer_observations_and_checked_conversions_expand_and_recheck() {
         for source in [
             "theorem observe(x: int128) { ensures to_integer(x) == to_integer(x) by close(); }",
@@ -1148,6 +1200,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn symbolic_integer_conversions_reject_missing_bounds() {
         for (target, lower, upper) in [
             ("int8", "-128", "127"),
@@ -1180,6 +1234,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn wrapped_symbolic_conversions_keep_bounds_through_proofs_and_expansion() {
         let bounded = "theorem wrapped(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; ensures to_int32(z) + 0 == to_int32(z) by close(); }";
         verify_c_sources(bounded, &[]).unwrap();
@@ -1202,6 +1258,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn integer_conversion_preserves_source_types_and_argument_definedness() {
         for (parameters, claim) in [
             ("", "to_integer(true) == 1"),
@@ -1225,6 +1283,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.2s in the parallel gate"]
     fn uint32_subtract_bridge_rechecks_guards_and_expansion() {
         let source = "import click::integer; theorem exact(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(integer::uint32_subtract_to_integer(left, right)); } }";
         verify_c_sources(source, &[]).unwrap();
@@ -1258,6 +1318,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn uint32_subtract_bridge_verifies_executed_c_difference() {
         let c = "unsigned int difference(unsigned int left, unsigned int right) { return left - right; }";
         let source = "import click::integer; verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { step_until(function.exit); apply(integer::uint32_subtract_to_integer(left, right)); close(); }";
@@ -1342,6 +1404,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     // Both native operations and modular calls must preserve the mathematical
     // observation; omitting either evaluation domain must not prove a claim.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.7s in the parallel gate"]
     fn uint32_division_bridges_verify_actual_operations_calls_and_expansion() {
         for (name, op, mathematical) in [
             (
@@ -1400,6 +1464,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn uint64_division_bridges_need_the_integer_domain() {
         for (name, op, mathematical) in [
             (
@@ -1500,6 +1566,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn signed_integer_order_bridges_recheck_source_guards_and_expansion() {
         for (name, ty, guard, goal) in [
             (
@@ -1532,6 +1600,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn contract_scalar_casts_check_all_supported_widths_and_recheck_expansion() {
         for ty in ["int32", "uint32", "int64", "uint64", "int128", "uint128"] {
             let source = format!(
@@ -1555,6 +1625,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn int64_integer_operation_applications_recheck_guards_and_expansion() {
         let (name, op) = ("click::integer::int64_subtract_to_integer", "-");
         let source = format!(
@@ -1595,6 +1667,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn integer_multiply_add_rechecks_application_and_expansion() {
         let source = "import click::integer; theorem distribute(a: Integer, b: Integer, c: Integer) { ensures (a + b) * c == a * c + b * c by { apply(integer::multiply_add(a, b, c)); } }";
         let verify_explicit = |source: &str| {
@@ -1614,6 +1688,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.6s in the parallel gate"]
     fn integer_truncation_applications_recheck_guards_claims_and_expansion() {
         for (name, requirements, goal) in [
             (
@@ -1716,6 +1792,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.5s in the parallel gate"]
     fn scaled_quotient_derivations_expand_reverify_and_preserve_guards() {
         let fixture = include_str!("../../mdtests/integer_quotient_bound.md");
         let source = fixture
@@ -1755,6 +1833,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         verify_c_sources(&exact, &[]).unwrap();
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn negated_integer_order_arithmetic_expands_and_reverifies() {
         let fixture = include_str!("../../mdtests/integer_negated_order_arithmetic.md");
         let source = fixture
@@ -1828,6 +1908,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 4.0s in the parallel gate"]
     fn correction_endpoint_lemmas_expand_and_reject_missing_evidence() {
         let fixture = include_str!("../../mdtests/integer_correction_endpoint_bounds.md");
         let source = fixture
@@ -1886,6 +1968,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.6s in the parallel gate"]
     fn normalized_opposite_bounds_print_and_reverify_equality_certificates() {
         for (bounds, goal) in [
             ("requires b <= x; requires not (b + 1 <= x);", "x == b"),
@@ -1920,7 +2004,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
 
     #[test]
     fn signed_int64_minimum_literal_preserves_type_and_round_trips() {
-        let source = "theorem minimum() { ensures to_integer(-9223372036854775808i64) == -9223372036854775808 by { normalize(); } }";
+        let source = "theorem minimum() { ensures to_integer(-9223372036854775808i64) == -9223372036854775808 by { close(); } }";
         verify_c_sources(source, &[]).unwrap();
         let expanded = expand_c_claim_source_by_label(source, &[], "minimum.ensures_0").unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
@@ -1936,14 +2020,14 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         }
         assert!(
             verify_c_sources(
-                "theorem bad() { ensures defined(0i64 - 9223372036854775808i64) by { normalize(); } }",
+                "theorem bad() { ensures defined(0i64 - 9223372036854775808i64) by { close(); } }",
                 &[]
             )
             .is_err()
         );
         assert!(
             verify_c_sources(
-                "theorem bad() { ensures defined(-(-9223372036854775808i64)) by { normalize(); } }",
+                "theorem bad() { ensures defined(-(-9223372036854775808i64)) by { close(); } }",
                 &[]
             )
             .is_err()

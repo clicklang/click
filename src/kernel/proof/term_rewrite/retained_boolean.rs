@@ -105,24 +105,24 @@ impl TermRewrite<'_> {
 mod tests {
     use super::*;
 
-    fn cases() -> Vec<ConditionTerm> {
-        let a = ConditionTerm::Variable(Variable(992100));
-        let b = ConditionTerm::Variable(Variable(992101));
+    fn cases() -> Vec<OldConditionTerm> {
+        let a = OldConditionTerm::Variable(Variable(992100));
+        let b = OldConditionTerm::Variable(Variable(992101));
         let leaves = [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
             a,
             b,
         ];
         let mut cases = leaves.to_vec();
         for left in &leaves {
             for right in &leaves {
-                cases.push(ConditionTerm::BoolEqual(
+                cases.push(OldConditionTerm::BoolEqual(
                     Box::new(left.clone()),
                     Box::new(right.clone()),
                 ));
                 for guard in &leaves {
-                    cases.push(ConditionTerm::BoolIf {
+                    cases.push(OldConditionTerm::BoolIf {
                         condition: Box::new(guard.clone()),
                         then_condition: Box::new(left.clone()),
                         else_condition: Box::new(right.clone()),
@@ -130,7 +130,7 @@ mod tests {
                 }
             }
         }
-        cases.push(ConditionTerm::BoolIf {
+        cases.push(OldConditionTerm::BoolIf {
             condition: Box::new(cases[12].clone()),
             then_condition: Box::new(cases[29].clone()),
             else_condition: Box::new(cases[41].clone()),
@@ -143,11 +143,11 @@ mod tests {
         let _session = VerificationSession::enter();
         let from = Variable(992100);
         for replacement in [
-            MachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Constant(false)),
-            MachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Constant(true)),
-            MachineTerm::bool_cast(
+            OldMachineTerm::bool_cast(MachineIntegerType::UInt8, OldConditionTerm::Constant(false)),
+            OldMachineTerm::bool_cast(MachineIntegerType::UInt8, OldConditionTerm::Constant(true)),
+            OldMachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
-                ConditionTerm::Variable(Variable(992102)),
+                OldConditionTerm::Variable(Variable(992102)),
             ),
         ] {
             let program =
@@ -213,11 +213,11 @@ mod tests {
     #[test]
     fn retained_boolean_checked_collection_preserves_work_refusal() {
         let _session = VerificationSession::enter();
-        let mut input = ConditionTerm::Variable(Variable(992130));
+        let mut input = OldConditionTerm::Variable(Variable(992130));
         for index in 0..32 {
-            input = ConditionTerm::BoolEqual(
+            input = OldConditionTerm::BoolEqual(
                 Box::new(input),
-                Box::new(ConditionTerm::Variable(Variable(992131 + index))),
+                Box::new(OldConditionTerm::Variable(Variable(992131 + index))),
             );
         }
         let root = KernelTermImport::for_exact_field_inputs().condition(&input);
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn retained_boolean_atom_collection_is_replayed_on_cached_reads() {
         let _session = VerificationSession::enter();
-        let input = ConditionTerm::Variable(Variable(992180));
+        let input = OldConditionTerm::Variable(Variable(992180));
         let root = KernelTermImport::default().condition(&input);
         let mut baseline = TermRewrite::empty();
         baseline.collected_conditions = Some(Vec::new());
@@ -264,9 +264,9 @@ mod tests {
     #[test]
     fn retained_boolean_nonadmission_preserves_lookup_and_leaf_boundaries() {
         let _session = VerificationSession::enter();
-        let from = ConditionTerm::Variable(Variable(992120));
-        let to = ConditionTerm::Constant(true);
-        let input = ConditionTerm::BoolEqual(Box::new(from.clone()), Box::new(from.clone()));
+        let from = OldConditionTerm::Variable(Variable(992120));
+        let to = OldConditionTerm::Constant(true);
+        let input = OldConditionTerm::BoolEqual(Box::new(from.clone()), Box::new(from.clone()));
         let root = KernelTermImport::for_exact_field_inputs().condition(&input);
         let mut exact = TermRewrite::for_condition_exact(&input, &to);
         assert!(exact.shared_boolean_operand(&root).is_none());
@@ -286,9 +286,9 @@ mod tests {
         let integer = BTreeMap::new();
         let algebraic = BTreeMap::new();
         for replacement in [
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
-            MachineTerm::Variable(Variable(992121)),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(992121)),
         ] {
             let program = BTreeMap::from([(
                 Variable(992120),
@@ -299,7 +299,7 @@ mod tests {
             assert!(
                 !matches!(
                     expected,
-                    ConditionTerm::Constant(_) | ConditionTerm::Variable(_)
+                    OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_)
                 ),
                 "the non-UInt8 truth-word path requires scalar/compound leaf support"
             );
@@ -316,9 +316,9 @@ mod tests {
                 expected_root.condition_storage_key()
             );
         }
-        let read = KernelTermImport::default().condition(&ConditionTerm::boolean_cell_read(
+        let read = KernelTermImport::default().condition(&OldConditionTerm::boolean_cell_read(
             ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            Address::symbolic(Variable(992122)),
+            OldAddress::symbolic(Variable(992122)),
         ));
         let mut rewrite = TermRewrite::empty();
         assert_eq!(rewrite.shared_boolean_operand(&read), Some(read.clone()));

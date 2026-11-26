@@ -28,7 +28,7 @@ is a load decoded at a pointer type.
 A value loaded from memory has six encodings today, each with its own identity,
 store lookup and raising:
 
-1. `MachineTerm::MemoryLoad(point, address, LoadKind)`, with fourteen kinds:
+1. `OldMachineTerm::MemoryLoad(point, address, LoadKind)`, with fourteen kinds:
    every integer width and signedness, `Bits64`, both floats and
    `Abstract(T)`.
 2. `AlgebraicTermNode::MemoryLoad`, for specification values held in memory.
@@ -41,7 +41,7 @@ store lookup and raising:
 5. Load variables (`LOAD_VARIABLE_REGISTRY`), for some integer loads and, as
    `FunctionSymbolic(var)`, for function-pointer loads. No admitted fact holds
    one (census `report_load_variables_in_facts`, 6,024 C mdtests).
-6. `Address::loaded_value(memory, cell)`, a pointer load named by a memory
+6. `OldAddress::loaded_value(memory, cell)`, a pointer load named by a memory
    state's unchanged-bytes source.
 
 Each new type needs its own copy of this machinery, and each change to one
@@ -130,7 +130,7 @@ the load.
 This resolves an inconsistency in the current kinds. Today 8-, 16-, 32- and
 128-bit loads carry signedness in their `LoadKind`, so the `int8` and `uint8`
 loads of a byte are two terms (maintainer direction, 2026-10-30, stated at
-`MachineTerm::memory_read`), while signed and unsigned 64-bit loads share
+`OldMachineTerm::memory_read`), while signed and unsigned 64-bit loads share
 `Bits64`, one term with signedness at the use
 (`docs/concepts/memory-model.md`). Under this model every width is like
 `Bits64`: one load, decoded at each format. The 2026-10-30 direction's
@@ -169,8 +169,8 @@ at an abstract type, whose value the kernel treats as opaque.
   keyed by `(read_key, cell)`, never by the whole `ProgramPoint`, whose
   `IndexedWrite` selection holds a derivation.
 - **Integer and float values** are `decode<format>(load)`. Today that is
-  `MachineTerm::MemoryLoad(point, address, kind)`, built only by
-  `MachineTerm::read_named` and `MachineTerm::memory_read` (enforced by
+  `OldMachineTerm::MemoryLoad(point, address, kind)`, built only by
+  `OldMachineTerm::read_named` and `OldMachineTerm::memory_read` (enforced by
   `build_support/read_construction.rs`). Since step 3a-i its identity is the
   interned load plus its kind, `MemoryLoad(ReadPoint, LoadCell, LoadKind)`;
   step 3b makes the kind a format.
@@ -178,7 +178,7 @@ at an abstract type, whose value the kernel treats as opaque.
   `LoadedPointer(PointerLoadId)` and the side table. A pointer-side
   constructor gets the same ratchet.
 - **Function-pointer values** use the same base, replacing load variables.
-- **`Address::loaded_value`** is a memory-named load (`ReadKey::Memory`); it
+- **`OldAddress::loaded_value`** is a memory-named load (`ReadKey::Memory`); it
   goes with the legacy walk.
 
 ## Calls are stores
@@ -308,7 +308,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
    (`logical_pointer_read_term`, the graph's read definitions, and its input
    read test) are removed; `FunctionSymbolic` remains for function-pointer
    binders.
-   `Address::loaded_value_at` names a memory-named load at the caller's
+   `OldAddress::loaded_value_at` names a memory-named load at the caller's
    point, keeping its legacy selection and so its identity.
 3. **Integer and float loads on `Load`**, in two PRs, with the program-point
    session, whose constructors and ratchet gate these terms. Neither overlaps
@@ -321,7 +321,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        `MemoryLoad(point, cell, kind)`
        holds a `ReadPoint`, the producer's selected point, and a `LoadCell`,
        the producer's address with its `Load::at(point, address)`, both built
-       only by `read_operands` inside `MachineTerm::read_named`
+       only by `read_operands` inside `OldMachineTerm::read_named`
        (`src/kernel/primitives/load.rs`; the ratchet counts `MemoryLoad(..)`,
        `read_operands(..)` calls, `ReadPoint(..)` and `LoadCell { .. }`).
        Equality, hashing and ordering go by `(Load, kind)`: the `ReadPoint`
@@ -392,7 +392,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        decide, so they go through one bridge,
        `legacy_pointer_word_read(memory, cell)` (`primitives/load.rs`),
        building the same terms as before:
-       `Address::canonical_read` and `canonical_loaded_value` select a pointer
+       `OldAddress::canonical_read` and `canonical_loaded_value` select a pointer
        cell's version through `canonical_scalar_read`, whose identity cache,
        read observations and access widths are keyed by
        `(memory, address, kind)` and shared with 64-bit integer reads of the
@@ -405,7 +405,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        program-point session owns the selection. The e-graph does not relate
        pointer loads through `Bits64` atoms: its pointer read definitions
        (`logical_pointer_read_term`) and several pointer-cell producers
-       (`Address::version_read_value`'s fallback, `symbolic_pointer_load`,
+       (`OldAddress::version_read_value`'s fallback, `symbolic_pointer_load`,
        `symbolic_storage_cell_value`) build `Int32` reads of a pointer cell
        instead, a detour of the same kind that this PR leaves.
        `build_support/read_construction.rs` holds the bridge's callers (two
@@ -449,7 +449,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        `primitives.rs` or the retained fold collector, and one fewer in
        `eval/memory_loads.rs`.
      - **Selection state by cell and width.** *Deferred; not implemented.*
-       Replacing the pointer-word bridge in `Address::canonical_read` and
+       Replacing the pointer-word bridge in `OldAddress::canonical_read` and
        `canonical_loaded_value` needs the state `canonical_scalar_read`
        selects through keyed by the load's cell and width instead of its
        kind, so a pointer decoding and the 64-bit integer decodings share it
@@ -499,7 +499,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        `cell_integer_for_read`'s stored-value resolution and the held-read
        match (an `Int32` and a `Float32` read of a cell holding an `int`
        select differently), so it is not width-keyed by construction either.
-       The `Int32` pointer-cell producers (`Address::version_read_value`'s
+       The `Int32` pointer-cell producers (`OldAddress::version_read_value`'s
        fallback, `symbolic_pointer_load`, `symbolic_storage_cell_value`)
        select through `canonical_scalar_read` at `Int32`, a second selection
        of the cell beside the bridge's: 32 of 7,456 paired selections of one
@@ -557,13 +557,13 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
    legacy walk.
    Until then, a memory-named pointer load records its read site wherever
    its builder has a point in reach (`design/point-named-reads.md`,
-   stage 1): `Address::loaded_value_at` and `loaded_source_value_at` for a
+   stage 1): `OldAddress::loaded_value_at` and `loaded_source_value_at` for a
    read of the point's own memory or its source, and
-   `Address::loaded_value_read_at(memory, site, cell)` for a read of
+   `OldAddress::loaded_value_read_at(memory, site, cell)` for a read of
    another state made there (an older node a walk found the bytes
    unchanged from, or a working copy of the site's memory). The pointer-cell
    producers take the site as an `Option<&ProgramPoint>`, as the scalar
-   `symbolic_*_load`s do: `Address::canonical_read`, `version_read_at` and
+   `symbolic_*_load`s do: `OldAddress::canonical_read`, `version_read_at` and
    `version_read_value`, `SymbolicMemory::symbolic_pointer_load` and
    `symbolic_pointer_version_load`, `symbolic_storage_cell_value`,
    `Pointer::from_read_at` (the complete read's domain origin), the graph's

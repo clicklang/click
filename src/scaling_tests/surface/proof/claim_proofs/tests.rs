@@ -5,8 +5,7 @@
 #[test]
 fn explicit_closers_lower_each_return_goal_once_without_unfoldings() {
     use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
-    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
-        .unwrap();
+    crate::surface::verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     for size in [2, 4, 8, 16] {
         let claims = "ensures result == x;\n".repeat(size);
         let closers = "close();\n".repeat(size);
@@ -41,8 +40,7 @@ fn check_return_claim_preparation_scaling(
     sizes: impl IntoIterator<Item = (usize, usize)>,
 ) {
     use crate::instrumentation::{VerificationEvent, collect};
-    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
-        .unwrap();
+    crate::surface::verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     for (resources, claims) in sizes {
         let holdings = (0..resources)
             .map(|i| format!("owns marker({i});\n"))
@@ -95,11 +93,15 @@ fn check_return_claim_preparation_scaling(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn return_known_views_scale_with_resources_and_claims() {
     check_return_claim_preparation_scaling("close();", [1, 2, 4, 8].map(|size| (size, size)));
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn return_normalization_views_scale_with_resources_and_claims() {
     check_return_claim_preparation_scaling("normalize();", [1, 2, 4, 8].map(|size| (size, size)));
 }
@@ -129,6 +131,8 @@ fn exact_return_closers_share_preparation_beside_unrelated_resources() {
 /// pairing every fact since execution ended made the `have` at position `k`
 /// cost about nine units per earlier `have`, quadratic over the proof.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.9s in the parallel gate"]
 fn post_execution_haves_before_a_fold_cost_the_same_at_every_position() {
     use crate::instrumentation::collect_tactic_work;
     crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])

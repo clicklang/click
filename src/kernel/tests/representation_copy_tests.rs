@@ -3,18 +3,18 @@ use crate::kernel::functions::{
     representation_copy_cell_moves, transfer_representation_copy_cells,
 };
 
-fn heap_pointer(block: &str) -> Address {
-    Address {
+fn heap_pointer(block: &str) -> OldAddress {
+    OldAddress {
         base: AddressBase::from(block),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
-fn copy_arguments(destination: &Address, source: &Address, bytes: u32) -> Vec<ProgramValue> {
+fn copy_arguments(destination: &OldAddress, source: &OldAddress, bytes: u32) -> Vec<ProgramValue> {
     vec![
         ProgramValue::typed_pointer(destination.clone(), ProgramType::UInt8Pointer),
         ProgramValue::typed_pointer(source.clone(), ProgramType::UInt8Pointer),
-        ProgramValue::Int32(MachineTerm::constant(bytes)),
+        ProgramValue::Int32(OldMachineTerm::constant(bytes)),
     ]
 }
 
@@ -32,7 +32,7 @@ fn representation_copy_transfers_a_fully_covered_cell() {
     let destination = heap_pointer("copy-destination");
     let entry = SymbolicMemory::new().store(
         source.clone(),
-        ProgramValue::UInt32(MachineTerm::constant(7)),
+        ProgramValue::UInt32(OldMachineTerm::constant(7)),
     );
 
     let result = transfer_representation_copy_cells(
@@ -44,7 +44,7 @@ fn representation_copy_transfers_a_fully_covered_cell() {
 
     assert_eq!(
         result.known_value(&destination),
-        Some(ProgramValue::UInt32(MachineTerm::constant(7)))
+        Some(ProgramValue::UInt32(OldMachineTerm::constant(7)))
     );
 }
 
@@ -54,7 +54,7 @@ fn representation_copy_leaves_a_split_cell_unestablished() {
     let destination = heap_pointer("split-destination");
     let entry = SymbolicMemory::new().store(
         source.clone(),
-        ProgramValue::UInt32(MachineTerm::constant(7)),
+        ProgramValue::UInt32(OldMachineTerm::constant(7)),
     );
 
     let result = transfer_representation_copy_cells(
@@ -82,15 +82,15 @@ fn representation_copy_leaves_an_untyped_source_unestablished() {
     assert_eq!(result.known_value(&destination), None);
 }
 
-fn cell(block: &str, index: u32) -> Address {
-    Address {
+fn cell(block: &str, index: u32) -> OldAddress {
+    OldAddress {
         base: AddressBase::from(block),
-        offset: AddressOffset::Constant(4 * i64::from(index)),
+        offset: OldAddressOffset::Constant(4 * i64::from(index)),
     }
 }
 
 fn cell_value(index: u32) -> ProgramValue {
-    ProgramValue::UInt32(MachineTerm::constant(index))
+    ProgramValue::UInt32(OldMachineTerm::constant(index))
 }
 
 fn source_with_cells(memory: SymbolicMemory, block: &str, cells: u32) -> SymbolicMemory {

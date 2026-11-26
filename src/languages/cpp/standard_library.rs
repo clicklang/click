@@ -13,8 +13,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::languages::interface::RecordLayout;
 
-pub(super) const IOS_FAILURE_FACTORY: &str = "__click_cpp_decl_ios_failure";
-
 /// One model accessor bound to a field path in one library's record.
 struct AccessorBinding {
     /// The prefix of the record's name, which names its template.
@@ -451,10 +449,6 @@ pub(super) fn contracts(
         if !libraries.contains(&library) {
             libraries.push(library);
         }
-    }
-    if export.uses_ios_failure_factory() {
-        models.insert(IOS_FAILURE_FACTORY.to_string());
-        libraries.push("std::ios_base::failure __click_cpp_decl_ios_failure() { ensures true; }\n");
     }
     Ok((libraries.concat(), models))
 }

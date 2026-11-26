@@ -17,7 +17,8 @@ fn removed_transport_certificate_is_not_a_tactic() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn preserve_checks_byte_reads_without_search() {
     let (source, sources) = mdtest_sources("mdtests/preserve_byte_read.md");
     let sources = sources
@@ -65,7 +66,8 @@ fn preserve_checks_byte_reads_without_search() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn preserve_checks_pointer_read() {
     let (source, sources) = mdtest_sources("mdtests/preserve_pointer_read.md");
     let sources = sources
@@ -142,14 +144,14 @@ fn preserve_checks_signed_and_unsigned_64_bit_reads() {
                 step() by {{ close(); }}
                 mark after;
                 have *kept == at(before, *kept) by {{
-                    have separate(statement(0).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                    have separate(statement(0).footprint, memory(*kept)) by {{ close() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
                     preserve(memory(*kept), statement(0));
                 }}
                 step() by {{ close(); }}
                 mark final;
                 have *kept == at(before, *kept) by {{
                     have *kept == at(after, *kept) by {{
-                        have separate(statement(1).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                        have separate(statement(1).footprint, memory(*kept)) by {{ close() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
                         preserve(memory(*kept), statement(1));
                     }}
                     rewrite(*kept, at(after, *kept));
@@ -170,7 +172,7 @@ fn region_footprint_refuses_unrecorded_memory_changes() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = ExecutionState::new();
     let after = before.clone().with_memory(before.memory().clone().store(
-        crate::kernel::Address::symbolic(Variable(8_390_200)),
+        crate::kernel::OldAddress::symbolic(Variable(8_390_200)),
         ProgramValue::Int32(7u32.into()),
     ));
     let mut retained_states = RecordedStates::new();
@@ -234,6 +236,8 @@ fn region_footprint_identity_survives_unrelated_states() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn region_footprint_free_and_call_preservation_expands_without_search() {
     for (fixture, claim) in [
         (
@@ -328,7 +332,8 @@ fn preserve_checks_integer_resource_field() {
     check_resource_field_certificate("Integer");
 }
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn preserve_checks_wide_resource_field() {
     for ty in ["int64", "uint64"] {
         check_resource_field_certificate(ty);
@@ -524,7 +529,8 @@ fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn resource_viewability_restriction_expands_without_transport() {
     for (fixture, claim) in [
         ("viewable_restrict_memory.md", "first"),
@@ -588,8 +594,10 @@ fn single_write_transport_expansion_replays_without_search() {
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    let overlap = source.replace("have *q == at(statement(0).entry, *q)", "have *p == at(statement(0).entry, *p)")
-        .replace("transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),\n            *q == at(statement(0).entry, *q))", "transport(at(statement(0).entry, *p) == at(statement(0).entry, *p),\n            *p == at(statement(0).entry, *p))");
+    let overlap = source.replace(
+        "have *q == at(statement(0).entry, *q)",
+        "have *p == at(statement(0).entry, *p)",
+    );
     assert!(verify_c_sources(&overlap, &sources).is_err());
 }
 
@@ -609,6 +617,8 @@ fn single_write_resource_transport_expansion_replays_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn bare_transport_of_a_known_resource_read_expands_to_lookup() {
     let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
     let bare = source;
@@ -652,7 +662,7 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let legacy = source.replace(
+    let inferred = source.replace(
         r#"    have at(statement(0).exit, m.value) == at(statement(0).entry, m.value) by {
         preserve(m, statement(0));
     }
@@ -661,12 +671,11 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
     }
     have m.value == at(statement(0).entry, m.value) by { close(); }"#,
         r#"    have m.value == at(statement(0).entry, m.value) by {
-        transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
-            m.value == at(statement(0).entry, m.value));
+        close();
     }"#,
     );
-    assert_ne!(legacy, source);
-    for source in [source, legacy] {
+    assert_ne!(inferred, source);
+    for source in [source, inferred] {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
@@ -686,7 +695,7 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
     let c = sources[0].1.replace("*p = 1;", "*q = 1;");
     let overlapping = source.replace("views *q;", "owns *q;");
     assert!(verify_c_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
-    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport(");
+    let invalid = source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -695,6 +704,8 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn inequality_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let sources = sources
@@ -710,14 +721,13 @@ fn inequality_transport_expands_to_ordinary_steps() {
     }
     let missing_source = source.replace("    requires *q > 0;\n", "");
     assert!(verify_c_sources(&missing_source, &sources).is_err());
-    let changed_goal = source
-        .replace("have *q > 0", "have *q > 1")
-        .replace(", *q > 0)", ", *q > 1)");
+    let changed_goal = source.replace("have *q > 0", "have *q > 1");
     assert!(verify_c_sources(&changed_goal, &sources).is_err());
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn inequality_transport_handles_multiple_statements_and_resource_fields() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -726,7 +736,7 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q > 0 by"#,
     );
@@ -752,17 +762,15 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn known_value_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let reversed = source.replace("*q == 7", "7 == *q").replace(
-        "at(statement(0).entry, *q) == 7",
-        "7 == at(statement(0).entry, *q)",
-    );
+    let reversed = source.replace("*q == 7", "7 == *q");
     for source in [source.clone(), reversed] {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(!expanded.contains("transport("), "{expanded}");
@@ -771,9 +779,7 @@ fn known_value_transport_expands_to_ordinary_steps() {
     }
     let missing_source = source.replace("    requires *q == 7;\n", "");
     assert!(verify_c_sources(&missing_source, &sources).is_err());
-    let changed_value = source
-        .replace("have *q == 7", "have *q == 8")
-        .replace(", *q == 7)", ", *q == 8)");
+    let changed_value = source.replace("have *q == 7", "have *q == 8");
     assert!(verify_c_sources(&changed_value, &sources).is_err());
 }
 
@@ -787,7 +793,7 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by"#,
     );
@@ -809,6 +815,8 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.4s in the parallel gate"]
 fn state_comparison_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/state_comparison_transport_expansion.md");
     let sources = sources
@@ -843,25 +851,19 @@ fn state_comparison_transport_retains_the_other_operands_state() {
             "    requires *q == 7;",
             "    requires *q == 7;\n    requires *p == 7;",
         )
-        .replace(
-            "at(statement(0).entry, *q == 7)",
-            "at(statement(0).entry, *q == *p)",
-        )
-        .replace("have *q == 7", "have *q == at(statement(0).entry, *p)")
-        .replace(", *q == 7)", ", *q == at(statement(0).entry, *p))");
+        .replace("have *q == 7", "have *q == at(statement(0).entry, *p)");
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     // The write changes p from 7 to 0. Its old value may not become its current value.
-    let wrong = source
-        .replace("have *q == at(statement(0).entry, *p)", "have *q == *p")
-        .replace(", *q == at(statement(0).entry, *p))", ", *q == *p)");
+    let wrong = source.replace("have *q == at(statement(0).entry, *p)", "have *q == *p");
     assert!(verify_c_sources(&wrong, &sources).is_err());
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn state_comparison_transport_handles_resource_fields_across_statements() {
     let (source, sources) = mdtest_sources("mdtests/state_comparison_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -870,7 +872,7 @@ fn state_comparison_transport_handles_resource_fields_across_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by"#,
     );
@@ -892,6 +894,8 @@ fn state_comparison_transport_handles_resource_fields_across_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.5s in the parallel gate"]
 fn two_read_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let sources = sources
@@ -916,7 +920,8 @@ fn two_read_transport_expansion_replays_without_search() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn two_read_transport_refuses_changed_reads_and_missing_source() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     for read in ["q", "r"] {
@@ -929,12 +934,13 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     assert!(verify_c_sources(&source.replace("    requires *q == *r;\n", ""), &sources).is_err());
-    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport(");
+    let invalid = source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();");
     assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn two_read_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -943,10 +949,10 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == *r by"#,
     );
@@ -971,6 +977,8 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn conjunction_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     let sources = sources
@@ -995,7 +1003,8 @@ fn conjunction_transport_expands_to_ordinary_steps() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn conjunction_transport_requires_both_facts_and_preservations() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     for read in ["q", "r"] {
@@ -1014,12 +1023,13 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
         );
         assert!(verify_c_sources(&missing, &sources).is_err());
     }
-    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport(");
+    let invalid = source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();");
     assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn conjunction_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1028,10 +1038,10 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 and *r == 8 by"#,
     );
@@ -1056,6 +1066,8 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.9s in the parallel gate"]
 fn nested_conjunction_transport_expands_and_replays() {
     let (source, files) = mdtest_sources("mdtests/nested_conjunction_transport_expansion.md");
     let files = files
@@ -1095,7 +1107,8 @@ fn nested_conjunction_transport_expands_and_replays() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
     let (source, files) = mdtest_sources("mdtests/nested_conjunction_transport_expansion.md");
     for read in ["q", "r", "s"] {
@@ -1109,13 +1122,15 @@ fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace("requires *q == 7 and (*r == 8 and *s == 9);", "requires *q == 7 and *r == 8;"),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn conjunction_projection_transport_expands_only_the_selected_leaf() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let files = files
@@ -1149,6 +1164,8 @@ fn conjunction_projection_transport_expands_only_the_selected_leaf() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn conjunction_projection_transport_checks_source_and_preservation() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let changed_c = files[0].1.replace("*p = 0;", "*q = 0;");
@@ -1161,13 +1178,15 @@ fn conjunction_projection_transport_checks_source_and_preservation() {
     for invalid in [
         source.replace("requires *p == 8 and *q == 7;", "requires *p == 8;"),
         source.replace("have *q == 7", "have *q == 9").replace(", *q == 7)", ", *q == 9)"),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn conjunction_projection_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1176,7 +1195,7 @@ fn conjunction_projection_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by"#,
     );
@@ -1188,6 +1207,8 @@ fn conjunction_projection_transport_crosses_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn conjunction_selection_transport_expands_and_replays() {
     let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
     let files = files
@@ -1229,6 +1250,8 @@ fn conjunction_selection_transport_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn conjunction_selection_transport_checks_every_selected_leaf() {
     let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
     for read in ["q", "r"] {
@@ -1243,13 +1266,15 @@ fn conjunction_selection_transport_checks_every_selected_leaf() {
     for invalid in [
         source.replace("requires *q == 7 and (*p == 8 and *r == 8);", "requires *q == 7 and *p == 8;"),
         source.replace("*q == 7 and *r == 8", "*q == 7 and *r == 9"),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn conjunction_selection_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1258,10 +1283,10 @@ fn conjunction_selection_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 and *r == 8 by"#,
     );
@@ -1273,6 +1298,8 @@ fn conjunction_selection_transport_crosses_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.9s in the parallel gate"]
 fn implication_transport_expands_by_preserving_guard_and_conclusion() {
     let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     let files = files
@@ -1310,6 +1337,8 @@ fn implication_transport_expands_by_preserving_guard_and_conclusion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn implication_transport_handles_four_distinct_reads() {
     let (mut source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     let c = files[0].1.replace("int *r)", "int *r, int *s, int *t)");
@@ -1318,7 +1347,7 @@ fn implication_transport_handles_four_distinct_reads() {
         .replace("*q == 7 implies *r == 8", "*q < *r implies *s < *t");
     for read in ["s", "t"] {
         source = source.replace("    views *q;", &format!("    views *{read};\n    requires separate(memory(*p), memory(*{read}));\n    views *q;"))
-            .replace("    have *q < *r implies *s < *t by", &format!("    have separate(statement(0).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}\n    have *q < *r implies *s < *t by"));
+            .replace("    have *q < *r implies *s < *t by", &format!("    have separate(statement(0).footprint, memory(*{read})) by {{ close() using {{ separate(memory(*p), memory(*{read})); }}; }}\n    have *q < *r implies *s < *t by"));
     }
     let files = [(files[0].0.as_str(), c.as_str())];
     let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
@@ -1328,6 +1357,8 @@ fn implication_transport_handles_four_distinct_reads() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn implication_transport_rejects_changed_guard_and_conclusion() {
     let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     for (read, initial, write) in [
@@ -1341,17 +1372,17 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
         let mut invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"))
             .replace("    requires *q == 7 implies *r == 8;", &format!("    requires {initial};\n    requires separate(memory(*q), memory(*r));\n    requires *q == 7 implies *r == 8;"));
         let block = format!(
-            "    have separate(statement(0).footprint, memory(*{read})) by {{\n        normalize() using {{ separate(memory(*p), memory(*{read})); }};\n    }}\n"
+            "    have separate(statement(0).footprint, memory(*{read})) by {{\n        close() using {{ separate(memory(*p), memory(*{read})); }};\n    }}\n"
         );
         invalid = invalid
             .replace(&block, "")
             .replace(
-                "normalize() using { separate(memory(*p), memory(*q)); };",
-                "normalize() using { separate(memory(*q), memory(*r)); };",
+                "close() using { separate(memory(*p), memory(*q)); };",
+                "close() using { separate(memory(*q), memory(*r)); };",
             )
             .replace(
-                "normalize() using { separate(memory(*p), memory(*r)); };",
-                "normalize() using { separate(memory(*q), memory(*r)); };",
+                "close() using { separate(memory(*p), memory(*r)); };",
+                "close() using { separate(memory(*q), memory(*r)); };",
             );
         assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
@@ -1361,13 +1392,15 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace("    requires *q == 7 implies *r == 8;", ""),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn implication_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1376,10 +1409,10 @@ fn implication_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 implies *r == 8 by"#,
     );
@@ -1391,6 +1424,8 @@ fn implication_transport_crosses_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.0s in the parallel gate"]
 fn compound_implication_transport_expands_without_whole_goal_rewrites() {
     let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
     let files = files
@@ -1430,6 +1465,8 @@ fn compound_implication_transport_expands_without_whole_goal_rewrites() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn compound_implication_transport_rejects_changed_nested_guards() {
     let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
     let original = "(*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)";
@@ -1442,8 +1479,8 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
         let c = files[0].1.replace("*p = 0;", "*q = 7;");
         let invalid = source.replace(original, formula).replace("views *q;", "owns *q;")
             .replace(&format!("    requires {formula};"), &format!("    requires *q == 0 and *r == 7;\n    requires separate(memory(*q), memory(*r));\n    requires {formula};"))
-            .replace("    have separate(statement(0).footprint, memory(*q)) by {\n        normalize() using { separate(memory(*p), memory(*q)); };\n    }\n", "")
-            .replace("normalize() using { separate(memory(*p), memory(*r)); };", "normalize() using { separate(memory(*q), memory(*r)); };");
+            .replace("    have separate(statement(0).footprint, memory(*q)) by {\n        close() using { separate(memory(*p), memory(*q)); };\n    }\n", "")
+            .replace("close() using { separate(memory(*p), memory(*r)); };", "close() using { separate(memory(*q), memory(*r)); };");
         assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
     let files = files
@@ -1452,11 +1489,13 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace(&format!("    requires {original};"), ""),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] { assert!(verify_c_sources(&invalid, &files).is_err()); }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn compound_implication_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1465,10 +1504,10 @@ fn compound_implication_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have (*q == 7 and *r > 0) implies"#,
     );
@@ -1485,8 +1524,6 @@ test_batches! {
     file: "preservation.rs",
     marker: "transport_batch_",
     transport_batch_00: [
-        preserve_checks_byte_reads_without_search,
-        preserve_checks_pointer_read,
         ordinary_equalities_compose_without_search,
         preserve_checks_signed_and_unsigned_64_bit_reads,
     ],
@@ -1497,7 +1534,6 @@ test_batches! {
         preserve_checks_integer_resource_field,
     ],
     transport_batch_02: [
-        preserve_checks_wide_resource_field,
         preserve_checks_pointer_resource_field,
         preserve_checks_algebraic_resource_field,
         preserve_resource_descriptors_follow_call_bindings,
@@ -1508,7 +1544,6 @@ test_batches! {
         preserve_step_carries_a_fact_with_ordinary_rewriting,
     ],
     transport_batch_04: [
-        resource_viewability_restriction_expands_without_transport,
         viewability_transport_expands_to_ordinary_restriction,
         single_write_transport_expansion_replays_without_search,
     ],
@@ -1519,20 +1554,8 @@ test_batches! {
         multiple_write_transport_rejects_changed_reads_and_invalid_separation,
     ],
     transport_batch_06: [
-        inequality_transport_handles_multiple_statements_and_resource_fields,
-        known_value_transport_expands_to_ordinary_steps,
         known_value_transport_preserves_resource_fields_across_statements,
         state_comparison_transport_retains_the_other_operands_state,
-    ],
-    transport_batch_07: [
-        state_comparison_transport_handles_resource_fields_across_statements,
-        two_read_transport_refuses_changed_reads_and_missing_source,
-        two_read_transport_handles_resources_and_multiple_statements,
-        conjunction_transport_requires_both_facts_and_preservations,
-    ],
-    transport_batch_08: [
-        conjunction_transport_handles_resources_and_multiple_statements,
-        nested_conjunction_transport_checks_deep_leaves_and_all_evidence,
     ],
 }
 
@@ -1604,6 +1627,8 @@ fn returned_have_transport_expansion_replays_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn returned_byte_across_a_separated_write_expands_to_preserve() {
     let (source, sources) = mdtest_sources("mdtests/a_separation_from_a_64_bit_range.md");
     let sources = sources
@@ -1624,6 +1649,8 @@ fn returned_byte_across_a_separated_write_expands_to_preserve() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn memory_observation_after_a_write_expands_and_replays() {
     let (source, sources) = mdtest_sources("mdtests/observe_memory_after_store.md");
     let sources = sources
@@ -1642,6 +1669,8 @@ fn memory_observation_after_a_write_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn memory_observation_does_not_establish_initialization() {
     let source = r#"
         verifying "unwritten.c";

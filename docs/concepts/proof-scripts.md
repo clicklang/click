@@ -81,8 +81,8 @@ this section shows how they appear in scripts.
 Smart tactics plan or search. `close()` checks the goal directly before
 searching and `close() using { ... }` searches from listed premises. The implicit tail, which runs the C a
 script leaves and closes what is open, is smart work too, including the
-`close()` closure of each loop-bundle member at a back edge. Bare
-`transport(P, Q)` is a smart tactic that searches for frame evidence.
+`close()` closure of each loop-bundle member at a back edge. The closer
+can search for frame evidence when using facts from an earlier point.
 `click expand` emits ordinary steps when it finds a replayable proof.
 
 Simple tactics request one deterministic checked operation without planning or
@@ -108,15 +108,15 @@ proof `if`.
 
 `close() using { ... }` is still smart: the listed facts restrict its search,
 it tries arithmetic over them last, and expansion replaces it with named
-simple rules. A miss adds arithmetic's reason. Common simple proposition
-tactics are `close()`, `normalize()`, `rewrite(...)`, `intro()`, and
+simple rules. A miss adds arithmetic's reason. Common proposition tactics
+include `close()`, `rewrite(...)`, `intro()`, and
 `contradiction(...)`. `close()` also closes a conjunction whose sides
 are facts and a disjunction with one side a fact. A successful
 expansion contains only those explicit rules, ordinary arithmetic proofs, and named
 theorem applications.
 
 Expanded `apply` reads premises from scope. For example, prove a
-constructor inequality with `have ... by { normalize(); }` before applying
+constructor inequality with `have ... by close();` before applying
 a theorem that requires it. Expansion retains that proof as a separate `have` (`mdtests/theorem_apply_retains_constructor_inequality.md`).
 
 ## Pure, fixed-state, and execution proofs
@@ -221,9 +221,8 @@ at unchanged function entry, after executed statements, and inside a loop's
 `maintain` body.
 
 An arm's bindings are in scope in every term the arm writes: `have` goals,
-theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
-`normalize() using`, the premises of a `close() using` or `normalize() using`
-inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
+theorem arguments and `using` premises, `instantiate`, `rewrite`,
+and the premises of a `close() using` inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm
 (`mdtests/loop_clause_reads_arm_bindings.md`), and that loop's `initialize` and
 `maintain` bodies (`mdtests/loop_phase_body_reads_arm_bindings.md`). A name that a `have` goal can see is a theorem
@@ -307,8 +306,8 @@ result form names the call's value:
 let { result: r } = step(classify);
 ```
 
-`r` is then an ordinary value name in `have`, `rewrite`, `normalize() using`,
-and `close() using` premises, on both sides of the `branch` written at the C `if`. It
+`r` is then an ordinary value name in `have`, `rewrite`, and `close() using`
+premises, on both sides of the `branch` written at the C `if`. It
 denotes the value the call returned, so it keeps its meaning after later
 statements. Naming the result of a call whose result the C discards is an
 error, as is reusing a name that is already a C local or a proof-local

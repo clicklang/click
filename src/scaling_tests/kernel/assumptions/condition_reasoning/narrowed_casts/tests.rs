@@ -9,29 +9,29 @@ use super::*;
 #[test]
 fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let x = MachineTerm::Variable(Variable(170_004));
+    let x = OldMachineTerm::Variable(Variable(170_004));
     // The narrowing's widening is its word.
-    let byte = MachineTerm::machine_integer_cast(
+    let byte = OldMachineTerm::machine_integer_cast(
         Ty::UInt8,
         Ty::Int32,
-        MachineTerm::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone()),
+        OldMachineTerm::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone()),
     );
     let mut work = Vec::new();
     for unrelated in [4u32, 64, 1024] {
         let mut context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0)),
+                OldConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(255)),
+                OldConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(255)),
                 true,
             );
         for index in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(171_000 + u64::from(index))),
-                    MachineTerm::constant(index),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(171_000 + u64::from(index))),
+                    OldMachineTerm::constant(index),
                 ),
                 true,
             );
@@ -42,14 +42,14 @@ fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
         assert_eq!(carrier, Some(x.clone()));
         // Filing an equality that names the conversion relates it to
         // its operand with the same bounded decisions.
-        let name = MachineTerm::Variable(Variable(170_005));
+        let name = OldMachineTerm::Variable(Variable(170_005));
         let (related, filing) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .clone()
-                .assume_condition(ConditionTerm::equal(name.clone(), byte.clone()), true)
+                .assume_condition(OldConditionTerm::equal(name.clone(), byte.clone()), true)
         });
         assert_eq!(
-            related.decide(&ConditionTerm::equal(name, x.clone())),
+            related.decide(&OldConditionTerm::equal(name, x.clone())),
             Some(true)
         );
         work.push(cost.saturating_add(filing));

@@ -30,33 +30,166 @@ pub(crate) enum ComparisonKind {
     Sequence,
 }
 
+/// Which arithmetic an operation is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ArithmeticKind {
+    /// Mathematical Integer arithmetic, which does not wrap.
+    Integer,
+    /// The program's own arithmetic at its operands' C type. Its format is
+    /// the operands' type, which the kernel builds bottom-up from them when
+    /// it evaluates the operation; it becomes a recorded field once Surface
+    /// operands are typed.
+    Native,
+}
+
+/// A binary arithmetic or bitwise operator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ArithmeticOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    ShiftLeft,
+    /// Rust's `<<`, whose shift count rules differ from C's.
+    RustShiftLeft,
+    ShiftRight,
+    /// Rust's `>>`.
+    RustShiftRight,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+}
+
+/// The type a Surface leaf, a literal or a name, has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum LeafType {
+    /// A mathematical Integer.
+    Integer,
+    /// A C value of this type. For an unsuffixed decimal literal it is the
+    /// type C gives the constant: `int32` when the value fits, else `int64`,
+    /// else `uint64`. For a name it is the name's declared C type.
+    Program(super::ProgramType),
+}
+
 /// A typed Surface term.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum SurfaceTerm {
+    /// An integer literal as written, with its type.
+    IntegerLiteral { text: String, ty: LeafType },
+    /// A name as written, with its type: an Integer binder, or a C variable
+    /// at its declared type, which lowering resolves at the program point.
+    Name { name: String, ty: LeafType },
+    /// `left op right` in the arithmetic `kind` names.
+    Binary {
+        op: ArithmeticOperator,
+        kind: ArithmeticKind,
+        left: Box<SurfaceTerm>,
+        right: Box<SurfaceTerm>,
+    },
+    /// `-operand` in the arithmetic `kind` names.
+    Negate {
+        kind: ArithmeticKind,
+        operand: Box<SurfaceTerm>,
+    },
+    /// `~operand`, which exists only on machine words.
+    BitwiseNot { operand: Box<SurfaceTerm> },
+    /// C pointer arithmetic: `pointer` moved by `elements` whole elements of
+    /// `element_width` bytes, backward when `backward` (`p - k`). The width
+    /// is the pointee's size, which elaboration reads from the pointer's
+    /// type.
+    PointerStep {
+        pointer: Box<SurfaceTerm>,
+        elements: Box<SurfaceTerm>,
+        element_width: u32,
+        backward: bool,
+    },
     /// A term elaboration has not typed yet; lowering reads it the old way,
     /// as the surrounding typed node says.
     Untyped(SyntaxTerm),
 }
 
 impl SurfaceTerm {
-    pub(crate) fn syntax(&self) -> &SyntaxTerm {
+    /// The Syntax of a term not yet typed. Only Integer and native
+    /// comparisons' operands have typed forms so far, so every other
+    /// comparison's operands are `Untyped`.
+    pub(crate) fn untyped_syntax(&self) -> &SyntaxTerm {
         match self {
             Self::Untyped(term) => term,
+            typed => unreachable!("only Integer and native operands are typed so far: {typed:?}"),
         }
     }
 }
 
 /// A typed Surface proposition.
+///
+/// Constructs not yet moved to Surface are carried as `Untyped`, a borrow of
+/// the Syntax they were elaborated from, which lowering reads the old way.
+/// The borrow is transitional: once every construct is typed, Surface owns
+/// all of its parts and the lifetime goes away.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum SurfaceProposition {
+pub(crate) enum SurfaceProposition<'s> {
     Comparison {
         kind: ComparisonKind,
         left: SurfaceTerm,
         operator: ComparisonOperator,
         right: SurfaceTerm,
     },
-    And(Box<SurfaceProposition>, Box<SurfaceProposition>),
-    Not(Box<SurfaceProposition>),
+    And(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
+    Or(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
+    Implies(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
+    Not(Box<SurfaceProposition<'s>>),
+    Untyped(&'s super::SyntaxProposition),
+}
+
+/// Elaborate a proposition's connective structure: `&&`, `||`, `implies` and
+/// `!` become Surface connectives, and every other construct is carried as
+/// `Untyped`. No connective needs a type, so this reads nothing but the
+/// proposition. Iterative, so a long chain needs no deep stack.
+pub(crate) fn elaborate_connectives(
+    proposition: &super::SyntaxProposition,
+) -> SurfaceProposition<'_> {
+    use super::SyntaxProposition as Syntax;
+    enum Frame<'s> {
+        Visit(&'s Syntax),
+        BuildAnd,
+        BuildOr,
+        BuildImplies,
+        BuildNot,
+    }
+    let mut frames = vec![Frame::Visit(proposition)];
+    let mut built = Vec::new();
+    while let Some(frame) = frames.pop() {
+        match frame {
+            Frame::Visit(Syntax::And(left, right)) => {
+                frames.extend([Frame::BuildAnd, Frame::Visit(right), Frame::Visit(left)]);
+            }
+            Frame::Visit(Syntax::Or(left, right)) => {
+                frames.extend([Frame::BuildOr, Frame::Visit(right), Frame::Visit(left)]);
+            }
+            Frame::Visit(Syntax::Implies(left, right)) => {
+                frames.extend([Frame::BuildImplies, Frame::Visit(right), Frame::Visit(left)]);
+            }
+            Frame::Visit(Syntax::Not(body)) => {
+                frames.extend([Frame::BuildNot, Frame::Visit(body)]);
+            }
+            Frame::Visit(other) => built.push(SurfaceProposition::Untyped(other)),
+            Frame::BuildNot => {
+                let body = built.pop().expect("elaborated negation body");
+                built.push(SurfaceProposition::Not(Box::new(body)));
+            }
+            frame => {
+                let right = Box::new(built.pop().expect("elaborated right operand"));
+                let left = Box::new(built.pop().expect("elaborated left operand"));
+                built.push(match frame {
+                    Frame::BuildAnd => SurfaceProposition::And(left, right),
+                    Frame::BuildOr => SurfaceProposition::Or(left, right),
+                    _ => SurfaceProposition::Implies(left, right),
+                });
+            }
+        }
+    }
+    built.pop().expect("elaborated proposition has one root")
 }
 
 /// Whether a term is an Integer by its own spelling, whatever its context:

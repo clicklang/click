@@ -10,13 +10,13 @@ fn loadable_count_production_retains_growing_bound_dags() {
                 MachineIntegerType::Int32
             };
             let zero = if wide {
-                MachineTerm::uint64_constant(0)
+                OldMachineTerm::uint64_constant(0)
             } else {
-                MachineTerm::constant(0)
+                OldMachineTerm::constant(0)
             };
             let mut end = KernelTerm::retained_machine_operand(
                 format,
-                MachineOperandView::Legacy(&MachineTerm::Variable(Variable(10993702))),
+                MachineOperandView::Old(&OldMachineTerm::Variable(Variable(10993702))),
             );
             for _ in 0..size {
                 end = KernelTerm::machine_binary_shared(
@@ -26,10 +26,15 @@ fn loadable_count_production_retains_growing_bound_dags() {
                 );
             }
             let mut range = if wide {
-                MemoryRange::new_wide(Address::symbolic(Variable(10993703)), zero.clone(), zero, 1)
+                MemoryRange::new_wide(
+                    OldAddress::symbolic(Variable(10993703)),
+                    zero.clone(),
+                    zero,
+                    1,
+                )
             } else {
                 MemoryRange::new_with_element_width(
-                    Address::symbolic(Variable(10993703)),
+                    OldAddress::symbolic(Variable(10993703)),
                     zero.clone(),
                     zero,
                     1,
@@ -58,5 +63,83 @@ fn loadable_count_production_retains_growing_bound_dags() {
                 "size={size}, wide={wide}"
             );
         }
+    }
+}
+
+#[test]
+fn virtual_interface_lookup_uses_one_method_key() {
+    for size in [8, 32, 128, 512] {
+        let mut environment = ExecutionEnvironment::new();
+        for index in 0..size {
+            let method = ProgramFunction::new(
+                ProgramType::Void,
+                format!("method_{index}"),
+                vec![],
+                ProgramStatement::Skip,
+            )
+            .with_contract(
+                vec![],
+                vec![],
+                vec![],
+                vec![FunctionContractClaim::body_safety()],
+                true,
+            );
+            let rule = crate::kernel::program_external_function_rule(method).unwrap();
+            environment = environment.with_cpp_virtual_rule(rule);
+        }
+        let name = format!("method_{}", size / 2);
+        let ((hit, miss), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                environment.get_call_function(&name, CallDispatch::CppVirtual),
+                environment.get_call_function("missing", CallDispatch::CppVirtual),
+            )
+        });
+        assert_eq!(hit.unwrap().name(), name);
+        assert!(miss.is_none());
+        assert!(
+            environment
+                .get_call_function(&name, CallDispatch::Direct)
+                .is_none()
+        );
+        assert_eq!(work, 2, "{size}: virtual interface lookup work");
+    }
+}
+
+#[test]
+fn cpp_binding_rule_lookup_uses_one_conversion_key() {
+    for size in [8, 32, 128, 512] {
+        let mut environment = ExecutionEnvironment::new();
+        let binding = |index| CppBindingContract {
+            conversion: CppObjectConversion::new(&format!("Derived{index}"), "Base"),
+            kind: CppBindingKind::AcquireShared,
+        };
+        let descriptor = ProgramFunction::new(
+            ProgramType::Void,
+            "reference binding",
+            vec![],
+            ProgramStatement::Skip,
+        )
+        .with_contract(
+            vec![],
+            vec![],
+            vec![],
+            vec![FunctionContractClaim::body_safety()],
+            true,
+        );
+        let rule = crate::kernel::program_external_function_rule(descriptor).unwrap();
+        for index in 0..size {
+            environment = environment.with_cpp_binding_rule(binding(index), rule.clone());
+        }
+        let acquire = binding(size / 2);
+        let release = acquire.release();
+        let ((hit, miss), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                environment.get_cpp_binding_rule(&acquire),
+                environment.get_cpp_binding_rule(&release),
+            )
+        });
+        assert!(hit.is_some());
+        assert!(miss.is_none());
+        assert_eq!(work, 2, "{size}: binding contract lookup work");
     }
 }

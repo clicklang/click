@@ -34,6 +34,9 @@ struct Block {
 
 /// The name a generic resource's instance at `arguments` is written out as.
 pub(super) fn instance_name(resource: &str, arguments: &[String]) -> String {
+    if let Some(name) = super::cpp_class_objects::object_resource_instance(resource, arguments) {
+        return name;
+    }
     let mut name = resource.to_string();
     for argument in arguments {
         // A C++ argument of two words, `unsigned int`, is one identifier.

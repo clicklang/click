@@ -484,8 +484,8 @@ pub(super) fn pure_induction_hypothesis(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
     let (current_variable, unsigned) = match context.values.get(&setup.parameter) {
-        Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => (variable, false),
-        Some(ProgramValue::UInt64(MachineTerm::Variable(variable))) => (variable, true),
+        Some(ProgramValue::Int32(OldMachineTerm::Variable(variable))) => (variable, false),
+        Some(ProgramValue::UInt64(OldMachineTerm::Variable(variable))) => (variable, true),
         _ => return Err(ClickError::new("invalid scalar induction parameter")),
     };
     // Lower the hypothesis in its own requirement scope. These premises
@@ -519,7 +519,7 @@ pub(super) fn pure_induction_hypothesis(
     // The decrease guard names the measure beside the binder, so the binder
     // avoids it even when neither the goal nor a requirement mentions it.
     let variable = fresh_int32_variable_for_propositions(&propositions, &[*current_variable]);
-    let value = MachineTerm::Variable(variable);
+    let value = OldMachineTerm::Variable(variable);
     let substitute = |proposition: &Proposition| {
         substitute_int32_variable_in_proposition(proposition, *current_variable, value.clone())
     };
@@ -545,13 +545,16 @@ pub(super) fn pure_induction_hypothesis(
     }
     let smaller = Proposition::condition_is(
         if unsigned {
-            ConditionTerm::uint64_less_than(value.clone(), MachineTerm::Variable(*current_variable))
+            OldConditionTerm::uint64_less_than(
+                value.clone(),
+                OldMachineTerm::Variable(*current_variable),
+            )
         } else {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(value.clone()),
-                right: Box::new(MachineTerm::Variable(*current_variable)),
+                right: Box::new(OldMachineTerm::Variable(*current_variable)),
             }
         },
         true,
@@ -559,11 +562,11 @@ pub(super) fn pure_induction_hypothesis(
     body = Proposition::Implies(Box::new(smaller), Box::new(body));
     if !unsigned {
         let nonnegative = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(value),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
@@ -889,10 +892,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
             let interface_type = parameter.click_type().interface_type()?;
             let value = match interface_type {
                 InterfaceType::Int128 => {
-                    ProgramValue::Int128(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Int128(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::UInt128 => {
-                    ProgramValue::UInt128(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::UInt128(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Parameter(name) => crate::kernel::symbolic_call_result(
                     ProgramType::Parameter(name),
@@ -905,17 +908,17 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 InterfaceType::Void => unreachable!("pure theorem parameters cannot be void"),
                 // A `Bool` parameter is a binder of the kernel sort (Stage 5),
                 // carried as its cast to `uint8` (rule C1).
-                InterfaceType::Bool => ProgramValue::Bool(MachineTerm::bool_cast(
+                InterfaceType::Bool => ProgramValue::Bool(OldMachineTerm::bool_cast(
                     crate::kernel::MachineIntegerType::UInt8,
-                    crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
+                    crate::kernel::OldConditionTerm::Variable(Variable(index as u64)),
                 )),
                 InterfaceType::VoidPointer
                 | InterfaceType::VoidPointerPointer
                 | InterfaceType::Pointer => ProgramValue::typed_pointer(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable::produced(
+                            OldMachineTerm::Variable(Variable::produced(
                                 crate::kernel::Producer::PointerArgument,
                                 index as u64,
                             )),
@@ -925,47 +928,47 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     interface_type.to_kernel_type(),
                 ),
                 InterfaceType::Int8 => {
-                    ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Int8(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Int16 => {
-                    ProgramValue::Int16(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Int16(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Int32 => {
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::UInt32 => {
-                    ProgramValue::UInt32(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::UInt32(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned) => {
-                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::UInt8(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Char(crate::languages::c::syntax::PlainChar::Signed) => {
-                    ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Int8(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::UInt8 => {
-                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::UInt8(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::UInt16 => {
-                    ProgramValue::UInt16(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::UInt16(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Int64(_) => {
-                    ProgramValue::Int64(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Int64(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::UInt64(_) => {
-                    ProgramValue::UInt64(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::UInt64(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Float32 => {
-                    ProgramValue::Float32(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Float32(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Float64 => {
-                    ProgramValue::Float64(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Float64(OldMachineTerm::Variable(Variable(index as u64)))
                 }
                 InterfaceType::Int8Pointer | InterfaceType::Int8Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -977,10 +980,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int16Pointer | InterfaceType::Int16Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -992,10 +995,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt16Pointer | InterfaceType::UInt16Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1007,10 +1010,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int32Pointer | InterfaceType::Int32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1024,10 +1027,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 | InterfaceType::CharArray(_, _)
                 | InterfaceType::UInt8Pointer
                 | InterfaceType::UInt8Array(_) => ProgramValue::typed_pointer(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable::produced(
+                            OldMachineTerm::Variable(Variable::produced(
                                 crate::kernel::Producer::PointerArgument,
                                 index as u64,
                             )),
@@ -1038,10 +1041,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 ),
                 InterfaceType::UInt32Pointer | InterfaceType::UInt32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1053,10 +1056,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int64Pointer(_) | InterfaceType::Int64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1068,10 +1071,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int128Pointer | InterfaceType::Int128Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1083,10 +1086,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt64Pointer(_) | InterfaceType::UInt64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1098,10 +1101,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt128Pointer | InterfaceType::UInt128Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1113,10 +1116,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Float32Pointer | InterfaceType::Float32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1128,10 +1131,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Float64Pointer | InterfaceType::Float64Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1148,10 +1151,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1179,10 +1182,10 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
-                                MachineTerm::Variable(Variable::produced(
+                                OldMachineTerm::Variable(Variable::produced(
                                     crate::kernel::Producer::PointerArgument,
                                     index as u64,
                                 )),
@@ -1193,14 +1196,14 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     )
                 }
                 InterfaceType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                    Address::symbolic_function(Variable(index as u64)),
+                    OldAddress::symbolic_function(Variable(index as u64)),
                     interface_type.to_kernel_type(),
                 ),
                 InterfaceType::PointerArray(_, _, _) => ProgramValue::typed_pointer(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable::produced(
+                            OldMachineTerm::Variable(Variable::produced(
                                 crate::kernel::Producer::PointerArgument,
                                 index as u64,
                             )),
@@ -1456,7 +1459,7 @@ fn verify_theorem_ensure(
         .parameters()
         .iter()
         .map(|parameter| match context.values.get(parameter.name()) {
-            Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
+            Some(ProgramValue::Int32(OldMachineTerm::Variable(variable))) => Some(*variable),
             _ => None,
         })
         .collect::<Option<Vec<_>>>();
@@ -2012,7 +2015,7 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.native_compat().clone()),
+            Term::ProgramValue(value) => Some(value.old_form().clone()),
             _ => None,
         })
         .collect()
@@ -3186,10 +3189,10 @@ fn lower_pure_theorem_proposition_opaque(
 /// lowers to that orientation (`canonical_observation_form`), while a kernel
 /// axiom states the order its lemma writes; both name the same fact.
 fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
-    use crate::kernel::ConditionTerm as Condition;
+    use crate::kernel::OldConditionTerm as Condition;
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            let oriented = match condition.native_compat() {
+            let oriented = match condition.old_form() {
                 Condition::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -3306,8 +3309,8 @@ mod tests {
 
     #[test]
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
-        use crate::kernel::ConditionTerm as Condition;
-        let word = |index| Box::new(MachineTerm::Variable(crate::kernel::Variable(index)));
+        use crate::kernel::OldConditionTerm as Condition;
+        let word = |index| Box::new(OldMachineTerm::Variable(crate::kernel::Variable(index)));
         let fact = |condition| Proposition::condition_is(condition, true);
         let greater = Proposition::Implies(
             Box::new(fact(Condition::Compare {
@@ -3358,6 +3361,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.3s in the parallel gate"]
     fn pure_requirements_use_earlier_evaluation_guards_without_dropping_them() {
         for (parameters, arguments, expression, wrong_expression) in [
             ("n: int32", "n", "n + 1", "n - 1"),
@@ -3401,7 +3406,7 @@ mod tests {
             crate::surface::verify_c_sources(&source.replace("requires defined(n + 1);", ""), &[])
                 .is_err()
         );
-        let missing_call_guard = "theorem guarded(n: int32) { requires defined(n + 1); requires to_integer(n + 1) == 1; ensures n == n by { normalize(); } } theorem caller(n: int32) { ensures n == n by { apply(guarded(n)); normalize(); } }";
+        let missing_call_guard = "theorem guarded(n: int32) { requires defined(n + 1); requires to_integer(n + 1) == 1; ensures n == n by { close(); } } theorem caller(n: int32) { ensures n == n by { apply(guarded(n)); close(); } }";
         assert!(crate::surface::verify_c_sources(missing_call_guard, &[]).is_err());
     }
 
@@ -3450,11 +3455,11 @@ mod tests {
             theorem identity(x: int32) { requires x == 0; ensures x == 0 by { close(); } }
             theorem application(x: int32) {
                 requires x == 0;
-                ensures x == 0 by { apply(identity(x)); rewrite(x, 0); normalize(); }
+                ensures x == 0 by { apply(identity(x)); rewrite(x, 0); close(); }
             }
             theorem extraction(x: int32) {
                 requires x == 0 and x <= 1;
-                ensures x == 0 by { have x == 0 by close(); rewrite(x, 0); normalize(); }
+                ensures x == 0 by { have x == 0 by close(); rewrite(x, 0); close(); }
             }
         "#;
         let verified = crate::surface::verify_click_theorems(source).unwrap();
@@ -3580,6 +3585,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 9.1s in the parallel gate"]
     fn numeric_induction_retains_partial_expression_requirements() {
         // A guarded addition in the conclusion must lower in the theorem's
         // requirement scope, including when building and applying its IH.
@@ -3741,8 +3748,8 @@ mod tests {
                 ensures n == n by {
                     let ih = induct(n);
                     match n {
-                        TestNat::Zero => { normalize(); }
-                        TestNat::Succ(tail) => { normalize(); }
+                        TestNat::Zero => { close(); }
+                        TestNat::Succ(tail) => { close(); }
                     }
                 }
             }
@@ -3891,6 +3898,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn pure_instantiate_preserves_an_unrelated_open_goal() {
         let open = INSTANTIATE_BOUND
             .replace("ensures x <= upper", "ensures x == upper")
@@ -3914,6 +3923,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn pure_instantiate_resolves_introduced_binders_and_nested_shadowing() {
         let source = r#"
             theorem shadowed(x: int32) {
@@ -3981,6 +3992,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn pure_instantiate_shares_unrelated_facts_and_bindings() {
         let mut allocations = Vec::new();
         for size in [8usize, 16, 32, 64] {
@@ -4088,7 +4101,7 @@ mod tests {
                 ensures forall (x: Integer) { x == x } by {
                     intro() {
                         instantiate(forall (k: int32) { k == k }, x);
-                        normalize();
+                        close();
                     }
                 }
             }
@@ -4382,6 +4395,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn unsigned_unpacking_declarations_require_exact_bounds_words_and_unsigned_shift() {
         for (ty, suffix, packed) in [
             ("uint32", "u32", "(high << 16) | low"),
@@ -4428,6 +4443,8 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn unsigned_packing_declarations_require_exact_fields_bounds_and_result() {
         for (ty, suffix, order) in [
             ("uint32", "u32", ""),
@@ -4459,6 +4476,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn integer_truncation_declarations_reject_forged_guards_operands_and_types() {
         for (name, requirements, goal) in [
             (
@@ -4656,7 +4675,7 @@ fn constant_integer(expression: &SyntaxTerm) -> Option<(i128, Option<ConstantTyp
             let crate::kernel::AddressBase::StringLiteral { bytes, .. } = &address.base else {
                 return None;
             };
-            let crate::kernel::AddressOffset::Constant(offset) = address.offset else {
+            let crate::kernel::OldAddressOffset::Constant(offset) = address.offset else {
                 return None;
             };
             let (index, _) = constant_integer(index)?;
@@ -4764,22 +4783,22 @@ fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<SyntaxTe
     let value = match ty {
         None => return Some(SyntaxTerm::IntegerLiteral(value.to_string())),
         Some(ConstantType::Int8) => {
-            crate::kernel::int8(MachineTerm::constant(i8::try_from(value).ok()? as u32))
+            crate::kernel::int8(OldMachineTerm::constant(i8::try_from(value).ok()? as u32))
         }
-        Some(ConstantType::UInt8) => {
-            crate::kernel::uint8(MachineTerm::constant(u32::from(u8::try_from(value).ok()?)))
-        }
+        Some(ConstantType::UInt8) => crate::kernel::uint8(OldMachineTerm::constant(u32::from(
+            u8::try_from(value).ok()?,
+        ))),
         Some(ConstantType::Int32) => {
-            ProgramValue::Int32(MachineTerm::constant(i32::try_from(value).ok()? as u32))
+            ProgramValue::Int32(OldMachineTerm::constant(i32::try_from(value).ok()? as u32))
         }
         Some(ConstantType::UInt32) => {
-            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::try_from(value).ok()?))
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::try_from(value).ok()?))
         }
         Some(ConstantType::Int64) => {
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::try_from(value).ok()?))
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::try_from(value).ok()?))
         }
         Some(ConstantType::UInt64) => {
-            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::try_from(value).ok()?))
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::try_from(value).ok()?))
         }
     };
     Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(

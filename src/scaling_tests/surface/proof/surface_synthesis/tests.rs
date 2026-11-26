@@ -9,9 +9,9 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = ExecutionState::new().begin_function_entry_memory();
     let point = source.program_point();
-    let slot = Address {
+    let slot = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let indexed = point
         .ordinary_typed_version(&slot, ProgramType::Int32)
@@ -49,7 +49,7 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
         source
             .memory()
             .clone()
-            .store(slot, ProgramValue::Int32(MachineTerm::constant(7))),
+            .store(slot, ProgramValue::Int32(OldMachineTerm::constant(7))),
     );
     assert_eq!(replacement.observation_point_id(), point.id());
     let mut points = RecordedStates::new();
@@ -68,10 +68,10 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         for index in 0..size {
             state = state.with_local(
                 format!("a_{index:04}"),
-                crate::kernel::bool_value(MachineTerm::Variable(Variable(2000 + index as u64))),
+                crate::kernel::bool_value(OldMachineTerm::Variable(Variable(2000 + index as u64))),
             );
         }
-        let value = crate::kernel::bool_value(MachineTerm::Variable(Variable(9000)));
+        let value = crate::kernel::bool_value(OldMachineTerm::Variable(Variable(9000)));
         let ProgramValue::Bool(term) = &value else {
             unreachable!()
         };
@@ -99,8 +99,8 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
             right: surface,
         };
         let lowered = relower_written_proposition(&equality, &state).unwrap();
-        let Some((condition @ ConditionTerm::BoolEqual(left, right), true)) =
-            lowered.condition_native()
+        let Some((condition @ OldConditionTerm::BoolEqual(left, right), true)) =
+            lowered.old_condition()
         else {
             panic!("expected the retained Boolean equality: {lowered:?}");
         };
@@ -115,14 +115,14 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
         .stack_size(1792 * 1024)
         .spawn(|| {
             for size in [1usize, 8, 32, 128] {
-                let pointer = Address {
+                let pointer = OldAddress {
                     base: crate::kernel::AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
-                let cyclic = Address {
+                let cyclic = OldAddress {
                     base: pointer.base.clone(),
-                    offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::integer_address(pointer.clone()),
+                    offset: OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::integer_address(pointer.clone()),
                         4,
                     ),
                 };
@@ -170,10 +170,10 @@ fn pointer_local_synthesis_skips_unrelated_address_bases() {
         for i in 0..size {
             state = state.with_local(
                 format!("a_{i:04}"),
-                ProgramValue::pointer(Address::symbolic(Variable(982_000 + i as u64))),
+                ProgramValue::pointer(OldAddress::symbolic(Variable(982_000 + i as u64))),
             );
         }
-        let base = Address::symbolic(Variable(984_000));
+        let base = OldAddress::symbolic(Variable(984_000));
         state = state.with_local("z_base", ProgramValue::pointer(base.clone()));
         let selected = base.offset_by_bytes(8);
         let (expression, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -302,13 +302,13 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
         let layout =
             crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
         let mut retained_states = RecordedStates::new().with_source_layout(layout.clone());
-        let mut last = Address::null();
+        let mut last = OldAddress::null();
         let mut last_region = 0;
         let mut insertion_work = 0;
         for n in 0..count {
-            last = Address {
+            last = OldAddress {
                 base: AddressBase::Heap(990_000 + n as u64),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             last_region = layout
                 .source_path_region(&[SourcePathStep::Statement(n + 1)], ProgramPointKind::Exit)
@@ -365,9 +365,9 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
             names.insert(Variable(9100 + i as u64), format!("unused_{i}").into());
         }
         names.insert(Variable(9000), "flag".into());
-        let flag = ConditionTerm::Variable(Variable(9000));
+        let flag = OldConditionTerm::Variable(Variable(9000));
         let fact = Proposition::condition_is(
-            ConditionTerm::bool_application(
+            OldConditionTerm::bool_application(
                 "choose",
                 vec![crate::kernel::PureFunctionArgument::Value(
                     ProgramValue::of_bool(flag),
@@ -391,11 +391,11 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
         "{costs:?}"
     );
     for size in [4usize, 8, 16, 32] {
-        let mut condition = ConditionTerm::Constant(false);
+        let mut condition = OldConditionTerm::Constant(false);
         for i in 0..size {
-            condition = ConditionTerm::bool_if(
-                ConditionTerm::bool_application(&format!("p{i}"), vec![]),
-                ConditionTerm::Constant(true),
+            condition = OldConditionTerm::bool_if(
+                OldConditionTerm::bool_application(&format!("p{i}"), vec![]),
+                OldConditionTerm::Constant(true),
                 condition,
             );
         }
@@ -442,14 +442,14 @@ fn leading_domain_recognition_retains_shared_arithmetic() {
                 IntegerTerm::Add(left, right)
             };
             let upper = Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     exact.clone().into(),
                     IntegerTerm::constant(i32::MAX.into()).into(),
                 ),
                 true,
             );
             let lower = Proposition::condition_is(
-                ConditionTerm::IntegerGreaterEqual(
+                OldConditionTerm::IntegerGreaterEqual(
                     exact.into(),
                     IntegerTerm::constant(i32::MIN.into()).into(),
                 ),
@@ -477,18 +477,18 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
     use crate::kernel::{KernelTermExport, KernelTermImport, VerificationSession};
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let native = MachineTerm::logical_machine_binary(
+        let native = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
-            MachineTerm::Variable(Variable(993410)),
-            MachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(993410)),
+            OldMachineTerm::constant(1),
         );
         let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
         let mut state = ExecutionState::new().with_local("current", ProgramValue::Int32(native));
         for index in 0..size {
             state = state.with_local(
                 format!("noise_{index}"),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(994000 + index))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(994000 + index))),
             );
         }
         let exports = KernelTermExport::machine_export_count();
@@ -512,20 +512,20 @@ fn nested_fold_surface_raising_scales_without_ambient_local_scan() {
     for unrelated in [0, 64, 256] {
         for size in [3, 9, 27] {
             let _session = crate::kernel::VerificationSession::enter();
-            let n = MachineTerm::Variable(Variable(720000));
+            let n = OldMachineTerm::Variable(Variable(720000));
             let mut state = ExecutionState::new().with_local("n", ProgramValue::Int32(n.clone()));
             for i in 0..unrelated {
                 state = state.with_local(
                     format!("unused_{i}"),
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(730000 + i))),
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(730000 + i))),
                 );
             }
-            let mut term = MachineTerm::Variable(Variable(720001));
+            let mut term = OldMachineTerm::Variable(Variable(720001));
             for _ in 0..size {
-                term = MachineTerm::RangeFold {
-                    start: Box::new(MachineTerm::constant(0)),
+                term = OldMachineTerm::RangeFold {
+                    start: Box::new(OldMachineTerm::constant(0)),
                     end: Box::new(n.clone()),
-                    initial: Box::new(MachineTerm::constant(0)),
+                    initial: Box::new(OldMachineTerm::constant(0)),
                     accumulator: Variable(720001),
                     item: Variable(720002),
                     body: Box::new(term),
@@ -617,12 +617,12 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
     for unrelated in [0, 64, 256] {
         for depth in [3, 9, 27] {
             let _session = crate::kernel::VerificationSession::enter();
-            let n = MachineTerm::Variable(Variable(992000));
+            let n = OldMachineTerm::Variable(Variable(992000));
             let mut state = ExecutionState::new().with_local("n", ProgramValue::Int32(n.clone()));
             for i in 0..unrelated {
                 state = state.with_local(
                     format!("unused_{i}"),
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(993000 + i))),
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(993000 + i))),
                 );
             }
             let mut import = KernelTermImport::default();
@@ -630,7 +630,7 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
                 KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]),
             ));
             let ty = KernelType::Program(ProgramType::Int32);
-            let zero = import.machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            let zero = import.machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0));
             let end = import.machine(MachineIntegerType::Int32, &n);
             let declaration = KernelTerm::variable(ty.clone(), Variable(992003));
             let mut root = KernelTerm::variable(ty.clone(), Variable(992001));
@@ -687,10 +687,10 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
 #[test]
 fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = ProgramValue::pointer(Address::symbolic(Variable(981_400)));
-    let cell = Address {
+    let pointer = ProgramValue::pointer(OldAddress::symbolic(Variable(981_400)));
+    let cell = OldAddress {
         base: AddressBase::Concrete("selected-array-memory".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let selected = ExecutionState::new()
         .with_local("p", pointer.clone())
@@ -855,20 +855,20 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
     for size in [8, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(999987);
-        let mut operand = MachineTerm::Variable(variable);
+        let mut operand = OldMachineTerm::Variable(variable);
         for _ in 0..size {
-            operand = MachineTerm::logical_machine_binary(
+            operand = OldMachineTerm::logical_machine_binary(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 operand,
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             );
         }
-        let root = KernelTermImport::default().condition(&ConditionTerm::Overflows {
+        let root = KernelTermImport::default().condition(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(operand),
-            right: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(OldMachineTerm::Variable(variable)),
         });
         let names = (BTreeMap::<_, String>::from([(variable, "x".into())]))
             .into_iter()
@@ -894,14 +894,14 @@ fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
     use crate::kernel::{KernelTermExport, KernelTermImport, OldPointer, SubobjectBounds};
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(Variable(999990));
-        let mut width = MachineTerm::Variable(Variable(999991));
+        let pointer = OldAddress::symbolic(Variable(999990));
+        let mut width = OldMachineTerm::Variable(Variable(999991));
         for _ in 0..size {
-            width = MachineTerm::logical_machine_binary(
+            width = OldMachineTerm::logical_machine_binary(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 width,
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             );
         }
         let value = OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
@@ -918,7 +918,7 @@ fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
         let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
             value.clone(),
         ))];
-        let root = KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
+        let root = KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
             Box::new(value.clone()),
             Box::new(value),
         ));
@@ -955,7 +955,7 @@ fn narrow_literal_comparison_spelling_ignores_unrelated_locals() {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
             let proposition = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation: R::LessEqual,
                     left: Box::new(word(9)),
@@ -987,7 +987,7 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
             crate::kernel::machine_integer::range::constant_word(T::UInt8, &n.into()).unwrap()
         };
         let atom = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: T::UInt8,
                 relation: R::GreaterEqual,
                 left: Box::new(word(9)),
@@ -1033,20 +1033,21 @@ fn pthread_handle_names_ignore_unrelated_live_and_recorded_handles() {
         for id in 0..size {
             state = state.with_local(
                 format!("other_{id}"),
-                ProgramValue::UInt64(MachineTerm::ThreadHandle(ThreadHandleId(id))),
+                ProgramValue::UInt64(OldMachineTerm::ThreadHandle(ThreadHandleId(id))),
             );
             points.insert(
                 ProgramPointSelector::Mark(format!("other_{id}")),
                 state.clone(),
             );
         }
-        let native = MachineTerm::ThreadHandle(ThreadHandleId(999002));
+        let native = OldMachineTerm::ThreadHandle(ThreadHandleId(999002));
         let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
         state = state.with_local("h", ProgramValue::UInt64(native));
         points.insert(ProgramPointSelector::Mark("created".into()), state.clone());
-        let now = state
-            .clone()
-            .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+        let now = state.clone().with_local(
+            "h",
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
+        );
         let _points = SynthesisRecordedPointsScope::enter(&points);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for (selected, expected) in [(&state, "h"), (&now, "at(created, h)")] {

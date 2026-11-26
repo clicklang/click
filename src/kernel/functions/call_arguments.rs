@@ -106,8 +106,8 @@ fn contract_interface_argument_views(
                 .unchecked_with_fact(ResourceFact::view_memory(
                     MemoryRange::new_with_element_width(
                         pointer.address().clone(),
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(i32::MAX as u32),
+                        OldMachineTerm::constant(0),
+                        OldMachineTerm::constant(i32::MAX as u32),
                         element_width,
                     ),
                 ));
@@ -124,10 +124,29 @@ pub(super) fn set_function_result(
     set_contract_result(state, function.contract_interface(), value);
 }
 
+/// [`set_contract_result`] as a step of the contract call in progress,
+/// which completes it.
+pub(super) fn stage_contract_result(
+    state: &mut ExecutionState,
+    interface: &FunctionContractInterface,
+    value: impl Into<StoredExecutionValue>,
+) {
+    set_contract_result_with(state, interface, value, true);
+}
+
 pub(super) fn set_contract_result(
     state: &mut ExecutionState,
     interface: &FunctionContractInterface,
     value: impl Into<StoredExecutionValue>,
+) {
+    set_contract_result_with(state, interface, value, false);
+}
+
+fn set_contract_result_with(
+    state: &mut ExecutionState,
+    interface: &FunctionContractInterface,
+    value: impl Into<StoredExecutionValue>,
+    stage: bool,
 ) {
     let value = value.into();
     if value.shared().is_some_and(|root| {
@@ -153,7 +172,7 @@ pub(super) fn set_contract_result(
         && let ProgramValue::Pointer(pointer) = &value
     {
         if interface.aggregate_return_mode() == AggregateReturnMode::Copy {
-            state.set_memory(
+            let memory =
                 // A returned-by-value temporary is fresh caller storage. Its
                 // declaration must remain in the memory history so copying
                 // its fields does not disconnect unrelated input states.
@@ -168,8 +187,12 @@ pub(super) fn set_contract_result(
                         .memory
                         .clone()
                         .with_block(pointer.base.clone(), layout.size())
-                },
-            );
+                };
+            if stage {
+                state.stage_memory(memory);
+            } else {
+                state.set_memory(memory);
+            }
         }
         state.locals.set_aggregate_object_at(
             CONTRACT_RESULT,
@@ -315,9 +338,9 @@ pub(super) fn incompatible_pointer_argument(
             if pointee.may_designate(&object) || pointer.is_null() {
                 return None;
             }
-            if assumptions.decide(&ConditionTerm::address_equal(
+            if assumptions.decide(&OldConditionTerm::address_equal(
                 pointer.address().clone(),
-                Address::null(),
+                OldAddress::null(),
             )) == Some(true)
             {
                 return None;
@@ -357,9 +380,9 @@ pub(super) fn incompatible_pointer_return(
     if pointee.may_designate(&object) || pointer.is_null() {
         return None;
     }
-    if assumptions.decide(&ConditionTerm::address_equal(
+    if assumptions.decide(&OldConditionTerm::address_equal(
         pointer.address().clone(),
-        Address::null(),
+        OldAddress::null(),
     )) == Some(true)
     {
         return None;
@@ -469,7 +492,7 @@ pub(super) fn symbolic_contract_result(
     // about a returned struct can state.
     if interface.return_aggregate_layout().is_some() {
         return ProgramValue::typed_pointer(
-            Address::verifier_temporary(variable),
+            OldAddress::verifier_temporary(variable),
             interface.return_type(),
         );
     }
@@ -480,16 +503,16 @@ pub(super) fn symbolic_contract_result(
     // allocator, so no other block has this one.
     if interface.fresh_result_allocation() && interface.return_type().is_pointer() {
         return ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: AddressBase::Heap(variable.0),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             interface.return_type(),
         )
         .with_pointer_declared_object_class(interface.return_pointee_class());
     }
     symbolic_call_result(interface.return_type(), variable)
-        .complete_word(Address::symbolic(variable))
+        .complete_word(OldAddress::symbolic(variable))
         .with_pointer_declared_object_class(interface.return_pointee_class())
 }
 
@@ -503,25 +526,25 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         // A `bool` is a binder of the kernel sort `Bool` (Stage 5), carried
         // as its cast (rule C1), so the binder is the parameter's own name.
         ProgramType::Bool => {
-            ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(variable))
+            ProgramValue::of_bool(crate::kernel::OldConditionTerm::Variable(variable))
         }
         ProgramType::VoidPointer | ProgramType::VoidPointerPointer | ProgramType::Pointer => {
-            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic(variable), program_type)
         }
-        ProgramType::Int8 => ProgramValue::Int8(MachineTerm::Variable(variable)),
-        ProgramType::Int16 => ProgramValue::Int16(MachineTerm::Variable(variable)),
-        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::Variable(variable)),
-        ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::Variable(variable)),
-        ProgramType::UInt16 => ProgramValue::UInt16(MachineTerm::Variable(variable)),
-        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::Variable(variable)),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(variable)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(variable)),
-        ProgramType::Int128 => ProgramValue::Int128(MachineTerm::Variable(variable)),
-        ProgramType::UInt128 => ProgramValue::UInt128(MachineTerm::Variable(variable)),
-        ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
-        ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
+        ProgramType::Int8 => ProgramValue::Int8(OldMachineTerm::Variable(variable)),
+        ProgramType::Int16 => ProgramValue::Int16(OldMachineTerm::Variable(variable)),
+        ProgramType::Int32 => ProgramValue::Int32(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt8 => ProgramValue::UInt8(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt16 => ProgramValue::UInt16(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt32 => ProgramValue::UInt32(OldMachineTerm::Variable(variable)),
+        ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::Variable(variable)),
+        ProgramType::Int128 => ProgramValue::Int128(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt128 => ProgramValue::UInt128(OldMachineTerm::Variable(variable)),
+        ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::Variable(variable)),
+        ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::Variable(variable)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
-            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic(variable), program_type)
         }
         ProgramType::ParameterPointer(_)
         | ProgramType::Int16Pointer
@@ -546,10 +569,10 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         | ProgramType::Float64Pointer
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer => {
-            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic(variable), program_type)
         }
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic_function(variable), program_type)
         }
         ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")
@@ -575,7 +598,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
 
 pub(in crate::kernel) fn add_memory_store_obligation(
     memory: &SymbolicMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -778,6 +801,25 @@ pub(super) fn contract_argument_binding_error(
             "incompatible signature for function pointer argument to {}",
             name
         )
+    } else if let Some(parameter) =
+        interface
+            .parameters()
+            .iter()
+            .zip(values)
+            .find_map(|(parameter, value)| {
+                let ProgramValue::Pointer(pointer) = value else {
+                    return None;
+                };
+                (parameter.aggregate_layout().is_some()
+                    && pointer.base.prepared_argument_binding().is_none()
+                    && pointer.base != AddressBase::ExternalArgument)
+                    .then_some(parameter)
+            })
+    {
+        format!(
+            "could not bind arguments for {name}: its by-value aggregate argument `{}` is not a parameter object prepared before the call (a frontend defect)",
+            parameter.name()
+        )
     } else {
         format!("could not bind arguments for {name}")
     }
@@ -801,7 +843,7 @@ pub(super) fn append_string_literal_loadable_facts(
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
-            bytes: (MachineTerm::constant(literal.bytes().len() as u32)).into(),
+            bytes: (OldMachineTerm::constant(literal.bytes().len() as u32)).into(),
             wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {
@@ -816,7 +858,7 @@ pub(super) fn append_string_literal_loadable_facts(
 /// by-value copy inside the callee cannot reuse its parameter.
 pub(super) fn is_prepared_aggregate_argument(
     caller: &ExecutionState,
-    address: &Address,
+    address: &OldAddress,
     layout: &AggregateLayout,
 ) -> bool {
     let Some(binding) = address.base.prepared_argument_binding() else {
@@ -834,6 +876,51 @@ enum AggregateArgumentBinding {
     Call,
     ProofEntry,
     IntroduceProofInputs,
+}
+
+/// A top-level execution's arguments as an external caller passes them:
+/// each by-value aggregate argument that is not already a prepared object
+/// is copied into one in `state`, before the call, as a frontend prepares a
+/// program call's. The call then receives the objects and is one transition.
+pub(in crate::kernel) fn prepare_external_aggregate_arguments(
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    mut arguments: Vec<ProgramExpression>,
+) -> (ExecutionState, Vec<ProgramExpression>) {
+    let mut state = state.clone();
+    for (index, parameter) in function.parameters().iter().enumerate() {
+        let Some(layout) = parameter.aggregate_layout() else {
+            continue;
+        };
+        let Some(ProgramExpression::Value(ProgramValue::Pointer(pointer))) = arguments.get(index)
+        else {
+            continue;
+        };
+        if pointer.is_null()
+            || pointer.base == AddressBase::ExternalArgument
+            || is_prepared_aggregate_argument(&state, pointer.address(), layout)
+        {
+            continue;
+        }
+        let Ok(ordinal) = u32::try_from(index) else {
+            continue;
+        };
+        let name = BindingName::from(LocalBindingId::prepared_argument(
+            crate::kernel::LocalFunctionId::new(None, "external caller".into()),
+            ordinal,
+        ));
+        let slot = SymbolicMemory::frame_local_pointer(state.next_local_frame(), name.clone());
+        register_block_alignment(&slot.base, layout.alignment_bytes());
+        let memory = copy_aggregate_fields(state.memory.clone(), pointer.address(), &slot, layout)
+            .with_block(slot.base.clone(), layout.size());
+        state.set_memory(memory);
+        state
+            .locals
+            .set_aggregate_object_at(name, layout.clone(), slot.clone());
+        arguments[index] =
+            ProgramExpression::Value(ProgramValue::typed_pointer(slot, ProgramType::UInt8Pointer));
+    }
+    (state, arguments)
 }
 
 pub(in crate::kernel) fn bind_program_function_arguments(
@@ -1013,6 +1100,12 @@ fn bind_program_function_arguments_impl(
                 );
                 continue;
             }
+            // A call receives a by-value aggregate as the object its frontend
+            // prepared before the call, so the call is one transition. Only a
+            // proof's entry builds its own input objects here.
+            if aggregate_binding == AggregateArgumentBinding::Call {
+                return None;
+            }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
@@ -1179,7 +1272,7 @@ pub(super) fn bind_contract_arguments(
     callee_state.borrow_participant = caller_state.borrow_participant;
     callee_state.borrow_bindings = caller_state.borrow_bindings.clone();
     if let Some(function) = storage {
-        callee_state = initialize_program_function_globals(&callee_state, function);
+        callee_state = initialize_callee_globals(&callee_state, function);
     }
     for (index, parameter) in interface.parameters().iter().enumerate() {
         let value = native.map(|values| &values[index]);
@@ -1198,6 +1291,13 @@ pub(super) fn bind_contract_arguments(
                     source,
                 );
                 continue;
+            }
+            // A program call receives a by-value aggregate as the object its
+            // frontend prepared before the call, so the call is one
+            // transition. Only an external argument, which no program region
+            // passes, is copied here.
+            if source.base != AddressBase::ExternalArgument {
+                return None;
             }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
@@ -1523,9 +1623,9 @@ mod pointer_argument_tests {
         .unwrap();
         assert_eq!(caller.locals.get("received").unwrap().shared(), Some(&root));
         // Changed-type coercion uses the existing native conversion result.
-        let converted = ProgramValue::Int32(MachineTerm::bool_cast(
+        let converted = ProgramValue::Int32(OldMachineTerm::bool_cast(
             MachineIntegerType::Int32,
-            ConditionTerm::Constant(true),
+            OldConditionTerm::Constant(true),
         ));
         assert_eq!(
             source
@@ -1533,7 +1633,7 @@ mod pointer_argument_tests {
                 .into_native(),
             converted
         );
-        let raw = ProgramValue::Bool(MachineTerm::Constant {
+        let raw = ProgramValue::Bool(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         });
@@ -1549,7 +1649,7 @@ mod pointer_argument_tests {
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1027100)),
+            OldAddress::symbolic(Variable(1027100)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -1622,7 +1722,7 @@ mod pointer_return_tests {
     fn pointer_returns_keep_complete_payload() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1027400)),
+            OldAddress::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -1663,7 +1763,7 @@ mod pointer_return_tests {
         assert!(bound.shared().is_some());
         state.locals.set_typed(
             "mutable",
-            ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(OldAddress::null(), ProgramType::Int32Pointer),
             ProgramType::Int32Pointer,
         );
         crate::kernel::loops::assign_call_result(

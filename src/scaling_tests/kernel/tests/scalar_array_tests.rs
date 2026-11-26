@@ -37,7 +37,7 @@ fn compact_scalar_arrays_copy_uniform_values_without_expanding_storage_or_work()
         );
         assert_eq!(
             memory.load(&pointer("local:array-target", i64::from(count - 1) * 4)),
-            ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+            ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::Variable(Variable(
                 912_345
             ))))
         );
@@ -108,7 +108,7 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
             ));
             assert_ne!(
                 held,
-                ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+                ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::Variable(Variable(
                     912_345
                 )),))
             );
@@ -213,7 +213,7 @@ fn scalar_array_states_preserve_sparse_lanes_without_length_work() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = pointer("local:array-source", 0);
         let target = pointer("local:array-target", 0);
-        let lane = ProgramValue::UInt32(MachineTerm::Variable(Variable(912_346)));
+        let lane = ProgramValue::UInt32(OldMachineTerm::Variable(Variable(912_346)));
         let memory = seeded(count).store(source.clone(), lane.clone()).store(
             pointer("local:array-source", i64::from(count - 1) * 4),
             ProgramValue::UInt32(17u32.into()),
@@ -245,7 +245,7 @@ fn scalar_array_states_preserve_sparse_lanes_without_length_work() {
         assert_eq!(changed.load(&target), ExpressionOutcome::Value(lane));
         assert_eq!(
             changed.load(&pointer("local:array-source", 4)),
-            ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+            ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::Variable(Variable(
                 912_345
             ))))
         );
@@ -324,9 +324,9 @@ fn scalar_array_write_borrow_requirement_ignores_alias_and_borrow_counts() {
             if grow_aliases {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             source.clone(),
-                            Address::symbolic(Variable(913_000 + i)),
+                            OldAddress::symbolic(Variable(913_000 + i)),
                         ),
                         true,
                     );
@@ -337,7 +337,7 @@ fn scalar_array_write_borrow_requirement_ignores_alias_and_borrow_counts() {
             let reader = ledger.fresh_participant().unwrap();
             for i in 0..if grow_aliases { 1 } else { count } {
                 let backing = ResourceFact::own_memory(MemoryRange::new(
-                    Address::symbolic(Variable(914_000 + i)),
+                    OldAddress::symbolic(Variable(914_000 + i)),
                     0u32.into(),
                     1u32.into(),
                 ));

@@ -13,9 +13,9 @@ const FORMATS: [MachineIntegerType; 8] = [
     MachineIntegerType::UInt64,
 ];
 const OPS: [MachineBinaryOp; 2] = [MachineBinaryOp::ShiftLeft, MachineBinaryOp::ShiftRight];
-fn input(format: MachineIntegerType, value: &MachineTerm, shared: bool) -> SpecValue {
+fn input(format: MachineIntegerType, value: &OldMachineTerm, shared: bool) -> SpecValue {
     if shared {
-        KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(value)).into()
+        KernelTerm::retained_machine_operand(format, MachineOperandView::Old(value)).into()
     } else {
         format.value_from_term(value.clone()).into()
     }
@@ -24,22 +24,22 @@ fn input(format: MachineIntegerType, value: &MachineTerm, shared: bool) -> SpecV
 // Compare the guards as mathematical relations, folding polarity and native
 // machine comparisons while materializing operands only in this oracle.
 fn native_domain(value: &Proposition) -> Proposition {
-    use ConditionTerm as C;
+    use OldConditionTerm as C;
     match value {
         Proposition::And(a, b) => {
             Proposition::And(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
         Proposition::ConditionIs(condition, truth) => {
-            if matches!(condition.native_compat(), C::Compare { .. }) {
+            if matches!(condition.old_form(), C::Compare { .. }) {
                 let lifted = crate::kernel::machine_integer::comparison::comparison_view(
-                    condition.native_compat(),
+                    condition.old_form(),
                     *truth,
                 )
                 .unwrap()
                 .integer_proposition();
                 return native_domain(&lifted);
             }
-            let (a, b, less, negated) = match condition.native_compat() {
+            let (a, b, less, negated) = match condition.old_form() {
                 C::IntegerLessThan(a, b) => (a, b, true, !truth),
                 C::IntegerGreaterThan(a, b) => (b, a, true, !truth),
                 C::IntegerLessEqual(a, b) => (a, b, false, !truth),
@@ -62,11 +62,15 @@ fn native_domain(value: &Proposition) -> Proposition {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn program_shifts_match_native_terms_and_independently_typed_count_domains() {
     check_shift_parity(false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn rust_shifts_match_native_terms_and_original_width_count_domains() {
     check_shift_parity(true);
 }
@@ -78,10 +82,10 @@ fn check_shift_parity(rust: bool) {
     for a in FORMATS {
         for b in FORMATS {
             let mut counts = vec![
-                MachineTerm::Variable(Variable(995471)),
-                MachineTerm::opaque_conversion(
+                OldMachineTerm::Variable(Variable(995471)),
+                OldMachineTerm::opaque_conversion(
                     "shift_count",
-                    MachineTerm::Variable(Variable(995472)),
+                    OldMachineTerm::Variable(Variable(995472)),
                 ),
             ];
             for n in [-1i64, 0, 1, 7, 8, 15, 16, 31, 32, 63, 64, 1 << 32] {
@@ -93,10 +97,10 @@ fn check_shift_parity(rust: bool) {
             }
             let (low, high) = a.format().bounds();
             let mut operands = vec![
-                MachineTerm::Variable(Variable(995473)),
-                MachineTerm::opaque_conversion(
+                OldMachineTerm::Variable(Variable(995473)),
+                OldMachineTerm::opaque_conversion(
                     "shift_value",
-                    MachineTerm::Variable(Variable(995474)),
+                    OldMachineTerm::Variable(Variable(995474)),
                 ),
             ];
             for n in [low, high, 0.into(), 1.into()] {
@@ -181,10 +185,10 @@ fn check_shift_parity(rust: bool) {
 fn program_shift_evaluator_retains_wide_count_refusals() {
     for op in OPS {
         let left = Box::new(SpecExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(995475)),
+            OldMachineTerm::Variable(Variable(995475)),
         )));
         let right = Box::new(SpecExpression::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(1 << 32),
+            OldMachineTerm::uint64_constant(1 << 32),
         )));
         let expression = if op == MachineBinaryOp::ShiftLeft {
             SpecExpression::ShiftLeft(left, right)
@@ -207,8 +211,8 @@ fn program_shift_evaluator_retains_wide_count_refusals() {
         let budget = SpecEvaluation::logical(&mut execution);
         let result = apply_values(
             Some(op),
-            &ProgramValue::Int32(MachineTerm::constant(1)).into(),
-            &ProgramValue::UInt64(MachineTerm::uint64_constant(1 << 32)).into(),
+            &ProgramValue::Int32(OldMachineTerm::constant(1)).into(),
+            &ProgramValue::UInt64(OldMachineTerm::uint64_constant(1 << 32)).into(),
             &budget,
         )
         .unwrap();
@@ -226,11 +230,11 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
     for format in FORMATS {
         for op in OPS {
             let leaf = SpecExpression::Value(
-                format.value_from_term(MachineTerm::Variable(Variable(995490))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(995490))),
             );
             let count = || {
                 Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                    MachineTerm::uint64_constant(1),
+                    OldMachineTerm::uint64_constant(1),
                 )))
             };
             let shift = |value| {
@@ -257,9 +261,9 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
             assert_eq!(paths[0].value.program_type(), format.program_type());
             assert_eq!(native_results(paths), evaluate(&expression, true));
             let value = format
-                .value_from_term(MachineTerm::Variable(Variable(995491)))
+                .value_from_term(OldMachineTerm::Variable(Variable(995491)))
                 .into();
-            let count = ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(
+            let count = ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::from(
                 format.format().bits(),
             )))
             .into();
@@ -272,8 +276,8 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
             );
         }
     }
-    let wide = ProgramValue::Int128(MachineTerm::Variable(Variable(995492))).into();
-    let word = ProgramValue::Int32(MachineTerm::constant(1)).into();
+    let wide = ProgramValue::Int128(OldMachineTerm::Variable(Variable(995492))).into();
+    let word = ProgramValue::Int32(OldMachineTerm::constant(1)).into();
     assert!(shifts::rust(MachineBinaryOp::ShiftLeft, &wide, &word).is_none());
     assert!(shifts::rust(MachineBinaryOp::ShiftLeft, &word, &wide).is_none());
 }

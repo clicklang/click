@@ -50,8 +50,8 @@ fn retained_machine_observation_rewrites_keep_growing_numeric_dags_shared() {
         );
         let root = KernelTermImport::default().integer(&input.into());
         for variable in [from, Variable(991981)] {
-            let source = MachineTerm::Variable(variable);
-            let replacement = MachineTerm::Variable(Variable(991982));
+            let source = OldMachineTerm::Variable(variable);
+            let replacement = OldMachineTerm::Variable(Variable(991982));
             let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
             let exports = KernelTermExport::machine_export_count();
             let was_cached = root.has_cached_native_argument();
@@ -111,6 +111,8 @@ fn retained_integer_conditionals_share_different_guards_with_common_prefixes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn exact_observation_rewrite_uses_retained_integer_dags() {
     let _session = VerificationSession::enter();
     let signed = MachineIntegerType::Int32;
@@ -132,7 +134,7 @@ fn exact_observation_rewrite_uses_retained_integer_dags() {
     let (_, other) = observe(unsigned, word.with_machine_observation_type(unsigned));
     let replacement: SharedIntegerTerm = IntegerTerm::var(Variable(992841)).into();
     let equality = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(source, replacement.clone()),
+        OldConditionTerm::IntegerEqual(source, replacement.clone()),
         true,
     );
     let add = |left, right| {
@@ -158,7 +160,7 @@ fn exact_observation_rewrite_uses_retained_integer_dags() {
             let mut facts = crate::kernel::proof::PureFactStore::default();
             for i in 0..unrelated {
                 facts = facts.with_fact(Proposition::condition_is(
-                    ConditionTerm::IntegerEqual(
+                    OldConditionTerm::IntegerEqual(
                         IntegerTerm::var(Variable(994000 + i)).into(),
                         IntegerTerm::constant_i64(1).into(),
                     ),

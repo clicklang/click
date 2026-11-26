@@ -114,9 +114,9 @@ fn check_resource_publication_work(
         let mut assumptions = assumptions.assume_proposition(body.clone());
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::address_equal(
-                    Address::symbolic(Variable(8_000_000 + index * 2)),
-                    Address::symbolic(Variable(8_000_001 + index * 2)),
+                OldConditionTerm::address_equal(
+                    OldAddress::symbolic(Variable(8_000_000 + index * 2)),
+                    OldAddress::symbolic(Variable(8_000_001 + index * 2)),
                 ),
                 true,
             );

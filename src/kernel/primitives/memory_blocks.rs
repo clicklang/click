@@ -119,8 +119,8 @@ mod tests {
 
     #[test]
     fn scalar_index_tracks_lifetime_replacement_and_branch_isolation() {
-        let scalar = Address::symbolic(Variable(9_392_001)).base;
-        let heap = Address::symbolic(Variable(9_392_002)).base;
+        let scalar = OldAddress::symbolic(Variable(9_392_001)).base;
+        let heap = OldAddress::symbolic(Variable(9_392_002)).base;
         let memory = SymbolicMemory::new()
             .with_declared_scalar_block(scalar.clone(), 4, ProgramType::Int32)
             .with_block(heap.clone(), 64);
@@ -146,8 +146,8 @@ mod tests {
 
     #[test]
     fn scalar_index_survives_arm_union_and_selected_projection() {
-        let a = Address::symbolic(Variable(9_392_003)).base;
-        let b = Address::symbolic(Variable(9_392_004)).base;
+        let a = OldAddress::symbolic(Variable(9_392_003)).base;
+        let b = OldAddress::symbolic(Variable(9_392_004)).base;
         let first =
             SymbolicMemory::new().with_declared_scalar_block(a.clone(), 4, ProgramType::Int32);
         let second = first

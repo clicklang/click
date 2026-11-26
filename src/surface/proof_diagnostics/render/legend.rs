@@ -3,6 +3,7 @@ use super::*;
 use crate::kernel::{AddressBase, MemoryConstructionKind, MemoryDerivation, ProgramValue};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -23,7 +24,7 @@ fn short(text: &str) -> String {
 }
 
 impl MemoryStateLabels {
-    pub(crate) fn immutable_pointer_name(&mut self, pointer: &Address, name: &str) {
+    pub(crate) fn immutable_pointer_name(&mut self, pointer: &OldAddress, name: &str) {
         if self.pointer_sources.len() < 128 {
             self.pointer_sources
                 .entry(pointer.clone())
@@ -41,12 +42,12 @@ impl MemoryStateLabels {
             .clone()
     }
 
-    fn legend_bits(&mut self, value: &MachineTerm) -> String {
+    fn legend_bits(&mut self, value: &OldMachineTerm) -> String {
         match value {
             bits32_constant!(value) => constant_u32(*value).to_string(),
             int64_constant!(value) => constant_i64(*value).to_string(),
             uint64_constant!(value) => constant_u64(*value).to_string(),
-            MachineTerm::Variable(variable) => {
+            OldMachineTerm::Variable(variable) => {
                 if let Some((memory, address)) =
                     crate::kernel::registered_load_for_variable(variable)
                 {
@@ -64,7 +65,7 @@ impl MemoryStateLabels {
                     self.legend_symbol(*variable)
                 )
             }
-            MachineTerm::MemoryLoad(memory, address, kind) => format!(
+            OldMachineTerm::MemoryLoad(memory, address, kind) => format!(
                 "{}-byte read({}, address {})",
                 kind.byte_width(),
                 self.memory_state_name(memory.memory()),
@@ -89,45 +90,45 @@ impl MemoryStateLabels {
         }
     }
 
-    fn legend_offset(&mut self, offset: &AddressOffset, depth: usize) -> String {
+    fn legend_offset(&mut self, offset: &OldAddressOffset, depth: usize) -> String {
         if depth == 0 {
             return "<offset depth limit>".into();
         }
-        match offset {
-            AddressOffset::Constant(bytes) => format!("{bytes} bytes"),
-            AddressOffset::Variable(variable) => {
+        match offset.view() {
+            OffsetView::Constant(bytes) => format!("{bytes} bytes"),
+            OffsetView::Variable(variable) => {
                 format!(
                     "({}) bytes",
-                    self.legend_bits(&MachineTerm::Variable(*variable))
+                    self.legend_bits(&OldMachineTerm::Variable(variable))
                 )
             }
-            AddressOffset::Add(left, right) => format!(
+            OffsetView::Add(left, right) => format!(
                 "({} + {})",
                 self.legend_offset(left, depth - 1),
                 self.legend_offset(right, depth - 1)
             ),
-            AddressOffset::Int32Scaled { value, byte_width } => {
+            OffsetView::Int32Scaled { index, byte_width } => {
                 format!(
                     "int32({}) * {byte_width} bytes",
-                    self.legend_bits(value.structural_value())
+                    self.legend_bits(index.structural_value())
                 )
             }
-            AddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned,
             } => {
-                let kind = if *unsigned { "uint64" } else { "int64" };
+                let kind = if unsigned { "uint64" } else { "int64" };
                 format!(
                     "{kind}({}) * {byte_width} bytes",
-                    self.legend_bits(value.structural_value())
+                    self.legend_bits(index.structural_value())
                 )
             }
         }
     }
 
-    pub(super) fn legend_pointer(&mut self, pointer: &Address) -> String {
-        if pointer == &Address::null() {
+    pub(super) fn legend_pointer(&mut self, pointer: &OldAddress) -> String {
+        if pointer == &OldAddress::null() {
             return "null pointer (0)".into();
         }
         if let Some(read) = pointer.as_loaded_value() {
@@ -138,7 +139,7 @@ impl MemoryStateLabels {
                 "pointer read at {retained_state}, address {address}, plus {displacement}"
             );
         }
-        if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
+        if let Some(OldMachineTerm::MemoryLoad(memory, address, _)) =
             crate::surface::proof_trace::pointer_definition(pointer)
         {
             return format!(
@@ -209,11 +210,11 @@ impl MemoryStateLabels {
         }
         // A displacement from a named pointer keeps that pointer's complete
         // address, including a symbolic base offset such as a parameter's.
-        if let AddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             for (stem, shift) in [(left, right), (right, left)] {
-                let stem = Address {
+                let stem = OldAddress {
                     base: pointer.base.clone(),
-                    offset: stem.as_ref().clone(),
+                    offset: stem.clone(),
                 };
                 if let Some(name) = self
                     .pointer_sources
@@ -225,9 +226,9 @@ impl MemoryStateLabels {
                 }
             }
         }
-        let base = Address {
+        let base = OldAddress {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let base_name = if let Some(name) = self.pointer_sources.get(&base) {
             name.clone()
@@ -309,7 +310,7 @@ impl MemoryStateLabels {
     fn legend_kept_frame(
         &mut self,
         ranges: &crate::kernel::ResourceContext,
-        premises: &[(ConditionTerm, bool)],
+        premises: &[(OldConditionTerm, bool)],
     ) -> String {
         const LIMIT: usize = 128;
         let (count, facts) = ranges.diagnostic_facts(LIMIT);
@@ -459,23 +460,23 @@ impl MemoryStateLabels {
                 None => "loop effect: unknown write footprint".into(),
             },
             MemoryDerivation::BlockDeclared { block, .. } => {
-                let address = self.pointer_value_name(&Address {
+                let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 format!("declare block at {address}")
             }
             MemoryDerivation::LocalLifetimeEnded { block, .. } => {
-                let address = self.pointer_value_name(&Address {
+                let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 format!("end local lifetime at {address}")
             }
             MemoryDerivation::HeapAllocated { block, bytes, .. } => {
-                let address = self.pointer_value_name(&Address {
+                let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 let bytes = self.legend_bits(bytes);
                 format!("allocate {bytes} bytes at {address}")
@@ -605,36 +606,39 @@ impl MemoryStateLabels {
 mod tests {
     use super::*;
 
-    fn pure_pointer(name: &str, arguments: Vec<PureFunctionArgument>, bytes: i64) -> Address {
-        Address {
+    fn pure_pointer(name: &str, arguments: Vec<PureFunctionArgument>, bytes: i64) -> OldAddress {
+        OldAddress {
             base: AddressBase::PureFunctionApplication(
                 crate::kernel::SharedPureApplication::intern(name.into(), arguments),
             ),
-            offset: AddressOffset::Constant(bytes),
+            offset: OldAddressOffset::Constant(bytes),
         }
     }
 
     #[test]
     fn pointer_legend_keeps_named_bases_and_symbolic_displacements() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(986_420)), 1),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(986_420)),
+                1,
+            ),
         };
-        let index = MachineTerm::Variable(Variable(986_421));
+        let index = OldMachineTerm::Variable(Variable(986_421));
         for (offset, expected) in [
-            (AddressOffset::Constant(16), "16 bytes"),
-            (AddressOffset::Variable(Variable(986_421)), "(d) bytes"),
+            (OldAddressOffset::Constant(16), "16 bytes"),
+            (OldAddressOffset::Variable(Variable(986_421)), "(d) bytes"),
             (
-                AddressOffset::scaled_int32_node(index.clone(), 4),
+                OldAddressOffset::scaled_int32_node(index.clone(), 4),
                 "int32(d) * 4 bytes",
             ),
             (
-                AddressOffset::scaled_int64_node(index.clone(), 8, false),
+                OldAddressOffset::scaled_int64_node(index.clone(), 8, false),
                 "int64(d) * 8 bytes",
             ),
             (
-                AddressOffset::scaled_int64_node(index, 1, true),
+                OldAddressOffset::scaled_int64_node(index, 1, true),
                 "uint64(d) * 1 bytes",
             ),
         ] {
@@ -642,9 +646,9 @@ mod tests {
                 (base.offset.clone(), offset.clone()),
                 (offset.clone(), base.offset.clone()),
             ] {
-                let pointer = Address {
+                let pointer = OldAddress {
                     base: base.base.clone(),
-                    offset: AddressOffset::Add(Box::new(left), Box::new(right)),
+                    offset: OldAddressOffset::Add(Box::new(left), Box::new(right)),
                 };
                 let mut labels = MemoryStateLabels::default();
                 labels.immutable_pointer_name(&base, "b");
@@ -662,19 +666,19 @@ mod tests {
 
     #[test]
     fn pointer_legend_keeps_recorded_names_separate_from_current_values() {
-        let before = Address {
+        let before = OldAddress {
             base: AddressBase::Symbolic(Variable(986_422)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let current = Address {
+        let current = OldAddress {
             base: before.base.clone(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
-        let shifted = Address {
+        let shifted = OldAddress {
             base: before.base.clone(),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(0)),
-                Box::new(AddressOffset::Variable(Variable(986_423))),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(0)),
+                Box::new(OldAddressOffset::Variable(Variable(986_423))),
             ),
         };
         let mut labels = MemoryStateLabels::default();
@@ -724,9 +728,9 @@ mod tests {
 
     #[test]
     fn pure_pointer_legend_preserves_argument_states_and_nested_pointer_labels() {
-        let base = Address {
+        let base = OldAddress {
             base: "local:p".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new();
         let after = before
@@ -766,9 +770,9 @@ mod tests {
 
     #[test]
     fn equal_content_reconstruction_has_a_definition_not_a_self_reference() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "local:unchanged".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_uninitialized_object(pointer.clone(), 4)
@@ -787,11 +791,11 @@ mod tests {
             SymbolicMemory::new()
                 .with_block("local:origin-test", 4)
                 .store(
-                    Address {
+                    OldAddress {
                         base: "local:origin-test".into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
-                    ProgramValue::Int32(MachineTerm::constant(9)),
+                    ProgramValue::Int32(OldMachineTerm::constant(9)),
                 )
         })
         .join()
@@ -820,9 +824,9 @@ mod tests {
     #[test]
     fn legend_defines_loaded_address_and_displacement_recursively() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let base = Address::symbolic(Variable(986_401));
-        let mut loaded = Address::loaded_value(&memory, &base);
-        loaded.offset = AddressOffset::Constant(16);
+        let base = OldAddress::symbolic(Variable(986_401));
+        let mut loaded = OldAddress::loaded_value(&memory, &base);
+        loaded.offset = OldAddressOffset::Constant(16);
         let mut labels = MemoryStateLabels::default();
         labels.immutable_pointer_name(&base, "zid");
         assert_eq!(labels.pointer_value_name(&loaded), "value#1");
@@ -838,10 +842,10 @@ mod tests {
 
     #[test]
     fn legend_shows_recorded_store_and_its_base() {
-        let address = Address::symbolic(Variable(986_402));
+        let address = OldAddress::symbolic(Variable(986_402));
         let memory = SymbolicMemory::new().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let mut labels = MemoryStateLabels::default();
         labels.immutable_pointer_name(&address, "p");
@@ -856,23 +860,23 @@ mod tests {
 
     #[test]
     fn retained_frame_shows_ranges_and_placement_premises_without_shortening() {
-        let pointer = Address::symbolic(Variable(986_405));
+        let pointer = OldAddress::symbolic(Variable(986_405));
         let ranges =
             crate::kernel::ResourceContext::new().unchecked_with_facts((0..12).map(|index| {
                 ResourceFact::own(Resource::Memory(
                     crate::kernel::MemoryRange::new_with_element_width(
                         pointer.clone(),
-                        MachineTerm::constant(index),
-                        MachineTerm::constant(index + 1),
+                        OldMachineTerm::constant(index),
+                        OldMachineTerm::constant(index + 1),
                         8,
                     ),
                 ))
             }));
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::constant(7)),
-            right: Box::new(MachineTerm::constant(7)),
+            left: Box::new(OldMachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         };
         let premises = vec![(condition.clone(), true)];
         let mut labels = MemoryStateLabels::default();
@@ -887,7 +891,7 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("display limit"), "{text}");
-        let many = vec![(ConditionTerm::Constant(true), true); 129];
+        let many = vec![(OldConditionTerm::Constant(true), true); 129];
         let text = labels.legend_kept_frame(&ranges, &many);
         assert!(
             text.contains("1 more premises (call frame display limit)"),
@@ -925,7 +929,7 @@ mod tests {
         let mut labels = MemoryStateLabels::default();
         for id in [986_403, 986_404] {
             labels.source_name(Variable(id), "sibling".into());
-            labels.pointer_value_name(&Address::symbolic(Variable(id)));
+            labels.pointer_value_name(&OldAddress::symbolic(Variable(id)));
         }
         let text = labels.trace_legend();
         assert!(text.contains("symbol A"), "{text}");
@@ -937,7 +941,7 @@ mod tests {
     fn legend_bounds_recursive_output_and_preserves_complete_trace() {
         let mut labels = MemoryStateLabels::default();
         for id in 0..128 {
-            let pointer = Address::symbolic(Variable(987_000 + id));
+            let pointer = OldAddress::symbolic(Variable(987_000 + id));
             labels.immutable_pointer_name(&pointer, &"é".repeat(200));
             labels.pointer_value_name(&pointer);
         }

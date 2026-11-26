@@ -6,7 +6,7 @@ fn fact(index: u64, related: bool) -> Proposition {
             format!("fact_{index}")
         },
         arguments: vec![crate::kernel::Term::Bitvector32(
-            crate::kernel::MachineTerm::constant(index as u32).into(),
+            crate::kernel::OldMachineTerm::constant(index as u32).into(),
         )],
     }
 }
@@ -66,24 +66,25 @@ fn statement_store_views_only_index_their_delta() {
 #[test]
 fn restricted_facts_keep_ambient_memory_reservations() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, ProgramValue, SymbolicMemory, Variable,
+        AddressBase, OldAddress, OldAddressOffset, OldMachineTerm, ProgramValue, SymbolicMemory,
+        Variable,
     };
     for size in [32, 128, 512] {
-        let pointer = |index| Address {
+        let pointer = |index| OldAddress {
             base: AddressBase::ExternalObject(Variable(9_100_000 + index)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(
                 pointer(index),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(9_200_000 + index))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(9_200_000 + index))),
             )
         });
         crate::kernel::intern_memory(memory.clone());
         let selected = Proposition::MemoryLoadable {
             memory,
             base: pointer(0),
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let discarded = fact(0, false);

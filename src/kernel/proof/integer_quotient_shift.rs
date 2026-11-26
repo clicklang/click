@@ -1,11 +1,11 @@
 //! Truncation agrees with floor on nonnegative numerators: adding d*k shifts
 //! the quotient by k when d is a positive constant and both x and k are >= 0.
 use super::arithmetic_special::ArithmeticRuleError as Error;
-use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
+use crate::kernel::{IntegerTerm, OldConditionTerm, Proposition, SharedIntegerTerm};
 use num_traits::{Signed, Zero};
 
 fn nonnegative(p: &Proposition, value: &SharedIntegerTerm) -> bool {
-    matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerLessEqual(zero, x), _)) if (zero.as_const().is_some_and(|c| c.is_zero()) && x == value)))
+    matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerLessEqual(zero, x), _)) if (zero.as_const().is_some_and(|c| c.is_zero()) && x == value)))
 }
 pub(super) fn check(
     node: usize,
@@ -20,7 +20,7 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Some((ConditionTerm::IntegerEqual(left, right), true)) = result.condition_native() else {
+    let Some((OldConditionTerm::IntegerEqual(left, right), true)) = result.old_condition() else {
         return Err(invalid());
     };
     let IntegerTerm::TruncatingQuotient(sum, d) = left.as_ref() else {

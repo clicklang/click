@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(crate::kernel::Variable(7_629_000));
+    let base = OldAddress::symbolic(crate::kernel::Variable(7_629_000));
     for element_type in [
         ProgramType::Int8,
         ProgramType::UInt8,
@@ -74,7 +74,7 @@ fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
                     // can resolve its source to a stored literal.
                     assert!(matches!(
                         bits,
-                        MachineTerm::MemoryLoad(..) | MachineTerm::Variable(_)
+                        OldMachineTerm::MemoryLoad(..) | OldMachineTerm::Variable(_)
                     ));
                     assert_eq!(canonical.cells.get(&run.slot_pointer(index)), Some(value));
                 }

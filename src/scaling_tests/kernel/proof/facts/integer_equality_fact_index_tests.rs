@@ -11,11 +11,11 @@ use crate::kernel::{
 
 #[test]
 fn wide_equality_decision_uses_only_its_indexed_component() {
-    let left = MachineTerm::Variable(Variable(211_000));
-    let middle = MachineTerm::Variable(Variable(211_001));
-    let equality = |a: MachineTerm, b: MachineTerm| {
+    let left = OldMachineTerm::Variable(Variable(211_000));
+    let middle = OldMachineTerm::Variable(Variable(211_001));
+    let equality = |a: OldMachineTerm, b: OldMachineTerm| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(a),
@@ -24,21 +24,21 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
             true,
         )
     };
-    let required = equality(left.clone(), MachineTerm::uint64_constant(7));
-    let wrong = equality(left.clone(), MachineTerm::uint64_constant(9));
+    let required = equality(left.clone(), OldMachineTerm::uint64_constant(7));
+    let wrong = equality(left.clone(), OldMachineTerm::uint64_constant(9));
     let mut work = Vec::new();
     for size in [8, 16, 32, 64] {
         let unrelated = (0..size)
             .map(|index| {
                 equality(
-                    MachineTerm::Variable(Variable(212_000 + index)),
-                    MachineTerm::uint64_constant(index),
+                    OldMachineTerm::Variable(Variable(212_000 + index)),
+                    OldMachineTerm::uint64_constant(index),
                 )
             })
             .collect::<Vec<_>>();
         let facts = PureFactStore::from_ordered(&unrelated)
             .with_kernel_checked_fact(equality(left.clone(), middle.clone()))
-            .with_kernel_checked_fact(equality(middle.clone(), MachineTerm::uint64_constant(7)));
+            .with_kernel_checked_fact(equality(middle.clone(), OldMachineTerm::uint64_constant(7)));
         let (proved, measured) = crate::instrumentation::measure_deterministic_work(|| {
             facts.assumptions().proves_atomic_without_search(&required)
         });
@@ -58,20 +58,20 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
     should_panic(expected = "a variable used at another width")
 )]
 fn a_narrow_equality_does_not_decide_a_wide_one() {
-    let left = MachineTerm::Variable(Variable(211_000));
-    let middle = MachineTerm::Variable(Variable(211_001));
+    let left = OldMachineTerm::Variable(Variable(211_000));
+    let middle = OldMachineTerm::Variable(Variable(211_001));
     let required = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
-            right: Box::new(MachineTerm::uint64_constant(7)),
+            right: Box::new(OldMachineTerm::uint64_constant(7)),
         },
         true,
     );
     let narrow = PureFactStore::from_ordered(&[
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -80,11 +80,11 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
             true,
         ),
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(middle),
-                right: Box::new(MachineTerm::uint64_constant(7)),
+                right: Box::new(OldMachineTerm::uint64_constant(7)),
             },
             true,
         ),
@@ -102,13 +102,13 @@ fn quantified_loadable_alpha_query_ignores_unrelated_state_size() {
                 source_memory.with_block(format!("quantified-viewable-work-{index}"), 8);
         }
         source_memory = source_memory.store(
-            Address {
+            OldAddress {
                 base: "quantified-viewable-work-0".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             // A value the binder does not name, as the alpha query compares
             // the retained state exactly.
-            ProgramValue::Int32(MachineTerm::Variable(Variable(209_900))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(209_900))),
         );
         let source = loadable_forall(
             &source_memory,
@@ -320,11 +320,11 @@ fn integer_alpha_index_keeps_one_source_for_renamed_fold_restatements() {
 #[test]
 fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
     let leaf = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::constant(0)),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -441,22 +441,22 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         let base = SymbolicMemory::new().with_block("same-bucket-facts", 8);
         for value in 0..=size {
             let memory = base.clone().store(
-                Address {
+                OldAddress {
                     base: "same-bucket-facts".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 // Distinct states without contradictory literal
                 // premises: each read may consistently equal zero.
-                ProgramValue::Int32(MachineTerm::Variable(Variable(986_000 + value as u64))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(986_000 + value as u64))),
             );
             memories.push(crate::kernel::intern_memory(memory));
         }
         let load = |memory: &crate::kernel::SharedMemory| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "same-bucket-facts".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
             )
@@ -465,22 +465,22 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
             .iter()
             .map(|memory| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(load(memory)),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     true,
                 )
             })
             .collect::<Vec<_>>();
         let required = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(memories.last().unwrap())),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
@@ -506,11 +506,11 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
 #[test]
 fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
     use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
-    let sum = MachineTerm::uint64_add(
-        MachineTerm::Variable(Variable(992_801)),
-        MachineTerm::uint64_constant(1),
+    let sum = OldMachineTerm::uint64_add(
+        OldMachineTerm::Variable(Variable(992_801)),
+        OldMachineTerm::uint64_constant(1),
     );
-    let condition = ConditionTerm::uint64_less_equal(sum, MachineTerm::uint64_constant(127));
+    let condition = OldConditionTerm::uint64_less_equal(sum, OldMachineTerm::uint64_constant(127));
     let native = Proposition::condition_is(condition.clone(), true);
     let retained_condition = retained_arithmetic_comparison(&condition).unwrap();
     let retained = Proposition::condition_is(retained_condition.clone(), true);
@@ -520,9 +520,9 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
         let unrelated: Vec<_> = (0..size)
             .map(|i| {
                 Proposition::condition_is(
-                    ConditionTerm::uint64_equal(
-                        MachineTerm::Variable(Variable(993_000 + i)),
-                        MachineTerm::uint64_constant(i),
+                    OldConditionTerm::uint64_equal(
+                        OldMachineTerm::Variable(Variable(993_000 + i)),
+                        OldMachineTerm::uint64_constant(i),
                     ),
                     true,
                 )
@@ -533,7 +533,7 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
                 PureFactStore::from_ordered(&unrelated).with_kernel_checked_fact(Proposition::And(
                     Box::new(source.clone()),
                     Box::new(Proposition::condition_is(
-                        ConditionTerm::Constant(true),
+                        OldConditionTerm::Constant(true),
                         true,
                     )),
                 ));
@@ -559,7 +559,7 @@ fn retained_call_atom_keys_own_their_observation_identities() {
     for count in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let opaque = MachineTerm::ClickFunctionApplication {
+        let opaque = OldMachineTerm::ClickFunctionApplication {
             name: "opaque_argument".into(),
             arguments: Vec::new(),
         };
@@ -567,7 +567,7 @@ fn retained_call_atom_keys_own_their_observation_identities() {
         let argument = PureFunctionArgument::SharedMachine(
             SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
         );
-        let term = MachineTerm::ClickFunctionApplication {
+        let term = OldMachineTerm::ClickFunctionApplication {
             name: "outer_call".into(),
             arguments: vec![argument],
         };
@@ -577,7 +577,7 @@ fn retained_call_atom_keys_own_their_observation_identities() {
                 SharedPureApplication::intern(
                     "unrelated_call_key".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                        MachineTerm::Variable(Variable(998_800 + index)),
+                        OldMachineTerm::Variable(Variable(998_800 + index)),
                     ))],
                 )
             })
@@ -604,7 +604,7 @@ fn exact_call_lookup_retains_shared_argument_prefixes() {
                 [root.clone(), root],
             );
         }
-        let inner = MachineTerm::ClickFunctionApplication {
+        let inner = OldMachineTerm::ClickFunctionApplication {
             name: "inner_retained_call".into(),
             arguments: vec![PureFunctionArgument::SharedMachine(
                 SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
@@ -615,12 +615,15 @@ fn exact_call_lookup_retains_shared_argument_prefixes() {
             KernelTerm::retained_native_machine_operand(format, &inner),
         )
         .unwrap();
-        let call = |argument| MachineTerm::ClickFunctionApplication {
+        let call = |argument| OldMachineTerm::ClickFunctionApplication {
             name: "outer_retained_call".into(),
             arguments: vec![argument],
         };
         let fact = |term| {
-            Proposition::condition_is(ConditionTerm::equal(term, MachineTerm::constant(0)), true)
+            Proposition::condition_is(
+                OldConditionTerm::equal(term, OldMachineTerm::constant(0)),
+                true,
+            )
         };
         let source = fact(call(PureFunctionArgument::Value(ProgramValue::Int32(
             inner,

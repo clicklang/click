@@ -28,15 +28,15 @@ fn havoc_write_set_identity_scales_near_linearly_with_term_size() {
 
 #[test]
 fn call_frame_retains_a_view_without_scanning_other_views() {
-    let pointer = |index| Address {
+    let pointer = |index| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(index)), 1),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(index)), 1),
     };
     let target = pointer(900_000);
     crate::kernel::eval::declare_load_access_width(&target, 4);
     let before = SymbolicMemory::new();
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(target.clone()),
             crate::kernel::LoadKind::Int32,
@@ -84,7 +84,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
             });
         assert!(evidence.is_fully_typed());
         assert!(evidence.checks(
-            &Proposition::condition_is(ConditionTerm::equal(load(&after), load(&before)), true),
+            &Proposition::condition_is(OldConditionTerm::equal(load(&after), load(&before)), true),
             &assumptions,
         ));
         assert!(

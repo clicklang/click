@@ -317,7 +317,9 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                     have ctx_node_is(c.model, parent) != 1 by {
                         rewrite(c.model, Context::Top);
                         unfold(ctx_node_is(Context::Top, parent));
-                        normalize() using { parent != 0; };
+                        have (if parent == 0 { 1 } else { 0 }) == 0 by close();
+                        rewrite(if parent == 0 { 1 } else { 0 }, 0);
+                        close();
                     }
                     contradiction(ctx_node_is(c.model, parent) == 1);
                 },

@@ -34,7 +34,7 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
             }
             return candidates;
         }
-        let add_owned_at_base = |candidates: &mut BTreeSet<ResourceEntryId>, at: &Address| {
+        let add_owned_at_base = |candidates: &mut BTreeSet<ResourceEntryId>, at: &OldAddress| {
             if Some(&at.base) == skip_block {
                 return;
             }
@@ -106,7 +106,7 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
             for aliased in assumptions.offsets_with_an_alias_at_root(&root.1) {
                 add_owned_at_base(
                     &mut candidates,
-                    &Address {
+                    &OldAddress {
                         base: root.0.clone(),
                         offset: aliased,
                     },

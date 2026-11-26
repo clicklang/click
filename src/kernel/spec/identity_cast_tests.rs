@@ -51,8 +51,8 @@ pub(super) fn cast_chain(
 fn identity_casts_preserve_exact_shared_roots_at_every_integer_width() {
     let _session = VerificationSession::enter();
     for format in FORMATS {
-        let root =
-            KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(995410)));
+        let root = KernelTermImport::default()
+            .machine(format, &OldMachineTerm::Variable(Variable(995410)));
         for count in [1, 3] {
             let exports = KernelTermExport::machine_export_count();
             let (path, _) = cast_chain(&root, format.program_type(), count);
@@ -67,7 +67,7 @@ fn identity_casts_preserve_exact_shared_roots_at_every_integer_width() {
 #[test]
 fn identity_casts_keep_selected_read_states_distinct() {
     let _session = VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(995411));
+    let pointer = OldAddress::symbolic(Variable(995411));
     let before = crate::kernel::intern_memory(SymbolicMemory::new());
     let after = crate::kernel::intern_memory(
         SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
@@ -95,14 +95,17 @@ fn changed_type_cast_is_not_an_identity_cast() {
     let _session = VerificationSession::enter();
     let root = KernelTermImport::default().machine(
         MachineIntegerType::UInt64,
-        &MachineTerm::uint64_constant(256),
+        &OldMachineTerm::uint64_constant(256),
     );
     let (path, _) = cast_chain(&root, ProgramType::UInt8, 1);
     assert_eq!(path.value.program_type(), ProgramType::UInt8);
     assert_ne!(path.value, SpecValue::Shared(root));
     assert_eq!(
         path.value.into_native(),
-        ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0))
+        ProgramValue::UInt8(OldMachineTerm::narrow_constant(
+            MachineIntegerType::UInt8,
+            0
+        ))
     );
 }
 

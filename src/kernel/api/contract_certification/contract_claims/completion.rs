@@ -35,7 +35,7 @@ pub(crate) struct WholeContractProof {
     proof: RootProof,
     modular: bool,
     loop_exits: Arc<crate::kernel::termination::loop_evidence::PreparedLoopExits>,
-    declared_calls: Arc<BTreeSet<String>>,
+    declared_calls: Arc<BTreeSet<crate::kernel::termination::CallDependency>>,
 }
 
 impl std::fmt::Debug for WholeContractProof {
@@ -981,7 +981,7 @@ mod tests {
         goal.closing = None;
         let proof = root(goal.clone());
         let contradiction =
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true);
         assert!(
             proof
                 .refute_function_outcome_with_contract_in(

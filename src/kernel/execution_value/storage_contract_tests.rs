@@ -57,27 +57,27 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
     let _session = VerificationSession::enter();
     let mut values = vec![ProgramValue::Void];
     for word in [
-        MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
-        MachineTerm::Constant {
+        OldMachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
+        OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         },
-        MachineTerm::Variable(Variable(998601)),
-        MachineTerm::bool_cast(
+        OldMachineTerm::Variable(Variable(998601)),
+        OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::Variable(Variable(998602)),
+            OldConditionTerm::Variable(Variable(998602)),
         ),
     ] {
         values.push(ProgramValue::Bool(word));
     }
     for bits in [0, 0x80000000, 0x7fc00001, 0x7fc00002] {
-        values.push(ProgramValue::Float32(MachineTerm::uint32_constant(bits)));
+        values.push(ProgramValue::Float32(OldMachineTerm::uint32_constant(bits)));
     }
     for bits in [0, 0x8000000000000000, 0x7ff8000000000001] {
-        values.push(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
+        values.push(ProgramValue::Float64(OldMachineTerm::uint64_constant(bits)));
     }
     values.push(ProgramValue::Pointer(OldPointer::new(
-        Address::symbolic(Variable(998603)),
+        OldAddress::symbolic(Variable(998603)),
         ProgramType::Int32Pointer,
     )));
     for left in &values {
@@ -113,7 +113,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
 #[test]
 fn float_storage_preserves_exact_call_argument_carrier_distinctions() {
     let _session = VerificationSession::enter();
-    let word = MachineTerm::Variable(Variable(998610));
+    let word = OldMachineTerm::Variable(Variable(998610));
     let arguments = [
         PureFunctionArgument::Value(ProgramValue::UInt32(word.clone())),
         PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
@@ -122,7 +122,7 @@ fn float_storage_preserves_exact_call_argument_carrier_distinctions() {
         )),
     ];
     let values = arguments.map(|argument| {
-        ProgramValue::Float32(MachineTerm::ClickFunctionApplication {
+        ProgramValue::Float32(OldMachineTerm::ClickFunctionApplication {
             name: "storage_contract".into(),
             arguments: vec![argument],
         })
@@ -142,18 +142,18 @@ fn float_storage_preserves_exact_call_argument_carrier_distinctions() {
 #[test]
 fn boolean_connective_keys_keep_native_condition_identity_and_order() {
     let _session = VerificationSession::enter();
-    let a = ConditionTerm::Variable(Variable(998670));
-    let b = ConditionTerm::Variable(Variable(998671));
+    let a = OldConditionTerm::Variable(Variable(998670));
+    let b = OldConditionTerm::Variable(Variable(998671));
     let cases = [
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Constant(false),
         a.clone(),
-        ConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(b.clone())),
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(b.clone())),
+        OldConditionTerm::BoolIf {
             condition: Box::new(a.clone()),
             then_condition: Box::new(b.clone()),
             else_condition: Box::new(a.clone()),
         },
-        ConditionTerm::BoolApplication(SharedPureApplication::intern("key_bool".into(), vec![])),
+        OldConditionTerm::BoolApplication(SharedPureApplication::intern("key_bool".into(), vec![])),
     ];
     let roots = cases
         .iter()
@@ -230,12 +230,12 @@ fn float_operation_keys_preserve_native_order_and_payloads() {
         // ordering even when carried by an unsupported legacy float input.
         roots.push(KernelTermImport::default().float(
             format,
-            &MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
+            &OldMachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
         ));
-        let native = MachineTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(998692))),
-            then_term: Box::new(MachineTerm::constant(1)),
-            else_term: Box::new(MachineTerm::constant(2)),
+        let native = OldMachineTerm::If {
+            condition: Box::new(OldConditionTerm::Variable(Variable(998692))),
+            then_term: Box::new(OldMachineTerm::constant(1)),
+            else_term: Box::new(OldMachineTerm::constant(2)),
         };
         roots.push(KernelTermImport::default().float(format, &native));
     }
@@ -302,7 +302,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
                 998733,
             )))],
             vec![AlgebraicValue::Program(ProgramValue::Bool(
-                MachineTerm::Variable(Variable(998734)),
+                OldMachineTerm::Variable(Variable(998734)),
             ))],
         ] {
             values.push(make(AlgebraicTermNode::Constructor {
@@ -311,7 +311,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
             }));
         }
     }
-    let word = MachineTerm::Variable(Variable(998735));
+    let word = OldMachineTerm::Variable(Variable(998735));
     for arg in [
         PureFunctionArgument::Value(ProgramValue::Int32(word.clone())),
         PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
@@ -327,7 +327,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
         }));
     }
     let pointer = OldPointer::new(
-        Address::symbolic(Variable(998737)),
+        OldAddress::symbolic(Variable(998737)),
         ProgramType::Int32Pointer,
     );
     for pointer in [pointer.clone(), pointer] {
@@ -339,10 +339,10 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
     for address in [998738, 998739] {
         values.push(make(AlgebraicTermNode::MemoryLoad {
             point: crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            pointer: Box::new(Address::symbolic(Variable(address))),
+            pointer: Box::new(OldAddress::symbolic(Variable(address))),
         }));
     }
-    let condition = ConditionTerm::Variable(Variable(998736));
+    let condition = OldConditionTerm::Variable(Variable(998736));
     let branches = values[..3].to_vec();
     for branch in branches {
         values.push(make(AlgebraicTermNode::If {
@@ -427,10 +427,10 @@ fn deep_algebraic_storage_keys_use_a_small_stack() {
 fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     let _session = VerificationSession::enter();
     let pointer = OldPointer::new(
-        Address::symbolic(Variable(998750)),
+        OldAddress::symbolic(Variable(998750)),
         ProgramType::Int32Pointer,
     );
-    let other = Address::symbolic(Variable(998751));
+    let other = OldAddress::symbolic(Variable(998751));
     let mut values = vec![
         pointer.clone(),
         pointer.clone(),
@@ -450,23 +450,23 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     for width in [0, 1, 8] {
         values.push(pointer.clone().with_bounds(Some(SubobjectBounds {
             start: other.clone(),
-            width: MachineTerm::constant(width),
+            width: OldMachineTerm::constant(width),
         })));
     }
     for offset in [
-        AddressOffset::Constant(-1),
-        AddressOffset::Constant(0),
-        AddressOffset::Variable(Variable(998752)),
-        AddressOffset::Add(
-            Box::new(AddressOffset::Variable(Variable(998752))),
-            Box::new(AddressOffset::Constant(1)),
+        OldAddressOffset::Constant(-1),
+        OldAddressOffset::Constant(0),
+        OldAddressOffset::Variable(Variable(998752)),
+        OldAddressOffset::Add(
+            Box::new(OldAddressOffset::Variable(Variable(998752))),
+            Box::new(OldAddressOffset::Constant(1)),
         ),
-        AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(998753)), 4),
-        AddressOffset::scaled_int64_node(MachineTerm::Variable(Variable(998754)), 8, false),
-        AddressOffset::scaled_int64_node(MachineTerm::Variable(Variable(998754)), 8, true),
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998753)), 4),
+        OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, false),
+        OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, true),
     ] {
         values.push(OldPointer::new(
-            Address {
+            OldAddress {
                 base: other.base.clone(),
                 offset,
             },
@@ -511,7 +511,7 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
             use crate::kernel::{KernelAddressOffset, SharedAddress};
             let _session = VerificationSession::enter();
             let value = SharedPointer::import_produced(&OldPointer::new(
-                Address::symbolic(Variable(998755)),
+                OldAddress::symbolic(Variable(998755)),
                 ProgramType::Int32Pointer,
             ));
             let mut payload = value.node().clone();
@@ -540,9 +540,9 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
 #[test]
 fn memory_numeric_keys_keep_native_syntax_instead_of_local_observations() {
     let _session = VerificationSession::enter();
-    let word = MachineTerm::Variable(Variable(998795));
+    let word = OldMachineTerm::Variable(Variable(998795));
     let call = |arg| {
-        ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+        ProgramValue::UInt32(OldMachineTerm::ClickFunctionApplication {
             name: "memory_carrier_key".into(),
             arguments: vec![arg],
         })
@@ -587,7 +587,7 @@ fn memory_hash_collisions_still_compare_values() {
         0x7ff8000000000001,
         0x7ff8000000000002,
     ]
-    .map(|bits| ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
+    .map(|bits| ProgramValue::Float64(OldMachineTerm::uint64_constant(bits)));
     let mut map = std::collections::HashMap::<
         StoredMemoryValue,
         usize,

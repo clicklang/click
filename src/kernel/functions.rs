@@ -16,6 +16,7 @@ use crate::kernel::{
     CompareRelation, MachineIntegerType, OverflowOperation, ReturnedBorrowReason,
     ReturnedBorrowRefusal,
 };
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 use std::sync::Arc;
 
@@ -131,7 +132,6 @@ fn execute_function_body_paths(
 
 fn invalid_goto_path(path: StatementExecutionPath, message: &str) -> StatementExecutionPath {
     StatementExecutionPath {
-        call_parameters: None,
         loop_invariant_correspondence: Default::default(),
         call_result: None,
         outcome: StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -745,7 +745,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         to_events,
                         &description,
                         false,
-                        quantity.native_compat(),
+                        quantity.old_form(),
                         assumptions,
                     )
                     .map_err(|refusal| {
@@ -787,7 +787,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                 to_events,
                 &description,
                 authority_fact,
-                quantity.native_compat(),
+                quantity.old_form(),
                 assumptions,
             )
             .map_err(|refusal| {
@@ -1469,22 +1469,22 @@ fn candidate_memory_ranges_proven_separate(
         let other_start = crate::kernel::assumptions::index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(other.start()),
+            MachineOperandView::Old(other.start()),
         );
         let other_end = crate::kernel::assumptions::index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(other.end()),
+            MachineOperandView::Old(other.end()),
         );
         assumptions.decide(&crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(anchor.end()),
+            MachineOperandView::Old(anchor.end()),
             other_start.operand_view(),
         )) == Some(true)
             || assumptions.decide(&crate::kernel::assumptions::index_comparison(
                 CompareRelation::LessEqual,
                 other_end.operand_view(),
-                MachineOperandView::Legacy(anchor.start()),
+                MachineOperandView::Old(anchor.start()),
             )) == Some(true)
     };
     separate_in_frame(left, right) || separate_in_frame(right, left)
@@ -1675,12 +1675,12 @@ enum AllocationContinuity {
     Distinct,
     /// The blocks may be one, but the sizes have different formats (D5).
     CrossKind,
-    Undecided(ConditionTerm),
+    Undecided(OldConditionTerm),
     Inconsistent,
 }
 
 fn canonical_memory_range(range: MemoryRange) -> MemoryRange {
-    let base = Address {
+    let base = OldAddress {
         base: range.base().base.clone(),
         offset: crate::kernel::eval::canonical_offset_term(&range.base().offset),
     };
@@ -2222,7 +2222,6 @@ fn execute_function_paths(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
 
             paths.push(FunctionPath {
-                call_parameters: None,
                 outcome,
                 facts,
                 obligations,
@@ -2279,7 +2278,7 @@ pub(super) fn execute_program_function_call_paths(
         .selected_call_contract
         .as_deref()
     {
-        let pointer = Address::function(function.name());
+        let pointer = OldAddress::function(function.name());
         let owned = contracts_for_pointer(
             &pointer,
             assumptions,
@@ -2305,40 +2304,10 @@ pub(super) fn execute_program_function_call_paths(
         .environment
         .get_external_function_rule(function.name())
     {
-        // External summaries use the same body-independent application
-        // interface as verified rules, but remain an assumption: do not
-        // repackage one as `VerifiedFunctionRule`, whose type carries body
-        // safety evidence. Applying the shared rule engine does not execute,
-        // inspect, or certify the external body's storage.
-        let binder_application = match selected_call_binder_application(
-            rule.function.name(),
-            rule.function.contract_interface(),
+        return execute_external_function_rule(
             caller_state,
-            execution_context.environment,
-            Some(&mut *budget),
-        ) {
-            Ok(application) => application,
-            Err(message) => return Ok(vec![resource_call_failure(message)]),
-        };
-        return execute_verified_function_applications(
-            caller_state,
-            &[FunctionContractApplication {
-                pointer_result: None,
-                name: rule.function.name(),
-                interface_name: rule.function.name(),
-                interface: rule.function.contract_interface(),
-                storage: Some(&rule.function),
-                evidence: None,
-                framed_rule: rule
-                    .is_scoped_unselected()
-                    .then_some(FramedCallRule::ScopedHypothesis { _rule: rule }),
-                representation_copy: rule.representation_copy(),
-                value_arguments: &[],
-            }],
+            rule,
             None,
-            binder_application
-                .as_ref()
-                .map(|application| (0, application)),
             arguments,
             assumptions,
             execution_context.environment,
@@ -2554,7 +2523,6 @@ pub(super) fn execute_program_function_call_paths(
             let mut outcome = outcome;
             refresh_returned_local_bindings_from_stores(&mut outcome, &facts, &return_assumptions);
             paths.push(FunctionPath {
-                call_parameters: None,
                 outcome,
                 facts,
                 obligations,
@@ -2565,6 +2533,58 @@ pub(super) fn execute_program_function_call_paths(
 
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+pub(super) fn execute_external_function_rule(
+    caller_state: &ExecutionState,
+    rule: &ExternalFunctionRule,
+    binding: Option<&CppBindingContract>,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<FunctionPath>> {
+    // External summaries use the same body-independent application
+    // interface as verified rules, but remain an assumption: do not
+    // repackage one as `VerifiedFunctionRule`, whose type carries body
+    // safety evidence. Applying the shared rule engine does not execute,
+    // inspect, or certify the external body's storage.
+    let binder_application = match selected_call_binder_application(
+        rule.function.name(),
+        binding,
+        rule.function.contract_interface(),
+        caller_state,
+        environment,
+        Some(&mut *budget),
+    ) {
+        Ok(application) => application,
+        Err(message) => return Ok(vec![resource_call_failure(message)]),
+    };
+    execute_verified_function_applications(
+        caller_state,
+        &[FunctionContractApplication {
+            cpp_binding: binding,
+            pointer_result: None,
+            name: rule.function.name(),
+            interface_name: rule.function.name(),
+            interface: rule.function.contract_interface(),
+            storage: Some(&rule.function),
+            evidence: None,
+            framed_rule: rule
+                .is_scoped_unselected()
+                .then_some(FramedCallRule::ScopedHypothesis { _rule: rule }),
+            representation_copy: rule.representation_copy(),
+            value_arguments: &[],
+        }],
+        None,
+        binder_application
+            .as_ref()
+            .map(|application| (0, application)),
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )
 }
 
 /// The successor of one statement-free application of a verified tactic rule.
@@ -2686,6 +2706,7 @@ fn execute_verified_function_rule(
     // is looked up once, and nothing else is consulted.
     let binder_application = match selected_call_binder_application(
         rule.function.name(),
+        None,
         rule.function.contract_interface(),
         caller_state,
         environment,
@@ -2697,6 +2718,7 @@ fn execute_verified_function_rule(
     execute_verified_function_applications(
         caller_state,
         &[FunctionContractApplication {
+            cpp_binding: None,
             pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
@@ -2743,6 +2765,7 @@ pub(super) fn suspend_verified_worker(
     let paths = execute_verified_function_applications_with_suspension(
         caller_state,
         &[FunctionContractApplication {
+            cpp_binding: None,
             pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
@@ -2804,6 +2827,7 @@ pub(super) fn unique_worker_completion(
 /// per declared binder.
 fn selected_call_binder_application(
     function_name: &str,
+    binding: Option<&CppBindingContract>,
     interface: &FunctionContractInterface,
     caller_state: &ExecutionState,
     environment: &ExecutionEnvironment,
@@ -2812,7 +2836,10 @@ fn selected_call_binder_application(
     let written = environment
         .selected_call_binders
         .as_ref()
-        .filter(|transport| transport.names_call_to(function_name))
+        .filter(|transport| match binding {
+            Some(binding) => matches!(&transport.target, CallBinderTarget::CppBinding(target) if target == binding),
+            None => transport.names_call_to(function_name),
+        })
         .map(|transport| transport.bindings.clone());
     // Only the binders required at entry are checked here; a `produces`
     // binder has no instance to check until the call returns.
@@ -3020,6 +3047,7 @@ enum FramedCallRule<'a> {
 /// External assumptions carry storage but no body proof evidence.
 #[derive(Clone, Copy)]
 struct FunctionContractApplication<'a> {
+    cpp_binding: Option<&'a CppBindingContract>,
     pointer_result: Option<&'a PurePointerResult>,
     /// Concrete callee name used for diagnostics and call attribution.
     name: &'a str,
@@ -3042,7 +3070,7 @@ struct FunctionContractApplication<'a> {
 fn representation_copy_arguments(
     values: &[ProgramValue],
     effect: RepresentationCopyEffect,
-) -> Option<(&Address, &Address, &ProgramValue)> {
+) -> Option<(&OldAddress, &OldAddress, &ProgramValue)> {
     let ProgramValue::Pointer(destination) = values.get(effect.destination_argument)? else {
         return None;
     };
@@ -3146,7 +3174,7 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
-) -> Vec<(Address, ProgramValue)> {
+) -> Vec<(OldAddress, ProgramValue)> {
     let Some((destination, source, bytes)) = representation_copy_arguments(argument_values, effect)
     else {
         return Vec::new();
@@ -3179,13 +3207,13 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     // `source_offset .. source_offset + bytes`. This range is therefore
     // exactly the candidate cells. A cell at `i64::MAX` cannot fit its
     // positive width, so saturating the end loses no candidate.
-    let start = Address {
+    let start = OldAddress {
         base: source_block.clone(),
-        offset: AddressOffset::Constant(source_offset),
+        offset: OldAddressOffset::constant(source_offset),
     };
-    let end = Address {
+    let end = OldAddress {
         base: source_block,
-        offset: AddressOffset::Constant(source_offset.saturating_add(bytes)),
+        offset: OldAddressOffset::constant(source_offset.saturating_add(bytes)),
     };
     crate::instrumentation::record_deterministic_work(1);
     let mut moves = Vec::new();
@@ -3209,9 +3237,9 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
             continue;
         }
         moves.push((
-            Address {
+            OldAddress {
                 base: destination_block.clone(),
-                offset: AddressOffset::Constant(destination_cell_offset),
+                offset: OldAddressOffset::constant(destination_cell_offset),
             },
             value.clone(),
         ));
@@ -3535,6 +3563,7 @@ fn execute_verified_function_applications_with_suspension(
             });
         let primary = applicable.remove(selected_position.unwrap_or(0));
         let PreparedVerifiedFunctionCall {
+            cpp_binding,
             name,
             interface_name,
             candidate_ordinal,
@@ -3564,6 +3593,7 @@ fn execute_verified_function_applications_with_suspension(
                 arguments,
                 caller_state.memory(),
             )
+            .with_cpp_binding(cpp_binding)
         };
         // An unnamed byte projection can still have a checked resource
         // bound. Separate that bound from the entire retained borrow frame.
@@ -3836,14 +3866,18 @@ fn execute_verified_function_applications_with_suspension(
                 let (all_null, evidence) =
                     super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
                 if all_null {
-                    pointer.replace_pointer(Address::null());
+                    pointer.replace_pointer(OldAddress::null());
                 }
                 ProgramValue::Pointer(pointer.with_object_type_evidence(evidence))
             } else {
                 result
             }
         };
-        let mut post_state = entry_state.clone().with_memory(memory);
+        // The call's value effects are steps of its region: they reach the
+        // call's effect point together, and its initialization, liveness and
+        // allocation effects then reach its exit.
+        let mut post_state = entry_state.clone();
+        post_state.stage_memory(memory);
         if interface.aggregate_return_mode() == AggregateReturnMode::Construction
             || interface.construction_parameter().is_some()
         {
@@ -3888,9 +3922,10 @@ fn execute_verified_function_applications_with_suspension(
                 }),
                 _ => unreachable!("checked helper use"),
             };
-            // The helper reads the post-call memory where it was made: at the
-            // post state's point, with the caller's ledgers.
-            let protocol_input = caller_state.clone().with_memory_of(&post_state);
+            // The helper's exchange is a step of the call in progress, with
+            // the caller's ledgers: it reads at the call's entry and stages
+            // its memory into the call's effect point.
+            let protocol_input = caller_state.clone().with_staged_memory_of(&post_state);
             match super::mutexes::helper_contracts::apply_call_effect(
                 &protocol_input,
                 &helper.source,
@@ -3902,6 +3937,9 @@ fn execute_verified_function_applications_with_suspension(
                 &environment.modeled_mutex_definition_list,
                 &effective_assumptions,
                 budget,
+                super::mutexes::ProtocolSite::InCall {
+                    entry: caller_state,
+                },
             ) {
                 Ok((successor, evidence, ranges)) => {
                     if !ranges.is_empty() {
@@ -3966,6 +4004,9 @@ fn execute_verified_function_applications_with_suspension(
                     &environment.modeled_mutex_definition_list,
                     &effective_assumptions,
                     budget,
+                    super::mutexes::ProtocolSite::InCall {
+                        entry: caller_state,
+                    },
                 ) {
                     Ok((fresh, ranges)) => {
                         if !ranges.is_empty() {
@@ -3997,8 +4038,11 @@ fn execute_verified_function_applications_with_suspension(
             }
         }
         if interface.return_type() != ProgramType::Void {
-            set_contract_result(&mut post_state, interface, result.clone());
+            stage_contract_result(&mut post_state, interface, result.clone());
         }
+        // Every value the call writes is in place: the call's effect point,
+        // at which everything it reads before its exit is read.
+        post_state.complete_staged_memory_as_call_effect();
         // A `produces` binder owns nothing at entry: the call creates the
         // instance under the identity the caller's `let` introduced. It is
         // built once, here, so the population transition and the returned
@@ -4350,13 +4394,12 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        let symbolic_initialized_bytes = match initialize_produced_memory(
+        let (symbolic_initialized_bytes, produced_words) = match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
             interface,
             &mut post_state,
             &effective_assumptions,
-            &mut facts,
             budget,
             application.evidence.is_none() && application.representation_copy.is_none(),
         )? {
@@ -4429,16 +4472,16 @@ fn execute_verified_function_applications_with_suspension(
             let exchange_quantity = if !events.owns_imported_population_member(&description)
                 && crate::kernel::quantity_condition_holds(
                     &effective_assumptions,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(quantity.native_compat().clone()),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: Box::new(quantity.old_form().clone()),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                 ) {
-                MachineTerm::constant(0)
+                OldMachineTerm::constant(0)
             } else {
-                quantity.native_compat().clone()
+                quantity.old_form().clone()
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
                 &pointer.address().base,
@@ -4693,7 +4736,7 @@ fn execute_verified_function_applications_with_suspension(
                 let anchor = pointer.address();
                 if produce
                     && !events.recognizes_imported_population(&description)
-                    && (anchor.offset != AddressOffset::Constant(0)
+                    && (!matches!(anchor.offset.view(), OffsetView::Constant(0))
                         || !(matches!(&anchor.base, AddressBase::Heap(_))
                             && post_state.memory.live_heap_block_size(anchor).is_some()
                             || anchor.base.is_local_block()
@@ -4720,7 +4763,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity.native_compat(),
+                        quantity.old_form(),
                         &effective_assumptions,
                     )
                 } else {
@@ -4728,7 +4771,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity.native_compat(),
+                        quantity.old_form(),
                         &effective_assumptions,
                     )
                 };
@@ -4854,7 +4897,10 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         };
         facts.extend(allocation_effects);
+        // The call's exit: its staged initialization and its allocation
+        // effects, reached from its effect point.
         post_state.set_memory(memory);
+        produced_word_equations(&post_state, &produced_words, &mut facts, budget);
         // A consumed allocation named through a pointer proven equal to it,
         // a contract's `result == p`, retires the storage the call's entry
         // transfer moved: its unique storage coordinate.
@@ -5376,7 +5422,6 @@ fn execute_verified_function_applications_with_suspension(
         if let Some(function) = evidence {
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
-        let call_parameters = CallParameters::of(&entry_contract_state, interface);
         // The checked return partition recovers this call's borrows. The
         // transition that uses it still owes separation from the caller's
         // pre-existing borrows, on both normal and exceptional paths.
@@ -5411,10 +5456,8 @@ fn execute_verified_function_applications_with_suspension(
                     .unwrap_or_else(empty_checked_borrow_evidence_sequence),
                 &helper_evidence,
             ),
-            call_parameters: call_parameters.clone(),
         });
-        if let Some(mut path) = exceptional_path {
-            path.call_parameters = call_parameters;
+        if let Some(path) = exceptional_path {
             paths.push(path);
         }
     }
@@ -5510,9 +5553,9 @@ fn refresh_call_written_locals(
             if !refreshed_blocks.insert(block.clone()) {
                 continue;
             }
-            let slot = Address {
+            let slot = OldAddress {
                 base: block,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             crate::kernel::eval::refresh_scalar_local_from_memory(state, &slot, assumptions);
         }
@@ -5672,6 +5715,7 @@ fn exceptional_direct_function_path(
 }
 
 struct PreparedVerifiedFunctionCall<'a> {
+    cpp_binding: Option<&'a CppBindingContract>,
     /// The nominal callee name used for diagnostics and attribution. It is not
     /// a source-body handle for named callbacks.
     name: &'a str,
@@ -5712,8 +5756,8 @@ fn source_load_state_for_proposition(
     const MAX_NODES: usize = 4096;
     enum Work<'a> {
         Proposition(&'a Proposition),
-        Condition(&'a ConditionTerm),
-        Bitvector(&'a MachineTerm),
+        Condition(&'a OldConditionTerm),
+        Bitvector(&'a OldMachineTerm),
     }
     let mut work = vec![Work::Proposition(proposition)];
     let mut visited = 0usize;
@@ -5729,7 +5773,7 @@ fn source_load_state_for_proposition(
         }
         match item {
             Work::Proposition(Proposition::ConditionIs(condition, _)) => {
-                work.push(Work::Condition(condition.native_compat()));
+                work.push(Work::Condition(condition.old_form()));
             }
             Work::Proposition(Proposition::And(left, right))
             | Work::Proposition(Proposition::Or(left, right))
@@ -5747,13 +5791,13 @@ fn source_load_state_for_proposition(
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }
-            Work::Condition(ConditionTerm::Constant(_))
-            | Work::Condition(ConditionTerm::Variable(_)) => {}
+            Work::Condition(OldConditionTerm::Constant(_))
+            | Work::Condition(OldConditionTerm::Variable(_)) => {}
             Work::Condition(_) => return Ok(None),
             Work::Bitvector(bits32_constant!(_))
             | Work::Bitvector(int64_constant!(_))
             | Work::Bitvector(uint64_constant!(_)) => {}
-            Work::Bitvector(MachineTerm::Variable(variable)) => {
+            Work::Bitvector(OldMachineTerm::Variable(variable)) => {
                 if crate::kernel::is_load_variable(variable) {
                     let Some((origin, _)) =
                         crate::kernel::registered_load_origin_for_variable(variable)
@@ -5767,9 +5811,9 @@ fn source_load_state_for_proposition(
                     memory_identity = Some(identity);
                 }
             }
-            Work::Bitvector(term @ MachineTerm::MemoryLoad(..)) => {
+            Work::Bitvector(term @ OldMachineTerm::MemoryLoad(..)) => {
                 let read = crate::kernel::eval::scalar_read_observation(
-                    crate::kernel::MachineOperandView::Legacy(term),
+                    crate::kernel::MachineOperandView::Old(term),
                 )
                 .expect("structural read observation");
                 let origin = read.origin.unwrap_or(read.point);
@@ -6332,7 +6376,7 @@ fn prepare_verified_function_call<'a>(
                             caller_events,
                             description,
                             false,
-                            &MachineTerm::constant(owned),
+                            &OldMachineTerm::constant(owned),
                             &path_assumptions,
                         )
                     }
@@ -6590,7 +6634,8 @@ fn prepare_verified_function_call<'a>(
                         candidate_ordinal,
                         source_arguments,
                         &caller_state.memory,
-                    );
+                    )
+                    .with_cpp_binding(application.cpp_binding);
                     site.value_arguments = contract_interface
                         .value_parameters()
                         .iter()
@@ -6748,7 +6793,7 @@ fn prepare_verified_function_call<'a>(
                                 path_assumptions.proves_exact(&requirement_path.proposition)
                                     || path_assumptions
                                         .has_matching_condition_fact_for_memory_resolution(
-                                            condition.native_compat(),
+                                            condition.old_form(),
                                             *value,
                                         )
                             }
@@ -6857,8 +6902,8 @@ fn prepare_verified_function_call<'a>(
             continue;
         };
         let order = match range.wide_bounds() {
-            Some((start, end)) => ConditionTerm::uint64_less_equal(start.clone(), end.clone()),
-            None => ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
+            Some((start, end)) => OldConditionTerm::uint64_less_equal(start.clone(), end.clone()),
+            None => OldConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
         };
         match guard_context.decide(&order) {
             Some(true) => {}
@@ -7094,13 +7139,16 @@ fn prepare_verified_function_call<'a>(
             }
             let site = call_requirement_site
                 .get_or_insert_with(|| {
-                    Arc::new(CallRequirementSite::for_requirement(
-                        application.name,
-                        application.interface_name,
-                        candidate_ordinal,
-                        source_arguments,
-                        caller_state.memory(),
-                    ))
+                    Arc::new(
+                        CallRequirementSite::for_requirement(
+                            application.name,
+                            application.interface_name,
+                            candidate_ordinal,
+                            source_arguments,
+                            caller_state.memory(),
+                        )
+                        .with_cpp_binding(application.cpp_binding),
+                    )
                 })
                 .clone();
             let source = CallRequirementSource::new(site, index, None, false, None)
@@ -7360,6 +7408,7 @@ fn prepare_verified_function_call<'a>(
     }
 
     Ok(Ok(PreparedVerifiedFunctionCall {
+        cpp_binding: application.cpp_binding,
         name: application.name,
         interface_name: application.interface_name,
         candidate_ordinal,
@@ -7412,7 +7461,7 @@ impl std::ops::Deref for NamedContractApplication<'_> {
 /// `function_type`. A fact whose values do not have its contract's value
 /// parameter types contributes nothing.
 pub(super) fn contracts_for_pointer(
-    pointer: &Address,
+    pointer: &OldAddress,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     function_type: &ProgramType,
@@ -7428,7 +7477,7 @@ pub(super) fn contracts_for_pointer(
                 .iter()
                 .skip(2)
                 .map(|argument| match argument {
-                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
+                    Term::ProgramValue(value) => Some(value.old_form().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -7511,6 +7560,7 @@ fn execute_named_contract_applications_paths(
             }
             match selected_call_binder_application(
                 contract.name(),
+                None,
                 contract.interface(),
                 caller_state,
                 environment,
@@ -7559,6 +7609,7 @@ fn execute_named_contract_applications_paths(
         .map(|application| {
             let contract = application.contract;
             FunctionContractApplication {
+                cpp_binding: None,
                 pointer_result: None,
                 name: contract.callee_name(),
                 interface_name: contract.name(),
@@ -7881,10 +7932,8 @@ fn separation_requirement_parts_are_established(
         }
         Proposition::ConditionIs(condition, value) => {
             required_obligation_is_exactly_discharged(assumptions, proposition)
-                || assumptions.has_matching_condition_fact_for_memory_resolution(
-                    condition.native_compat(),
-                    *value,
-                )
+                || assumptions
+                    .has_matching_condition_fact_for_memory_resolution(condition.old_form(), *value)
         }
         Proposition::ResourceSeparate { .. } if proposition.memory_separation().is_some() => {
             let (left, right) = proposition
@@ -7954,14 +8003,18 @@ fn function_contract_requirement_is_proven(
                 pointer.clone()
             };
             let target = match comparison_pointer.address() {
-                Address {
+                OldAddress {
                     base: AddressBase::Function(target),
-                    offset: AddressOffset::Constant(0),
-                } => Some(target),
-                Address {
+                    offset,
+                } if matches!(offset.view(), OffsetView::Constant(0)) => Some(target),
+                OldAddress {
                     base: AddressBase::FunctionSymbolic(_) | AddressBase::Load(_),
-                    offset: AddressOffset::Constant(0),
-                } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
+                    offset,
+                } if matches!(offset.view(), OffsetView::Constant(0))
+                    && matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) =>
+                {
+                    None
+                }
                 _ => return Ok(false),
             };
             // The fact's values fix the contract's value parameters for the
@@ -7969,7 +8022,7 @@ fn function_contract_requirement_is_proven(
             let Some(values) = values
                 .iter()
                 .map(|value| match value {
-                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
+                    Term::ProgramValue(value) => Some(value.old_form().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()
@@ -8039,7 +8092,7 @@ pub(crate) use named_contract_refinement::*;
 /// The surface spells it in source terms.
 #[derive(Clone, Debug)]
 pub(crate) enum StorageWriteOutsideFootprint {
-    Write { pointer: Address, bytes: u32 },
+    Write { pointer: OldAddress, bytes: u32 },
     Range(MemoryRange),
 }
 
@@ -8061,8 +8114,8 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     transition_resources: Option<&[CheckedResourceFact]>,
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
-    let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
-    let storage_writes: Vec<(Address, crate::kernel::AccessExtent)> =
+    let is_storage = |pointer: &OldAddress| pointer.base.is_static_storage_block();
+    let storage_writes: Vec<(OldAddress, crate::kernel::AccessExtent)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
@@ -8145,15 +8198,15 @@ pub(crate) fn storage_writes_outside_owned_footprint(
 }
 
 fn storage_write_within_owned_footprint(
-    pointer: &Address,
+    pointer: &OldAddress,
     write_bytes: u32,
     owned: &[MemoryRange],
     assumptions: &PureFactContext,
 ) -> bool {
     let write = MemoryRange::new_with_element_width(
         pointer.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(write_bytes),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(write_bytes),
         1,
     );
     owned.iter().any(|range| {
@@ -8164,7 +8217,7 @@ fn storage_write_within_owned_footprint(
         }
         let (base, bytes) = range.byte_footprint();
         let owned_bytes =
-            MemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1);
+            MemoryRange::new_with_element_width(base, OldMachineTerm::constant(0), bytes, 1);
         super::assumptions::memory_range_shallowly_contained_with_facts(
             &write,
             &owned_bytes,
@@ -8191,7 +8244,7 @@ fn storage_write_within_owned_footprint(
 /// does not cover whole elements, or any other shape, is left to the byte
 /// comparison.
 fn storage_write_within_owned_elements(
-    pointer: &Address,
+    pointer: &OldAddress,
     write_bytes: u32,
     range: &MemoryRange,
     assumptions: &PureFactContext,
@@ -8214,17 +8267,17 @@ fn storage_write_within_owned_elements(
             && let Some(index) = pointer.shared_wide_element_index_from_base(range.base(), width)
             && index.operand_view().uint64_constant().is_none()
         {
-            let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+            let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
             if (start == 0
                 || holds(crate::kernel::assumptions::wide_index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(start)),
+                    MachineOperandView::Old(&OldMachineTerm::uint64_constant(start)),
                     index.operand_view(),
                 )))
                 && holds(crate::kernel::assumptions::wide_index_comparison(
                     CompareRelation::LessThan,
                     index.operand_view(),
-                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(end)),
+                    MachineOperandView::Old(&OldMachineTerm::uint64_constant(end)),
                 ))
             {
                 return true;
@@ -8240,14 +8293,14 @@ fn storage_write_within_owned_elements(
     };
     let elements = i64::from(write_bytes / width);
     let index = delta.index.clone();
-    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
     // `constant <= index` (lower) or `index < constant` (upper), for a
     // constant computed exactly: a constant outside the int32 range is
     // decided by the range itself.
     let index_at_least = |bound: i64| match i32::try_from(bound) {
         Ok(bound) => holds(crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&MachineTerm::constant(bound as u32)),
+            MachineOperandView::Old(&OldMachineTerm::constant(bound as u32)),
             index.operand_view(),
         )),
         Err(_) => bound < i64::from(i32::MIN),
@@ -8256,7 +8309,7 @@ fn storage_write_within_owned_elements(
         Ok(bound) => holds(crate::kernel::assumptions::index_comparison(
             CompareRelation::LessThan,
             index.operand_view(),
-            MachineOperandView::Legacy(&MachineTerm::constant(bound as u32)),
+            MachineOperandView::Old(&OldMachineTerm::constant(bound as u32)),
         )),
         Err(_) => bound > i64::from(i32::MAX),
     };
@@ -8270,7 +8323,7 @@ fn storage_write_within_owned_elements(
             delta.constant == 0
                 && holds(crate::kernel::assumptions::index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(range.start()),
+                    MachineOperandView::Old(range.start()),
                     index.operand_view(),
                 ))
         }
@@ -8288,16 +8341,16 @@ fn storage_write_within_owned_elements(
             holds(crate::kernel::assumptions::index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(range.end()),
+                MachineOperandView::Old(range.end()),
             ))
         }
         None if delta.constant == 0 => {
-            let last = MachineTerm::constant((elements - 1) as u32);
+            let last = OldMachineTerm::constant((elements - 1) as u32);
             assumptions.decide_overflow_query(
                 &crate::kernel::machine_integer::definedness::OverflowQueryView::from_operands(
                     MachineIntegerType::Int32,
                     crate::kernel::machine_integer::Operation::Add,
-                    [index.operand_view(), MachineOperandView::Legacy(&last)],
+                    [index.operand_view(), MachineOperandView::Old(&last)],
                 )
                 .expect("int32 addition"),
             ) == Some(false)
@@ -8306,10 +8359,10 @@ fn storage_write_within_owned_elements(
                     crate::kernel::assumptions::index_binary(
                         MachineBinaryOp::Add,
                         index.operand_view(),
-                        MachineOperandView::Legacy(&last),
+                        MachineOperandView::Old(&last),
                     )
                     .operand_view(),
-                    MachineOperandView::Legacy(range.end()),
+                    MachineOperandView::Old(range.end()),
                 ))
         }
         None => false,
@@ -8580,7 +8633,7 @@ fn matched_instance_body_ownership(
     definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Option<(Vec<MemoryRange>, Vec<(ConditionTerm, bool)>)> {
+) -> Option<(Vec<MemoryRange>, Vec<(OldConditionTerm, bool)>)> {
     let ResourceFact::Own(Resource::Instance(instance), _) = fact else {
         return None;
     };
@@ -8634,7 +8687,7 @@ fn matched_instance_body_ownership(
         assumptions,
     );
     if clauses.iter().any(|clause| {
-        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _))))
+        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(false), _))))
     }) {
         return None;
     }
@@ -8652,7 +8705,7 @@ fn matched_instance_body_ownership(
         .into_iter()
         .filter_map(|clause| match clause.proposition {
             Proposition::ConditionIs(condition, value) => {
-                Some((condition.native_compat().clone(), value))
+                Some((condition.old_form().clone(), value))
             }
             _ => None,
         })
@@ -8761,7 +8814,7 @@ fn open_unmatched_instance_body(
 /// same composition and give the same answer.
 pub(in crate::kernel) fn store_opened_instance_composition(
     state: &ExecutionState,
-    write: &Address,
+    write: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
@@ -8770,7 +8823,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         return None;
     }
     let definitions = crate::kernel::assumptions::frame_composite_definitions()?;
-    let write = Address {
+    let write = OldAddress {
         base: write.base.clone(),
         offset: crate::kernel::memory_history::normalize_exact_memory_loads_in_pointer_offset(
             &write.offset,
@@ -9946,17 +9999,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 let reversed_order = match premise.as_ref() {
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterThan,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessThan,
                                 left: right.clone(),
@@ -9967,17 +10020,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     }
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterEqual,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
                                 left: right.clone(),
@@ -9988,17 +10041,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     }
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessThan,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterThan,
                                 left: right.clone(),
@@ -10009,17 +10062,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     }
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterEqual,
                                 left: right.clone(),
@@ -10100,9 +10153,9 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// different formats are never the same allocation's (D5): a pair whose
 /// bases are not proven distinct is [`AllocationContinuity::CrossKind`].
 fn allocation_continuity(
-    input_base: &Address,
+    input_base: &OldAddress,
     input_size: &AllocationSize,
-    output_base: &Address,
+    output_base: &OldAddress,
     output_size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
@@ -10130,7 +10183,7 @@ fn allocation_continuity(
         ) {
             return AllocationContinuity::Same;
         }
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
             left: Box::new(input_bytes.clone()),
@@ -10152,7 +10205,7 @@ fn allocation_continuity(
     } else if pointers_proven_distinct_for_memory_resolution(input_base, output_base, assumptions) {
         AllocationContinuity::Distinct
     } else {
-        AllocationContinuity::Undecided(ConditionTerm::address_equal(
+        AllocationContinuity::Undecided(OldConditionTerm::address_equal(
             input_base.clone(),
             output_base.clone(),
         ))
@@ -10192,7 +10245,7 @@ mod allocation_continuity_tests;
 pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     lent: &ResourceContext,
     kept: &'a ResourceContext,
-    base: &Address,
+    base: &OldAddress,
     bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<&'a ResourceFact> {
@@ -10227,11 +10280,11 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
 /// width or with provably equal endpoints.
 fn lent_owned_memory_covers_allocation(
     lent: &ResourceContext,
-    base: &Address,
+    base: &OldAddress,
     bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> bool {
-    if let Some(constant) = bytes.int32_bytes().and_then(MachineTerm::as_const)
+    if let Some(constant) = bytes.int32_bytes().and_then(OldMachineTerm::as_const)
         && constant > 0
     {
         return lent.owns_storage_access(base, constant, assumptions);
@@ -10673,7 +10726,7 @@ pub(crate) fn initialize_program_program_storage(
 /// runs and concrete cells, not its elements.
 fn periodic_struct_array_blocks(
     memory: &SymbolicMemory,
-    constant_offset: impl Fn(&Address) -> u32,
+    constant_offset: impl Fn(&OldAddress) -> u32,
 ) -> BTreeMap<AddressBase, (u32, u32)> {
     // Each run and each concrete cell examined charges a unit. Nothing here
     // stops early: the caller's next checkpoint, one visit later, does.
@@ -10744,8 +10797,8 @@ fn initial_static_resources(
         count_visit();
         crate::instrumentation::deadline_exceeded()
     };
-    let constant_offset = |pointer: &Address| {
-        let AddressOffset::Constant(offset) = pointer.offset else {
+    let constant_offset = |pointer: &OldAddress| {
+        let OffsetView::Constant(offset) = pointer.offset.view() else {
             unreachable!("static initializers have constant cell offsets");
         };
         u32::try_from(offset).expect("static cell offset")
@@ -10837,12 +10890,12 @@ fn initial_static_resources(
                 return None;
             }
             let range = MemoryRange::new_with_element_width(
-                Address {
+                OldAddress {
                     base: identity.clone(),
-                    offset: AddressOffset::Constant(i64::from(start)),
+                    offset: OldAddressOffset::constant(i64::from(start)),
                 },
-                MachineTerm::constant(0),
-                MachineTerm::constant((end - start) / width),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant((end - start) / width),
                 width,
             );
             resources = resources.unchecked_with_fact(if block.is_read_only() {
@@ -11487,10 +11540,14 @@ fn string_literal_instance_constant(
 ) -> Option<ProgramValue> {
     let value = u32::try_from(value).ok()?;
     Some(match program_type {
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(value))),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::uint64_constant(u64::from(value))),
-        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(value)),
-        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(value)),
+        ProgramType::UInt64 => {
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::from(value)))
+        }
+        ProgramType::Int64 => {
+            ProgramValue::Int64(OldMachineTerm::uint64_constant(u64::from(value)))
+        }
+        ProgramType::UInt32 => ProgramValue::UInt32(OldMachineTerm::uint32_constant(value)),
+        ProgramType::Int32 => ProgramValue::Int32(OldMachineTerm::constant(value)),
         _ => return None,
     })
 }
@@ -11643,14 +11700,14 @@ const STRING_LITERAL_FACT_BYTES: i64 = 4096;
 /// address of a read inside them still names.
 fn string_literal_fact_holds(
     proposition: &Proposition,
-    bindings: &mut Vec<(Variable, MachineTerm)>,
+    bindings: &mut Vec<(Variable, OldMachineTerm)>,
 ) -> bool {
     string_literal_fact_value(proposition, bindings) == Some(true)
 }
 
 fn string_literal_fact_value(
     proposition: &Proposition,
-    bindings: &mut Vec<(Variable, MachineTerm)>,
+    bindings: &mut Vec<(Variable, OldMachineTerm)>,
 ) -> Option<bool> {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
@@ -11714,9 +11771,9 @@ fn string_literal_fact_value(
                 // Any other read is defined when the state holds a stored
                 // value of the read's width at that very cell, as a local
                 // array's bytes after their stores do.
-                let cell = Address {
+                let cell = OldAddress {
                     base: pointer.base.clone(),
-                    offset: AddressOffset::Constant(offset),
+                    offset: OldAddressOffset::constant(offset),
                 };
                 return match memory.load(&cell) {
                     ExpressionOutcome::Value(value)
@@ -11750,9 +11807,9 @@ fn string_literal_fact_value(
 }
 
 fn string_literal_pointer_with_bindings(
-    pointer: &Address,
-    bindings: &[(Variable, MachineTerm)],
-) -> Address {
+    pointer: &OldAddress,
+    bindings: &[(Variable, OldMachineTerm)],
+) -> OldAddress {
     let mut pointer = pointer.clone();
     for (bound, value) in bindings {
         pointer = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
@@ -11766,7 +11823,7 @@ fn string_literal_pointer_with_bindings(
 /// replaced by the byte there, or `None` when a read is of anything else.
 fn string_literal_reads_resolved(
     leaf: &Proposition,
-    bindings: &[(Variable, MachineTerm)],
+    bindings: &[(Variable, OldMachineTerm)],
 ) -> Option<Proposition> {
     let mut variables = BTreeSet::new();
     crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
@@ -11778,7 +11835,7 @@ fn string_literal_reads_resolved(
         if !crate::kernel::is_load_variable(&variable) {
             continue;
         }
-        let MachineTerm::MemoryLoad(_, pointer, kind) =
+        let OldMachineTerm::MemoryLoad(_, pointer, kind) =
             crate::kernel::eval::registered_load_term_for_variable(&variable)?
         else {
             return None;
@@ -11790,11 +11847,11 @@ fn string_literal_reads_resolved(
         let offset = pointer.offset.as_const()?;
         let byte = *bytes.get(usize::try_from(offset).ok()?)?;
         let value = match kind {
-            LoadKind::UInt8 => MachineTerm::narrow_constant(
+            LoadKind::UInt8 => OldMachineTerm::narrow_constant(
                 crate::kernel::MachineIntegerType::UInt8,
                 u128::from(byte),
             ),
-            LoadKind::Int8 => MachineTerm::narrow_constant(
+            LoadKind::Int8 => OldMachineTerm::narrow_constant(
                 crate::kernel::MachineIntegerType::Int8,
                 u128::from(byte),
             ),
@@ -11884,7 +11941,7 @@ pub(crate) fn guard_contract_refusal(
         .then_some("mutex authority contracts currently require preserving owned inputs")
 }
 
-fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
+fn private_aggregate_storage_owner(slot: OldAddress, layout: &AggregateLayout) -> ResourceFact {
     // A symbolic struct's storage is its whole object, `sizeof(S)` bytes.
     ResourceFact::own_memory(MemoryRange::object(slot, layout.size()))
 }
@@ -13274,10 +13331,9 @@ fn initialize_produced_memory(
     interface: &FunctionContractInterface,
     post_state: &mut ExecutionState,
     assumptions: &PureFactContext,
-    facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
     opaque_output: bool,
-) -> ExecutionResult<Result<Vec<MemoryRange>, RuntimeError>> {
+) -> ExecutionResult<Result<(Vec<MemoryRange>, Vec<OldAddress>), RuntimeError>> {
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
     let mut symbolic_initialized_bytes = Vec::new();
@@ -13381,20 +13437,33 @@ fn initialize_produced_memory(
             word_outputs.push(start);
         }
     }
-    post_state.set_memory_directly(memory);
-    if !word_outputs.is_empty() {
-        let point = post_state.program_point();
-        for address in word_outputs {
-            if let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
-                &point,
-                &address,
-                budget.program_byte_order(),
-            ) {
-                facts.push(ExecutionPureFact::certified(equation));
-            }
+    // A step of the call in progress, which reaches its exit after the
+    // allocation effects; the produced words' equations are made there.
+    post_state.stage_memory(memory);
+    Ok(Ok((symbolic_initialized_bytes, word_outputs)))
+}
+
+/// The equations of the produced 32-bit output words at `exit`, the call's
+/// exit, which no effect after their initialization changes.
+fn produced_word_equations(
+    exit: &ExecutionState,
+    word_outputs: &[OldAddress],
+    facts: &mut ExecutionFacts,
+    budget: &ExecutionBudget,
+) {
+    if word_outputs.is_empty() {
+        return;
+    }
+    let point = exit.program_point();
+    for address in word_outputs {
+        if let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
+            &point,
+            address,
+            budget.program_byte_order(),
+        ) {
+            facts.push(ExecutionPureFact::certified(equation));
         }
     }
-    Ok(Ok(symbolic_initialized_bytes))
 }
 
 /// Evaluates the first `count` returned resources of a contract as one
@@ -14300,7 +14369,7 @@ fn evaluate_contract_return_resources(
         // reading rather than an escaping borrow.
         let is_population = match support.resource() {
             Resource::Composite { name, .. } => {
-                support.owned_quantity_term() != Some(&MachineTerm::constant(1))
+                support.owned_quantity_term() != Some(&OldMachineTerm::constant(1))
                     || post_state.observes_population_family(name)
                     || entry_state.observes_population_family(name)
             }
@@ -14459,7 +14528,7 @@ fn requirement_is_population_quantity(requirement: &CheckedResourceFact) -> bool
         requirement.fact.resource(),
         Resource::Composite { .. } | Resource::Token { .. }
     ) && requirement.fact.is_own()
-        && requirement.fact.owned_quantity_term() != Some(&MachineTerm::constant(1))
+        && requirement.fact.owned_quantity_term() != Some(&OldMachineTerm::constant(1))
 }
 
 fn resource_fact_composite_head(fact: &ResourceFact) -> Option<(bool, &str)> {
@@ -14592,7 +14661,7 @@ fn bind_composite_witness_values(
             .as_ref()
             .and_then(|term| {
                 if term.uint64_as_const() == Some(0) {
-                    return Some(Address::null());
+                    return Some(OldAddress::null());
                 }
                 let mut used = super::eval::pointer_tags::UsedFacts::new();
                 super::eval::pointer_tags::tagged_address_form(term, assumptions, &mut used)
@@ -14630,7 +14699,7 @@ fn bind_composite_witness_values(
             word.as_ref()
                 .map(super::eval::canonical_term)
                 .hash(&mut hasher);
-            Address::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
+            OldAddress::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
         let value = ProgramValue::typed_pointer(pointer, witness.program_type());
         state.locals.bind_logical_typed(
@@ -14652,7 +14721,7 @@ fn held_child_witness(
     arguments: &[AlgebraicValue],
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-) -> Option<Address> {
+) -> Option<OldAddress> {
     // The body's own instance is never its own child.
     let own_pointers = arguments
         .iter()
@@ -14688,9 +14757,10 @@ fn held_child_witness(
         .filter(|pointer| {
             own_pointers.iter().all(|own| {
                 own.base != pointer.base
-                    || assumptions
-                        .decide(&ConditionTerm::address_equal(pointer.clone(), own.clone()))
-                        == Some(false)
+                    || assumptions.decide(&OldConditionTerm::address_equal(
+                        pointer.clone(),
+                        own.clone(),
+                    )) == Some(false)
             })
         });
     let first = candidates.next()?;
@@ -14911,44 +14981,44 @@ fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
         return false;
     };
     matches!(
-        condition.native_compat(),
-        ConditionTerm::Overflows {
+        condition.old_form(),
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Divide,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::ShiftLeft,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Divide,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::ShiftLeft,
             ..
@@ -15035,7 +15105,7 @@ fn lower_selected_resource_body_clauses(
         if let Proposition::ConditionIs(condition, truth) = &path.proposition
             && let Some(condition) =
                 crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(
-                    condition.native_compat(),
+                    condition.old_form(),
                 )
         {
             path.proposition = Proposition::condition_is(condition, *truth);
@@ -15149,14 +15219,14 @@ fn resource_body_fact_is_established(
     // endpoints and captured variables, using checked equality substitution. A
     // candidate must still be established by the original context.
     if let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         true,
-    )) = (proposition).condition_native()
+    )) = (proposition).old_condition()
     {
         let mut variables = std::collections::BTreeSet::new();
         crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
@@ -15165,12 +15235,12 @@ fn resource_body_fact_is_established(
         );
         let endpoints = [left.as_ref().clone(), right.as_ref().clone()]
             .into_iter()
-            .chain(variables.into_iter().map(MachineTerm::Variable));
+            .chain(variables.into_iter().map(OldMachineTerm::Variable));
         for endpoint in endpoints {
             for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
                 crate::instrumentation::record_deterministic_work(1);
                 let equality = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         left: Box::new(endpoint.clone()),
@@ -15197,7 +15267,7 @@ fn resource_body_fact_is_established(
     // logical read retains its own producer identity. Reuse only the exact
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
-    if let Some((ConditionTerm::AddressEqual(left, right), true)) = (proposition).condition_native()
+    if let Some((OldConditionTerm::AddressEqual(left, right), true)) = (proposition).old_condition()
         && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
@@ -15205,7 +15275,7 @@ fn resource_body_fact_is_established(
     if matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
         _,
         true,
-    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(left, right), _)) if (crate::kernel::memory_history::pointer_load_offset_proven_equal(
+    ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressOffsetEqual(left, right), _)) if (crate::kernel::memory_history::pointer_load_offset_proven_equal(
         left,
         right,
         established,
@@ -15217,7 +15287,7 @@ fn resource_body_fact_is_established(
     // two loads denote one value when the states are proven to agree at
     // its address.
     if let Proposition::ConditionIs(condition, value) = proposition
-        && established.proves_algebraic_condition_modulo_states(condition.native_compat(), *value)
+        && established.proves_algebraic_condition_modulo_states(condition.old_form(), *value)
     {
         return true;
     }
@@ -15263,7 +15333,7 @@ fn body_fact_is_established_through_a_pointer_alias(
     );
     variables.into_iter().any(|variable| {
         established
-            .exact_pointer_aliases(&Address::symbolic(variable))
+            .exact_pointer_aliases(&OldAddress::symbolic(variable))
             .any(|alias| {
                 let candidate =
                     crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
@@ -15835,11 +15905,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 return Err("instance body quantity must have type int32".into());
             };
             let fact = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: Box::new(quantity),
-                    right: Box::new(MachineTerm::constant(0)),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 },
                 true,
             );
@@ -16504,7 +16574,7 @@ pub(super) fn loop_instance_guard(
     instance: &ResourceInstance,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<Option<(Address, ConditionTerm)>, String> {
+) -> Result<Option<(OldAddress, OldConditionTerm)>, String> {
     let Ok(index) = definitions.binary_search_by(|d| {
         crate::instrumentation::record_deterministic_work(1);
         d.name().cmp(instance.name())
@@ -16601,7 +16671,7 @@ pub(super) fn loop_instance_guard(
     };
     Ok(Some((
         pointer.address().clone(),
-        (held.clone()).native_compat().clone(),
+        (held.clone()).old_form().clone(),
     )))
 }
 
@@ -17076,14 +17146,14 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
     let assumptions = &guard_assumptions;
     let proves_body_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact(condition.native_compat(), *value)
-                || assumptions.decide(condition.native_compat()) == Some(*value)
+            assumptions.proves_condition_exact(condition.old_form(), *value)
+                || assumptions.decide(condition.old_form()) == Some(*value)
                 || assumptions.proves_atomic_without_search(proposition)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact(condition.native_compat(), !*value)
-                    || assumptions.decide(condition.native_compat()) == Some(!*value)
+                assumptions.proves_condition_exact(condition.old_form(), !*value)
+                    || assumptions.decide(condition.old_form()) == Some(!*value)
                     || assumptions.proves_atomic_without_search(&Proposition::condition_is(
                         condition.clone(),
                         !*value,
@@ -17613,11 +17683,11 @@ fn consume_returned_resource_unit(
 
     let unit = quantity_condition_holds(
         assumptions,
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(quantity.native_compat().clone()),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(quantity.old_form().clone()),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
     );
     if !active.insert(required.clone()) {
@@ -17891,16 +17961,16 @@ fn view_range_concretely_loadable(memory: &SymbolicMemory, range: &MemoryRange) 
     if end <= start || end - start > 64 {
         return false;
     }
-    let width = match &range.base().offset {
-        AddressOffset::Int32Scaled { byte_width, .. } => u32::try_from(*byte_width).unwrap_or(4),
+    let width = match range.base().offset.view() {
+        OffsetView::Int32Scaled { byte_width, .. } => u32::try_from(byte_width).unwrap_or(4),
         _ => 4,
     };
     (start..end).all(|index| {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: range.base().base.clone(),
-            offset: AddressOffset::add(
+            offset: OldAddressOffset::add(
                 range.base().offset.clone(),
-                AddressOffset::scale_int32(MachineTerm::constant(index), i64::from(width)),
+                OldAddressOffset::scale_int32(OldMachineTerm::constant(index), i64::from(width)),
             ),
         };
         memory.is_loadable_concretely(&pointer, width)
@@ -18579,7 +18649,7 @@ fn evaluate_resource_clauses_in_section(
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ResourceClauseDependencyKey {
     Fact(ResourceFact),
-    MemoryBase(Address),
+    MemoryBase(OldAddress),
     MemoryBlock(AddressBase),
 }
 
@@ -18692,7 +18762,7 @@ fn evaluate_resource_clause_with_dependencies(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(OldAddress, ProgramType), ProgramValue>,
     mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -20157,7 +20227,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(OldAddress, ProgramType), ProgramValue>,
     mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -20605,11 +20675,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 };
                 if !quantity_condition_holds(
                     assumptions,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(quantity.native_compat().clone()),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: Box::new(quantity.old_form().clone()),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                 ) {
                     return Ok(Err(RuntimeError::FunctionContract(
@@ -20821,11 +20891,11 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             Err(error) => return Ok(Err(error)),
         };
         propositions.push(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(quantity.native_compat().clone()),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(quantity.old_form().clone()),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         ));
@@ -20871,7 +20941,7 @@ fn evaluate_function_declared_resource_spec(
     argument_state_sources: &[ResourceStateSource],
     parameter_types: &[ProgramType],
     source_arguments: Option<&[String]>,
-    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(OldAddress, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -20964,9 +21034,9 @@ fn evaluate_function_declared_resource_spec(
                     ))));
                 }
             };
-            int32(MachineTerm::multiply(
+            int32(OldMachineTerm::multiply(
                 count,
-                MachineTerm::constant(ProgramType::Int32.byte_width()),
+                OldMachineTerm::constant(ProgramType::Int32.byte_width()),
             ))
         } else {
             let mut diagnostic = None;
@@ -21134,13 +21204,13 @@ fn evaluate_function_declared_resource_spec(
 /// evaluation decides: a requirement at a call, a clause a function produces
 /// at its exit, and one an opaque or extern call returns to its caller.
 fn uint64_allocation_size_argument(
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<ProgramValue, RuntimeError> {
     if let Some(constant) = bytes.uint64_as_const()
         && (1..=i32::MAX as u64).contains(&constant)
     {
-        return Ok(int32(MachineTerm::constant(constant as u32)));
+        return Ok(int32(OldMachineTerm::constant(constant as u32)));
     }
     if assumptions.should_assume_entry_clause_spans()
         || crate::kernel::eval::uint64_allocation_size_bytes_are_exact(bytes, assumptions)
@@ -21650,9 +21720,9 @@ pub(in crate::kernel) fn function_exit_memory(
         Some(pointer)
             if pointer.address().base.is_local_block()
                 && (!caller_state.memory.has_block(&pointer.address().base)
-                    || callee_state.locals.is_proof_input_slot(&Address {
+                    || callee_state.locals.is_proof_input_slot(&OldAddress {
                         base: pointer.address().base.clone(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     })) =>
         {
             let block = &pointer.address().base;
@@ -22624,16 +22694,18 @@ fn contract_exit_outcome_with_boundary_transfer(
                                             (!produce
                                                 || crate::kernel::quantity_condition_holds(
                                                     assumptions,
-                                                    ConditionTerm::Compare {
+                                                    OldConditionTerm::Compare {
                                                         format: MachineIntegerType::Int32,
                                                         relation: CompareRelation::Equal,
                                                         left: Box::new(actual.clone()),
-                                                        right: Box::new(MachineTerm::constant(0)),
+                                                        right: Box::new(OldMachineTerm::constant(
+                                                            0,
+                                                        )),
                                                     },
                                                 ))
                                                 && crate::kernel::quantity_condition_holds(
                                                     assumptions,
-                                                    ConditionTerm::Compare {
+                                                    OldConditionTerm::Compare {
                                                         format: MachineIntegerType::Int32,
                                                         relation: CompareRelation::Equal,
                                                         left: Box::new(actual),
@@ -22654,16 +22726,16 @@ fn contract_exit_outcome_with_boundary_transfer(
                                 (actual_produce == produce
                                     || crate::kernel::quantity_condition_holds(
                                         assumptions,
-                                        ConditionTerm::Compare {
+                                        OldConditionTerm::Compare {
                                             format: MachineIntegerType::Int32,
                                             relation: CompareRelation::Equal,
                                             left: Box::new(actual_quantity.clone()),
-                                            right: Box::new(MachineTerm::constant(0)),
+                                            right: Box::new(OldMachineTerm::constant(0)),
                                         },
                                     ))
                                     && crate::kernel::quantity_condition_holds(
                                         assumptions,
-                                        ConditionTerm::Compare {
+                                        OldConditionTerm::Compare {
                                             format: MachineIntegerType::Int32,
                                             relation: CompareRelation::Equal,
                                             left: Box::new(actual_quantity),
@@ -23081,9 +23153,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Address {
+                        OldAddress {
                             base: block.clone(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         },
                         0.into(),
                         bytes,
@@ -23164,9 +23236,9 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Address {
+                        OldAddress {
                             base: block.clone(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         },
                         0.into(),
                         bytes,
@@ -23230,13 +23302,13 @@ fn exceptional_outcome_declaration_error(
     })
 }
 
-impl From<u32> for MachineTerm {
+impl From<u32> for OldMachineTerm {
     fn from(value: u32) -> Self {
         Self::constant(value)
     }
 }
 
-impl From<bool> for ConditionTerm {
+impl From<bool> for OldConditionTerm {
     fn from(value: bool) -> Self {
         Self::Constant(value)
     }

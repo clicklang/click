@@ -492,11 +492,8 @@ uint64 spell(const uint8* b, uint64 n) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(
-            trace.contains("`known` requires the current goal as an available semantic fact"),
-            "{trace}"
-        );
-        assert!(trace.contains("\nrequired evidence: false\n"), "{trace}");
+        assert!(trace.contains("could not establish `false`"), "{trace}");
+        assert!(trace.contains("\ngoal: false\n"), "{trace}");
         assert!(trace.contains(" = b + uint64("), "{trace}");
         assert!(
             trace.contains(" = at(statement(2).statement(0).entry, v)"),
@@ -1161,7 +1158,7 @@ int32 check(struct link* node) {
         .unwrap();
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); have 0 == 1 by { normalize(); } step(); close(); }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); have 0 == 1 by { close(); } step(); close(); }\n",
         )
         .unwrap();
         let nested = entry([
@@ -1171,12 +1168,12 @@ int32 check(struct link* node) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(nested.contains("tactic@2:66:\n  normalize();"), "{nested}");
+        assert!(nested.contains("tactic@2:66:\n  close();"), "{nested}");
         assert!(
             nested.contains("location: tactic 1 > have body tactic 1"),
             "{nested}"
         );
-        assert!(nested.contains("required evidence: 0 == 1"), "{nested}");
+        assert!(nested.contains("goal: 0 == 1"), "{nested}");
         assert!(nested.contains("steps through: declare x"), "{nested}");
 
         let wrong = entry([
@@ -1463,25 +1460,12 @@ int32 check(struct link* node) {
         let source = SHARED_POPULATION_FIXTURE;
         fs::write(&fixture, source).unwrap();
         entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
-        let click_start = source.find("```click\n").unwrap();
-        let release_start =
-            click_start + source[click_start..].find("void child_release(").unwrap();
-        let release_end =
-            release_start + source[release_start..].find("void parent_attach(").unwrap();
-        let final_release = "        close();\n    } else {";
-        let final_closer = release_start
-            + source[release_start..release_end]
-                .find(final_release)
-                .unwrap();
-        let line = source[..final_closer]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count()
-            + 1;
         entry([
             "expand".to_string(),
+            "--claim".to_string(),
+            "child_release.contract".to_string(),
             "--in-place".to_string(),
-            format!("{}:{line}:9", fixture.display()),
+            fixture.display().to_string(),
         ])
         .unwrap();
         let expanded = fs::read_to_string(&fixture).unwrap();
@@ -1821,7 +1805,7 @@ void update(int32* p, int32 x) {
     ensures exists (z: int32) { z == x } by {
         step_until(function.exit);
         witness(x);
-        normalize();
+        close();
     }
 }
 void parent(int32* p) {
@@ -1860,7 +1844,7 @@ void parent(int32* p) {
         );
         let current = read_state(
             failed_check,
-            "required evidence: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
+            "goal: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
         );
         assert_ne!(saved, current, "{report}");
     }
@@ -1890,7 +1874,7 @@ theorem bad(p: int32*, q: int32*) {
         let ordinary = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         let ordinary_goal = ordinary
             .lines()
-            .find_map(|line| line.trim().strip_prefix("required evidence: "))
+            .find_map(|line| line.trim().strip_prefix("goal: "))
             .unwrap();
         let report = entry([
             "verify".to_string(),
@@ -1903,14 +1887,11 @@ theorem bad(p: int32*, q: int32*) {
         // trace keeps the typed checked goal.
         assert!(ordinary_goal.contains("tag("), "{ordinary}");
         assert!(!ordinary_goal.contains("state#"), "{ordinary}");
-        assert_eq!(report.matches("required evidence:").count(), 1, "{report}");
-        let checked = report
-            .lines()
-            .find(|line| line.contains("required evidence:"))
-            .unwrap();
+        assert_eq!(report.matches("goal:").count(), 1, "{report}");
+        let checked = report.lines().find(|line| line.contains("goal:")).unwrap();
         assert!(checked.contains("tag("), "{report}");
         assert!(checked.contains("array-ref<int32>(state#1,"), "{report}");
-        assert!(checked.contains("ptr<int32*>("), "{report}");
+        assert!(checked.contains("ptr<int32*>(q)"), "{report}");
         assert!(
             report.contains("state#1 = initial empty memory"),
             "{report}"
@@ -2107,7 +2088,7 @@ theorem bad(x: int32, y: int32) {
     requires x == y;
     ensures x == 0 by {
         have y == x by { close(); }
-        have x == 0 by { normalize(); }
+        have x == 0 by { close(); }
         close();
     }
 }
@@ -2118,7 +2099,7 @@ theorem arms(x: int32) {
         } else {
             have x != 0 by { close(); }
         }
-        normalize();
+        close();
     }
 }
 int32 f() { ensures result == 2; } by { step(); close(); }
@@ -2137,7 +2118,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
         };
 
         let error = entry(["verify".to_string(), path.clone()]).unwrap_err();
-        assert!(error.contains("tactic@13:26:\n  normalize();"), "{error}");
+        assert!(error.contains("tactic@13:26:\n  close();"), "{error}");
         let hint = error
             .split_once("\n\nTo get a trace:\n  click ")
             .expect("a failing theorem suggests a trace")
@@ -2150,7 +2131,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
             traced.contains("\n\nproof trace (checked tactics and branch facts):\ntactic@12: have y == x\n  adds: y == x"),
             "{traced}"
         );
-        assert!(traced.contains("tactic@13:26:\n  normalize();"), "{traced}");
+        assert!(traced.contains("tactic@13:26:\n  close();"), "{traced}");
         assert!(!traced.contains("tactic@14"), "{traced}");
         assert!(!traced.contains("To get a trace:"), "{traced}");
         assert!(traced.len() < 2_000, "{traced}");
@@ -2193,7 +2174,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { normalize(); } }\nint32 f() { ensures result == 1; } by { step(); close(); }\n",
+            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { close(); } }\nint32 f() { ensures result == 1; } by { step(); close(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -2620,9 +2601,9 @@ int32 f() { ensures result == 2; } by { step(); close(); }
     fn supported_proof_boundary_verifies_and_profiles() {
         const STRUCTURAL_NESTING_LIMIT: usize = 32;
         let proof_goal = "0 == 0";
-        let mut proof_body = String::from("normalize();");
+        let mut proof_body = String::from("close();");
         for _ in 0..STRUCTURAL_NESTING_LIMIT - 2 {
-            proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+            proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
         }
         verify_and_profile_supported_boundary(
             "proof",
@@ -2738,8 +2719,8 @@ int32 f() { ensures result == 2; } by { step(); close(); }
                 "proof",
                 format!(
                     "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {} }} }}\n",
-                    (0..=STRUCTURAL_LIMIT).fold("normalize();".to_string(), |body, _| format!(
-                        "all {{ true => {{ {body} }} true => {{ normalize(); }} }}"
+                    (0..=STRUCTURAL_LIMIT).fold("close();".to_string(), |body, _| format!(
+                        "all {{ true => {{ {body} }} true => {{ close(); }} }}"
                     ))
                 ),
                 "too_deep_proof.ensures_0",

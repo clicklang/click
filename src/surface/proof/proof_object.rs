@@ -13,6 +13,7 @@ use crate::kernel::proof::{
     PropositionKnownContext, PropositionObligation as KernelPropositionObligation,
     PropositionSplitError, PureFactStore, SplitId,
 };
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::persistent::PersistentMap;
 
 #[cfg(test)]
@@ -688,11 +689,11 @@ pub(in crate::surface::proof) struct StoreSeparationMiss {
     /// The statement that ran, as a proof names it (`statement(5)`).
     pub(in crate::surface::proof) statement: String,
     /// The cached cell the store dropped.
-    pub(in crate::surface::proof) cell: crate::kernel::Address,
+    pub(in crate::surface::proof) cell: crate::kernel::OldAddress,
     /// The dropped cell as the statement's C locals spell it, `q[0]`.
     pub(in crate::surface::proof) cell_text: Option<String>,
     /// The cell the store wrote.
-    pub(in crate::surface::proof) store: crate::kernel::Address,
+    pub(in crate::surface::proof) store: crate::kernel::OldAddress,
     /// The spelled disequality the search tried at the statement's pre-state.
     pub(in crate::surface::proof) fact: SyntaxProposition,
 }
@@ -1495,15 +1496,16 @@ impl Proof<'_> {
                     crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
                     _ => None,
                 },
-                crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+                crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable)) => {
                     Some(*variable)
                 }
                 ProgramValue::Pointer(pointer) => {
                     match (&pointer.address().base, &pointer.address().offset) {
-                        (
-                            crate::kernel::AddressBase::Symbolic(variable),
-                            AddressOffset::Constant(0),
-                        ) => Some(*variable),
+                        (crate::kernel::AddressBase::Symbolic(variable), offset)
+                            if matches!(offset.view(), OffsetView::Constant(0)) =>
+                        {
+                            Some(*variable)
+                        }
                         _ => None,
                     }
                 }
@@ -1569,21 +1571,21 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             _ => None,
         },
         crate::kernel::arithmetic_c_value!(term) => match term {
-            MachineTerm::Variable(variable) => Some(*variable),
+            OldMachineTerm::Variable(variable) => Some(*variable),
             // A `Bool` binder (Stage 5), carried as its cast.
-            MachineTerm::BoolCast { value, .. } => match value.as_ref() {
-                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+            OldMachineTerm::BoolCast { value, .. } => match value.as_ref() {
+                crate::kernel::OldConditionTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
             _ => None,
         },
-        ProgramValue::Pointer(pointer) => match &pointer.address().offset {
-            AddressOffset::Variable(variable) => Some(*variable),
+        ProgramValue::Pointer(pointer) => match pointer.address().offset.view() {
+            OffsetView::Variable(variable) => Some(variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
-                value.operand_view().variable().copied()
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                index.operand_view().variable().copied()
             }
             _ => None,
         },
@@ -1630,10 +1632,10 @@ fn register_call_result_name(
     value: &ProgramValue,
 ) {
     match value.numeric_value() {
-        crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+        crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable)) => {
             labels.fallback_source_name(*variable, spelling, value.program_type());
         }
-        crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
+        crate::kernel::arithmetic_c_value!(read @ OldMachineTerm::MemoryLoad(..)) => {
             labels.fallback_read_name(read, spelling);
         }
         ProgramValue::Pointer(pointer) => {
@@ -1727,7 +1729,7 @@ fn register_state_names(
             // A `usize` or `uintptr_t` local is a pointer integer; its
             // numeric value is the scalar the local held.
             match value.numeric_value() {
-                crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+                crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable)) => {
                     // A read of a memory a recorded point names is spelled as
                     // that read, `old(g[0])`, which says where the value came
                     // from.
@@ -1742,7 +1744,7 @@ fn register_state_names(
                         value.program_type(),
                     );
                 }
-                crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(memory, _, _)) => {
+                crate::kernel::arithmetic_c_value!(read @ OldMachineTerm::MemoryLoad(memory, _, _)) => {
                     if !labels.names_memory(memory.memory()) {
                         labels.fallback_read_name(read, format!("at({point}, {name})"));
                     }
@@ -3966,7 +3968,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::ApplyPlannedTheorem { .. } => "apply",
         ProofStep::ApplyInduction { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
-        ProofStep::CompatibilityFactTransport { .. } => "verification-only fact transport",
         ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
         ProofStep::Open { .. } => "with",

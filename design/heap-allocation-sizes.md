@@ -40,11 +40,11 @@ contract happens to prove.
   `src/kernel/reasoning/path_facts.rs:834-861`, which matches only an Int32
   `Multiply` or a 32-bit constant).
 - **Heap state.** `CHeapMemory` (`src/kernel/primitives.rs:8508-8555`) maps
-  pointers to untyped `MachineTerm` sizes (live, deallocated, pending,
+  pointers to untyped `OldMachineTerm` sizes (live, deallocated, pending,
   zeroed-prefix); so do `CPendingReallocation.old_bytes` and `CBlock.size`
   (`primitives.rs:8688-8690`). The width is implicit; `memory_state.rs:4008`
   labels a reallocation's old bytes `CValue::Int32`.
-- **Offsets** are already width-typed (`AddressOffset::Int32Scaled` /
+- **Offsets** are already width-typed (`OldAddressOffset::Int32Scaled` /
   `Int64Scaled{unsigned}`, `primitives.rs:1018-1035`). `pointer_index_term`
   (`src/kernel/eval/operators.rs:2419-2446`) keeps a `size_t` index 64-bit and
   always zero-extends `uint32`. `address_base_bounds` (`operators.rs:2884-2990`)

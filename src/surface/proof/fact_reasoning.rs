@@ -71,7 +71,7 @@ pub(super) fn describe_derivation_failure(
         // search's miss is then not the news, and neither smaller steps nor
         // listed premises would supply the condition.
         let consulted = available.pure_context();
-        if consulted.decide(condition.native_compat()) == Some(!*value) {
+        if consulted.decide(condition.old_form()) == Some(!*value) {
             return crate::surface::diagnostics::describe_refuted_condition(
                 proposition,
                 available,
@@ -197,7 +197,7 @@ fn describe_access_bound_prerequisite(
         ParameterBinding::new(&parameters, &arguments),
     )?;
     let bound = crate::kernel::memory_access_element_bound(memory, pointer, byte_width)?;
-    let spell = |term: &MachineTerm| {
+    let spell = |term: &OldMachineTerm| {
         let spelled = crate::surface::diagnostics::describe_bitvector_with_context(
             term,
             ParameterBinding::new(&parameters, &arguments),
@@ -317,7 +317,7 @@ pub(in crate::surface) fn asserted_condition<'s>(
 ) -> Option<&'s ProgramExpression> {
     if !matches!(
         proposition,
-        Proposition::Equal(Term::ProgramValue(_), Term::ProgramValue(one)) if one.native_compat() == &int32(1)
+        Proposition::Equal(Term::ProgramValue(_), Term::ProgramValue(one)) if one.old_form() == &int32(1)
     ) {
         return None;
     }

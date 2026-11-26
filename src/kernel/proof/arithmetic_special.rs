@@ -1,13 +1,13 @@
 //! Local arithmetic rules used by selected-input normalization, and internal
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
-    Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
-    FloatCondition, FloatOperandView, KernelFloatType, MachineTerm, OldPointer, Proposition,
-    SignedDefinedWidth,
+    AddressBase, ComparisonOperator, FloatClassification, FloatCondition, FloatOperandView,
+    KernelFloatType, OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, OldPointer,
+    Proposition, SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
-use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{CompareRelation, OffsetTree, OffsetView, OverflowOperation};
 use crate::kernel::{IntegerTerm, MachineIntegerType, PureFactContext};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -59,11 +59,11 @@ fn address_base_payload(block: &AddressBase) -> Option<usize> {
     (payload <= MAX_TERM_PAYLOAD).then_some(payload)
 }
 
-fn pointer_payload(pointer: &Address) -> Option<usize> {
+fn pointer_payload(pointer: &OldAddress) -> Option<usize> {
     address_base_payload(&pointer.base)?.checked_add(pointer_offset_payload(&pointer.offset)?)
 }
 
-fn pointer_offset_payload(root: &AddressOffset) -> Option<usize> {
+fn pointer_offset_payload(root: &OldAddressOffset) -> Option<usize> {
     let mut pending = vec![root];
     let mut payload = 0usize;
     while let Some(offset) = pending.pop() {
@@ -71,13 +71,14 @@ fn pointer_offset_payload(root: &AddressOffset) -> Option<usize> {
         if payload > MAX_TERM_PAYLOAD {
             return None;
         }
-        match offset {
-            AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
-            AddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Constant(_) | OffsetView::Variable(_) => {}
+            OffsetView::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OffsetView::Int32Scaled { index: value, .. }
+            | OffsetView::Int64Scaled { index: value, .. } => {
                 payload = payload.checked_add(pointer_index_payload(value.operand_view())?)?;
             }
         }
@@ -116,7 +117,7 @@ fn pointer_index_payload(root: crate::kernel::MachineOperandView<'_>) -> Option<
             }
             total = total.checked_add(1)?;
             pending.push(operand);
-        } else if let V::Legacy(term) = view {
+        } else if let V::Old(term) = view {
             total = total.checked_add(bitvector_payload(term)?)?;
         } else {
             return None;
@@ -128,7 +129,7 @@ fn pointer_index_payload(root: crate::kernel::MachineOperandView<'_>) -> Option<
     Some(total)
 }
 
-fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
+fn bitvector_payload(root: &OldMachineTerm) -> Option<usize> {
     let mut pending = vec![root];
     let mut payload = 0usize;
     while let Some(term) = pending.pop() {
@@ -137,10 +138,10 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
             return None;
         }
         match term {
-            MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
+            OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => {}
             // Integer operands are already interned by shallow identity.
-            MachineTerm::IntegerToMachine { .. } => {}
-            MachineTerm::Binary {
+            OldMachineTerm::IntegerToMachine { .. } => {}
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left,
@@ -149,9 +150,9 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
             | binary_term!(Int32, BitwiseXor, left, right)
             | binary_term!(Int32, Add, left, right)
             | binary_term!(Int32, Subtract, left, right)
-            | MachineTerm::Float32Binary { left, right, .. }
-            | MachineTerm::Float64Binary { left, right, .. }
-            | MachineTerm::Binary {
+            | OldMachineTerm::Float32Binary { left, right, .. }
+            | OldMachineTerm::Float64Binary { left, right, .. }
+            | OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op:
                     MachineBinaryOp::Add
@@ -172,21 +173,21 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
             cast_term!(Int64FromUInt32, value)
             | cast_term!(UInt64From32, value)
             | cast_term!(UInt32From64, value)
-            | MachineTerm::Float32Negate(value)
-            | MachineTerm::Float64Negate(value) => pending.push(value),
-            MachineTerm::Cast {
+            | OldMachineTerm::Float32Negate(value)
+            | OldMachineTerm::Float64Negate(value) => pending.push(value),
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 ..
             } => pending.push(value),
-            MachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::PureFunctionApplication { name, arguments } => {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
             }
-            MachineTerm::IntegerAddress(pointer, _) => {
+            OldMachineTerm::IntegerAddress(pointer, _) => {
                 payload = payload.checked_add(pointer_payload(pointer)?)?;
             }
-            MachineTerm::MemoryLoad(_, pointer, _) => {
+            OldMachineTerm::MemoryLoad(_, pointer, _) => {
                 // A read owns an interned state; only its written address
                 // contributes syntax payload, never the state contents.
                 payload = payload.checked_add(pointer_payload(pointer.address())?)?;
@@ -200,11 +201,11 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
     Some(payload)
 }
 
-fn charge_pointer_offset(offset: &AddressOffset) -> bool {
+fn charge_pointer_offset(offset: &OldAddressOffset) -> bool {
     pointer_offset_payload(offset).is_some_and(charge_payload)
 }
 
-fn charge_pointer(pointer: &Address) -> bool {
+fn charge_pointer(pointer: &OldAddress) -> bool {
     pointer_payload(pointer).is_some_and(charge_payload)
 }
 
@@ -212,11 +213,11 @@ fn charge_address_base(block: &AddressBase) -> bool {
     address_base_payload(block).is_some_and(charge_payload)
 }
 
-fn charge_bitvector(term: &MachineTerm) -> bool {
+fn charge_bitvector(term: &OldMachineTerm) -> bool {
     bitvector_payload(term).is_some_and(charge_payload)
 }
 
-fn charge_map_insert(offset: &AddressOffset, map_len: usize) -> bool {
+fn charge_map_insert(offset: &OldAddressOffset, map_len: usize) -> bool {
     let comparisons = (usize::BITS - map_len.max(1).leading_zeros()) as usize;
     pointer_offset_payload(offset).is_some_and(|payload| {
         !crate::instrumentation::deadline_exceeded_with_work(
@@ -231,7 +232,7 @@ fn charge_signed_bound(proposition: &Proposition) -> bool {
     // A native 8- or 16-bit order is the same fact as the `int32` order of
     // its widenings (rule K8), which the bound context files with it.
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format:
                 MachineIntegerType::Int32
                 | MachineIntegerType::UInt32
@@ -248,7 +249,7 @@ fn charge_signed_bound(proposition: &Proposition) -> bool {
             right,
         },
         true,
-    )) = proposition.condition_native()
+    )) = proposition.old_condition()
     else {
         return false;
     };
@@ -338,34 +339,34 @@ fn pointer_index_equal(
     true
 }
 
-fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
+fn address_offset_equal(left: &OldAddressOffset, right: &OldAddressOffset) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
-        match (left, right) {
-            (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
+        match (left.view(), right.view()) {
+            (OffsetView::Constant(left), OffsetView::Constant(right)) => {
                 if left != right {
                     return false;
                 }
             }
-            (AddressOffset::Variable(left), AddressOffset::Variable(right)) => {
+            (OffsetView::Variable(left), OffsetView::Variable(right)) => {
                 if left != right {
                     return false;
                 }
             }
             (
-                AddressOffset::Add(left_first, left_second),
-                AddressOffset::Add(right_first, right_second),
+                OffsetView::Add(left_first, left_second),
+                OffsetView::Add(right_first, right_second),
             ) => {
                 pending.push((left_first, right_first));
                 pending.push((left_second, right_second));
             }
             (
-                AddressOffset::Int32Scaled {
-                    value: left,
+                OffsetView::Int32Scaled {
+                    index: left,
                     byte_width: left_width,
                 },
-                AddressOffset::Int32Scaled {
-                    value: right,
+                OffsetView::Int32Scaled {
+                    index: right,
                     byte_width: right_width,
                 },
             ) if left_width == right_width => {
@@ -374,13 +375,13 @@ fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
                 }
             }
             (
-                AddressOffset::Int64Scaled {
-                    value: left,
+                OffsetView::Int64Scaled {
+                    index: left,
                     byte_width: left_width,
                     unsigned: left_unsigned,
                 },
-                AddressOffset::Int64Scaled {
-                    value: right,
+                OffsetView::Int64Scaled {
+                    index: right,
                     byte_width: right_width,
                     unsigned: right_unsigned,
                 },
@@ -395,7 +396,7 @@ fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
     true
 }
 
-fn address_equal(left: &Address, right: &Address) -> bool {
+fn address_equal(left: &OldAddress, right: &OldAddress) -> bool {
     charge_pointer(left)
         && charge_pointer(right)
         && address_base_equal(&left.base, &right.base)
@@ -407,21 +408,24 @@ mod operand_identity;
 /// Compare only the bounded structural fragment accepted by `bitvector_payload`.
 /// This avoids recursive equality on attacker-controlled expression depth after
 /// the payload has already been charged.
-fn bitvector_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
+fn bitvector_equal(left: &OldMachineTerm, right: &OldMachineTerm) -> bool {
     operand_identity::equal(
-        crate::kernel::MachineOperandView::Legacy(left),
-        crate::kernel::MachineOperandView::Legacy(right),
+        crate::kernel::MachineOperandView::Old(left),
+        crate::kernel::MachineOperandView::Old(right),
     )
 }
 
-fn legacy_bitvector_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
+fn legacy_bitvector_equal(left: &OldMachineTerm, right: &OldMachineTerm) -> bool {
     if !charge_bitvector(left) || !charge_bitvector(right) {
         return false;
     }
     legacy_bitvector_equal_after_payload_check(left, right)
 }
 
-fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &MachineTerm) -> bool {
+fn legacy_bitvector_equal_after_payload_check(
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
@@ -445,12 +449,12 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
                     return false;
                 }
             }
-            (MachineTerm::Variable(left), MachineTerm::Variable(right)) => {
+            (OldMachineTerm::Variable(left), OldMachineTerm::Variable(right)) => {
                 if left != right {
                     return false;
                 }
             }
-            (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
+            (OldMachineTerm::MemoryLoad(lm, lp, lk), OldMachineTerm::MemoryLoad(rm, rp, rk)) => {
                 if lm.point() != rm.point() || lk != rk || !address_equal(lp, rp) {
                     return false;
                 }
@@ -461,11 +465,11 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
                 }
             }
             (
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value: left,
                     destination: left_destination,
                 },
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value: right,
                     destination: right_destination,
                 },
@@ -475,13 +479,13 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
                 }
             }
             (
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: left,
                     from: left_source,
                     to: left_destination,
                 },
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: right,
                     from: right_source,
@@ -494,18 +498,18 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
                 pending.push((left, right));
             }
             (
-                MachineTerm::PureFunctionApplication {
+                OldMachineTerm::PureFunctionApplication {
                     name: left_name,
                     arguments: left_arguments,
                 },
-                MachineTerm::PureFunctionApplication {
+                OldMachineTerm::PureFunctionApplication {
                     name: right_name,
                     arguments: right_arguments,
                 },
             ) if left_name == right_name && left_arguments.len() == right_arguments.len() => {
                 pending.extend(left_arguments.iter().zip(right_arguments.iter()));
             }
-            (MachineTerm::IntegerAddress(left, _), MachineTerm::IntegerAddress(right, _)) => {
+            (OldMachineTerm::IntegerAddress(left, _), OldMachineTerm::IntegerAddress(right, _)) => {
                 if !address_equal(left, right) {
                     return false;
                 }
@@ -566,7 +570,9 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
 /// uses the convenience `uint64_as_const` recognizer, whose implementation is
 /// recursive for constant expressions; keeping it behind this bounded walk
 /// makes attacker-controlled depth fail before that helper is reached.
-pub(crate) fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Address, u64)> {
+pub(crate) fn checked_pointer_alignment(
+    condition: &OldConditionTerm,
+) -> Option<(&OldAddress, u64)> {
     use crate::kernel::MachineOperandView;
     let is_mask = |operand: MachineOperandView<'_>| {
         matches!(
@@ -575,21 +581,20 @@ pub(crate) fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&A
         )
     };
     match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
         } => {
-            if !(is_mask(MachineOperandView::Legacy(left))
-                || is_mask(MachineOperandView::Legacy(right)))
+            if !(is_mask(MachineOperandView::Old(left)) || is_mask(MachineOperandView::Old(right)))
                 || !charge_bitvector(left)
                 || !charge_bitvector(right)
             {
                 return None;
             }
         }
-        ConditionTerm::IntegerEqual(left, right) => {
+        OldConditionTerm::IntegerEqual(left, right) => {
             if ![left, right].into_iter().any(|operand| {
                 matches!(operand.as_ref(), IntegerTerm::Machine(word) if is_mask(word.operand_view()))
             }) {
@@ -699,30 +704,30 @@ pub(crate) enum ArithmeticRuleError {
 /// subtraction names: its width, its two operands, and whether it subtracts.
 pub(crate) fn signed_definedness_operands(
     proposition: &Proposition,
-) -> Option<(SignedDefinedWidth, &MachineTerm, &MachineTerm, bool)> {
+) -> Option<(SignedDefinedWidth, &OldMachineTerm, &OldMachineTerm, bool)> {
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
-    match condition.native_compat() {
-        ConditionTerm::Overflows {
+    match condition.old_form() {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left,
             right,
         } => Some((SignedDefinedWidth::Int32, left, right, false)),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
         } => Some((SignedDefinedWidth::Int32, left, right, true)),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left,
             right,
         } => Some((SignedDefinedWidth::Int64, left, right, false)),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             left,
@@ -733,7 +738,10 @@ pub(crate) fn signed_definedness_operands(
 }
 
 /// The signed value of `term` when it is a constant of `width`.
-pub(crate) fn signed_width_constant(width: SignedDefinedWidth, term: &MachineTerm) -> Option<i64> {
+pub(crate) fn signed_width_constant(
+    width: SignedDefinedWidth,
+    term: &OldMachineTerm,
+) -> Option<i64> {
     match width {
         SignedDefinedWidth::Int32 => term.as_const().map(|bits| i64::from(bits as i32)),
         SignedDefinedWidth::Int64 => term.int64_as_const(),
@@ -775,7 +783,7 @@ fn signed_constant_bound_on_key(
     let Proposition::ConditionIs(condition, value) = premise else {
         return None;
     };
-    let view = comparison_view(condition.native_compat(), *value)?;
+    let view = comparison_view(condition.old_form(), *value)?;
     let format = match width {
         SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
         SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
@@ -896,26 +904,26 @@ impl SpecialArithmeticNode {}
 fn pointer_sides(
     proposition: &Proposition,
 ) -> Option<(
-    &AddressOffset,
-    &AddressOffset,
+    &OldAddressOffset,
+    &OldAddressOffset,
     Option<(&AddressBase, &AddressBase)>,
 )> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::PointerEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::PointerEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AddressEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AddressEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((left, right, None))
         }
@@ -923,11 +931,11 @@ fn pointer_sides(
     }
 }
 
-fn scalar(value: &MachineTerm) -> Option<i64> {
+fn scalar(value: &OldMachineTerm) -> Option<i64> {
     value.as_const().map(|value| i64::from(value as i32))
 }
 
-fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, (i64, i64)>> {
+fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<OldMachineTerm, (i64, i64)>> {
     let mut bounds = BTreeMap::new();
     for premise in premises {
         if !charge_signed_bound(premise) {
@@ -936,33 +944,33 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, (i64
         let Proposition::ConditionIs(condition, true) = premise else {
             return None;
         };
-        let (left, right, strict) = match condition.native_compat() {
-            ConditionTerm::Compare {
+        let (left, right, strict) = match condition.old_form() {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
                 right,
             } => (left.as_ref(), right.as_ref(), true),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
                 right,
             } => (left.as_ref(), right.as_ref(), false),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
                 right,
             } => (right.as_ref(), left.as_ref(), true),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
                 right,
             } => (right.as_ref(), left.as_ref(), false),
             // A `uint32` order bounds no signed word.
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation:
                     CompareRelation::LessThan
@@ -1017,30 +1025,30 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, (i64
 
 /// The two sides of an unsigned 64-bit order premise, lower side first,
 /// and whether the order is strict.
-fn unsigned64_order(proposition: &Proposition) -> Option<(&MachineTerm, &MachineTerm, bool)> {
+fn unsigned64_order(proposition: &Proposition) -> Option<(&OldMachineTerm, &OldMachineTerm, bool)> {
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
-    Some(match condition.native_compat() {
-        ConditionTerm::Compare {
+    Some(match condition.old_form() {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left,
             right,
         } => (left, right, true),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         } => (left, right, false),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         } => (right, left, true),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left,
@@ -1053,7 +1061,7 @@ fn unsigned64_order(proposition: &Proposition) -> Option<(&MachineTerm, &Machine
 /// The interval each cited unsigned 64-bit order premise gives its
 /// non-constant side. A strict order between two symbolic values keeps the
 /// lower one below the type's largest value.
-fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, (u64, u64)>> {
+fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<OldMachineTerm, (u64, u64)>> {
     let mut bounds = BTreeMap::new();
     for premise in premises {
         let (lower, upper, strict) = unsigned64_order(premise)?;
@@ -1086,11 +1094,28 @@ fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, 
     Some(bounds)
 }
 
+/// A part of one scaled index, borrowed from the index an offset view owns.
 enum OffsetPart<'a> {
-    Offset(&'a AddressOffset),
     Scaled(crate::kernel::MachineOperandView<'a>, i64),
     /// An unsigned 64-bit index scaled by an element width.
     Scaled64(crate::kernel::MachineOperandView<'a>, i64),
+}
+
+/// Count `sign` once more for `atom`, charging the map insertion.
+fn add_offset_atom(
+    terms: &mut BTreeMap<OldAddressOffset, i128>,
+    atom: OldAddressOffset,
+    sign: i128,
+) -> bool {
+    if !charge_map_insert(&atom, terms.len()) {
+        return false;
+    }
+    let entry = terms.entry(atom).or_default();
+    let Some(next) = entry.checked_add(sign) else {
+        return false;
+    };
+    *entry = next;
+    true
 }
 
 /// An Integer rule's result as the rule derives it: a native comparison
@@ -1244,8 +1269,8 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     }
     if let Proposition::ConditionIs(condition, truth) = goal
         && matches!(
-            condition.native_compat(),
-            ConditionTerm::Compare {
+            condition.old_form(),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
                 ..
@@ -1259,7 +1284,7 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
             }
             context = context.assume_proposition(premise.clone());
         }
-        return context.decide_widened_sum_bound(condition.native_compat()) == Some(*truth);
+        return context.decide_widened_sum_bound(condition.old_form()) == Some(*truth);
     }
     false
 }
@@ -1269,12 +1294,12 @@ fn pointer_translation(
     bound_propositions: &[&Proposition],
     goal: &Proposition,
 ) -> bool {
-    if let Some((ConditionTerm::PointerEqual(left, right), true)) = (goal).condition_native() {
+    if let Some((OldConditionTerm::PointerEqual(left, right), true)) = (goal).old_condition() {
         let same_domain = |a: &OldPointer, b: &OldPointer| a.same_provenance_as(b);
         let linked = match relation {
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::PointerEqual(a, b), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
+                    condition_source_0.old_condition() =>
             {
                 (same_domain(left, a) && same_domain(right, b))
                     || (same_domain(left, b) && same_domain(right, a))
@@ -1340,10 +1365,10 @@ fn pointer_translation(
     // that exact matching rule while retaining the queried shared operand.
     let bounds: Vec<_> = bounds.into_iter().collect();
     let wide_bounds: Vec<_> = wide_bounds.into_iter().collect();
-    fn lookup<T: Copy>(bounds: &[(MachineTerm, T)], value: V<'_>) -> Option<T> {
+    fn lookup<T: Copy>(bounds: &[(OldMachineTerm, T)], value: V<'_>) -> Option<T> {
         bounds
             .binary_search_by(|(term, _)| {
-                crate::kernel::machine_operand_syntax_cmp(V::Legacy(term), value)
+                crate::kernel::machine_operand_syntax_cmp(V::Old(term), value)
             })
             .ok()
             .map(|index| bounds[index].1)
@@ -1383,7 +1408,7 @@ fn pointer_translation(
         };
         xmin + ymin >= SIGNED_MIN && xmax + ymax <= SIGNED_MAX
     };
-    let mut terms = BTreeMap::<AddressOffset, i128>::new();
+    let mut terms = BTreeMap::<OldAddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [
         (left, 1i128),
@@ -1391,115 +1416,128 @@ fn pointer_translation(
         (right, -1),
         (premise_right, 1),
     ] {
-        let mut pending = vec![OffsetPart::Offset(offset)];
-        while let Some(part) = pending.pop() {
-            let atom = match part {
-                OffsetPart::Offset(AddressOffset::Constant(value)) => {
-                    let Some(next) = constant.checked_add(sign * i128::from(*value)) else {
+        let mut pending = vec![offset];
+        while let Some(offset) = pending.pop() {
+            // A scaled index's parts are split by a nested walk over the
+            // index the view owns, run where its first part would have been
+            // popped, so parts are counted in the same order.
+            let parts = match offset.view() {
+                OffsetView::Constant(value) => {
+                    let Some(next) = constant.checked_add(sign * i128::from(value)) else {
                         return false;
                     };
                     constant = next;
                     continue;
                 }
-                OffsetPart::Offset(AddressOffset::Add(left, right)) => {
-                    pending.push(OffsetPart::Offset(left));
-                    pending.push(OffsetPart::Offset(right));
+                OffsetView::Add(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
                     continue;
                 }
-                OffsetPart::Offset(AddressOffset::Int32Scaled { value, byte_width }) => {
-                    pending.push(OffsetPart::Scaled(value.operand_view(), *byte_width));
-                    continue;
-                }
-                OffsetPart::Scaled(value, width) => {
-                    if let Some(int32_constant!(bits)) = value.literal() {
-                        let value = i128::from(constant_u32(bits) as i32) * i128::from(width);
-                        let Some(next) = constant.checked_add(sign * value) else {
-                            return false;
-                        };
-                        constant = next;
-                        continue;
-                    }
-                    if let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) =
-                        value.binary()
-                        && sum_is_defined(left, right)
-                    {
-                        pending.push(OffsetPart::Scaled(left, width));
-                        pending.push(OffsetPart::Scaled(right, width));
-                        continue;
-                    }
-                    AddressOffset::Int32Scaled {
-                        value: value.retain(MachineIntegerType::Int32),
-                        byte_width: width,
-                    }
-                }
-                OffsetPart::Offset(AddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int32Scaled { index, byte_width } => Some((index, byte_width, false)),
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned: true,
-                }) => {
-                    pending.push(OffsetPart::Scaled64(value.operand_view(), *byte_width));
-                    continue;
-                }
-                OffsetPart::Scaled64(value, width) => {
-                    if let Some(bits) = value.uint64_constant() {
-                        let value = i128::from(bits) * i128::from(width);
-                        let Some(next) = constant.checked_add(sign * value) else {
-                            return false;
-                        };
-                        constant = next;
-                        continue;
-                    }
-                    if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Add, [left, right])) =
-                        value.binary()
-                        && wide_sum_is_exact(left, right)
-                    {
-                        pending.push(OffsetPart::Scaled64(left, width));
-                        pending.push(OffsetPart::Scaled64(right, width));
-                        continue;
-                    }
-                    AddressOffset::Int64Scaled {
-                        value: value.retain(MachineIntegerType::Int64),
-                        byte_width: width,
-                        unsigned: true,
-                    }
-                }
-                OffsetPart::Offset(value) => value.clone(),
+                } => Some((index, byte_width, true)),
+                OffsetView::Variable(_) | OffsetView::Int64Scaled { .. } => None,
             };
-            if !charge_map_insert(&atom, terms.len()) {
-                return false;
+            let Some((index, byte_width, wide)) = parts else {
+                if !add_offset_atom(&mut terms, offset.clone(), sign) {
+                    return false;
+                }
+                continue;
+            };
+            let mut parts = vec![if wide {
+                OffsetPart::Scaled64(index.operand_view(), byte_width)
+            } else {
+                OffsetPart::Scaled(index.operand_view(), byte_width)
+            }];
+            while let Some(part) = parts.pop() {
+                let atom = match part {
+                    OffsetPart::Scaled(value, width) => {
+                        if let Some(int32_constant!(bits)) = value.literal() {
+                            let value = i128::from(constant_u32(bits) as i32) * i128::from(width);
+                            let Some(next) = constant.checked_add(sign * value) else {
+                                return false;
+                            };
+                            constant = next;
+                            continue;
+                        }
+                        if let Some((
+                            MachineIntegerType::Int32,
+                            MachineBinaryOp::Add,
+                            [left, right],
+                        )) = value.binary()
+                            && sum_is_defined(left, right)
+                        {
+                            parts.push(OffsetPart::Scaled(left, width));
+                            parts.push(OffsetPart::Scaled(right, width));
+                            continue;
+                        }
+                        OldAddressOffset::int32_scaled(
+                            value.retain(MachineIntegerType::Int32),
+                            width,
+                        )
+                    }
+                    OffsetPart::Scaled64(value, width) => {
+                        if let Some(bits) = value.uint64_constant() {
+                            let value = i128::from(bits) * i128::from(width);
+                            let Some(next) = constant.checked_add(sign * value) else {
+                                return false;
+                            };
+                            constant = next;
+                            continue;
+                        }
+                        if let Some((
+                            MachineIntegerType::UInt64,
+                            MachineBinaryOp::Add,
+                            [left, right],
+                        )) = value.binary()
+                            && wide_sum_is_exact(left, right)
+                        {
+                            parts.push(OffsetPart::Scaled64(left, width));
+                            parts.push(OffsetPart::Scaled64(right, width));
+                            continue;
+                        }
+                        OldAddressOffset::int64_scaled(
+                            value.retain(MachineIntegerType::Int64),
+                            width,
+                            true,
+                        )
+                    }
+                };
+                if !add_offset_atom(&mut terms, atom, sign) {
+                    return false;
+                }
             }
-            let entry = terms.entry(atom).or_default();
-            let Some(next) = entry.checked_add(sign) else {
-                return false;
-            };
-            *entry = next;
         }
     }
     constant == 0 && terms.values().all(|coefficient| *coefficient == 0)
 }
 
-fn offset_difference(goal: &AddressOffset, premise: &AddressOffset) -> Option<i128> {
+fn offset_difference(goal: &OldAddressOffset, premise: &OldAddressOffset) -> Option<i128> {
     if !charge_pointer_offset(goal) || !charge_pointer_offset(premise) {
         return None;
     }
-    let mut terms = BTreeMap::<AddressOffset, i128>::new();
+    let mut terms = BTreeMap::<OldAddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [(goal, 1i128), (premise, -1)] {
         let mut pending = vec![offset];
         while let Some(offset) = pending.pop() {
-            match offset {
-                AddressOffset::Constant(value) => {
-                    constant = constant.checked_add(sign * i128::from(*value))?
+            match offset.view() {
+                OffsetView::Constant(value) => {
+                    constant = constant.checked_add(sign * i128::from(value))?
                 }
-                AddressOffset::Add(left, right) => {
+                OffsetView::Add(left, right) => {
                     pending.push(left);
                     pending.push(right);
                 }
-                other => {
-                    if !charge_map_insert(other, terms.len()) {
+                _ => {
+                    if !charge_map_insert(offset, terms.len()) {
                         return None;
                     }
-                    let coefficient = terms.entry(other.clone()).or_default();
+                    let coefficient = terms.entry(offset.clone()).or_default();
                     *coefficient = coefficient.checked_add(sign)?;
                 }
             }
@@ -1526,7 +1564,10 @@ pub(crate) fn unsigned_word_constant_for_discovery(
 
 /// A bounded discovery hint over two explicit pointers, with no fact context.
 /// The caller still constructs its ordinary address identity and offset law.
-pub(crate) fn constant_pointer_byte_difference(left: &Address, right: &Address) -> Option<i128> {
+pub(crate) fn constant_pointer_byte_difference(
+    left: &OldAddress,
+    right: &OldAddress,
+) -> Option<i128> {
     if !charge_pointer(left)
         || !charge_pointer(right)
         || !address_base_equal(&left.base, &right.base)
@@ -1546,7 +1587,7 @@ pub(crate) fn intrinsic_pointer_alignment(result: &Proposition) -> bool {
 /// Select a formation premise by the written base, offset and alignment.
 /// Replay validates the selected premise with the ordinary alignment rule.
 pub(crate) fn known_pointer_alignment(result: &Proposition, facts: &PureFactContext) -> bool {
-    let Some((condition, expected)) = result.condition_native() else {
+    let Some((condition, expected)) = result.old_condition() else {
         return false;
     };
     let Some((pointer, alignment)) = checked_pointer_alignment(condition) else {
@@ -1564,7 +1605,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
     let Proposition::ConditionIs(condition, expected) = result else {
         return false;
     };
-    let Some((goal_pointer, goal_alignment)) = checked_pointer_alignment(condition.native_compat())
+    let Some((goal_pointer, goal_alignment)) = checked_pointer_alignment(condition.old_form())
     else {
         return false;
     };
@@ -1575,7 +1616,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         let Proposition::ConditionIs(condition, true) = proposition else {
             return None;
         };
-        checked_pointer_alignment(condition.native_compat())
+        checked_pointer_alignment(condition.old_form())
     });
     if premise.is_some() && premise_alignment.is_none() {
         return false;
@@ -1602,7 +1643,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         };
         aligned
     } else {
-        let intrinsic_alignment = if address_equal(goal_pointer, &Address::null()) {
+        let intrinsic_alignment = if address_equal(goal_pointer, &OldAddress::null()) {
             // The null address is zero, so every valid power-of-two alignment
             // divides it; use the largest possible bound as an intrinsic
             // alignment sentinel.
@@ -1624,7 +1665,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         if goal_alignment > intrinsic {
             return false;
         }
-        let Some(delta) = offset_difference(&goal_pointer.offset, &AddressOffset::Constant(0))
+        let Some(delta) = offset_difference(&goal_pointer.offset, &OldAddressOffset::constant(0))
         else {
             return false;
         };
@@ -1637,7 +1678,10 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
 /// alignment.  Such an addend cannot change the pointer's residue.  The
 /// traversal is iterative because this helper runs on source-shaped pointer
 /// offsets and must not inherit their nesting depth.
-fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option<AddressOffset> {
+fn drop_aligned_scaled_addends(
+    offset: &OldAddressOffset,
+    alignment: u64,
+) -> Option<OldAddressOffset> {
     if !charge_pointer_offset(offset) {
         return None;
     }
@@ -1645,12 +1689,12 @@ fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option
     let mut pending = vec![offset];
     let mut parts = Vec::new();
     while let Some(offset) = pending.pop() {
-        match offset {
-            AddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            other => parts.push(other.clone()),
+            _ => parts.push(offset.clone()),
         }
     }
     fn constant_factor(term: crate::kernel::MachineOperandView<'_>) -> Option<i64> {
@@ -1663,14 +1707,19 @@ fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option
             .or_else(|| right.word32_constant())
             .map(|value| i64::from(value as i32))
     }
-    let divisible = |part: &AddressOffset| match part {
-        AddressOffset::Int32Scaled { value, byte_width }
-        | AddressOffset::Int64Scaled {
-            value, byte_width, ..
+    let divisible = |part: &OldAddressOffset| match part.view() {
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        }
+        | OffsetView::Int64Scaled {
+            index: value,
+            byte_width,
+            ..
         } => {
             let scale = constant_factor(value.operand_view())
-                .and_then(|factor| factor.checked_mul(*byte_width))
-                .unwrap_or(*byte_width);
+                .and_then(|factor| factor.checked_mul(byte_width))
+                .unwrap_or(byte_width);
             scale != 0 && scale % alignment == 0
         }
         _ => false,
@@ -1682,8 +1731,8 @@ fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option
         parts
             .into_iter()
             .filter(|part| !divisible(part))
-            .reduce(AddressOffset::add)
-            .unwrap_or(AddressOffset::Constant(0)),
+            .reduce(OldAddressOffset::add)
+            .unwrap_or(OldAddressOffset::constant(0)),
     )
 }
 
@@ -1701,9 +1750,9 @@ enum TaggedTag<'a> {
 struct TaggedAddress<'a> {
     /// Pointer payloads can be large symbolic offset trees.  The iterative
     /// evaluator keeps one of these forms at every visited term, so sharing
-    /// the payload is essential: cloning an `Address` here would turn a tag
+    /// the payload is essential: cloning an `OldAddress` here would turn a tag
     /// chain over a deep pointer into a payload-depth by tag-depth operation.
-    pointer: Arc<Address>,
+    pointer: Arc<OldAddress>,
     tag: Arc<TaggedTag<'a>>,
     /// The tag's constant value, when it is known.  Keeping this alongside
     /// the term is important: a symbolic tag chain must not be recursively
@@ -1787,11 +1836,11 @@ fn pointer_index_hash(view: crate::kernel::MachineOperandView<'_>) -> Option<u64
         return None;
     }
     // Called only after the occurrence/depth-bounded pointer payload check.
-    let header = MachineTerm::Binary {
+    let header = OldMachineTerm::Binary {
         format,
         op,
-        left: Box::new(MachineTerm::constant(0)),
-        right: Box::new(MachineTerm::constant(0)),
+        left: Box::new(OldMachineTerm::constant(0)),
+        right: Box::new(OldMachineTerm::constant(0)),
     };
     let mut hash = DefaultHasher::new();
     std::mem::discriminant(&header).hash(&mut hash);
@@ -1801,7 +1850,7 @@ fn pointer_index_hash(view: crate::kernel::MachineOperandView<'_>) -> Option<u64
     Some(hash.finish())
 }
 
-fn pointer_identity_hash(pointer: &Address) -> Option<u64> {
+fn pointer_identity_hash(pointer: &OldAddress) -> Option<u64> {
     let payload = pointer_payload(pointer)?;
     if crate::instrumentation::deadline_exceeded_with_work(payload.max(1)) {
         return None;
@@ -1810,26 +1859,29 @@ fn pointer_identity_hash(pointer: &Address) -> Option<u64> {
     pointer.base.hash(&mut hasher);
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            AddressOffset::Constant(value) => {
+        match offset.view() {
+            OffsetView::Constant(value) => {
                 0u8.hash(&mut hasher);
                 value.hash(&mut hasher);
             }
-            AddressOffset::Variable(value) => {
+            OffsetView::Variable(value) => {
                 1u8.hash(&mut hasher);
                 value.hash(&mut hasher);
             }
-            AddressOffset::Add(left, right) => {
+            OffsetView::Add(left, right) => {
                 2u8.hash(&mut hasher);
                 pending.push(right);
                 pending.push(left);
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
+            OffsetView::Int32Scaled {
+                index: value,
+                byte_width,
+            } => {
                 3u8.hash(&mut hasher);
                 byte_width.hash(&mut hasher);
                 pointer_index_hash(value.operand_view())?.hash(&mut hasher);
             }
-            AddressOffset::Int64Scaled { .. } => return None,
+            OffsetView::Int64Scaled { .. } => return None,
         }
     }
     Some(hasher.finish())
@@ -1843,12 +1895,12 @@ struct AlignmentIndex<'a> {
 }
 
 struct AlignmentEntry<'a> {
-    pointer: &'a Address,
+    pointer: &'a OldAddress,
     max_alignment: u64,
 }
 
 impl<'a> AlignmentIndex<'a> {
-    fn new(alignments: &'a [(&'a Address, u64)]) -> Option<Self> {
+    fn new(alignments: &'a [(&'a OldAddress, u64)]) -> Option<Self> {
         let mut by_hash: HashMap<u64, Vec<AlignmentEntry<'a>>> = HashMap::new();
         for (pointer, alignment) in alignments {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
@@ -1876,7 +1928,7 @@ impl<'a> AlignmentIndex<'a> {
         Some(Self { by_hash })
     }
 
-    fn supports(&self, pointer: &Address, required: u64) -> bool {
+    fn supports(&self, pointer: &OldAddress, required: u64) -> bool {
         let Some(hash) = pointer_identity_hash(pointer) else {
             return false;
         };
@@ -1891,11 +1943,11 @@ impl<'a> AlignmentIndex<'a> {
     }
 }
 
-fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
+fn bounded_term_hashes(roots: &[&OldMachineTerm]) -> Option<HashMap<usize, u64>> {
     let mut pending = roots.iter().map(|root| (*root, false)).collect::<Vec<_>>();
     let mut hashes: HashMap<usize, u64> = HashMap::new();
     while let Some((term, expanded)) = pending.pop() {
-        let identity = term as *const MachineTerm as usize;
+        let identity = term as *const OldMachineTerm as usize;
         if hashes.contains_key(&identity) {
             continue;
         }
@@ -1904,29 +1956,29 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
             std::mem::discriminant(term).hash(&mut hasher);
             // One variant spells every format-carrying operator, so its
             // format and operator are part of the identity.
-            if let MachineTerm::Binary { format, op, .. } = term {
+            if let OldMachineTerm::Binary { format, op, .. } = term {
                 (format, op).hash(&mut hasher);
             }
             // So is a constant's format: one variant spells every constant.
-            if let MachineTerm::Constant { format, .. } = term {
+            if let OldMachineTerm::Constant { format, .. } = term {
                 format.hash(&mut hasher);
             }
             match term {
                 bits32_constant!(value) => constant_u32(*value).hash(&mut hasher),
                 int64_constant!(value) => constant_i64(*value).hash(&mut hasher),
                 uint64_constant!(value) => constant_u64(*value).hash(&mut hasher),
-                MachineTerm::Variable(value) => value.hash(&mut hasher),
-                MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                OldMachineTerm::Variable(value) => value.hash(&mut hasher),
+                OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
                     memory.shared_memory().arena_id().hash(&mut hasher);
                     kind.hash(&mut hasher);
                     pointer_identity_hash(pointer)?.hash(&mut hasher);
                 }
-                MachineTerm::IntegerAddress(pointer, _) => {
+                OldMachineTerm::IntegerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
                 }
                 binary_term!(Int32, Add, left, right)
                 | binary_term!(Int32, Subtract, left, right)
-                | MachineTerm::Binary {
+                | OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op:
                         MachineBinaryOp::Add
@@ -1953,7 +2005,7 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
             match term {
                 binary_term!(Int32, Add, left, right)
                 | binary_term!(Int32, Subtract, left, right)
-                | MachineTerm::Binary {
+                | OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op:
                         MachineBinaryOp::Add
@@ -1975,9 +2027,9 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
     Some(hashes)
 }
 
-fn bounded_term_hash(root: &MachineTerm) -> Option<u64> {
+fn bounded_term_hash(root: &OldMachineTerm) -> Option<u64> {
     bounded_term_hashes(&[root])?
-        .get(&(root as *const MachineTerm as usize))
+        .get(&(root as *const OldMachineTerm as usize))
         .copied()
 }
 
@@ -2046,7 +2098,7 @@ fn masked_source(term: Word<'_>) -> Option<(Word<'_>, u64)> {
 fn pointer_or_masked_tag<'a>(
     left: Word<'a>,
     right: Word<'a>,
-) -> Option<(&'a Address, Word<'a>, u64)> {
+) -> Option<(&'a OldAddress, Word<'a>, u64)> {
     let (pointer, tag) = match (left.node(), right.node()) {
         (WordNode::IntegerAddress(pointer), _) => (pointer, right),
         (_, WordNode::IntegerAddress(pointer)) => (pointer, left),
@@ -2123,7 +2175,7 @@ fn tagged_form_inner<'a>(
         },
         FinishPointerOr {
             term: Word<'a>,
-            pointer: &'a Address,
+            pointer: &'a OldAddress,
             tag: Word<'a>,
             alignment: u64,
         },
@@ -2499,7 +2551,7 @@ fn word_comparison(
         return None;
     };
     let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
     )?;
     if !matches!(
         view.format,
@@ -2542,8 +2594,7 @@ fn pointer_word_equality(
         let Proposition::ConditionIs(condition, true) = premise else {
             return false;
         };
-        let Some((pointer, alignment)) = checked_pointer_alignment(condition.native_compat())
-        else {
+        let Some((pointer, alignment)) = checked_pointer_alignment(condition.old_form()) else {
             return false;
         };
         if !charge_pointer(pointer) {
@@ -2612,7 +2663,7 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
         let Proposition::ConditionIs(condition, true) = premise else {
             return false;
         };
-        if checked_pointer_alignment(condition.native_compat()).is_none() {
+        if checked_pointer_alignment(condition.old_form()).is_none() {
             return false;
         }
     }
@@ -2622,7 +2673,7 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
             let Proposition::ConditionIs(condition, true) = premise else {
                 unreachable!("alignment premises were checked above");
             };
-            checked_pointer_alignment(condition.native_compat())
+            checked_pointer_alignment(condition.old_form())
                 .expect("alignment premises were checked above")
         })
         .collect::<Vec<_>>();
@@ -2712,7 +2763,7 @@ pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<Vec<Pr
             let literal =
                 crate::kernel::machine_integer::range::constant_word(width, &endpoint.into())?;
             Some(Proposition::condition_is(
-                condition_for_operand_views(width, relation, [count, View::Legacy(&literal)]),
+                condition_for_operand_views(width, relation, [count, View::Old(&literal)]),
                 true,
             ))
         };
@@ -2730,12 +2781,12 @@ pub(crate) fn shift_count_mask_requirements(goal: &Proposition) -> Option<Vec<Pr
 /// the original count. This is a view of the goal, with no fact queries.
 pub(crate) fn signed_shift_bound_mask_identity(goal: &Proposition) -> Option<Proposition> {
     use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
-    let (condition, expected) = goal.condition_native()?;
+    let (condition, expected) = goal.old_condition()?;
     if let Some((left, right)) = match (condition, expected) {
-        (ConditionTerm::IntegerLessEqual(left, right), true)
-        | (ConditionTerm::IntegerGreaterThan(left, right), false) => Some((left, right)),
-        (ConditionTerm::IntegerGreaterEqual(left, right), true)
-        | (ConditionTerm::IntegerLessThan(left, right), false) => Some((right, left)),
+        (OldConditionTerm::IntegerLessEqual(left, right), true)
+        | (OldConditionTerm::IntegerGreaterThan(left, right), false) => Some((left, right)),
+        (OldConditionTerm::IntegerGreaterEqual(left, right), true)
+        | (OldConditionTerm::IntegerLessThan(left, right), false) => Some((right, left)),
         _ => None,
     } && let (IntegerTerm::Machine(lhs), IntegerTerm::Machine(rhs)) =
         (left.as_ref(), right.as_ref())
@@ -2796,12 +2847,12 @@ fn signed_max_shift_bound(
     MachineIntegerType,
     crate::kernel::MachineOperandView<'_>,
 )> {
-    let (condition, expected) = goal.condition_native()?;
+    let (condition, expected) = goal.old_condition()?;
     let (left, right) = match (condition, expected) {
-        (ConditionTerm::IntegerLessEqual(left, right), true)
-        | (ConditionTerm::IntegerGreaterThan(left, right), false) => (left, right),
-        (ConditionTerm::IntegerGreaterEqual(left, right), true)
-        | (ConditionTerm::IntegerLessThan(left, right), false) => (right, left),
+        (OldConditionTerm::IntegerLessEqual(left, right), true)
+        | (OldConditionTerm::IntegerGreaterThan(left, right), false) => (left, right),
+        (OldConditionTerm::IntegerGreaterEqual(left, right), true)
+        | (OldConditionTerm::IntegerLessThan(left, right), false) => (right, left),
         _ => return None,
     };
     let (format, count) = signed_max_shift(right)?;
@@ -2864,11 +2915,11 @@ pub(crate) fn same_signed_max_shift_bound(premise: &Proposition, goal: &Proposit
 }
 
 fn shifted_max_operand(comparison: &Proposition) -> Option<&crate::kernel::SharedIntegerTerm> {
-    match comparison.condition_native()? {
-        (ConditionTerm::IntegerLessEqual(_, bound), true)
-        | (ConditionTerm::IntegerGreaterThan(_, bound), false)
-        | (ConditionTerm::IntegerGreaterEqual(bound, _), true)
-        | (ConditionTerm::IntegerLessThan(bound, _), false) => Some(bound),
+    match comparison.old_condition()? {
+        (OldConditionTerm::IntegerLessEqual(_, bound), true)
+        | (OldConditionTerm::IntegerGreaterThan(_, bound), false)
+        | (OldConditionTerm::IntegerGreaterEqual(bound, _), true)
+        | (OldConditionTerm::IntegerLessThan(bound, _), false) => Some(bound),
         _ => None,
     }
 }
@@ -2883,7 +2934,10 @@ pub(crate) fn signed_max_shift_bound_identity(
     let from = shifted_max_operand(goal)?;
     let to = shifted_max_operand(premise)?;
     (from.value_read() != to.value_read()).then(|| {
-        Proposition::condition_is(ConditionTerm::IntegerEqual(from.clone(), to.clone()), true)
+        Proposition::condition_is(
+            OldConditionTerm::IntegerEqual(from.clone(), to.clone()),
+            true,
+        )
     })
 }
 
@@ -2908,13 +2962,16 @@ pub(crate) fn signed_max_shift_signed_identity(goal: &Proposition) -> Option<Pro
     let maximum = import.machine_arithmetic(signed, &maximum)?;
     let count = match count {
         MachineOperandView::Shared(count) => count.clone(),
-        MachineOperandView::Legacy(count) => import.machine_arithmetic(unsigned, count)?,
+        MachineOperandView::Old(count) => import.machine_arithmetic(unsigned, count)?,
     };
     let signed_shift =
         KernelTerm::machine_binary_shared(signed, MachineBinaryOp::ShiftRight, [maximum, count]);
     let to = IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(signed, signed_shift)?);
     (from.value_read() != &to).then(|| {
-        Proposition::condition_is(ConditionTerm::IntegerEqual(from.clone(), to.into()), true)
+        Proposition::condition_is(
+            OldConditionTerm::IntegerEqual(from.clone(), to.into()),
+            true,
+        )
     })
 }
 
@@ -2936,7 +2993,7 @@ fn shift_count_upper_bound(
         condition_for_operand_views(
             format,
             CompareRelation::LessThan,
-            [count, View::Legacy(&limit)],
+            [count, View::Old(&limit)],
         ),
         true,
     ))
@@ -3081,7 +3138,7 @@ fn shifted_one_count_bounds(
     let bound = |relation, endpoint: u32| {
         let literal = constant_word(count_format, &endpoint.into())?;
         Some(Proposition::condition_is(
-            condition_for_operand_views(count_format, relation, [count, View::Legacy(&literal)]),
+            condition_for_operand_views(count_format, relation, [count, View::Old(&literal)]),
             true,
         ))
     };
@@ -3115,7 +3172,7 @@ pub(crate) fn word_order_excludes_literal(goal: &Proposition, premise: &Proposit
     use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
     crate::instrumentation::record_deterministic_work(1);
     let Some(view) = goal
-        .condition_native()
+        .old_condition()
         .and_then(|(condition, truth)| comparison_view(condition, *truth))
     else {
         return false;
@@ -3134,7 +3191,7 @@ pub(crate) fn word_order_excludes_literal(goal: &Proposition, premise: &Proposit
         return false;
     };
     let Some(case) = premise
-        .condition_native()
+        .old_condition()
         .and_then(|(condition, truth)| comparison_view(condition, *truth))
     else {
         return false;
@@ -3227,8 +3284,8 @@ pub(crate) fn odd_product_nonzero_requirement(goal: &Proposition) -> Option<Prop
             _ => return None,
         },
         BooleanOperandView::Native(condition) => match (condition, *truth) {
-            (ConditionTerm::IntegerEqual(left, right), false)
-            | (ConditionTerm::IntegerNotEqual(left, right), true) => [left.root(), right.root()],
+            (OldConditionTerm::IntegerEqual(left, right), false)
+            | (OldConditionTerm::IntegerNotEqual(left, right), true) => [left.root(), right.root()],
             _ => return None,
         },
     };
@@ -3281,7 +3338,7 @@ fn odd_product_operand_nonzero(
                 condition_for_operand_views(
                     format,
                     CompareRelation::Equal,
-                    [operand, View::Legacy(&zero)],
+                    [operand, View::Old(&zero)],
                 ),
                 false,
             ))
@@ -3295,7 +3352,7 @@ pub(in crate::kernel) fn bitwise_divisor_excludes(
     format: MachineIntegerType,
     divisor: crate::kernel::MachineOperandView<'_>,
     minus_one: bool,
-    mut holds: impl FnMut(ConditionTerm, bool) -> bool,
+    mut holds: impl FnMut(OldConditionTerm, bool) -> bool,
 ) -> bool {
     use crate::kernel::MachineOperandView as View;
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
@@ -3340,7 +3397,7 @@ pub(in crate::kernel) fn bitwise_divisor_excludes(
         }
         let mut test = |relation, literal, truth| {
             holds(
-                condition_for_operand_views(format, relation, [operand, View::Legacy(literal)]),
+                condition_for_operand_views(format, relation, [operand, View::Old(literal)]),
                 truth,
             )
         };
@@ -3365,7 +3422,7 @@ pub(in crate::kernel) fn bitwise_divisor_excludes(
 
 pub(super) fn bitwise_division_disequality(
     goal: &Proposition,
-    mut holds: impl FnMut(ConditionTerm, bool) -> bool,
+    mut holds: impl FnMut(OldConditionTerm, bool) -> bool,
 ) -> bool {
     use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
     let Proposition::ConditionIs(condition, truth) = goal else {
@@ -3395,7 +3452,7 @@ pub(super) fn bitwise_division_disequality(
 /// Observe a signed native quotient with a positive divisor. Positivity
 /// excludes both zero and the sole signed division overflow pair.
 pub(crate) fn signed_quotient_bridge_requirement(goal: &Proposition) -> Option<Proposition> {
-    let (ConditionTerm::IntegerEqual(left, right), true) = goal.condition_native()? else {
+    let (OldConditionTerm::IntegerEqual(left, right), true) = goal.old_condition()? else {
         return None;
     };
     for (native, exact) in [(left, right), (right, left)] {
@@ -3423,7 +3480,7 @@ pub(crate) fn signed_quotient_bridge_requirement(goal: &Proposition) -> Option<P
             && observe(divisor).value_read() == b.value_read()
         {
             return Some(Proposition::condition_is(
-                ConditionTerm::integer_greater_than(
+                OldConditionTerm::integer_greater_than(
                     b.as_ref().clone(),
                     IntegerTerm::constant_i64(0),
                 ),
@@ -3481,12 +3538,16 @@ fn signed_product_guard_requirements(
     swap: bool,
     signs: SignedProductSigns,
 ) -> Option<Vec<Proposition>> {
-    let (condition, truth) = goal.condition_native()?;
+    let (condition, truth) = goal.old_condition()?;
     let (product, bound, upper) = match (condition, truth) {
-        (ConditionTerm::IntegerLessEqual(a, b), true) if b.as_const().is_some() => (a, b, true),
-        (ConditionTerm::IntegerGreaterEqual(a, b), true) if b.as_const().is_some() => (a, b, false),
-        (ConditionTerm::IntegerLessEqual(a, b), true) if a.as_const().is_some() => (b, a, false),
-        (ConditionTerm::IntegerGreaterEqual(a, b), true) if a.as_const().is_some() => (b, a, true),
+        (OldConditionTerm::IntegerLessEqual(a, b), true) if b.as_const().is_some() => (a, b, true),
+        (OldConditionTerm::IntegerGreaterEqual(a, b), true) if b.as_const().is_some() => {
+            (a, b, false)
+        }
+        (OldConditionTerm::IntegerLessEqual(a, b), true) if a.as_const().is_some() => (b, a, false),
+        (OldConditionTerm::IntegerGreaterEqual(a, b), true) if a.as_const().is_some() => {
+            (b, a, true)
+        }
         _ => return None,
     };
     let IntegerTerm::Multiply(a, b) = product.as_ref() else {
@@ -3510,27 +3571,28 @@ fn signed_product_guard_requirements(
     let zero = || IntegerTerm::constant_i64(0);
     let y_sign = match signs {
         PositiveRight | Nonnegative | NonpositiveLeft => {
-            ConditionTerm::integer_greater_than(b.as_ref().clone(), zero())
+            OldConditionTerm::integer_greater_than(b.as_ref().clone(), zero())
         }
         NegativeRight | BothNegativeStrictDivisor => {
-            ConditionTerm::integer_less_than(b.as_ref().clone(), IntegerTerm::constant_i64(-1))
+            OldConditionTerm::integer_less_than(b.as_ref().clone(), IntegerTerm::constant_i64(-1))
         }
-        BothNegative => ConditionTerm::integer_less_than(b.as_ref().clone(), zero()),
+        BothNegative => OldConditionTerm::integer_less_than(b.as_ref().clone(), zero()),
     };
     let mut premises = vec![Proposition::condition_is(y_sign, true)];
     let x_sign = match signs {
         PositiveRight => None,
-        Nonnegative | NegativeRight => Some(ConditionTerm::integer_greater_equal(
+        Nonnegative | NegativeRight => Some(OldConditionTerm::integer_greater_equal(
             a.as_ref().clone(),
             zero(),
         )),
-        NonpositiveLeft => Some(ConditionTerm::integer_less_equal(
+        NonpositiveLeft => Some(OldConditionTerm::integer_less_equal(
             a.as_ref().clone(),
             zero(),
         )),
-        BothNegative | BothNegativeStrictDivisor => {
-            Some(ConditionTerm::integer_less_than(a.as_ref().clone(), zero()))
-        }
+        BothNegative | BothNegativeStrictDivisor => Some(OldConditionTerm::integer_less_than(
+            a.as_ref().clone(),
+            zero(),
+        )),
     };
     if let Some(x_sign) = x_sign {
         premises.push(Proposition::condition_is(x_sign, true));
@@ -3543,20 +3605,20 @@ fn signed_product_guard_requirements(
     if needs_quotient_guard {
         // This rule covers scalar variables, so building the native
         // quotient key never exports a potentially large operand DAG.
-        let x = MachineTerm::Variable(*x.operand_view().variable()?);
-        let y = MachineTerm::Variable(*y.operand_view().variable()?);
+        let x = OldMachineTerm::Variable(*x.operand_view().variable()?);
+        let y = OldMachineTerm::Variable(*y.operand_view().variable()?);
         let numerator = match width {
-            MachineIntegerType::Int32 => MachineTerm::constant(endpoint as u32),
-            _ => MachineTerm::int64_constant(endpoint),
+            MachineIntegerType::Int32 => OldMachineTerm::constant(endpoint as u32),
+            _ => OldMachineTerm::int64_constant(endpoint),
         };
-        let quotient = MachineTerm::machine_binary(width, MachineBinaryOp::Divide, numerator, y);
+        let quotient = OldMachineTerm::machine_binary(width, MachineBinaryOp::Divide, numerator, y);
         let observe = |value| IntegerTerm::from_machine(width, value);
         let (x, quotient) = (observe(x)?, observe(quotient)?);
         let rejected_branch = match signs {
-            PositiveRight if upper => ConditionTerm::integer_greater_than(x, quotient),
-            Nonnegative | NegativeRight => ConditionTerm::integer_greater_than(x, quotient),
+            PositiveRight if upper => OldConditionTerm::integer_greater_than(x, quotient),
+            Nonnegative | NegativeRight => OldConditionTerm::integer_greater_than(x, quotient),
             PositiveRight | NonpositiveLeft | BothNegative | BothNegativeStrictDivisor => {
-                ConditionTerm::integer_less_than(x, quotient)
+                OldConditionTerm::integer_less_than(x, quotient)
             }
         };
         premises.push(Proposition::condition_is(rejected_branch, false));
@@ -3850,8 +3912,8 @@ fn float_bound_proposition(
     use crate::kernel::{KernelTerm, KernelTermImport, StoredConditionTerm};
 
     let literal = match format {
-        KernelFloatType::Float32 => MachineTerm::constant(endpoint as u32),
-        KernelFloatType::Float64 => MachineTerm::uint64_constant(endpoint),
+        KernelFloatType::Float32 => OldMachineTerm::constant(endpoint as u32),
+        KernelFloatType::Float64 => OldMachineTerm::uint64_constant(endpoint),
     };
     let mut import = KernelTermImport::default();
     let operand = match operand {
@@ -4056,9 +4118,9 @@ fn rounded_integer_float_endpoint(
         let operand = if let Some(root) = conversion.shared() {
             MachineOperandView::Shared(root)
         } else {
-            MachineOperandView::Legacy(conversion.native()?)
+            MachineOperandView::Old(conversion.native()?)
         };
-        let (condition, truth) = premise.condition_native()?;
+        let (condition, truth) = premise.old_condition()?;
         let view = comparison_view(condition, *truth)?;
         if view.format != format || !matches!(view.relation, Relation::Less | Relation::LessEqual) {
             return None;
@@ -4205,7 +4267,7 @@ fn same_float_operand(left: FloatOperandView<'_>, right: FloatOperandView<'_>) -
     {
         return true;
     }
-    if let (Some(left), Some(right)) = (left.native_compat(), right.native_compat())
+    if let (Some(left), Some(right)) = (left.old_form(), right.old_form())
         && bitvector_equal(left, right)
     {
         return true;
@@ -4246,18 +4308,18 @@ fn float_endpoint_compare(
     operator: ComparisonOperator,
 ) -> bool {
     let comparison = match format {
-        KernelFloatType::Float32 => ConditionTerm::float32_compare(
-            MachineTerm::constant(low as u32),
-            MachineTerm::constant(high as u32),
+        KernelFloatType::Float32 => OldConditionTerm::float32_compare(
+            OldMachineTerm::constant(low as u32),
+            OldMachineTerm::constant(high as u32),
             operator,
         ),
-        KernelFloatType::Float64 => ConditionTerm::float64_compare(
-            MachineTerm::uint64_constant(low),
-            MachineTerm::uint64_constant(high),
+        KernelFloatType::Float64 => OldConditionTerm::float64_compare(
+            OldMachineTerm::uint64_constant(low),
+            OldMachineTerm::uint64_constant(high),
             operator,
         ),
     };
-    comparison == ConditionTerm::Constant(true)
+    comparison == OldConditionTerm::Constant(true)
 }
 
 fn float_infinity(format: KernelFloatType) -> u64 {
@@ -4404,8 +4466,8 @@ pub(super) fn float_self_operation_bounds(
     let finite = finite_float_requirement(bound.format, operand.clone())?;
     let nonzero = if operator == Divide {
         let zero = match bound.format {
-            KernelFloatType::Float32 => MachineTerm::constant(0),
-            KernelFloatType::Float64 => MachineTerm::uint64_constant(0),
+            KernelFloatType::Float32 => OldMachineTerm::constant(0),
+            KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0),
         };
         let zero = crate::kernel::KernelTermImport::default().float(bound.format, &zero);
         let condition = crate::kernel::KernelTerm::float_compare(
@@ -4885,12 +4947,12 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     let Proposition::ConditionIs(finite_condition, true) = finite else {
         return false;
     };
-    let (finite_expression, finite_width) = match finite_condition.native_compat() {
-        ConditionTerm::Float32(FloatCondition::Classification {
+    let (finite_expression, finite_width) = match finite_condition.old_form() {
+        OldConditionTerm::Float32(FloatCondition::Classification {
             value: expression,
             classification: FloatClassification::Finite,
         }) => (expression.as_ref(), 32),
-        ConditionTerm::Float64(FloatCondition::Classification {
+        OldConditionTerm::Float64(FloatCondition::Classification {
             value: expression,
             classification: FloatClassification::Finite,
         }) => (expression.as_ref(), 64),
@@ -4902,7 +4964,7 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
     let Some((condition, left, right)) = finite_float_comparison(result) else {
         return false;
     };
-    let width = if matches!(condition, ConditionTerm::Float32(_)) {
+    let width = if matches!(condition, OldConditionTerm::Float32(_)) {
         32
     } else {
         64
@@ -4918,17 +4980,17 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
 /// on equal finite operands.
 fn finite_float_comparison(
     result: &Proposition,
-) -> Option<(&ConditionTerm, &MachineTerm, &MachineTerm)> {
+) -> Option<(&OldConditionTerm, &OldMachineTerm, &OldMachineTerm)> {
     let Proposition::ConditionIs(condition, expected) = result else {
         return None;
     };
-    let (operator, left, right) = match condition.native_compat() {
-        ConditionTerm::Float32(FloatCondition::Comparison {
+    let (operator, left, right) = match condition.old_form() {
+        OldConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
         })
-        | ConditionTerm::Float64(FloatCondition::Comparison {
+        | OldConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
@@ -4941,7 +5003,7 @@ fn finite_float_comparison(
             | ComparisonOperator::LessEqual
             | ComparisonOperator::GreaterEqual
     );
-    (*expected == reflexive).then_some((condition.native_compat(), left, right))
+    (*expected == reflexive).then_some((condition.old_form(), left, right))
 }
 
 pub(super) fn finite_float_reflexivity_premise(result: &Proposition) -> Option<Proposition> {
@@ -4950,11 +5012,11 @@ pub(super) fn finite_float_reflexivity_premise(result: &Proposition) -> Option<P
         return None;
     }
     let finite = match condition {
-        ConditionTerm::Float32(_) => {
-            ConditionTerm::float32_classification(operand.clone(), FloatClassification::Finite)
+        OldConditionTerm::Float32(_) => {
+            OldConditionTerm::float32_classification(operand.clone(), FloatClassification::Finite)
         }
-        ConditionTerm::Float64(_) => {
-            ConditionTerm::float64_classification(operand.clone(), FloatClassification::Finite)
+        OldConditionTerm::Float64(_) => {
+            OldConditionTerm::float64_classification(operand.clone(), FloatClassification::Finite)
         }
         _ => unreachable!("finite reflexivity only selects float comparisons"),
     };
@@ -4972,15 +5034,14 @@ mod tests {
             VerificationSession,
         };
         let _session = VerificationSession::enter();
-        let x = MachineTerm::Variable(crate::kernel::Variable(1081201));
+        let x = OldMachineTerm::Variable(crate::kernel::Variable(1081201));
         let mut native = x.clone();
-        let mut root =
-            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&x));
+        let mut root = KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Old(&x));
         for depth in 0..9 {
             let index = S::from_shared(MachineIntegerType::Int32, root.clone()).unwrap();
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Int32Scaled {
+                offset: OldAddressOffset::Int32Scaled {
                     value: index.clone(),
                     byte_width: 4,
                 },
@@ -5005,7 +5066,7 @@ mod tests {
                 MachineBinaryOp::Add,
                 [root.clone(), root],
             );
-            native = MachineTerm::Binary {
+            native = OldMachineTerm::Binary {
                 format: MachineIntegerType::Int32,
                 op: MachineBinaryOp::Add,
                 left: Box::new(native.clone()),
@@ -5034,17 +5095,17 @@ mod tests {
                 OverflowOperation::Divide,
             ] {
                 let legacy = Proposition::condition_is(
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format,
                         op,
-                        left: Box::new(MachineTerm::Variable(crate::kernel::Variable(986302))),
+                        left: Box::new(OldMachineTerm::Variable(crate::kernel::Variable(986302))),
                         right: Box::new(
                             if format == MachineIntegerType::Int64
                                 || format == MachineIntegerType::UInt64
                             {
-                                MachineTerm::int64_constant(1)
+                                OldMachineTerm::int64_constant(1)
                             } else {
-                                MachineTerm::constant(1)
+                                OldMachineTerm::constant(1)
                             },
                         ),
                     },
@@ -5102,12 +5163,12 @@ mod tests {
             (MachineIntegerType::Int32, SignedDefinedWidth::Int32),
             (MachineIntegerType::Int64, SignedDefinedWidth::Int64),
         ] {
-            let term = MachineTerm::Variable(Variable(982601));
+            let term = OldMachineTerm::Variable(Variable(982601));
             for constant in [-5, 0, 7] {
                 let literal = if format == MachineIntegerType::Int32 {
-                    MachineTerm::constant(constant as u32)
+                    OldMachineTerm::constant(constant as u32)
                 } else {
-                    MachineTerm::int64_constant(constant)
+                    OldMachineTerm::int64_constant(constant)
                 };
                 for relation in [
                     CompareRelation::Equal,
@@ -5124,7 +5185,7 @@ mod tests {
                                 (term.clone(), literal.clone())
                             };
                             let premise = Proposition::condition_is(
-                                ConditionTerm::Compare {
+                                OldConditionTerm::Compare {
                                     format,
                                     relation,
                                     left: Box::new(left),
@@ -5154,7 +5215,7 @@ mod tests {
                                 signed_constant_bound_on_view(
                                     width,
                                     &premise,
-                                    MachineOperandView::Legacy(&term)
+                                    MachineOperandView::Old(&term)
                                 ),
                                 expected
                             );
@@ -5168,9 +5229,9 @@ mod tests {
     #[test]
     fn cast_term_identity_keeps_formats_and_operand_identity() {
         use crate::kernel::{IntegerTerm, MachineIntegerConstant, MachineIntegerType, Variable};
-        let native_cast = |source, destination, variable| MachineTerm::Cast {
+        let native_cast = |source, destination, variable| OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
+            value: Box::new(OldMachineTerm::Variable(Variable(variable))),
             from: source,
             to: destination,
         };
@@ -5199,7 +5260,7 @@ mod tests {
         ] {
             assert!(!bitvector_equal(&cast, &other));
         }
-        let observed = |destination, variable| MachineTerm::IntegerToMachine {
+        let observed = |destination, variable| OldMachineTerm::IntegerToMachine {
             value: IntegerTerm::Variable(Variable(variable)).into(),
             destination,
         };
@@ -5214,7 +5275,7 @@ mod tests {
             &observed(MachineIntegerType::Int64, 891_004)
         ));
         let constant = |value| {
-            MachineTerm::machine_constant(
+            OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_integer(MachineIntegerType::Int128.format(), &value)
                     .unwrap(),
             )
@@ -5223,15 +5284,15 @@ mod tests {
         assert!(!bitvector_equal(&constant(1.into()), &constant(2.into())));
     }
 
-    fn pointer(offset: AddressOffset) -> Address {
-        Address {
+    fn pointer(offset: OldAddressOffset) -> OldAddress {
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset,
         }
     }
 
-    fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
-        AddressOffset::Add(Box::new(left), Box::new(right))
+    fn add(left: OldAddressOffset, right: OldAddressOffset) -> OldAddressOffset {
+        OldAddressOffset::Add(Box::new(left), Box::new(right))
     }
 
     fn tagged_tag_nodes(root: &Arc<TaggedTag<'_>>) -> usize {
@@ -5253,27 +5314,27 @@ mod tests {
         seen.len()
     }
 
-    fn deep_pointer(depth: usize) -> Address {
-        let mut offset = AddressOffset::Constant(0);
+    fn deep_pointer(depth: usize) -> OldAddress {
+        let mut offset = OldAddressOffset::Constant(0);
         for _ in 0..depth {
-            offset = add(offset, AddressOffset::Constant(1));
+            offset = add(offset, OldAddressOffset::Constant(1));
         }
         pointer(offset)
     }
 
     fn measured_tagged_form(pointer_depth: usize, tag_depth: usize) -> (bool, usize, usize) {
-        let address = MachineTerm::IntegerAddress(
+        let address = OldMachineTerm::IntegerAddress(
             Box::new(deep_pointer(pointer_depth)),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let variable = MachineTerm::Variable(crate::kernel::Variable(394));
+        let variable = OldMachineTerm::Variable(crate::kernel::Variable(394));
         let mut tagged = address;
         for index in 0..tag_depth {
-            tagged = MachineTerm::Binary {
+            tagged = OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(tagged),
-                right: Box::new(MachineTerm::Variable(crate::kernel::Variable(
+                right: Box::new(OldMachineTerm::Variable(crate::kernel::Variable(
                     (400 + index) as u64,
                 ))),
             };
@@ -5295,18 +5356,18 @@ mod tests {
 
     #[test]
     fn pointer_scalar_bounds_do_not_admit_native_width_operations() {
-        let wide = MachineTerm::Binary {
+        let wide = OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(crate::kernel::Variable(1))),
-            right: Box::new(MachineTerm::uint64_constant(1)),
+            left: Box::new(OldMachineTerm::Variable(crate::kernel::Variable(1))),
+            right: Box::new(OldMachineTerm::uint64_constant(1)),
         };
         let bound = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(wide),
-                right: Box::new(MachineTerm::constant(i32::MAX as u32)),
+                right: Box::new(OldMachineTerm::constant(i32::MAX as u32)),
             },
             true,
         );
@@ -5317,23 +5378,23 @@ mod tests {
     fn retained_masked_read_equation_checks_native_pointer_goal() {
         use crate::kernel::MachineOperandView;
         let _session = crate::kernel::VerificationSession::enter();
-        let next = pointer(AddressOffset::Constant(0));
-        let address = MachineTerm::integer_address(next.clone());
-        let raw = MachineTerm::read_named(
+        let next = pointer(OldAddressOffset::Constant(0));
+        let address = OldMachineTerm::integer_address(next.clone());
+        let raw = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(
                 &(crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new())),
             ),
             Box::new(next.clone()),
             crate::kernel::LoadKind::Bits64,
         );
-        let tagged = MachineTerm::uint64_add(
+        let tagged = OldMachineTerm::uint64_add(
             address.clone(),
-            MachineTerm::uint64_bitwise_and(raw.clone(), MachineTerm::uint64_constant(1)),
+            OldMachineTerm::uint64_bitwise_and(raw.clone(), OldMachineTerm::uint64_constant(1)),
         );
         let roots = [&raw, &tagged].map(|word| {
             crate::kernel::KernelTerm::retained_machine_operand(
                 MachineIntegerType::UInt64,
-                MachineOperandView::Legacy(word),
+                MachineOperandView::Old(word),
             )
         });
         let relation = Proposition::condition_is(
@@ -5344,11 +5405,11 @@ mod tests {
             ),
             true,
         );
-        let alignment = Proposition::condition_is(ConditionTerm::pointer_aligned(next, 8), true);
+        let alignment = Proposition::condition_is(OldConditionTerm::pointer_aligned(next, 8), true);
         let goal = Proposition::condition_is(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 address,
-                MachineTerm::uint64_bitwise_and(raw, MachineTerm::uint64_constant(!1)),
+                OldMachineTerm::uint64_bitwise_and(raw, OldMachineTerm::uint64_constant(!1)),
             ),
             true,
         );
@@ -5365,18 +5426,20 @@ mod tests {
         let alignments = AlignmentIndex::new(&[]).expect("empty alignment index");
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
-            let address = MachineTerm::IntegerAddress(
-                Box::new(pointer(AddressOffset::Constant(0))),
+            let address = OldMachineTerm::IntegerAddress(
+                Box::new(pointer(OldAddressOffset::Constant(0))),
                 crate::kernel::AddressObjectClass::NONE,
             );
-            let variable = MachineTerm::Variable(crate::kernel::Variable(294));
+            let variable = OldMachineTerm::Variable(crate::kernel::Variable(294));
             let mut tagged = address;
             for index in 0..depth {
-                tagged = MachineTerm::Binary {
+                tagged = OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(tagged),
-                    right: Box::new(MachineTerm::Variable(crate::kernel::Variable(300 + index))),
+                    right: Box::new(OldMachineTerm::Variable(crate::kernel::Variable(
+                        300 + index,
+                    ))),
                 };
             }
             let form = tagged_form(
@@ -5432,20 +5495,20 @@ mod unsigned_widening_tests {
 
     #[test]
     fn widened_operand_identity_preserves_leaf_and_conversion_identity() {
-        let value = MachineTerm::Variable(Variable(994_101));
+        let value = OldMachineTerm::Variable(Variable(994_101));
         let widened =
-            MachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value.clone()));
+            OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value.clone()));
         assert!(bitvector_equal(&widened, &widened));
         assert!(!bitvector_equal(
             &widened,
-            &MachineTerm::legacy_cast(
+            &OldMachineTerm::legacy_cast(
                 MachineCastSpelling::UInt64From32,
-                Box::new(MachineTerm::Variable(Variable(994_102)))
+                Box::new(OldMachineTerm::Variable(Variable(994_102)))
             )
         ));
         assert!(!bitvector_equal(
             &widened,
-            &MachineTerm::legacy_cast(
+            &OldMachineTerm::legacy_cast(
                 MachineCastSpelling::Int64FromUInt32,
                 Box::new(value.clone())
             )
@@ -5453,7 +5516,7 @@ mod unsigned_widening_tests {
         assert!(!bitvector_equal(&widened, &value));
         let mut deep = value;
         for _ in 0..MAX_TERM_PAYLOAD {
-            deep = MachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(deep));
+            deep = OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(deep));
         }
         assert!(!bitvector_equal(&deep, &deep));
     }

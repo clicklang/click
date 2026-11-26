@@ -54,7 +54,6 @@ try_direct_model_equality_rewrite_closure
 try_direct_structural_closure_with_quantified
 try_execute_to_exit
 try_execute_until
-try_fact_transport
 try_generated_linear_script
 try_restricted_solve_closure
 try_index_disequality_closure

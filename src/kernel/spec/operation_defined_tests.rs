@@ -4,7 +4,7 @@
 use super::*;
 
 fn int32_value(id: u64) -> ProgramExpression {
-    ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(id))))
+    ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(id))))
 }
 
 fn lower(fragment: ProgramExpression) -> (Proposition, Vec<ProofObligation>) {

@@ -14,34 +14,33 @@ use std::fmt;
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, AlgebraicValue, BitvectorEqualityDerivationStep,
-    CheckedFunctionExecution, CheckedFunctionProposition,
-    ComparisonOperator as KernelComparisonOperator, CompositeResourceDefinition, ConditionOutcome,
-    ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics,
-    ExecutionState, ExpressionOutcome, FunctionContract, FunctionContractClaim,
-    FunctionContractClaimKey, FunctionContractClaimTarget, FunctionContractExecutionMode,
-    FunctionExecutionCandidates, FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect,
-    LoopEffectCheck, LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit,
-    MachineTerm, MemoryRange, MemorySegment, ProgramExpression, ProgramFunction, ProgramStatement,
-    ProgramType, ProgramValue, ProofObligation, Proposition, PropositionDerivation,
-    PureFactContext, Resource, ResourceAccessMode as KernelResourceAccessMode, ResourceContext,
-    ResourceContextValidityError, ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource,
-    ResourceTransferRole, Sort, SpecAlgebraicExpression, SpecExpression, SpecPoint,
-    SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
-    SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
-    VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
-    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
-    program_condition_fact_memories, program_declare,
+    AddressBase, AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,
+    CheckedFunctionProposition, ComparisonOperator as KernelComparisonOperator,
+    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionEnvironment,
+    ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome, FunctionContract,
+    FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
+    FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
+    FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
+    LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MemoryRange, MemorySegment,
+    OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramExpression,
+    ProgramFunction, ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
+    PropositionDerivation, PureFactContext, Resource,
+    ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
+    ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource, ResourceTransferRole, Sort,
+    SpecAlgebraicExpression, SpecExpression, SpecPoint, SpecPredicateArgument, SpecProposition,
+    SpecResource, StatementOutcome, SymbolicExecution, SymbolicMemory, Term, TerminationRefusal,
+    Theorem, UnsuitableCallback, Variable, VerifiedLoopRule,
+    VerifiedPureTheorem as KernelVerifiedPureTheorem, contract_refinement_context, int32,
+    loop_invariants_hold_at_entry, program_assign, program_declare,
     program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_refinement_arguments, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
     program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
-    prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
-    prove_program_function_contract_refinement,
+    prove_owned_resource_quantity_nonnegative, prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
     prove_symbolic_loop_exit_with_proven_phases_using_budget,
     prove_symbolic_program_condition_evaluation, prove_universally_quantified_pure_implication,
-    prove_universally_quantified_pure_implication_by_int32_rewrites, resources_directly_match,
+    prove_universally_quantified_pure_implication_by_int32_rewrites,
     substitute_int32_variable_in_proposition,
 };
 use crate::languages::c::syntax::{self, CExpression, LongRank};
@@ -87,7 +86,10 @@ mod typed_surface;
 use integer_conversions::*;
 use integer_truncation::*;
 pub use surface_propositions::SurfacePropositionMap;
-pub(crate) use typed_surface::{ComparisonKind, SurfaceProposition, SurfaceTerm, print_comparison};
+pub(crate) use typed_surface::{
+    ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType, SurfaceProposition, SurfaceTerm,
+    elaborate_connectives, print_comparison,
+};
 mod printing;
 mod proof;
 pub(crate) mod pure_fact_list;
@@ -317,7 +319,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "target",
     "theorem",
     "then",
-    "transport",
     "uint8",
     "unfold",
     "uninitialized",
@@ -811,6 +812,12 @@ pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
         .unwrap_or(callee)
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct CppBindingContracts {
+    conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
+    written: BTreeMap<crate::kernel::CppBindingContract, FunctionBlock>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
     /// Physical struct strides retained for generic theorem instantiation.
@@ -836,6 +843,8 @@ pub struct ClickFile {
     theorem_definitions: Vec<TheoremDefinition>,
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
+    cpp_virtual_interfaces: BTreeMap<String, FunctionBlock>,
+    cpp_bindings: CppBindingContracts,
     termination_proof: Option<Vec<ProofTactic>>,
     termination_span: Option<(crate::source::SourcePosition, crate::source::SourcePosition)>,
     /// User-defined tactics: contracts over the proof state, each proved once
@@ -1553,6 +1562,8 @@ impl CallBinderBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallBinderTransport {
     callee: String,
+    /// The written source region when the proof steps a reference binding.
+    source_binding: Option<CodeRegionRef>,
     /// Select this named interface at the current C call; arguments come from C.
     named_contract: bool,
     /// `step(callee, { ... })`: the step names its C function, and the call's
@@ -1695,11 +1706,16 @@ impl std::fmt::Display for CallBinderTransport {
             write!(f, " }} = ")?;
         }
         if self.named_contract || self.frontier {
+            let target = self
+                .source_binding
+                .as_ref()
+                .map(diagnostics::describe_code_region_ref);
+            let callee = target.as_deref().unwrap_or(&self.callee);
             let entries = self.map_entries();
             return if entries.is_empty() {
-                write!(f, "step({})", self.callee)
+                write!(f, "step({})", callee)
             } else {
-                write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "))
+                write!(f, "step({}, {{ {} }})", callee, entries.join(", "))
             };
         }
         write!(f, "step({}(", self.callee)?;
@@ -3615,7 +3631,7 @@ pub(crate) use binary_contract_expression;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
     point: crate::kernel::ProgramPoint,
-    pointer: Address,
+    pointer: OldAddress,
     element_type: ProgramType,
 }
 
@@ -3711,7 +3727,7 @@ fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::ker
 fn model_field_variable<'a>(
     value: impl Into<crate::kernel::ResourceFieldValue<'a>>,
 ) -> Option<crate::kernel::Variable> {
-    use crate::kernel::{AlgebraicTermNode, MachineTerm};
+    use crate::kernel::{AlgebraicTermNode, OldMachineTerm};
     match value.into() {
         crate::kernel::ResourceFieldValue::Algebraic(term) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
@@ -3724,7 +3740,7 @@ fn model_field_variable<'a>(
             }
         }
         crate::kernel::ResourceFieldValue::Program(
-            crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
+            crate::kernel::integer_c_value!(OldMachineTerm::Variable(variable)),
         ) => Some(*variable),
         _ => None,
     }
@@ -3845,7 +3861,7 @@ struct RecordedStates {
     >,
     /// Allocation results keep the region that introduced them, independently
     /// of later pointer reads or assignments to the result local.
-    allocation_results: crate::persistent::PersistentMap<crate::kernel::Address, CodeRegionRef>,
+    allocation_results: crate::persistent::PersistentMap<crate::kernel::OldAddress, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
     call_results: RecordedCallResults,
     /// Prelowered result steps retain their result table at each citable
@@ -3859,15 +3875,15 @@ struct RecordedStates {
     read_event_results: crate::persistent::PersistentMap<(usize, usize), RetainedProgramValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
     read_event_names: ReadEventNames<ProgramValue>,
-    read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
-    read_event_pointer_names: ReadEventNames<crate::kernel::Address>,
+    read_event_scalar_names: ReadEventNames<crate::kernel::OldMachineTerm>,
+    read_event_pointer_names: ReadEventNames<crate::kernel::OldAddress>,
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
     /// The call that produced each pointer a call returned, by the
     /// pointer's address: the value is spelled `<region>.result`, which
     /// lowers to the exact returned value.
-    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Address, usize>,
+    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::OldAddress, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
     loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::KernelTerm>,
@@ -4355,7 +4371,7 @@ impl RecordedStates {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, count);
             let retained = RetainedProgramValue::from(value);
-            let value = retained.native_compat();
+            let value = retained.old_form();
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
                 ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
@@ -4395,14 +4411,17 @@ impl RecordedStates {
 
     fn read_event_naming_scalar(
         &self,
-        value: &crate::kernel::MachineTerm,
+        value: &crate::kernel::OldMachineTerm,
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let &(index, event) = self.read_event_scalar_names.get(value)?.last()?;
         Some(self.read_event_region(index, event))
     }
 
-    fn read_event_naming_pointer(&self, value: &crate::kernel::Address) -> Option<CodeRegionRef> {
+    fn read_event_naming_pointer(
+        &self,
+        value: &crate::kernel::OldAddress,
+    ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let &(index, event) = self.read_event_pointer_names.get(value)?.last()?;
         Some(self.read_event_region(index, event))
@@ -4465,7 +4484,7 @@ impl RecordedStates {
             return self
                 .call_results_at(selector)
                 .and_then(|results| results.get(&index))
-                .map(RetainedProgramValue::native_compat)
+                .map(RetainedProgramValue::old_form)
                 .cloned()
                 .ok_or_else(|| {
                     format!(
@@ -4617,13 +4636,13 @@ impl RecordedStates {
     fn call_result_native(&self, index: &usize) -> Option<&ProgramValue> {
         self.call_results
             .get(index)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
     }
 
     fn read_event_native(&self, key: &(usize, usize)) -> Option<&ProgramValue> {
         self.read_event_results
             .get(key)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
     }
 
     fn record_retained_call_result(&mut self, index: usize, value: Option<RetainedProgramValue>) {
@@ -4639,7 +4658,7 @@ impl RecordedStates {
         if let Some(ProgramValue::Parameter(term)) = self
             .call_results
             .get(&index)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
             && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
         {
             self.algebraic_call_results.remove(term.as_ref());
@@ -4647,14 +4666,14 @@ impl RecordedStates {
         if let Some(ProgramValue::Pointer(pointer)) = self
             .call_results
             .get(&index)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
             && self.pointer_call_results.get(pointer.address()) == Some(&index)
         {
             self.pointer_call_results.remove(pointer.address());
         }
         self.call_results.remove(&index);
-        if let Some(value) = value.filter(|value| value.native_compat() != &ProgramValue::Void) {
-            let native = value.native_compat();
+        if let Some(value) = value.filter(|value| value.old_form() != &ProgramValue::Void) {
+            let native = value.old_form();
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
                 native.numeric_value()
             {
@@ -4677,6 +4696,57 @@ impl RecordedStates {
             }
             self.call_results.insert(index, value);
         }
+    }
+
+    /// The object the call `region` names receives as its by-value
+    /// aggregate parameter `name`, with its layout: what
+    /// `<region>.parameter(name)` names.
+    pub(crate) fn region_parameter(
+        &self,
+        region: &CodeRegionRef,
+        name: &str,
+    ) -> Result<(crate::kernel::BindingName, crate::kernel::AggregateLayout), String> {
+        let fallback;
+        let layout = match &self.source_layout {
+            Some(layout) => layout,
+            None => {
+                fallback = diagnostics::spelling_layout()
+                    .ok_or("`.parameter(name)` names a call of a function body being executed")?;
+                &fallback
+            }
+        };
+        let index = match region {
+            CodeRegionRef::Path(steps) => {
+                layout.source_path_region(steps, ProgramPointKind::Exit)?
+            }
+            CodeRegionRef::Region(index) => *index,
+            _ => return Err("`.parameter(name)` names a call's region".to_string()),
+        };
+        let (object, aggregate) = layout.call_parameter_object(index, name).ok_or_else(|| {
+            format!(
+                "the call at `{}` has no by-value aggregate parameter `{name}`",
+                diagnostics::describe_code_region_ref(region)
+            )
+        })?;
+        Ok((object.clone(), aggregate.clone()))
+    }
+
+    /// The call region selector, parameter, and layout of a prepared
+    /// argument object: it is spelled `<region>.parameter(name)`.
+    pub(crate) fn prepared_parameter(
+        &self,
+        object: &crate::kernel::BindingName,
+    ) -> Option<(CodeRegionRef, String, crate::kernel::AggregateLayout)> {
+        let fallback;
+        let layout = match &self.source_layout {
+            Some(layout) => layout,
+            None => {
+                fallback = diagnostics::spelling_layout()?;
+                &fallback
+            }
+        };
+        let (region, parameter, aggregate) = layout.prepared_parameter(object)?;
+        Some((region, parameter.to_owned(), aggregate.clone()))
     }
 
     /// Records the pass count `iterations` of loop `loop_index`'s head,
@@ -4753,7 +4823,7 @@ impl RecordedStates {
             Some(point) => self.call_results_at(point)?,
             None => &self.call_results,
         };
-        let recorded = results.get(&index)?.native_compat();
+        let recorded = results.get(&index)?.old_form();
         if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
             return None;
         }
@@ -4782,7 +4852,7 @@ impl RecordedStates {
                         "{}.result",
                         diagnostics::describe_code_region_ref(&CodeRegionRef::Path(steps))
                     ),
-                    value.native_compat(),
+                    value.old_form(),
                 ))
             })
             .collect()
@@ -4803,7 +4873,7 @@ impl RecordedStates {
     /// lookup, checked against the recorded value.
     fn call_result_naming_pointer(
         &self,
-        pointer: &crate::kernel::Address,
+        pointer: &crate::kernel::OldAddress,
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
@@ -4813,7 +4883,7 @@ impl RecordedStates {
 
     fn call_result_naming_integer(
         &self,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
     ) -> Option<CodeRegionRef> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);
@@ -5065,7 +5135,7 @@ impl RecordedStates {
     fn point_reading_load(
         &self,
         point: &crate::kernel::ProgramPoint,
-        pointer: &crate::kernel::Address,
+        pointer: &crate::kernel::OldAddress,
     ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
         if point.id().is_some() {
             return self.point_naming_read(point);
@@ -5114,7 +5184,7 @@ impl RecordedStates {
     /// locals that held a term of this fingerprint, each checked there.
     fn point_naming_integer(
         &self,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
     ) -> Option<(
         &ProgramPointSelector,
         &crate::kernel::BindingName,
@@ -5261,13 +5331,16 @@ impl RecordedStates {
         }
     }
 
-    fn allocation_result(&self, pointer: &crate::kernel::Address) -> Option<CodeRegionRef> {
+    fn allocation_result(&self, pointer: &crate::kernel::OldAddress) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         self.allocation_results.get(pointer).cloned()
     }
 
     /// Name the address of frontend-owned storage by its producing region.
-    fn produced_address_expression(&self, pointer: &crate::kernel::Address) -> Option<SyntaxTerm> {
+    fn produced_address_expression(
+        &self,
+        pointer: &crate::kernel::OldAddress,
+    ) -> Option<SyntaxTerm> {
         use crate::kernel::AddressBase;
         match &pointer.base {
             AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary() => {
@@ -5282,7 +5355,7 @@ impl RecordedStates {
 
     fn call_result_address_expression(
         &self,
-        pointer: &crate::kernel::Address,
+        pointer: &crate::kernel::OldAddress,
     ) -> Option<SyntaxTerm> {
         if let Some(region) = self.call_result_naming_pointer(pointer) {
             return Some(SyntaxTerm::RegionResult(region));
@@ -5295,20 +5368,20 @@ impl RecordedStates {
     }
 
     fn displaced_result_address(
-        pointer: &crate::kernel::Address,
-        name_base: impl FnOnce(&crate::kernel::Address) -> Option<SyntaxTerm>,
+        pointer: &crate::kernel::OldAddress,
+        name_base: impl FnOnce(&crate::kernel::OldAddress) -> Option<SyntaxTerm>,
     ) -> Option<SyntaxTerm> {
-        use crate::kernel::{Address, AddressOffset};
-        let AddressOffset::Constant(bytes) = pointer.offset else {
+        use crate::kernel::{OffsetTree, OffsetView, OldAddress, OldAddressOffset};
+        let OffsetView::Constant(bytes) = pointer.offset.view() else {
             return None;
         };
         let bytes = u32::try_from(bytes).ok()?;
         if bytes == 0 {
             return name_base(pointer);
         }
-        let base = Address {
+        let base = OldAddress {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         Some(SyntaxTerm::CUnary {
             operand: Box::new(name_base(&base)?),
@@ -5353,7 +5426,7 @@ impl RecordedStates {
     /// [`CELL_POINTS_OFFERED`]. The caller spells the term in each state.
     fn points_holding_cell_integer(
         &self,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
     ) -> impl Iterator<Item = (&ProgramPointSelector, &ExecutionState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);
@@ -6246,7 +6319,6 @@ pub struct CertifiedStatementTransition {
     pub(crate) call_result: Option<RetainedProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
-    pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
     pub(crate) theorem: Theorem,
     /// The kernel fact context the theorem was proved under; retained with
     /// the theorem so the proof object checks its premises against exactly that.
@@ -6406,16 +6478,6 @@ pub enum ProofTactic {
     CloseInvariants,
     Rewrite(SyntaxProposition),
     Preserve(SyntaxProposition),
-    Transport {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-    },
-    /// A legacy frame check with no ordinary Surface expansion.
-    CompatibilityFactTransport {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-        premises: Vec<SyntaxProposition>,
-    },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: SyntaxProposition,
@@ -6531,8 +6593,6 @@ pub enum SmartTacticKind {
 pub enum SmartSite {
     /// A smart tactic engine.
     Engine(SmartTacticKind),
-    /// Bare `transport(P, Q)` searches for frame evidence.
-    FactTransport,
     /// Bare `close_invariants()`: a fixed expansion into
     /// `close_invariants() by { ... }` with `close()` on each member.
     CloseInvariants,
@@ -6817,11 +6877,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "transport",
-        syntax: "transport(P, Q)",
-        class: "smart",
-    },
-    PublicTacticForm {
         id: "instantiate",
         syntax: "instantiate(F, value, ...)",
         class: "simple",
@@ -7000,10 +7055,6 @@ impl ProofTactic {
             Self::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
             Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
             Self::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
-            Self::Transport { .. } => TacticClass::Smart(SmartSite::FactTransport),
-            Self::CompatibilityFactTransport { .. } => {
-                TacticClass::Simple(SimpleTactic::FactTransport)
-            }
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
@@ -7687,6 +7738,11 @@ pub enum SourcePathStep {
     /// The statement's `j`th call of any callee, including one through a
     /// function pointer, in evaluation order: `call(j)`; a chain's end.
     AnyCall(usize),
+    /// The checked transfer at a written C++ argument or receiver.
+    Binding {
+        slot: crate::kernel::CppBindingSlot,
+        release: bool,
+    },
     /// A loop's own test, after the calls its condition makes: `test()`; a
     /// chain's end.
     Test,
@@ -7803,10 +7859,11 @@ pub struct ProgramPointRef {
 pub enum ProgramPointKind {
     Entry,
     Exit,
-    /// A call region's by-value aggregate parameters as the call bound them:
-    /// the memory just after each argument was copied into its parameter
-    /// object. Only `R.parameter(name)` reads at it.
-    Parameters,
+    /// A contract call's state after its value effects, before the effects
+    /// on initialization, liveness and allocation that reach its exit:
+    /// `call(f, j).effect`. A migration measure: reads are named at it until
+    /// they are named by the write that made their value.
+    Effect,
 }
 
 /// A destination for forward execution. A loop back edge selects the
@@ -8002,7 +8059,7 @@ impl<'a> ParameterBinding<'a> {
 pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
     pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
-    pointer_sources: BTreeMap<Address, usize>,
+    pointer_sources: BTreeMap<OldAddress, usize>,
     float_sources: BTreeMap<(ProgramType, Variable), usize>,
 }
 
@@ -8022,8 +8079,8 @@ impl ParameterNaming {
                         .or_insert(index);
                 }
                 ProgramExpression::Value(
-                    value @ (ProgramValue::Float32(MachineTerm::Variable(variable))
-                    | ProgramValue::Float64(MachineTerm::Variable(variable))),
+                    value @ (ProgramValue::Float32(OldMachineTerm::Variable(variable))
+                    | ProgramValue::Float64(OldMachineTerm::Variable(variable))),
                 ) => {
                     float_sources
                         .entry((value.program_type(), *variable))
@@ -8055,7 +8112,7 @@ impl ParameterNaming {
 
     pub(crate) fn pointer_source(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
     ) -> Option<(
         &crate::languages::interface::ImportedParameter,
         &ProgramExpression,
@@ -8968,10 +9025,6 @@ struct ReportDetail {
     written_goal: Option<String>,
     /// Whether a write and a live view concretely overlap, when reporting a write prerequisite.
     live_view_write_overlap: Option<bool>,
-    /// The labels a refusal that prints its own legend numbered it with, so
-    /// a trace of the same failure names the same states and values the
-    /// same way instead of numbering them afresh.
-    labels: Option<ReportLabels>,
 }
 
 impl ReportDetail {
@@ -8987,25 +9040,6 @@ impl ReportDetail {
         })
     }
 }
-
-/// A refusal's own state and value labels. Diagnostics only: two errors
-/// are not told apart by them.
-#[derive(Clone)]
-struct ReportLabels(std::sync::Arc<proof_diagnostics::render::MemoryStateLabels>);
-
-impl std::fmt::Debug for ReportLabels {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ReportLabels")
-    }
-}
-
-impl PartialEq for ReportLabels {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-impl Eq for ReportLabels {}
 
 /// What the verifier is working on, for locating a failure that carries no
 /// site of its own. This is diagnostics only: nothing reads it to decide a
@@ -9840,9 +9874,8 @@ impl FunctionBlock {
         Ok(())
     }
 
-    /// This contract, without its proof, as the contract of `name`: a C++
-    /// dispatch that stands for this block's virtual method.
-    pub(in crate::surface) fn dispatch_alias(&self, name: &str) -> FunctionBlock {
+    /// This interface, without its proof, as an external contract of `name`.
+    pub(in crate::surface) fn external_contract_as(&self, name: &str) -> FunctionBlock {
         let mut alias = self.clone();
         alias.signature.name = name.to_string();
         alias.signature.c_source = None;
@@ -9869,7 +9902,7 @@ impl FunctionBlock {
                 self.signature.parameters.len()
             ));
         }
-        let mut alias = self.dispatch_alias(name);
+        let mut alias = self.external_contract_as(name);
         for (parameter, interface_type) in
             alias.signature.parameters.iter_mut().zip(parameter_types)
         {
@@ -11445,14 +11478,7 @@ impl ClickError {
             return None;
         }
         let _typed = proof_diagnostics::render::TypedNotationScope::enter();
-        let mut labels = self
-            .report_detail
-            .as_ref()
-            .and_then(|detail| detail.labels.as_ref())
-            .map_or_else(
-                proof_diagnostics::render::MemoryStateLabels::ambient,
-                |labels| labels.0.as_ref().clone(),
-            );
+        let mut labels = proof_diagnostics::render::MemoryStateLabels::ambient();
         let context = proof_diagnostics::render_trace_context_with_requirement(
             diagnostic,
             self.search_failures
@@ -12042,17 +12068,6 @@ impl ClickError {
                 .origin
                 .source_tactic_path = Some(vec![source_index]);
         }
-        self
-    }
-
-    /// Records the labels this refusal's own legend used, so its trace
-    /// continues that numbering.
-    pub(crate) fn with_report_labels(
-        mut self,
-        labels: proof_diagnostics::render::MemoryStateLabels,
-    ) -> Self {
-        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).labels =
-            Some(ReportLabels(std::sync::Arc::new(labels)));
         self
     }
 

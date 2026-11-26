@@ -11,7 +11,7 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
     let left = IntegerTerm::var(Variable(791_001));
     let right = IntegerTerm::var(Variable(791_002));
     let goal = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(left.clone().into(), right.into()),
+        OldConditionTerm::IntegerEqual(left.clone().into(), right.into()),
         true,
     );
     for size in [4u64, 16, 64, 256] {
@@ -19,7 +19,7 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
         for index in 0..size {
             let sum = IntegerTerm::add(left.clone(), IntegerTerm::var(Variable(792_000 + index)));
             context = context.assume_condition(
-                ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), sum),
+                OldConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), sum),
                 true,
             );
         }
@@ -59,11 +59,11 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
                 })
                 .collect();
         }
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(terms.pop().unwrap()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let ((context, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -109,15 +109,15 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
         let (mut context, goal) = chain(8, 0);
         let memory = intern_memory(SymbolicMemory::new().with_block("other", size as u32 * 4));
         for index in 0..size {
-            let condition = ConditionTerm::Compare {
+            let condition = OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term(20_000 + index as u64)),
-                right: Box::new(MachineTerm::read_named(
+                right: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    Box::new(Address {
+                    Box::new(OldAddress {
                         base: "other".into(),
-                        offset: AddressOffset::Constant(index as i64 * 4),
+                        offset: OldAddressOffset::Constant(index as i64 * 4),
                     }),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -147,15 +147,15 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             branch_work, warm,
             "scalar insertion must share the completed state index"
         );
-        let extra = ConditionTerm::Compare {
+        let extra = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term(90_000)),
-            right: Box::new(MachineTerm::read_named(
+            right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "other".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -262,9 +262,9 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
         let memory = SymbolicMemory::new();
         // The theorem frontend represents these pointers in one block, so
         // unrelated ranges remain candidates for the adjacency search.
-        let pointer = |index| Address {
+        let pointer = |index| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(term(index), 4),
+            offset: OldAddressOffset::scale_int32(term(index), 4),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
@@ -281,7 +281,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
                 wide: false,
             });
             context = context.assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(term(10_000 + index)),
@@ -319,20 +319,20 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         let mut context = PureFactContext::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let read = MachineTerm::read_named(
+            let read = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "buffer".into(),
-                    offset: AddressOffset::Constant(index * 4),
+                    offset: OldAddressOffset::Constant(index * 4),
                 }),
                 LoadKind::Int32,
             );
             let (variable, load) = load_variable_for_term(&read).unwrap();
             context = context.assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
                     right: Box::new(load.clone()),
                 },
                 true,
@@ -342,10 +342,10 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         // An equation between different reads is useful, even when its left
         // operand is a reserved load name. It must remain a candidate.
         let alias = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(reads[0].0)),
+                left: Box::new(OldMachineTerm::Variable(reads[0].0)),
                 right: Box::new(reads[1].1.clone()),
             },
             true,
@@ -356,11 +356,11 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 Int32,
                 Add,
                 Box::new(sum),
-                Box::new(MachineTerm::Variable(*variable)),
+                Box::new(OldMachineTerm::Variable(*variable)),
             )
         });
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(sum),

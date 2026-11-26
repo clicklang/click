@@ -4,12 +4,12 @@ use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V}
 #[test]
 fn shared_index_addresses_preserve_native_queries_and_late_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
-    let a = MachineTerm::Variable(Variable(991401));
-    let b = MachineTerm::Variable(Variable(991402));
+    let a = OldMachineTerm::Variable(Variable(991401));
+    let b = OldMachineTerm::Variable(Variable(991402));
     let inputs = [
         a.clone(),
-        MachineTerm::add(a.clone(), b),
-        MachineTerm::subtract(a, 1u32.into()),
+        OldMachineTerm::add(a.clone(), b),
+        OldMachineTerm::subtract(a, 1u32.into()),
         0u32.into(),
         u32::MAX.into(),
     ];
@@ -21,14 +21,14 @@ fn shared_index_addresses_preserve_native_queries_and_late_aliases() {
             for successor in [false, true] {
                 for alias_first in [false, true] {
                     let mut graph = EqualityGraph::default();
-                    let p = Address::symbolic(Variable(991403));
-                    let q = Address::symbolic(Variable(991404)).offset_by_bytes(12);
+                    let p = OldAddress::symbolic(Variable(991403));
+                    let q = OldAddress::symbolic(Variable(991404)).offset_by_bytes(12);
                     if alias_first {
                         graph.add_equality(&p, &q);
                     }
                     let exports = KernelTermExport::machine_export_count();
                     let native = graph
-                        .indexed_address_class(&p, V::Legacy(&input), successor, width)
+                        .indexed_address_class(&p, V::Old(&input), successor, width)
                         .unwrap();
                     let shared = graph
                         .indexed_address_class(&p, V::Shared(&root), successor, width)
@@ -42,7 +42,7 @@ fn shared_index_addresses_preserve_native_queries_and_late_aliases() {
                         graph.add_equality(&p, &q);
                     }
                     let aliased = graph
-                        .indexed_address_class(&q, V::Legacy(&input), successor, width)
+                        .indexed_address_class(&q, V::Old(&input), successor, width)
                         .unwrap();
                     let shared = graph
                         .indexed_address_class(&p, V::Shared(&root), successor, width)
@@ -79,7 +79,7 @@ fn scaled_offset_keys_and_congruence_retain_shared_operands() {
         MachineIntegerType::UInt64,
     ] {
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = |native: MachineTerm, stride| {
+        let offset = |native: OldMachineTerm, stride| {
             let container = if ty == MachineIntegerType::Int32 {
                 ty
             } else {
@@ -90,23 +90,23 @@ fn scaled_offset_keys_and_congruence_retain_shared_operands() {
                 .unwrap();
             let value = SharedMachineIntegerTerm::from_shared(container, root).unwrap();
             if ty == MachineIntegerType::Int32 {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value,
                     byte_width: stride,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width: stride,
                     unsigned: ty == MachineIntegerType::UInt64,
                 }
             }
         };
-        let expression = |variable| MachineTerm::Binary {
+        let expression = |variable| OldMachineTerm::Binary {
             format: ty,
             op: crate::kernel::MachineBinaryOp::Add,
-            left: MachineTerm::Variable(Variable(variable)).into(),
-            right: MachineTerm::Variable(Variable(variable)).into(),
+            left: OldMachineTerm::Variable(Variable(variable)).into(),
+            right: OldMachineTerm::Variable(Variable(variable)).into(),
         };
         let left = offset(expression(991420), 4);
         let right = offset(expression(991421), 4);

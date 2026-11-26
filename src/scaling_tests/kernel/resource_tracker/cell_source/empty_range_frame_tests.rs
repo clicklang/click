@@ -7,16 +7,16 @@ fn empty_range_frames_ignore_related_and_unrelated_separation_candidates() {
         let mut samples = Vec::new();
         for size in [4u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let base = Address::symbolic(Variable(9_952_000));
-            let read = Address::symbolic(Variable(9_952_001));
-            let bound = MachineTerm::Variable(Variable(9_952_002));
+            let base = OldAddress::symbolic(Variable(9_952_000));
+            let read = OldAddress::symbolic(Variable(9_952_001));
+            let bound = OldMachineTerm::Variable(Variable(9_952_002));
             let range = MemoryRange::new(base.clone(), bound.clone(), bound);
             let mut context = PureFactContext::new();
             for index in 0..size {
                 let candidate_base = if related {
                     base.clone()
                 } else {
-                    Address::symbolic(Variable(9_953_000 + index))
+                    OldAddress::symbolic(Variable(9_953_000 + index))
                 };
                 context = context.assume_proposition(Proposition::ResourceSeparate {
                     left: Box::new(Resource::Memory(MemoryRange::new(

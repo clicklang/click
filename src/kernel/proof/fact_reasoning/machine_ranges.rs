@@ -3,9 +3,9 @@
 //! proof context, and the walk refuses when it uses its local allowance.
 
 use crate::kernel::{
-    BooleanOperandView, CompareRelation, ConditionTerm, IntegerComparisonOperator, IntegerTerm,
-    KernelTerm, KernelTermNode, MachineBinaryOp, MachineIntegerConstant, MachineIntegerType,
-    MachineOperandView, MachineTerm,
+    BooleanOperandView, CompareRelation, IntegerComparisonOperator, IntegerTerm, KernelTerm,
+    KernelTermNode, MachineBinaryOp, MachineIntegerConstant, MachineIntegerType,
+    MachineOperandView, OldConditionTerm, OldMachineTerm,
 };
 use num_traits::ToPrimitive;
 
@@ -61,7 +61,7 @@ impl Range {
 const MAX_VISITS: usize = 512;
 const MAX_DEPTH: usize = 64;
 
-pub(super) fn comparison_value(condition: &ConditionTerm) -> Option<bool> {
+pub(super) fn comparison_value(condition: &OldConditionTerm) -> Option<bool> {
     Check { left: MAX_VISITS }.condition(condition, MAX_DEPTH)
 }
 
@@ -70,11 +70,11 @@ struct Check {
 }
 
 impl Check {
-    fn condition(&mut self, condition: &ConditionTerm, depth: usize) -> Option<bool> {
+    fn condition(&mut self, condition: &OldConditionTerm, depth: usize) -> Option<bool> {
         use CompareRelation::*;
         let (relation, left, right, negated) = match condition {
-            ConditionTerm::Constant(value) => return Some(*value),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(value) => return Some(*value),
+            OldConditionTerm::Compare {
                 format,
                 relation,
                 left,
@@ -83,16 +83,18 @@ impl Check {
                 return self.machine_comparison(
                     *format,
                     *relation,
-                    [left.as_ref(), right.as_ref()].map(MachineOperandView::Legacy),
+                    [left.as_ref(), right.as_ref()].map(MachineOperandView::Old),
                     depth,
                 );
             }
-            ConditionTerm::IntegerEqual(left, right) => (Equal, left, right, false),
-            ConditionTerm::IntegerNotEqual(left, right) => (Equal, left, right, true),
-            ConditionTerm::IntegerLessThan(left, right) => (LessThan, left, right, false),
-            ConditionTerm::IntegerLessEqual(left, right) => (LessEqual, left, right, false),
-            ConditionTerm::IntegerGreaterThan(left, right) => (GreaterThan, left, right, false),
-            ConditionTerm::IntegerGreaterEqual(left, right) => (GreaterEqual, left, right, false),
+            OldConditionTerm::IntegerEqual(left, right) => (Equal, left, right, false),
+            OldConditionTerm::IntegerNotEqual(left, right) => (Equal, left, right, true),
+            OldConditionTerm::IntegerLessThan(left, right) => (LessThan, left, right, false),
+            OldConditionTerm::IntegerLessEqual(left, right) => (LessEqual, left, right, false),
+            OldConditionTerm::IntegerGreaterThan(left, right) => (GreaterThan, left, right, false),
+            OldConditionTerm::IntegerGreaterEqual(left, right) => {
+                (GreaterEqual, left, right, false)
+            }
             _ => return None,
         };
         let left = self.integer(left.as_ref(), depth)?;
@@ -177,7 +179,7 @@ impl Check {
             return None;
         }
         if let Some(literal) = value.literal() {
-            let MachineTerm::Constant { format, bits } = literal else {
+            let OldMachineTerm::Constant { format, bits } = literal else {
                 return None;
             };
             if format.format().bits() != ty.format().bits() {
@@ -267,19 +269,19 @@ mod tests {
         use MachineIntegerType as Ty;
 
         let ty = Ty::UInt32;
-        let literal = MachineTerm::constant;
-        let binary = |op, left, right| MachineTerm::Binary {
+        let literal = OldMachineTerm::constant;
+        let binary = |op, left, right| OldMachineTerm::Binary {
             format: ty,
             op,
             left: Box::new(left),
             right: Box::new(right),
         };
         let samples = [4, 16, 64].map(|size| {
-            let mut input = MachineTerm::var(crate::kernel::Variable(996000));
+            let mut input = OldMachineTerm::var(crate::kernel::Variable(996000));
             for _ in 0..size {
                 input = binary(Op::Add, input, literal(1));
             }
-            let equality = |mask, offset| ConditionTerm::Compare {
+            let equality = |mask, offset| OldConditionTerm::Compare {
                 format: ty,
                 relation: CompareRelation::Equal,
                 left: Box::new(binary(
@@ -304,8 +306,8 @@ mod tests {
     fn unfolded_machine_ranges_refuse_wrapping_bounds_and_invalid_division() {
         use MachineBinaryOp as Op;
         use MachineIntegerType as Ty;
-        let word = MachineTerm::uint64_constant;
-        let signed = MachineTerm::int64_constant;
+        let word = OldMachineTerm::uint64_constant;
+        let signed = OldMachineTerm::int64_constant;
         for (format, op, left, right, bound) in [
             (Ty::UInt64, Op::Add, word(u64::MAX), word(1), word(1)),
             (Ty::UInt64, Op::Divide, word(12), word(0), word(1)),
@@ -317,10 +319,10 @@ mod tests {
                 signed(0),
             ),
         ] {
-            let condition = ConditionTerm::Compare {
+            let condition = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(MachineTerm::Binary {
+                left: Box::new(OldMachineTerm::Binary {
                     format,
                     op,
                     left: Box::new(left),

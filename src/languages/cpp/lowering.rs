@@ -162,27 +162,27 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         .collect::<Result<Vec<_>, _>>()?;
     let (library_contracts, library_models) =
         super::standard_library::contracts(import.export(), &names)?;
+    // An overload's head at its shared path selects it by signature.
+    let mut overload_paths = BTreeMap::new();
+    for (id, path) in &paths {
+        crate::instrumentation::record_deterministic_work(1);
+        let name = names.require(id)?;
+        if name != path {
+            overload_paths.insert(name.to_string(), path.clone());
+        }
+    }
     let mut execution = super::interface::prepare(
         import,
         &functions,
         &reachable_functions,
         layouts,
         library_contracts,
-        &polymorphism.coercions.into_inner(),
+        polymorphism.coercions.into_inner(),
         &polymorphism.dispatches.into_inner(),
         &polymorphism.receiver_calls.into_inner(),
+        overload_paths,
     )?;
     execution.library_models = library_models;
-    // An overload's head at its shared path selects it by signature.
-    for (id, path) in &paths {
-        crate::instrumentation::record_deterministic_work(1);
-        let name = names.require(id)?;
-        if name != path {
-            execution
-                .overload_paths
-                .insert(name.to_string(), path.clone());
-        }
-    }
     Ok(LoweredCppFunction {
         execution: std::sync::Arc::new(execution),
         names,
@@ -488,7 +488,7 @@ struct LoweringContext<'a> {
     /// The packs the call being lowered needs, with their unpacks and the
     /// derived class's address: one for each reference argument that
     /// converts a derived class reference to a polymorphic base.
-    pending_coercions: Vec<(String, String, ProgramExpression)>,
+    pending_coercions: Vec<(usize, crate::kernel::CppBindingContract, ProgramExpression)>,
     /// The receiver of the call being lowered when it converts to a base
     /// whose method runs as itself, on memory: it is not packed.
     direct_receiver: Option<CppPlaceReference>,
@@ -506,15 +506,14 @@ struct Polymorphism<'a> {
     derived: BTreeSet<&'a str>,
     /// Every conversion of a derived class reference to a polymorphic base
     /// the program makes, by derived and base record.
-    coercions: std::cell::RefCell<BTreeSet<(String, String)>>,
-    /// Every dispatch the program makes through a reference to an open
-    /// class's method that overrides another, by the name of the function
-    /// it calls, with the method's importer name.
-    dispatches: std::cell::RefCell<BTreeMap<String, String>>,
+    coercions: std::cell::RefCell<BTreeSet<crate::kernel::CppObjectConversion>>,
+    /// Methods the program calls through their virtual interface.
+    dispatches: std::cell::RefCell<BTreeSet<String>>,
     /// Each function's calls of methods on a receiver that may be an object
     /// of a derived class, by its importer name: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
-    receiver_calls: std::cell::RefCell<BTreeMap<String, Vec<(String, Option<String>)>>>,
+    receiver_calls:
+        std::cell::RefCell<BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>>,
 }
 
 impl<'a> Polymorphism<'a> {
@@ -605,24 +604,65 @@ impl LoweringContext<'_> {
     /// the callee holds the base class's object the derived class's memory
     /// stands for, which the sidecar may declare.
     fn coerced(&mut self, call: ProgramStatement) -> ProgramStatement {
+        self.coerced_call(call, false)
+    }
+
+    fn coerced_call(&mut self, call: ProgramStatement, has_receiver: bool) -> ProgramStatement {
+        use crate::kernel::{CppBindingOperation, CppBindingSlot, CppBindingSource};
         let coercions = std::mem::take(&mut self.pending_coercions);
+        // The only multi-step call passed here is a call followed by the
+        // assignment of its result. Both count as regions of the binding.
+        let call_regions = match &call {
+            ProgramStatement::Seq(statements) => statements.len(),
+            _ => 1,
+        };
         let mut statement = call;
-        for (pack, unpack, address) in coercions.iter().rev() {
+        for (index, (position, contract, address)) in coercions.iter().enumerate().rev() {
             crate::instrumentation::record_deterministic_work(1);
-            statement = program_seq(
-                program_call(pack.clone(), vec![address.clone()]),
-                program_seq(
-                    statement,
-                    program_call(unpack.clone(), vec![address.clone()]),
-                ),
+            let remaining = coercions.len() - index;
+            let slot = if has_receiver && *position == 0 {
+                CppBindingSlot::Receiver
+            } else {
+                CppBindingSlot::Argument(position - usize::from(has_receiver))
+            };
+            let transition = |contract, source| ProgramStatement::Call {
+                function_name: String::new(),
+                arguments: vec![address.clone()],
+                callee: None,
+                dispatch: crate::kernel::CallDispatch::Direct,
+                cpp_binding: Some(std::sync::Arc::new(CppBindingOperation {
+                    contract,
+                    source,
+                })),
+            };
+            let acquire = transition(
+                contract.clone(),
+                Some(CppBindingSource {
+                    slot,
+                    call_offset: remaining,
+                    release_offset: remaining + call_regions + remaining - 1,
+                }),
             );
+            let release = transition(contract.release(), None);
+            statement = program_seq(acquire, program_seq(statement, release));
         }
         statement
     }
 
+    fn call_has_receiver(&self, callee: &super::CppFunctionReference) -> bool {
+        self.polymorphism
+            .functions
+            .get(callee.declaration_id.as_str())
+            .is_some_and(|function| function.receiver().is_some())
+    }
+
     /// Records the pack a reference argument needs when its place ends in
     /// base projections to a polymorphic class.
-    fn note_object_coercion(&mut self, place: &super::CppPlaceReference) -> Result<(), String> {
+    fn note_object_coercion(
+        &mut self,
+        place: &super::CppPlaceReference,
+        position: usize,
+    ) -> Result<(), String> {
         let trailing = place
             .projections
             .iter()
@@ -662,23 +702,32 @@ impl LoweringContext<'_> {
             self.lower_place(&derived_place)?,
             ProgramType::Int32Pointer,
         );
-        let (pack, unpack) = if base.is_const {
-            (
-                crate::languages::cpp::names::object_const_pack_name(&derived, &base.base_name),
-                crate::languages::cpp::names::object_const_unpack_name(&derived, &base.base_name),
-            )
-        } else {
-            (
-                crate::languages::cpp::names::object_pack_name(&derived, &base.base_name),
-                crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
-            )
-        };
-        self.pending_coercions.push((pack, unpack, address));
+        self.record_binding(position, &derived, &base.base_name, base.is_const, address);
+        Ok(())
+    }
+
+    fn record_binding(
+        &mut self,
+        position: usize,
+        derived: &str,
+        base: &str,
+        shared: bool,
+        address: ProgramExpression,
+    ) {
+        use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+        let conversion = CppObjectConversion::new(derived, base);
         self.polymorphism
             .coercions
             .borrow_mut()
-            .insert((derived, base.base_name.clone()));
-        Ok(())
+            .insert(conversion.clone());
+        self.pending_coercions.push((
+            position,
+            CppBindingContract {
+                conversion,
+                kind: CppBindingKind::acquire(shared),
+            },
+            address,
+        ));
     }
 
     /// Whether `place`, before any base edges it ends in, is a complete
@@ -705,13 +754,14 @@ impl LoweringContext<'_> {
     /// complete object of an open class passed by reference becomes the
     /// object a reference to its class holds. A call that dispatches through
     /// a reference to an open class's method that overrides another runs
-    /// whichever override the object's class selects, which the function
-    /// named for that dispatch stands for.
-    fn call_name(
+    /// whichever override the object's class selects, using the method's
+    /// virtual interface.
+    fn call_target(
         &mut self,
         callee: &super::CppFunctionReference,
         arguments: &[CppCallArgument],
-    ) -> Result<String, String> {
+    ) -> Result<(String, crate::kernel::CallDispatch), String> {
+        use crate::kernel::CallDispatch;
         self.direct_receiver = None;
         let name = self.callee_name(callee)?;
         let Some(function) = (!callee.through_pointer)
@@ -723,10 +773,12 @@ impl LoweringContext<'_> {
             .flatten()
             .copied()
         else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let receiver = function.receiver();
-        for (argument, parameter) in arguments.iter().zip(&function.parameters) {
+        for (position, (argument, parameter)) in
+            arguments.iter().zip(&function.parameters).enumerate()
+        {
             let CppCallArgument::Reference { place } = argument else {
                 continue;
             };
@@ -755,33 +807,18 @@ impl LoweringContext<'_> {
                 self.lower_place(place)?,
                 ProgramType::Int32Pointer,
             );
-            let (pack, unpack) = if *is_const {
-                (
-                    crate::languages::cpp::names::object_const_pack_name(class, class),
-                    crate::languages::cpp::names::object_const_unpack_name(class, class),
-                )
-            } else {
-                (
-                    crate::languages::cpp::names::object_pack_name(class, class),
-                    crate::languages::cpp::names::object_unpack_name(class, class),
-                )
-            };
-            self.pending_coercions.push((pack, unpack, address));
-            self.polymorphism
-                .coercions
-                .borrow_mut()
-                .insert((class.clone(), class.clone()));
+            self.record_binding(position, class, class, *is_const, address);
         }
         let Some(CppType::LvalueReference { pointee }) =
             receiver.map(|parameter| &parameter.value_type)
         else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let CppType::Record { name: class, .. } = pointee.as_ref() else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let Some(CppCallArgument::Reference { place }) = arguments.first() else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let exact = self.is_exact(place)?;
         let dispatches = function.virtual_method.as_ref().is_some_and(|method| {
@@ -789,26 +826,28 @@ impl LoweringContext<'_> {
                 && !method.overrides.is_empty()
                 && self.polymorphism.open.contains(class.as_str())
         }) && !exact;
+        let dispatch = if dispatches {
+            self.polymorphism
+                .dispatches
+                .borrow_mut()
+                .insert(name.clone());
+            CallDispatch::CppVirtual
+        } else {
+            CallDispatch::Direct
+        };
         if !exact && self.polymorphism.derived.contains(class.as_str()) {
             let id = place.declaration_id.as_str();
             let holder = (self.receiver != Some(id)).then(|| place.name.clone());
-            let target = if dispatches {
-                crate::languages::cpp::names::object_dispatch_name(
-                    class,
-                    function
-                        .path
-                        .last()
-                        .map_or(callee.name.as_str(), String::as_str),
-                )
-            } else {
-                name.clone()
-            };
             self.polymorphism
                 .receiver_calls
                 .borrow_mut()
                 .entry(self.function_name.to_string())
                 .or_default()
-                .push((target, holder));
+                .push(crate::languages::interface::CppReceiverCall {
+                    method: name.clone(),
+                    dispatch,
+                    holder,
+                });
         }
         if !dispatches {
             // A method of a class with a polymorphic base, called as itself,
@@ -821,18 +860,8 @@ impl LoweringContext<'_> {
             {
                 self.direct_receiver = Some(place.clone());
             }
-            return Ok(name);
         }
-        let method_name = function
-            .path
-            .last()
-            .map_or(callee.name.as_str(), String::as_str);
-        let dispatch = crate::languages::cpp::names::object_dispatch_name(class, method_name);
-        self.polymorphism
-            .dispatches
-            .borrow_mut()
-            .insert(dispatch.clone(), name);
-        Ok(dispatch)
+        Ok((name, dispatch))
     }
 
     fn lower_statement(&mut self, statement: &CppStatement) -> Result<ProgramStatement, String> {
@@ -970,16 +999,19 @@ impl LoweringContext<'_> {
                     },
                 ) => {
                     let layout = self.record_layout(name)?;
-                    let (prefix, actual) = self.normalize_arguments(arguments)?;
+                    let (prefix, actual, prepared) = self.normalize_arguments(callee, arguments)?;
                     Ok(evaluate_then(
                         prefix,
                         program_seq(
                             program_allocate_aggregate_destination(local.name.clone(), layout),
-                            self.coerced(program_call_construct(
-                                local.name.clone(),
-                                self.callee_name(callee)?,
-                                actual,
-                            )),
+                            end_prepared_arguments(
+                                self.coerced(program_call_construct(
+                                    local.name.clone(),
+                                    self.callee_name(callee)?,
+                                    actual,
+                                )),
+                                prepared,
+                            ),
                         ),
                     ))
                 }
@@ -1378,11 +1410,21 @@ impl LoweringContext<'_> {
             CppStatement::Call {
                 callee, arguments, ..
             } => {
-                let target = self.call_name(callee, arguments)?;
+                let (target, dispatch) = self.call_target(callee, arguments)?;
+                let parameter_names = self.callee_parameter_names(callee);
                 let (prefix, arguments, mut temporaries) =
-                    self.normalize_temporary_arguments(arguments, true)?;
+                    self.normalize_temporary_arguments_for(arguments, &parameter_names, true)?;
                 temporaries.reverse();
-                let operation = self.coerced(program_call(target, arguments));
+                let operation = self.coerced_call(
+                    ProgramStatement::Call {
+                        function_name: target,
+                        arguments,
+                        dispatch,
+                        callee: None,
+                        cpp_binding: None,
+                    },
+                    self.call_has_receiver(callee),
+                );
                 let operation = if temporaries.is_empty() {
                     operation
                 } else {
@@ -1495,7 +1537,7 @@ impl LoweringContext<'_> {
                     );
                 };
                 let layout = self.record_layout(name)?;
-                let (prefix, actual) = self.normalize_arguments(arguments)?;
+                let (prefix, actual, prepared) = self.normalize_arguments(callee, arguments)?;
                 let temporary = self.fresh_aggregate_capture(name)?;
                 let (materialize, address) = self.retain_materialized(&temporary);
                 // The RHS is a separate object: the live LHS may be read by
@@ -1505,11 +1547,14 @@ impl LoweringContext<'_> {
                     program_seq(
                         program_allocate_aggregate_destination(temporary.clone(), layout.clone()),
                         program_seq(
-                            self.coerced(program_call_construct(
-                                temporary.clone(),
-                                self.callee_name(callee)?,
-                                actual,
-                            )),
+                            end_prepared_arguments(
+                                self.coerced(program_call_construct(
+                                    temporary.clone(),
+                                    self.callee_name(callee)?,
+                                    actual,
+                                )),
+                                prepared,
+                            ),
                             program_seq(
                                 program_seq(
                                     materialize,
@@ -1528,7 +1573,7 @@ impl LoweringContext<'_> {
             CppStatement::ReturnConstruct {
                 callee, arguments, ..
             } => {
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let (prefix, arguments, prepared) = self.normalize_arguments(callee, arguments)?;
                 let mut actual = vec![crate::kernel::program_expression::cast(
                     crate::kernel::program_expression::variable(crate::kernel::CONTRACT_RESULT),
                     ProgramType::Int32Pointer,
@@ -1537,7 +1582,10 @@ impl LoweringContext<'_> {
                 Ok(evaluate_then(
                     prefix,
                     program_seq(
-                        self.coerced(program_call(self.callee_name(callee)?, actual)),
+                        end_prepared_arguments(
+                            self.coerced(program_call(self.callee_name(callee)?, actual)),
+                            prepared,
+                        ),
                         program_return(crate::kernel::program_expression::variable(
                             crate::kernel::CONTRACT_RESULT,
                         )),
@@ -1547,15 +1595,18 @@ impl LoweringContext<'_> {
             CppStatement::ReturnAggregateCall {
                 callee, arguments, ..
             } => {
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let (prefix, arguments, prepared) = self.normalize_arguments(callee, arguments)?;
                 Ok(evaluate_then(
                     prefix,
                     program_seq(
-                        self.coerced(program_call_construct(
-                            crate::kernel::CONTRACT_RESULT,
-                            self.callee_name(callee)?,
-                            arguments,
-                        )),
+                        end_prepared_arguments(
+                            self.coerced(program_call_construct(
+                                crate::kernel::CONTRACT_RESULT,
+                                self.callee_name(callee)?,
+                                arguments,
+                            )),
+                            prepared,
+                        ),
                         program_return(crate::kernel::program_expression::variable(
                             crate::kernel::CONTRACT_RESULT,
                         )),
@@ -1647,20 +1698,12 @@ impl LoweringContext<'_> {
                 }
                 Ok(operation)
             }
-            CppStatement::ThrowIosFailure { .. } => {
-                let (construction, payload) = crate::kernel::program_call_value(
-                    self.result_step(),
-                    super::standard_library::IOS_FAILURE_FACTORY,
-                    Vec::new(),
-                );
-                Ok(program_seq(
-                    construction,
-                    self.lower_throwing_statement(
-                        ProgramStatement::Throw(payload),
-                        state.exit(unwind_base),
-                    )?,
-                ))
-            }
+            CppStatement::ThrowIosFailure { .. } => self.lower_throwing_statement(
+                ProgramStatement::ThrowOpaque(crate::kernel::TypeParameterName::intern(
+                    "std::ios_base::failure",
+                )),
+                state.exit(unwind_base),
+            ),
             CppStatement::Throw { value, .. } => {
                 let throw = ProgramStatement::Throw(self.lower_expression(value)?);
                 self.lower_throwing_statement(throw, state.exit(unwind_base))
@@ -1810,9 +1853,11 @@ impl LoweringContext<'_> {
                 value_type,
                 conversions,
             } => {
-                let target = self.call_name(callee, arguments)?;
-                let (prefix, arguments, temporaries) = self.normalize_temporary_arguments(
+                let (target, dispatch) = self.call_target(callee, arguments)?;
+                let parameter_names = self.callee_parameter_names(callee);
+                let (prefix, arguments, temporaries) = self.normalize_temporary_arguments_for(
                     arguments,
+                    &parameter_names,
                     arguments.iter().any(CppCallArgument::is_opaque_copy),
                 )?;
                 // Keep the callee's own type until the source conversion
@@ -1823,12 +1868,14 @@ impl LoweringContext<'_> {
                 let ProgramStatement::CallResult {
                     result_type,
                     result_pointee_constant,
+                    dispatch: call_dispatch,
                     ..
                 } = &mut call
                 else {
                     unreachable!("a value-producing call")
                 };
                 let pointee_constant = scalar::returns_constant_element(value_type);
+                *call_dispatch = dispatch;
                 *result_type = Some(capture_type);
                 *result_pointee_constant = pointee_constant;
                 let (operation, mut value) =
@@ -1843,12 +1890,15 @@ impl LoweringContext<'_> {
                                     false,
                                     pointee_constant,
                                 ),
-                                self.coerced(program_seq(call, program_assign(name.clone(), raw))),
+                                self.coerced_call(
+                                    program_seq(call, program_assign(name.clone(), raw)),
+                                    self.call_has_receiver(callee),
+                                ),
                             ),
                             crate::kernel::program_expression::variable(name),
                         )
                     } else {
-                        (self.coerced(call), raw)
+                        (self.coerced_call(call, self.call_has_receiver(callee)), raw)
                     };
                 let operation = if temporaries.is_empty() {
                     operation
@@ -1893,18 +1943,50 @@ impl LoweringContext<'_> {
         }
     }
 
+    /// The arguments of a call to `callee` whose full expression holds no
+    /// other temporaries, with the prepared parameter objects of its
+    /// by-value record copies; the caller ends those once the call returns.
     fn normalize_arguments(
         &mut self,
+        callee: &super::CppFunctionReference,
         arguments: &[CppCallArgument],
-    ) -> Result<(ProgramStatement, Vec<ProgramExpression>), String> {
-        let (prefix, actual, temporaries) = self.normalize_temporary_arguments(arguments, false)?;
-        debug_assert!(temporaries.is_empty());
-        Ok((prefix, actual))
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
+        let parameter_names = self.callee_parameter_names(callee);
+        self.normalize_temporary_arguments_for(arguments, &parameter_names, false)
+    }
+
+    /// The parameter names of `callee`, by position, when it is a known
+    /// function: what a prepared by-value argument is passed as.
+    fn callee_parameter_names(&self, callee: &super::CppFunctionReference) -> Vec<String> {
+        (!callee.through_pointer)
+            .then(|| {
+                self.polymorphism
+                    .functions
+                    .get(callee.declaration_id.as_str())
+            })
+            .flatten()
+            .map(|function| {
+                function
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn normalize_temporary_arguments(
         &mut self,
         arguments: &[CppCallArgument],
+        allow_temporaries: bool,
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
+        self.normalize_temporary_arguments_for(arguments, &[], allow_temporaries)
+    }
+
+    fn normalize_temporary_arguments_for(
+        &mut self,
+        arguments: &[CppCallArgument],
+        parameter_names: &[String],
         allow_temporaries: bool,
     ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
         let mut temporaries = Vec::new();
@@ -1932,7 +2014,12 @@ impl LoweringContext<'_> {
             retained_states.push(retained_state);
         }
         let mut lowered = Vec::with_capacity(arguments.len());
-        for (argument, retained_state) in arguments.iter().zip(retained_states) {
+        for (position, (argument, retained_state)) in
+            arguments.iter().zip(retained_states).enumerate()
+        {
+            let parameter_name = parameter_names
+                .get(position)
+                .filter(|name| !name.is_empty());
             crate::instrumentation::record_deterministic_work(1);
             if let Some(retained_state) = retained_state {
                 lowered.push(retained_state);
@@ -1957,6 +2044,38 @@ impl LoweringContext<'_> {
                 );
                 evaluation = evaluate_then(evaluation, call);
                 lowered.push(returned);
+            } else if let CppCallArgument::RecordCopy {
+                place,
+                value_type: CppType::Record { name, .. },
+                ..
+            } = argument
+            {
+                // The trivial copy into the callee's parameter object is a
+                // region of its own before the call, as C's is: the call
+                // receives the initialized object, which ends with the full
+                // expression.
+                let layout = self.record_layout(name)?;
+                let capture = self.fresh_prepared_argument(name, parameter_name)?;
+                let source = crate::kernel::program_expression::cast(
+                    self.lower_place(place)?,
+                    ProgramType::UInt8Pointer,
+                );
+                evaluation = evaluate_then(
+                    evaluation,
+                    program_seq(
+                        program_allocate_aggregate_destination(capture.clone(), layout.clone()),
+                        crate::kernel::program_copy_aggregate(
+                            crate::kernel::program_expression::variable(capture.clone()),
+                            source,
+                            layout,
+                        ),
+                    ),
+                );
+                lowered.push(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::variable(capture.clone()),
+                    ProgramType::UInt8Pointer,
+                ));
+                temporaries.push(capture);
             } else if matches!(
                 argument,
                 CppCallArgument::Construct { .. }
@@ -1990,7 +2109,11 @@ impl LoweringContext<'_> {
                     unreachable!()
                 };
                 let layout = self.record_layout(name)?;
-                let capture = self.fresh_aggregate_capture_with(name, opaque_copy)?;
+                let capture = if opaque_copy {
+                    self.fresh_prepared_argument(name, parameter_name)?
+                } else {
+                    self.fresh_aggregate_capture(name)?
+                };
                 let (prefix, mut actual, inner_temporaries) =
                     self.normalize_temporary_arguments(arguments, true)?;
                 temporaries.extend(inner_temporaries);
@@ -2042,7 +2165,7 @@ impl LoweringContext<'_> {
                 lowered.push(inner.value);
             } else {
                 // Remaining siblings are stable and total across the call.
-                lowered.push(self.lower_call_argument(argument)?);
+                lowered.push(self.lower_call_argument(argument, position)?);
             }
         }
         Ok((evaluation, lowered, temporaries))
@@ -2294,6 +2417,28 @@ impl LoweringContext<'_> {
         self.fresh_aggregate_capture_with(record, false)
     }
 
+    /// The object a call receives as its by-value parameter, named for that
+    /// parameter when the callee is known.
+    fn fresh_prepared_argument(
+        &mut self,
+        record: &str,
+        parameter: Option<&String>,
+    ) -> Result<BindingName, String> {
+        let Some(parameter) = parameter else {
+            return self.fresh_aggregate_capture_with(record, true);
+        };
+        let ordinal = self.next_temporary;
+        self.next_temporary = ordinal
+            .checked_add(1)
+            .ok_or("C++ temporary ordinal overflow")?;
+        crate::instrumentation::record_deterministic_work(1);
+        let id =
+            LocalBindingId::prepared_argument_for(self.temporary_owner.clone(), ordinal, parameter);
+        id.initialize_program_type(ProgramType::Int32Pointer);
+        id.initialize_struct_name(record);
+        Ok(id.into())
+    }
+
     fn fresh_aggregate_capture_with(
         &mut self,
         record: &str,
@@ -2313,7 +2458,8 @@ impl LoweringContext<'_> {
     ) -> Result<Vec<ProgramExpression>, String> {
         arguments
             .iter()
-            .map(|argument| self.lower_call_argument(argument))
+            .enumerate()
+            .map(|(position, argument)| self.lower_call_argument(argument, position))
             .collect()
     }
 
@@ -2336,6 +2482,7 @@ impl LoweringContext<'_> {
     fn lower_call_argument(
         &mut self,
         argument: &CppCallArgument,
+        position: usize,
     ) -> Result<ProgramExpression, String> {
         match argument {
             CppCallArgument::RecordCopy { place, .. } => {
@@ -2349,7 +2496,7 @@ impl LoweringContext<'_> {
                 if self.direct_receiver.as_ref() == Some(place) {
                     self.direct_receiver = None;
                 } else {
-                    self.note_object_coercion(place)?;
+                    self.note_object_coercion(place, position)?;
                 }
                 let root = self.place(place)?;
                 // A scalar local bound to a native reference: its address.
@@ -2629,7 +2776,7 @@ impl LoweringContext<'_> {
             CppExpression::AddressOf {
                 place, value_type, ..
             } if !place.projections.is_empty() => {
-                // Address formation checks storage, not a read of the field value.
+                // OldAddress formation checks storage, not a read of the field value.
                 // The member is its own subobject (C++ [basic.compound]): the
                 // pointer may not reach a sibling member at an adjacent address.
                 let CppType::Pointer { pointee } = value_type else {
@@ -3070,4 +3217,16 @@ fn is_const_int64(value_type: &CppType) -> bool {
 
 fn is_native_object_pointer(value_type: &CppType) -> bool {
     matches!(value_type, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some())
+}
+
+/// `call`, then the end of the prepared parameter objects it received.
+fn end_prepared_arguments(call: ProgramStatement, prepared: Vec<BindingName>) -> ProgramStatement {
+    if prepared.is_empty() {
+        call
+    } else {
+        program_seq(
+            call,
+            program_end_automatic_lifetimes(prepared.into_iter().rev().collect()),
+        )
+    }
 }

@@ -111,7 +111,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
         SizedInsertMirroredContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right) => {
             have sized_mirrored_context_uncle_pending(state.phase) != 1 by {
                 rewrite(state.phase, SizedInsertMirroredContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
-                unfold(sized_mirrored_context_uncle_pending(SizedInsertMirroredContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right))); normalize();
+                unfold(sized_mirrored_context_uncle_pending(SizedInsertMirroredContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right))); close();
             }
             contradiction(sized_mirrored_context_uncle_pending(state.phase) == 1);
         },
@@ -120,7 +120,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             unfold(sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
             have tree.model == SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), SizedTree::Node(node, p, Color::Red, nv, left, right))) by {
                 rewrite(tree.model, sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
-                unfold(sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right)); normalize();
+                unfold(sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right)); close();
             }
             let { metadata: g_size, right: parent_tree, left: g_left } = unfold(tree);
             let { metadata: p_size, right: focus, left: p_left } = unfold(parent_tree);
@@ -128,11 +128,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             unfold(color_bit(Color::Red));
             have (node->__rb_parent_color & 1) == 0 by {
                 rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
-                rewrite(color_bit(Color::Red), 0); normalize();
+                rewrite(color_bit(Color::Red), 0); close();
             }
             have node->__rb_parent_color == address(p) by {
                 rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1), 0); normalize();
+                rewrite((node->__rb_parent_color & 1), 0); close();
             }
             have node->rb_left != node by close();
             have node->rb_right != node by close();
@@ -184,7 +184,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
                     have loop_tree.model == SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), SizedTree::Node(node, p, Color::Red, nv, left, right))) by {
                         rewrite(loop_tree.model, sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
-                        unfold(sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right)); normalize();
+                        unfold(sized_mirrored_context_uncle_before(g, p, m, u, node, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right)); close();
                     }
                     let { metadata: g_size, right: parent_tree, left: g_left } = unfold(loop_tree);
                     let { metadata: p_size, right: focus, left: p_left } = unfold(parent_tree);
@@ -195,7 +195,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(color_bit(Color::Black));
                     have (u->__rb_parent_color & 1) == 1 by {
                         rewrite((u->__rb_parent_color & 1), color_bit(Color::Black));
-                        rewrite(color_bit(Color::Black), 1); normalize();
+                        rewrite(color_bit(Color::Black), 1); close();
                     }
                     let { metadata: m_size, left: m_left, right: m_right } = unfold(p_left);
                     have p->rb_left == m by { close(); }
@@ -218,7 +218,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     unfold(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
                     have to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv) by {
-                        rewrite(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)), mv); normalize();
+                        rewrite(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)), mv); close();
                     }
                     have to_integer(gv) == 2 + to_integer(nv) + to_integer(mv) + to_integer(uv) by {
                         close() using {
@@ -233,13 +233,13 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(to_integer(nv), rb_subtree_size(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))));
                         unfold(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right)));
                         unfold(rb_subtree_size(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))));
-                        normalize();
+                        close();
                     }
                     have rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv) by { close(); }
                     have rb_subtree_size(sized_shape(middle_left)) + rb_subtree_size(sized_shape(middle_right)) + 1 == to_integer(mv) by {
                         rewrite(to_integer(mv), rb_subtree_size(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))));
                         unfold(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
-                        unfold(rb_subtree_size(RbTree::Node(m, p, Color::Black, sized_shape(middle_left), sized_shape(middle_right)))); normalize();
+                        unfold(rb_subtree_size(RbTree::Node(m, p, Color::Black, sized_shape(middle_left), sized_shape(middle_right)))); close();
                     }
                     apply(rb_subtree_size_nonnegative(sized_shape(SizedTree::Node(node, p, Color::Red, nv, left, right))));
                     apply(rb_subtree_size_nonnegative(sized_shape(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))));
@@ -255,7 +255,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have rb_subtree_size(sized_shape(uncle_left)) + rb_subtree_size(sized_shape(uncle_right)) + 1 == to_integer(uv) by {
                         rewrite(to_integer(uv), rb_subtree_size(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))));
                         unfold(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
-                        unfold(rb_subtree_size(RbTree::Node(u, g, Color::Black, sized_shape(uncle_left), sized_shape(uncle_right)))); normalize();
+                        unfold(rb_subtree_size(RbTree::Node(u, g, Color::Black, sized_shape(uncle_left), sized_shape(uncle_right)))); close();
                     }
                     apply(rb_subtree_size_nonnegative(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right))));
                     have 0 <= to_integer(uv) by { close() using {
@@ -275,12 +275,12 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->__rb_parent_color == address(g) by {
                         rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
                         rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
-                        rewrite(color_bit(Color::Red), 0); normalize();
+                        rewrite(color_bit(Color::Red), 0); close();
                     }
                     have g->__rb_parent_color == address(above) + 1 by {
                         rewrite(g->__rb_parent_color, address(above) + (g->__rb_parent_color & 1));
                         rewrite((g->__rb_parent_color & 1), color_bit(Color::Black));
-                        rewrite(color_bit(Color::Black), 1); normalize();
+                        rewrite(color_bit(Color::Black), 1); close();
                     }
                     let loop_parent = fold(mirrored_context_uncle_node_frame(p, g), { color: Color::Red, word: p->__rb_parent_color, right: node, left: m });
                     let loop_grandparent = fold(mirrored_context_uncle_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, right: p, left: u });
@@ -302,7 +302,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(color_bit(Color::Black));
                     have (u->__rb_parent_color & 1) == 1 by {
                         rewrite((u->__rb_parent_color & 1), color_bit(Color::Black));
-                        rewrite(color_bit(Color::Black), 1); normalize();
+                        rewrite(color_bit(Color::Black), 1); close();
                     }
                     let uncle_observation = fold(mirrored_context_uncle_node_frame(u, g), { color: Color::Black, word: u->__rb_parent_color, right: u->rb_right, left: u->rb_left });
                     step(); step(); step(); // Read the black uncle and skip the color flip.
@@ -356,10 +356,10 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->rb_left == g by close();
                     have parent == p by close();
                     have sized_parent_is(SizedTree::Node(node, p, Color::Red, nv, left, right), p) == 1 by {
-                        unfold(sized_parent_is(SizedTree::Node(node, p, Color::Red, nv, left, right), p)); normalize();
+                        unfold(sized_parent_is(SizedTree::Node(node, p, Color::Red, nv, left, right), p)); close();
                     }
                     have sized_parent_is(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right)), p) == 1 by {
-                        unfold(sized_parent_is(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right)), p)); normalize();
+                        unfold(sized_parent_is(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right)), p)); close();
                     }
                     have to_integer(sized_value(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right)))) == 2 + to_integer(sized_value(sized_left(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right))))) + to_integer(sized_value(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right))))) + to_integer(sized_value(SizedTree::Node(node, p, Color::Red, nv, left, right))) by {
                         unfold(sized_value(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right))));
@@ -413,7 +413,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_shape(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right), SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right))));
                         unfold(sized_shape(SizedTree::Node(m, g, Color::Black, mv, middle_left, middle_right)));
                         unfold(sized_shape(SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right)));
-                        unfold(sized_mirrored_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right)); normalize();
+                        unfold(sized_mirrored_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right)); close();
                     }
                     have rb_subtree_size(sized_mirrored_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right)) == to_integer(gv) by {
                         unfold(sized_mirrored_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
@@ -440,7 +440,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have rb_parent_is(sized_shape(checked.model), above) == 1 by {
                         rewrite(sized_shape(checked.model), sized_mirrored_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
                         unfold(sized_mirrored_context_uncle_after(g, p, m, u, node, above, left, right, middle_left, middle_right, uncle_left, uncle_right));
-                        unfold(rb_parent_is(RbTree::Node(p, above, Color::Black, RbTree::Node(g, p, Color::Red, RbTree::Node(u, g, Color::Black, sized_shape(uncle_left), sized_shape(uncle_right)), RbTree::Node(m, g, Color::Black, sized_shape(middle_left), sized_shape(middle_right))), RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), above)); normalize();
+                        unfold(rb_parent_is(RbTree::Node(p, above, Color::Black, RbTree::Node(g, p, Color::Red, RbTree::Node(u, g, Color::Black, sized_shape(uncle_left), sized_shape(uncle_right)), RbTree::Node(m, g, Color::Black, sized_shape(middle_left), sized_shape(middle_right))), RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), above)); close();
                     }
                     have sized_parent_is(checked.model, above) == 1 by {
                         rewrite(sized_parent_is(checked.model, above), rb_parent_is(sized_shape(checked.model), above));

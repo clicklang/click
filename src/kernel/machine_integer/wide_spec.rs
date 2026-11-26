@@ -1,7 +1,8 @@
 //! Definedness and mathematical results for 128-bit specification arithmetic.
 use crate::kernel::eval::SpecDivision;
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineBinaryOp, MachineIntegerType, ProofObligation, Proposition,
+    IntegerTerm, MachineBinaryOp, MachineIntegerType, OldConditionTerm, ProofObligation,
+    Proposition,
 };
 
 pub(in crate::kernel) fn result_type(
@@ -34,7 +35,7 @@ pub(in crate::kernel) fn result_and_domain(
 ) -> (IntegerTerm, Option<ProofObligation>) {
     let mut domain = Vec::new();
     let mut require = |proposition: Proposition| {
-        if !matches!(proposition.condition_native(), Some((ConditionTerm::Constant(actual), expected)) if actual == expected)
+        if !matches!(proposition.old_condition(), Some((OldConditionTerm::Constant(actual), expected)) if actual == expected)
         {
             domain.push(proposition);
         }
@@ -43,30 +44,32 @@ pub(in crate::kernel) fn result_and_domain(
         let product = IntegerTerm::multiply(left, right);
         let (min, max) = destination.format().bounds();
         require(Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
+            OldConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
             true,
         ));
         require(Proposition::condition_is(
-            ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
+            OldConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
             true,
         ));
         product
     } else {
         if division == SpecDivision::CDefined {
             require(Proposition::condition_is(
-                ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0)),
+                OldConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0)),
                 false,
             ));
         }
         if destination == MachineIntegerType::Int128 {
-            let min =
-                ConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
+            let min = OldConditionTerm::integer_equal(
+                left.clone(),
+                IntegerTerm::constant(i128::MIN.into()),
+            );
             let minus_one =
-                ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
+                OldConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
             // Either operand excludes MIN / -1. Keep this disjunction scoped
             // with the other domain debts, never as an assumed path fact.
-            if !matches!(min, ConditionTerm::Constant(false))
-                && !matches!(minus_one, ConditionTerm::Constant(false))
+            if !matches!(min, OldConditionTerm::Constant(false))
+                && !matches!(minus_one, OldConditionTerm::Constant(false))
             {
                 require(Proposition::Or(
                     Box::new(Proposition::condition_is(min, false)),

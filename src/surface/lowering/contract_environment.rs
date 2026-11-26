@@ -5,6 +5,7 @@
 //! kernel's, through the elaborated spec form.
 
 use super::*;
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::diagnostics::describe_program_point_ref;
 
@@ -262,23 +263,23 @@ pub(in crate::surface) fn program_value_matches_allocation_size(value: &ProgramV
 
 #[cfg(test)]
 pub(in crate::surface) fn offset_pointer_by_int32_elements(
-    pointer: Address,
-    elements: MachineTerm,
-) -> Address {
+    pointer: OldAddress,
+    elements: OldMachineTerm,
+) -> OldAddress {
     offset_pointer_by_elements(pointer, elements, 4)
 }
 
 pub(in crate::surface) fn offset_pointer_by_elements(
-    pointer: Address,
-    elements: MachineTerm,
+    pointer: OldAddress,
+    elements: OldMachineTerm,
     element_width: u32,
-) -> Address {
+) -> OldAddress {
     // Contract and execution indices retain the same shared structure,
     // including a loaded index's state and read kind. The common producer
     // unwraps transitional registered names before constructing that index.
     let mut discarded_facts = crate::kernel::ExecutionFacts::new();
     let elements = crate::kernel::canonicalized_offset_index_term(elements, &mut discarded_facts);
-    Address {
+    OldAddress {
         base: pointer.base,
         offset: add_pointer_offset(
             pointer.offset,
@@ -288,25 +289,30 @@ pub(in crate::surface) fn offset_pointer_by_elements(
 }
 
 pub(in crate::surface) fn add_pointer_offset(
-    left: AddressOffset,
-    right: AddressOffset,
-) -> AddressOffset {
-    match (&left, &right) {
-        (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
-            AddressOffset::Constant(left + right)
-        }
-        (AddressOffset::Constant(0), _) => right,
-        (_, AddressOffset::Constant(0)) => left,
-        _ => AddressOffset::Add(Box::new(left), Box::new(right)),
+    left: OldAddressOffset,
+    right: OldAddressOffset,
+) -> OldAddressOffset {
+    let constant = |offset: &OldAddressOffset| match offset.view() {
+        OffsetView::Constant(value) => Some(value),
+        _ => None,
+    };
+    match (constant(&left), constant(&right)) {
+        (Some(left), Some(right)) => OldAddressOffset::constant(left + right),
+        (Some(0), _) => right,
+        (_, Some(0)) => left,
+        _ => OldAddressOffset::raw_add(left, right),
     }
 }
 
-pub(in crate::surface) fn scale_int32_offset(value: MachineTerm, byte_width: i64) -> AddressOffset {
+pub(in crate::surface) fn scale_int32_offset(
+    value: OldMachineTerm,
+    byte_width: i64,
+) -> OldAddressOffset {
     match value {
         bits32_constant!(value) => {
-            AddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            OldAddressOffset::constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => AddressOffset::scaled_int32_node(value, byte_width),
+        value => OldAddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
@@ -355,9 +361,9 @@ mod tests {
     fn parameter_array_binding_hides_global_and_follows_reassignment() {
         let state = globals(0);
         let value = ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: "parameter-bytes".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -372,9 +378,9 @@ mod tests {
         let arrays = array_refs_for_parameters(&parameters, &values, &state.program_point());
         let names = BTreeSet::from(["bytes".to_string()]);
         let reassigned = ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: "reassigned-bytes".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -406,8 +412,8 @@ mod tests {
 
     #[test]
     fn float_argument_types_preserve_their_width() {
-        let single = ProgramValue::Float32(MachineTerm::Variable(Variable(41501)));
-        let double = ProgramValue::Float64(MachineTerm::Variable(Variable(41502)));
+        let single = ProgramValue::Float32(OldMachineTerm::Variable(Variable(41501)));
+        let double = ProgramValue::Float64(OldMachineTerm::Variable(Variable(41502)));
         assert!(program_value_matches_click_type(
             &single,
             InterfaceType::Float32

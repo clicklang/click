@@ -4,9 +4,9 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let base = Address {
+        let base = OldAddress {
             base: "wide_bound_scaling".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut root =
             KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018502));
@@ -16,16 +16,16 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
         }
         let index = MachineOperandView::Shared(&root).retain(ty);
         let range = MemoryRange::new_wide(
-            Address {
+            OldAddress {
                 base: base.base.clone(),
-                offset: AddressOffset::Int64Scaled {
+                offset: OldAddressOffset::Int64Scaled {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: true,
                 },
             },
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1),
             8,
         );
         let facts = PureFactContext::new();
@@ -63,11 +63,11 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int64);
-        let base = Address {
+        let base = OldAddress {
             base: "normalization-shared-index".into(),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(7)),
-                Box::new(AddressOffset::Int64Scaled {
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(7)),
+                Box::new(OldAddressOffset::Int64Scaled {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: true,
@@ -77,8 +77,8 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
         let fact = |start, end| {
             ResourceFact::own_memory(MemoryRange::new_wide(
                 base.clone(),
-                MachineTerm::uint64_constant(start),
-                MachineTerm::uint64_constant(end),
+                OldMachineTerm::uint64_constant(start),
+                OldMachineTerm::uint64_constant(end),
                 8,
             ))
         };

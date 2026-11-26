@@ -32,7 +32,7 @@ pub(super) enum ResourceBodyClosure {
 /// asking whether unrelated assumptions imply a contradictory arithmetic fact.
 /// Symbolic counts still require the existing checked proof queries.
 fn fold_resource_quantity_activity(
-    quantity: &MachineTerm,
+    quantity: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> (bool, bool) {
     if let Some(value) = quantity.as_const() {
@@ -41,11 +41,11 @@ fn fold_resource_quantity_activity(
     let zero = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(quantity.clone()),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         ),
@@ -53,11 +53,11 @@ fn fold_resource_quantity_activity(
     let positive = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: Box::new(quantity.clone()),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         ),
@@ -269,7 +269,7 @@ fn dynamic_body_fact_dependency(
     temporary_views: &DynamicViewDependencyIndex,
 ) -> Result<Option<crate::kernel::BorrowBinding>, String> {
     fn check_load(
-        pointer: Address,
+        pointer: OldAddress,
         width: u32,
         state: &ExecutionState,
         assumptions: &PureFactContext,
@@ -293,8 +293,8 @@ fn dynamic_body_fact_dependency(
             .unwrap_or_else(|| {
                 MemoryRange::new_with_element_width(
                     pointer,
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     width,
                 )
             });
@@ -407,7 +407,7 @@ fn dynamic_body_fact_dependency(
         )
     }
     fn walk_loads(
-        loads: Vec<(Address, u32)>,
+        loads: Vec<(OldAddress, u32)>,
         state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
@@ -1195,7 +1195,7 @@ pub(super) fn project_initial_composite_resource_cores(
             parameter_binding,
             &state,
             &state,
-            &ProgramValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(OldMachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )
@@ -1423,7 +1423,7 @@ pub(super) fn project_initial_resource_facts(
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
 ) -> Result<PureFactList, ClickError> {
-    let result = ProgramValue::Int32(MachineTerm::constant(0));
+    let result = ProgramValue::Int32(OldMachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(available_pure_facts.fact_store());
     append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
@@ -1684,7 +1684,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 parameter_binding,
                 &state,
                 &state,
-                &ProgramValue::Int32(MachineTerm::constant(0)),
+                &ProgramValue::Int32(OldMachineTerm::constant(0)),
                 available_pure_facts.assumptions(),
                 &count_witness,
                 spec_definitions,
@@ -1722,7 +1722,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &ProgramValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(OldMachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &nonnegative_witness,
             spec_definitions,
@@ -1762,7 +1762,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &ProgramValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(OldMachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &count_nonnegative_witness,
             spec_definitions,
@@ -1803,11 +1803,11 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             || holds_by_lookup_or_decision(
                 &assumptions,
                 &Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(quantity.clone()),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     true,
                 ),
@@ -1873,7 +1873,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &ProgramValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(OldMachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
         CompositeObservation::Explicit(&surface_substitutions),
@@ -2003,7 +2003,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         parameter_binding,
         pre_state,
         fact_state,
-        &ProgramValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(OldMachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )?
@@ -2195,7 +2195,7 @@ pub(super) fn record_initial_composite_surface_facts(
             parameter_binding,
             state,
             state,
-            &ProgramValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(OldMachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )?
@@ -2211,7 +2211,7 @@ pub(super) fn record_initial_composite_surface_facts(
                 parameter_binding,
                 state,
                 state,
-                &ProgramValue::Int32(MachineTerm::constant(0)),
+                &ProgramValue::Int32(OldMachineTerm::constant(0)),
                 available_pure_facts,
                 &surface,
                 spec_definitions,
@@ -2286,16 +2286,16 @@ fn project_held_resource_observable_facts(
 /// Whether an owned resource's quantity is known to be positive: a constant
 /// read as a signed `int32`, as `fold` reads one, or one the kernel's
 /// condition decision settles.
-fn owned_quantity_is_positive(quantity: &MachineTerm, assumptions: &PureFactContext) -> bool {
+fn owned_quantity_is_positive(quantity: &OldMachineTerm, assumptions: &PureFactContext) -> bool {
     quantity.as_const().is_some_and(|value| (value as i32) > 0)
         || holds_by_lookup_or_decision(
             assumptions,
             &Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: Box::new(quantity.clone()),
-                    right: Box::new(MachineTerm::constant(0)),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 },
                 true,
             ),
@@ -2343,13 +2343,13 @@ fn try_select_composite_resource_body(
     })?;
     let proves_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact(condition.native_compat(), *value)
-                || assumptions.decide(condition.native_compat()) == Some(*value)
+            assumptions.proves_condition_exact(condition.old_form(), *value)
+                || assumptions.decide(condition.old_form()) == Some(*value)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact(condition.native_compat(), !*value)
-                    || assumptions.decide(condition.native_compat()) == Some(!*value)
+                assumptions.proves_condition_exact(condition.old_form(), !*value)
+                    || assumptions.decide(condition.old_form()) == Some(!*value)
             }
             _ => false,
         },
@@ -3181,12 +3181,12 @@ fn decided_by_kernel_condition_decision(
                 && decided_by_kernel_condition_decision(assumptions, right)
         }
         Proposition::ConditionIs(condition, value) => {
-            assumptions.decide(condition.native_compat()) == Some(*value)
+            assumptions.decide(condition.old_form()) == Some(*value)
         }
         Proposition::Not(body) => matches!(
             body.as_ref(),
             Proposition::ConditionIs(condition, value)
-                if assumptions.decide(condition.native_compat()) == Some(!*value)
+                if assumptions.decide(condition.old_form()) == Some(!*value)
         ),
         _ => false,
     }
@@ -3280,7 +3280,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &ProgramValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(OldMachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )
@@ -3310,7 +3310,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     let requested_quantity = abstract_resource
         .owned_quantity_term()
         .cloned()
-        .unwrap_or(MachineTerm::constant(1));
+        .unwrap_or(OldMachineTerm::constant(1));
     let assumptions = available_pure_facts.assumptions().clone();
     if let Some(authority) = state
         .resources()
@@ -3421,7 +3421,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     let (population_name, population_arguments, population_count) = (
         requested_population_name,
         requested_population_arguments,
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(1),
     );
     if state.population_body_is_open(&population_name, &population_arguments) {
         return Err(ClickError::new("population body is already open")
@@ -3434,7 +3434,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // own; only a symbolic one needs a fact about it.
         let final_by_constant = quantity.as_const() == Some(1);
         let final_unit = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(count),
@@ -3714,7 +3714,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &fact_state,
             &fact_state,
-            &ProgramValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(OldMachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &fact,
             spec_definitions,
@@ -5134,7 +5134,7 @@ fn fold_composite_resource_for_proof_with_closure(
 ) -> Result<CheckedResourceFold, ClickError> {
     let facts = ProofResourcePureFacts::new(facts);
     let outcome = FunctionOutcome::Return {
-        value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
+        value: ProgramValue::Int32(OldMachineTerm::constant(0)).into(),
         state: Box::new(state),
     };
     let (outcome, mut selections, borrow_holds) = fold_composite_resources_on_outcome_with_facts(
@@ -5678,7 +5678,7 @@ fn materialize_composite_resource_cells_from_state(
     for index in start..end {
         let pointer = offset_pointer_by_elements(
             range.base().clone(),
-            MachineTerm::constant(index),
+            OldMachineTerm::constant(index),
             element_width,
         );
         if matches!(memory.load(&pointer), ExpressionOutcome::Value(_)) {
@@ -5694,6 +5694,8 @@ mod v11_resource_dependency_tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn authority_body_read_projection_retires_only_its_owned_observations() {
         let source = r#"import click::integer;
 
@@ -5890,9 +5892,9 @@ void child_release(struct child* obj) {
             let fact = Proposition::MemoryReadDefined {
                 at,
                 memory: earlier.memory().clone(),
-                pointer: Address {
+                pointer: OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 value_type: ProgramType::Int32,
             };
@@ -5908,29 +5910,29 @@ void child_release(struct child* obj) {
     /// admits, not on the one symbolic cell `p[k]`, which no view contains.
     #[test]
     fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new();
         let index = Variable(2_000_000);
-        let index_term = || Box::new(MachineTerm::Variable(index));
+        let index_term = || Box::new(OldMachineTerm::Variable(index));
         let below = |end: u32| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: index_term(),
-                    right: Box::new(MachineTerm::constant(end)),
+                    right: Box::new(OldMachineTerm::constant(end)),
                 },
                 true,
             )
         };
         let at_least_zero = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::constant(0)),
                 right: index_term(),
             },
             true,
@@ -5945,9 +5947,9 @@ void child_release(struct child* obj) {
                     Box::new(Proposition::MemoryReadDefined {
                         at: None,
                         memory: memory.clone(),
-                        pointer: Address {
+                        pointer: OldAddress {
                             base: AddressBase::ExternalArgument,
-                            offset: AddressOffset::Int32Scaled {
+                            offset: OldAddressOffset::Int32Scaled {
                                 value: crate::kernel::SharedMachineIntegerTerm::index(
                                     crate::kernel::MachineIntegerType::Int32,
                                     *index_term(),
@@ -5960,7 +5962,11 @@ void child_release(struct child* obj) {
                 ),
             )
         };
-        let range = MemoryRange::new(base, MachineTerm::constant(0), MachineTerm::constant(4));
+        let range = MemoryRange::new(
+            base,
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(4),
+        );
         let own = ResourceFact::own_memory(range.clone());
         let view = ResourceFact::view_memory(range);
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
@@ -6019,24 +6025,24 @@ void child_release(struct child* obj) {
     }
 
     fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(OldMachineTerm::constant(0)),
         );
         let retained_state = crate::kernel::intern_memory_ref(&memory);
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&retained_state),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let proposition = if definedness {
             Proposition::MemoryReadDefined {
@@ -6049,20 +6055,20 @@ void child_release(struct child* obj) {
             Proposition::condition_is(condition, true)
         };
         let span = if symbolic_range {
-            MachineTerm::Variable(Variable(2_000_017))
+            OldMachineTerm::Variable(Variable(2_000_017))
         } else {
-            MachineTerm::constant(1)
+            OldMachineTerm::constant(1)
         };
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(span.clone()),
-                right: Box::new(MachineTerm::constant(1)),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
             true,
         ));
-        let range = MemoryRange::new(pointer, MachineTerm::constant(0), span);
+        let range = MemoryRange::new(pointer, OldMachineTerm::constant(0), span);
         let own = ResourceFact::own_memory(range.clone());
         let view = ResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
@@ -6221,13 +6227,13 @@ void child_release(struct child* obj) {
 
         let opaque = Proposition::Equal(
             Term::Bitvector32(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "opaque".into(),
                     arguments: Vec::new(),
                 }
                 .into(),
             ),
-            Term::Bitvector32(MachineTerm::constant(0).into()),
+            Term::Bitvector32(OldMachineTerm::constant(0).into()),
         );
         assert!(
             dynamic_body_fact_dependency(&opaque, &owner_state, &assumptions, &no_temporary_views,)
@@ -6243,11 +6249,11 @@ mod wide_range_reader_tests {
     // A wide composite span must not be enumerated as signed constant cells.
     #[test]
     fn wide_composite_materialization_keeps_the_state_without_enumerating_cells() {
-        let base = Address::symbolic(Variable(985_600));
+        let base = OldAddress::symbolic(Variable(985_600));
         let wide = MemoryRange::new_wide(
             base.clone(),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1 << 33),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1 << 33),
             4,
         );
         let literal = || SyntaxTerm::IntegerLiteral("0".into());
@@ -6307,7 +6313,7 @@ mod guarded_unmatched_materialization_tests {
     #[test]
     fn ordinary_composite_cell_naming_keeps_the_entry_point() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(crate::kernel::Variable(88_026));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_026));
         let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
         let state = ExecutionState::new().with_memory(memory);
         check_composite_cell_naming(pointer, state, false);
@@ -6316,16 +6322,16 @@ mod guarded_unmatched_materialization_tests {
     #[test]
     fn a_held_composite_names_an_unwritten_scalar_at_function_entry() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new().begin_function_entry_memory();
         check_composite_cell_naming(pointer, state, true);
     }
 
     fn check_composite_cell_naming(
-        pointer: Address,
+        pointer: OldAddress,
         state: ExecutionState,
         names_entry_version: bool,
     ) {
@@ -6377,7 +6383,7 @@ mod guarded_unmatched_materialization_tests {
             if names_entry_version {
                 assert!(matches!(
                     value,
-                    ProgramValue::Int32(MachineTerm::MemoryLoad(source, _, _))
+                    ProgramValue::Int32(OldMachineTerm::MemoryLoad(source, _, _))
                         if source.read_version_id() == Some(point)
                 ));
             }
@@ -6395,7 +6401,7 @@ mod guarded_unmatched_materialization_tests {
         let resources = ResourceEnvironment::new(&file.resource_definitions);
         let functions = ClickFunctionEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
-        let pointer = Address::symbolic(crate::kernel::Variable(88_027));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_027));
         let held = ResourceFact::own_composite(
             "link".into(),
             vec![ProgramValue::typed_pointer(
@@ -6456,7 +6462,7 @@ mod guarded_unmatched_materialization_tests {
         let functions = ClickFunctionEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
         let specs = SpecDefinitions::new(&predicates, &functions);
-        let pointer = Address::symbolic(crate::kernel::Variable(88_023));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_023));
         let arguments = [ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer.clone(),
             ProgramType::Int32Pointer,
@@ -6535,7 +6541,7 @@ mod guarded_unmatched_materialization_tests {
         let functions = ClickFunctionEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
         let specs = SpecDefinitions::new(&predicates, &functions);
-        let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(88_021));
+        let pointer = crate::kernel::OldAddress::symbolic(crate::kernel::Variable(88_021));
         let held = ResourceFact::own_composite(
             "initialized_cell".into(),
             vec![ProgramValue::typed_pointer(
@@ -6612,7 +6618,7 @@ mod guarded_unmatched_materialization_tests {
         let [definition] = definitions.as_slice() else {
             panic!("expected the cell resource definition");
         };
-        let pointer = Address::symbolic(crate::kernel::Variable(88_024));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_024));
         let instance = ResourceInstance::new(
             crate::kernel::InstanceId::from_variable(crate::kernel::Variable(88_025)),
             "cell".into(),
@@ -6699,7 +6705,7 @@ mod guarded_unmatched_materialization_tests {
         )
         .unwrap();
         let definition = &file.resource_definitions[0];
-        let pointer = Address::symbolic(crate::kernel::Variable(88_028));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_028));
         let substitutions = resource_value_substitutions(
             definition,
             &[AlgebraicValue::Program(ProgramValue::typed_pointer(
@@ -6708,16 +6714,16 @@ mod guarded_unmatched_materialization_tests {
             ))],
         )
         .unwrap();
-        let slot = Address {
+        let slot = OldAddress {
             base: "local:slot".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 4));
-        let memory = start
-            .memory()
-            .clone()
-            .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
+        let memory = start.memory().clone().store(
+            slot.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
+        );
         let state = start.with_materialized_memory(memory);
         let point = state.observation_point_id().unwrap();
         let (memory, _) = instantiate_composite_resource_body_resources(
@@ -6767,15 +6773,15 @@ resource cell(p: int32*) {
         )])
         .unwrap();
         for (pointer, active) in [
-            (crate::kernel::Address::null(), false),
+            (crate::kernel::OldAddress::null(), false),
             (
-                crate::kernel::Address::symbolic(crate::kernel::Variable(88_001)),
+                crate::kernel::OldAddress::symbolic(crate::kernel::Variable(88_001)),
                 false,
             ),
             (
-                crate::kernel::Address {
+                crate::kernel::OldAddress {
                     base: "object".into(),
-                    offset: crate::kernel::AddressOffset::Constant(0),
+                    offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
                 true,
             ),
@@ -6830,10 +6836,10 @@ mod fold_quantity_activity_tests {
             let mut assumptions = PureFactContext::new();
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(MachineTerm::Variable(Variable(9_810_000 + index))),
+                        left: Box::new(OldMachineTerm::Variable(Variable(9_810_000 + index))),
                         right: Box::new(100u32.into()),
                     },
                     true,
@@ -6861,7 +6867,7 @@ mod fold_quantity_activity_tests {
     #[test]
     fn symbolic_counts_require_checked_zero_or_positive_facts() {
         let _session = crate::kernel::VerificationSession::enter();
-        let count = MachineTerm::Variable(Variable(9_820_001));
+        let count = OldMachineTerm::Variable(Variable(9_820_001));
         assert_eq!(
             fold_resource_quantity_activity(&count, &PureFactContext::new()),
             (false, false)
@@ -6872,7 +6878,7 @@ mod fold_quantity_activity_tests {
             (u32::MAX, (false, false)),
         ] {
             let assumptions = PureFactContext::new().assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(count.clone()),
@@ -6911,7 +6917,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn scalar_field_observations_do_not_initialize_owned_padding() {
-        let base = Address::symbolic(Variable(985_801));
+        let base = OldAddress::symbolic(Variable(985_801));
         for viewed in [false, true] {
             let mut samples = Vec::new();
             for padding in [0u32, 16, 64, 256] {
@@ -6965,7 +6971,7 @@ mod declared_scalar_field_observation_tests {
     #[test]
     fn pointer_field_observation_is_one_complete_typed_read() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address::symbolic(Variable(985_803));
+        let base = OldAddress::symbolic(Variable(985_803));
         let memory = SymbolicMemory::new();
         let segment = field(
             ProgramExpression::Value(ProgramValue::pointer(base.clone())),
@@ -6986,7 +6992,7 @@ mod declared_scalar_field_observation_tests {
             matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
-        let expected = Address::loaded(&MachineTerm::read_named(
+        let expected = OldAddress::loaded(&OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
@@ -7006,14 +7012,14 @@ mod declared_scalar_field_observation_tests {
     #[test]
     fn declared_pointer_field_retains_its_recorded_store() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let ty = ProgramType::Int32Pointer;
         let stored = ExecutionState::new().with_memory(SymbolicMemory::new().store(
             base.clone(),
-            ProgramValue::typed_pointer(Address::symbolic(Variable(985_804)), ty),
+            ProgramValue::typed_pointer(OldAddress::symbolic(Variable(985_804)), ty),
         ));
         let source = stored.program_point();
         let segment = field(
@@ -7041,9 +7047,9 @@ mod declared_scalar_field_observation_tests {
     fn declared_float_field_retains_its_resource_source_point() {
         use crate::kernel::KernelFloatType;
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new().begin_function_entry_memory();
         let source = state.program_point();
@@ -7071,7 +7077,7 @@ mod declared_scalar_field_observation_tests {
             let (ProgramValue::Float32(term) | ProgramValue::Float64(term)) = value else {
                 panic!("expected a float value");
             };
-            let MachineTerm::MemoryLoad(point, address, kind) = term else {
+            let OldMachineTerm::MemoryLoad(point, address, kind) = term else {
                 panic!("expected a float read");
             };
             assert_eq!(point.read_version_id(), state.observation_point_id());
@@ -7082,7 +7088,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn declared_array_elements_exclude_trailing_padding() {
-        let base = Address::symbolic(Variable(985_802));
+        let base = OldAddress::symbolic(Variable(985_802));
         for count in [0, 16, 64, 256] {
             let segment = field(
                 crate::kernel::program_expression::typed_load(

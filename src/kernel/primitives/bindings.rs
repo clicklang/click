@@ -123,6 +123,9 @@ struct LocalDeclaration {
     program_type: OnceLock<ProgramType>,
     array_shape: OnceLock<Arc<[u32]>>,
     struct_name: OnceLock<Arc<str>>,
+    /// For a prepared argument, the callee parameter it is passed as: the
+    /// object is spelled `R.parameter(name)` at its call's region `R`.
+    call_parameter: Option<Arc<str>>,
 }
 impl LocalBindingId {
     pub fn new(
@@ -141,6 +144,7 @@ impl LocalBindingId {
             program_type: OnceLock::new(),
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
+            call_parameter: None,
         }))
     }
     /// A frontend temporary is distinct from all source declaration ordinals.
@@ -150,6 +154,25 @@ impl LocalBindingId {
 
     pub(crate) fn prepared_argument(owner: LocalFunctionId, ordinal: u32) -> Self {
         Self::new_unnamed(owner, ordinal, LocalBindingKind::PreparedArgument)
+    }
+
+    /// The object a call receives as its by-value parameter `parameter`,
+    /// initialized by the caller before the call.
+    pub(crate) fn prepared_argument_for(
+        owner: LocalFunctionId,
+        ordinal: u32,
+        parameter: &str,
+    ) -> Self {
+        let mut declaration = Self::prepared_argument(owner, ordinal);
+        Arc::get_mut(&mut declaration.0)
+            .expect("a new declaration is unshared")
+            .call_parameter = Some(Arc::from(parameter));
+        declaration
+    }
+
+    /// The callee parameter this prepared argument is passed as.
+    pub(crate) fn call_parameter(&self) -> Option<&str> {
+        self.0.call_parameter.as_deref()
     }
 
     /// An unnamed object identified by its written compound literal occurrence.
@@ -199,6 +222,7 @@ impl LocalBindingId {
             program_type: OnceLock::new(),
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
+            call_parameter: None,
         }))
     }
     pub(crate) fn loop_escape(owner: LocalFunctionId, ordinal: u32) -> Self {
@@ -212,6 +236,7 @@ impl LocalBindingId {
             program_type: OnceLock::from(ProgramType::Int32),
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
+            call_parameter: None,
         }))
     }
 
@@ -226,6 +251,7 @@ impl LocalBindingId {
             program_type: OnceLock::from(ProgramType::UInt64),
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
+            call_parameter: None,
         }))
     }
 
@@ -291,6 +317,7 @@ impl LocalBindingId {
             program_type: OnceLock::from(ty),
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
+            call_parameter: None,
         }))
     }
 
@@ -314,6 +341,7 @@ impl LocalBindingId {
                 program_type: OnceLock::from(ty),
                 array_shape: OnceLock::new(),
                 struct_name: OnceLock::new(),
+                call_parameter: None,
             }))
         })
     }
@@ -362,6 +390,7 @@ impl LocalBindingId {
             program_type: OnceLock::new(),
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
+            call_parameter: self.0.call_parameter.clone(),
         }))
     }
     pub fn owner(&self) -> &LocalFunctionId {
@@ -1357,8 +1386,8 @@ mod tests {
         let carrier = BindingName::reference_carrier("x");
         let variable = ProgramExpression::Variable(carrier);
         let fake = ProgramExpression::Variable("&x".into());
-        let pointer = ProgramValue::pointer(Address::symbolic(Variable(71)));
-        let other = ProgramValue::pointer(Address::symbolic(Variable(72)));
+        let pointer = ProgramValue::pointer(OldAddress::symbolic(Variable(71)));
+        let other = ProgramValue::pointer(OldAddress::symbolic(Variable(72)));
         let spec = ResourceSpec::declared_with_argument_states(
             ResourceFamily::Composite,
             ResourceAccessMode::Own,

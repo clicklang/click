@@ -1,13 +1,18 @@
 //! External copies capture immutable typed bytes without allocating one cell per lane.
 use super::*;
 
-fn external(id: u64) -> Address {
-    Address {
+fn external(id: u64) -> OldAddress {
+    OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     }
 }
-fn copy(memory: SymbolicMemory, target: &Address, source: &Address, count: u32) -> SymbolicMemory {
+fn copy(
+    memory: SymbolicMemory,
+    target: &OldAddress,
+    source: &OldAddress,
+    count: u32,
+) -> SymbolicMemory {
     memory
         .write_scalar_array_region(
             target,
@@ -20,7 +25,7 @@ fn copy(memory: SymbolicMemory, target: &Address, source: &Address, count: u32) 
         )
         .unwrap()
 }
-fn typed_load(memory: &SymbolicMemory, pointer: &Address) -> ProgramValue {
+fn typed_load(memory: &SymbolicMemory, pointer: &OldAddress) -> ProgramValue {
     match memory.load(pointer) {
         ExpressionOutcome::Value(value) => value,
         _ => ProgramValue::UInt32(crate::kernel::eval::canonical_form_of_load(
@@ -36,13 +41,13 @@ fn external_array_sparse_copies_forward_states_and_preserve_neighbors() {
     for count in [8, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = external(931_000);
-        let target = Address {
+        let target = OldAddress {
             base: "local:sparse-copy".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let destination = Address {
+        let destination = OldAddress {
             base: "local:sparse-destination".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block(target.base.clone(), count * 4)
@@ -74,9 +79,9 @@ fn external_array_sparse_copies_forward_states_and_preserve_neighbors() {
         );
         assert_eq!(typed_load(&changed, &destination.offset_by_bytes(4)), saved);
     }
-    let source = Address {
+    let source = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = (0..5).fold(SymbolicMemory::new(), |memory, index| {
         memory.store(
@@ -136,13 +141,13 @@ fn external_array_states_reject_invalid_storage_and_preserve_empty_semantics() {
             SymbolicMemory::new().store(source.clone(), ProgramValue::Int32(1.into())),
         ),
         (
-            Address {
+            OldAddress {
                 base: "local:uninitialized".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             SymbolicMemory::new().with_block("local:uninitialized", 16),
         ),
-        (Address::null(), SymbolicMemory::new()),
+        (OldAddress::null(), SymbolicMemory::new()),
     ] {
         assert!(
             memory
@@ -183,9 +188,9 @@ fn external_array_copy_representatives_cover_source_and_destination_stem_cancell
     let _session = crate::kernel::VerificationSession::enter();
     let source = external(938_000).offset_by_bytes(0);
     let destination = external(938_001);
-    let shifted = |p: &Address, shift| Address {
+    let shifted = |p: &OldAddress, shift| OldAddress {
         base: p.base.clone(),
-        offset: AddressOffset::add(p.offset.clone(), AddressOffset::Constant(shift)),
+        offset: OldAddressOffset::add(p.offset.clone(), OldAddressOffset::Constant(shift)),
     };
     for (source_shift, target_shift) in [(-4, -8), (-8, -4), (0, -4), (-4, 0)] {
         let source = shifted(&source, source_shift);

@@ -750,7 +750,7 @@ fn slice_method(
             .map(|value| {
                 SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                     crate::kernel::ProgramValue::UInt64(
-                        crate::kernel::MachineTerm::uint64_constant(value),
+                        crate::kernel::OldMachineTerm::uint64_constant(value),
                     ),
                 ))
             })
@@ -782,7 +782,7 @@ fn slice_method(
         _ => return None,
     };
     let zero = SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-        crate::kernel::ProgramValue::UInt64(crate::kernel::MachineTerm::uint64_constant(0)),
+        crate::kernel::ProgramValue::UInt64(crate::kernel::OldMachineTerm::uint64_constant(0)),
     ));
     let data = match &start {
         Some(start) => SyntaxTerm::Add(Box::new(pointer), Box::new(start.clone())),

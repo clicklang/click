@@ -15,12 +15,12 @@ fn site() -> (SymbolicMemory, ProgramPoint) {
     (memory, site)
 }
 
-fn cell(id: u64) -> Address {
-    Address::symbolic(Variable(id))
+fn cell(id: u64) -> OldAddress {
+    OldAddress::symbolic(Variable(id))
 }
 
 /// Whether the load `address` is based on recorded `site` as its read site.
-fn records(address: &Address, site: &ProgramPoint) -> bool {
+fn records(address: &OldAddress, site: &ProgramPoint) -> bool {
     address.as_loaded_value().is_some_and(|read| {
         read.point.read_version_id().is_none()
             && read
@@ -32,7 +32,7 @@ fn records(address: &Address, site: &ProgramPoint) -> bool {
 
 /// The sited load, built first, carries the site; the siteless call names
 /// the same load, in equality and in order.
-fn same_load(sited: &Address, bare: &Address, site: &ProgramPoint) {
+fn same_load(sited: &OldAddress, bare: &OldAddress, site: &ProgramPoint) {
     assert!(records(sited, site), "the read records its site: {sited:?}");
     assert_eq!(sited, bare);
     assert_eq!(sited.cmp(bare), std::cmp::Ordering::Equal);
@@ -51,11 +51,11 @@ fn a_memory_named_load_records_its_site_and_is_the_same_load() {
     let (_, site) = site();
     let memory = site.shared_memory().clone();
     let at = cell(1_207_001);
-    let sited = Address::loaded_value_read_at(&memory, Some(&site), &at);
-    same_load(&sited, &Address::loaded_value(&memory, &at), &site);
+    let sited = OldAddress::loaded_value_read_at(&memory, Some(&site), &at);
+    same_load(&sited, &OldAddress::loaded_value(&memory, &at), &site);
     let at = cell(1_207_002);
-    let sited = Address::loaded_value_at(&site, &at);
-    same_load(&sited, &Address::loaded_value(&memory, &at), &site);
+    let sited = OldAddress::loaded_value_at(&site, &at);
+    same_load(&sited, &OldAddress::loaded_value(&memory, &at), &site);
 }
 
 #[test]
@@ -64,8 +64,12 @@ fn a_canonical_pointer_read_records_its_site_and_is_the_same_read() {
     let (_, site) = site();
     let memory = site.shared_memory().clone();
     let at = cell(1_207_011);
-    let sited = Address::canonical_read(&memory, Some(&site), &at);
-    same_load(&sited, &Address::canonical_read(&memory, None, &at), &site);
+    let sited = OldAddress::canonical_read(&memory, Some(&site), &at);
+    same_load(
+        &sited,
+        &OldAddress::canonical_read(&memory, None, &at),
+        &site,
+    );
 }
 
 #[test]
@@ -74,8 +78,8 @@ fn a_version_read_records_its_site_and_is_the_same_read() {
     let (_, site) = site();
     let memory = site.shared_memory().clone();
     let at = cell(1_207_021);
-    let sited = Address::version_read_at(&memory, Some(&site), &at);
-    same_load(&sited, &Address::version_read(&memory, &at), &site);
+    let sited = OldAddress::version_read_at(&memory, Some(&site), &at);
+    same_load(&sited, &OldAddress::version_read(&memory, &at), &site);
 }
 
 #[test]
@@ -125,7 +129,7 @@ fn a_complete_read_domain_records_its_site_and_is_the_same_domain() {
     let memory = site.shared_memory().clone();
     let ty = ProgramType::Int32Pointer;
     let at = cell(1_207_041);
-    let value = Address::symbolic(Variable(1_207_042));
+    let value = OldAddress::symbolic(Variable(1_207_042));
     let sited = OldPointer::from_read_at(value.clone(), ty, &memory, Some(&site), &at);
     let bare = OldPointer::from_read(value, ty, &memory, &at);
     same_load(sited.provenance(), bare.provenance(), &site);
@@ -139,7 +143,7 @@ fn the_pointer_word_bridge_records_its_site_and_is_the_same_read() {
     let memory = site.shared_memory().clone();
     let at = cell(1_207_051);
     let sited = crate::kernel::legacy_pointer_word_read(&memory, Some(&site), &at);
-    let MachineTerm::MemoryLoad(point, _, _) = &sited else {
+    let OldMachineTerm::MemoryLoad(point, _, _) = &sited else {
         panic!("a memory read: {sited:?}");
     };
     assert!(point.read_site().is_some_and(|path| path.id() == site.id()));

@@ -5,8 +5,8 @@ use crate::kernel::VerificationSession;
 fn float_comparison_lowering_preserves_symbolic_operator_polarity() {
     let _session = VerificationSession::enter();
     for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
-        let left = MachineTerm::Variable(Variable(1008100));
-        let right = MachineTerm::Variable(Variable(1008101));
+        let left = OldMachineTerm::Variable(Variable(1008100));
+        let right = OldMachineTerm::Variable(Variable(1008101));
         for operator in [
             ComparisonOperator::Equal,
             ComparisonOperator::NotEqual,
@@ -21,8 +21,8 @@ fn float_comparison_lowering_preserves_symbolic_operator_polarity() {
                 right: Box::new(right.clone()),
             };
             let condition = match format {
-                KernelFloatType::Float32 => ConditionTerm::Float32(condition),
-                KernelFloatType::Float64 => ConditionTerm::Float64(condition),
+                KernelFloatType::Float32 => OldConditionTerm::Float32(condition),
+                KernelFloatType::Float64 => OldConditionTerm::Float64(condition),
             };
             assert_eq!(
                 program_value_comparison_proposition(
@@ -57,8 +57,8 @@ fn float_inequality_lowering_preserves_ieee_constant_results() {
     ] {
         let value = |bits| {
             format.value(match format {
-                KernelFloatType::Float32 => MachineTerm::constant(bits as u32),
-                KernelFloatType::Float64 => MachineTerm::uint64_constant(bits),
+                KernelFloatType::Float32 => OldMachineTerm::constant(bits as u32),
+                KernelFloatType::Float64 => OldMachineTerm::uint64_constant(bits),
             })
         };
         for (left, right, unequal) in [
@@ -76,7 +76,7 @@ fn float_inequality_lowering_preserves_ieee_constant_results() {
                 assert_eq!(
                     program_value_comparison_proposition(&value(left), operator, &value(right)),
                     Some(Proposition::condition_is(
-                        ConditionTerm::Constant(expected),
+                        OldConditionTerm::Constant(expected),
                         true
                     )),
                     "{format:?}: {left:x} {operator:?} {right:x}"
@@ -98,7 +98,7 @@ fn float_call_results_retain_nested_arguments_and_match_native_production() {
             result_object_class: None,
         };
         let expression = call(call(SpecExpression::Value(
-            format.value(MachineTerm::Variable(Variable(1008203))),
+            format.value(OldMachineTerm::Variable(Variable(1008203))),
         )));
         let state = ExecutionState::new();
         let scope = SpecScope::unbound(&state, None);
@@ -146,7 +146,7 @@ fn float_conditional_handoffs_preserve_exact_equality_and_existing_refusals() {
             "other_branch".into(),
             vec![],
         ));
-        let condition = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let condition = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         let exports = KernelTermExport::float_export_count();
         assert_eq!(
             SpecValue::conditional(&condition, &left, &native, true)
@@ -196,7 +196,7 @@ fn float_specification_values_and_program_reads_keep_execution_roots() {
         assert_eq!(paths[0].value.shared(), Some(&root));
         assert_eq!(KernelTermExport::float_export_count(), exports);
         let expression =
-            SpecExpression::Value(format.value(MachineTerm::Variable(Variable(1008300))));
+            SpecExpression::Value(format.value(OldMachineTerm::Variable(Variable(1008300))));
         let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
             SpecScope::unbound(&state, None),
             &expression,

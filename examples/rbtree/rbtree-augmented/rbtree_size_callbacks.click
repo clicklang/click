@@ -170,7 +170,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
                     rewrite(old(input.model), SizedRotationInput::Left(tree_model));
                     unfold(sized_rotation_input_tree(SizedRotationInput::Left(tree_model)));
-                    normalize();
+                    close();
                 }
                 step_until(function.exit);
             },
@@ -184,7 +184,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
                     rewrite(old(input.model), SizedRotationInput::Right(tree_model));
                     unfold(sized_rotation_input_tree(SizedRotationInput::Right(tree_model)));
-                    normalize();
+                    close();
                 }
                 step_until(function.exit);
             },
@@ -222,7 +222,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))));
-            normalize();
+            close();
         }
         close();
     }
@@ -258,7 +258,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))));
-            normalize();
+            close();
         }
         close();
     }

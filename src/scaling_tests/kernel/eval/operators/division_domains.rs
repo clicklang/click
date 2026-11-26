@@ -1,19 +1,21 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn division_domain_checks_do_not_scan_unrelated_assumptions() {
     for established in [false, true] {
         let mut costs = Vec::new();
         for size in [0, 128, 512] {
             let _session = crate::kernel::VerificationSession::enter();
-            let left = MachineTerm::Variable(Variable(970_001 + size * 4));
-            let right = MachineTerm::Variable(Variable(970_002 + size * 4));
+            let left = OldMachineTerm::Variable(Variable(970_001 + size * 4));
+            let right = OldMachineTerm::Variable(Variable(970_002 + size * 4));
             let mut facts = PureFactContext::new();
             for index in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(971_000 + index)),
-                        MachineTerm::constant(index as u32),
+                    OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(971_000 + index)),
+                        OldMachineTerm::constant(index as u32),
                     ),
                     true,
                 );
@@ -49,24 +51,24 @@ fn division_domain_checks_do_not_scan_unrelated_assumptions() {
 #[test]
 fn literal_or_zero_check_ignores_related_and_unrelated_bounds() {
     let format = MachineIntegerType::Int32;
-    let word = MachineTerm::Variable(Variable(972_001));
-    let divisor = MachineTerm::machine_binary(
+    let word = OldMachineTerm::Variable(Variable(972_001));
+    let divisor = OldMachineTerm::machine_binary(
         format,
         MachineBinaryOp::BitwiseOr,
         word.clone(),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(1),
     );
-    let zero = ConditionTerm::equal(divisor.clone(), MachineTerm::constant(0));
+    let zero = OldConditionTerm::equal(divisor.clone(), OldMachineTerm::constant(0));
     for related in [false, true] {
         let samples = [4u32, 16, 64, 256].map(|size| {
             let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
                 let value = if related {
                     word.clone()
                 } else {
-                    MachineTerm::Variable(Variable(972_100 + u64::from(index)))
+                    OldMachineTerm::Variable(Variable(972_100 + u64::from(index)))
                 };
                 facts.assume_condition(
-                    ConditionTerm::signed_greater_equal(value, MachineTerm::constant(!index)),
+                    OldConditionTerm::signed_greater_equal(value, OldMachineTerm::constant(!index)),
                     true,
                 )
             });
@@ -83,44 +85,56 @@ fn literal_or_zero_check_ignores_related_and_unrelated_bounds() {
 #[test]
 fn computed_divisor_queries_use_indexed_operand_facts() {
     let format = MachineIntegerType::Int32;
-    let word = MachineTerm::var(Variable(973_001));
-    let literal = MachineTerm::constant(1);
-    let positive = MachineTerm::var(Variable(973_002));
-    let xor = MachineTerm::machine_binary(
+    let word = OldMachineTerm::var(Variable(973_001));
+    let literal = OldMachineTerm::constant(1);
+    let positive = OldMachineTerm::var(Variable(973_002));
+    let xor = OldMachineTerm::machine_binary(
         format,
         MachineBinaryOp::BitwiseXor,
         word.clone(),
         literal.clone(),
     );
-    let or = MachineTerm::machine_binary(
+    let or = OldMachineTerm::machine_binary(
         format,
         MachineBinaryOp::BitwiseOr,
         word.clone(),
         positive.clone(),
     );
-    let zero = ConditionTerm::equal(xor.clone(), MachineTerm::constant(0));
-    let or_zero = ConditionTerm::equal(or.clone(), MachineTerm::constant(0));
+    let zero = OldConditionTerm::equal(xor.clone(), OldMachineTerm::constant(0));
+    let or_zero = OldConditionTerm::equal(or.clone(), OldMachineTerm::constant(0));
     let path = ExecutionFacts::new();
     for related in [false, true] {
         let samples = [4, 16, 64].map(|size| {
             let mut facts = PureFactContext::new()
-                .assume_condition(ConditionTerm::equal(word.clone(), literal.clone()), false)
                 .assume_condition(
-                    ConditionTerm::signed_greater_than(positive.clone(), MachineTerm::constant(0)),
+                    OldConditionTerm::equal(word.clone(), literal.clone()),
+                    false,
+                )
+                .assume_condition(
+                    OldConditionTerm::signed_greater_than(
+                        positive.clone(),
+                        OldMachineTerm::constant(0),
+                    ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_greater_equal(word.clone(), MachineTerm::constant(0)),
+                    OldConditionTerm::signed_greater_equal(
+                        word.clone(),
+                        OldMachineTerm::constant(0),
+                    ),
                     true,
                 );
             for index in 0..size {
                 let value = if related {
                     word.clone()
                 } else {
-                    MachineTerm::var(Variable(973_100 + u64::from(index)))
+                    OldMachineTerm::var(Variable(973_100 + u64::from(index)))
                 };
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_equal(value, MachineTerm::constant(100 + index)),
+                    OldConditionTerm::signed_less_equal(
+                        value,
+                        OldMachineTerm::constant(100 + index),
+                    ),
                     true,
                 );
             }

@@ -19,22 +19,22 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
             _ => unreachable!(),
         };
         for extra in 0..size {
-            let noise = MachineTerm::Variable(Variable(9_949_000 + extra));
+            let noise = OldMachineTerm::Variable(Variable(9_949_000 + extra));
             context = context
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(range.start().clone(), noise.clone()),
+                    OldConditionTerm::signed_less_equal(range.start().clone(), noise.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(noise, range.end().clone()),
+                    OldConditionTerm::signed_less_than(noise, range.end().clone()),
                     true,
                 );
         }
         let index = binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(Variable(9_941_002))),
-            Box::new(MachineTerm::Variable(Variable(9_941_004))),
+            Box::new(OldMachineTerm::Variable(Variable(9_941_002))),
+            Box::new(OldMachineTerm::Variable(Variable(9_941_004))),
         );
         let access = data.offset_by_elements(index, 4);
         PureFactContext::reset_exact_order_evidence_visits();
@@ -59,12 +59,14 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn separated_range_frame_retains_full_access_and_range_spans() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let data = Address::symbolic(Variable(9_901_001));
-        let field = Address::symbolic(Variable(9_901_002));
+        let data = OldAddress::symbolic(Variable(9_901_001));
+        let field = OldAddress::symbolic(Variable(9_901_002));
         let backing = MemoryRange::new(data.clone(), 0u32.into(), 2u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
         let separate = |left, right| Proposition::ResourceSeparate {
@@ -76,12 +78,12 @@ fn separated_range_frame_retains_full_access_and_range_spans() {
         for index in 0..size {
             context = context.assume_proposition(separate(
                 MemoryRange::new(
-                    Address::symbolic(Variable(9_902_000 + index * 2)),
+                    OldAddress::symbolic(Variable(9_902_000 + index * 2)),
                     0u32.into(),
                     2u32.into(),
                 ),
                 MemoryRange::new(
-                    Address::symbolic(Variable(9_902_001 + index * 2)),
+                    OldAddress::symbolic(Variable(9_902_001 + index * 2)),
                     0u32.into(),
                     2u32.into(),
                 ),

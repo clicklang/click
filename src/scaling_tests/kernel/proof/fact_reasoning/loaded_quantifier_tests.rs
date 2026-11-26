@@ -1,6 +1,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
     for format in [
         MachineIntegerType::Int32,
@@ -15,11 +17,11 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             for index in 0..size {
                 let block = format!("unrelated-{index}");
                 memory = memory.with_block(block.clone(), 8).store(
-                    Address {
+                    OldAddress {
                         base: block.into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
-                    ProgramValue::Int32(MachineTerm::constant(index as u32)),
+                    ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
                 );
             }
             let memory = intern_memory(memory);
@@ -28,9 +30,9 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&native));
             for index in 0..size {
                 facts = facts.with_fact(Proposition::condition_is(
-                    ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(930_000 + index)),
-                        MachineTerm::constant(3),
+                    OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(930_000 + index)),
+                        OldMachineTerm::constant(3),
                     ),
                     true,
                 ));
@@ -40,11 +42,11 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             });
             assert!(found.is_some());
             let changed = intern_memory(memory.as_ref().clone().store(
-                Address {
+                OldAddress {
                     base: "loaded-quantifier".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));
             let missing = loaded_fact_of_format(&changed, Variable(920_002), true, format);
             let (refused, miss_work) = crate::instrumentation::measure_deterministic_work(|| {

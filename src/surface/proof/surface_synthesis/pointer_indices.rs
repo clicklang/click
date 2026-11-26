@@ -7,13 +7,13 @@ use std::collections::HashSet;
 /// A source index may already be native. Do not import a newly computed
 /// native displacement merely to hand it straight to the native raiser.
 pub(super) enum SourceIndex {
-    Native(MachineTerm),
+    Native(OldMachineTerm),
     Shared(SharedMachineIntegerTerm),
 }
 impl SourceIndex {
     pub(super) fn operand_view(&self) -> V<'_> {
         match self {
-            Self::Native(term) => V::Legacy(term),
+            Self::Native(term) => V::Old(term),
             Self::Shared(term) => term.operand_view(),
         }
     }
@@ -42,12 +42,12 @@ pub(super) fn source_index(
                     ..
                 } => Some(V::Shared(operand).retain(MachineIntegerType::UInt32)),
                 N::MachineObservationInput { .. } | N::WrittenMachine(_) => {
-                    widened(V::Legacy(root.machine_conversion_leaf()?))
+                    widened(V::Old(root.machine_conversion_leaf()?))
                 }
                 _ => None,
             },
-            V::Legacy(cast_term!(UInt64From32, index)) => {
-                Some(V::Legacy(index).retain(MachineIntegerType::UInt32))
+            V::Old(cast_term!(UInt64From32, index)) => {
+                Some(V::Old(index).retain(MachineIntegerType::UInt32))
             }
             _ => None,
         }
@@ -60,7 +60,7 @@ pub(super) fn source_index(
 }
 
 /// Inspect a literal without asking opaque common calls for a native adapter.
-pub(super) fn literal(view: V<'_>) -> Option<MachineTerm> {
+pub(super) fn literal(view: V<'_>) -> Option<OldMachineTerm> {
     match view {
         V::Shared(root)
             if !matches!(
@@ -82,7 +82,7 @@ pub(super) fn raise(
 ) -> Option<SyntaxTerm> {
     match value {
         V::Shared(root) => raise_kernel_term(root, parameters, state, names),
-        V::Legacy(value) => synthesize_surface_bitvector(value, parameters, state, names),
+        V::Old(value) => synthesize_surface_bitvector(value, parameters, state, names),
     }
 }
 
@@ -116,55 +116,55 @@ pub(super) fn load_free(root: V<'_>) -> bool {
                 N::MachineObservationInput { .. }
                 | N::WrittenMachine(_)
                 | N::IntegerAddress { .. } => match root.machine_conversion_leaf() {
-                    Some(value) => pending.push(V::Legacy(value)),
+                    Some(value) => pending.push(V::Old(value)),
                     None => return false,
                 },
                 _ => return false,
             },
-            V::Legacy(term) => match term {
-                MachineTerm::ThreadHandle(_) => {}
-                MachineTerm::MemoryLoad(..) => return false,
-                MachineTerm::IntegerAddress(pointer, _) => pending.extend(
+            V::Old(term) => match term {
+                OldMachineTerm::ThreadHandle(_) => {}
+                OldMachineTerm::MemoryLoad(..) => return false,
+                OldMachineTerm::IntegerAddress(pointer, _) => pending.extend(
                     pointer
                         .offset
                         .scaled_operands()
                         .into_iter()
                         .map(|v| v.operand_view()),
                 ),
-                MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
+                OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => {}
                 crate::kernel::binary_bitvector32_term!(left, right)
                 | crate::kernel::binary_wide_term!(left, right) => {
-                    pending.push(V::Legacy(left));
-                    pending.push(V::Legacy(right));
+                    pending.push(V::Old(left));
+                    pending.push(V::Old(right));
                 }
-                MachineTerm::Float32Binary { left, right, .. }
-                | MachineTerm::Float64Binary { left, right, .. } => {
-                    pending.push(V::Legacy(left));
-                    pending.push(V::Legacy(right));
+                OldMachineTerm::Float32Binary { left, right, .. }
+                | OldMachineTerm::Float64Binary { left, right, .. } => {
+                    pending.push(V::Old(left));
+                    pending.push(V::Old(right));
                 }
-                crate::kernel::unary_machine_term!(value) => pending.push(V::Legacy(value)),
-                MachineTerm::If {
+                crate::kernel::unary_machine_term!(value) => pending.push(V::Old(value)),
+                OldMachineTerm::If {
                     then_term,
                     else_term,
                     ..
                 } => {
-                    pending.push(V::Legacy(then_term));
-                    pending.push(V::Legacy(else_term));
+                    pending.push(V::Old(then_term));
+                    pending.push(V::Old(else_term));
                 }
-                MachineTerm::RangeFold {
+                OldMachineTerm::RangeFold {
                     start,
                     end,
                     initial,
                     body,
                     ..
-                } => pending.extend([start, end, initial, body].map(|value| V::Legacy(value))),
-                MachineTerm::PureFunctionApplication { arguments, .. } => {
-                    pending.extend(arguments.iter().map(V::Legacy))
+                } => pending.extend([start, end, initial, body].map(|value| V::Old(value))),
+                OldMachineTerm::PureFunctionApplication { arguments, .. } => {
+                    pending.extend(arguments.iter().map(V::Old))
                 }
-                MachineTerm::ClickFunctionApplication { .. }
-                | MachineTerm::AlgebraicMatch { .. }
-                | MachineTerm::IntegerToMachine { .. }
-                | MachineTerm::BoolCast { .. } => return false,
+                OldMachineTerm::ClickFunctionApplication { .. }
+                | OldMachineTerm::AlgebraicMatch { .. }
+                | OldMachineTerm::IntegerToMachine { .. }
+                | OldMachineTerm::BoolCast { .. } => return false,
             },
         }
     }
@@ -179,40 +179,40 @@ mod tests {
     fn load_free_reader_keeps_existing_opaque_and_guard_policy() {
         let _session = VerificationSession::enter();
         let _scope = SurfaceSynthesisScope::enter();
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
-            Box::new(Address::symbolic(Variable(1014000))),
+            Box::new(OldAddress::symbolic(Variable(1014000))),
             crate::kernel::LoadKind::Int32,
         );
-        let variable = MachineTerm::Variable(Variable(1014001));
+        let variable = OldMachineTerm::Variable(Variable(1014001));
         let cases = vec![
             (variable.clone(), true),
             (load.clone(), false),
             (
-                MachineTerm::If {
-                    condition: Box::new(ConditionTerm::Compare {
+                OldMachineTerm::If {
+                    condition: Box::new(OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(load.clone()),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     }),
                     then_term: Box::new(variable.clone()),
-                    else_term: Box::new(MachineTerm::constant(1)),
+                    else_term: Box::new(OldMachineTerm::constant(1)),
                 },
                 true,
             ),
             (
-                MachineTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(Variable(1014002))),
+                OldMachineTerm::If {
+                    condition: Box::new(OldConditionTerm::Variable(Variable(1014002))),
                     then_term: Box::new(variable.clone()),
                     else_term: Box::new(load.clone()),
                 },
                 false,
             ),
             (
-                MachineTerm::RangeFold {
-                    start: Box::new(MachineTerm::constant(0)),
-                    end: Box::new(MachineTerm::constant(2)),
+                OldMachineTerm::RangeFold {
+                    start: Box::new(OldMachineTerm::constant(0)),
+                    end: Box::new(OldMachineTerm::constant(2)),
                     initial: Box::new(variable.clone()),
                     accumulator: Variable(1014003),
                     item: Variable(1014004),
@@ -221,14 +221,14 @@ mod tests {
                 false,
             ),
             (
-                MachineTerm::PureFunctionApplication {
+                OldMachineTerm::PureFunctionApplication {
                     name: "opaque-machine".into(),
                     arguments: vec![variable.clone()],
                 },
                 true,
             ),
             (
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "opaque-click".into(),
                     arguments: vec![],
                 },
@@ -237,9 +237,9 @@ mod tests {
         ];
         for (native, expected) in cases {
             let shared =
-                KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&native));
+                KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Old(&native));
             let exports = KernelTermExport::machine_export_count();
-            assert_eq!(load_free(V::Legacy(&native)), expected, "{native:?}");
+            assert_eq!(load_free(V::Old(&native)), expected, "{native:?}");
             assert_eq!(load_free(V::Shared(&shared)), expected, "{native:?}");
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }

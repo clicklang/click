@@ -19,21 +19,21 @@ trait VariableSubstitution {
     const SUBSTITUTES_CONDITION_EVIDENCE: bool;
 
     fn from(&self) -> Variable;
-    fn bitvector(&self, term: &MachineTerm) -> MachineTerm;
+    fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm;
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
     fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm;
 
-    fn pointer(&self, pointer: &Address) -> Address;
+    fn pointer(&self, pointer: &OldAddress) -> OldAddress;
     /// The address of a local's storage slot.
-    fn local_slot(&self, pointer: &Address) -> Address;
+    fn local_slot(&self, pointer: &OldAddress) -> OldAddress;
     fn term(&self, term: &Term) -> Term;
-    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
+    fn condition(&self, condition: &OldConditionTerm) -> OldConditionTerm;
     fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm>;
     fn stored_condition(&self, condition: &StoredConditionTerm) -> StoredConditionTerm {
         if let Some(root) = condition.root().and_then(|root| self.condition_root(root)) {
             return StoredConditionTerm::from_root(root).expect("logical condition substitution");
         }
-        self.condition(condition.native_compat()).into()
+        self.condition(condition.old_form()).into()
     }
     fn program_value(&self, value: &ProgramValue) -> ProgramValue;
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
@@ -74,12 +74,12 @@ trait VariableSubstitution {
 
 struct BitvectorSubstitution<'a> {
     from: Variable,
-    to: &'a MachineTerm,
+    to: &'a OldMachineTerm,
     keep_memory_effects: bool,
 }
 
 impl<'a> BitvectorSubstitution<'a> {
-    fn new(from: Variable, to: &'a MachineTerm) -> Self {
+    fn new(from: Variable, to: &'a OldMachineTerm) -> Self {
         Self {
             from,
             to,
@@ -98,7 +98,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn from(&self) -> Variable {
         self.from
     }
-    fn bitvector(&self, term: &MachineTerm) -> MachineTerm {
+    fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm {
         substitute_bitvector_variable(term, self.from, self.to)
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
@@ -108,7 +108,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
         if root.is_mathematical_integer() {
             return root;
         }
-        let source = MachineTerm::Variable(self.from);
+        let source = OldMachineTerm::Variable(self.from);
         let mut rewrite =
             crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, self.to);
         let result = rewrite.retained_integer_field(&root);
@@ -120,16 +120,16 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
         let value = self.integer(root.integer_native_compat().expect("Integer field"));
         KernelTermImport::for_exact_field_inputs().integer(&value.into())
     }
-    fn pointer(&self, pointer: &Address) -> Address {
+    fn pointer(&self, pointer: &OldAddress) -> OldAddress {
         substitute_bitvector_variable_in_pointer(pointer, self.from, self.to)
     }
-    fn local_slot(&self, pointer: &Address) -> Address {
+    fn local_slot(&self, pointer: &OldAddress) -> OldAddress {
         pointer.clone()
     }
     fn term(&self, term: &Term) -> Term {
         substitute_bitvector_variable_in_term(term, self.from, self.to)
     }
-    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
+    fn condition(&self, condition: &OldConditionTerm) -> OldConditionTerm {
         substitute_bitvector_variable_in_condition(condition, self.from, self.to)
     }
     fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
@@ -140,7 +140,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     }
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue {
         if let Some(root) = value.shared() {
-            let source = MachineTerm::Variable(self.from);
+            let source = OldMachineTerm::Variable(self.from);
             if let Some(rewritten) =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, self.to)
                     .shared_machine_operand(root)
@@ -177,7 +177,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
 
 struct PointerSubstitution<'a> {
     from: Variable,
-    to: &'a Address,
+    to: &'a OldAddress,
 }
 
 impl VariableSubstitution for PointerSubstitution<'_> {
@@ -186,7 +186,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn from(&self) -> Variable {
         self.from
     }
-    fn bitvector(&self, term: &MachineTerm) -> MachineTerm {
+    fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm {
         term.clone()
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
@@ -195,16 +195,16 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm {
         root
     }
-    fn pointer(&self, pointer: &Address) -> Address {
+    fn pointer(&self, pointer: &OldAddress) -> OldAddress {
         substitute_pointer_variable_in_pointer(pointer, self.from, self.to)
     }
-    fn local_slot(&self, pointer: &Address) -> Address {
+    fn local_slot(&self, pointer: &OldAddress) -> OldAddress {
         self.pointer(pointer)
     }
     fn term(&self, term: &Term) -> Term {
         substitute_pointer_variable_in_term(term, self.from, self.to)
     }
-    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
+    fn condition(&self, condition: &OldConditionTerm) -> OldConditionTerm {
         substitute_pointer_variable_in_condition(condition, self.from, self.to)
     }
     fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
@@ -251,7 +251,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
 pub(crate) fn substitute_bitvector_variable_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Proposition {
     walk_proposition(proposition, &BitvectorSubstitution::new(from, to))
 }
@@ -262,7 +262,7 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
 pub(in crate::kernel) fn restate_loop_exit_scalar(
     proposition: &Proposition,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Proposition {
     walk_proposition(
         proposition,
@@ -276,7 +276,7 @@ pub(in crate::kernel) fn restate_loop_exit_scalar(
 fn substitute_bitvector_variable_in_algebraic_value(
     value: &AlgebraicValue,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> AlgebraicValue {
     walk_algebraic_value(value, &BitvectorSubstitution::new(from, to))
 }
@@ -284,7 +284,7 @@ fn substitute_bitvector_variable_in_algebraic_value(
 fn substitute_bitvector_variable_in_pure_function_argument(
     argument: &PureFunctionArgument,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> PureFunctionArgument {
     walk_pure_function_argument(argument, &BitvectorSubstitution::new(from, to))
 }
@@ -292,7 +292,7 @@ fn substitute_bitvector_variable_in_pure_function_argument(
 fn substitute_bitvector_variable_in_sequence(
     sequence: &SequenceTerm,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SequenceTerm {
     walk_sequence(sequence, &BitvectorSubstitution::new(from, to))
 }
@@ -301,7 +301,7 @@ fn substitute_bitvector_variable_in_sequence(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_execution_statement(
     statement: &ProgramStatement,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> ProgramStatement {
     walk_execution_statement(statement, &BitvectorSubstitution::new(from, to))
 }
@@ -309,7 +309,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_execution_statement(
 fn substitute_bitvector_variable_in_execution_state(
     state: &ExecutionState,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> ExecutionState {
     walk_execution_state(state, &BitvectorSubstitution::new(from, to))
 }
@@ -318,7 +318,7 @@ fn substitute_bitvector_variable_in_execution_state(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_resource(
     resource: &Resource,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Resource {
     walk_resource(resource, &BitvectorSubstitution::new(from, to))
 }
@@ -327,7 +327,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_program_function(
     function: &ProgramFunction,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> ProgramFunction {
     walk_program_function(function, &BitvectorSubstitution::new(from, to))
 }
@@ -336,7 +336,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_function(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
     resource: &ResourceSpec,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> ResourceSpec {
     walk_resource_spec(resource, &BitvectorSubstitution::new(from, to))
 }
@@ -344,7 +344,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
 pub(crate) fn substitute_pointer_variable_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> Proposition {
     walk_proposition(proposition, &PointerSubstitution { from, to })
 }
@@ -374,7 +374,7 @@ pub(crate) fn substitute_pointer_value_in_proposition(
 fn substitute_pointer_variable_in_algebraic_value(
     value: &AlgebraicValue,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> AlgebraicValue {
     walk_algebraic_value(value, &PointerSubstitution { from, to })
 }
@@ -382,7 +382,7 @@ fn substitute_pointer_variable_in_algebraic_value(
 fn substitute_pointer_variable_in_pure_function_argument(
     argument: &PureFunctionArgument,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> PureFunctionArgument {
     walk_pure_function_argument(argument, &PointerSubstitution { from, to })
 }
@@ -390,7 +390,7 @@ fn substitute_pointer_variable_in_pure_function_argument(
 fn substitute_pointer_variable_in_sequence(
     sequence: &SequenceTerm,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SequenceTerm {
     walk_sequence(sequence, &PointerSubstitution { from, to })
 }
@@ -399,7 +399,7 @@ fn substitute_pointer_variable_in_sequence(
 fn substitute_pointer_variable_in_execution_statement(
     statement: &ProgramStatement,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> ProgramStatement {
     walk_execution_statement(statement, &PointerSubstitution { from, to })
 }
@@ -407,7 +407,7 @@ fn substitute_pointer_variable_in_execution_statement(
 fn substitute_pointer_variable_in_execution_state(
     state: &ExecutionState,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> ExecutionState {
     walk_execution_state(state, &PointerSubstitution { from, to })
 }
@@ -416,7 +416,7 @@ fn substitute_pointer_variable_in_execution_state(
 fn substitute_pointer_variable_in_resource(
     resource: &Resource,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> Resource {
     walk_resource(resource, &PointerSubstitution { from, to })
 }
@@ -425,7 +425,7 @@ fn substitute_pointer_variable_in_resource(
 fn substitute_pointer_variable_in_program_function(
     function: &ProgramFunction,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> ProgramFunction {
     walk_program_function(function, &PointerSubstitution { from, to })
 }
@@ -1050,8 +1050,12 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             function_name,
             arguments,
             callee,
+            dispatch,
+            cpp_binding,
         } => ProgramStatement::Call {
             function_name: function_name.clone(),
+            dispatch: *dispatch,
+            cpp_binding: cpp_binding.clone(),
             arguments: arguments
                 .iter()
                 .map(|argument| s.program_expression(argument))
@@ -1069,6 +1073,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             result_type,
             result_aggregate_layout,
             result_pointee_constant,
+            dispatch,
             callee,
             ..
         } => ProgramStatement::CallResult {
@@ -1082,6 +1087,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             result_type: *result_type,
             result_aggregate_layout: result_aggregate_layout.clone(),
             result_pointee_constant: *result_pointee_constant,
+            dispatch: *dispatch,
             callee: callee.as_ref().map(|callee| Callee {
                 pointer: s.program_expression(&callee.pointer),
                 pointer_type: callee.pointer_type,
@@ -1831,8 +1837,8 @@ mod resource_frame_substitution_tests {
     #[test]
     fn guard_substitution_renames_abstract_authority_but_preserves_concrete_acquisition() {
         let variable = Variable(71_900);
-        let address = Address::symbolic(variable);
-        let replacement = Address::symbolic(Variable(71_901));
+        let address = OldAddress::symbolic(variable);
+        let replacement = OldAddress::symbolic(Variable(71_901));
         let abstract_guard = Resource::MutexGuard(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
@@ -1857,8 +1863,8 @@ mod resource_frame_substitution_tests {
     #[test]
     fn lifetime_substitution_renames_abstract_authority_but_preserves_concrete_initialization() {
         let variable = Variable(71_900);
-        let address = Address::symbolic(variable);
-        let replacement = Address::symbolic(Variable(71_901));
+        let address = OldAddress::symbolic(variable);
+        let replacement = OldAddress::symbolic(Variable(71_901));
         let abstract_guard = Resource::MutexLive(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
@@ -1883,9 +1889,9 @@ mod resource_frame_substitution_tests {
     #[test]
     fn use_substitution_preserves_exact_share_and_diagnostic_address() {
         let variable = Variable(71_900);
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::Symbolic(variable),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(variable), 1),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 1),
         };
         let live = ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(123),
@@ -1908,7 +1914,7 @@ mod resource_frame_substitution_tests {
             substitute_pointer_variable_in_resource(
                 resource,
                 variable,
-                &Address::symbolic(Variable(71_901))
+                &OldAddress::symbolic(Variable(71_901))
             ),
             *resource
         );
@@ -1916,7 +1922,7 @@ mod resource_frame_substitution_tests {
             substitute_bitvector_variable_in_resource(
                 resource,
                 variable,
-                &MachineTerm::constant(4)
+                &OldMachineTerm::constant(4)
             ),
             *resource
         );
@@ -1925,26 +1931,26 @@ mod resource_frame_substitution_tests {
     #[test]
     fn unrelated_binder_preserves_nested_offset_state() {
         let base = SymbolicMemory::new();
-        let metadata = Address {
+        let metadata = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Add(
-                    Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(100_000)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::Variable(Variable(100_000)),
                         4,
                     )),
-                    Box::new(AddressOffset::Constant(8)),
+                    Box::new(OldAddressOffset::Constant(8)),
                 )),
-                Box::new(AddressOffset::Constant(4)),
+                Box::new(OldAddressOffset::Constant(4)),
             ),
         };
         let retained_state = crate::kernel::intern_memory(
-            base.store(metadata, ProgramValue::Int32(MachineTerm::constant(7))),
+            base.store(metadata, ProgramValue::Int32(OldMachineTerm::constant(7))),
         );
         let rewritten = substitute_bitvector_variable_in_shared_memory(
             &retained_state,
             Variable(2_000_000),
-            &MachineTerm::Variable(Variable(3_200_000)),
+            &OldMachineTerm::Variable(Variable(3_200_000)),
         );
         assert_eq!(rewritten.arena_id(), retained_state.arena_id());
     }
@@ -1954,18 +1960,18 @@ mod resource_frame_substitution_tests {
         let ledger = crate::kernel::borrows::BorrowLedger::new();
         let participant = ledger.fresh_participant().expect("participant identity");
         let state = ExecutionState::new()
-            .with_local("x", int32(MachineTerm::Variable(Variable(71_100))))
+            .with_local("x", int32(OldMachineTerm::Variable(Variable(71_100))))
             .with_borrow_ledger(Some(ledger))
             .with_borrow_participant(Some(participant));
         let bitvector_substituted = substitute_bitvector_variable_in_execution_state(
             &state,
             Variable(71_100),
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
         );
         let pointer_substituted = substitute_pointer_variable_in_execution_state(
             &state,
             Variable(71_100),
-            &Address::symbolic(Variable(71_101)),
+            &OldAddress::symbolic(Variable(71_101)),
         );
 
         let original = state.borrow_ledger().expect("state has ledger");
@@ -2004,16 +2010,16 @@ mod resource_frame_substitution_tests {
     fn bitvector_substitution_rewrites_validated_inherited_ranges() {
         let from = Variable(71_001);
         let range = MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::Concrete("substitution:range".into()),
-                offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(from), 4),
+                offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
             },
-            MachineTerm::Variable(from),
+            OldMachineTerm::Variable(from),
             binary_node!(
                 Int32,
                 Add,
-                Box::new(MachineTerm::Variable(from)),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::Variable(from)),
+                Box::new(OldMachineTerm::constant(1)),
             ),
         );
         let statement = ProgramStatement::Loop {
@@ -2035,7 +2041,7 @@ mod resource_frame_substitution_tests {
         let substituted = substitute_bitvector_variable_in_execution_statement(
             &statement,
             from,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
         );
         let ProgramStatement::Loop { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
@@ -2043,25 +2049,25 @@ mod resource_frame_substitution_tests {
         let actual = effect_checks[0]
             .validated_ranges()
             .expect("validated carrier must be retained");
-        assert_eq!(actual[0].start(), &MachineTerm::constant(4));
-        assert_eq!(actual[0].end(), &MachineTerm::constant(5));
-        assert_eq!(actual[0].base.offset, AddressOffset::Constant(16));
+        assert_eq!(actual[0].start(), &OldMachineTerm::constant(4));
+        assert_eq!(actual[0].end(), &OldMachineTerm::constant(5));
+        assert_eq!(actual[0].base.offset, OldAddressOffset::Constant(16));
     }
 
     #[test]
     fn pointer_substitution_rewrites_validated_ranges_and_derived_interface() {
         let from = Variable(71_002);
-        let replacement = Address {
+        let replacement = OldAddress {
             base: AddressBase::Concrete("substitution:replacement".into()),
-            offset: AddressOffset::Constant(2),
+            offset: OldAddressOffset::Constant(2),
         };
         let range = MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::Symbolic(from),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let statement = ProgramStatement::Loop {
             test: crate::kernel::LoopTestRegion::expression(
@@ -2090,9 +2096,9 @@ mod resource_frame_substitution_tests {
         );
 
         let derived_segment = MemorySegment::new(
-            ProgramExpression::Value(ProgramValue::pointer(Address {
+            ProgramExpression::Value(ProgramValue::pointer(OldAddress {
                 base: AddressBase::Symbolic(from),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             })),
             ProgramExpression::Value(int32(0)),
             ProgramExpression::Value(int32(1)),
@@ -2256,7 +2262,7 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
 #[cfg(test)]
 pub(in crate::kernel) fn substitute_bitvector_variables_in_proposition(
     proposition: &Proposition,
-    substitutions: &BTreeMap<Variable, MachineTerm>,
+    substitutions: &BTreeMap<Variable, OldMachineTerm>,
 ) -> Proposition {
     if substitutions.is_empty() {
         return proposition.clone();
@@ -2281,7 +2287,7 @@ pub(in crate::kernel) fn substitute_bitvector_variables_in_proposition(
         result = substitute_bitvector_variable_in_proposition(
             &result,
             *source,
-            &MachineTerm::Variable(*temporary),
+            &OldMachineTerm::Variable(*temporary),
         );
     }
     for (source, temporary) in staged {
@@ -2345,7 +2351,7 @@ fn collect_proposition_bound_variables_one(
             collect_sequence_bound_variables(sequence, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bound_variables(condition.native_compat(), variables);
+            collect_condition_bound_variables(condition.old_form(), variables);
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -2493,11 +2499,9 @@ fn collect_proposition_bound_variables_one(
 fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>) {
     match term {
         Term::Condition(condition) => {
-            collect_condition_bound_variables(condition.native_compat(), variables)
+            collect_condition_bound_variables(condition.old_form(), variables)
         }
-        Term::Bitvector32(bits) => {
-            collect_bitvector_bound_variables(bits.native_compat(), variables)
-        }
+        Term::Bitvector32(bits) => collect_bitvector_bound_variables(bits.old_form(), variables),
         Term::Integer(integer) => {
             if integer
                 .root()
@@ -2507,7 +2511,7 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
                 // as the native match, including its scrutinee and arm scopes.
                 super::variable_collection::collect_term_bitvector_variables(term, variables);
             } else {
-                collect_integer_bound_variables(integer.native_compat(), variables);
+                collect_integer_bound_variables(integer.old_form(), variables);
             }
         }
         Term::PointerOffset(offset) => {
@@ -2521,14 +2525,14 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
                     }
                 });
             } else {
-                collect_pointer_offset_bound_variables(offset.native_compat(), variables);
+                collect_pointer_offset_bound_variables(offset.old_form(), variables);
             }
         }
         Term::ProgramValue(value) => {
-            collect_program_value_bound_variables(value.native_compat(), variables);
+            collect_program_value_bound_variables(value.old_form(), variables);
         }
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
-        Term::Algebraic(term) => collect_algebraic_bound_variables(term.native_compat(), variables),
+        Term::Algebraic(term) => collect_algebraic_bound_variables(term.old_form(), variables),
         Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
         Term::ArrayReadPoint(point) => collect_memory_bound_variables(point.memory(), variables),
     }
@@ -3045,12 +3049,12 @@ fn collect_expression_outcome_bound_variables(
     }
 }
 
-fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<Variable>) {
+fn collect_pointer_bound_variables(pointer: &OldAddress, variables: &mut BTreeSet<Variable>) {
     match &pointer.base {
         AddressBase::PureFunctionApplication(_) => {
             collect_proposition_capture_variables(
                 &Proposition::condition_is(
-                    ConditionTerm::AddressEqual(
+                    OldConditionTerm::AddressEqual(
                         Box::new(pointer.clone()),
                         Box::new(pointer.clone()),
                     ),
@@ -3368,21 +3372,23 @@ fn collect_scoped_leaf_bound_variables(
     }
 }
 
-fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
+fn collect_bitvector_bound_variables(term: &OldMachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
-        MachineTerm::ThreadHandle(_) => {}
-        bits32_constant!(_) | MachineTerm::Variable(_) => {}
+        OldMachineTerm::ThreadHandle(_) => {}
+        bits32_constant!(_) | OldMachineTerm::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
         unary_term!(Int32, BitwiseNot, value)
-        | MachineTerm::Float32Negate(value)
-        | MachineTerm::Float64Negate(value) => {
+        | OldMachineTerm::Float32Negate(value)
+        | OldMachineTerm::Float64Negate(value) => {
             collect_bitvector_bound_variables(value, variables);
         }
-        MachineTerm::BoolCast { value, .. } => collect_condition_bound_variables(value, variables),
-        MachineTerm::If {
+        OldMachineTerm::BoolCast { value, .. } => {
+            collect_condition_bound_variables(value, variables)
+        }
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -3391,7 +3397,7 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
             collect_bitvector_bound_variables(then_term, variables);
             collect_bitvector_bound_variables(else_term, variables);
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -3406,12 +3412,12 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
             variables.insert(*item);
             collect_bitvector_bound_variables(body, variables);
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_bitvector_bound_variables(argument, variables);
             }
         }
-        MachineTerm::ClickFunctionApplication { arguments, .. } => {
+        OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
@@ -3433,7 +3439,7 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
                 }
             }
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_bound_variables(scrutinee, variables);
             for arm in arms {
                 for binding in &arm.bindings {
@@ -3442,22 +3448,22 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
                 collect_bitvector_bound_variables(&arm.body, variables);
             }
         }
-        MachineTerm::MemoryLoad(memory, pointer, _) => {
+        OldMachineTerm::MemoryLoad(memory, pointer, _) => {
             // SymbolicMemory states are immutable kernel values; their free
             // variable collector remains the source of truth for state
             // contents, while the pointer can contain nested fold terms.
             collect_memory_bitvector_variables(memory.memory(), variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        MachineTerm::IntegerToMachine { value, .. } => {
+        OldMachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_bound_variables(value, variables);
         }
         int64_constant!(_) | uint64_constant!(_) | native_constant!(_, _) => {}
         cast_term!(Int64From32, value)
-        | MachineTerm::Cast {
+        | OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             ..
@@ -3467,12 +3473,12 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
         | cast_term!(Int64FromUInt32, value)
         | cast_term!(UInt64FromInt32, value)
         | cast_term!(UInt64FromInt64, value)
-        | MachineTerm::Unary { operand: value, .. } => {
+        | OldMachineTerm::Unary { operand: value, .. } => {
             collect_bitvector_bound_variables(value, variables)
         }
         crate::kernel::binary_wide_term!(left, right)
-        | MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        | OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
@@ -3548,17 +3554,17 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
 }
 
 fn collect_condition_bound_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_bound_variables(&pointer.offset, variables);
             }
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_machine_operand(|view| {
                 visit_machine_operand_scoped_leaves(view, |term| {
                     collect_scoped_leaf_bound_variables(term, variables)
@@ -3570,7 +3576,7 @@ fn collect_condition_bound_variables(
                 })
             });
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
@@ -3579,19 +3585,19 @@ fn collect_condition_bound_variables(
             collect_integer_bound_variables(left, variables);
             collect_integer_bound_variables(right, variables);
         }
-        ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float32(float_condition) | OldConditionTerm::Float64(float_condition) => {
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bound_variables(left, variables);
             collect_pointer_offset_bound_variables(right, variables);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_offset_bound_variables(&left.offset, variables);
             collect_pointer_offset_bound_variables(&right.offset, variables);
         }
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             for argument in application.arguments() {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
@@ -3613,7 +3619,7 @@ fn collect_condition_bound_variables(
                 }
             }
         }
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -3622,7 +3628,7 @@ fn collect_condition_bound_variables(
                 collect_condition_bound_variables(condition, variables);
             }
         }
-        ConditionTerm::BoolEqual(left, right) => {
+        OldConditionTerm::BoolEqual(left, right) => {
             collect_condition_bound_variables(left, variables);
             collect_condition_bound_variables(right, variables);
         }
@@ -3630,7 +3636,7 @@ fn collect_condition_bound_variables(
 }
 
 fn collect_pointer_offset_bound_variables(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     variables: &mut BTreeSet<Variable>,
 ) {
     offset.for_each_scaled_operand(|value| {
@@ -3650,11 +3656,11 @@ fn collect_offset_index_bound_variables(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
     term: &Term,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Term {
     match term {
         Term::Condition(condition) => Term::Condition(
-            substitute_bitvector_variable_in_condition(condition.native_compat(), from, to).into(),
+            substitute_bitvector_variable_in_condition(condition.old_form(), from, to).into(),
         ),
         Term::Bitvector32(bits) => {
             Term::Bitvector32(bits.map_native(|word| substitute_bitvector_variable(word, from, to)))
@@ -3663,21 +3669,21 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
         // machine substitution must never rewrite an Integer variable with a
         // machine term. Integer binders use the dedicated function below.
         Term::Integer(integer) => Term::Integer(
-            substitute_bitvector_variable_in_integer(integer.native_compat(), from, to).into(),
+            substitute_bitvector_variable_in_integer(integer.old_form(), from, to).into(),
         ),
         Term::PointerOffset(offset) => Term::PointerOffset(
             substitute_bitvector_variable_in_stored_offset(offset, from, to),
         ),
         Term::ProgramValue(value) => Term::ProgramValue(
-            substitute_bitvector_variable_in_program_value(value.native_compat(), from, to).into(),
+            substitute_bitvector_variable_in_program_value(value.old_form(), from, to).into(),
         ),
         Term::Sequence(sequence) => Term::Sequence(substitute_bitvector_variable_in_sequence(
             sequence, from, to,
         )),
         Term::Algebraic(term) => {
             let rewritten = AlgebraicTerm {
-                algebraic_type: term.native_compat().algebraic_type.clone(),
-                node: match &term.native_compat().node {
+                algebraic_type: term.old_form().algebraic_type.clone(),
+                node: match &term.old_form().node {
                     AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
                     AlgebraicTermNode::MemoryLoad { point, pointer } if point.is_entry_read() => {
                         AlgebraicTermNode::MemoryLoad {
@@ -3695,16 +3701,16 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                             &AlgebraicTermNode::memory_load_carrier_value(
                                 memory,
                                 pointer,
-                                &term.native_compat().algebraic_type,
+                                &term.old_form().algebraic_type,
                             ),
                             from,
                             to,
                         ) {
                             AlgebraicValue::Program(value) => {
                                 AlgebraicTermNode::memory_load_from_carrier(&value)
-                                    .unwrap_or_else(|| term.native_compat().node.clone())
+                                    .unwrap_or_else(|| term.old_form().node.clone())
                             }
-                            _ => term.native_compat().node.clone(),
+                            _ => term.old_form().node.clone(),
                         }
                     }
                     AlgebraicTermNode::Constructor { variant, fields } => {
@@ -3776,7 +3782,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             };
             // Keep the original term, with its shared root, when nothing in
             // it named `from`.
-            if rewritten == *term.native_compat() {
+            if rewritten == *term.old_form() {
                 Term::Algebraic(term.clone())
             } else if term.root().is_some() {
                 // A shared term stays shared, as lowering it would make it.
@@ -3803,7 +3809,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
 fn substitute_bitvector_variable_in_integer(
     term: &IntegerTerm,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> IntegerTerm {
     match substitute_bitvector_variable_in_integer_checked(term, from, to) {
         Ok(result) => result,
@@ -3814,7 +3820,7 @@ fn substitute_bitvector_variable_in_integer(
 fn substitute_bitvector_variable_in_integer_checked(
     term: &IntegerTerm,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
     substitute_bitvector_variable_in_integer_checked_with_mode(term, from, to, false)
 }
@@ -3822,7 +3828,7 @@ fn substitute_bitvector_variable_in_integer_checked(
 fn substitute_bitvector_variable_in_integer_checked_with_registered_loads(
     term: &IntegerTerm,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
     substitute_bitvector_variable_in_integer_checked_with_mode(term, from, to, true)
 }
@@ -3830,10 +3836,10 @@ fn substitute_bitvector_variable_in_integer_checked_with_registered_loads(
 fn substitute_bitvector_variable_in_integer_checked_with_mode(
     term: &IntegerTerm,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
     resolve_registered_loads: bool,
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
-    let source = MachineTerm::Variable(from);
+    let source = OldMachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     if resolve_registered_loads {
@@ -4108,7 +4114,7 @@ fn validate_integer_pure_proposition(
             if mathematical_comparison(condition).is_some() {
                 validate_integer_atomic_proposition(proposition, collector)
             } else {
-                validate_integer_pure_condition(condition.native_compat(), collector)
+                validate_integer_pure_condition(condition.old_form(), collector)
             }
         }
         Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
@@ -4171,7 +4177,7 @@ fn validate_integer_pure_proposition(
 }
 
 fn validate_integer_pure_condition(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     collector: &mut crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector,
 ) -> Result<(), IntegerPureSubstitutionError> {
     validate_integer_atomic_proposition(
@@ -4335,7 +4341,7 @@ fn substitute_pure_proposition_with_walker(
                     Proposition::ConditionIs(condition, value) => {
                         rewritten.push(Proposition::condition_is(
                             substitute_integer_pure_condition_with_walker(
-                                condition.native_compat(),
+                                condition.old_form(),
                                 walker,
                             )?,
                             *value,
@@ -4569,9 +4575,9 @@ fn queue_integer_quantifier_rewrite<'a>(
 }
 
 fn substitute_integer_pure_condition_with_walker(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
-) -> Result<ConditionTerm, IntegerPureSubstitutionError> {
+) -> Result<OldConditionTerm, IntegerPureSubstitutionError> {
     let Proposition::ConditionIs(result, _) = rewrite_integer_atomic_proposition_with_walker(
         &Proposition::condition_is(condition.clone(), true),
         walker,
@@ -4579,7 +4585,7 @@ fn substitute_integer_pure_condition_with_walker(
     else {
         unreachable!()
     };
-    Ok(result.native_compat().clone())
+    Ok(result.old_form().clone())
 }
 
 fn rewrite_integer_memory_loadable_with_walker(
@@ -4633,7 +4639,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
-    let bytes = walker.bits(bytes.native_compat());
+    let bytes = walker.bits(bytes.old_form());
     integer_substitution_refusal(walker.refusal())?;
     Ok(Proposition::MemoryLoadable {
         // SymbolicMemory states are immutable proof-state identities.  Keep the same
@@ -4745,7 +4751,7 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
         substitute_bitvector_variable_in_integer_checked_with_registered_loads(
             &with_temporary,
             item,
-            &MachineTerm::Variable(temporary_item),
+            &OldMachineTerm::Variable(temporary_item),
         )?
     } else {
         substitute_integer_pure_term(
@@ -4769,7 +4775,7 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
         let Some(operand) = integer_item_operand(item_value, item_type) else {
             return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
         };
-        let source = MachineTerm::Variable(temporary_item);
+        let source = OldMachineTerm::Variable(temporary_item);
         let mut rewrite =
             crate::kernel::proof::term_rewrite::TermRewrite::for_machine_operand_checked(
                 &source,
@@ -4805,11 +4811,11 @@ fn integer_item_operand(
             .map(|value| {
                 SharedMachineIntegerTerm::intern(
                     item_type,
-                    MachineTerm::constant(value as i32 as u32),
+                    OldMachineTerm::constant(value as i32 as u32),
                 )
             }),
         (IntegerTerm::Constant(value), MachineIntegerType::UInt64) => value.to_u64().map(|value| {
-            SharedMachineIntegerTerm::intern(item_type, MachineTerm::uint64_constant(value))
+            SharedMachineIntegerTerm::intern(item_type, OldMachineTerm::uint64_constant(value))
         }),
         _ => None,
     }
@@ -4818,7 +4824,7 @@ fn integer_item_operand(
 fn substitute_bitvector_variable_in_algebraic_term(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> AlgebraicTerm {
     let Term::Algebraic(term) =
         substitute_bitvector_variable_in_term(&Term::Algebraic(term.clone().into()), from, to)
@@ -4831,7 +4837,7 @@ fn substitute_bitvector_variable_in_algebraic_term(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
     expression: &ProgramExpression,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> ProgramExpression {
     match expression {
         ProgramExpression::StringLiteral(_) => expression.clone(),
@@ -5149,9 +5155,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_expression(
     expression: &SpecExpression,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SpecExpression {
-    let source = MachineTerm::Variable(from);
+    let source = OldMachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
@@ -5162,9 +5168,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_expression(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_proposition(
     proposition: &SpecProposition,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SpecProposition {
-    let source = MachineTerm::Variable(from);
+    let source = OldMachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
@@ -5175,9 +5181,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_proposition(
 fn substitute_bitvector_variable_in_spec_integer(
     expression: &SpecIntegerExpression,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SpecIntegerExpression {
-    let source = MachineTerm::Variable(from);
+    let source = OldMachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
@@ -5190,7 +5196,7 @@ mod spec_carrier_substitution_binder_tests {
     use super::*;
 
     fn int32_value(variable: Variable) -> SpecExpression {
-        SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable)))
+        SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(variable)))
     }
 
     fn fold_body(item: Variable, source: Variable) -> SpecIntegerExpression {
@@ -5201,7 +5207,7 @@ mod spec_carrier_substitution_binder_tests {
             Box::new(SpecIntegerExpression::Term(IntegerTerm::Machine(
                 SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(source),
+                    OldMachineTerm::Variable(source),
                 ),
             ))),
         )
@@ -5213,7 +5219,7 @@ mod spec_carrier_substitution_binder_tests {
                 index: SpecIntegerRangeFoldIndex::Int32 {
                     start: Box::new(int32_value(source)),
                     end: Box::new(SpecExpression::Value(ProgramValue::Int32(
-                        MachineTerm::constant(8),
+                        OldMachineTerm::constant(8),
                     ))),
                 },
                 initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
@@ -5232,7 +5238,7 @@ mod spec_carrier_substitution_binder_tests {
         let rewritten = substitute_bitvector_variable_in_spec_expression(
             &int32_fold(item, source),
             source,
-            &MachineTerm::Variable(item),
+            &OldMachineTerm::Variable(item),
         );
         let SpecExpression::IntegerToMachine { value, .. } = rewritten else {
             panic!("the Integer fold was dropped")
@@ -5266,7 +5272,7 @@ mod spec_carrier_substitution_binder_tests {
         else {
             panic!("the source machine integer was silently dropped")
         };
-        assert_eq!(substituted_source.value(), &MachineTerm::Variable(item));
+        assert_eq!(substituted_source.value(), &OldMachineTerm::Variable(item));
     }
 
     #[test]
@@ -5275,7 +5281,7 @@ mod spec_carrier_substitution_binder_tests {
         let rewritten = substitute_bitvector_variable_in_spec_expression(
             &int32_fold(source, source),
             source,
-            &MachineTerm::constant(5),
+            &OldMachineTerm::constant(5),
         );
         let SpecExpression::IntegerToMachine { value, .. } = rewritten else {
             panic!("the Integer fold was dropped")
@@ -5292,7 +5298,7 @@ mod spec_carrier_substitution_binder_tests {
         };
         assert_eq!(
             *start,
-            SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(5)))
+            SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(5)))
         );
         let SpecIntegerExpression::Add(bound_item, machine_source) = *body else {
             panic!("the fold body changed shape")
@@ -5305,7 +5311,7 @@ mod spec_carrier_substitution_binder_tests {
             *machine_source,
             SpecIntegerExpression::Term(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(source),
+                OldMachineTerm::Variable(source),
             ),))
         );
     }
@@ -5326,7 +5332,7 @@ mod spec_carrier_substitution_binder_tests {
         let rewritten = substitute_bitvector_variable_in_spec_proposition(
             &proposition,
             source,
-            &MachineTerm::Variable(binder),
+            &OldMachineTerm::Variable(binder),
         );
         let SpecProposition::ForAllInt32 { variable, body, .. } = rewritten else {
             panic!("the quantifier was dropped")
@@ -5354,13 +5360,13 @@ mod spec_carrier_substitution_binder_tests {
             body: Box::new(SpecProposition::Comparison {
                 left: int32_value(source),
                 operator: ComparisonOperator::Equal,
-                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(8))),
+                right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(8))),
             }),
         };
         let rewritten = substitute_bitvector_variable_in_spec_proposition(
             &proposition,
             source,
-            &MachineTerm::constant(5),
+            &OldMachineTerm::constant(5),
         );
         assert_eq!(rewritten, proposition);
     }
@@ -5390,7 +5396,7 @@ mod spec_carrier_substitution_binder_tests {
                     substitute_bitvector_variable_in_integer(
                         &IntegerTerm::var(Variable(340)),
                         Variable(340),
-                        &MachineTerm::constant(1),
+                        &OldMachineTerm::constant(1),
                     )
                 });
                 crate::instrumentation::emit(
@@ -5415,15 +5421,15 @@ mod machine_integer_substitution_tests {
     fn instantiating_an_exact_read_index_keeps_its_program_point() {
         let _session = crate::kernel::VerificationSession::enter();
         let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
-        let base = Address::symbolic(Variable(38_551));
+        let base = OldAddress::symbolic(Variable(38_551));
         let index = Variable(38_552);
-        let value = MachineTerm::Variable(Variable(38_553));
+        let value = OldMachineTerm::Variable(Variable(38_553));
         let read = |pointer| {
-            crate::kernel::MachineTerm::read_named(point.clone(), pointer, LoadKind::Int32)
+            crate::kernel::OldMachineTerm::read_named(point.clone(), pointer, LoadKind::Int32)
         };
         let equation = |pointer| {
             Proposition::condition_is(
-                ConditionTerm::machine_compare(
+                OldConditionTerm::machine_compare(
                     MachineIntegerType::Int32,
                     CompareRelation::Equal,
                     read(pointer),
@@ -5432,12 +5438,12 @@ mod machine_integer_substitution_tests {
                 true,
             )
         };
-        let before = Address {
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(index), 4),
+        let before = OldAddress {
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(index), 4),
             ..base.clone()
         };
         let after = base.offset_by_bytes(28);
-        let replacement = MachineTerm::constant(7);
+        let replacement = OldMachineTerm::constant(7);
         assert_eq!(
             substitute_bitvector_variable(&read(before.clone()), index, &replacement),
             read(after.clone())
@@ -5458,13 +5464,13 @@ mod machine_integer_substitution_tests {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
             for relation in [R::LessThan, R::LessEqual, R::GreaterThan, R::GreaterEqual] {
-                let condition = ConditionTerm::Compare {
+                let condition = OldConditionTerm::Compare {
                     format,
                     relation,
-                    left: Box::new(MachineTerm::Variable(variable)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
                     right: Box::new(word(5)),
                 };
-                let expected = ConditionTerm::Compare {
+                let expected = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(word(9)),
@@ -5538,7 +5544,7 @@ fn map_common_substitution_offsets(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
     condition: &KernelTerm,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Option<KernelTerm> {
     let mut machine_results = std::collections::HashMap::new();
     let mut map_machine = |argument: &KernelTerm, format: MachineIntegerType| {
@@ -5549,7 +5555,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
             crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
             |_| true,
             |root| {
-                let source = MachineTerm::Variable(from);
+                let source = OldMachineTerm::Variable(from);
                 let mut rewrite =
                     crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
                 rewrite.enable_registered_load_resolution();
@@ -5677,7 +5683,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
 pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
     condition: &KernelTerm,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> Option<KernelTerm> {
     if crate::kernel::BooleanOperandView::Shared(condition).is_bool_value_form()
         || matches!(
@@ -5752,13 +5758,13 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     from: Variable,
-    to: &MachineTerm,
-) -> ConditionTerm {
+    to: &OldMachineTerm,
+) -> OldConditionTerm {
     match condition {
-        ConditionTerm::Constant(value) => ConditionTerm::Constant(*value),
-        ConditionTerm::AlgebraicEqual(left, right) => ConditionTerm::AlgebraicEqual(
+        OldConditionTerm::Constant(value) => OldConditionTerm::Constant(*value),
+        OldConditionTerm::AlgebraicEqual(left, right) => OldConditionTerm::AlgebraicEqual(
             Box::new(substitute_bitvector_variable_in_algebraic_term(
                 left, from, to,
             )),
@@ -5768,16 +5774,16 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
         ),
         // A `Bool` binder (Stage 5) instantiated with a `bool` value's word
         // takes that value's truth.
-        ConditionTerm::Variable(variable) if *variable == from => {
-            ConditionTerm::truth_of_bool_word(to)
+        OldConditionTerm::Variable(variable) if *variable == from => {
+            OldConditionTerm::truth_of_bool_word(to)
         }
-        ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
-        ConditionTerm::Compare {
+        OldConditionTerm::Variable(variable) => OldConditionTerm::Variable(*variable),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::Compare {
+        } => OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(substitute_bitvector_variable(left, from, to)),
@@ -5787,68 +5793,70 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             let rewrite =
                 |term: &IntegerTerm| substitute_bitvector_variable_in_integer(term, from, to);
             match condition {
-                ConditionTerm::IntegerLessThan(_, _) => {
-                    ConditionTerm::integer_less_than(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerLessThan(_, _) => {
+                    OldConditionTerm::integer_less_than(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerLessEqual(_, _) => {
-                    ConditionTerm::integer_less_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerLessEqual(_, _) => {
+                    OldConditionTerm::integer_less_equal(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerGreaterThan(_, _) => {
-                    ConditionTerm::integer_greater_than(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerGreaterThan(_, _) => {
+                    OldConditionTerm::integer_greater_than(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerGreaterEqual(_, _) => {
-                    ConditionTerm::integer_greater_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerGreaterEqual(_, _) => {
+                    OldConditionTerm::integer_greater_equal(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerEqual(_, _) => {
-                    ConditionTerm::integer_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerEqual(_, _) => {
+                    OldConditionTerm::integer_equal(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerNotEqual(_, _) => {
-                    ConditionTerm::integer_not_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerNotEqual(_, _) => {
+                    OldConditionTerm::integer_not_equal(rewrite(left), rewrite(right))
                 }
                 _ => unreachable!(),
             }
         }
-        ConditionTerm::Float32(FloatCondition::Comparison {
+        OldConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => ConditionTerm::float32_compare(
+        }) => OldConditionTerm::float32_compare(
             substitute_bitvector_variable(left, from, to),
             substitute_bitvector_variable(right, from, to),
             *operator,
         ),
-        ConditionTerm::Float32(FloatCondition::Classification {
+        OldConditionTerm::Float32(FloatCondition::Classification {
             classification,
             value,
-        }) => ConditionTerm::float32_classification(
+        }) => OldConditionTerm::float32_classification(
             substitute_bitvector_variable(value, from, to),
             *classification,
         ),
-        ConditionTerm::Float64(FloatCondition::Comparison {
+        OldConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => ConditionTerm::float64_compare(
+        }) => OldConditionTerm::float64_compare(
             substitute_bitvector_variable(left, from, to),
             substitute_bitvector_variable(right, from, to),
             *operator,
         ),
-        ConditionTerm::Float64(FloatCondition::Classification {
+        OldConditionTerm::Float64(FloatCondition::Classification {
             classification,
             value,
-        }) => ConditionTerm::float64_classification(
+        }) => OldConditionTerm::float64_classification(
             substitute_bitvector_variable(value, from, to),
             *classification,
         ),
-        ConditionTerm::AddressOffsetEqual(left, right) => ConditionTerm::address_offset_equal(
-            substitute_bitvector_variable_in_pointer_offset(left, from, to),
-            substitute_bitvector_variable_in_pointer_offset(right, from, to),
-        ),
-        ConditionTerm::PointerEqual(left, right) => ConditionTerm::PointerEqual(
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::address_offset_equal(
+                substitute_bitvector_variable_in_pointer_offset(left, from, to),
+                substitute_bitvector_variable_in_pointer_offset(right, from, to),
+            )
+        }
+        OldConditionTerm::PointerEqual(left, right) => OldConditionTerm::PointerEqual(
             Box::new(left.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
             Box::new(right.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
         ),
-        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
+        OldConditionTerm::AddressEqual(left, right) => OldConditionTerm::address_equal(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
         ),
@@ -5860,7 +5868,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 },
             )
             .expect("a `Bool` value form maps"),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -5887,8 +5895,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                     *format,
                     *relation,
                     [
-                        crate::kernel::MachineOperandView::Legacy(&left),
-                        crate::kernel::MachineOperandView::Legacy(&right),
+                        crate::kernel::MachineOperandView::Old(&left),
+                        crate::kernel::MachineOperandView::Old(&right),
                     ],
                 )
             } else {
@@ -5914,15 +5922,15 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
 fn substitute_through_load_variable(
     variable: Variable,
     from: Variable,
-    to: &MachineTerm,
-) -> Option<MachineTerm> {
+    to: &OldMachineTerm,
+) -> Option<OldMachineTerm> {
     if !crate::kernel::is_load_variable(&variable) {
         return None;
     }
     let (registered, pointer) = crate::kernel::eval::registered_load_point_for_variable(&variable)?;
     let memory = registered.shared_memory().clone();
     let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
-    let substituted_pointer = Address {
+    let substituted_pointer = OldAddress {
         base: pointer.base.clone(),
         offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
     };
@@ -5972,7 +5980,7 @@ fn substitute_through_load_variable(
         );
     }
     Some(crate::kernel::eval::canonical_term(
-        &crate::kernel::MachineTerm::read_named(
+        &crate::kernel::OldMachineTerm::read_named(
             place(&substituted_memory, &registered),
             substituted_pointer,
             kind,
@@ -5981,15 +5989,15 @@ fn substitute_through_load_variable(
 }
 
 pub(crate) fn substitute_bitvector_variable(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     from: Variable,
-    to: &MachineTerm,
-) -> MachineTerm {
+    to: &OldMachineTerm,
+) -> OldMachineTerm {
     match term {
-        MachineTerm::ThreadHandle(_) => term.clone(),
-        MachineTerm::Constant { .. } => term.clone(),
-        MachineTerm::Variable(variable) if *variable == from => to.clone(),
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::ThreadHandle(_) => term.clone(),
+        OldMachineTerm::Constant { .. } => term.clone(),
+        OldMachineTerm::Variable(variable) if *variable == from => to.clone(),
+        OldMachineTerm::Variable(variable) => {
             // A load variable can represent a load whose address mentions
             // the substituted variable (a universal's body contains `p[k]`
             // with the bound `k` inside the address). Substitution reaches
@@ -5997,22 +6005,22 @@ pub(crate) fn substitute_bitvector_variable(
             // form of the result, so instantiating a universal yields the
             // same load variable as a direct read of that cell.
             substitute_through_load_variable(*variable, from, to)
-                .unwrap_or(MachineTerm::Variable(*variable))
+                .unwrap_or(OldMachineTerm::Variable(*variable))
         }
-        MachineTerm::BoolCast { to: format, value } => MachineTerm::bool_cast(
+        OldMachineTerm::BoolCast { to: format, value } => OldMachineTerm::bool_cast(
             *format,
             substitute_bitvector_variable_in_condition(value, from, to),
         ),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
-        } => MachineTerm::if_then_else(
+        } => OldMachineTerm::if_then_else(
             substitute_bitvector_variable_in_condition(condition, from, to),
             substitute_bitvector_variable(then_term, from, to),
             substitute_bitvector_variable(else_term, from, to),
         ),
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -6046,7 +6054,7 @@ pub(crate) fn substitute_bitvector_variable(
                 body = substitute_bitvector_variable(
                     &body,
                     accumulator,
-                    &MachineTerm::Variable(renamed),
+                    &OldMachineTerm::Variable(renamed),
                 );
                 accumulator = renamed;
             }
@@ -6060,13 +6068,14 @@ pub(crate) fn substitute_bitvector_variable(
                 reserved.insert(item);
                 let mut fresh = KernelVariableGenerator::fresh_for(0, reserved);
                 let renamed = fresh.next();
-                body = substitute_bitvector_variable(&body, item, &MachineTerm::Variable(renamed));
+                body =
+                    substitute_bitvector_variable(&body, item, &OldMachineTerm::Variable(renamed));
                 item = renamed;
             }
             if original_accumulator != from && original_item != from {
                 body = substitute_bitvector_variable(&body, from, to);
             }
-            MachineTerm::range_fold(
+            OldMachineTerm::range_fold(
                 substitute_bitvector_variable(start, from, to),
                 substitute_bitvector_variable(end, from, to),
                 substitute_bitvector_variable(initial, from, to),
@@ -6075,8 +6084,8 @@ pub(crate) fn substitute_bitvector_variable(
                 body,
             )
         }
-        MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::rebuild_pure_application(
+        OldMachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::rebuild_pure_application(
                 name.clone(),
                 arguments
                     .iter()
@@ -6084,8 +6093,8 @@ pub(crate) fn substitute_bitvector_variable(
                     .collect(),
             )
         }
-        MachineTerm::ClickFunctionApplication { name, arguments } => {
-            MachineTerm::ClickFunctionApplication {
+        OldMachineTerm::ClickFunctionApplication { name, arguments } => {
+            OldMachineTerm::ClickFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
                     .iter()
@@ -6095,7 +6104,7 @@ pub(crate) fn substitute_bitvector_variable(
                     .collect(),
             }
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => MachineTerm::AlgebraicMatch {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(substitute_bitvector_variable_in_algebraic_term(
                 scrutinee, from, to,
             )),
@@ -6115,7 +6124,7 @@ pub(crate) fn substitute_bitvector_variable(
                 })
                 .collect(),
         },
-        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+        OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
             let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
             // A certified exact read fixes its program point. Substitute in
             // the address expression at that point.
@@ -6157,7 +6166,7 @@ pub(crate) fn substitute_bitvector_variable(
                 return term.clone();
             }
             let read = crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(term),
+                crate::kernel::MachineOperandView::Old(term),
             )
             .expect("structural read");
             // A projected state is indexed by the address it was selected
@@ -6176,7 +6185,7 @@ pub(crate) fn substitute_bitvector_variable(
                     read.bytes,
                 );
                 return crate::kernel::eval::canonical_term(
-                    &crate::kernel::MachineTerm::read_named(
+                    &crate::kernel::OldMachineTerm::read_named(
                         ProgramPoint::read_at(&source, memory),
                         rewritten_pointer,
                         *kind,
@@ -6201,14 +6210,16 @@ pub(crate) fn substitute_bitvector_variable(
                 read.bytes,
             )
         }
-        MachineTerm::IntegerAddress(pointer, class) => MachineTerm::object_pointer_address(
+        OldMachineTerm::IntegerAddress(pointer, class) => OldMachineTerm::object_pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
             class.class(),
         ),
-        MachineTerm::IntegerToMachine { value, destination } => MachineTerm::IntegerToMachine {
-            value: substitute_bitvector_variable_in_integer(value.as_ref(), from, to).into(),
-            destination: *destination,
-        },
+        OldMachineTerm::IntegerToMachine { value, destination } => {
+            OldMachineTerm::IntegerToMachine {
+                value: substitute_bitvector_variable_in_integer(value.as_ref(), from, to).into(),
+                destination: *destination,
+            }
+        }
         // A rename rebuilds a node as written: folding `0 + k` to `k` would
         // change the term a lowering produced.
         term => match (term.as_binary(), term.as_unary()) {
@@ -6235,10 +6246,10 @@ pub(crate) fn substitute_bitvector_variable(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     from: Variable,
-    to: &MachineTerm,
-) -> AddressOffset {
+    to: &OldMachineTerm,
+) -> OldAddressOffset {
     substitute_bitvector_variable_in_pointer_offset_cow(offset, from, to).into_owned()
 }
 
@@ -6247,31 +6258,31 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
 /// key, which in turn mints a different state for a binder rename that did
 /// not occur anywhere in that cell.
 fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
-    offset: &'a AddressOffset,
+    offset: &'a OldAddressOffset,
     from: Variable,
-    to: &MachineTerm,
-) -> std::borrow::Cow<'a, AddressOffset> {
+    to: &OldMachineTerm,
+) -> std::borrow::Cow<'a, OldAddressOffset> {
     use std::borrow::Cow;
-    match offset {
-        AddressOffset::Constant(_) | AddressOffset::Variable(_) => Cow::Borrowed(offset),
-        AddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => Cow::Borrowed(offset),
+        OffsetView::Add(left, right) => {
             let left = substitute_bitvector_variable_in_pointer_offset_cow(left, from, to);
             let right = substitute_bitvector_variable_in_pointer_offset_cow(right, from, to);
             if matches!((&left, &right), (Cow::Borrowed(_), Cow::Borrowed(_))) {
                 Cow::Borrowed(offset)
             } else {
-                Cow::Owned(AddressOffset::add(left.into_owned(), right.into_owned()))
+                Cow::Owned(OldAddressOffset::add(left.into_owned(), right.into_owned()))
             }
         }
-        AddressOffset::Int32Scaled { value, byte_width } => {
-            substitute_in_scaled_pointer_index(value, *byte_width, None, from, to)
+        OffsetView::Int32Scaled { index, byte_width } => {
+            substitute_in_scaled_pointer_index(&index, byte_width, None, from, to)
                 .map_or(Cow::Borrowed(offset), Cow::Owned)
         }
-        AddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index,
             byte_width,
             unsigned,
-        } => substitute_in_scaled_pointer_index(value, *byte_width, Some(*unsigned), from, to)
+        } => substitute_in_scaled_pointer_index(&index, byte_width, Some(unsigned), from, to)
             .map_or(Cow::Borrowed(offset), Cow::Owned),
     }
 }
@@ -6281,15 +6292,15 @@ fn substitute_in_scaled_pointer_index(
     byte_width: i64,
     unsigned: Option<bool>,
     from: Variable,
-    to: &MachineTerm,
-) -> Option<AddressOffset> {
+    to: &OldMachineTerm,
+) -> Option<OldAddressOffset> {
     let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
         value,
         |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
         crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
         |_| true,
         |root| {
-            let source = MachineTerm::Variable(from);
+            let source = OldMachineTerm::Variable(from);
             let mut rewrite =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
             rewrite.enable_registered_load_resolution();
@@ -6307,13 +6318,12 @@ fn substitute_in_scaled_pointer_index(
 fn substitute_bitvector_variable_in_stored_offset(
     offset: &crate::kernel::StoredPointerOffset,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> crate::kernel::StoredPointerOffset {
     use crate::kernel::{KernelAddressOffset, SharedAddressOffset, StoredPointerOffset};
 
     let Some(root) = offset.root() else {
-        return substitute_bitvector_variable_in_pointer_offset(offset.native_compat(), from, to)
-            .into();
+        return substitute_bitvector_variable_in_pointer_offset(offset.old_form(), from, to).into();
     };
     let rewritten = root
         .try_map_root(|original, node| {
@@ -6353,12 +6363,12 @@ fn substitute_bitvector_variable_in_stored_offset(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
-    pointer: &Address,
+    pointer: &OldAddress,
     from: Variable,
-    to: &MachineTerm,
-) -> Address {
+    to: &OldMachineTerm,
+) -> OldAddress {
     if matches!(pointer.base, AddressBase::PureFunctionApplication(_)) {
-        let source = MachineTerm::Variable(from);
+        let source = OldMachineTerm::Variable(from);
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
         let Some(ProgramValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to)
@@ -6369,7 +6379,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
         };
         return result.into_pointer();
     }
-    Address {
+    OldAddress {
         base: pointer.base.clone(),
         offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
     }
@@ -6422,8 +6432,8 @@ struct SubstitutedMemoryScope {
 }
 
 impl SubstitutedMemoryScope {
-    fn enter(from: Variable, to: &MachineTerm) -> Self {
-        let address = to as *const MachineTerm as usize;
+    fn enter(from: Variable, to: &OldMachineTerm) -> Self {
+        let address = to as *const OldMachineTerm as usize;
         let joined = SUBSTITUTED_MEMORIES.with(|frames| {
             frames
                 .borrow()
@@ -6459,7 +6469,7 @@ impl Drop for SubstitutedMemoryScope {
 fn substitute_bitvector_variable_in_shared_memory(
     memory: &SharedMemory,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SharedMemory {
     let identity = memory.arena_id();
     if memory_lacks_variable(identity, from) {
@@ -6497,7 +6507,7 @@ fn substitute_bitvector_variable_in_shared_memory(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_memory(
     memory: &SymbolicMemory,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SymbolicMemory {
     // A state carried by value (a loadability or effect proposition) is
     // interned only to consult and fill the absent-variable memo; interning
@@ -6565,7 +6575,7 @@ fn run_slot_named_by_load_variable(
 fn rewrite_memory_state(
     memory: &SymbolicMemory,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SymbolicMemory {
     crate::instrumentation::measure_operation(
         "kernel",
@@ -6610,10 +6620,13 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
         ProgramType::UInt32,
     );
     let mut read_only = MemoryBlock::read_only(4);
-    read_only.size = AllocationSize::int32(MachineTerm::Variable(from));
+    read_only.size = AllocationSize::int32(OldMachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
-    let rewritten =
-        substitute_bitvector_variable_in_memory_contents(&memory, from, &MachineTerm::constant(16));
+    let rewritten = substitute_bitvector_variable_in_memory_contents(
+        &memory,
+        from,
+        &OldMachineTerm::constant(16),
+    );
     assert_eq!(
         rewritten.blocks.get(&AddressBase::from("local:word")),
         memory.blocks.get(&AddressBase::from("local:word"))
@@ -6629,7 +6642,7 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
 fn substitute_bitvector_variable_in_memory_contents(
     memory: &SymbolicMemory,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> SymbolicMemory {
     crate::instrumentation::record_deterministic_work(
         memory.cells.representation_len() + memory.union_cells.len() + memory.blocks.len(),
@@ -6833,7 +6846,7 @@ fn substitute_bitvector_variable_in_memory_contents(
         "substitute scalar variable",
         vec![memory.clone()],
         vec![
-            ProgramValue::Int32(MachineTerm::Variable(from)),
+            ProgramValue::Int32(OldMachineTerm::Variable(from)),
             ProgramValue::Int32(to.clone()),
         ],
     );
@@ -6843,7 +6856,7 @@ fn substitute_bitvector_variable_in_memory_contents(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
     value: &ProgramValue,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> ProgramValue {
     match value {
         ProgramValue::PointerInteger(record) => ProgramValue::PointerInteger(PointerIntegerValue {
@@ -6898,10 +6911,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
     }
 }
 
-fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address) -> Term {
+fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &OldAddress) -> Term {
     match term {
         Term::Condition(condition) => Term::Condition(
-            substitute_pointer_variable_in_condition(condition.native_compat(), from, to).into(),
+            substitute_pointer_variable_in_condition(condition.old_form(), from, to).into(),
         ),
         Term::Integer(_) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
@@ -6909,19 +6922,15 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address
         }
         Term::Bitvector32(_) | Term::PointerOffset(_) => term.clone(),
         Term::ProgramValue(value) => Term::ProgramValue(
-            substitute_pointer_variable_in_program_value(value.native_compat(), from, to).into(),
+            substitute_pointer_variable_in_program_value(value.old_form(), from, to).into(),
         ),
         Term::Sequence(sequence) => {
             Term::Sequence(substitute_pointer_variable_in_sequence(sequence, from, to))
         }
         Term::Algebraic(term) => Term::Algebraic(
             AlgebraicTerm {
-                algebraic_type: term.native_compat().algebraic_type.clone(),
-                node: substitute_pointer_variable_in_algebraic_term_node(
-                    term.native_compat(),
-                    from,
-                    to,
-                ),
+                algebraic_type: term.old_form().algebraic_type.clone(),
+                node: substitute_pointer_variable_in_algebraic_term_node(term.old_form(), from, to),
             }
             .into(),
         ),
@@ -6939,7 +6948,7 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address
 fn substitute_pointer_variable_in_algebraic_term_node(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> AlgebraicTermNode {
     match &term.node {
         AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
@@ -7028,7 +7037,7 @@ fn substitute_pointer_variable_in_algebraic_term_node(
 fn substitute_pointer_variable_in_algebraic_term(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: term.algebraic_type.clone(),
@@ -7037,21 +7046,21 @@ fn substitute_pointer_variable_in_algebraic_term(
 }
 
 fn substitute_pointer_variable_in_condition(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     from: Variable,
-    to: &Address,
-) -> ConditionTerm {
+    to: &OldAddress,
+) -> OldConditionTerm {
     match condition {
-        ConditionTerm::IntegerLessThan(..)
-        | ConditionTerm::IntegerLessEqual(..)
-        | ConditionTerm::IntegerGreaterThan(..)
-        | ConditionTerm::IntegerGreaterEqual(..)
-        | ConditionTerm::IntegerEqual(..)
-        | ConditionTerm::IntegerNotEqual(..) => {
+        OldConditionTerm::IntegerLessThan(..)
+        | OldConditionTerm::IntegerLessEqual(..)
+        | OldConditionTerm::IntegerGreaterThan(..)
+        | OldConditionTerm::IntegerGreaterEqual(..)
+        | OldConditionTerm::IntegerEqual(..)
+        | OldConditionTerm::IntegerNotEqual(..) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .condition(condition)
         }
-        ConditionTerm::AlgebraicEqual(left, right) => ConditionTerm::AlgebraicEqual(
+        OldConditionTerm::AlgebraicEqual(left, right) => OldConditionTerm::AlgebraicEqual(
             Box::new(substitute_pointer_variable_in_algebraic_term(
                 left, from, to,
             )),
@@ -7059,11 +7068,11 @@ fn substitute_pointer_variable_in_condition(
                 right, from, to,
             )),
         ),
-        ConditionTerm::PointerEqual(..) => {
+        OldConditionTerm::PointerEqual(..) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .condition(condition)
         }
-        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
+        OldConditionTerm::AddressEqual(left, right) => OldConditionTerm::address_equal(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
         ),
@@ -7079,7 +7088,7 @@ fn substitute_pointer_variable_in_condition(
 fn substitute_pointer_variable_in_program_value(
     value: &ProgramValue,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> ProgramValue {
     let Term::ProgramValue(value) =
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
@@ -7091,10 +7100,10 @@ fn substitute_pointer_variable_in_program_value(
 }
 
 fn substitute_pointer_variable_in_pointer(
-    pointer: &Address,
+    pointer: &OldAddress,
     from: Variable,
-    to: &Address,
-) -> Address {
+    to: &OldAddress,
+) -> OldAddress {
     if matches!(&pointer.base, AddressBase::PureFunctionApplication(_)) {
         let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
         let Some(ProgramValue::Pointer(result)) =
@@ -7108,9 +7117,9 @@ fn substitute_pointer_variable_in_pointer(
     }
     if matches!(pointer.base, AddressBase::ExternalObject(variable) if variable == from) {
         let identity = to.object_identity();
-        return Address {
+        return OldAddress {
             base: identity.base,
-            offset: AddressOffset::add(identity.offset, pointer.offset.clone()),
+            offset: OldAddressOffset::add(identity.offset, pointer.offset.clone()),
         };
     }
     let replaces_block = matches!(
@@ -7120,9 +7129,9 @@ fn substitute_pointer_variable_in_pointer(
     );
     let offset = pointer.offset.clone();
     if replaces_block {
-        Address {
+        OldAddress {
             base: to.base.clone(),
-            offset: AddressOffset::add(to.offset.clone(), offset),
+            offset: OldAddressOffset::add(to.offset.clone(), offset),
         }
     } else {
         pointer.clone()
@@ -7132,7 +7141,7 @@ fn substitute_pointer_variable_in_pointer(
 fn substitute_pointer_variable_in_program_expression(
     expression: &ProgramExpression,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> ProgramExpression {
     match expression {
         ProgramExpression::Value(value) => ProgramExpression::Value(
@@ -7322,7 +7331,7 @@ fn substitute_pointer_variable_in_program_expression(
 pub(crate) fn substitute_pointer_variable_in_memory(
     memory: &SymbolicMemory,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SymbolicMemory {
     let mut result = SymbolicMemory {
         construction: None,
@@ -7523,7 +7532,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
         "substitute pointer variable",
         vec![memory.clone()],
         vec![
-            ProgramValue::pointer(Address::symbolic(from)),
+            ProgramValue::pointer(OldAddress::symbolic(from)),
             ProgramValue::pointer(to.clone()),
         ],
     );
@@ -7533,14 +7542,14 @@ pub(crate) fn substitute_pointer_variable_in_memory(
 fn substitute_pointer_variable_in_block(
     block: &AddressBase,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> AddressBase {
     match block {
         AddressBase::PureFunctionApplication(_) => {
             substitute_pointer_variable_in_pointer(
-                &Address {
+                &OldAddress {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 },
                 from,
                 to,
@@ -7560,7 +7569,7 @@ fn substitute_pointer_variable_in_block(
 fn substitute_pointer_variable_in_spec_point(
     spec_point: &SpecPoint,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecPoint {
     match spec_point {
         SpecPoint::Current => SpecPoint::Current,
@@ -7577,7 +7586,7 @@ fn substitute_pointer_variable_in_spec_point(
 fn substitute_pointer_variable_in_spec_algebraic_expression(
     expression: &SpecAlgebraicExpression,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecAlgebraicExpression {
     let node = match &expression.node {
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
@@ -7674,7 +7683,7 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
 fn substitute_pointer_variable_in_spec_expression(
     expression: &SpecExpression,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecExpression {
     match expression {
         SpecExpression::ObjectAddress(address) => {
@@ -7902,7 +7911,7 @@ fn substitute_pointer_variable_in_spec_expression(
 fn substitute_pointer_variable_in_spec_function_argument(
     argument: &SpecPureFunctionArgument,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecPureFunctionArgument {
     match argument {
         SpecPureFunctionArgument::ObjectPointer {
@@ -7938,7 +7947,7 @@ fn substitute_pointer_variable_in_spec_function_argument(
 fn substitute_pointer_variable_in_spec_integer(
     expression: &SpecIntegerExpression,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecIntegerExpression {
     match expression {
         SpecIntegerExpression::ResourceField(_) => expression.clone(),
@@ -8083,7 +8092,7 @@ fn substitute_pointer_variable_in_spec_integer(
 fn substitute_pointer_variable_in_spec_proposition(
     proposition: &SpecProposition,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecProposition {
     match proposition {
         SpecProposition::Truth(value) => SpecProposition::Truth(*value),
@@ -8347,7 +8356,7 @@ fn substitute_pointer_variable_in_spec_proposition(
 fn substitute_pointer_variable_in_spec_sequence(
     sequence: &SpecSequenceExpression,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecSequenceExpression {
     match sequence {
         SpecSequenceExpression::Literal(elements) => SpecSequenceExpression::Literal(
@@ -8368,7 +8377,7 @@ fn substitute_pointer_variable_in_spec_sequence(
 fn substitute_pointer_variable_in_spec_resource(
     resource: &SpecResource,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> SpecResource {
     match resource {
         SpecResource::Star(a, b) => SpecResource::Star(
@@ -8411,23 +8420,30 @@ mod pointee_const_return_tests {
     #[test]
     fn pointee_const_return_value_substitution_preserves_qualifiers_and_identity() {
         let value = ProgramValue::typed_pointer(
-            Address::symbolic(Variable(918)),
+            OldAddress::symbolic(Variable(918)),
             ProgramType::Int32Pointer,
         );
         assert_eq!(
             substitute_bitvector_variable_in_program_value(
                 &value,
                 Variable(919),
-                &MachineTerm::constant(0)
+                &OldMachineTerm::constant(0)
             ),
             value
         );
         assert_eq!(
-            substitute_pointer_variable_in_program_value(&value, Variable(919), &Address::null()),
+            substitute_pointer_variable_in_program_value(
+                &value,
+                Variable(919),
+                &OldAddress::null()
+            ),
             value
         );
-        let replaced =
-            substitute_pointer_variable_in_program_value(&value, Variable(918), &Address::null());
+        let replaced = substitute_pointer_variable_in_program_value(
+            &value,
+            Variable(918),
+            &OldAddress::null(),
+        );
         assert!(matches!(replaced, ProgramValue::Pointer(pointer)
             if pointer.is_null()));
     }
@@ -8445,7 +8461,7 @@ mod pointee_const_return_tests {
             substitute_bitvector_variable_in_program_function(
                 &function,
                 Variable(914),
-                &MachineTerm::constant(0),
+                &OldMachineTerm::constant(0),
             )
             .return_pointee_is_constant()
         );
@@ -8453,7 +8469,7 @@ mod pointee_const_return_tests {
             substitute_pointer_variable_in_program_function(
                 &function,
                 Variable(914),
-                &Address::symbolic(Variable(915)),
+                &OldAddress::symbolic(Variable(915)),
             )
             .return_pointee_is_constant()
         );
@@ -8469,37 +8485,37 @@ mod integer_to_machine_substitution_tests {
         let payload = crate::kernel::SharedIntegerTerm::from(IntegerTerm::Machine(
             crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                MachineTerm::Variable(Variable(701)),
+                OldMachineTerm::Variable(Variable(701)),
             ),
         ));
-        let term = MachineTerm::IntegerToMachine {
+        let term = OldMachineTerm::IntegerToMachine {
             value: payload.clone(),
             destination: crate::kernel::MachineIntegerType::UInt32,
         };
         let replaced = substitute_bitvector_variable(
             &term,
             Variable(701),
-            &MachineTerm::Variable(Variable(702)),
+            &OldMachineTerm::Variable(Variable(702)),
         );
-        let MachineTerm::IntegerToMachine { value, destination } = replaced else {
+        let OldMachineTerm::IntegerToMachine { value, destination } = replaced else {
             panic!("substitution changed the carrier shape")
         };
         assert_eq!(destination, crate::kernel::MachineIntegerType::UInt32);
         assert!(matches!(value.as_ref(), IntegerTerm::Machine(machine)
             if machine.ty() == crate::kernel::MachineIntegerType::Int32
-                && machine.value() == &MachineTerm::Variable(Variable(702))));
+                && machine.value() == &OldMachineTerm::Variable(Variable(702))));
     }
 
     #[test]
     fn integer_to_machine_substitution_reuses_unchanged_shared_payload() {
         let payload = crate::kernel::SharedIntegerTerm::from(IntegerTerm::Variable(Variable(703)));
-        let term = MachineTerm::IntegerToMachine {
+        let term = OldMachineTerm::IntegerToMachine {
             value: payload.clone(),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
         let replaced =
-            substitute_bitvector_variable(&term, Variable(704), &MachineTerm::constant(0));
-        let MachineTerm::IntegerToMachine { value, .. } = replaced else {
+            substitute_bitvector_variable(&term, Variable(704), &OldMachineTerm::constant(0));
+        let OldMachineTerm::IntegerToMachine { value, .. } = replaced else {
             panic!("substitution changed the carrier shape")
         };
         assert_eq!(value.id(), payload.id());
@@ -8513,30 +8529,32 @@ mod machine_integer_pointer_substitution_tests {
     #[test]
     fn pointer_substitution_reaches_integer_observations_and_composes_offsets() {
         let binder = Variable(610);
-        let source = Address {
+        let source = OldAddress {
             base: AddressBase::Symbolic(binder),
-            offset: AddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8),
         };
-        let replacement = Address {
+        let replacement = OldAddress {
             base: AddressBase::Symbolic(Variable(611)),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
-        let expected = Address {
+        let expected = OldAddress {
             base: replacement.base.clone(),
-            offset: AddressOffset::Constant(12),
+            offset: OldAddressOffset::Constant(12),
         };
-        let bits =
-            MachineTerm::IntegerAddress(Box::new(source), crate::kernel::AddressObjectClass::NONE);
+        let bits = OldMachineTerm::IntegerAddress(
+            Box::new(source),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let term =
             IntegerTerm::from_machine(crate::kernel::MachineIntegerType::UInt64, bits.clone())
                 .unwrap();
         let proposition = Proposition::condition_is(
-            ConditionTerm::integer_equal(term, IntegerTerm::constant_i64(0)),
+            OldConditionTerm::integer_equal(term, IntegerTerm::constant_i64(0)),
             true,
         );
         let rewritten =
             substitute_pointer_variable_in_proposition(&proposition, binder, &replacement);
-        let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, _), true)) = rewritten.old_condition()
         else {
             panic!("unexpected proposition")
         };
@@ -8545,7 +8563,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             observation.value(),
-            &MachineTerm::IntegerAddress(
+            &OldMachineTerm::IntegerAddress(
                 Box::new(expected.clone()),
                 crate::kernel::AddressObjectClass::NONE
             )
@@ -8569,7 +8587,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             *value,
-            SpecExpression::Value(ProgramValue::UInt64(MachineTerm::IntegerAddress(
+            SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::IntegerAddress(
                 Box::new(expected),
                 crate::kernel::AddressObjectClass::NONE,
             )))
@@ -8584,8 +8602,8 @@ mod integer_function_traversal_tests {
     #[test]
     fn integer_applications_rewrite_program_and_nested_integer_arguments() {
         let from = Variable(817);
-        let machine = MachineTerm::Variable(from);
-        let make = |machine: MachineTerm| {
+        let machine = OldMachineTerm::Variable(from);
+        let make = |machine: OldMachineTerm| {
             IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observed".into(),
                 vec![
@@ -8599,19 +8617,19 @@ mod integer_function_traversal_tests {
             ))
         };
         let original = make(machine);
-        let expected = make(MachineTerm::Variable(Variable(818)));
+        let expected = make(OldMachineTerm::Variable(Variable(818)));
         assert_eq!(
             substitute_bitvector_variable_in_integer(
                 &original,
                 from,
-                &MachineTerm::Variable(Variable(818))
+                &OldMachineTerm::Variable(Variable(818))
             ),
             expected
         );
         assert_eq!(
             crate::kernel::proof::term_rewrite::TermRewrite::for_bits(
-                &MachineTerm::Variable(from),
-                &MachineTerm::Variable(Variable(818))
+                &OldMachineTerm::Variable(from),
+                &OldMachineTerm::Variable(Variable(818))
             )
             .term(&Term::Integer(original.into())),
             Term::Integer(expected.into())
@@ -8633,7 +8651,7 @@ mod integer_match_substitution_scope_tests {
     fn symbolic_match(body: IntegerTerm, binding: Variable) -> IntegerTerm {
         symbolic_match_with_binding(
             body,
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(binding))),
+            AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(binding))),
         )
     }
 
@@ -8665,7 +8683,7 @@ mod integer_match_substitution_scope_tests {
                     binding_names: Default::default(),
                     variant: "Left".into(),
                     bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                        MachineTerm::Variable(binding),
+                        OldMachineTerm::Variable(binding),
                     ))],
                     body: body.clone().into(),
                 },
@@ -8673,7 +8691,7 @@ mod integer_match_substitution_scope_tests {
                     binding_names: Default::default(),
                     variant: "Right".into(),
                     bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                        MachineTerm::Variable(binding),
+                        OldMachineTerm::Variable(binding),
                     ))],
                     body: body.into(),
                 },
@@ -8688,22 +8706,22 @@ mod integer_match_substitution_scope_tests {
         let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(y))),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(x))),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
-                    9003,
-                )))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(y))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(x))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
+                    Variable(9003),
+                ))),
             ],
         ));
         let rewritten = substitute_bitvector_variable_in_integer(
             &symbolic_match(body, y),
             x,
-            &MachineTerm::Variable(y),
+            &OldMachineTerm::Variable(y),
         );
         let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
             panic!("expected algebraic match")
         };
-        let AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(fresh))) =
+        let AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(fresh))) =
             arms[0].bindings[0]
         else {
             panic!("expected C binder")
@@ -8713,9 +8731,9 @@ mod integer_match_substitution_scope_tests {
             panic!("expected application body")
         };
         let [
-            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(first))),
-            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(second))),
-            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(free))),
+            PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(first))),
+            PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(second))),
+            PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(free))),
         ] = application.arguments()
         else {
             panic!("expected two C arguments")
@@ -8761,7 +8779,7 @@ mod integer_match_substitution_scope_tests {
             panic!("expected Integer equality")
         };
         assert_eq!(left, IntegerTerm::var(replacement).into());
-        let IntegerTerm::AlgebraicMatch { arms, .. } = right.native_compat() else {
+        let IntegerTerm::AlgebraicMatch { arms, .. } = right.old_form() else {
             panic!("expected RHS algebraic match")
         };
         let AlgebraicValue::Integer(IntegerTerm::Variable(fresh)) = arms[0].bindings[0] else {
@@ -8785,20 +8803,20 @@ mod integer_match_substitution_scope_tests {
         let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::Variable(y),
+                OldMachineTerm::Variable(y),
             ))],
         ));
         let rewritten = substitute_bitvector_variable_in_integer(
             &symbolic_match(body, y),
             y,
-            &MachineTerm::Variable(z),
+            &OldMachineTerm::Variable(z),
         );
         let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
             panic!("expected algebraic match")
         };
         assert_eq!(
             arms[0].bindings[0],
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(y),))
+            AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(y),))
         );
         let IntegerTerm::PureFunctionApplication(application) = arms[0].body.as_ref() else {
             panic!("expected application body")
@@ -8806,7 +8824,7 @@ mod integer_match_substitution_scope_tests {
         assert_eq!(
             application.arguments(),
             &[PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::Variable(y),
+                OldMachineTerm::Variable(y),
             ))]
         );
     }
@@ -8816,27 +8834,27 @@ mod integer_match_substitution_scope_tests {
         let source = Variable(9040);
         let replacement = Variable(9041);
         let carriers = [
-            ProgramValue::Bool(MachineTerm::Variable(replacement)),
-            ProgramValue::Int8(MachineTerm::Variable(replacement)),
-            ProgramValue::Int16(MachineTerm::Variable(replacement)),
-            ProgramValue::Int32(MachineTerm::Variable(replacement)),
-            ProgramValue::UInt8(MachineTerm::Variable(replacement)),
-            ProgramValue::UInt16(MachineTerm::Variable(replacement)),
-            ProgramValue::UInt32(MachineTerm::Variable(replacement)),
-            ProgramValue::Int64(MachineTerm::Variable(replacement)),
-            ProgramValue::UInt64(MachineTerm::Variable(replacement)),
+            ProgramValue::Bool(OldMachineTerm::Variable(replacement)),
+            ProgramValue::Int8(OldMachineTerm::Variable(replacement)),
+            ProgramValue::Int16(OldMachineTerm::Variable(replacement)),
+            ProgramValue::Int32(OldMachineTerm::Variable(replacement)),
+            ProgramValue::UInt8(OldMachineTerm::Variable(replacement)),
+            ProgramValue::UInt16(OldMachineTerm::Variable(replacement)),
+            ProgramValue::UInt32(OldMachineTerm::Variable(replacement)),
+            ProgramValue::Int64(OldMachineTerm::Variable(replacement)),
+            ProgramValue::UInt64(OldMachineTerm::Variable(replacement)),
         ];
         for carrier in carriers {
             let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observe".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(source),
+                    OldMachineTerm::Variable(source),
                 ))],
             ));
             let rewritten = substitute_bitvector_variable_in_integer(
                 &symbolic_match_with_binding(body, AlgebraicValue::Program(carrier.clone())),
                 source,
-                &MachineTerm::Variable(replacement),
+                &OldMachineTerm::Variable(replacement),
             );
             let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
                 panic!("expected algebraic match")
@@ -8878,7 +8896,7 @@ mod integer_match_substitution_scope_tests {
 mod integer_mixed_quantifier_tests {
     use super::*;
 
-    fn application(integer: IntegerTerm, machine: MachineTerm) -> IntegerTerm {
+    fn application(integer: IntegerTerm, machine: OldMachineTerm) -> IntegerTerm {
         IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "opaque".into(),
             vec![
@@ -8891,7 +8909,7 @@ mod integer_mixed_quantifier_tests {
     #[test]
     fn integer_substitution_descends_function_and_reverse_conversion_arguments() {
         let from = Variable(87);
-        let converted = MachineTerm::IntegerToMachine {
+        let converted = OldMachineTerm::IntegerToMachine {
             value: IntegerTerm::var(from).into(),
             destination: MachineIntegerType::Int32,
         };
@@ -8911,7 +8929,7 @@ mod integer_mixed_quantifier_tests {
                 Term::Integer(
                     application(
                         IntegerTerm::constant_i64(9),
-                        MachineTerm::IntegerToMachine {
+                        OldMachineTerm::IntegerToMachine {
                             value: IntegerTerm::constant_i64(9).into(),
                             destination: MachineIntegerType::Int32,
                         }
@@ -8933,7 +8951,7 @@ mod integer_mixed_quantifier_tests {
             Sort::Integer,
             Proposition::Equal(
                 Term::Integer(
-                    application(IntegerTerm::var(from), MachineTerm::Variable(bound)).into(),
+                    application(IntegerTerm::var(from), OldMachineTerm::Variable(bound)).into(),
                 ),
                 Term::Integer(IntegerTerm::var(bound).into()),
             ),
@@ -8955,7 +8973,7 @@ mod integer_mixed_quantifier_tests {
             *body,
             Proposition::Equal(
                 Term::Integer(
-                    application(IntegerTerm::var(bound), MachineTerm::Variable(bound)).into()
+                    application(IntegerTerm::var(bound), OldMachineTerm::Variable(bound)).into()
                 ),
                 Term::Integer(IntegerTerm::var(*fresh).into()),
             )
@@ -8974,10 +8992,10 @@ mod integer_mixed_quantifier_tests {
         let free_index = Variable(9_101);
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
-            &Address {
+            &OldAddress {
                 base: AddressBase::Concrete("integer-witness-capture".into()),
-                offset: AddressOffset::scaled_int32_node(
-                    MachineTerm::IntegerToMachine {
+                offset: OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::IntegerToMachine {
                         value: IntegerTerm::var(free_index).into(),
                         destination: MachineIntegerType::Int32,
                     },
@@ -8989,7 +9007,7 @@ mod integer_mixed_quantifier_tests {
         );
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(load),
+            OldMachineTerm::Variable(load),
         ));
         let proposition = crate::kernel::quantifiers::test_exists(
             "nested".into(),
@@ -9021,7 +9039,7 @@ mod integer_mixed_quantifier_tests {
         let IntegerTerm::Machine(machine) = left.into_native_compat() else {
             panic!("witness replacement changed Integer carrier")
         };
-        let MachineTerm::Variable(rewritten_load) = machine.value() else {
+        let OldMachineTerm::Variable(rewritten_load) = machine.value() else {
             panic!("registered load was expanded into the memory state")
         };
         let (rewritten_memory, rewritten_pointer) =
@@ -9030,8 +9048,8 @@ mod integer_mixed_quantifier_tests {
         assert_eq!(rewritten_memory, memory);
         assert!(matches!(
             rewritten_pointer.offset,
-            AddressOffset::Int32Scaled { value, .. }
-                if matches!(value.structural_value(), MachineTerm::IntegerToMachine { value, .. }
+            OldAddressOffset::Int32Scaled { value, .. }
+                if matches!(value.structural_value(), OldMachineTerm::IntegerToMachine { value, .. }
                     if matches!(value.as_ref(), IntegerTerm::Variable(variable)
                 if *variable == free_index))
         ));
@@ -9039,8 +9057,8 @@ mod integer_mixed_quantifier_tests {
 
     fn program_int_equality(left: Variable, right: Variable) -> Proposition {
         Proposition::Equal(
-            Term::Bitvector32(MachineTerm::Variable(left).into()),
-            Term::Bitvector32(MachineTerm::Variable(right).into()),
+            Term::Bitvector32(OldMachineTerm::Variable(left).into()),
+            Term::Bitvector32(OldMachineTerm::Variable(right).into()),
         )
     }
 
@@ -9050,7 +9068,7 @@ mod integer_mixed_quantifier_tests {
         let c_binder = Variable(9_201);
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(c_binder),
+            OldMachineTerm::Variable(c_binder),
         ));
         let proposition = crate::kernel::quantifiers::test_forall(
             Default::default(),
@@ -9133,8 +9151,8 @@ mod integer_mixed_quantifier_tests {
         let inner_pointer = Variable(9_222);
         let replacement = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            MachineTerm::IntegerAddress(
-                Box::new(Address::symbolic(inner_pointer)),
+            OldMachineTerm::IntegerAddress(
+                Box::new(OldAddress::symbolic(inner_pointer)),
                 crate::kernel::AddressObjectClass::NONE,
             ),
         )
@@ -9142,7 +9160,7 @@ mod integer_mixed_quantifier_tests {
         let pointer_value = |variable| {
             Term::ProgramValue(
                 ProgramValue::Pointer(OldPointer::new(
-                    Address::symbolic(variable),
+                    OldAddress::symbolic(variable),
                     ProgramType::Int32Pointer,
                 ))
                 .into(),
@@ -9380,13 +9398,13 @@ mod integer_range_fold_substitution_tests {
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [leaf.clone(), leaf]);
         let replacement = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
         let fold = IntegerTerm::range_fold(
-            int32_index(MachineTerm::constant(0), MachineTerm::constant(1)),
+            int32_index(OldMachineTerm::constant(0), OldMachineTerm::constant(1)),
             IntegerTerm::constant_i64(0),
             accumulator,
             item,
             program_item(source),
         );
-        let from = MachineTerm::Variable(source);
+        let from = OldMachineTerm::Variable(source);
         let exports = KernelTermExport::machine_export_count();
         let mut rewrite =
             crate::kernel::proof::term_rewrite::TermRewrite::for_machine_operand_checked(
@@ -9409,7 +9427,7 @@ mod integer_range_fold_substitution_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
-    fn int32_index(start: MachineTerm, end: MachineTerm) -> IntegerRangeFoldIndex {
+    fn int32_index(start: OldMachineTerm, end: OldMachineTerm) -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
             start: SharedIntegerRangeEndpoint::intern(start),
             end: SharedIntegerRangeEndpoint::intern(end),
@@ -9419,11 +9437,11 @@ mod integer_range_fold_substitution_tests {
     fn program_item(value: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(value),
+            OldMachineTerm::Variable(value),
         ))
     }
 
-    fn program_item_value(value: MachineTerm) -> IntegerTerm {
+    fn program_item_value(value: OldMachineTerm) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             value,
@@ -9445,15 +9463,18 @@ mod integer_range_fold_substitution_tests {
             program_item(free_zero),
         );
         let fold = IntegerTerm::range_fold(
-            int32_index(MachineTerm::constant(0), MachineTerm::constant(1)),
+            int32_index(OldMachineTerm::constant(0), OldMachineTerm::constant(1)),
             IntegerTerm::var(accumulator),
             accumulator,
             item,
             body,
         );
 
-        let replaced =
-            substitute_bitvector_variable_in_integer(&fold, source, &MachineTerm::Variable(item));
+        let replaced = substitute_bitvector_variable_in_integer(
+            &fold,
+            source,
+            &OldMachineTerm::Variable(item),
+        );
         let IntegerTerm::RangeFold {
             item: fresh_item,
             body,
@@ -9470,22 +9491,22 @@ mod integer_range_fold_substitution_tests {
         };
         assert!(
             matches!(free_zero_term.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(free_zero))
+            if machine.value() == &OldMachineTerm::Variable(free_zero))
         );
         let IntegerTerm::Add(prefix, free_item) = left.as_ref() else {
             panic!("missing free y+1 term")
         };
         assert!(matches!(free_item.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(free_y_plus_one)));
+            if machine.value() == &OldMachineTerm::Variable(free_y_plus_one)));
         let IntegerTerm::Add(replaced_source, bound_item) = prefix.as_ref() else {
             panic!("missing source and item terms")
         };
         assert!(
             matches!(replaced_source.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(item))
+            if machine.value() == &OldMachineTerm::Variable(item))
         );
         assert!(matches!(bound_item.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(fresh_item)));
+            if machine.value() == &OldMachineTerm::Variable(fresh_item)));
     }
 
     #[test]
@@ -9494,7 +9515,10 @@ mod integer_range_fold_substitution_tests {
         let accumulator = Variable(70_011);
         let body = program_item(source);
         let fold = IntegerTerm::range_fold(
-            int32_index(MachineTerm::Variable(source), MachineTerm::Variable(source)),
+            int32_index(
+                OldMachineTerm::Variable(source),
+                OldMachineTerm::Variable(source),
+            ),
             program_item(source),
             accumulator,
             source,
@@ -9502,7 +9526,7 @@ mod integer_range_fold_substitution_tests {
         );
 
         let replaced =
-            substitute_bitvector_variable_in_integer(&fold, source, &MachineTerm::constant(9));
+            substitute_bitvector_variable_in_integer(&fold, source, &OldMachineTerm::constant(9));
         let IntegerTerm::RangeFold {
             index,
             initial,
@@ -9517,15 +9541,15 @@ mod integer_range_fold_substitution_tests {
         let IntegerRangeFoldIndex::Int32 { start, end } = index else {
             panic!("substitution changed the index carrier")
         };
-        assert_eq!(start.value(), &MachineTerm::constant(9));
-        assert_eq!(end.value(), &MachineTerm::constant(9));
+        assert_eq!(start.value(), &OldMachineTerm::constant(9));
+        assert_eq!(end.value(), &OldMachineTerm::constant(9));
         // The initial value was `to_integer(source)`, so substituting a literal
         // decides that observation: it is the mathematical 9, the same Integer
         // an evaluation of `to_integer(9)` produces. The body's observation is
         // of the bound item and stays an observation.
         assert_eq!(initial.as_ref(), &IntegerTerm::constant_i64(9));
         assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(source)));
+            if machine.value() == &OldMachineTerm::Variable(source)));
     }
 
     #[test]
@@ -9547,7 +9571,7 @@ mod integer_range_fold_substitution_tests {
         let replaced = substitute_bitvector_variable_in_integer(
             &outer,
             Variable(70_022),
-            &MachineTerm::constant(9),
+            &OldMachineTerm::constant(9),
         );
         let IntegerTerm::Add(left, right) = replaced else {
             panic!("substitution changed the shared outer shape")
@@ -9627,7 +9651,7 @@ mod integer_range_fold_substitution_tests {
         let body = program_item(item);
         let malformed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::UInt32,
-            MachineTerm::Variable(Variable(70_054)),
+            OldMachineTerm::Variable(Variable(70_054)),
         ));
         let result = instantiate_integer_range_fold_step(
             &body,
@@ -9648,26 +9672,26 @@ mod integer_range_fold_substitution_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let binder = Variable(70_190);
         let renamed = Variable(70_191);
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(binder), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
         };
         let source =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("unrelated", 4).store(
-                Address {
+                OldAddress {
                     base: AddressBase::Concrete("unrelated".into()),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
         let original =
-            crate::kernel::eval::canonical_term(&crate::kernel::MachineTerm::read_named(
+            crate::kernel::eval::canonical_term(&crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&source),
                 pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             ));
-        let MachineTerm::MemoryLoad(projected, _, _) = &original else {
+        let OldMachineTerm::MemoryLoad(projected, _, _) = &original else {
             panic!("structural read");
         };
         assert_ne!(
@@ -9678,22 +9702,22 @@ mod integer_range_fold_substitution_tests {
         let renamed_pointer = substitute_bitvector_variable_in_pointer(
             &pointer,
             binder,
-            &MachineTerm::Variable(renamed),
+            &OldMachineTerm::Variable(renamed),
         );
         let actual =
-            substitute_bitvector_variable(&original, binder, &MachineTerm::Variable(renamed));
+            substitute_bitvector_variable(&original, binder, &OldMachineTerm::Variable(renamed));
         crate::kernel::eval::record_load_access_width(source.memory(), &renamed_pointer, 4);
         let expected =
-            crate::kernel::eval::canonical_term(&crate::kernel::MachineTerm::read_named(
+            crate::kernel::eval::canonical_term(&crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&source),
                 renamed_pointer,
                 crate::kernel::LoadKind::Int32,
             ));
         assert_eq!(actual, expected);
         assert_eq!(
-            crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(&actual),
-            )
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Old(
+                &actual
+            ),)
             .unwrap()
             .bytes,
             4
@@ -9706,9 +9730,9 @@ mod integer_range_fold_substitution_tests {
         for bytes in [4, 8] {
             let memory = crate::kernel::intern_memory(SymbolicMemory::new());
             let binder = Variable(70_156 + u64::from(bytes));
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(binder), 4),
+                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
             };
             let original = crate::kernel::eval::scalar_read_for_exact_cell(
                 &memory,
@@ -9719,21 +9743,21 @@ mod integer_range_fold_substitution_tests {
             let substituted = substitute_bitvector_variable(
                 &original,
                 binder,
-                &MachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
+                &OldMachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
             );
-            assert!(matches!(substituted, MachineTerm::MemoryLoad(..)));
+            assert!(matches!(substituted, OldMachineTerm::MemoryLoad(..)));
             let observed = crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(&substituted),
+                crate::kernel::MachineOperandView::Old(&substituted),
             )
             .unwrap();
             assert_eq!(observed.bytes, bytes);
             let renamed_pointer = observed.pointer;
             assert_eq!(
                 renamed_pointer,
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(
-                        MachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
+                    offset: OldAddressOffset::scale_int32(
+                        OldMachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
                         4
                     )
                 }
@@ -9745,9 +9769,9 @@ mod integer_range_fold_substitution_tests {
     fn int32_fold_substitution_rewrites_registered_load_address_only() {
         let item = Variable(70_056);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(item), 4),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(item), 4),
         };
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -9756,14 +9780,14 @@ mod integer_range_fold_substitution_tests {
         );
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(load_variable),
+            OldMachineTerm::Variable(load_variable),
         ));
         let result = instantiate_integer_range_fold_step(
             &body,
             Variable(70_057),
             &IntegerTerm::constant_i64(0),
             item,
-            &program_item_value(MachineTerm::constant(0)),
+            &program_item_value(OldMachineTerm::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
@@ -9782,19 +9806,19 @@ mod integer_range_fold_substitution_tests {
         // A new address retains the producer's live memory, rather than
         // reusing the original address's empty version point.
         assert_eq!(retained_state, &memory);
-        assert_eq!(pointer.offset, AddressOffset::Constant(0));
+        assert_eq!(pointer.offset, OldAddressOffset::Constant(0));
     }
 
     #[test]
     fn int32_fold_substitution_canonicalizes_nonzero_load_base() {
         let item = Variable(70_058);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(4)),
-                Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(item),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(4)),
+                Box::new(OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(item),
                     4,
                 )),
             ),
@@ -9806,14 +9830,14 @@ mod integer_range_fold_substitution_tests {
         );
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(load_variable),
+            OldMachineTerm::Variable(load_variable),
         ));
         let result = instantiate_integer_range_fold_step(
             &body,
             Variable(70_059),
             &IntegerTerm::constant_i64(0),
             item,
-            &program_item_value(MachineTerm::constant(0)),
+            &program_item_value(OldMachineTerm::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
@@ -9832,7 +9856,7 @@ mod integer_range_fold_substitution_tests {
         // A new address retains the producer's live memory, rather than
         // reusing the original address's empty version point.
         assert_eq!(retained_state, &memory);
-        assert_eq!(pointer.offset, AddressOffset::Constant(4));
+        assert_eq!(pointer.offset, OldAddressOffset::Constant(4));
     }
 
     #[test]
@@ -9840,13 +9864,13 @@ mod integer_range_fold_substitution_tests {
         use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
         let source = Variable(70_060);
-        let mut payload = MachineTerm::Variable(source);
+        let mut payload = OldMachineTerm::Variable(source);
         for _ in 0..64 {
             payload = binary_node!(
                 Int32,
                 Add,
                 Box::new(payload),
-                Box::new(MachineTerm::constant(1))
+                Box::new(OldMachineTerm::constant(1))
             );
         }
         let term = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -9874,7 +9898,7 @@ mod integer_range_fold_substitution_tests {
                     let result = substitute_bitvector_variable_in_integer_checked(
                         &term,
                         source,
-                        &MachineTerm::constant(7),
+                        &OldMachineTerm::constant(7),
                     );
                     instrumentation::emit(VerificationEvent::TacticFailed(tactic));
                     result
@@ -9904,13 +9928,15 @@ mod resource_reference_substitution_tests {
             InstanceId::from_variable(Variable(200)),
             "cell".into(),
             vec![
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(100)))),
-                AlgebraicValue::Program(ProgramValue::pointer(Address::symbolic(Variable(101)))),
+                AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
+                    100,
+                )))),
+                AlgebraicValue::Program(ProgramValue::pointer(OldAddress::symbolic(Variable(101)))),
             ]
             .into(),
             schema.clone(),
             vec![AlgebraicValue::Program(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(102)),
+                OldMachineTerm::Variable(Variable(102)),
             ))]
             .into(),
         )
@@ -9943,9 +9969,9 @@ mod resource_reference_substitution_tests {
         let replaced = substitute_bitvector_variable_in_resource(
             &source,
             Variable(100),
-            &MachineTerm::constant(7),
+            &OldMachineTerm::constant(7),
         );
-        let pointer = Address::symbolic(Variable(103));
+        let pointer = OldAddress::symbolic(Variable(103));
         let replaced = substitute_pointer_variable_in_resource(&replaced, Variable(101), &pointer);
         let Resource::Instance(instance) = replaced else {
             unreachable!()
@@ -9997,7 +10023,7 @@ mod checked_singleton_substitution_tests {
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
     fn pointer_value(variable: Variable) -> OldPointer {
-        OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
+        OldPointer::new(OldAddress::symbolic(variable), ProgramType::Int32Pointer)
     }
 
     fn pointer_term(variable: Variable) -> Term {
@@ -10060,7 +10086,7 @@ mod checked_singleton_substitution_tests {
     fn observed(variable: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(variable),
+            OldMachineTerm::Variable(variable),
         ))
     }
 
@@ -10190,7 +10216,7 @@ mod checked_singleton_substitution_tests {
             name: "opaque".into(),
             arguments: vec![
                 Term::Integer(observed(variable).into()),
-                Term::Bitvector32(MachineTerm::Variable(variable).into()),
+                Term::Bitvector32(OldMachineTerm::Variable(variable).into()),
                 Term::Integer(IntegerTerm::var(variable).into()),
             ],
         };
@@ -10200,7 +10226,7 @@ mod checked_singleton_substitution_tests {
                 name: "opaque".into(),
                 arguments: vec![
                     Term::Integer(IntegerTerm::constant_i64(7).into()),
-                    Term::Bitvector32(MachineTerm::constant(7).into()),
+                    Term::Bitvector32(OldMachineTerm::constant(7).into()),
                     Term::Integer(IntegerTerm::var(variable).into()),
                 ],
             }),
@@ -10303,33 +10329,35 @@ fn float_conversion_substitution_matches_direct_constant_cast() {
         crate::kernel::uint8(0xff),
         crate::kernel::int16(u32::MAX),
         crate::kernel::uint16(0xffff),
-        ProgramValue::Int32(MachineTerm::constant(16_777_217)),
-        ProgramValue::Int32(MachineTerm::constant(i32::MIN as u32)),
-        ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
-        ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
-        ProgramValue::Float32(MachineTerm::constant(0x80000000)),
-        ProgramValue::Float32(MachineTerm::constant(1)),
-        ProgramValue::Float32(MachineTerm::constant(0x7f800000)),
-        ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x3ff0000010000000)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff0000000000000)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0xfff8000000000123)),
+        ProgramValue::Int32(OldMachineTerm::constant(16_777_217)),
+        ProgramValue::Int32(OldMachineTerm::constant(i32::MIN as u32)),
+        ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX)),
+        ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::MAX)),
+        ProgramValue::Float32(OldMachineTerm::constant(0x80000000)),
+        ProgramValue::Float32(OldMachineTerm::constant(1)),
+        ProgramValue::Float32(OldMachineTerm::constant(0x7f800000)),
+        ProgramValue::Float32(OldMachineTerm::constant(0x7f800123)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x3ff0000010000000)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x7ff0000000000000)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0xfff8000000000123)),
     ];
     for value in sources {
         for target in [ProgramType::Float32, ProgramType::Float64] {
             let (symbolic_value, literal) = match &value {
-                ProgramValue::Float32(term) => {
-                    (ProgramValue::Float32(MachineTerm::Variable(variable)), term)
-                }
-                ProgramValue::Float64(term) => {
-                    (ProgramValue::Float64(MachineTerm::Variable(variable)), term)
-                }
+                ProgramValue::Float32(term) => (
+                    ProgramValue::Float32(OldMachineTerm::Variable(variable)),
+                    term,
+                ),
+                ProgramValue::Float64(term) => (
+                    ProgramValue::Float64(OldMachineTerm::Variable(variable)),
+                    term,
+                ),
                 crate::kernel::integer64_c_value!(term) => (
                     MachineIntegerType::from_program_type(value.program_type())
                         .unwrap()
-                        .value_from_term(MachineTerm::Variable(variable)),
+                        .value_from_term(OldMachineTerm::Variable(variable)),
                     term,
                 ),
                 _ => unreachable!(),
@@ -10355,7 +10383,7 @@ fn float_conversion_substitution_matches_direct_constant_cast() {
     }
     let nested = evaluate_cast(
         evaluate_cast(
-            ProgramValue::Int32(MachineTerm::Variable(variable)),
+            ProgramValue::Int32(OldMachineTerm::Variable(variable)),
             ProgramType::Float32,
         ),
         ProgramType::Float64,
@@ -10367,19 +10395,19 @@ fn float_conversion_substitution_matches_direct_constant_cast() {
         ProgramValue::Float64(substitute_bitvector_variable(
             &nested,
             variable,
-            &MachineTerm::constant(16_777_217)
+            &OldMachineTerm::constant(16_777_217)
         )),
         evaluate_cast(
             evaluate_cast(
-                ProgramValue::Int32(MachineTerm::constant(16_777_217)),
+                ProgramValue::Int32(OldMachineTerm::constant(16_777_217)),
                 ProgramType::Float32
             ),
             ProgramType::Float64
         ),
     );
     for source in [
-        ProgramValue::Float32(MachineTerm::constant(0x3fe00000)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x3ffc000000000000)),
+        ProgramValue::Float32(OldMachineTerm::constant(0x3fe00000)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x3ffc000000000000)),
     ] {
         for target in [
             MachineIntegerType::Int8,
@@ -10392,12 +10420,14 @@ fn float_conversion_substitution_matches_direct_constant_cast() {
             MachineIntegerType::UInt64,
         ] {
             let (symbolic, literal) = match &source {
-                ProgramValue::Float32(term) => {
-                    (ProgramValue::Float32(MachineTerm::Variable(variable)), term)
-                }
-                ProgramValue::Float64(term) => {
-                    (ProgramValue::Float64(MachineTerm::Variable(variable)), term)
-                }
+                ProgramValue::Float32(term) => (
+                    ProgramValue::Float32(OldMachineTerm::Variable(variable)),
+                    term,
+                ),
+                ProgramValue::Float64(term) => (
+                    ProgramValue::Float64(OldMachineTerm::Variable(variable)),
+                    term,
+                ),
                 _ => unreachable!(),
             };
             let crate::kernel::integer64_c_value!(term) =
@@ -10419,17 +10449,17 @@ mod float_conversion_freshness_tests {
     #[test]
     fn retained_float_conversion_freshness_preserves_nested_binders() {
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::opaque_conversion(
+        let native = OldMachineTerm::opaque_conversion(
             "c_float32_to_int32",
-            MachineTerm::opaque_conversion(
+            OldMachineTerm::opaque_conversion(
                 "c_int32_to_float32",
-                MachineTerm::RangeFold {
-                    start: Box::new(MachineTerm::constant(0)),
-                    end: Box::new(MachineTerm::Variable(Variable(999982))),
-                    initial: Box::new(MachineTerm::constant(0)),
+                OldMachineTerm::RangeFold {
+                    start: Box::new(OldMachineTerm::constant(0)),
+                    end: Box::new(OldMachineTerm::Variable(Variable(999982))),
+                    initial: Box::new(OldMachineTerm::constant(0)),
                     accumulator: Variable(999983),
                     item: Variable(999984),
-                    body: Box::new(MachineTerm::Variable(Variable(999983))),
+                    body: Box::new(OldMachineTerm::Variable(Variable(999983))),
                 },
             ),
         );
@@ -10451,14 +10481,14 @@ fn contract_offset_freshness_includes_retained_fold_binders() {
     let end = Variable(999985);
     let accumulator = Variable(999986);
     let item = Variable(999987);
-    let offset = AddressOffset::scaled_int32_node(
-        MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::Variable(end)),
-            initial: Box::new(MachineTerm::constant(0)),
+    let offset = OldAddressOffset::scaled_int32_node(
+        OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::Variable(end)),
+            initial: Box::new(OldMachineTerm::constant(0)),
             accumulator,
             item,
-            body: Box::new(MachineTerm::Variable(accumulator)),
+            body: Box::new(OldMachineTerm::Variable(accumulator)),
         },
         4,
     );
@@ -10474,13 +10504,13 @@ fn contract_offset_freshness_includes_retained_fold_binders() {
 fn variable_substitution_keeps_contract_displacements_retained() {
     let _session = crate::kernel::VerificationSession::enter();
     let from = Variable(999989);
-    let to = MachineTerm::constant(17);
-    let input = AddressOffset::Add(
-        Box::new(AddressOffset::scaled_int32_node(
-            MachineTerm::Variable(from),
+    let to = OldMachineTerm::constant(17);
+    let input = OldAddressOffset::Add(
+        Box::new(OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(from),
             4,
         )),
-        Box::new(AddressOffset::Constant(16)),
+        Box::new(OldAddressOffset::Constant(16)),
     );
     let stored = crate::kernel::StoredPointerOffset::from_written(&input);
     let output = substitute_bitvector_variable_in_stored_offset(&stored, from, &to);

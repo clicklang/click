@@ -46,7 +46,7 @@ pub(crate) fn apply(
         preserve_field(separation, field).ok_or(
             "preserve requires the selected field of a resource separated from the footprint",
         )?
-    } else if matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))))
+    } else if matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _))))
     {
         result.clone()
     } else {
@@ -99,35 +99,35 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
     match result {
         Proposition::ConditionIs(_, true)
             if matches!(
-                result.condition_native(),
-                Some((ConditionTerm::BoolEqual(..), true))
+                result.old_condition(),
+                Some((OldConditionTerm::BoolEqual(..), true))
             ) =>
         {
             Some(ReadType::Boolean)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
-                condition_source_0.condition_native()
+            if let Some((OldConditionTerm::AlgebraicEqual(a, b), _)) =
+                condition_source_0.old_condition()
                 && (a.algebraic_type == b.algebraic_type) =>
         {
             Some(ReadType::Abstract)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AddressEqual(..), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AddressEqual(..), _)) =
+                condition_source_0.old_condition() =>
         {
             Some(ReadType::IntegerAddress)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::PointerEqual(a, b), _)) =
-                condition_source_0.condition_native()
+            if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
+                condition_source_0.old_condition()
                 && (a.program_type() == b.program_type()) =>
         {
             Some(ReadType::Pointer(a.program_type()))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
-                condition_source_0.condition_native()
+            if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.old_condition()
                 && let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (&**a, &**b)
                 && a.ty() == b.ty()
                 && matches!(
@@ -139,13 +139,13 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
                     ..
                 },
                 _,
-            )) = condition_source_0.condition_native()
+            )) = condition_source_0.old_condition()
                 && (matches!(
                     format,
                     MachineIntegerType::Int8
@@ -169,7 +169,7 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
 /// wrap to the width of a scalar. Use the actual signed endpoint difference
 /// and checked scaling instead. Symbolic spans need an explicit reduction
 /// to a complete cell before this primitive can use them.
-fn observation_footprint(range: &MemoryRange) -> Option<(Address, u32)> {
+fn observation_footprint(range: &MemoryRange) -> Option<(OldAddress, u32)> {
     let start = range.signed_constant_start()?;
     let end = range.signed_constant_end()?;
     let elements = u32::try_from(end.checked_sub(start)?).ok()?;
@@ -285,21 +285,21 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Integer(a),
             crate::kernel::ResourceFieldValue::Integer(b),
-        ) => ConditionTerm::integer_equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::integer_equal(a.clone(), b.clone()),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
         ) if a.algebraic_type == b.algebraic_type => {
-            ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
+            OldConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
-        ) => ConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),
-        ) => ConditionTerm::equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::equal(a.clone(), b.clone()),
         // An 8-bit field value is native: its equality is at its own format.
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(a)),
@@ -308,7 +308,7 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(b)),
-        ) => ConditionTerm::uint32_equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::uint32_equal(a.clone(), b.clone()),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(b)),
@@ -328,7 +328,7 @@ fn preserve_field(
 fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> Option<ReadType> {
     match (comparison, bytes) {
         (ReadType::Integer(MachineIntegerType::Int32), 1 | 2) => {
-            let (ConditionTerm::Compare { left, right, .. }, true) = result.condition_native()?
+            let (OldConditionTerm::Compare { left, right, .. }, true) = result.old_condition()?
             else {
                 return None;
             };
@@ -344,7 +344,7 @@ fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> O
 
 fn observation_equality(
     footprint: &crate::kernel::RegionFootprint,
-    address: Address,
+    address: OldAddress,
     kind: ReadType,
     comparison: ReadType,
 ) -> Option<Proposition> {
@@ -356,29 +356,29 @@ fn observation_equality(
         && narrow != MachineIntegerType::Int32
     {
         let widen =
-            |value| MachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
+            |value| OldMachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
         return Some(Proposition::condition_is(
-            ConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
+            OldConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
             true,
         ));
     }
     let condition = match (kind, after, before) {
         (ReadType::Boolean, ProgramValue::Bool(a), ProgramValue::Bool(b)) => {
-            ConditionTerm::bool_equal(
-                ConditionTerm::truth_of_bool_word(&a),
-                ConditionTerm::truth_of_bool_word(&b),
+            OldConditionTerm::bool_equal(
+                OldConditionTerm::truth_of_bool_word(&a),
+                OldConditionTerm::truth_of_bool_word(&b),
             )
         }
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::logical_pointer_equal(a, b)
+            OldConditionTerm::logical_pointer_equal(a, b)
         }
         (ReadType::IntegerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::address_equal(a.address().clone(), b.address().clone())
+            OldConditionTerm::address_equal(a.address().clone(), b.address().clone())
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
         {
-            ConditionTerm::AlgebraicEqual(a, b)
+            OldConditionTerm::AlgebraicEqual(a, b)
         }
         (ReadType::Integer(format), a, b) => {
             integer_equality(format, integer_bits(a)?, integer_bits(b)?)?
@@ -388,7 +388,7 @@ fn observation_equality(
     Some(Proposition::condition_is(condition, true))
 }
 
-fn integer_bits(value: ProgramValue) -> Option<MachineTerm> {
+fn integer_bits(value: ProgramValue) -> Option<OldMachineTerm> {
     match value {
         ProgramValue::Int8(t)
         | ProgramValue::UInt8(t)
@@ -406,18 +406,18 @@ fn integer_bits(value: ProgramValue) -> Option<MachineTerm> {
 
 fn integer_equality(
     format: MachineIntegerType,
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Option<ConditionTerm> {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> Option<OldConditionTerm> {
     Some(match format {
         MachineIntegerType::Int8
         | MachineIntegerType::UInt8
         | MachineIntegerType::Int16
         | MachineIntegerType::UInt16 => {
-            ConditionTerm::machine_compare(format, CompareRelation::Equal, left, right)
+            OldConditionTerm::machine_compare(format, CompareRelation::Equal, left, right)
         }
-        MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
-        MachineIntegerType::UInt32 => ConditionTerm::uint32_equal(left, right),
+        MachineIntegerType::Int32 => OldConditionTerm::equal(left, right),
+        MachineIntegerType::UInt32 => OldConditionTerm::uint32_equal(left, right),
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
             // The produced equality must have the same shape as its logical
             // goal, including reflexive variables and closed literal operands.
@@ -425,15 +425,17 @@ fn integer_equality(
                 format,
                 CompareRelation::Equal,
                 [
-                    MachineOperandView::Legacy(&left),
-                    MachineOperandView::Legacy(&right),
+                    MachineOperandView::Old(&left),
+                    MachineOperandView::Old(&right),
                 ],
             )
         }
-        MachineIntegerType::Int128 | MachineIntegerType::UInt128 => ConditionTerm::integer_equal(
-            IntegerTerm::from_machine(format, left)?,
-            IntegerTerm::from_machine(format, right)?,
-        ),
+        MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
+            OldConditionTerm::integer_equal(
+                IntegerTerm::from_machine(format, left)?,
+                IntegerTerm::from_machine(format, right)?,
+            )
+        }
     })
 }
 
@@ -499,22 +501,22 @@ mod tests {
         history: u64,
         ty: ProgramType,
     ) -> (Preservation, Proposition, Proposition, Proposition) {
-        let pointer = Address::symbolic(Variable(8_410_000));
+        let pointer = OldAddress::symbolic(Variable(8_410_000));
         let mut memory = SymbolicMemory::new();
         for i in 0..history {
             // Grow both related history and unrelated memory.
             memory = memory.store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
             memory = memory.store(
-                Address::symbolic(Variable(8_420_000 + i)),
-                ProgramValue::Int32(MachineTerm::constant(i as u32)),
+                OldAddress::symbolic(Variable(8_420_000 + i)),
+                ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
         let before = ExecutionState::new().with_memory(memory.clone());
         let after = ExecutionState::new().with_memory(memory.store(
-            Address::symbolic(Variable(8_430_000)),
+            OldAddress::symbolic(Variable(8_430_000)),
             ProgramValue::Int32(1u32.into()),
         ));
         let footprint = crate::kernel::RegionFootprint::transition(
@@ -569,9 +571,9 @@ mod tests {
             (i32::MIN, i32::MAX, 4, None),
         ] {
             let range = MemoryRange::new_with_element_width(
-                Address::symbolic(Variable(8_499_100)),
-                MachineTerm::constant(start as u32),
-                MachineTerm::constant(end as u32),
+                OldAddress::symbolic(Variable(8_499_100)),
+                OldMachineTerm::constant(start as u32),
+                OldMachineTerm::constant(end as u32),
                 width,
             );
             assert_eq!(
@@ -613,7 +615,7 @@ mod tests {
                 };
                 match corruption {
                     0 => *memory = SymbolicMemory::new(),
-                    1 => *pointer = Address::symbolic(Variable(8_499_000)),
+                    1 => *pointer = OldAddress::symbolic(Variable(8_499_000)),
                     2 => {
                         *at = ExecutionState::new()
                             .with_memory(memory.clone())
@@ -651,16 +653,16 @@ mod tests {
         resource_fixture_with_values(
             size,
             MachineIntegerType::Int32,
-            MachineTerm::Variable(Variable(8_390_901)),
-            MachineTerm::Variable(Variable(8_390_902)),
+            OldMachineTerm::Variable(Variable(8_390_901)),
+            OldMachineTerm::Variable(Variable(8_390_902)),
         )
     }
 
     pub(super) fn resource_fixture_with_values(
         size: u64,
         format: MachineIntegerType,
-        before_value: MachineTerm,
-        after_value: MachineTerm,
+        before_value: OldMachineTerm,
+        after_value: OldMachineTerm,
     ) -> (Preservation, Proposition) {
         let schema = ResourceFieldSchema::new(vec![(
             "value".into(),
@@ -683,7 +685,7 @@ mod tests {
             resources =
                 resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(instance(
                     9_000_000 + i,
-                    MachineTerm::Variable(Variable(10_000_000 + i)),
+                    OldMachineTerm::Variable(Variable(10_000_000 + i)),
                 ))));
         }
         let before = ExecutionState::new().with_resource_context(
@@ -709,13 +711,15 @@ mod tests {
         };
         let goal = Proposition::condition_is(
             match format {
-                MachineIntegerType::Int64 | MachineIntegerType::UInt64 => ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(after_value),
-                    right: Box::new(before_value),
-                },
-                _ => ConditionTerm::equal(after_value, before_value),
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
+                    OldConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(after_value),
+                        right: Box::new(before_value),
+                    }
+                }
+                _ => OldConditionTerm::equal(after_value, before_value),
             },
             true,
         );
@@ -736,16 +740,19 @@ mod tests {
     fn wide_resource_field_equalities_retain_their_selected_endpoints() {
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let variable = MachineTerm::Variable(Variable(8_390_901));
+            let variable = OldMachineTerm::Variable(Variable(8_390_901));
             let literal = if format == MachineIntegerType::Int64 {
-                MachineTerm::int64_constant(7)
+                OldMachineTerm::int64_constant(7)
             } else {
-                MachineTerm::uint64_constant(7)
+                OldMachineTerm::uint64_constant(7)
             };
             for (before, after) in [
                 (variable.clone(), variable.clone()),
                 (literal.clone(), literal.clone()),
-                (variable.clone(), MachineTerm::Variable(Variable(8_390_902))),
+                (
+                    variable.clone(),
+                    OldMachineTerm::Variable(Variable(8_390_902)),
+                ),
                 (literal, variable),
             ] {
                 let (mut preservation, goal) =
@@ -753,16 +760,14 @@ mod tests {
                 let separation = preservation.separation.clone();
                 assert_eq!(preservation.apply(|p| p == &separation).unwrap(), goal);
                 assert!(preservation.apply(|_| false).is_err());
-                let (condition, truth) = preservation
-                    .result
-                    .condition_native()
-                    .expect("wide equality");
+                let (condition, truth) =
+                    preservation.result.old_condition().expect("wide equality");
                 let mut condition = condition.clone();
                 let truth = *truth;
-                let ConditionTerm::Compare { left, .. } = &mut condition else {
+                let OldConditionTerm::Compare { left, .. } = &mut condition else {
                     panic!("wide equality")
                 };
-                **left = MachineTerm::Variable(Variable(8_390_999));
+                **left = OldMachineTerm::Variable(Variable(8_390_999));
                 preservation.result = Proposition::condition_is(condition, truth);
                 assert!(preservation.apply(|p| p == &separation).is_err());
             }
@@ -826,7 +831,7 @@ mod tests {
         let (mut preservation, _) = resource_fixture(8);
         let result = &mut preservation.result;
         *result = Proposition::condition_is(
-            ConditionTerm::equal(MachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
+            OldConditionTerm::equal(OldMachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
             true,
         );
         assert!(
@@ -837,7 +842,7 @@ mod tests {
 
     pub(super) fn observe(
         memory: &SymbolicMemory,
-        address: &Address,
+        address: &OldAddress,
         ty: ProgramType,
     ) -> ProgramValue {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
@@ -859,7 +864,7 @@ mod tests {
 
     pub(super) fn observe_point(
         point: &ProgramPoint,
-        address: &Address,
+        address: &OldAddress,
         ty: ProgramType,
     ) -> ProgramValue {
         let value = observe(point.memory(), address, ty);
@@ -868,20 +873,20 @@ mod tests {
     }
 
     pub(super) fn fixture(history: u64, cached: bool) -> (Preservation, Proposition) {
-        let address = Address::symbolic(Variable(8_310_000));
-        let changed = Address::symbolic(Variable(8_310_001));
+        let address = OldAddress::symbolic(Variable(8_310_000));
+        let changed = OldAddress::symbolic(Variable(8_310_001));
         let mut before = SymbolicMemory::new();
         for i in 0..history {
             before = before.store(
-                Address::symbolic(Variable(8_320_000 + i)),
-                ProgramValue::Int32(MachineTerm::constant(i as u32)),
+                OldAddress::symbolic(Variable(8_320_000 + i)),
+                ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
         if cached {
             before = before.store(
                 address.clone(),
                 ProgramValue::typed_pointer(
-                    Address::symbolic(Variable(8_310_002)),
+                    OldAddress::symbolic(Variable(8_310_002)),
                     ProgramType::Int32Pointer,
                 ),
             );
@@ -891,7 +896,7 @@ mod tests {
             .without_possible_aliasing_cells(&changed, 4, &PureFactContext::new())
             .store(
                 changed.clone(),
-                ProgramValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
         let resource = |p, bytes| {
             Box::new(Resource::Memory(MemoryRange::new_with_element_width(
@@ -925,7 +930,7 @@ mod tests {
             unreachable!()
         };
         let result = Proposition::condition_is(
-            ConditionTerm::pointer_equal(after_value, before_value),
+            OldConditionTerm::pointer_equal(after_value, before_value),
             true,
         );
         (
@@ -941,7 +946,7 @@ mod tests {
     pub(super) fn abstract_fixture(history: u64) -> (Preservation, Proposition) {
         let (mut preservation, _) = fixture(history, false);
         let (before, after) = preservation.points();
-        let address = Address::symbolic(Variable(8_310_000));
+        let address = OldAddress::symbolic(Variable(8_310_000));
         let ty = ProgramType::Parameter(TypeParameterName::intern("TransportValue"));
         let ProgramValue::Parameter(a) = observe_point(after, &address, ty) else {
             unreachable!()
@@ -949,7 +954,7 @@ mod tests {
         let ProgramValue::Parameter(b) = observe_point(before, &address, ty) else {
             unreachable!()
         };
-        let goal = Proposition::condition_is(ConditionTerm::AlgebraicEqual(a, b), true);
+        let goal = Proposition::condition_is(OldConditionTerm::AlgebraicEqual(a, b), true);
         let result = &mut preservation.result;
         *result = goal.clone();
         (preservation, goal)
@@ -962,11 +967,11 @@ mod tests {
         let (mut preservation, goal) = abstract_fixture(8);
         assert_eq!(preservation.apply(|_| true).unwrap(), goal);
         let result = &mut preservation.result;
-        let Some((condition, true)) = result.condition_native() else {
+        let Some((condition, true)) = result.old_condition() else {
             unreachable!()
         };
         let mut condition = condition.clone();
-        let ConditionTerm::AlgebraicEqual(_, old) = &mut condition else {
+        let OldConditionTerm::AlgebraicEqual(_, old) = &mut condition else {
             unreachable!()
         };
         old.algebraic_type = TypeParameterName::intern("WrongTransportValue").algebraic_type();
@@ -993,16 +998,18 @@ mod tests {
             Some(goal)
         );
         let mut wrong_domain = preservation.clone();
-        let Some((condition, true)) = wrong_domain.result.condition_native() else {
+        let Some((condition, true)) = wrong_domain.result.old_condition() else {
             panic!("distinct complete read domains");
         };
         let mut condition = condition.clone();
-        let ConditionTerm::PointerEqual(left, _) = &mut condition else {
+        let OldConditionTerm::PointerEqual(left, _) = &mut condition else {
             panic!("distinct complete read domains");
         };
         **left = (**left)
             .clone()
-            .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(8_399_099))));
+            .with_provenance(std::sync::Arc::new(OldAddress::symbolic(Variable(
+                8_399_099,
+            ))));
         wrong_domain.result = Proposition::condition_is(condition, true);
         assert!(
             wrong_domain
@@ -1012,9 +1019,9 @@ mod tests {
         );
         let result = &mut preservation.result;
         *result = Proposition::condition_is(
-            ConditionTerm::AddressEqual(
-                Box::new(Address::symbolic(Variable(8_399_000))),
-                Box::new(Address::symbolic(Variable(8_399_001))),
+            OldConditionTerm::AddressEqual(
+                Box::new(OldAddress::symbolic(Variable(8_399_000))),
+                Box::new(OldAddress::symbolic(Variable(8_399_001))),
             ),
             true,
         );
@@ -1034,7 +1041,7 @@ mod tests {
         let second = ExecutionState::new().with_memory(memory);
         assert_eq!(first.memory(), second.memory());
         assert_ne!(first.program_point_id(), second.program_point_id());
-        let address = Address::symbolic(Variable(8_399_011));
+        let address = OldAddress::symbolic(Variable(8_399_011));
         let read = ProgramValue::bool_constant(true);
         let _scope = typed_reads::ReadScope::enter();
         typed_reads::record_at(&first.program_point(), &address, &read);
@@ -1051,7 +1058,7 @@ mod tests {
     fn typed_read_observations_are_scoped_and_keep_the_selected_width() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
-        let address = Address::symbolic(Variable(8_399_010));
+        let address = OldAddress::symbolic(Variable(8_399_010));
         let kind = ReadType::Integer(MachineIntegerType::Int64);
         observe(&memory, &address, ProgramType::UInt64);
         assert!(typed_reads::get(&memory, &address, kind).is_none());
@@ -1110,25 +1117,25 @@ mod tests {
             LoadKind::Bits64,
             MachineIntegerType::Int64,
             8,
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         );
         check_indexed_preservation(
             LoadKind::Bits64,
             MachineIntegerType::UInt64,
             8,
-            ProgramValue::UInt64(MachineTerm::uint64_constant(1u64 << 63)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(1u64 << 63)),
         );
         check_indexed_preservation(
             LoadKind::UInt32,
             MachineIntegerType::UInt32,
             4,
-            ProgramValue::UInt32(MachineTerm::uint32_constant(0x8000_0000)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(0x8000_0000)),
         );
         check_indexed_preservation(
             LoadKind::Int16,
             MachineIntegerType::Int16,
             2,
-            ProgramValue::Int16(MachineTerm::narrow_constant(
+            ProgramValue::Int16(OldMachineTerm::narrow_constant(
                 MachineIntegerType::Int16,
                 0x8000,
             )),
@@ -1137,7 +1144,7 @@ mod tests {
             LoadKind::UInt16,
             MachineIntegerType::UInt16,
             2,
-            ProgramValue::UInt16(MachineTerm::narrow_constant(
+            ProgramValue::UInt16(OldMachineTerm::narrow_constant(
                 MachineIntegerType::UInt16,
                 0x8000,
             )),
@@ -1146,13 +1153,16 @@ mod tests {
             LoadKind::Int8,
             MachineIntegerType::Int8,
             1,
-            ProgramValue::Int8(MachineTerm::narrow_constant(MachineIntegerType::Int8, 0x80)),
+            ProgramValue::Int8(OldMachineTerm::narrow_constant(
+                MachineIntegerType::Int8,
+                0x80,
+            )),
         );
         check_indexed_preservation(
             LoadKind::UInt8,
             MachineIntegerType::UInt8,
             1,
-            ProgramValue::UInt8(MachineTerm::narrow_constant(
+            ProgramValue::UInt8(OldMachineTerm::narrow_constant(
                 MachineIntegerType::UInt8,
                 0x80,
             )),
@@ -1167,9 +1177,9 @@ mod tests {
     ) {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
-        let address = |name: &str| Address {
+        let address = |name: &str| OldAddress {
             base: AddressBase::Concrete(name.into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let slot = address("local:unsigned");
         let other = address("local:signed");
@@ -1185,7 +1195,7 @@ mod tests {
             before
                 .memory()
                 .clone()
-                .store(other, ProgramValue::Int32(MachineTerm::constant(1))),
+                .store(other, ProgramValue::Int32(OldMachineTerm::constant(1))),
         );
         let read = |state: &ExecutionState| {
             let version = state
@@ -1221,19 +1231,19 @@ mod tests {
             _ => format,
         };
         let comparison_type = ReadType::Integer(comparison);
-        let operand = |bits| MachineTerm::machine_integer_cast(format, comparison, bits);
+        let operand = |bits| OldMachineTerm::machine_integer_cast(format, comparison, bits);
         let condition = match bytes {
-            16 => ConditionTerm::integer_equal(
+            16 => OldConditionTerm::integer_equal(
                 IntegerTerm::from_machine(format, after_read.clone()).unwrap(),
                 IntegerTerm::from_machine(format, before_read.clone()).unwrap(),
             ),
-            8 => ConditionTerm::Compare {
+            8 => OldConditionTerm::Compare {
                 format: comparison,
                 relation: CompareRelation::Equal,
                 left: Box::new(after_read.clone()),
                 right: Box::new(before_read.clone()),
             },
-            _ => ConditionTerm::machine_compare(
+            _ => OldConditionTerm::machine_compare(
                 comparison,
                 CompareRelation::Equal,
                 operand(after_read.clone()),
@@ -1267,9 +1277,9 @@ mod tests {
                 _ => unreachable!("narrow test format"),
             };
             let mixed = Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     operand(after_read),
-                    MachineTerm::machine_integer_cast(other_format, comparison, before_read),
+                    OldMachineTerm::machine_integer_cast(other_format, comparison, before_read),
                 ),
                 true,
             );
@@ -1308,7 +1318,7 @@ mod tests {
                 };
                 if corruption == 0 {
                     **right = Resource::Memory(MemoryRange::new_with_element_width(
-                        Address::symbolic(Variable(8_310_099)),
+                        OldAddress::symbolic(Variable(8_310_099)),
                         0u32.into(),
                         1u32.into(),
                         C_POINTER_BYTE_WIDTH,

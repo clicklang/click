@@ -96,28 +96,28 @@ impl MachineOrder {
         match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, _)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         ..
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         ..
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 Some(Self::Int32)
             }
@@ -125,25 +125,25 @@ impl MachineOrder {
             // bridges and left out.
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         ..
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 Some(Self::Int32)
             }
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         ..
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 Some(Self::Equal64)
             }
@@ -198,7 +198,7 @@ enum Establish {
 fn observed_operation_format(
     identity: &Proposition,
 ) -> Option<crate::kernel::MachineIntegerFormat> {
-    let Some((ConditionTerm::IntegerEqual(left, right), true)) = identity.condition_native() else {
+    let Some((OldConditionTerm::IntegerEqual(left, right), true)) = identity.old_condition() else {
         return None;
     };
     [left, right].into_iter().find_map(|side| {
@@ -299,7 +299,7 @@ fn is_rewrite_equality(kernel: &Proposition) -> bool {
     // Retained machine comparisons use exact Integer observations. They are
     // the same machine equalities this strategy already accepts, not a new
     // class of mathematical Integer rewrite candidates.
-    if let Some((condition @ ConditionTerm::IntegerEqual(..), true)) = (kernel).condition_native()
+    if let Some((condition @ OldConditionTerm::IntegerEqual(..), true)) = (kernel).old_condition()
         && let Some(view) =
             crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
         && view.format.format().bits() <= 64
@@ -307,12 +307,12 @@ fn is_rewrite_equality(kernel: &Proposition) -> bool {
         return true;
     }
     matches!(&kernel, condition_source @ Proposition::ConditionIs(_, true)
-        if matches!(condition_source.condition_native(), Some((ConditionTerm::Compare {
+        if matches!(condition_source.old_condition(), Some((OldConditionTerm::Compare {
             // An 8- or 16-bit equality rewrites at its own width.
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64
                 | MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16,
             relation: CompareRelation::Equal, ..
-        } | ConditionTerm::AddressEqual(_, _) | ConditionTerm::PointerEqual(_, _) | ConditionTerm::AddressOffsetEqual(_, _), _))))
+        } | OldConditionTerm::AddressEqual(_, _) | OldConditionTerm::PointerEqual(_, _) | OldConditionTerm::AddressOffsetEqual(_, _), _))))
         || matches!(
             kernel,
             Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
@@ -376,7 +376,7 @@ fn explicit_native_rewrite_equality(
     kernel: &Proposition,
     surface: &SyntaxProposition,
 ) -> Option<SyntaxProposition> {
-    let Some((ConditionTerm::Compare { format, .. }, _)) = kernel.condition_native() else {
+    let Some((OldConditionTerm::Compare { format, .. }, _)) = kernel.old_condition() else {
         return None;
     };
     fn cast(operand: &SyntaxTerm, format: crate::kernel::MachineIntegerType) -> SyntaxTerm {
@@ -446,13 +446,13 @@ fn algebraic_sides(
 ) -> Option<(&crate::kernel::AlgebraicTerm, &crate::kernel::AlgebraicTerm)> {
     match fact {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AlgebraicEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AlgebraicEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((left, right))
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            Some((left.native_compat(), right.native_compat()))
+            Some((left.old_form(), right.old_form()))
         }
         _ => None,
     }
@@ -626,7 +626,7 @@ mod tests {
                 )
                 .into()
             };
-            let equality = ConditionTerm::IntegerEqual(side(995450), side(995451));
+            let equality = OldConditionTerm::IntegerEqual(side(995450), side(995451));
             assert_eq!(
                 is_rewrite_equality(&Proposition::condition_is(equality.clone(), true)),
                 format.format().bits() <= 64
@@ -635,12 +635,12 @@ mod tests {
                 equality, false
             )));
             assert!(!is_rewrite_equality(&Proposition::condition_is(
-                ConditionTerm::IntegerNotEqual(side(995450), side(995451)),
+                OldConditionTerm::IntegerNotEqual(side(995450), side(995451)),
                 true
             )));
         }
         assert!(!is_rewrite_equality(&Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::Variable(Variable(995452)).into(),
                 IntegerTerm::Variable(Variable(995453)).into()
             ),
@@ -649,6 +649,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.7s in the parallel gate"]
     fn retained_shift_bounds_expand_and_replay_without_search() {
         for (premise, goal) in [
             ("(v >> 32) != 0u64", "4294967296u64 <= v"),
@@ -684,6 +686,8 @@ theorem shift_bound(v: uint64) {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn listed_narrowed_length_equalities_expand_to_explicit_rewrites() {
         let source = r#"
 import click::c::stdio;
@@ -755,21 +759,29 @@ theorem identity(x: {ty}) {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn listed_premises_prove_signed_add_identity() {
         check_listed_operation_identity("int32", "x < 2147483647", "x + 1");
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn listed_premises_prove_signed_subtract_identity() {
         check_listed_operation_identity("int32", "x > -2147483648", "x - 1");
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn listed_premises_prove_unsigned_add_identity() {
         check_listed_operation_identity("uint64", "x < 18446744073709551615u64", "x + 1u64");
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.0s in the parallel gate"]
     fn listed_premises_prove_unsigned_subtract_identity() {
         check_listed_operation_identity("uint64", "x > 0u64", "x - 1u64");
     }
@@ -780,6 +792,8 @@ theorem identity(x: {ty}) {{
     /// an explicit product-lower-bound library application. The expansion
     /// retains the identity separately and replays with no search.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn solve_plans_a_product_identity_from_its_operand_ranges() {
         let source = r#"
 theorem product_identity(a: uint16, b: uint16) {
@@ -814,6 +828,8 @@ theorem product_identity(a: uint16, b: uint16) {
     /// the `signed_int32` certificate had the step. The expansion replays
     /// with no search.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn solve_makes_a_bound_strict_by_a_disequality_at_every_format() {
         for ty in ["int64", "Integer"] {
             let source = format!(
@@ -851,6 +867,8 @@ theorem strict(a: {ty}, b: {ty}) {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn solve_proves_an_equality_operation_identity_once() {
         // Each bound of the split equality is proved inside its own `have`,
         // which drops the identities proved there, so proving them per bound
@@ -965,11 +983,11 @@ theorem black_color_is_black(color: Color) {
 
     #[test]
     fn native_rewrite_operands_survive_integer_source_expansion() {
-        let used = MachineTerm::Variable(Variable(920_001));
-        let capacity = MachineTerm::Variable(Variable(920_002));
-        let slots = MachineTerm::Variable(Variable(920_003));
+        let used = OldMachineTerm::Variable(Variable(920_001));
+        let capacity = OldMachineTerm::Variable(Variable(920_002));
+        let slots = OldMachineTerm::Variable(Variable(920_003));
         let kernel = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(capacity),

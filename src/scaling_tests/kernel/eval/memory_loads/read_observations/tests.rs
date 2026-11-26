@@ -6,7 +6,7 @@ fn unobserved_read_inspection_is_indexed_and_leaves_no_record() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let pointer = Address::symbolic(Variable(998_708));
+        let pointer = OldAddress::symbolic(Variable(998_708));
         for i in 1..=size {
             record(
                 &memory,
@@ -16,16 +16,14 @@ fn unobserved_read_inspection_is_indexed_and_leaves_no_record() {
                 4,
             );
         }
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
-                for_operand(MachineOperandView::Legacy(&read))
-                    .unwrap()
-                    .bytes,
+                for_operand(MachineOperandView::Old(&read)).unwrap().bytes,
                 8
             );
         });
@@ -45,7 +43,7 @@ fn selected_read_metadata_stays_indexed_as_observations_and_branches_grow() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let address = Address::symbolic(Variable(998_703));
+        let address = OldAddress::symbolic(Variable(998_703));
         let term = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
             &crate::kernel::ProgramPoint::at(&memory),

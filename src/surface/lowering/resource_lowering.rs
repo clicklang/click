@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{ResourceFieldSchema, ResourceTerm};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
@@ -37,7 +38,7 @@ pub(in crate::surface) fn construction_result_resource(
         // the struct held whole reaches.
         size @ crate::kernel::LayoutSize::Of(_) => MemorySegment::new(
             crate::kernel::program_expression::cast(result, ProgramType::UInt8Pointer),
-            ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(0))),
+            ProgramExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(0))),
             ProgramExpression::Value(ProgramValue::UInt64(size.term())),
         ),
     };
@@ -48,7 +49,7 @@ pub(in crate::surface) fn construction_result_resource(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct ConcreteMemoryRangeSeed {
-    pub(in crate::surface) base: Address,
+    pub(in crate::surface) base: OldAddress,
     pub(in crate::surface) bytes: u32,
     pub(in crate::surface) element_width: u32,
     /// `None` denotes a range whose logical elements are aggregates, such as
@@ -209,8 +210,8 @@ fn input_pointer_identity(pointer: &crate::kernel::OldPointer) -> Option<Variabl
     if pointer.address().base != AddressBase::ExternalArgument {
         return None;
     }
-    match &pointer.address().offset {
-        AddressOffset::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
+    match pointer.address().offset.view() {
+        OffsetView::Int32Scaled { index, .. } => index.operand_view().variable().copied(),
         _ => None,
     }
 }
@@ -219,7 +220,7 @@ fn input_pointer_identity(pointer: &crate::kernel::OldPointer) -> Option<Variabl
 /// on the checked callee binding. Contract evaluation still needs that
 /// information after the callee frame has been popped.
 fn initial_pointer_argument(
-    pointer: Address,
+    pointer: OldAddress,
     parameter: &crate::languages::interface::ImportedParameter,
     index: usize,
     scope: u64,
@@ -248,10 +249,10 @@ fn input_arguments(
     for (index, parameter) in parameters.iter().enumerate() {
         if parameter.is_struct_value() {
             arguments.push(initial_pointer_argument(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: scale_int32_offset(
-                        MachineTerm::Variable(input_pointer_variable(scope, index)?),
+                        OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                         1,
                     ),
                 },
@@ -272,12 +273,12 @@ fn input_arguments(
             }
             InterfaceType::Int128 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int128(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::UInt128 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt128(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
 
@@ -290,19 +291,19 @@ fn input_arguments(
             // A `Bool` parameter is a binder of the kernel sort (Stage 5).
             InterfaceType::Bool => {
                 arguments.push(ProgramExpression::Value(
-                    crate::kernel::ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(
-                        Variable(arguments.len() as u64),
-                    )),
+                    crate::kernel::ProgramValue::of_bool(
+                        crate::kernel::OldConditionTerm::Variable(Variable(arguments.len() as u64)),
+                    ),
                 ));
             }
             InterfaceType::VoidPointer
             | InterfaceType::VoidPointerPointer
             | InterfaceType::Pointer => {
                 arguments.push(initial_pointer_argument(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(input_pointer_variable(scope, index)?),
+                            OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                             1,
                         ),
                     },
@@ -313,7 +314,7 @@ fn input_arguments(
             }
             InterfaceType::FunctionPointer(_) => {
                 arguments.push(initial_pointer_argument(
-                    Address::symbolic_function(input_pointer_variable(scope, index)?),
+                    OldAddress::symbolic_function(input_pointer_variable(scope, index)?),
                     parameter,
                     index,
                     scope,
@@ -337,10 +338,10 @@ fn input_arguments(
                     |_| 1,
                 );
                 arguments.push(initial_pointer_argument(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
-                            MachineTerm::Variable(input_pointer_variable(scope, index)?),
+                            OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                             i64::from(element_width),
                         ),
                     },
@@ -390,10 +391,10 @@ fn input_arguments(
                     },
                     |_| 1,
                 );
-                let pointer = Address {
+                let pointer = OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: scale_int32_offset(
-                        MachineTerm::Variable(input_pointer_variable(scope, index)?),
+                        OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                         i64::from(element_width),
                     ),
                 };
@@ -401,60 +402,62 @@ fn input_arguments(
             }
             InterfaceType::Int8 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int8(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::Int16 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int16(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::Int32 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::Char(crate::languages::c::syntax::PlainChar::Signed) => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int8(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::Char(crate::languages::c::syntax::PlainChar::Unsigned)
             | InterfaceType::UInt8 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt8(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::UInt16 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt16(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::UInt32 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::Int64(_) => {
                 arguments.push(ProgramExpression::Value(
-                    ProgramValue::Int64(MachineTerm::Variable(Variable(arguments.len() as u64)))
-                        .complete_word(Address::symbolic(input_pointer_variable(scope, index)?)),
+                    ProgramValue::Int64(OldMachineTerm::Variable(Variable(arguments.len() as u64)))
+                        .complete_word(OldAddress::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             InterfaceType::UInt64(_) => {
                 arguments.push(ProgramExpression::Value(
-                    ProgramValue::UInt64(MachineTerm::Variable(Variable(arguments.len() as u64)))
-                        .complete_word(Address::symbolic(input_pointer_variable(scope, index)?)),
+                    ProgramValue::UInt64(OldMachineTerm::Variable(
+                        Variable(arguments.len() as u64),
+                    ))
+                    .complete_word(OldAddress::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             InterfaceType::Float32 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Float32(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::Float64 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Float64(
-                    MachineTerm::Variable(Variable(arguments.len() as u64)),
+                    OldMachineTerm::Variable(Variable(arguments.len() as u64)),
                 )));
             }
             InterfaceType::Int8Array(_) => {
@@ -534,7 +537,7 @@ pub(in crate::surface) fn initial_call_state(
             .return_aggregate_layout()
             .ok_or_else(|| ClickError::new("construction result has no layout"))?
             .clone();
-        let destination = Address::symbolic(input_pointer_variable(scope, parameters.len())?);
+        let destination = OldAddress::symbolic(input_pointer_variable(scope, parameters.len())?);
         crate::kernel::register_block_alignment(&destination.base, layout.alignment_bytes());
         let memory = state
             .memory()
@@ -564,7 +567,7 @@ pub(in crate::surface) fn initial_call_state(
         // Record the raw footprint before resource naming can seed typed cells.
         // The constructor can target a subobject, so do not fix its containing
         // allocation's size. Field liveness comes from the entry contract.
-        let destination = Address::symbolic(input_pointer_variable(scope, index)?);
+        let destination = OldAddress::symbolic(input_pointer_variable(scope, index)?);
         crate::kernel::register_block_alignment(&destination.base, layout.alignment_bytes());
         arguments[index] = initial_pointer_argument(destination.clone(), parameter, index, scope);
         let memory = state
@@ -815,7 +818,7 @@ fn reject_aggregate_parameter_storage_resource(
 fn entry_cell_source<'a>(
     entry: &'a crate::kernel::ProgramPoint,
     fallback: &'a crate::kernel::ProgramPoint,
-    pointer: &Address,
+    pointer: &OldAddress,
     ty: ProgramType,
 ) -> &'a crate::kernel::ProgramPoint {
     if entry.entry_cell_version(pointer, ty).is_some()
@@ -844,7 +847,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
             {
                 let element_pointer = offset_pointer_by_elements(
                     range.base.clone(),
-                    MachineTerm::constant(offset / range.element_width),
+                    OldMachineTerm::constant(offset / range.element_width),
                     range.element_width,
                 );
                 for field in layout.fields().values() {
@@ -902,9 +905,9 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
 
 pub(in crate::surface) fn visit_struct_field_cells(
     field: &crate::languages::interface::RecordField,
-    element_pointer: &Address,
+    element_pointer: &OldAddress,
     mut memory: SymbolicMemory,
-    mut visit: impl FnMut(SymbolicMemory, Address, ProgramType) -> SymbolicMemory,
+    mut visit: impl FnMut(SymbolicMemory, OldAddress, ProgramType) -> SymbolicMemory,
 ) -> SymbolicMemory {
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
     let field_type = field.interface_type().to_kernel_type();
@@ -1228,7 +1231,7 @@ fn check_segment_base_loadability(
     let obligation = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
-        bytes: (MachineTerm::constant(value_type.byte_width())).into(),
+        bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
         wide: false,
     };
     if crate::kernel::execution_state_justifies_loadability_obligation(
@@ -1433,7 +1436,7 @@ fn materialize_access_segment_cells(
         for index in constant_u32(*start)..constant_u32(*end) {
             let element_pointer = offset_pointer_by_elements(
                 segment.base.clone(),
-                MachineTerm::constant(index),
+                OldMachineTerm::constant(index),
                 layout.size_bytes(),
             );
             for field in layout.fields().values() {
@@ -2829,7 +2832,7 @@ pub(in crate::surface) fn resource_argument_to_typed_program_expression(
 ) -> Result<ProgramExpression, ClickError> {
     if argument_is_null_pointer_constant(argument, parameter_type) {
         return Ok(crate::kernel::program_expression::typed_pointer_value(
-            Address::null(),
+            OldAddress::null(),
             parameter_type.to_kernel_type(),
         ));
     }
@@ -2883,11 +2886,11 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
                 ClickError::new("an arbitrary Integer literal requires Integer context")
             })?;
             let value = if value <= i32::MAX as u64 {
-                ProgramValue::Int32(MachineTerm::constant(value as u32))
+                ProgramValue::Int32(OldMachineTerm::constant(value as u32))
             } else if value <= i64::MAX as u64 {
-                ProgramValue::Int64(MachineTerm::int64_constant(value as i64))
+                ProgramValue::Int64(OldMachineTerm::int64_constant(value as i64))
             } else {
-                ProgramValue::UInt64(MachineTerm::uint64_constant(value))
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))
             };
             Ok(ProgramExpression::Value(value))
         }
@@ -2897,7 +2900,7 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
                 && value <= (i32::MAX as u64) + 1
             {
                 return Ok(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(0u32.wrapping_sub(value as u32)),
+                    OldMachineTerm::constant(0u32.wrapping_sub(value as u32)),
                 )));
             }
             Ok(ProgramExpression::Negate(Box::new(
@@ -3317,13 +3320,13 @@ fn reject_impossible_range_guards(
 ) -> Result<(), ClickError> {
     if guards.iter().any(|guard| match guard {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::Constant(false), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::Constant(false), _)) =
+                condition_source_0.old_condition() =>
         {
             true
         }
         Proposition::ConditionIs(condition, true) => {
-            assumptions.decide(condition.native_compat()) == Some(false)
+            assumptions.decide(condition.old_form()) == Some(false)
         }
         _ => false,
     }) {
@@ -3411,8 +3414,8 @@ pub(in crate::surface) fn concrete_loadable_block(
             else {
                 return Ok(None);
             };
-            if segment.base.offset != AddressOffset::Constant(0)
-                || segment.start != MachineTerm::constant(0)
+            if !matches!(segment.base.offset.view(), OffsetView::Constant(0))
+                || segment.start != OldMachineTerm::constant(0)
             {
                 return Ok(None);
             }
@@ -3540,7 +3543,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
 pub(in crate::surface) fn loadable_base_and_bytes(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<(Address, MachineTerm, Vec<Proposition>), ClickError> {
+) -> Result<(OldAddress, OldMachineTerm, Vec<Proposition>), ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = ExecutionState::new();
@@ -3670,7 +3673,7 @@ pub(in crate::surface) fn object_segment_layout<'a>(
 /// One complete struct object as a memory range seed: a single element of
 /// the layout's size, materialized field by field.
 fn object_range_seed(
-    base: Address,
+    base: OldAddress,
     layout: &crate::languages::interface::RecordLayout,
 ) -> ConcreteMemoryRangeSeed {
     ConcreteMemoryRangeSeed {
@@ -4412,9 +4415,9 @@ mod entry_cell_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let source = entry.program_point();
-        let base = Address {
+        let base = OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         for ty in [ProgramType::Float32, ProgramType::Float64] {
             let width = ty.byte_width();
@@ -4437,7 +4440,7 @@ mod entry_cell_tests {
                 ) => value,
                 other => panic!("expected a seeded {ty:?} cell, got {other:?}"),
             };
-            let MachineTerm::MemoryLoad(point, address, kind) = value else {
+            let OldMachineTerm::MemoryLoad(point, address, kind) = value else {
                 panic!("expected a symbolic float read");
             };
             assert_eq!(point.read_version_id(), source.id());
@@ -4451,16 +4454,16 @@ mod entry_cell_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let source = entry.program_point();
-        let address = |variable| Address {
+        let address = |variable| OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Variable(crate::kernel::Variable(variable)),
+            offset: crate::kernel::OldAddressOffset::Variable(crate::kernel::Variable(variable)),
         };
         let integer_base = address(1_009_104);
         let generic_base = address(1_009_105);
         let generic = ProgramType::Parameter(crate::kernel::TypeParameterName::intern("SeededT"));
         let mut work = Vec::new();
         for count in [4, 16, 64, 256] {
-            let typed_range = |base: &Address, ty: ProgramType| ConcreteMemoryRangeSeed {
+            let typed_range = |base: &OldAddress, ty: ProgramType| ConcreteMemoryRangeSeed {
                 base: base.clone(),
                 bytes: count * ty.byte_width(),
                 element_width: ty.byte_width(),
@@ -4482,7 +4485,7 @@ mod entry_cell_tests {
                     memory.load(&generic_base.offset_by_bytes(generic.byte_width())),
                 )
             });
-            let ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::MemoryLoad(
+            let ExpressionOutcome::Value(ProgramValue::Int32(OldMachineTerm::MemoryLoad(
                 integer,
                 _,
                 _,
@@ -4500,12 +4503,12 @@ mod entry_cell_tests {
             assert_eq!(integer.read_version_id(), source.id());
             assert_eq!(generic.read_version_id(), source.id());
             let installed = entry.clone().with_function_entry_memory(memory);
-            let symbolic_element = Address {
+            let symbolic_element = OldAddress {
                 base: integer_base.base.clone(),
-                offset: crate::kernel::AddressOffset::add(
+                offset: crate::kernel::OldAddressOffset::add(
                     integer_base.offset.clone(),
-                    crate::kernel::AddressOffset::scale_int32(
-                        MachineTerm::Variable(crate::kernel::Variable(1_009_106)),
+                    crate::kernel::OldAddressOffset::scale_int32(
+                        OldMachineTerm::Variable(crate::kernel::Variable(1_009_106)),
                         4,
                     ),
                 ),

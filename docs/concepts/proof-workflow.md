@@ -86,10 +86,9 @@ A proof is at one point at a time. Once a script reaches function exit
 on its path, with `step_until(function.exit)` or inside one arm of a proof
 `if`, the tactics that follow act on that path. Its open goals are the
 contract's claims in contract order, resource claims included. `fold`,
-`apply`, and `have` transform the current path. A closer such as `close()`,
-`close()`, `normalize() using` or `close() using` acts on the first open
-goal, the last two from exactly their listed premises when the explicit closer
-is preferable to search, and the implicit tail closes every goal still open.
+`apply`, and `have` transform the current path. A closer such as `close()` or
+`close() using` acts on the first open goal. Use `close() using` to restrict
+the premises. The implicit tail closes every goal still open.
 A later fact or fold does not retroactively affect an earlier closing step.
 
 ## Tactics
@@ -149,9 +148,8 @@ expansion output.
 - `step()`: execute the next C statement with every fact in the proof
   context visible to the kernel. A fact about a cell the context proves the
   statement leaves untouched keeps that cell's name and stays true; a fact
-  about a cell the statement may write is renamed. Use an explicit
-  `transport(source, target)` when relating such a fact to the new state
-  needs more reasoning than the context gives the step. At a C `if`, an
+  about a cell the statement may write is renamed. A later `have` can
+  establish the current fact with a frame proof. At a C `if`, an
   available condition fact selects and enters one arm. At a loop head, it
   evaluates the condition once and enters one iteration or advances past the
   loop.
@@ -214,17 +212,11 @@ expansion output.
   names for multiple witnesses. Use `have` first if the existential needs a proof.
 - `witness(expression);`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
-- `close();`: close a goal already present as the same semantic fact; it
-  does not normalize or transport a new fact.
-- `normalize();`: close a pure goal by context-free computation.
+- `close();` checks for the goal among the available facts and can use bounded
+  proof search. For a computation, first use any needed `unfold` or `rewrite`.
 - `rewrite(from, to);`: rewrite the current proposition once using an exact
   available equality; the [tactic reference](../reference/tactics/index.md)
   lists the supported integer, pointer, and native unsigned forms.
-- `transport(source, target);`: require an exact source fact and apply one
-  certified atomic transport rule to establish the stated target fact at the
-  current statement frontier. Conditions use framing; structural memory facts
-  such as `viewable(...)` use the certified execution effects. Like `apply`,
-  this bare form is smart.
 - `preserve(resource, region)`: use exact footprint separation to prove a
   selected read unchanged across the named region. Use the equality in a
   `rewrite` to carry the fact to the current point.
@@ -244,8 +236,7 @@ expansion output.
 
 An opaque predicate does not expose the memory footprint needed for framing.
 When a predicate fact must cross execution, unfold it before those execution
-steps and transport the unfolded definition; smart `transport` diagnoses this
-case directly.
+steps, then prove that the unfolded definition still holds.
 
 The implicit tail at the end of a per-claim `by { ... }` block closes that
 claim. The tail of a trailing grouped function block closes every effect and

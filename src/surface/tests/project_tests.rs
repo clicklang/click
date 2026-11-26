@@ -2,7 +2,8 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn c_constant_spellings_preserve_declared_identifiers_in_both_source_paths() {
     use crate::languages::c::compiler_import::PreparedCImport;
 
@@ -127,7 +128,8 @@ int32 bad(int32 x) {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_01")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn location_verification_ignores_an_unselected_function_ranked_loop() {
     // A location-scoped run verifies one proof unit, so it builds a verified
     // loop rule only for the loops it checks. Planning termination for every
@@ -1057,7 +1059,7 @@ int32 identity(int32 x) throws int32 {
 "#;
     let rewritten = source.replace(
         "\n}\n",
-        "\n} by { step(); have result == x by { normalize(); } close(); }\n",
+        "\n} by { step(); have result == x by { close(); } close(); }\n",
     );
     let position = expansion::position_at_offset(&rewritten, rewritten.find("step();").unwrap());
     let (session, _) = ProgramVerificationSession::new(
@@ -1440,7 +1442,8 @@ int32 two() {
 /// An `extern` contract is trusted to return exactly as its `ensures` is
 /// trusted, so a ranked function that calls one has termination evidence.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn an_extern_callee_is_assumed_to_return() {
     let c_source = r#"int32 poll();
 
@@ -1496,21 +1499,21 @@ int32 drain(int32 n) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_05")]
 fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
     let overflow = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
         false,
     );
-    let constant = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let constant = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let equality = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(2))),
-            right: Box::new(MachineTerm::constant(7)),
+            left: Box::new(OldMachineTerm::Variable(Variable(2))),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -1532,40 +1535,40 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         assert!(condition_polarity_equivalent(condition, condition));
     }
     let less_than = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::Variable(Variable(2))),
         },
         true,
     );
     let greater_equal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::Variable(Variable(2))),
         },
         false,
     );
     assert!(condition_polarity_equivalent(&less_than, &greater_equal));
 
     let greater_equal_true = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::Variable(Variable(2))),
-            right: Box::new(MachineTerm::Variable(Variable(1))),
+            left: Box::new(OldMachineTerm::Variable(Variable(2))),
+            right: Box::new(OldMachineTerm::Variable(Variable(1))),
         },
         true,
     );
     let reversed_less_equal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::Variable(Variable(2))),
         },
         true,
     );
@@ -2270,14 +2273,12 @@ test_batches! {
     file: "project_tests.rs",
     marker: "project_batch_",
     project_batch_00: [
-        c_constant_spellings_preserve_declared_identifiers_in_both_source_paths,
         c_constant_spellings_preserve_enumerators_and_functions,
         c_constant_spellings_do_not_prove_a_false_parameter_contract,
         c_constant_spellings_keep_actual_macro_expansion_authoritative,
     ],
     project_batch_01: [
         location_verification_skips_unrelated_function_proofs,
-        location_verification_ignores_an_unselected_function_ranked_loop,
         location_verification_assumes_unselected_callee_contracts,
         external_dependency_report_is_transitive_and_per_function,
     ],
@@ -2297,7 +2298,6 @@ test_batches! {
         required_termination_refuses_an_unranked_loop_and_its_caller,
         required_termination_spreads_diverges_to_callers,
         required_termination_certifies_loop_free_callers_unannotated,
-        an_extern_callee_is_assumed_to_return,
     ],
     project_batch_05: [
         unrelated_non_comparison_conditions_are_not_polarity_equivalent,

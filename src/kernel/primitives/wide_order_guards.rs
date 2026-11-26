@@ -5,8 +5,8 @@ use crate::kernel::machine_integer::{
     comparison::{NativeComparisonView, comparison_view, condition_for_operand_views},
 };
 use crate::kernel::{
-    CompareRelation as R, ConditionTerm as C, MachineBinaryOp as Op, MachineIntegerType as T,
-    MachineOperandView as V, MachineTerm as B,
+    CompareRelation as R, MachineBinaryOp as Op, MachineIntegerType as T, MachineOperandView as V,
+    OldConditionTerm as C, OldMachineTerm as B,
 };
 
 fn order(condition: &C) -> Option<NativeComparisonView<'_>> {
@@ -32,9 +32,9 @@ fn binary(operand: V<'_>, op: Op) -> Option<[V<'_>; 2]> {
 
 fn same(a: V<'_>, b: V<'_>) -> bool {
     match (a, b) {
-        (V::Legacy(a), V::Legacy(b)) => a == b,
+        (V::Old(a), V::Old(b)) => a == b,
         (V::Shared(a), V::Shared(b)) => a == b,
-        (V::Shared(shared), V::Legacy(legacy)) | (V::Legacy(legacy), V::Shared(shared)) => {
+        (V::Shared(shared), V::Old(legacy)) | (V::Old(legacy), V::Shared(shared)) => {
             crate::kernel::KernelTermImport::default()
                 .machine_arithmetic(T::UInt64, legacy)
                 .as_ref()
@@ -70,7 +70,7 @@ impl C {
             return Some(compare(
                 R::LessEqual,
                 a,
-                V::Legacy(&B::uint64_constant(u64::MAX - 1)),
+                V::Old(&B::uint64_constant(u64::MAX - 1)),
             ));
         }
         if view.relation == Relation::LessEqual {
@@ -109,7 +109,7 @@ impl C {
         let [n, d] = binary(a, Op::Remainder)?;
         ((view.relation == Relation::LessEqual && same(n, b))
             || (view.relation == Relation::Less && same(d, b)))
-        .then(|| compare(R::LessThan, V::Legacy(&B::uint64_constant(0)), d))
+        .then(|| compare(R::LessThan, V::Old(&B::uint64_constant(0)), d))
     }
 
     /// `(n - k) <= upper` follows from `k <= n <= upper`.

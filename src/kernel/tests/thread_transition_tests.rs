@@ -5,10 +5,10 @@ use crate::kernel::threads::{
     JoinRuntimeAssumption, PendingThreadCreate, ThreadContext, ThreadHandle,
 };
 
-fn pointer(index: usize) -> Address {
-    Address {
+fn pointer(index: usize) -> OldAddress {
+    OldAddress {
         base: format!("thread-task-{index}").into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
@@ -280,7 +280,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             "pthread_join",
             vec![
                 ProgramExpression::Value(handle.program_value()),
-                crate::kernel::program_expression::pointer_value(Address::null()),
+                crate::kernel::program_expression::pointer_value(OldAddress::null()),
             ],
         )
     };
@@ -295,7 +295,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             "pthread_join",
             vec![
                 crate::kernel::program_expression::uint64_literal(1),
-                crate::kernel::program_expression::pointer_value(Address::null()),
+                crate::kernel::program_expression::pointer_value(OldAddress::null()),
             ],
         ),
         &PureFactContext::new(),
@@ -315,7 +315,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             "pthread_join",
             vec![
                 crate::kernel::program_expression::variable("copied_handle"),
-                crate::kernel::program_expression::pointer_value(Address::null()),
+                crate::kernel::program_expression::pointer_value(OldAddress::null()),
             ],
         ),
         &PureFactContext::new(),
@@ -338,7 +338,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
                 "pthread_join",
                 vec![
                     crate::kernel::program_expression::variable("copied_handle"),
-                    crate::kernel::program_expression::pointer_value(Address::null()),
+                    crate::kernel::program_expression::pointer_value(OldAddress::null()),
                 ],
             ),
             PureFactContext::new(),
@@ -404,7 +404,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
                 crate::kernel::program_expression::uint8_literal(77),
             ),
             program_return(ProgramExpression::Value(ProgramValue::typed_pointer(
-                Address::null(),
+                OldAddress::null(),
                 ProgramType::VoidPointer,
             ))),
         ),
@@ -480,7 +480,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         "pthread_create",
         vec![
             crate::kernel::program_expression::addr_of("thread"),
-            crate::kernel::program_expression::pointer_value(Address::null()),
+            crate::kernel::program_expression::pointer_value(OldAddress::null()),
             crate::kernel::program_expression::function_address("byte_worker"),
             ProgramExpression::Value(ProgramValue::typed_pointer(
                 pointer(0),
@@ -716,7 +716,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         "pthread_join",
         vec![
             crate::kernel::program_expression::variable("thread"),
-            crate::kernel::program_expression::pointer_value(Address::null()),
+            crate::kernel::program_expression::pointer_value(OldAddress::null()),
         ],
     );
     let joined = execute_execution_statement_paths(
@@ -812,7 +812,7 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
             "pthread_create",
             vec![
                 crate::kernel::program_expression::addr_of("thread"),
-                crate::kernel::program_expression::pointer_value(Address::null()),
+                crate::kernel::program_expression::pointer_value(OldAddress::null()),
                 crate::kernel::program_expression::function_address("thread_worker"),
                 crate::kernel::program_expression::pointer_value(pointer(0)),
             ],
@@ -1116,13 +1116,13 @@ fn thread_guarantees_are_withheld_until_join() {
         )
         .unwrap();
     let postcondition = Proposition::condition_is(
-        ConditionTerm::equal(
-            MachineTerm::read_named(
+        OldConditionTerm::equal(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory_ref(spawned.parent().memory()))),
                 Box::new(pointer(0)),
                 crate::kernel::LoadKind::Int32,
             ),
-            MachineTerm::constant(77),
+            OldMachineTerm::constant(77),
         ),
         true,
     );
@@ -1267,9 +1267,9 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         true,
     );
     let (reader, termination) = certify_worker(function);
-    let local = Address {
+    let local = OldAddress {
         base: "local:shared-reader".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let view = ResourceFact::view_memory(MemoryRange::new(local.clone(), 0.into(), 1.into()));
     let state = ExecutionState::new()
@@ -1647,9 +1647,9 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
         "global:thread-output",
         "static:thread-output",
     ] {
-        let local = Address {
+        let local = OldAddress {
             base: block.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_population_creation_tracking()
@@ -1785,7 +1785,6 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     ] {
         let paths = crate::kernel::eval::paths_after_scope_exit(
             vec![StatementExecutionPath {
-                call_parameters: None,
                 outcome,
                 facts: vec![].into(),
                 obligations: vec![],

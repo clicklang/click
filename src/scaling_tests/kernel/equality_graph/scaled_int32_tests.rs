@@ -16,12 +16,12 @@ fn scaled_int32_late_merges_and_constant_evaluation_scale_with_affected_parents(
             crate::instrumentation::measure_deterministic_work(|| {
                 graph.add_int32_equality(&scalar(1), &scalar(2));
                 // The heavy class acquires a literal from a singleton.
-                graph.add_int32_equality(&MachineTerm::constant(3), &scalar(1));
+                graph.add_int32_equality(&OldMachineTerm::constant(3), &scalar(1));
                 for i in 1..=size {
                     assert!(graph.are_offsets_equal(&offset(10_000 + i), &offset(20_000 + i)));
                     assert!(graph.are_offsets_equal(
                         &offset(10_000 + i),
-                        &AddressOffset::Constant(3 * i as i64)
+                        &OldAddressOffset::Constant(3 * i as i64)
                     ));
                 }
             })
@@ -66,19 +66,19 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
         let mut graph = EqualityGraph::default();
         for value in 0..size {
             graph.add_condition(
-                &ConditionTerm::equal(scalar(1), MachineTerm::constant(value as u32)),
+                &OldConditionTerm::equal(scalar(1), OldMachineTerm::constant(value as u32)),
                 false,
             );
         }
         graph.add_offset_equality(&scaled(1, 4), &offset(10));
         let sibling = graph.clone();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-            graph.add_int32_equality(&scalar(1), &MachineTerm::constant(2048));
-            assert!(graph.are_offsets_equal(&offset(10), &AddressOffset::Constant(8192)));
+            graph.add_int32_equality(&scalar(1), &OldMachineTerm::constant(2048));
+            assert!(graph.are_offsets_equal(&offset(10), &OldAddressOffset::Constant(8192)));
         });
-        assert!(!sibling.are_offsets_equal(&offset(10), &AddressOffset::Constant(8192)));
+        assert!(!sibling.are_offsets_equal(&offset(10), &OldAddressOffset::Constant(8192)));
         assert!(graph.knows_condition(
-            &ConditionTerm::equal(scalar(1), MachineTerm::constant(0)),
+            &OldConditionTerm::equal(scalar(1), OldMachineTerm::constant(0)),
             false
         ));
         samples.push((size, work));
@@ -97,6 +97,8 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
 /// facts, and unrelated offset aliases grow, and work bounded by the affected
 /// parents as aliases of the byte offset itself grow.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
     let mut unrelated_samples = Vec::new();
     let mut related_samples = Vec::new();
@@ -119,7 +121,7 @@ fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
         let mut related = EqualityGraph::default();
         for i in 0..size {
             related.add_offset_equality(
-                &AddressOffset::Add(
+                &OldAddressOffset::Add(
                     Box::new(byte_product(1, 4, true)),
                     Box::new(offset(30_000 + i)),
                 ),

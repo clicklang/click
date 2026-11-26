@@ -34,7 +34,7 @@ int read(int* p) {
 fn proof_match_fields_survive_function_unfold_in_have() {
     let source = SOURCE
         .replace("resource cell", "function identity(m: Maybe) -> Maybe { m }\nresource cell")
-        .replace("            unfold(c);", "            have identity(Maybe::Some(value)) == Maybe::Some(value) by {\n                unfold(identity(Maybe::Some(value)));\n                normalize();\n            }\n            have Maybe::Some(value) != Maybe::None by {\n                rewrite(Maybe::Some(value), identity(Maybe::Some(value)));\n                rewrite(identity(Maybe::Some(value)), Maybe::Some(value));\n                normalize();\n            }\n            unfold(c);");
+        .replace("            unfold(c);", "            have identity(Maybe::Some(value)) == Maybe::Some(value) by {\n                unfold(identity(Maybe::Some(value)));\n                close();\n            }\n            have Maybe::Some(value) != Maybe::None by {\n                rewrite(Maybe::Some(value), identity(Maybe::Some(value)));\n                rewrite(identity(Maybe::Some(value)), Maybe::Some(value));\n                close();\n            }\n            unfold(c);");
     let sources = [("read.c", C)];
     for source in [
         source.clone(),
@@ -249,7 +249,8 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by proof_match_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn proof_match_nested_impossible_arms_keep_their_scopes() {
     let source = r#"
 verifying "id.c";
@@ -451,7 +452,6 @@ test_batches! {
     file: "proof_match.rs",
     marker: "proof_match_batch_",
     proof_match_batch_00: [
-        proof_match_nested_impossible_arms_keep_their_scopes,
         proof_match_int64_payloads_are_typed,
         proof_match_compound_scrutinee_expansion_rechecks,
         proof_match_nested_generic_fields_and_repeated_values,

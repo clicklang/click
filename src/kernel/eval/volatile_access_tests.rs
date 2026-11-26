@@ -4,9 +4,9 @@ fn access(budget: &mut ExecutionBudget, kind: VolatileAccessKind) -> ExecutionPu
     volatile_access_fact(
         budget,
         kind,
-        Address::symbolic(Variable(800_001)),
+        OldAddress::symbolic(Variable(800_001)),
         ProgramType::Int32,
-        ProgramValue::Int32(MachineTerm::Variable(Variable(800_002))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(800_002))),
     )
     .unwrap()
 }
@@ -26,7 +26,7 @@ fn typed_accesses_keep_nominal_identity_and_read_results() {
         panic!()
     };
     assert_eq!(event.value_type, ProgramType::Int32);
-    assert_eq!(event.pointer, Address::symbolic(Variable(800_001)));
+    assert_eq!(event.pointer, OldAddress::symbolic(Variable(800_001)));
     assert_eq!(first.proposition().clone(), *first.proposition());
 }
 
@@ -36,9 +36,9 @@ fn predicate_spelling_and_uncertified_records_do_not_supply_read_results() {
         name: "__click_volatile_read_0".into(),
         arguments: vec![
             Term::ProgramValue(
-                (ProgramValue::pointer(Address::symbolic(Variable(800_001)))).into(),
+                (ProgramValue::pointer(OldAddress::symbolic(Variable(800_001)))).into(),
             ),
-            Term::ProgramValue((ProgramValue::Int32(MachineTerm::constant(7))).into()),
+            Term::ProgramValue((ProgramValue::Int32(OldMachineTerm::constant(7))).into()),
         ],
     });
     assert!(legacy.volatile_read_result().is_none());
@@ -63,22 +63,22 @@ fn substitution_reaches_operands_and_preserves_event_identity() {
     let mapped = substitute_bitvector_variable_in_proposition(
         fact.proposition(),
         Variable(800_002),
-        &MachineTerm::constant(9),
+        &OldMachineTerm::constant(9),
     );
     let mapped = substitute_pointer_variable_in_proposition(
         &mapped,
         Variable(800_001),
-        &Address::symbolic(Variable(800_003)),
+        &OldAddress::symbolic(Variable(800_003)),
     );
     let Proposition::VolatileAccess(mapped) = mapped else {
         panic!()
     };
     assert_eq!(mapped.id, original.id);
     assert_eq!(mapped.kind, original.kind);
-    assert_eq!(mapped.pointer, Address::symbolic(Variable(800_003)));
+    assert_eq!(mapped.pointer, OldAddress::symbolic(Variable(800_003)));
     assert_eq!(
-        mapped.value.native_compat(),
-        &ProgramValue::Int32(MachineTerm::constant(9))
+        mapped.value.old_form(),
+        &ProgramValue::Int32(OldMachineTerm::constant(9))
     );
 }
 
@@ -98,7 +98,7 @@ fn volatile_local_write_retains_the_evaluated_value_root() {
     let state = crate::kernel::functions::bind_program_function_arguments(
         &ExecutionState::new(),
         &function,
-        &[ProgramValue::Int32(MachineTerm::constant(0))],
+        &[ProgramValue::Int32(OldMachineTerm::constant(0))],
     )
     .unwrap()
     .with_retained_local("src", root.clone().into());
@@ -132,7 +132,7 @@ fn retained_volatile_read_values_keep_certification_and_nominal_event_identity()
     let event = volatile_access_fact(
         &mut ExecutionBudget::default(),
         VolatileAccessKind::Read,
-        Address::symbolic(Variable(10993673)),
+        OldAddress::symbolic(Variable(10993673)),
         ProgramType::Float32,
         crate::kernel::ExecutionValue::Shared(root.clone()),
     )

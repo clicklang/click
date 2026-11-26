@@ -106,7 +106,7 @@ what lowering reads. They are Syntax with extras mixed in:
   own. An operation therefore has two spellings, such as `SurfaceTerm::Subtract`
   and `ProgramExpression::Subtract`, which lowering treats differently, and
   Surface holds kernel values (`ProgramExpression::Value` carries
-  `MachineTerm`s; `Field` and `CUnary` keep a `lowered` kernel form).
+  `OldMachineTerm`s; `Field` and `CUnary` keep a `lowered` kernel form).
   `ProgramExpression` serves C, C++ and Rust alike; names such as `QualifiedC`
   and comments calling it a C fragment date from when Click verified only C.
 - Inference runs twice. Validation (`src/surface/validation/`) infers types to
@@ -179,7 +179,7 @@ format enums:
 
 ```rust
 pub enum ComparisonKind {
-    Machine(MachineIntegerType), // ConditionTerm::Compare at a format
+    Machine(MachineIntegerType), // OldConditionTerm::Compare at a format
     Integer,                     // IntegerLessThan .. IntegerNotEqual
     Pointer,                     // PointerEqual
     Address,                     // AddressEqual: address(p) == address(q)
@@ -189,7 +189,7 @@ pub enum ComparisonKind {
 }
 
 pub enum ArithmeticKind {
-    Machine(MachineIntegerType), // MachineTerm::Binary at a format
+    Machine(MachineIntegerType), // OldMachineTerm::Binary at a format
     Integer,                     // IntegerTerm::Add, Subtract, ...
 }
 
@@ -211,9 +211,9 @@ to the same term, which Surface-to-Kernel's many-to-one direction allows.
 - **Lower** reads the kind: a `Machine` comparison or operation lowers its
   operands as machine words at that format, an `Integer` one as Integers. No
   operand inspection, no caller-dependent path.
-- **Raise** copies the kind from the kernel term: `ConditionTerm::Compare
+- **Raise** copies the kind from the kernel term: `OldConditionTerm::Compare
   { format, .. }` gives `Machine(format)`, `IntegerEqual` gives `Integer`,
-  `MachineTerm::Binary { format, .. }` gives `Machine(format)`, an
+  `OldMachineTerm::Binary { format, .. }` gives `Machine(format)`, an
   `IntegerTerm` operation gives `Integer`.
 - **Print** writes `to_integer(...)` or a cast exactly where the kind differs
   from what elaborating the bare text would infer. It asks the one function
@@ -232,7 +232,7 @@ its fields' equalities; `lower_surface_proposition` reads the kind and
 inspects no operand.
 
 `Native` stands for the shapes listed above as `Machine(format)`, `Pointer`,
-`Address`, `Bool` and `Float`. Which of these a native comparison is, and its
+`OldAddress`, `Bool` and `Float`. Which of these a native comparison is, and its
 format, is the C type of its operands, built bottom-up from them; that is
 compositional, so lowering may compute it. It becomes a recorded field once
 program expressions are typed Surface (stage 3). The kind elaboration records

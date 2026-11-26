@@ -47,7 +47,7 @@ fn focused_execute_handles_deep_branches_on_a_two_megabyte_stack() {
                     let environment = ExecutionEnvironment::new();
                     let arguments = (0..depth)
                         .map(|i| {
-                            ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                            ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(
                                 Variable(771_000 + i as u64),
                             )))
                         })

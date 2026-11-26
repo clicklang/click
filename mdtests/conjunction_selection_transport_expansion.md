@@ -23,7 +23,7 @@ void keep(int32* p, int32* q, int32* r) {
         close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 and *r == 8 by {
-        transport(at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8)), *q == 7 and *r == 8);
+        close();
     }
     step();
     close();

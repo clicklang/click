@@ -15,7 +15,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         },
     };
     let pointer = OldPointer::new(
-        Address::symbolic(Variable(1008501)),
+        OldAddress::symbolic(Variable(1008501)),
         ProgramType::Int32Pointer,
     );
     let arguments = vec![
@@ -27,20 +27,22 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
             pointer: ProgramValue::Pointer(pointer),
             element_type: ProgramType::Int32,
         },
-        PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+        PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 1,
         })),
-        PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(1008505)))),
-        PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+        PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Variable(Variable(
+            1008505,
+        )))),
+        PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::bool_application("mixed_bool", vec![]),
+            OldConditionTerm::bool_application("mixed_bool", vec![]),
         ))),
         PureFunctionArgument::Value(ProgramValue::Float64(
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "mixed_float".into(),
                 arguments: vec![PureFunctionArgument::Value(ProgramValue::Float32(
-                    MachineTerm::uint32_constant(0x7fc00123),
+                    OldMachineTerm::uint32_constant(0x7fc00123),
                 ))],
             },
         )),
@@ -91,7 +93,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         format!("{:?}", machine.machine_conversion_leaf().unwrap()),
         format!(
             "{:?}",
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "mixed_result".into(),
                 arguments: arguments.clone()
             }
@@ -99,7 +101,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
     );
     assert_eq!(
         format!("{:?}", KernelTermExport::condition(&boolean).unwrap()),
-        format!("{:?}", ConditionTerm::BoolApplication(application))
+        format!("{:?}", OldConditionTerm::BoolApplication(application))
     );
     let float = KernelTerm::float_call(
         KernelFloatType::Float64,
@@ -110,7 +112,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         format!("{:?}", KernelTermExport::float(&float).unwrap()),
         format!(
             "{:?}",
-            ProgramValue::Float64(MachineTerm::ClickFunctionApplication {
+            ProgramValue::Float64(OldMachineTerm::ClickFunctionApplication {
                 name: "mixed_result".into(),
                 arguments
             })
@@ -122,17 +124,17 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
 fn noncanonical_boolean_carriers_keep_exact_native_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
     for word in [
-        MachineTerm::Constant {
+        OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         },
-        MachineTerm::BoolCast {
+        OldMachineTerm::BoolCast {
             to: MachineIntegerType::UInt16,
-            value: Box::new(ConditionTerm::Variable(Variable(1008506))),
+            value: Box::new(OldConditionTerm::Variable(Variable(1008506))),
         },
-        MachineTerm::BoolCast {
+        OldMachineTerm::BoolCast {
             to: MachineIntegerType::UInt8,
-            value: Box::new(ConditionTerm::Constant(true)),
+            value: Box::new(OldConditionTerm::Constant(true)),
         },
     ] {
         let source = PureFunctionArgument::Value(ProgramValue::Bool(word));
@@ -150,7 +152,7 @@ fn prepared_call_children_reuse_the_producer_only_in_the_current_session() {
         "session_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             OldPointer::new(
-                Address::symbolic(Variable(1008515)),
+                OldAddress::symbolic(Variable(1008515)),
                 ProgramType::Int32Pointer,
             ),
         ))],
@@ -182,7 +184,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
         "thread_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             OldPointer::new(
-                Address::symbolic(Variable(1008517)),
+                OldAddress::symbolic(Variable(1008517)),
                 ProgramType::Int32Pointer,
             ),
         ))],
@@ -211,7 +213,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
 #[test]
 fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let _session = crate::kernel::VerificationSession::enter();
-    let argument = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+    let argument = PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Constant {
         format: MachineIntegerType::UInt8,
         bits: 2,
     }));
@@ -227,7 +229,7 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let boolean = import.boolean_call(&first);
     let integer = import.integer(&IntegerTerm::PureFunctionApplication(first.clone()).into());
     let pointer = SharedPointer::import(&OldPointer::new(
-        Address::symbolic(Variable(1008520)),
+        OldAddress::symbolic(Variable(1008520)),
         ProgramType::Int32Pointer,
     ));
     let pointer = import.pointer_call(&first, vec![None], pointer);
@@ -278,7 +280,7 @@ fn a_null_array_argument_is_formed_at_no_state() {
     let empty = crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new());
     let other =
         crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new().with_block("local:x", 8));
-    let pointer = |address: Address| {
+    let pointer = |address: OldAddress| {
         KernelTerm::shared_pointer_value(SharedPointer::import(&OldPointer::new(
             address,
             ProgramType::Int32Pointer,
@@ -287,16 +289,16 @@ fn a_null_array_argument_is_formed_at_no_state() {
     let array = |point: &crate::kernel::ProgramPoint, pointer: &KernelTerm| {
         KernelTerm::shared_array_reference(point.clone(), pointer.clone(), ProgramType::Int32)
     };
-    let null = pointer(Address::null());
+    let null = pointer(OldAddress::null());
     assert_eq!(array(&empty, &null), array(&other, &null));
-    let symbolic = pointer(Address::symbolic(Variable(1008601)));
+    let symbolic = pointer(OldAddress::symbolic(Variable(1008601)));
     assert_ne!(array(&empty, &symbolic), array(&other, &symbolic));
 }
 
 #[test]
 fn opaque_call_observation_borrows_the_written_argument_slot() {
     let _session = crate::kernel::VerificationSession::enter();
-    let native = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+    let native = PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Constant {
         format: MachineIntegerType::UInt8,
         bits: 2,
     }));

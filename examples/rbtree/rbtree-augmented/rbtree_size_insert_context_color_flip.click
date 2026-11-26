@@ -141,14 +141,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
         SizedContextFlipPhase::After(g, p, u) => {
             have sized_context_flip_pending(state.phase) != 1 by {
                 rewrite(state.phase, SizedContextFlipPhase::After(g, p, u));
-                unfold(sized_context_flip_pending(SizedContextFlipPhase::After(g, p, u))); normalize();
+                unfold(sized_context_flip_pending(SizedContextFlipPhase::After(g, p, u))); close();
             }
             contradiction(sized_context_flip_pending(state.phase) == 1);
         },
         SizedContextFlipPhase::Done(g, p, u) => {
             have sized_context_flip_pending(state.phase) != 1 by {
                 rewrite(state.phase, SizedContextFlipPhase::Done(g, p, u));
-                unfold(sized_context_flip_pending(SizedContextFlipPhase::Done(g, p, u))); normalize();
+                unfold(sized_context_flip_pending(SizedContextFlipPhase::Done(g, p, u))); close();
             }
             contradiction(sized_context_flip_pending(state.phase) == 1);
         },
@@ -164,7 +164,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             have node->__rb_parent_color == address(p) by {
                 rewrite(node->__rb_parent_color, address(p) + (node->__rb_parent_color & 1));
                 rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
-                rewrite(color_bit(Color::Red), 0); normalize();
+                rewrite(color_bit(Color::Red), 0); close();
             }
             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { close(); }
             mark m0; step();
@@ -203,7 +203,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         SizedContextFlipPhase::Done(x, y, z) => {
                             have not (sized_context_flip_running(state.phase) == 1) by {
                                 rewrite(state.phase, SizedContextFlipPhase::Done(x, y, z));
-                                unfold(sized_context_flip_running(SizedContextFlipPhase::Done(x, y, z))); normalize();
+                                unfold(sized_context_flip_running(SizedContextFlipPhase::Done(x, y, z))); close();
                             }
                             contradiction(sized_context_flip_running(state.phase) == 1);
                         },
@@ -211,12 +211,12 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             have parent == sized_context_parent(at(iteration,state.outer),0) by {
                                 rewrite(parent, sized_context_flip_parent(state.phase,at(iteration,state.outer)));
                                 rewrite(state.phase, SizedContextFlipPhase::After(x,y,z));
-                                unfold(sized_context_flip_parent(SizedContextFlipPhase::After(x,y,z),at(iteration,state.outer))); normalize();
+                                unfold(sized_context_flip_parent(SizedContextFlipPhase::After(x,y,z),at(iteration,state.outer))); close();
                             }
                             have node == x by {
                                 rewrite(node, sized_context_flip_focus(state.phase,old(node)));
                                 rewrite(state.phase, SizedContextFlipPhase::After(x,y,z));
-                                unfold(sized_context_flip_focus(SizedContextFlipPhase::After(x,y,z),old(node))); normalize();
+                                unfold(sized_context_flip_focus(SizedContextFlipPhase::After(x,y,z),old(node))); close();
                             }
                             unfold(sized_context_flip_finish(SizedContextFlipPhase::After(x,y,z)));
                             have SizedContextFlipPhase::Done(x,y,z) == sized_context_flip_finish(old(state.phase)) by {
@@ -228,7 +228,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                 SizedContext::Top => {
                                     have not (sized_context_flip_black(at(iteration,state.outer)) == 1) by {
                                         rewrite(at(iteration,state.outer), SizedContext::Top);
-                                        unfold(sized_context_flip_black(SizedContext::Top)); normalize();
+                                        unfold(sized_context_flip_black(SizedContext::Top)); close();
                                     }
                                     contradiction(sized_context_flip_black(at(iteration,state.outer)) == 1);
                                 },
@@ -237,7 +237,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                     have parent == a by {
                                         rewrite(parent, sized_context_parent(at(iteration,state.outer),0));
                                         rewrite(at(iteration,state.outer), SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model));
-                                        rewrite(sized_context_parent(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model),0), a); normalize();
+                                        rewrite(sized_context_parent(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model),0), a); close();
                                     }
                                     unfold(sized_context_flip_black(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model)));
                                     have color_bit(shade) == 1 by {
@@ -247,20 +247,20 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                     let { metadata: a_size, sibling: sibling, up: up } = unfold(path);
                                     have (a->__rb_parent_color & 1) == 1 by {
                                         rewrite((a->__rb_parent_color & 1), color_bit(shade));
-                                        rewrite(color_bit(shade), 1); normalize();
+                                        rewrite(color_bit(shade), 1); close();
                                     }
                                     step(); step();
                                     let path = fold(sized_context_at(x,root->rb_node,0,cached_total), { model: SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
                                     step();
                                     have sized_value(focus.model) == old(state.grand_value) by {
                                         rewrite(focus.model, SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))));
-                                        unfold(sized_value(SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))))); normalize();
+                                        unfold(sized_value(SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))))); close();
                                     }
                                     have sized_parent_is(focus.model,sized_context_parent(path.model,0)) == 1 by {
                                         rewrite(focus.model, SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))));
                                         rewrite(path.model, SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model));
                                         rewrite(at(iteration,state.outer), SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model));
-                                        unfold(sized_parent_is(SizedTree::Node(x, sized_context_parent(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))),sized_context_parent(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model),0))); normalize();
+                                        unfold(sized_parent_is(SizedTree::Node(x, sized_context_parent(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))),sized_context_parent(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model),0))); close();
                                     }
                                     let { whole: whole } = restore_sized_context(x,root->rb_node,0,cached_total, { path: path, sub: focus });
                                     have whole.model == sized_plug(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))) by {
@@ -279,7 +279,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                     have parent == a by {
                                         rewrite(parent, sized_context_parent(at(iteration,state.outer),0));
                                         rewrite(at(iteration,state.outer), SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model));
-                                        rewrite(sized_context_parent(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model),0), a); normalize();
+                                        rewrite(sized_context_parent(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model),0), a); close();
                                     }
                                     unfold(sized_context_flip_black(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model)));
                                     have color_bit(shade) == 1 by {
@@ -289,20 +289,20 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                     let { metadata: a_size, sibling: sibling, up: up } = unfold(path);
                                     have (a->__rb_parent_color & 1) == 1 by {
                                         rewrite((a->__rb_parent_color & 1), color_bit(shade));
-                                        rewrite(color_bit(shade), 1); normalize();
+                                        rewrite(color_bit(shade), 1); close();
                                     }
                                     step(); step();
                                     let path = fold(sized_context_at(x,root->rb_node,0,cached_total), { model: SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
                                     step();
                                     have sized_value(focus.model) == old(state.grand_value) by {
                                         rewrite(focus.model, SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))));
-                                        unfold(sized_value(SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))))); normalize();
+                                        unfold(sized_value(SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))))); close();
                                     }
                                     have sized_parent_is(focus.model,sized_context_parent(path.model,0)) == 1 by {
                                         rewrite(focus.model, SizedTree::Node(x, sized_context_parent(at(iteration,state.outer), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))));
                                         rewrite(path.model, SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model));
                                         rewrite(at(iteration,state.outer), SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model));
-                                        unfold(sized_parent_is(SizedTree::Node(x, sized_context_parent(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))),sized_context_parent(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model),0))); normalize();
+                                        unfold(sized_parent_is(SizedTree::Node(x, sized_context_parent(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), 0), Color::Red, old(state.grand_value), SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))),sized_context_parent(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model),0))); close();
                                     }
                                     let { whole: whole } = restore_sized_context(x,root->rb_node,0,cached_total, { path: path, sub: focus });
                                     have whole.model == sized_plug(SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), sized_context_flip_subtree(SizedContextFlipPhase::Done(x,y,z), old(node), SizedContext::Right(a, ancestor, shade, value, sibling_model, up_model), old(state.seed), old(state.parent_value), old(state.grand_value), old(state.other), old(state.uncle))) by {
@@ -322,12 +322,12 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             have parent == y by {
                                 rewrite(parent, sized_context_flip_parent(state.phase, state.outer));
                                 rewrite(state.phase, SizedContextFlipPhase::Before(x, y, z));
-                                unfold(sized_context_flip_parent(SizedContextFlipPhase::Before(x, y, z),state.outer)); normalize();
+                                unfold(sized_context_flip_parent(SizedContextFlipPhase::Before(x, y, z),state.outer)); close();
                             }
                             have node == old(node) by {
                                 rewrite(node, sized_context_flip_focus(state.phase,old(node)));
                                 rewrite(state.phase, SizedContextFlipPhase::Before(x, y, z));
-                                unfold(sized_context_flip_focus(SizedContextFlipPhase::Before(x, y, z),old(node))); normalize();
+                                unfold(sized_context_flip_focus(SizedContextFlipPhase::Before(x, y, z),old(node))); close();
                             }
                             let { focus: focus, path: path, grand_value: cached_total } = unfold(state);
                             let { metadata: p_size, sibling: p_right, up: g_path } = unfold(path);
@@ -343,7 +343,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             have y->__rb_parent_color == address(x) by {
                                 rewrite(y->__rb_parent_color, address(x) + (y->__rb_parent_color & 1));
                                 rewrite((y->__rb_parent_color & 1), color_bit(Color::Red));
-                                rewrite(color_bit(Color::Red), 0); normalize();
+                                rewrite(color_bit(Color::Red), 0); close();
                             }
                             have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { close(); }
                             mark c0; step();
@@ -385,7 +385,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             step();
                             have aligned(gparent, 8) by close();
                             have (address(gparent) | 1) == address(gparent) + 1 by {
-                                normalize() using { aligned(gparent, 8); };
+                                close() using { aligned(gparent, 8); };
                             }
                             let uncle_word = fold(sized_context_flip_black_word(tmp, gparent), {
                                 word: tmp->__rb_parent_color
@@ -408,7 +408,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             have (address(parent) & 7u64) == 0u64 by {
                                 close() using { aligned(parent, 8); };
                             }
-                            have (7u64 & 1u64) == 1u64 by normalize();
+                            have (7u64 & 1u64) == 1u64 by close();
                             apply(click::integer::uint64_mask_subset(address(parent), 7u64, 1u64));
                             have (x->__rb_parent_color & 1) == 0 by {
                                 rewrite(x->__rb_parent_color, address(parent));
@@ -418,7 +418,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(x->__rb_parent_color, address(parent));
                                 rewrite(sized_context_parent(at(iteration,state.outer),0), parent);
                                 rewrite((address(parent) & 1u64), 0u64);
-                                normalize();
+                                close();
                             }
                             have to_integer(sized_value(old(state.uncle))) == 1 + to_integer(sized_value(sized_left(old(state.uncle)))) + to_integer(sized_value(sized_right(old(state.uncle)))) by {
                                 close();
@@ -427,7 +427,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             have sized_parent_is(focus.model,y) == 1 by {
                                 rewrite(focus.model, old(state.seed));
                                 rewrite(old(state.seed), SizedTree::Node(old(node), y, Color::Red, sized_value(old(state.seed)), sized_left(old(state.seed)), sized_right(old(state.seed))));
-                                unfold(sized_parent_is(SizedTree::Node(old(node), y, Color::Red, sized_value(old(state.seed)), sized_left(old(state.seed)), sized_right(old(state.seed))),y)); normalize();
+                                unfold(sized_parent_is(SizedTree::Node(old(node), y, Color::Red, sized_value(old(state.seed)), sized_left(old(state.seed)), sized_right(old(state.seed))),y)); close();
                             }
                             have sized_parent_is(old(state.other),y) == 1 by {
                                 rewrite(old(state.other), at(iteration,state.other)); close();
@@ -439,11 +439,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             let p_tree = fold(sized_at(y), { model: SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)), metadata: p_size, left: focus, right: p_right });
                             have sized_parent_is(p_tree.model,x) == 1 by {
                                 rewrite(p_tree.model, SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)));
-                                unfold(sized_parent_is(SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)),x)); normalize();
+                                unfold(sized_parent_is(SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other)),x)); close();
                             }
                             have sized_parent_is(u_tree.model,x) == 1 by {
                                 rewrite(u_tree.model, SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle))));
-                                unfold(sized_parent_is(SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle))),x)); normalize();
+                                unfold(sized_parent_is(SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle))),x)); close();
                             }
                             unfold(sized_value(SizedTree::Node(y, x, Color::Black, old(state.parent_value), old(state.seed), old(state.other))));
                             unfold(sized_value(SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle)))));
@@ -473,7 +473,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             }
                             have sized_context_flip_running(state.phase) == 1 by {
                                 rewrite(state.phase, SizedContextFlipPhase::After(x, y, z));
-                                unfold(sized_context_flip_running(SizedContextFlipPhase::After(x, y, z))); normalize();
+                                unfold(sized_context_flip_running(SizedContextFlipPhase::After(x, y, z))); close();
                             }
                             step();
                         },

@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
-    let a = ConditionTerm::Variable(Variable(701));
-    let b = ConditionTerm::Variable(Variable(702));
+    let a = OldConditionTerm::Variable(Variable(701));
+    let b = OldConditionTerm::Variable(Variable(702));
     for conjunction in [false, true] {
         let left = Box::new(Proposition::condition_is(a.clone(), true));
         let right = Box::new(Proposition::condition_is(b.clone(), false));
@@ -16,7 +16,7 @@ fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
         let ProgramValue::Int32(bits) = value else {
             panic!("int32 conditional");
         };
-        let is_seven = ConditionTerm::equal(bits, MachineTerm::constant(7));
+        let is_seven = OldConditionTerm::equal(bits, OldMachineTerm::constant(7));
         assert_eq!(PureFactContext::new().decide(&is_seven), None);
         for left in [false, true] {
             for right in [false, true] {

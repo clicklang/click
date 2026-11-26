@@ -27,7 +27,7 @@ impl KernelFloatType {
             Self::Float64 => ProgramType::Float64,
         }
     }
-    pub(crate) fn value(self, term: MachineTerm) -> ProgramValue {
+    pub(crate) fn value(self, term: OldMachineTerm) -> ProgramValue {
         match self {
             Self::Float32 => ProgramValue::Float32(term),
             Self::Float64 => ProgramValue::Float64(term),
@@ -40,7 +40,7 @@ impl KernelFloatType {
 /// explicit boundary until their operation slices migrate.
 #[derive(Clone, Copy)]
 pub(crate) enum FloatOperandView<'a> {
-    Native(KernelFloatType, &'a MachineTerm),
+    Native(KernelFloatType, &'a OldMachineTerm),
     Shared(&'a KernelTerm),
 }
 impl<'a> FloatOperandView<'a> {
@@ -70,7 +70,7 @@ impl<'a> FloatOperandView<'a> {
     }
     pub(crate) fn literal(self) -> Option<(MachineIntegerType, u128)> {
         match self {
-            Self::Native(_, MachineTerm::Constant { format, bits }) => Some((*format, *bits)),
+            Self::Native(_, OldMachineTerm::Constant { format, bits }) => Some((*format, *bits)),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::FloatLiteral { carrier, bits } => Some((*carrier, *bits)),
                 KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
@@ -92,7 +92,7 @@ impl<'a> FloatOperandView<'a> {
     }
     pub(crate) fn variable(self) -> Option<Variable> {
         match self {
-            Self::Native(_, MachineTerm::Variable(variable)) => Some(*variable),
+            Self::Native(_, OldMachineTerm::Variable(variable)) => Some(*variable),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::Variable(variable) => Some(*variable),
                 KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
@@ -109,14 +109,14 @@ impl<'a> FloatOperandView<'a> {
     }
     /// Explicit selected native reading. Shared atoms have no child prefix;
     /// still-native compound operands are borrowed without cloning them.
-    pub(crate) fn native_compat(self) -> Option<&'a MachineTerm> {
+    pub(crate) fn old_form(self) -> Option<&'a OldMachineTerm> {
         match self {
             Self::Native(_, term) => Some(term),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::FloatRead(_)
                 | KernelTermNode::FloatLiteral { .. }
                 | KernelTermNode::Variable(_) => {
-                    Self::from_value(root.float_native_value()?)?.native_compat()
+                    Self::from_value(root.float_native_value()?)?.old_form()
                 }
                 KernelTermNode::ImportedScalar(input) => Some(input.value()),
                 KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
@@ -124,7 +124,7 @@ impl<'a> FloatOperandView<'a> {
                         PureFunctionArgument::Value(value) => value,
                         _ => return None,
                     })?
-                    .native_compat()
+                    .old_form()
                 }
                 _ => None,
             },
@@ -133,9 +133,9 @@ impl<'a> FloatOperandView<'a> {
 }
 
 impl KernelTermImport {
-    fn float_atom(&mut self, format: KernelFloatType, term: &MachineTerm) -> KernelTerm {
+    fn float_atom(&mut self, format: KernelFloatType, term: &OldMachineTerm) -> KernelTerm {
         crate::instrumentation::record_deterministic_work(1);
-        if let MachineTerm::MemoryLoad(point, pointer, kind) = term
+        if let OldMachineTerm::MemoryLoad(point, pointer, kind) = term
             && *kind == format.load_kind()
         {
             return KernelTerm::float_read(
@@ -205,7 +205,7 @@ mod tests {
             let mut identities = std::collections::HashSet::new();
             for carrier in carriers {
                 for bits in patterns {
-                    let native = MachineTerm::Constant {
+                    let native = OldMachineTerm::Constant {
                         format: *carrier,
                         bits: *bits,
                     };
@@ -221,7 +221,7 @@ mod tests {
                     assert_eq!(view.format(), format);
                     assert_eq!(view.literal(), Some((*carrier, *bits)));
                     assert_eq!(view.variable(), None);
-                    assert_eq!(view.native_compat(), Some(&native));
+                    assert_eq!(view.old_form(), Some(&native));
                     assert_eq!(KernelTermExport::float(&root).unwrap(), value);
                     assert_eq!(
                         KernelTermExport::default().argument(&root).unwrap(),
@@ -231,7 +231,7 @@ mod tests {
                 }
             }
         }
-        let native = MachineTerm::Variable(Variable(999801));
+        let native = OldMachineTerm::Variable(Variable(999801));
         let roots = [KernelFloatType::Float32, KernelFloatType::Float64].map(|format| {
             let root = KernelTermImport::default().float(format, &native);
             let view = FloatOperandView::from_shared(&root).unwrap();
@@ -255,10 +255,10 @@ mod tests {
     fn unmigrated_float_selections_keep_the_exact_native_payload() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
-            let native = MachineTerm::If {
-                condition: Box::new(ConditionTerm::Constant(true)),
-                then_term: Box::new(MachineTerm::Variable(Variable(999937))),
-                else_term: Box::new(MachineTerm::Variable(Variable(999938))),
+            let native = OldMachineTerm::If {
+                condition: Box::new(OldConditionTerm::Constant(true)),
+                then_term: Box::new(OldMachineTerm::Variable(Variable(999937))),
+                else_term: Box::new(OldMachineTerm::Variable(Variable(999938))),
             };
             let root = KernelTermImport::default().float(format, &native);
             assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
@@ -274,15 +274,15 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let native = match format {
-                KernelFloatType::Float32 => MachineTerm::Float32Binary {
+                KernelFloatType::Float32 => OldMachineTerm::Float32Binary {
                     operator: FloatBinaryOperator::Add,
-                    left: Box::new(MachineTerm::Variable(Variable(999802))),
-                    right: Box::new(MachineTerm::constant(0)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(999802))),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 },
-                KernelFloatType::Float64 => MachineTerm::Float64Binary {
+                KernelFloatType::Float64 => OldMachineTerm::Float64Binary {
                     operator: FloatBinaryOperator::Add,
-                    left: Box::new(MachineTerm::Variable(Variable(999802))),
-                    right: Box::new(MachineTerm::uint64_constant(0)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(999802))),
+                    right: Box::new(OldMachineTerm::uint64_constant(0)),
                 },
             };
             let root = KernelTermImport::default().float(format, &native);
@@ -290,7 +290,7 @@ mod tests {
             let view = FloatOperandView::from_shared(&root).unwrap();
             assert_eq!(view.literal(), None);
             assert_eq!(view.variable(), None);
-            assert!(view.native_compat().is_none());
+            assert!(view.old_form().is_none());
             assert_eq!(
                 KernelTermExport::float(&root).unwrap(),
                 format.value(native)
@@ -320,18 +320,18 @@ impl KernelTerm {
                 // its child leaves through this same slot.
                 let value = match self.node() {
                     KernelTermNode::FloatLiteral { carrier, bits } => {
-                        format.value(MachineTerm::Constant {
+                        format.value(OldMachineTerm::Constant {
                             format: *carrier,
                             bits: *bits,
                         })
                     }
                     KernelTermNode::ImportedScalar(input) => format.value(input.value().clone()),
                     KernelTermNode::Variable(variable) => {
-                        format.value(MachineTerm::Variable(*variable))
+                        format.value(OldMachineTerm::Variable(*variable))
                     }
                     KernelTermNode::FloatRead(read) => {
                         let (point, address) = read.parts();
-                        format.value(crate::kernel::MachineTerm::read_named(
+                        format.value(crate::kernel::OldMachineTerm::read_named(
                             point.clone(),
                             address.export().expect("float read address"),
                             format.load_kind(),

@@ -11,15 +11,15 @@ use super::{PersistentOrderedSet, PersistentSequence, PureFactStore, SharedValue
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
+use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType};
 use crate::kernel::{
-    Address, CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
-    ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
-    MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
+    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
+    ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MemoryRange,
+    OldAddress, OldMachineTerm, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
     ProofObligation, Proposition, PureFactContext, Resource, ResourceContext, ResourceFact,
     ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, SymbolicMemory, Theorem,
     Variable, VerifiedLoopRule,
 };
-use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
@@ -921,10 +921,12 @@ fn checks_population_member_exchange(
                 }
             });
     if !imported_member_exchange
-        && (anchor.offset != crate::kernel::AddressOffset::Constant(0)
-            || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
-                && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
+        && (!matches!(
+            crate::kernel::OffsetTree::view(&anchor.offset),
+            crate::kernel::OffsetView::Constant(0)
+        ) || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
+            && before.memory.live_heap_block_size(anchor).is_some()
+            || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
     {
         return Err("population member rewrite requires live base storage".into());
     }
@@ -1150,7 +1152,7 @@ fn memory_only_adds_named_cells(
         let Some(kind) = LoadKind::of_value(&value) else {
             return Err("added a cell no load reads".into());
         };
-        if let Some(MachineTerm::MemoryLoad(point, _, _)) =
+        if let Some(OldMachineTerm::MemoryLoad(point, _, _)) =
             crate::kernel::spec::program_value_bitvector_term(&value)
             && point.read_version_id().is_some()
         {
@@ -1187,9 +1189,9 @@ fn memory_only_adds_named_cells(
 /// search or ambient-fact scan.
 fn describe_unnamed_cell_addition(
     base: &crate::kernel::SharedMemory,
-    pointer: &crate::kernel::Address,
+    pointer: &crate::kernel::OldAddress,
     value: &ProgramValue,
-    load: &MachineTerm,
+    load: &OldMachineTerm,
 ) -> String {
     let held = truncate_debug(value, 240);
     let expected = truncate_debug(load, 240);
@@ -1272,7 +1274,7 @@ fn describe_changed_state_field(
 /// cell, in one of the representations resource projection writes: the scalar
 /// term itself, the `_Bool` normalization of it, or the complete typed pointer
 /// read (including its provenance and bounds).
-fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool {
+fn cell_value_is_exactly_load(value: &ProgramValue, load: &OldMachineTerm) -> bool {
     match value {
         ProgramValue::Int8(term) => term == load,
         ProgramValue::Int16(term)
@@ -1287,10 +1289,10 @@ fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool 
         | ProgramValue::Float32(term)
         | ProgramValue::Float64(term) => term == load,
         ProgramValue::Bool(term) => {
-            term == &MachineTerm::if_then_else(
-                crate::kernel::ConditionTerm::equal(load.clone(), MachineTerm::constant(0)),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+            term == &OldMachineTerm::if_then_else(
+                crate::kernel::OldConditionTerm::equal(load.clone(), OldMachineTerm::constant(0)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )
         }
         ProgramValue::Pointer(pointer) => {
@@ -1595,12 +1597,12 @@ impl CheckedResourceRewrite {
         let mut evaluation_assumptions = assumptions.clone();
         for imported in imported_counts.into_iter().flatten() {
             let bound = Proposition::condition_is(
-                crate::kernel::ConditionTerm::signed_greater_equal(
+                crate::kernel::OldConditionTerm::signed_greater_equal(
                     imported.entry_count,
                     imported
                         .entry_symbolic_members
                         .clone()
-                        .unwrap_or(MachineTerm::constant(imported.entry_owned_members)),
+                        .unwrap_or(OldMachineTerm::constant(imported.entry_owned_members)),
                 ),
                 true,
             );
@@ -2814,8 +2816,8 @@ impl CheckedResourceObservation {
                     MachineIntegerType::Int32,
                     CompareRelation::LessEqual,
                     [
-                        crate::kernel::MachineOperandView::Legacy(&MachineTerm::constant(0)),
-                        crate::kernel::MachineOperandView::Legacy(quantity),
+                        crate::kernel::MachineOperandView::Old(&OldMachineTerm::constant(0)),
+                        crate::kernel::MachineOperandView::Old(quantity),
                     ],
                 ),
                 true,
@@ -3365,8 +3367,8 @@ impl OpenedContractEntry {
             // equations being admitted as independent premises.
             let selected = match fact {
                 condition_source_0 @ Proposition::ConditionIs(_, _)
-                    if let Some((crate::kernel::ConditionTerm::PointerEqual(..), _)) =
-                        condition_source_0.condition_native() =>
+                    if let Some((crate::kernel::OldConditionTerm::PointerEqual(..), _)) =
+                        condition_source_0.old_condition() =>
                 {
                     contract.explicitly_states(fact)
                 }
@@ -5109,7 +5111,7 @@ fn arm_effect_deltas_are_exact(
 fn memory_diff_is_covered_by_writes(
     before: &SymbolicMemory,
     after: &SymbolicMemory,
-    changed: &[(Address, crate::kernel::AccessExtent)],
+    changed: &[(OldAddress, crate::kernel::AccessExtent)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
 ) -> bool {
@@ -5142,8 +5144,8 @@ fn memory_diff_is_covered_by_writes(
                     &diff_pointer,
                     value.byte_width(),
                     changed_pointer,
-                    &MachineTerm::constant(0),
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(0),
+                    &OldMachineTerm::constant(1),
                     *bytes,
                 ),
                 // A whole object of abstract size changes the cell at its
@@ -5471,7 +5473,7 @@ fn checked_interface_effect_facts_along(
 
 fn conditional_heap_frees(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
-) -> [Vec<(Address, crate::kernel::AllocationSize)>; 2] {
+) -> [Vec<(OldAddress, crate::kernel::AllocationSize)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
@@ -5492,10 +5494,10 @@ fn interface_resources_guard_heap_frees(
     arm_resources: &[Vec<ResourceFact>; 2],
     arm_states: [&ExecutionState; 2],
     arm_facts: [&PureFactStore; 2],
-    heap_frees: &[Vec<(Address, crate::kernel::AllocationSize)>; 2],
+    heap_frees: &[Vec<(OldAddress, crate::kernel::AllocationSize)>; 2],
 ) -> bool {
     let has_allocation = |arm_index: usize,
-                          base: &Address,
+                          base: &OldAddress,
                           bytes: &crate::kernel::AllocationSize| {
         arm_resources[arm_index].iter().any(|resource| {
             if resource
@@ -5816,7 +5818,7 @@ impl CheckedInterfaceLowering {
 #[derive(Default)]
 struct InterfaceReadPremises {
     by_base: std::collections::BTreeMap<
-        (crate::kernel::SymbolicMemory, crate::kernel::Address),
+        (crate::kernel::SymbolicMemory, crate::kernel::OldAddress),
         (u32, Proposition),
     >,
 }
@@ -5892,7 +5894,7 @@ pub(super) struct CheckedInterfaceLoadDefinition {
 impl CheckedInterfaceLoadDefinition {
     fn check(proposition: &Proposition) -> Option<Self> {
         let Some((
-            crate::kernel::ConditionTerm::Compare {
+            crate::kernel::OldConditionTerm::Compare {
                 format:
                     crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::Equal,
@@ -5900,11 +5902,11 @@ impl CheckedInterfaceLoadDefinition {
                 right,
             },
             true,
-        )) = proposition.condition_native()
+        )) = proposition.old_condition()
         else {
             return None;
         };
-        let (MachineTerm::Variable(variable), load @ MachineTerm::MemoryLoad(_, _, _)) =
+        let (OldMachineTerm::Variable(variable), load @ OldMachineTerm::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             return None;
@@ -6743,7 +6745,7 @@ fn collect_applied_tactics<'e>(
 fn collect_checked_callees<'e>(
     events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     seen: &mut std::collections::HashSet<usize>,
-    callees: &mut std::collections::BTreeSet<String>,
+    callees: &mut std::collections::BTreeSet<crate::kernel::termination::CallDependency>,
 ) {
     for event in events {
         crate::kernel::termination::charge_termination_work(1);
@@ -6823,12 +6825,12 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         // shared comparison spellings use the same retained source; this
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
-            if facts.assumptions().selected_comparison_source(condition.native_compat(), *truth).is_some())
-        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
+            if facts.assumptions().selected_comparison_source(condition.old_form(), *truth).is_some())
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)
                 && checked_branch_fact_is_available(facts, right))
-        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, _)) if (left == right)))
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, _)) if (left == right)))
 }
 
 /// The pointer congruence fragment may give a field read another spelling
@@ -6841,9 +6843,9 @@ pub(super) fn checked_interface_pointer_equality(
     matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
             _,
             true
-        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::AddressEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerEqual(_, _)
-                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _), _))))
+        ) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::AddressEqual(_, _)
+                | crate::kernel::OldConditionTerm::PointerEqual(_, _)
+                | crate::kernel::OldConditionTerm::AddressOffsetEqual(_, _), _))))
         && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
 }
 
@@ -8267,7 +8269,9 @@ impl ExecutionProofCore {
         self.checked_call_events.clone()
     }
 
-    fn retained_checked_callees(&self) -> Option<Arc<std::collections::BTreeSet<String>>> {
+    fn retained_checked_callees(
+        &self,
+    ) -> Option<Arc<std::collections::BTreeSet<crate::kernel::termination::CallDependency>>> {
         if self.execution_evidence.is_empty() {
             return None;
         }
@@ -9813,6 +9817,7 @@ impl ExecutionProofCore {
                     })
                 },
             )?;
+            reached.complete_staged_memory();
         }
         if let Some(pending) = &reached.pending_thread_create {
             let no_assumptions = PureFactContext::new();
@@ -10251,7 +10256,7 @@ impl ExecutionProofCore {
                         };
                         if *other != scrutinee
                             && !matches!(other, Term::Algebraic(term)
-                                if matches!(term.native_compat().node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
+                                if matches!(term.old_form().node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
                         {
                             arm_facts = arm_facts
                                 .with_fact(Proposition::Equal(other.clone(), constructor.clone()));
@@ -10278,8 +10283,8 @@ impl ExecutionProofCore {
                     body_clauses = crate::kernel::functions::matched_resource_instance_case_clauses(
                         &self.state,
                         projection,
-                        model.native_compat(),
-                        constructor.native_compat(),
+                        model.old_form(),
+                        constructor.old_form(),
                         definitions,
                         arm_facts.assumptions(),
                     );
@@ -10297,7 +10302,7 @@ impl ExecutionProofCore {
                     crate::kernel::AlgebraicTermNode::Constructor { .. }
                 ) && let Proposition::Equal(left, Term::Algebraic(constructor)) = case
                     && let crate::kernel::AlgebraicTermNode::Constructor { variant, fields } =
-                        &constructor.native_compat().node
+                        &constructor.old_form().node
                 {
                     let spelled_fields = fields
                         .iter()
@@ -10318,7 +10323,7 @@ impl ExecutionProofCore {
                         .collect::<Vec<_>>();
                     if spelled_fields != *fields {
                         let spelled = crate::kernel::AlgebraicTerm {
-                            algebraic_type: constructor.native_compat().algebraic_type.clone(),
+                            algebraic_type: constructor.old_form().algebraic_type.clone(),
                             node: crate::kernel::AlgebraicTermNode::Constructor {
                                 variant: variant.clone(),
                                 fields: spelled_fields,
@@ -10334,7 +10339,7 @@ impl ExecutionProofCore {
                 if let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node
                     && let Proposition::Equal(_, Term::Algebraic(constructor)) = case
                 {
-                    for instance in matched_value_premise_instances(facts, variable, constructor.native_compat()) {
+                    for instance in matched_value_premise_instances(facts, variable, constructor.old_form()) {
                         arm_facts = arm_facts.with_fact(instance);
                     }
                 }
@@ -12502,7 +12507,6 @@ impl ExecutionProofCore {
                 candidate.obligations(),
             ));
             let path = crate::kernel::SymbolicExecutionPath {
-                call_parameters: None,
                 descent_step: None,
                 completion_origin: Some(candidate.outcome().clone()),
                 call_result: None,

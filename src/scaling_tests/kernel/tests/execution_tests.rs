@@ -25,7 +25,7 @@ fn direct_local_write_builds_borrow_obligation_without_visiting_aliases() {
     ));
     let slot = state.locals().slot("x").unwrap().clone();
     let borrow = active_memory_borrow(MemoryRange::new(
-        Address::symbolic(Variable(930_000)),
+        OldAddress::symbolic(Variable(930_000)),
         0u32.into(),
         1u32.into(),
     ));
@@ -37,9 +37,9 @@ fn direct_local_write_builds_borrow_obligation_without_visiting_aliases() {
         let mut assumptions = PureFactContext::new();
         for i in 0..count {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     slot.clone(),
-                    Address::symbolic(Variable(931_000 + i)),
+                    OldAddress::symbolic(Variable(931_000 + i)),
                 ),
                 true,
             );
@@ -85,9 +85,9 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
         let mut assumptions = PureFactContext::new().assume_condition(guard.clone(), true);
         for index in 0..size as u32 {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(u64::from(500_000 + index))),
-                    MachineTerm::constant(index),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(u64::from(500_000 + index))),
+                    OldMachineTerm::constant(index),
                 ),
                 true,
             );
@@ -115,7 +115,7 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
 #[test]
 fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts() {
     let state =
-        ExecutionState::new().with_local("i", int32(MachineTerm::Variable(Variable(912_346))));
+        ExecutionState::new().with_local("i", int32(OldMachineTerm::Variable(Variable(912_346))));
     let mut samples = Vec::new();
     for size in [8usize, 16, 32] {
         let checks = (0..size)
@@ -263,9 +263,9 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1_910_000 + u64::from(index))),
-                    MachineTerm::constant(index),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(1_910_000 + u64::from(index))),
+                    OldMachineTerm::constant(index),
                 ),
                 true,
             );
@@ -390,7 +390,7 @@ fn loop_freshness_ignores_unrelated_live_state() {
                 state = state.with_resource_context(ResourceContext::new().unchecked_with_facts(
                     (0..size).map(|index| {
                         ResourceFact::own(Resource::Memory(MemoryRange::new(
-                            Address::symbolic(Variable(base + index)),
+                            OldAddress::symbolic(Variable(base + index)),
                             0u32.into(),
                             1u32.into(),
                         )))
@@ -400,7 +400,7 @@ fn loop_freshness_ignores_unrelated_live_state() {
                 for index in 0..size {
                     state = state.with_local(
                         format!("unrelated_{index}"),
-                        int32(MachineTerm::Variable(Variable(base + index))),
+                        int32(OldMachineTerm::Variable(Variable(base + index))),
                     );
                 }
             }

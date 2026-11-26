@@ -46,18 +46,23 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     step();
                     have rb->__rb_parent_color == address(p) + 1 by {
                         rewrite(color, 1);
-                        normalize() using { aligned(p, 8); };
+                        close() using { aligned(p, 8); };
                     }
+                    have (address(p) & 7u64) == 0u64 by close();
+                    apply(click::integer::uint64_mask_subset(address(p), 7u64, 3u64));
+                    apply(click::integer::uint64_mask_subset(address(p), 7u64, 1u64));
+                    apply(click::integer::uint64_mask_add_clear(address(p), 1u64, 18446744073709551612u64));
                     have (rb->__rb_parent_color & ~3) == address(p) by {
-                        rewrite(color, 1);
-                        normalize() using { aligned(p, 8); };
+                        rewrite(rb->__rb_parent_color, address(p) + 1);
+                        close();
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
                         close();
                     }
+                    apply(click::integer::uint64_mask_add_low(address(p), 1u64, 1u64));
                     have (rb->__rb_parent_color & 1) == 1 by {
                         rewrite(rb->__rb_parent_color, address(p) + 1);
-                        normalize() using { aligned(p, 8); };
+                        close();
                     }
                     have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by {
                         rewrite((rb->__rb_parent_color & 1), 1);
@@ -84,16 +89,21 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     have rb->__rb_parent_color == address(p) + 0 by {
                         rewrite(color, 0); close();
                     }
+                    have (address(p) & 7u64) == 0u64 by close();
+                    apply(click::integer::uint64_mask_subset(address(p), 7u64, 3u64));
+                    apply(click::integer::uint64_mask_subset(address(p), 7u64, 1u64));
+                    apply(click::integer::uint64_mask_add_clear(address(p), 0u64, 18446744073709551612u64));
                     have (rb->__rb_parent_color & ~3) == address(p) by {
-                        rewrite(color, 0);
-                        normalize() using { aligned(p, 8); };
+                        rewrite(rb->__rb_parent_color, address(p) + 0);
+                        close();
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
                         close();
                     }
+                    apply(click::integer::uint64_mask_add_low(address(p), 0u64, 1u64));
                     have (rb->__rb_parent_color & 1) == 0 by {
                         rewrite(rb->__rb_parent_color, address(p) + 0);
-                        normalize() using { aligned(p, 8); };
+                        close();
                     }
                     have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by {
                         rewrite((rb->__rb_parent_color & 1), 0);

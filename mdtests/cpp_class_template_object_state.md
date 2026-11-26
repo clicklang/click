@@ -2,8 +2,9 @@
 
 A generic `class` block declares the object state of a polymorphic class
 template, `template<class T> class Holder<T> { function held(this) -> T; }`:
-its object is the generic resource `Holder__object<T>`, and each instance a
+its object is the generic resource `Holder<T>::object`, and each instance a
 caller uses, `Holder<int>` and `Holder<unsigned int>`, has it at its type.
+A named contract can refer to the instance directly.
 `Wrap<T>` defines `held` on its own memory for every `T`, so its overrides
 are verified once, against `Holder<T>`'s interface read through the
 definition. A caller passing a `Wrap<int>` as a `Holder<int>&` knows after
@@ -50,6 +51,9 @@ verifying "holders.cpp";
 import "interfaces/cpp_class_template_object_state.interface.click";
 template<class T> class Wrap<T> : Holder<T> {
     function held(this) -> T { this->value }
+}
+contract void HoldUnsigned(int* p) {
+    owns held_object: Holder<unsigned int>::object(p);
 }
 template<class T> void Wrap<T>::put(T x) {
 }

@@ -11,6 +11,7 @@ mod exclusive_calls;
 pub(crate) mod mutex_calls;
 
 mod return_backing;
+use crate::kernel::OffsetTree;
 use crate::kernel::{bits32_constant, constant_u32};
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
 use return_backing::PermittedDescriptions;
@@ -21,12 +22,12 @@ use super::functions::CheckedResourceFact;
 #[cfg(test)]
 use super::primitives::memory_ranges_proven_overlapping;
 use super::primitives::{
-    Address, AddressBase, MemorySplitOrigins, OwnedMemberKey, ResourceMemoryIntervalNode,
+    AddressBase, MemorySplitOrigins, OldAddress, OwnedMemberKey, ResourceMemoryIntervalNode,
     memory_interval_ancestors, memory_interval_nodes, memory_range_covers,
     memory_range_is_proven_empty,
 };
 use super::{
-    ExecutionState, MachineTerm, MemoryRange, Proposition, PureFactContext, Resource,
+    ExecutionState, MemoryRange, OldMachineTerm, Proposition, PureFactContext, Resource,
     ResourceContext, ResourceDescription, ResourceFact, ResourceOccurrenceId, ResourceStateSource,
     ResourceTransferRole,
 };
@@ -344,7 +345,7 @@ pub(crate) struct BorrowBindings {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum BoundViewKey {
-    Memory(Address),
+    Memory(OldAddress),
     Other(OwnedMemberKey),
 }
 
@@ -761,7 +762,7 @@ fn without_unindexed_memory(
 ///
 /// A backwards range is how a range says it is empty, and both endpoints are
 /// read as the signed `int32` values they are. Read through
-/// `MachineTerm::as_const`, a start of `-1` arrives as `4294967295` and
+/// `OldMachineTerm::as_const`, a start of `-1` arrives as `4294967295` and
 /// every range beginning below its base — `r[-1..3]` under a callee's
 /// `mutable r[s..e]` called at `-1, 3` — claimed to be empty and took the
 /// barrier's exit: no interval lookup, no symbolic comparison, no refusal,
@@ -828,7 +829,7 @@ pub(crate) fn protected_range_proven_overlapping(
     }
     let byte_range = |range: &MemoryRange| {
         let (base, bytes) = range.byte_footprint();
-        MemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1)
+        MemoryRange::new_with_element_width(base, OldMachineTerm::constant(0), bytes, 1)
     };
     queries.iter().any(|query| {
         protected_ranges.iter().any(|protected| {
@@ -1118,11 +1119,11 @@ struct BorrowLedgerStorage {
 }
 
 type CacheProtectionIndex =
-    PersistentMap<(Address, ResourceMemoryIntervalNode), PersistentSet<BorrowId>>;
+    PersistentMap<(OldAddress, ResourceMemoryIntervalNode), PersistentSet<BorrowId>>;
 
 fn cache_protection_nodes(
     range: &MemoryRange,
-) -> Option<(Address, Vec<ResourceMemoryIntervalNode>)> {
+) -> Option<(OldAddress, Vec<ResourceMemoryIntervalNode>)> {
     let (origin, start, end) = super::primitives::constant_memory_coordinates(range)?;
     let nodes = super::primitives::memory_interval_nodes_for_coordinates(
         &origin.base,
@@ -1134,7 +1135,7 @@ fn cache_protection_nodes(
 
 fn update_cache_protection_bucket(
     index: &mut CacheProtectionIndex,
-    key: (Address, ResourceMemoryIntervalNode),
+    key: (OldAddress, ResourceMemoryIntervalNode),
     borrow: BorrowId,
     insert: bool,
 ) {
@@ -1749,7 +1750,7 @@ enum BorrowTransitionEvidence {
     BorrowedMutexUseRoot {
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Address,
+        mutex: super::OldAddress,
         protected: Option<ResourceDescription>,
         initialization: super::mutexes::MutexInitializationId,
         scope: BorrowScopeId,
@@ -2022,9 +2023,9 @@ impl LocalViewBacking {
         }
         let bytes = memory.block_size(&range.base().base)?.clone();
         let entire = MemoryRange::new_with_element_width(
-            super::Address {
+            super::OldAddress {
                 base: range.base().base.clone(),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::constant(0),
             },
             0.into(),
             bytes,
@@ -2061,9 +2062,9 @@ impl LocalViewBacking {
             return Ok(());
         };
         let data = &ledger.storage.data;
-        let origin = Address {
+        let origin = OldAddress {
             base: self.block.clone(),
-            offset: super::AddressOffset::Constant(0),
+            offset: super::OldAddressOffset::constant(0),
         };
         let has_possible_symbolic_overlap =
             data.automatic_storage_borrows.contains_key(&self.block)
@@ -3296,7 +3297,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 StableViewPlanError::MissingResource(ResourceFact::Own(
                     fact.resource().clone(),
-                    Box::new(MachineTerm::constant(demanded).into()),
+                    Box::new(OldMachineTerm::constant(demanded).into()),
                 ))
             }
             _ => StableViewPlanError::MissingResource(fact.clone()),
@@ -3515,12 +3516,14 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     // Two wide ranges have one span when their widths and
                     // 64-bit bounds agree.
                     (Some((required_start, required_end)), Some((caller_start, caller_end))) => {
-                        let same = |left: &MachineTerm, right: &MachineTerm| {
+                        let same = |left: &OldMachineTerm, right: &OldMachineTerm| {
                             left == right
-                                || assumptions.decide(&crate::kernel::ConditionTerm::uint64_equal(
-                                    left.clone(),
-                                    right.clone(),
-                                )) == Some(true)
+                                || assumptions.decide(
+                                    &crate::kernel::OldConditionTerm::uint64_equal(
+                                        left.clone(),
+                                        right.clone(),
+                                    ),
+                                ) == Some(true)
                         };
                         required.element_width() == caller.element_width()
                             && same(required_start, caller_start)
@@ -5300,7 +5303,7 @@ impl BorrowLedger {
         &self,
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Address,
+        mutex: super::OldAddress,
     ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         self.borrowed_mutex_use_input_with_protected(holder, support, mutex, None)
     }
@@ -5309,7 +5312,7 @@ impl BorrowLedger {
         &self,
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Address,
+        mutex: super::OldAddress,
         protected: Option<ResourceDescription>,
     ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         let arena = self.storage.data.arena;
@@ -6615,7 +6618,7 @@ impl BorrowLedger {
     pub(super) fn automatic_storage_retirement_refusal(
         &self,
         block: &AddressBase,
-        size: &MachineTerm,
+        size: &OldMachineTerm,
     ) -> Option<BorrowRefusalDiagnostic> {
         #[cfg(test)]
         let _fast =
@@ -6625,9 +6628,9 @@ impl BorrowLedger {
         let (borrow, protected) = data.automatic_storage_borrows.get(block)?.iter().next()?;
         let record = data.borrows.get(borrow).expect("indexed live borrow");
         let attempted = MemoryRange::new_with_element_width(
-            Address {
+            OldAddress {
                 base: block.clone(),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::constant(0),
             },
             0u32.into(),
             size.clone(),

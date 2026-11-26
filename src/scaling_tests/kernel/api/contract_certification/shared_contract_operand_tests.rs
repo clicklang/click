@@ -36,23 +36,23 @@ fn symbolic_ternary_lowering_ignores_unrelated_facts_and_retains_its_guard() {
     let mut results = Vec::new();
     for (size, flag_is_zero) in [(0, None), (16, Some(true)), (256, Some(false))] {
         let _session = crate::kernel::VerificationSession::enter();
-        let flag = MachineTerm::Variable(Variable(1017210));
-        let y = MachineTerm::Variable(Variable(1017211));
+        let flag = OldMachineTerm::Variable(Variable(1017210));
+        let y = OldMachineTerm::Variable(Variable(1017211));
         let state = ExecutionState::new()
             .with_local("flag", crate::kernel::int32(flag.clone()))
             .with_local("y", crate::kernel::int32(y));
         let mut facts = (0..size).fold(PureFactContext::new(), |facts, index| {
             facts.assume_proposition(Proposition::condition_is(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1017300 + index)),
-                    MachineTerm::constant(1),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(1017300 + index)),
+                    OldMachineTerm::constant(1),
                 ),
                 true,
             ))
         });
         if let Some(flag_is_zero) = flag_is_zero {
             facts = facts.assume_proposition(Proposition::condition_is(
-                ConditionTerm::equal(flag, MachineTerm::constant(0)),
+                OldConditionTerm::equal(flag, OldMachineTerm::constant(0)),
                 flag_is_zero,
             ));
         }

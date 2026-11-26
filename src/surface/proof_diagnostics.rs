@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn rejected_read_prerequisite_uses_the_shared_state_legend() {
-        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
+        use crate::kernel::{OldAddress, ProgramType, SymbolicMemory, Variable};
         struct Rejected(Proposition);
         impl ProofDiagnosticState for Rejected {
             fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -805,7 +805,7 @@ mod tests {
         let state = Rejected(Proposition::MemoryReadDefined {
             at: None,
             memory: SymbolicMemory::new(),
-            pointer: Address::symbolic(Variable(987_001)),
+            pointer: OldAddress::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
         });
         let mut labels = render::MemoryStateLabels::default();
@@ -826,7 +826,7 @@ mod tests {
     #[test]
     fn rejected_resource_fact_uses_one_printer_and_state_legend() {
         let _typed = render::TypedNotationScope::enter();
-        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
+        use crate::kernel::{OldAddress, ProgramType, SymbolicMemory, Variable};
         struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
         impl ProofDiagnosticState for Rejected {
             fn rejected_resource_fact(
@@ -847,7 +847,7 @@ mod tests {
         let read = |memory| Proposition::MemoryReadDefined {
             at: None,
             memory,
-            pointer: Address::symbolic(Variable(987_002)),
+            pointer: OldAddress::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
         };
         let rejected = read(SymbolicMemory::new());
@@ -884,7 +884,7 @@ mod tests {
     #[test]
     fn rendering_is_the_boundary_that_visits_retained_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -909,13 +909,13 @@ mod tests {
     #[test]
     fn trace_context_retains_a_refined_integer_goal_without_a_source_spelling() {
         use crate::kernel::{
-            ConditionTerm, IntegerTerm, MachineIntegerType, MachineTerm, Variable,
+            IntegerTerm, MachineIntegerType, OldConditionTerm, OldMachineTerm, Variable,
         };
         let goal = Proposition::condition_is(
-            ConditionTerm::integer_equal(
+            OldConditionTerm::integer_equal(
                 IntegerTerm::from_machine(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(Variable(981_701)),
+                    OldMachineTerm::Variable(Variable(981_701)),
                 )
                 .unwrap(),
                 IntegerTerm::constant_i64(7),
@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn click_error_lazily_caches_and_preserves_structured_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -994,7 +994,9 @@ mod tests {
 
     #[test]
     fn reported_trace_uses_the_goals_state_labels() {
-        use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
+        use crate::kernel::{
+            AddressBase, OldAddress, OldAddressOffset, OldMachineTerm, SymbolicMemory,
+        };
 
         struct TracedState(Proposition);
         impl ProofDiagnosticState for TracedState {
@@ -1037,11 +1039,11 @@ mod tests {
         }
         let at = |memory| Proposition::MemoryLoadable {
             memory,
-            base: Address {
+            base: OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         crate::surface::with_proof_trace("f", || {
@@ -1107,7 +1109,7 @@ mod tests {
     #[test]
     fn terminal_search_report_renders_unclosed_goal_lazily() {
         let state = Arc::new(CountingState {
-            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = Arc::new(ProofFailureDiagnostic {
@@ -1149,11 +1151,11 @@ mod tests {
     }
     fn unspelled_test_fact(variable: crate::kernel::Variable) -> Proposition {
         Proposition::condition_is(
-            crate::kernel::ConditionTerm::Compare {
+            crate::kernel::OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
-                left: Box::new(crate::kernel::MachineTerm::Variable(variable)),
-                right: Box::new(crate::kernel::MachineTerm::constant(0)),
+                left: Box::new(crate::kernel::OldMachineTerm::Variable(variable)),
+                right: Box::new(crate::kernel::OldMachineTerm::constant(0)),
             },
             true,
         )
@@ -1188,7 +1190,7 @@ mod tests {
 
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
-        use crate::kernel::{MachineTerm, ProgramExpression, ProgramValue, Variable};
+        use crate::kernel::{OldMachineTerm, ProgramExpression, ProgramValue, Variable};
         use crate::languages::interface::{ImportedParameter, InterfaceType};
 
         let variable = Variable(786_901);
@@ -1198,7 +1200,7 @@ mod tests {
             None,
         )];
         let arguments = [ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(variable),
+            OldMachineTerm::Variable(variable),
         ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),

@@ -12,11 +12,11 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
         Variable(300),
         Sort::Bitvector32,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(300))),
-                right: Box::new(MachineTerm::constant(5)),
+                left: Box::new(OldMachineTerm::Variable(Variable(300))),
+                right: Box::new(OldMachineTerm::constant(5)),
             },
             true,
         ),
@@ -26,11 +26,11 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
     for index in 0..128 {
         large = large.assume_proposition(distinct_requirement(10_000 + index, "unrelated"));
         large = large.assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
-                right: Box::new(MachineTerm::constant(index as u32)),
+                left: Box::new(OldMachineTerm::Variable(Variable(20_000 + index))),
+                right: Box::new(OldMachineTerm::constant(index as u32)),
             },
             true,
         ));
@@ -120,13 +120,15 @@ fn stated_index_keys_each_fact_once_and_only_when_asked() {
 /// at the other, at the work of a lookup at its own, however many unrelated
 /// equalities the context holds; nothing is filed twice.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn a_32_bit_equality_is_one_fact_at_either_signedness() {
-    let x = MachineTerm::Variable(Variable(31_000));
-    let equality = |format, right: u32| ConditionTerm::Compare {
+    let x = OldMachineTerm::Variable(Variable(31_000));
+    let equality = |format, right: u32| OldConditionTerm::Compare {
         format,
         relation: CompareRelation::Equal,
         left: Box::new(x.clone()),
-        right: Box::new(MachineTerm::constant(right)),
+        right: Box::new(OldMachineTerm::constant(right)),
     };
     let mut samples = Vec::new();
     for size in [16u32, 64, 256, 1024] {
@@ -137,11 +139,13 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
             let mut context = PureFactContext::new();
             for index in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(32_000 + u64::from(index)))),
-                        right: Box::new(MachineTerm::constant(index)),
+                        left: Box::new(OldMachineTerm::Variable(Variable(
+                            32_000 + u64::from(index),
+                        ))),
+                        right: Box::new(OldMachineTerm::constant(index)),
                     },
                     true,
                 );
@@ -182,7 +186,7 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
 fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
     use crate::kernel::machine_integer::{Operation, definedness};
     let format = MachineIntegerType::Int32;
-    let index = MachineTerm::Variable(Variable(880_000));
+    let index = OldMachineTerm::Variable(Variable(880_000));
     let exact = Operation::Add.exact(
         IntegerTerm::from_machine(format, index.clone()).unwrap(),
         IntegerTerm::constant(1.into()),
@@ -196,11 +200,17 @@ fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
             if mode == 1 {
                 context = context
                     .assume_condition(
-                        ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
+                        OldConditionTerm::signed_less_equal(
+                            OldMachineTerm::constant(0),
+                            index.clone(),
+                        ),
                         true,
                     )
                     .assume_condition(
-                        ConditionTerm::signed_less_equal(index.clone(), MachineTerm::constant(64)),
+                        OldConditionTerm::signed_less_equal(
+                            index.clone(),
+                            OldMachineTerm::constant(64),
+                        ),
                         true,
                     );
             } else if mode == 2 {

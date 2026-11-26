@@ -448,25 +448,25 @@ fn certificate_from_farkas(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, IntegerTerm, Variable};
+    use crate::kernel::{IntegerTerm, OldConditionTerm, Variable};
 
     fn x(id: u64) -> IntegerTerm {
         IntegerTerm::Variable(Variable(id))
     }
 
     fn le(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::integer_less_equal(left, right), true)
+        Proposition::condition_is(OldConditionTerm::integer_less_equal(left, right), true)
     }
 
     fn lt(left: IntegerTerm, right: IntegerTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::IntegerLessThan(left.into(), right.into()),
+            OldConditionTerm::IntegerLessThan(left.into(), right.into()),
             true,
         )
     }
 
     fn eq(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::integer_equal(left, right), true)
+        Proposition::condition_is(OldConditionTerm::integer_equal(left, right), true)
     }
 
     fn c(value: i64) -> IntegerTerm {
@@ -482,7 +482,7 @@ mod tests {
 
     fn ne(left: IntegerTerm, right: IntegerTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::IntegerNotEqual(left.into(), right.into()),
+            OldConditionTerm::IntegerNotEqual(left.into(), right.into()),
             true,
         )
     }

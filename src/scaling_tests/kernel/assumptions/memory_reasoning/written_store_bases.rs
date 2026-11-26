@@ -5,7 +5,7 @@ fn ownership_footprint_does_not_walk_pointer_aliases() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = |i| Address::symbolic(Variable(991_000 + i));
+            let pointer = |i| OldAddress::symbolic(Variable(991_000 + i));
             let owner = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new(pointer(0), 0u32.into(), 2u32.into()),
             ));
@@ -14,8 +14,10 @@ fn ownership_footprint_does_not_walk_pointer_aliases() {
                 .with_store_owner(Some(owner));
             for i in 1..=size {
                 let base = if related { pointer(0) } else { pointer(2 * i) };
-                facts = facts
-                    .assume_condition(ConditionTerm::address_equal(base, pointer(2 * i + 1)), true);
+                facts = facts.assume_condition(
+                    OldConditionTerm::address_equal(base, pointer(2 * i + 1)),
+                    true,
+                );
             }
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..4 {

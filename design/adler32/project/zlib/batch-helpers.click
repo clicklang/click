@@ -78,11 +78,8 @@ theorem zlib_batch_nonempty_prefix(n: uint32) {
 }
 theorem zlib_batch_empty_components(bytes: uint8[]) {
  ensures adler_spec_a(bytes, 0, 1) == 1 and adler_spec_b(bytes, 0, 1, 0) == 0 by {
-  apply(adler_sum_empty(bytes, 0));
-  unfold(adler_spec_a(bytes, 0, 1));
-  unfold(adler_spec_b(bytes, 0, 1, 0));
-  rewrite(adler_byte_sum(bytes, 0), 0);
-  rewrite(adler_weighted_sum(bytes, 0, 0), 0); all { (0 : Integer) == 0 => { normalize(); } (0 : Integer) == 0 => { normalize(); } }
+  apply(adler_spec_empty(bytes, 1, 0));
+  close();
  }
 }
 theorem zlib_batch_predecessor(n: uint32) {

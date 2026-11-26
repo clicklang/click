@@ -80,7 +80,7 @@ impl TermRewrite<'_> {
             .bitvector
             .map(|(from, _)| super::super::machine_source_match::MachineSourceMatcher::new(from));
         let mut replacements = HashMap::<MachineIntegerType, KernelTerm>::new();
-        let mut guards = HashMap::<u64, (ConditionTerm, KernelTerm, bool)>::new();
+        let mut guards = HashMap::<u64, (OldConditionTerm, KernelTerm, bool)>::new();
         let mut pending = vec![(root.clone(), false)];
         while let Some((term, finish)) = pending.pop() {
             self.visit();
@@ -122,7 +122,7 @@ impl TermRewrite<'_> {
                     .is_some_and(|variable| self.scope.program_values.contains_key(variable))
             {
                 let source = sources.entry(format).or_insert_with(|| match from {
-                    MachineOperandView::Legacy(from) => {
+                    MachineOperandView::Old(from) => {
                         KernelTermImport::default().machine_arithmetic(format, from)
                     }
                     MachineOperandView::Shared(from) => {
@@ -206,7 +206,7 @@ impl TermRewrite<'_> {
             }
             let children: Vec<_> = match term.node() {
                 KernelTermNode::MachineIf { arguments } => match guards.get(&term.id()) {
-                    Some((ConditionTerm::Constant(value), _, false)) => {
+                    Some((OldConditionTerm::Constant(value), _, false)) => {
                         vec![arguments[if *value { 1 } else { 2 }].clone()]
                     }
                     _ => arguments[1..].to_vec(),
@@ -233,7 +233,7 @@ impl TermRewrite<'_> {
                 KernelTermNode::MachineIf { arguments } => {
                     let (condition, guard, preserve) =
                         guards.remove(&term.id()).expect("visited guard");
-                    if !preserve && let ConditionTerm::Constant(value) = condition {
+                    if !preserve && let OldConditionTerm::Constant(value) = condition {
                         get(&arguments[if value { 1 } else { 2 }])?
                     } else {
                         let left = get(&arguments[1])?;
@@ -246,10 +246,10 @@ impl TermRewrite<'_> {
                     }
                 }
                 KernelTermNode::Variable(variable) => {
-                    let rewritten = self.bits(&MachineTerm::Variable(*variable));
+                    let rewritten = self.bits(&OldMachineTerm::Variable(*variable));
                     KernelTerm::retained_machine_operand(
                         format,
-                        MachineOperandView::Legacy(&rewritten),
+                        MachineOperandView::Old(&rewritten),
                     )
                 }
                 KernelTermNode::MemoryLoad { .. } => {
@@ -259,7 +259,7 @@ impl TermRewrite<'_> {
                     let rewritten = self.bits(read);
                     KernelTerm::retained_machine_operand(
                         format,
-                        MachineOperandView::Legacy(&rewritten),
+                        MachineOperandView::Old(&rewritten),
                     )
                 }
                 KernelTermNode::FloatConvert { .. } => {
@@ -269,7 +269,7 @@ impl TermRewrite<'_> {
                     let rewritten = self.bits(&native);
                     KernelTerm::retained_machine_operand(
                         format,
-                        MachineOperandView::Legacy(&rewritten),
+                        MachineOperandView::Old(&rewritten),
                     )
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
@@ -285,7 +285,7 @@ impl TermRewrite<'_> {
                 }
                 KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => {
                     let value = self.bits(term.machine_conversion_leaf().expect("conversion leaf"));
-                    KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&value))
+                    KernelTerm::retained_machine_operand(format, MachineOperandView::Old(&value))
                 }
                 KernelTermNode::MachineBinary {
                     format: operation_format,
@@ -304,12 +304,12 @@ impl TermRewrite<'_> {
                         // literals. Fold only those fixed-size children, as the
                         // native conditional rewriter does; retain symbolic DAGs.
                         let folded =
-                            MachineTerm::machine_binary(*operation_format, *operator, a, b);
+                            OldMachineTerm::machine_binary(*operation_format, *operator, a, b);
                         // The root may be a signed word-equality reading of an
                         // unsigned operation. Interpret a folded word in that
                         // root's format before observing its mathematical value.
                         let folded =
-                            MachineTerm::machine_integer_cast(*operation_format, format, folded);
+                            OldMachineTerm::machine_integer_cast(*operation_format, format, folded);
                         imported(format, folded)
                     } else {
                         KernelTerm::machine_binary_shared(
@@ -388,14 +388,14 @@ impl TermRewrite<'_> {
 }
 
 impl TermRewrite<'_> {
-    fn shared_guard_holds(&self, guard: &ConditionTerm) -> bool {
+    fn shared_guard_holds(&self, guard: &OldConditionTerm) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.conditions
             .is_some_and(|conditions| conditions.get(guard) == Some(&true))
             || self
                 .cited_comparison_context
                 .is_some_and(|context| context.selected_comparison_value(guard) == Some(true))
-            || folded_machine_condition(guard.clone()) == ConditionTerm::Constant(true)
+            || folded_machine_condition(guard.clone()) == OldConditionTerm::Constant(true)
     }
 
     fn widened_narrowed_shared_carrier(
@@ -474,7 +474,7 @@ fn shared_narrowed_cast_identity(
     value: &KernelTerm,
     source: MachineIntegerType,
     destination: MachineIntegerType,
-) -> Option<(Vec<Vec<ConditionTerm>>, KernelTerm)> {
+) -> Option<(Vec<Vec<OldConditionTerm>>, KernelTerm)> {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use MachineIntegerType as T;
     use MachineOperandView as V;
@@ -511,11 +511,11 @@ fn shared_narrowed_cast_identity(
     };
     let compare = |format, relation, bound: i64| {
         let bound = match format {
-            T::Int64 => MachineTerm::int64_constant(bound),
-            T::UInt64 => MachineTerm::uint64_constant(bound as u64),
-            _ => MachineTerm::constant(bound as i32 as u32),
+            T::Int64 => OldMachineTerm::int64_constant(bound),
+            T::UInt64 => OldMachineTerm::uint64_constant(bound as u64),
+            _ => OldMachineTerm::constant(bound as i32 as u32),
         };
-        condition_for_operand_views(format, relation, [V::Shared(&value), V::Legacy(&bound)])
+        condition_for_operand_views(format, relation, [V::Shared(&value), V::Old(&bound)])
     };
     let format = match source {
         T::Int8 | T::UInt8 | T::Int16 | T::UInt16 => T::Int32,
@@ -540,7 +540,7 @@ fn shared_narrowed_cast_identity(
     Some((bounds, carrier))
 }
 
-fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<ConditionTerm>, KernelTerm)> {
+fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<OldConditionTerm>, KernelTerm)> {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use MachineBinaryOp as O;
     use MachineIntegerType as T;
@@ -556,7 +556,7 @@ fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<ConditionTerm>, K
     let compare = |ty, relation, a: &KernelTerm, b: &KernelTerm| {
         let condition = condition_for_operand_views(ty, relation, [V::Shared(a), V::Shared(b)]);
         crate::kernel::assumptions::observation_comparisons::constant_observation_value(&condition)
-            .map(ConditionTerm::Constant)
+            .map(OldConditionTerm::Constant)
             .unwrap_or(condition)
     };
     if *format == T::UInt64 {
@@ -646,10 +646,10 @@ fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<ConditionTerm>, K
     ))
 }
 
-pub(super) fn literal(term: &KernelTerm) -> Option<MachineTerm> {
+pub(super) fn literal(term: &KernelTerm) -> Option<OldMachineTerm> {
     MachineOperandView::Shared(term).literal()
 }
-pub(super) fn imported(format: MachineIntegerType, value: MachineTerm) -> KernelTerm {
+pub(super) fn imported(format: MachineIntegerType, value: OldMachineTerm) -> KernelTerm {
     KernelTermImport::default()
         .machine_arithmetic(format, &value)
         .expect("machine arithmetic result")
@@ -734,7 +734,7 @@ fn comparison_binary_uncached(
     // Reuse the established evaluator only for two fixed-size literal leaves.
     // No symbolic child is exported or temporarily represented as a native tree.
     if let (Some(a), Some(b)) = (literal(&left), literal(&right)) {
-        return imported(format, MachineTerm::machine_binary(format, op, a, b));
+        return imported(format, OldMachineTerm::machine_binary(format, op, a, b));
     }
     if word32 {
         match op {
@@ -859,23 +859,23 @@ fn comparison_binary_uncached(
 }
 
 #[cfg(test)]
-fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
+fn comparison_read_fixture(value: OldMachineTerm) -> (Variable, Variable) {
     let ty = MachineIntegerType::Int32;
-    let index = MachineTerm::Variable(Variable(992201));
-    let pointer = |value| Address {
+    let index = OldMachineTerm::Variable(Variable(992201));
+    let pointer = |value| OldAddress {
         base: AddressBase::Concrete("opaque-comparison".into()),
-        offset: AddressOffset::scaled_int32_node(value, 4),
+        offset: OldAddressOffset::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new()
             .with_block("opaque-comparison", 64)
             .store(pointer(index.clone()), ProgramValue::Int32(value)),
     );
-    let written = MachineTerm::Binary {
+    let written = OldMachineTerm::Binary {
         format: ty,
         op: MachineBinaryOp::Add,
         left: Box::new(index.clone()),
-        right: Box::new(MachineTerm::constant(0)),
+        right: Box::new(OldMachineTerm::constant(0)),
     };
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
@@ -898,8 +898,8 @@ mod tests {
 
     fn check_conditional_parity(
         format: MachineIntegerType,
-        native: MachineTerm,
-        guards: Vec<ConditionTerm>,
+        native: OldMachineTerm,
+        guards: Vec<OldConditionTerm>,
     ) {
         let root = imported(format, native.clone());
         for omitted in 0..=guards.len() {
@@ -938,19 +938,19 @@ mod tests {
     #[test]
     fn retained_float_to_integer_rewrite_matches_native_normalization_and_refusal() {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(999976));
+        let variable = OldMachineTerm::Variable(Variable(999976));
         for source in [ProgramType::Float32, ProgramType::Float64] {
             let replacements = if source == ProgramType::Float32 {
                 vec![
-                    MachineTerm::constant(0x3fc00000),
-                    MachineTerm::constant(0x80000000),
-                    MachineTerm::constant(0x7fc00001),
+                    OldMachineTerm::constant(0x3fc00000),
+                    OldMachineTerm::constant(0x80000000),
+                    OldMachineTerm::constant(0x7fc00001),
                 ]
             } else {
                 vec![
-                    MachineTerm::uint64_constant(0x3ff8000000000000),
-                    MachineTerm::uint64_constant(0x8000000000000000),
-                    MachineTerm::uint64_constant(0x7ff8000000000001),
+                    OldMachineTerm::uint64_constant(0x3ff8000000000000),
+                    OldMachineTerm::uint64_constant(0x8000000000000000),
+                    OldMachineTerm::uint64_constant(0x7ff8000000000001),
                 ]
             };
             for target in [
@@ -958,7 +958,7 @@ mod tests {
                 MachineIntegerType::UInt32,
                 MachineIntegerType::Int64,
             ] {
-                let native = MachineTerm::opaque_conversion(
+                let native = OldMachineTerm::opaque_conversion(
                     format!(
                         "c_{}_to_{}",
                         crate::kernel::program_type_spelling(source),
@@ -989,11 +989,11 @@ mod tests {
     fn shared_conditional_remainders_preserve_selected_guards() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
-            let n = MachineTerm::Binary {
+            let n = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
-                left: MachineTerm::Variable(Variable(985001)).into(),
-                right: MachineTerm::Variable(Variable(985002)).into(),
+                left: OldMachineTerm::Variable(Variable(985001)).into(),
+                right: OldMachineTerm::Variable(Variable(985002)).into(),
             };
             let constant = |number| {
                 crate::kernel::machine_integer::range::constant_word(
@@ -1006,17 +1006,17 @@ mod tests {
                 let d = constant(divisor);
                 let inputs = [
                     n.clone(),
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format,
                         op: MachineBinaryOp::Subtract,
                         left: n.clone().into(),
                         right: d.clone().into(),
                     },
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format,
                         op: MachineBinaryOp::Subtract,
                         left: n.clone().into(),
-                        right: MachineTerm::Binary {
+                        right: OldMachineTerm::Binary {
                             format,
                             op: MachineBinaryOp::Remainder,
                             left: n.clone().into(),
@@ -1026,7 +1026,7 @@ mod tests {
                     },
                 ];
                 for input in inputs {
-                    let native = MachineTerm::Binary {
+                    let native = OldMachineTerm::Binary {
                         format,
                         op: MachineBinaryOp::Remainder,
                         left: input.into(),
@@ -1046,22 +1046,23 @@ mod tests {
     fn shared_conditional_low_word_multiple_requires_the_full_width_bound() {
         let _session = crate::kernel::VerificationSession::enter();
         use MachineIntegerType as T;
-        let n = MachineTerm::uint64_add(
-            MachineTerm::Variable(Variable(985021)),
-            MachineTerm::Variable(Variable(985022)),
+        let n = OldMachineTerm::uint64_add(
+            OldMachineTerm::Variable(Variable(985021)),
+            OldMachineTerm::Variable(Variable(985022)),
         );
-        let d = MachineTerm::uint64_constant(5);
-        let multiple = MachineTerm::uint64_subtract(n.clone(), MachineTerm::uint64_remainder(n, d));
-        let low = MachineTerm::uint32_from_64(multiple);
+        let d = OldMachineTerm::uint64_constant(5);
+        let multiple =
+            OldMachineTerm::uint64_subtract(n.clone(), OldMachineTerm::uint64_remainder(n, d));
+        let low = OldMachineTerm::uint32_from_64(multiple);
         for low in [
             low.clone(),
-            MachineTerm::sign_cast32(T::UInt32, T::Int32, low),
+            OldMachineTerm::sign_cast32(T::UInt32, T::Int32, low),
         ] {
-            let input = MachineTerm::Binary {
+            let input = OldMachineTerm::Binary {
                 format: T::Int32,
                 op: MachineBinaryOp::Remainder,
                 left: low.into(),
-                right: MachineTerm::constant(5).into(),
+                right: OldMachineTerm::constant(5).into(),
             };
             let guards = input.guarded_remainder_rewrite().unwrap().0;
             check_conditional_parity(T::Int32, input, guards);
@@ -1084,25 +1085,25 @@ mod tests {
         ] {
             for destination in [T::Int8, T::UInt8, T::Int16, T::UInt16] {
                 let value = if source.format().bits() >= 32 {
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format: source,
                         op: MachineBinaryOp::Add,
-                        left: MachineTerm::Variable(Variable(985011)).into(),
-                        right: MachineTerm::Variable(Variable(985012)).into(),
+                        left: OldMachineTerm::Variable(Variable(985011)).into(),
+                        right: OldMachineTerm::Variable(Variable(985012)).into(),
                     }
                 } else {
-                    MachineTerm::Variable(Variable(985011))
+                    OldMachineTerm::Variable(Variable(985011))
                 };
                 let Some((bounds, _)) =
                     crate::kernel::assumptions::narrowed_cast_identity(&value, source, destination)
                 else {
                     continue;
                 };
-                let native = MachineTerm::Cast {
+                let native = OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: destination,
                     to: T::Int32,
-                    value: MachineTerm::Cast {
+                    value: OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         from: source,
                         to: destination,
@@ -1123,12 +1124,12 @@ mod tests {
     fn unguarded_machine_observation_copy_keeps_shared_operands() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let native = MachineTerm::Cast {
+        let native = OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: format,
             to: format,
-            value: Box::new(MachineTerm::add(
-                MachineTerm::Variable(Variable(992400)),
+            value: Box::new(OldMachineTerm::add(
+                OldMachineTerm::Variable(Variable(992400)),
                 1u32.into(),
             )),
         };
@@ -1158,11 +1159,11 @@ mod tests {
             MachineIntegerType::UInt64,
         ];
         for format in formats {
-            let conversion = MachineTerm::IntegerToMachine {
+            let conversion = OldMachineTerm::IntegerToMachine {
                 value: source.clone(),
                 destination: format,
             };
-            let expression = MachineTerm::Binary {
+            let expression = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
                 left: Box::new(conversion.clone()),
@@ -1170,13 +1171,13 @@ mod tests {
             };
             for destination in formats {
                 for native in [
-                    MachineTerm::Cast {
+                    OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         from: format,
                         to: destination,
                         value: Box::new(expression.clone()),
                     },
-                    MachineTerm::machine_integer_cast(format, destination, expression.clone()),
+                    OldMachineTerm::machine_integer_cast(format, destination, expression.clone()),
                 ] {
                     let expected = TermRewrite::for_integer_exact(&source, &target).bits(&native);
                     let input = IntegerTerm::Machine(
@@ -1209,19 +1210,19 @@ mod tests {
     fn compound_machine_replacement_is_exact_and_does_not_rewrite_its_replacement() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let a = MachineTerm::Variable(Variable(992402));
-        let b = MachineTerm::Variable(Variable(992403));
-        let source = MachineTerm::add(a.clone(), b.clone());
-        let replacement = MachineTerm::add(source.clone(), a.clone());
+        let a = OldMachineTerm::Variable(Variable(992402));
+        let b = OldMachineTerm::Variable(Variable(992403));
+        let source = OldMachineTerm::add(a.clone(), b.clone());
+        let replacement = OldMachineTerm::add(source.clone(), a.clone());
         for native in [
             source.clone(),
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Multiply,
                 left: Box::new(source.clone()),
                 right: Box::new(source.clone()),
             },
-            MachineTerm::add(b, a),
+            OldMachineTerm::add(b, a),
         ] {
             let expected = TermRewrite::for_bits_checked(&source, &replacement).bits(&native);
             let root = imported(format, native);
@@ -1240,27 +1241,30 @@ mod tests {
         for (format, values) in [
             (
                 MachineIntegerType::Int32,
-                vec![MachineTerm::constant(1), MachineTerm::uint32_constant(1)],
+                vec![
+                    OldMachineTerm::constant(1),
+                    OldMachineTerm::uint32_constant(1),
+                ],
             ),
             (
                 MachineIntegerType::UInt32,
                 vec![
-                    MachineTerm::constant(u32::MAX),
-                    MachineTerm::uint32_constant(u32::MAX),
+                    OldMachineTerm::constant(u32::MAX),
+                    OldMachineTerm::uint32_constant(u32::MAX),
                 ],
             ),
             (
                 MachineIntegerType::Int64,
                 vec![
-                    MachineTerm::int64_constant(-1),
-                    MachineTerm::uint64_constant(u64::MAX),
+                    OldMachineTerm::int64_constant(-1),
+                    OldMachineTerm::uint64_constant(u64::MAX),
                 ],
             ),
             (
                 MachineIntegerType::UInt64,
                 vec![
-                    MachineTerm::int64_constant(1),
-                    MachineTerm::uint64_constant(1),
+                    OldMachineTerm::int64_constant(1),
+                    OldMachineTerm::uint64_constant(1),
                 ],
             ),
         ] {
@@ -1291,15 +1295,15 @@ mod tests {
         let format = MachineIntegerType::Int32;
         let variable = Variable(992404);
         let replacement = IntegerTerm::constant_i64(5);
-        let source = MachineTerm::IntegerToMachine {
+        let source = OldMachineTerm::IntegerToMachine {
             value: IntegerTerm::Variable(variable).into(),
             destination: format,
         };
-        let native = MachineTerm::Binary {
+        let native = OldMachineTerm::Binary {
             format,
             op: MachineBinaryOp::Multiply,
             left: Box::new(source),
-            right: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(OldMachineTerm::Variable(variable)),
         };
         let root = imported(format, native.clone());
         let empty = BTreeMap::new();
@@ -1333,7 +1337,7 @@ mod tests {
     #[test]
     fn variable_substitution_preserves_shared_arithmetic_and_is_query_local() {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(992301));
+        let variable = OldMachineTerm::Variable(Variable(992301));
         let formats = [
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
@@ -1351,7 +1355,7 @@ mod tests {
                 MachineBinaryOp::ShiftRight,
                 MachineBinaryOp::BitwiseAnd,
             ] {
-                let native = MachineTerm::Binary {
+                let native = OldMachineTerm::Binary {
                     format,
                     op,
                     left: Box::new(variable.clone()),
@@ -1382,8 +1386,8 @@ mod tests {
     fn signed_observation_retains_a_substituted_unsigned_carrier() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int64;
-        let source = MachineTerm::Variable(Variable(992303));
-        let replacement = MachineTerm::uint64_constant(u64::MAX);
+        let source = OldMachineTerm::Variable(Variable(992303));
+        let replacement = OldMachineTerm::uint64_constant(u64::MAX);
         let input = IntegerTerm::Machine(
             SharedMachineIntegerTerm::from_shared(format, imported(format, source.clone()))
                 .unwrap(),
@@ -1404,7 +1408,7 @@ mod tests {
     #[test]
     fn variable_substitution_preserves_shared_cast_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(992302));
+        let variable = OldMachineTerm::Variable(Variable(992302));
         let formats = [
             MachineIntegerType::Int8,
             MachineIntegerType::UInt8,
@@ -1417,7 +1421,7 @@ mod tests {
         ];
         for source in formats {
             for destination in formats {
-                let native = MachineTerm::Cast {
+                let native = OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: source,
                     to: destination,
@@ -1450,15 +1454,16 @@ mod tests {
     fn comparison_keeps_arithmetic_shared_when_a_read_exposes_an_integer_conversion() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let opaque = MachineTerm::IntegerToMachine {
+        let opaque = OldMachineTerm::IntegerToMachine {
             value: IntegerTerm::Variable(Variable(992202)).into(),
             destination: ty,
         };
         let (load, _) = comparison_read_fixture(opaque.clone());
-        let rewritten = TermRewrite::for_arithmetic_comparison().bits(&MachineTerm::Variable(load));
+        let rewritten =
+            TermRewrite::for_arithmetic_comparison().bits(&OldMachineTerm::Variable(load));
         assert_eq!(rewritten, opaque);
 
-        let mut root = imported(ty, MachineTerm::Variable(load));
+        let mut root = imported(ty, OldMachineTerm::Variable(load));
         for _ in 0..4 {
             root = KernelTerm::machine_binary_shared(
                 ty,
@@ -1467,7 +1472,7 @@ mod tests {
             );
         }
         let proposition = Proposition::condition_is(
-            ConditionTerm::integer_less_than(
+            OldConditionTerm::integer_less_than(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap()),
                 IntegerTerm::constant_i64(0),
             ),
@@ -1484,11 +1489,11 @@ mod tests {
         let facts = PureFactContext::new();
         let (seven, canonical_seven) = comparison_read_fixture(7u32.into());
         let (eight, _) = comparison_read_fixture(8u32.into());
-        let (unknown, _) = comparison_read_fixture(MachineTerm::IntegerToMachine {
+        let (unknown, _) = comparison_read_fixture(OldMachineTerm::IntegerToMachine {
             value: IntegerTerm::Variable(Variable(992202)).into(),
             destination: MachineIntegerType::Int32,
         });
-        let var = MachineTerm::Variable;
+        let var = OldMachineTerm::Variable;
         for (left, right, expected) in [
             (var(seven), var(canonical_seven), Some(true)),
             (var(seven), 7u32.into(), Some(true)),
@@ -1499,7 +1504,7 @@ mod tests {
             assert_eq!(
                 {
                     let written = Proposition::condition_is(
-                        ConditionTerm::equal(left.clone(), right.clone()),
+                        OldConditionTerm::equal(left.clone(), right.clone()),
                         true,
                     );
                     let normalized =
@@ -1507,7 +1512,7 @@ mod tests {
                     let Proposition::ConditionIs(condition, true) = normalized else {
                         unreachable!()
                     };
-                    facts.decide(condition.native_compat())
+                    facts.decide(condition.old_form())
                 },
                 expected,
                 "{left:?} == {right:?}"
@@ -1519,13 +1524,16 @@ mod tests {
     fn comparison_preserves_stored_value_premise_matching() {
         let _session = crate::kernel::VerificationSession::enter();
         let (read, _) = comparison_read_fixture(7u32.into());
-        let bound = MachineTerm::Variable(Variable(992203));
+        let bound = OldMachineTerm::Variable(Variable(992203));
         let claim = |value| {
-            Proposition::condition_is(ConditionTerm::signed_less_than(value, bound.clone()), true)
+            Proposition::condition_is(
+                OldConditionTerm::signed_less_than(value, bound.clone()),
+                true,
+            )
         };
         assert!(
             crate::kernel::proof::fact_reasoning::condition_polarity_equivalent(
-                &claim(MachineTerm::Variable(read)),
+                &claim(OldMachineTerm::Variable(read)),
                 &claim(7u32.into())
             )
         );
@@ -1541,22 +1549,22 @@ mod tests {
         let expression = |integer| {
             imported(
                 format,
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Add,
-                    left: Box::new(MachineTerm::IntegerToMachine {
+                    left: Box::new(OldMachineTerm::IntegerToMachine {
                         destination: format,
                         value: IntegerTerm::Add(
                             IntegerTerm::Variable(integer).into(),
                             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                                 format,
-                                MachineTerm::Variable(a),
+                                OldMachineTerm::Variable(a),
                             ))
                             .into(),
                         )
                         .into(),
                     }),
-                    right: Box::new(MachineTerm::Variable(c)),
+                    right: Box::new(OldMachineTerm::Variable(c)),
                 },
             )
         };
@@ -1568,14 +1576,14 @@ mod tests {
         assert_eq!(carriers.program_values, BTreeSet::from([a, c]));
         assert_eq!(carriers.integer, BTreeSet::from([a]));
         assert!(carriers.algebraic.is_empty());
-        let condition = ConditionTerm::integer_equal(
+        let condition = OldConditionTerm::integer_equal(
             IntegerTerm::Machine(observed(left.clone())),
             IntegerTerm::Machine(observed(right)),
         );
         let parent = PureFactContext::new();
         assert_eq!(parent.decide(&condition), None);
         let child = parent.clone().assume_condition(
-            ConditionTerm::integer_equal(IntegerTerm::Variable(a), IntegerTerm::Variable(b)),
+            OldConditionTerm::integer_equal(IntegerTerm::Variable(a), IntegerTerm::Variable(b)),
             true,
         );
         assert_eq!(child.decide(&condition), Some(true));
@@ -1603,27 +1611,27 @@ mod tests {
         for source in formats {
             for destination in formats {
                 for inner in [
-                    MachineTerm::Variable(Variable(992100)),
+                    OldMachineTerm::Variable(Variable(992100)),
                     crate::kernel::machine_integer::range::constant_word(source, &1.into())
                         .unwrap(),
                 ] {
                     for native in [
-                        MachineTerm::Cast {
+                        OldMachineTerm::Cast {
                             spelling: MachineCastSpelling::Generic,
                             from: source,
                             to: destination,
                             value: Box::new(inner.clone()),
                         },
-                        MachineTerm::machine_integer_cast(source, destination, inner.clone()),
-                        MachineTerm::Cast {
+                        OldMachineTerm::machine_integer_cast(source, destination, inner.clone()),
+                        OldMachineTerm::Cast {
                             spelling: MachineCastSpelling::Generic,
                             from: source,
                             to: destination,
-                            value: Box::new(MachineTerm::Cast {
+                            value: Box::new(OldMachineTerm::Cast {
                                 spelling: MachineCastSpelling::Generic,
                                 from: destination,
                                 to: source,
-                                value: Box::new(MachineTerm::Variable(Variable(992101))),
+                                value: Box::new(OldMachineTerm::Variable(Variable(992101))),
                             }),
                         },
                     ] {
@@ -1650,13 +1658,13 @@ mod tests {
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let x = MachineTerm::Variable(Variable(992001));
-            let y = MachineTerm::Variable(Variable(992002));
+            let x = OldMachineTerm::Variable(Variable(992001));
+            let y = OldMachineTerm::Variable(Variable(992002));
             let zero =
                 crate::kernel::machine_integer::range::constant_word(format, &0.into()).unwrap();
             let one =
                 crate::kernel::machine_integer::range::constant_word(format, &1.into()).unwrap();
-            let make = |op, a: MachineTerm, b: MachineTerm| MachineTerm::Binary {
+            let make = |op, a: OldMachineTerm, b: OldMachineTerm| OldMachineTerm::Binary {
                 format,
                 op,
                 left: Box::new(a),
@@ -1721,9 +1729,9 @@ mod call_tests {
     #[test]
     fn common_calls_rewrite_arguments_and_keep_exact_noop_roots() {
         let _session = VerificationSession::enter();
-        let from = MachineTerm::Variable(Variable(995860));
-        let to = MachineTerm::Variable(Variable(995861));
-        let missing = MachineTerm::Variable(Variable(995862));
+        let from = OldMachineTerm::Variable(Variable(995860));
+        let to = OldMachineTerm::Variable(Variable(995861));
+        let missing = OldMachineTerm::Variable(Variable(995862));
         for format in crate::kernel::machine_integer::FORMATS {
             let argument =
                 KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995860));
@@ -1741,12 +1749,12 @@ mod call_tests {
             assert_eq!(noop.refusal(), None);
             let mut exact = TermRewrite::for_machine_operands_checked(
                 MachineOperandView::Shared(&root),
-                MachineOperandView::Legacy(&to),
+                MachineOperandView::Old(&to),
             );
             assert_eq!(exact.bits(&native), to);
             assert_eq!(exact.refusal(), None);
             let mut matcher = crate::kernel::proof::machine_source_match::MachineSourceMatcher::new(
-                MachineOperandView::Legacy(&native),
+                MachineOperandView::Old(&native),
             );
             assert_eq!(matcher.matches(format, &root), Some(true));
             assert_eq!(matcher.matches(format, &result), Some(false));
@@ -1760,15 +1768,15 @@ mod call_tests {
     #[test]
     fn common_call_substitution_preserves_capture_avoidance_inside_arguments() {
         let _session = VerificationSession::enter();
-        let from = MachineTerm::Variable(Variable(995890));
-        let to = MachineTerm::Variable(Variable(995891));
-        let fold = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::constant(3)),
+        let from = OldMachineTerm::Variable(Variable(995890));
+        let to = OldMachineTerm::Variable(Variable(995891));
+        let fold = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::constant(3)),
             initial: Box::new(from.clone()),
             accumulator: Variable(995891),
             item: Variable(995892),
-            body: Box::new(MachineTerm::add(to.clone(), from.clone())),
+            body: Box::new(OldMachineTerm::add(to.clone(), from.clone())),
         };
         let application = SharedPureApplication::intern(
             "binder_call".into(),
@@ -1788,10 +1796,10 @@ mod call_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         let actual = KernelTermExport::machine(&result).unwrap();
         assert_eq!(actual, expected);
-        let MachineTerm::ClickFunctionApplication { arguments, .. } = actual else {
+        let OldMachineTerm::ClickFunctionApplication { arguments, .. } = actual else {
             panic!()
         };
-        let PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::RangeFold {
+        let PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::RangeFold {
             accumulator,
             ..
         })) = &arguments[0]

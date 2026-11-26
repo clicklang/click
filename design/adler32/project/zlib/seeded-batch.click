@@ -187,28 +187,7 @@ theorem zlib_native_cursor_join(base: const uint8*, first: uint64, second: uint6
   have to_integer(first) + to_integer(second) <= 18446744073709551615 by close() using {
    to_integer(first) <= to_integer(22208u64); to_integer(second) <= to_integer(5552u64);
   };
-  have to_integer(first + second) == to_integer(first) + to_integer(second);
-  have second <= 22208u64 by close() using { second <= 5552u64; };
-  apply(adler_count_observation(first)); apply(adler_count_bounds(first));
-  apply(adler_count_observation(second)); apply(adler_count_bounds(second));
-  apply(adler_count_observation(first + second));
-  have defined(first as uint32 as int32 + second as uint32 as int32) by close();
-  have to_integer(first as uint32 as int32 + second as uint32 as int32) == to_integer(first as uint32 as int32) + to_integer(second as uint32 as int32);
-  have to_integer((first + second) as uint32 as int32) == to_integer(first as uint32 as int32 + second as uint32 as int32) by close() using {
-   to_integer((first + second) as uint32 as int32) == to_integer(first + second);
-   to_integer(first + second) == to_integer(first) + to_integer(second);
-   to_integer(first as uint32 as int32) == to_integer(first);
-   to_integer(second as uint32 as int32) == to_integer(second);
-   to_integer(first as uint32 as int32 + second as uint32 as int32) == to_integer(first as uint32 as int32) + to_integer(second as uint32 as int32);
-  };
-  apply(adler_count_byte_pointer(base, first));
-  apply(adler_count_byte_pointer(base + first, second));
-  apply(adler_count_byte_pointer(base, first + second));
-  rewrite(base + first + second, base + first + second as uint32 as int32);
-  rewrite(base + first, base + first as uint32 as int32);
-  rewrite(base + (first + second), base + (first + second) as uint32 as int32);
-  rewrite(to_integer((first + second) as uint32 as int32), to_integer(first as uint32 as int32 + second as uint32 as int32));
-  normalize() using { defined(first as uint32 as int32 + second as uint32 as int32); };
+  apply(integer::uint8_pointer_add_associate_uint64(base, first, second));
  }
 }
 
@@ -516,7 +495,7 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
   apply(integer::uint64_remainder_to_integer(a0, 65521u64)); apply(integer::uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
-  have length <= 2147483647 by normalize();
+  have length <= 2147483647 by close();
   have to_integer(a0) <= 549755879424 by close() using { to_integer(a0) <= 1500000; };
   have 0 <= to_integer(length) by close() using { to_integer(0) <= to_integer(length); };
   have to_integer(length) <= 2147483647 by close() using { to_integer(length) <= to_integer(2147483647); };

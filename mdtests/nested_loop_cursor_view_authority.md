@@ -13,6 +13,24 @@ int32 f(const uint8* bytes) { const uint8* cursor = bytes; int32 outer = 0; whil
 import click::separation;
 verifying "alias-nested-call.c";
 int32 read(const uint8* p) { views p[0..4]; ensures 0 <= result and result <= 255; }
+theorem nonzero_cursor_below_two(value: int32) {
+    requires 0 <= value;
+    requires value < 2;
+    requires value != 0;
+    ensures value == 1 by {
+        have 0 < value by {
+            if value <= 0 {
+                have value == 0 by close() using { 0 <= value; value <= 0; };
+                contradiction(value == 0);
+            } else {
+                close();
+            }
+        }
+        apply(click::integer::lt_step_le(0, to_integer(value)));
+        apply(click::integer::lt_step_le(to_integer(value), 2));
+        close() using { 1 <= to_integer(value); to_integer(value) + 1 <= 2; };
+    }
+}
 int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
  step_until(loop(0).entry);
  have viewable(bytes[0..8]) by { observe(bytes[0..8]); }
@@ -49,7 +67,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
    }
    have 0 <= 0 by { close(); }
    have 0 <= 4 by { close(); }
-   have to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer)) by { normalize(); }
+   have to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer)) by { close(); }
    have contains(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4])) by {
     apply(separation::contains_subrange(bytes + (4 * outer), 0, (4 * outer + 4) - (4 * outer), 0, 4));
    }
@@ -87,7 +105,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
     close();
    } else {
     have at(after_inner, outer) == 1 by {
-     normalize() using { 0 <= at(after_inner, outer); at(after_inner, outer) < 2; not (at(after_inner, outer) == 0); };
+     apply(nonzero_cursor_below_two(at(after_inner, outer)));
     }
     rewrite(at(after_inner, outer), 1);
     close();
@@ -97,7 +115,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   have at(after_inner, cursor) == bytes + (4 * at(after_inner, outer));
   have (bytes + (4 * at(after_inner, outer))) + 4 == bytes + (4 * at(after_inner, outer) + 4) by {
    if at(after_inner, outer) == 0 { close(); } else {
-    have at(after_inner, outer) == 1 by { normalize() using { 0 <= at(after_inner, outer); at(after_inner, outer) < 2; not (at(after_inner, outer) == 0); }; }
+    have at(after_inner, outer) == 1 by { apply(nonzero_cursor_below_two(at(after_inner, outer))); }
     rewrite(at(after_inner, outer), 1); close();
    }
   }

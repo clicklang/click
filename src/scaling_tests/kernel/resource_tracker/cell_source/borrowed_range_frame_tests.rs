@@ -8,9 +8,9 @@ use super::*;
 fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Address::symbolic(Variable(9_897_001));
-        let data = Address::symbolic(Variable(9_897_002));
-        let count = MachineTerm::Variable(Variable(9_897_003));
+        let field = OldAddress::symbolic(Variable(9_897_001));
+        let data = OldAddress::symbolic(Variable(9_897_002));
+        let count = OldMachineTerm::Variable(Variable(9_897_003));
         let backing = MemoryRange::new_with_element_width(data, 0u32.into(), count.clone(), 4);
         let descriptor =
             MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
@@ -20,7 +20,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         for index in 0..size {
             partition = partition.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
-                    Address::symbolic(Variable(9_898_000 + index)),
+                    OldAddress::symbolic(Variable(9_898_000 + index)),
                     0u32.into(),
                     4u32.into(),
                     4,
@@ -57,11 +57,11 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let context = PureFactContext::new()
             .assume_proposition(authority.clone())
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), count.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), count.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(count.clone(), 536870911u32.into()),
+                OldConditionTerm::signed_less_equal(count.clone(), 536870911u32.into()),
                 true,
             );
         let bare =
@@ -78,7 +78,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let wider_range = MemoryRange::new_with_element_width(
             backing.base().clone(),
             0u32.into(),
-            MachineTerm::add(count.clone(), 1u32.into()),
+            OldMachineTerm::add(count.clone(), 1u32.into()),
             4,
         );
         assert!(!proof.checks(&wider_range, &field, 8, &context));
@@ -86,7 +86,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             typed_range_disjoint_from_pointer_evidence(&wider_range, &field, 8, &context).is_none()
         );
         let overlapping = context.clone().assume_condition(
-            ConditionTerm::address_equal(backing.base().clone(), field.clone()),
+            OldConditionTerm::address_equal(backing.base().clone(), field.clone()),
             true,
         );
         assert!(!proof.checks(&backing, &field, 8, &overlapping));
@@ -103,7 +103,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             None,
         );
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(field.clone()),
                 LoadKind::Bits64,

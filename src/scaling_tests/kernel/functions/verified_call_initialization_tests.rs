@@ -11,16 +11,20 @@ fn aliased_byte_output_lookup_ignores_unrelated_memory_and_alias_history() {
         budget.install_program_byte_order(ByteOrder::Little);
         let mut post_state = state.clone();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_produced_memory(
+            let produced = initialize_produced_memory(
                 &state,
                 &state,
                 function.contract_interface(),
                 &mut post_state,
                 &assumptions,
-                &mut facts,
                 &mut budget,
                 false,
-            )
+            );
+            post_state.complete_staged_memory();
+            if let Ok(Ok((_, words))) = &produced {
+                produced_word_equations(&post_state, words, &mut facts, &budget);
+            }
+            produced
         });
         result.unwrap().unwrap();
         assert!(post_state.memory().has_initialized_bytes_at(&word, 4));

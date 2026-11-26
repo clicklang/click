@@ -21,7 +21,7 @@ fn retained_index_checks_scale_with_growing_prefixes_without_exports() {
                         assert_eq!(
                             wide_element_offsets_proven_distinct(
                                 &offset,
-                                &AddressOffset::Constant(0),
+                                &OldAddressOffset::Constant(0),
                                 &context
                             ),
                             Some(false)

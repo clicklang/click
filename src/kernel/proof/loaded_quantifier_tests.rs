@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::proof::PureFactStore;
 use crate::kernel::{
-    Address, AddressOffset, LoadKind, ProgramValue, SymbolicMemory, intern_memory,
+    LoadKind, OldAddress, OldAddressOffset, ProgramValue, SymbolicMemory, intern_memory,
 };
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
@@ -15,42 +15,42 @@ fn loaded_fact_of_format(
     format: MachineIntegerType,
 ) -> Proposition {
     crate::kernel::reasoning::prepare_memory_variable_index(memory.as_ref());
-    let left = MachineTerm::Variable(binder);
-    let right = MachineTerm::Binary {
+    let left = OldMachineTerm::Variable(binder);
+    let right = OldMachineTerm::Binary {
         format,
         op: MachineBinaryOp::Subtract,
-        left: Box::new(MachineTerm::Variable(Variable(910_001))),
-        right: Box::new(MachineTerm::Variable(Variable(910_002))),
+        left: Box::new(OldMachineTerm::Variable(Variable(910_001))),
+        right: Box::new(OldMachineTerm::Variable(Variable(910_002))),
     };
     let guard = if shared {
-        ConditionTerm::IntegerLessThan(
+        OldConditionTerm::IntegerLessThan(
             IntegerTerm::from_machine(format, left).unwrap().into(),
             IntegerTerm::from_machine(format, right).unwrap().into(),
         )
     } else {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation: CompareRelation::LessThan,
             left: Box::new(left),
             right: Box::new(right),
         }
     };
-    let read = MachineTerm::read_named(
+    let read = OldMachineTerm::read_named(
         ProgramPoint::at(memory),
-        Box::new(Address {
+        Box::new(OldAddress {
             base: "loaded-quantifier".into(),
             offset: match format {
                 MachineIntegerType::Int32 => {
-                    AddressOffset::scaled_int32_node(MachineTerm::Variable(binder), 4)
+                    OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4)
                 }
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
-                    AddressOffset::scaled_int64_node(
-                        MachineTerm::Variable(binder),
+                    OldAddressOffset::scaled_int64_node(
+                        OldMachineTerm::Variable(binder),
                         4,
                         format == MachineIntegerType::UInt64,
                     )
                 }
-                MachineIntegerType::UInt32 => AddressOffset::Constant(0),
+                MachineIntegerType::UInt32 => OldAddressOffset::Constant(0),
                 _ => unreachable!(),
             },
         }),
@@ -63,7 +63,7 @@ fn loaded_fact_of_format(
         Proposition::Implies(
             Box::new(Proposition::condition_is(guard, true)),
             Box::new(Proposition::condition_is(
-                ConditionTerm::equal(read, MachineTerm::constant(0)),
+                OldConditionTerm::equal(read, OldMachineTerm::constant(0)),
                 true,
             )),
         ),
@@ -85,11 +85,11 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         assert!(quantified_binder_equivalent(source, requested));
     }
     let changed_memory = intern_memory(memory.as_ref().clone().store(
-        Address {
+        OldAddress {
             base: "loaded-quantifier".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
-        ProgramValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(OldMachineTerm::constant(7)),
     ));
     assert!(!quantified_binder_equivalent(
         &native,
@@ -112,16 +112,16 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         if change == 1 {
             *truth = false;
         }
-        let (condition, truth) = conclusion.condition_native().unwrap();
+        let (condition, truth) = conclusion.old_condition().unwrap();
         let mut condition = condition.clone();
         let truth = *truth;
-        let ConditionTerm::Compare { left, right, .. } = &mut condition else {
+        let OldConditionTerm::Compare { left, right, .. } = &mut condition else {
             unreachable!()
         };
         if change == 2 {
-            **right = MachineTerm::constant(1);
+            **right = OldMachineTerm::constant(1);
         }
-        let MachineTerm::MemoryLoad(point, pointer, kind) = left.as_ref() else {
+        let OldMachineTerm::MemoryLoad(point, pointer, kind) = left.as_ref() else {
             unreachable!()
         };
         let (mut pointer, mut kind) = (pointer.address().clone(), *kind);
@@ -129,13 +129,15 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             3 => pointer.base = "other-block".into(),
             4 => kind = LoadKind::UInt32,
             5 => {
-                pointer.offset =
-                    AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(920_003)), 4)
+                pointer.offset = OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(920_003)),
+                    4,
+                )
             }
             _ => {}
         }
         // A changed read is a new term, built by its constructor.
-        **left = MachineTerm::read_named(point.point().clone(), pointer, kind);
+        **left = OldMachineTerm::read_named(point.point().clone(), pointer, kind);
         **conclusion = Proposition::condition_is(condition, truth);
         assert!(
             !quantified_binder_equivalent(&native, &different),
@@ -156,11 +158,11 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
         SymbolicMemory::new()
             .with_block("loaded-quantifier", 64)
             .store(
-                Address {
+                OldAddress {
                     base: "loaded-quantifier".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
-                ProgramValue::Int32(MachineTerm::Variable(Variable(920_001))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(920_001))),
             ),
     );
     let native = loaded_fact(&memory, Variable(920_001), false);
@@ -183,11 +185,11 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
                 SymbolicMemory::new()
                     .with_block("loaded-quantifier", 64)
                     .store(
-                        Address {
+                        OldAddress {
                             base: "loaded-quantifier".into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         },
-                        ProgramValue::Int32(MachineTerm::Variable(a)),
+                        ProgramValue::Int32(OldMachineTerm::Variable(a)),
                     ),
             );
             let quantify = |binder| {
@@ -230,11 +232,11 @@ fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_v
             SymbolicMemory::new()
                 .with_block("loaded-quantifier", 64)
                 .store(
-                    Address {
+                    OldAddress {
                         base: "loaded-quantifier".into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
-                    ProgramValue::Int32(MachineTerm::Variable(stored)),
+                    ProgramValue::Int32(OldMachineTerm::Variable(stored)),
                 ),
         );
         loaded_fact(&memory, binder, false)

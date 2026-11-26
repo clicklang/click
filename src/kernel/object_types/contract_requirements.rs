@@ -450,7 +450,7 @@ mod tests {
             &ObjectTypeRequirements::unit(1, class())
         );
         let mut normal = vec![ProgramValue::typed_pointer(
-            Address::symbolic(Variable(700)),
+            OldAddress::symbolic(Variable(700)),
             ProgramType::Int32Pointer,
         )];
         assert!(
@@ -465,7 +465,7 @@ mod tests {
             .is_none()
         );
         let mut captured = vec![ProgramValue::typed_pointer(
-            Address::symbolic(Variable(701)),
+            OldAddress::symbolic(Variable(701)),
             ProgramType::Int32Pointer,
         )];
         assert!(
@@ -503,7 +503,7 @@ mod tests {
         SpecProposition::Comparison {
             left: variable(CONTRACT_RESULT),
             operator,
-            right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+            right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
         }
     }
     #[test]

@@ -26,7 +26,7 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                     .with_value(BitvectorEqualityAtomKey::Variable(*variable)),
                 KernelTermNode::MachineLiteral(literal) => {
                     let mut atoms = PersistentSet::default();
-                    if let Some(atom) = bitvector_equality_atom_key(&literal.legacy_term()) {
+                    if let Some(atom) = bitvector_equality_atom_key(&literal.old_term()) {
                         atoms = atoms.with_value(atom);
                     }
                     atoms
@@ -159,7 +159,7 @@ fn collect_in(
                     // Native folds visited these children before migration.
                     // Preserve their opaque atoms and dependency rules here.
                     collect_bitvector_atoms(native, atoms);
-                } else if let MachineTerm::BoolCast { value, .. } = native {
+                } else if let OldMachineTerm::BoolCast { value, .. } = native {
                     // Ordinary common expressions retain their existing
                     // selection policy; migrating folds must not widen it.
                     collect_condition_bitvector_atoms(value, atoms);
@@ -186,13 +186,13 @@ fn collect_in(
 /// Root-only atom selection for bounded registered-address inspection.
 pub(super) fn root_atom(operand: MachineOperandView<'_>) -> Option<BitvectorEqualityAtomKey> {
     match operand {
-        MachineOperandView::Legacy(term) => bitvector_equality_atom_key(term),
+        MachineOperandView::Old(term) => bitvector_equality_atom_key(term),
         MachineOperandView::Shared(root) => match root.node() {
             KernelTermNode::Variable(variable) => {
                 Some(BitvectorEqualityAtomKey::Variable(*variable))
             }
             KernelTermNode::MachineLiteral(literal) => {
-                bitvector_equality_atom_key(&literal.legacy_term())
+                bitvector_equality_atom_key(&literal.old_term())
             }
             KernelTermNode::MemoryLoad { .. } => {
                 bitvector_equality_atom_key(root.machine_read_leaf().expect("read leaf"))
@@ -209,9 +209,9 @@ mod tests {
     #[test]
     fn retained_float_conversion_preserves_opaque_atom_policy() {
         let _session = VerificationSession::enter();
-        let native = MachineTerm::opaque_conversion(
+        let native = OldMachineTerm::opaque_conversion(
             "c_float32_to_int32",
-            MachineTerm::Variable(Variable(1005399)),
+            OldMachineTerm::Variable(Variable(1005399)),
         );
         let root =
             crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
@@ -225,19 +225,19 @@ mod tests {
     #[test]
     fn shared_match_atom_selection_keeps_native_conditional_guards() {
         let _session = VerificationSession::enter();
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(crate::kernel::KernelMatch::test_scrutinee(vec![])),
             arms: vec![crate::kernel::AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
                 bindings: vec![],
                 binding_names: Default::default(),
-                body: MachineTerm::If {
-                    condition: Box::new(ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(1005397)),
-                        MachineTerm::Variable(Variable(1005398)),
+                body: OldMachineTerm::If {
+                    condition: Box::new(OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(1005397)),
+                        OldMachineTerm::Variable(Variable(1005398)),
                     )),
-                    then_term: Box::new(MachineTerm::constant(1)),
-                    else_term: Box::new(MachineTerm::constant(0)),
+                    then_term: Box::new(OldMachineTerm::constant(1)),
+                    else_term: Box::new(OldMachineTerm::constant(0)),
                 },
             }],
         };
@@ -257,16 +257,16 @@ mod tests {
     fn shared_fold_atom_selection_keeps_call_bodies_opaque() {
         use crate::kernel::{KernelTermExport, KernelTermImport};
         let _session = VerificationSession::enter();
-        let native = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::Variable(Variable(1005390))),
-            initial: Box::new(MachineTerm::constant(0)),
+        let native = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::Variable(Variable(1005390))),
+            initial: Box::new(OldMachineTerm::constant(0)),
             accumulator: Variable(1005391),
             item: Variable(1005392),
-            body: Box::new(MachineTerm::ClickFunctionApplication {
+            body: Box::new(OldMachineTerm::ClickFunctionApplication {
                 name: "opaque_body".into(),
                 arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(1005393)),
+                    OldMachineTerm::Variable(Variable(1005393)),
                 ))],
             }),
         };
@@ -284,18 +284,18 @@ mod tests {
     #[test]
     fn ordinary_shared_atom_selection_does_not_adopt_fold_leaf_rules() {
         let _session = VerificationSession::enter();
-        let call = MachineTerm::ClickFunctionApplication {
+        let call = OldMachineTerm::ClickFunctionApplication {
             name: "ordinary_opaque_call".into(),
             arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(1005394)),
+                OldMachineTerm::Variable(Variable(1005394)),
             ))],
         };
         let call_atom = bitvector_equality_atom_key(&call).expect("opaque call atom");
-        let native = MachineTerm::Binary {
+        let native = OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
             left: Box::new(call),
-            right: Box::new(MachineTerm::constant(1)),
+            right: Box::new(OldMachineTerm::constant(1)),
         };
         let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, native);
         assert!(machine.shared_operand().is_some());
@@ -311,29 +311,29 @@ mod tests {
     #[test]
     fn selected_shared_atoms_preserve_literal_conversion_and_load_rules() {
         let _session = VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(1005300)),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(1005301)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1005301)), 4),
         };
         let memory = intern_memory(SymbolicMemory::new());
         let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
-        let conversion = MachineTerm::IntegerToMachine {
+        let conversion = OldMachineTerm::IntegerToMachine {
             destination: MachineIntegerType::Int32,
             value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(Variable(1005302)),
+                OldMachineTerm::Variable(Variable(1005302)),
             ))
             .into(),
         };
-        let native = MachineTerm::Binary {
+        let native = OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(load)),
-            right: Box::new(MachineTerm::Binary {
+            left: Box::new(OldMachineTerm::Variable(load)),
+            right: Box::new(OldMachineTerm::Binary {
                 format: MachineIntegerType::Int32,
                 op: MachineBinaryOp::Multiply,
                 left: Box::new(conversion),
-                right: Box::new(MachineTerm::uint32_constant(7)),
+                right: Box::new(OldMachineTerm::uint32_constant(7)),
             }),
         };
         let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, native.clone());
@@ -349,9 +349,9 @@ mod tests {
         assert!(!found.contains(&BitvectorEqualityAtomKey::Variable(Variable(1005302))));
         let wide = SharedMachineIntegerTerm::intern(
             MachineIntegerType::UInt64,
-            MachineTerm::uint64_add(
-                MachineTerm::Variable(Variable(1005303)),
-                MachineTerm::uint64_constant(7),
+            OldMachineTerm::uint64_add(
+                OldMachineTerm::Variable(Variable(1005303)),
+                OldMachineTerm::uint64_constant(7),
             ),
         );
         let mut wide_atoms = BTreeSet::new();

@@ -82,9 +82,9 @@ fn destination<'a>(
         .uninitialized_objects
         .get(&selected.pointer)
         == Some(&layout.size_bytes());
-    let base = Address {
+    let base = OldAddress {
         base: selected.pointer.base.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     let within_raw_parent = state
         .memory
@@ -165,7 +165,7 @@ pub(super) fn bind(
     let check_borrow_write =
         borrow_obligations.is_some() || interface.construction_parameter().is_some();
     let mut pending = Vec::new();
-    let mut writable = |pointer: &Address, bytes| {
+    let mut writable = |pointer: &OldAddress, bytes| {
         if caller
             .resources()
             .memory_write_range(pointer, bytes, &assumptions)
@@ -292,6 +292,7 @@ pub(super) fn summary_result(
 /// A certified construction rule, or an explicit external construction-return
 /// assumption, justifies these initialized fields. Ordinary owns clauses do not.
 /// The call's existing effect transition forgets their old values first.
+/// The initialization is a step of the call in progress, which completes it.
 pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionState) {
     let selected = entry
         .aggregate_destination
@@ -300,7 +301,7 @@ pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionSt
         .clone();
     for field in selected.layout.fields() {
         let pointer = selected.pointer.offset_by_layout(field.offset());
-        state.set_memory(
+        state.stage_memory(
             state
                 .memory
                 .clone()

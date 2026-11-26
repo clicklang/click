@@ -7,7 +7,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
     let native = SharedPureApplication::intern(
         "f".into(),
         vec![PureFunctionArgument::Value(ProgramValue::UInt32(
-            MachineTerm::Variable(Variable(995800)),
+            OldMachineTerm::Variable(Variable(995800)),
         ))],
     );
     let retained = SharedPureApplication::intern(
@@ -41,7 +41,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(
             KernelTermExport::machine(&root).unwrap(),
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "f".into(),
                 arguments: native.arguments().to_vec()
             }
@@ -64,7 +64,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
 #[test]
 fn machine_call_roots_preserve_opaque_producer_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldPointer::new(Address::symbolic(Variable(995801)), ProgramType::VoidPointer);
+    let pointer = OldPointer::new(OldAddress::symbolic(Variable(995801)), ProgramType::VoidPointer);
     let application = SharedPureApplication::intern(
         "pointer_arg".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
@@ -102,7 +102,7 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
         ));
     }
     for (call, expected) in [(&root, None), (&second_root, Some(class))] {
-        let MachineTerm::ClickFunctionApplication { arguments, .. } =
+        let OldMachineTerm::ClickFunctionApplication { arguments, .. } =
             KernelTermExport::machine(call).unwrap()
         else {
             panic!()
@@ -113,7 +113,7 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
         assert_eq!(pointer.object_class(), expected);
     }
     drop(application);
-    let MachineTerm::ClickFunctionApplication { arguments, .. } =
+    let OldMachineTerm::ClickFunctionApplication { arguments, .. } =
         KernelTermExport::machine(&root).unwrap()
     else {
         panic!()
@@ -127,7 +127,7 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
 #[test]
 fn machine_call_argument_order_and_read_states_remain_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(995802));
+    let pointer = OldAddress::symbolic(Variable(995802));
     let before = crate::kernel::intern_memory(SymbolicMemory::new());
     let after = crate::kernel::intern_memory(
         SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
@@ -136,7 +136,7 @@ fn machine_call_argument_order_and_read_states_remain_distinct() {
         SharedPureApplication::intern(
             "read_arg".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(pointer.clone()), LoadKind::Int32),
+                OldMachineTerm::read_named(ProgramPoint::at(&memory), Box::new(pointer.clone()), LoadKind::Int32),
             ))],
         )
     });
@@ -174,11 +174,11 @@ fn common_call_numeric_identity_matches_native_without_changing_payloads() {
         let application = SharedPureApplication::intern(
             "numeric_call".into(),
             vec![PureFunctionArgument::Value(ProgramValue::UInt32(
-                MachineTerm::Variable(Variable(995820)),
+                OldMachineTerm::Variable(Variable(995820)),
             ))],
         );
         let root = KernelTermImport::default().machine_call(format, &application);
-        let native = MachineTerm::ClickFunctionApplication {
+        let native = OldMachineTerm::ClickFunctionApplication {
             name: application.name().into(),
             arguments: application.arguments().to_vec(),
         };
@@ -201,8 +201,8 @@ fn native_call_import_before_shared_production_keeps_argument_handles() {
         let argument = crate::kernel::binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(Variable(995942))),
-            Box::new(MachineTerm::constant(1))
+            Box::new(OldMachineTerm::Variable(Variable(995942))),
+            Box::new(OldMachineTerm::constant(1))
         );
         let application = SharedPureApplication::intern(
             "native_then_shared".into(),
@@ -222,7 +222,7 @@ fn native_call_import_before_shared_production_keeps_argument_handles() {
         let exports = KernelTermExport::machine_export_count();
         let produced = KernelTermImport::default().machine_call(format, &retained);
         assert_eq!(imported, produced);
-        let MachineTerm::ClickFunctionApplication { arguments, .. } =
+        let OldMachineTerm::ClickFunctionApplication { arguments, .. } =
             produced.machine_conversion_leaf().unwrap()
         else {
             panic!()

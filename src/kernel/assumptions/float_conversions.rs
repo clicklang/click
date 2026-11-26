@@ -24,7 +24,7 @@ pub(super) fn machine_conversion(
                 FloatOperandView::from_shared(operand)?,
             ))
         }
-        MachineOperandView::Legacy(MachineTerm::PureFunctionApplication { name, arguments }) => {
+        MachineOperandView::Old(OldMachineTerm::PureFunctionApplication { name, arguments }) => {
             let [operand] = arguments.as_slice() else {
                 return None;
             };
@@ -47,7 +47,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
         FloatOperandView::Native(format, value) => (
             policy,
             false,
-            value as *const MachineTerm as usize as u64,
+            value as *const OldMachineTerm as usize as u64,
             format,
         ),
     };
@@ -82,7 +82,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                 let operand = match conversion.shared() {
                     Some(root) => MachineOperandView::Shared(root),
                     None => {
-                        MachineOperandView::Legacy(conversion.native().expect("native conversion"))
+                        MachineOperandView::Old(conversion.native().expect("native conversion"))
                     }
                 };
                 // The existing scalar selector owns integer syntax. Scoped scalar
@@ -94,7 +94,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                             | KernelTermNode::MachineObservationInput { .. }
                             | KernelTermNode::WrittenMachine(_)
                     ) {
-                    operand_fingerprint(MachineOperandView::Legacy(legacy_numeric(root)), policy)
+                    operand_fingerprint(MachineOperandView::Old(legacy_numeric(root)), policy)
                 } else if let MachineOperandView::Shared(root) = operand
                     && matches!(
                         root.node(),
@@ -105,7 +105,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                 {
                     let native = crate::kernel::KernelTermExport::machine(root)
                         .expect("scoped integer operand");
-                    operand_fingerprint(MachineOperandView::Legacy(&native), policy)
+                    operand_fingerprint(MachineOperandView::Old(&native), policy)
                 } else {
                     operand_fingerprint(operand, policy)
                 };
@@ -132,7 +132,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
             match value {
                 FloatOperandView::Native(
                     _,
-                    MachineTerm::ClickFunctionApplication { name, arguments },
+                    OldMachineTerm::ClickFunctionApplication { name, arguments },
                 ) => {
                     name.hash(&mut hash);
                     arguments.len().hash(&mut hash);
@@ -181,7 +181,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
             children
         } else {
             3u8.hash(&mut hash);
-            let native = value.native_compat().expect("float atom");
+            let native = value.old_form().expect("float atom");
             match policy {
                 OperandFingerprintPolicy::MemoryBlind => {
                     hash_memory_blind_bitvector(native, &mut hash)
@@ -258,7 +258,7 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
     }
 }
 
-fn legacy_numeric(root: &KernelTerm) -> &MachineTerm {
+fn legacy_numeric(root: &KernelTerm) -> &OldMachineTerm {
     if let KernelTermNode::ImportedScalar(input) = root.node() {
         return input.value();
     }
@@ -277,12 +277,12 @@ mod tests {
             crate::kernel::FloatBinaryOperator::Add,
             crate::kernel::FloatBinaryOperator::Multiply,
         ] {
-            let native = MachineTerm::opaque_conversion(
+            let native = OldMachineTerm::opaque_conversion(
                 "c_float32_to_int32",
-                MachineTerm::Float32Binary {
+                OldMachineTerm::Float32Binary {
                     operator,
-                    left: Box::new(MachineTerm::Variable(Variable(999990))),
-                    right: Box::new(MachineTerm::Variable(Variable(999991))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(999990))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(999991))),
                 },
             );
             let root = crate::kernel::KernelTermImport::default()
@@ -300,14 +300,14 @@ mod tests {
             assert_eq!(
                 pair.0,
                 operand_fingerprint(
-                    MachineOperandView::Legacy(&native),
+                    MachineOperandView::Old(&native),
                     OperandFingerprintPolicy::MemoryBlind
                 )
             );
             assert_eq!(
                 pair.1,
                 operand_fingerprint(
-                    MachineOperandView::Legacy(&native),
+                    MachineOperandView::Old(&native),
                     OperandFingerprintPolicy::MemoryState(false)
                 )
             );
@@ -320,29 +320,29 @@ mod tests {
     #[test]
     fn conversion_index_fingerprints_preserve_integer_source_forms() {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(999986));
+        let variable = OldMachineTerm::Variable(Variable(999986));
         for (source, scoped) in [
             (variable.clone(), false),
             (
-                MachineTerm::PureFunctionApplication {
+                OldMachineTerm::PureFunctionApplication {
                     name: "integer_source".into(),
                     arguments: vec![variable.clone()],
                 },
                 false,
             ),
             (
-                MachineTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(Variable(999987))),
+                OldMachineTerm::If {
+                    condition: Box::new(OldConditionTerm::Variable(Variable(999987))),
                     then_term: Box::new(variable.clone()),
-                    else_term: Box::new(MachineTerm::constant(0)),
+                    else_term: Box::new(OldMachineTerm::constant(0)),
                 },
                 true,
             ),
             (
-                MachineTerm::RangeFold {
-                    start: Box::new(MachineTerm::constant(0)),
+                OldMachineTerm::RangeFold {
+                    start: Box::new(OldMachineTerm::constant(0)),
                     end: Box::new(variable.clone()),
-                    initial: Box::new(MachineTerm::constant(0)),
+                    initial: Box::new(OldMachineTerm::constant(0)),
                     accumulator: Variable(999988),
                     item: Variable(999989),
                     body: Box::new(variable),
@@ -350,9 +350,9 @@ mod tests {
                 true,
             ),
         ] {
-            let native = MachineTerm::opaque_conversion(
+            let native = OldMachineTerm::opaque_conversion(
                 "c_float32_to_int32",
-                MachineTerm::opaque_conversion("c_int32_to_float32", source),
+                OldMachineTerm::opaque_conversion("c_int32_to_float32", source),
             );
             let root = crate::kernel::KernelTermImport::default()
                 .machine(MachineIntegerType::Int32, &native);
@@ -364,7 +364,7 @@ mod tests {
             ] {
                 assert_eq!(
                     operand_fingerprint(MachineOperandView::Shared(&root), policy),
-                    operand_fingerprint(MachineOperandView::Legacy(&native), policy)
+                    operand_fingerprint(MachineOperandView::Old(&native), policy)
                 );
             }
             if !scoped {
@@ -384,10 +384,10 @@ mod tests {
             (KernelFloatType::Float32, "c_float32_to_int32"),
             (KernelFloatType::Float64, "c_float64_to_int32"),
         ] {
-            let pointer = Address::symbolic(Variable(999978));
-            let native = MachineTerm::opaque_conversion(
+            let pointer = OldAddress::symbolic(Variable(999978));
+            let native = OldMachineTerm::opaque_conversion(
                 name,
-                MachineTerm::read_named(point.clone(), Box::new(pointer), format.load_kind()),
+                OldMachineTerm::read_named(point.clone(), Box::new(pointer), format.load_kind()),
             );
             let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
             let KernelTermNode::FloatConvert { operand, .. } = root.node() else {
@@ -406,22 +406,22 @@ mod tests {
     #[test]
     fn conversion_index_fingerprints_and_load_keys_match_native_policies() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(Variable(999979));
+        let pointer = OldAddress::symbolic(Variable(999979));
         let mut policies = Vec::new();
         for memory in [
             SymbolicMemory::new(),
             SymbolicMemory::new().with_block("different", 4),
         ] {
-            let source = MachineTerm::Float32Binary {
+            let source = OldMachineTerm::Float32Binary {
                 operator: crate::kernel::FloatBinaryOperator::Add,
-                left: Box::new(MachineTerm::read_named(
+                left: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Float32,
                 )),
-                right: Box::new(MachineTerm::Variable(Variable(999980))),
+                right: Box::new(OldMachineTerm::Variable(Variable(999980))),
             };
-            let native = MachineTerm::opaque_conversion("c_float32_to_int32", source);
+            let native = OldMachineTerm::opaque_conversion("c_float32_to_int32", source);
             let root = crate::kernel::KernelTermImport::default()
                 .machine(MachineIntegerType::Int32, &native);
             for policy in [
@@ -431,7 +431,7 @@ mod tests {
             ] {
                 assert_eq!(
                     operand_fingerprint(MachineOperandView::Shared(&root), policy),
-                    operand_fingerprint(MachineOperandView::Legacy(&native), policy)
+                    operand_fingerprint(MachineOperandView::Old(&native), policy)
                 );
             }
             policies.push((
@@ -462,12 +462,12 @@ mod float_call_tests {
     #[test]
     fn float_call_index_fingerprints_and_load_policies_match_native() {
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::opaque_conversion(
+        let native = OldMachineTerm::opaque_conversion(
             "c_float32_to_int32",
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "float_index".into(),
                 arguments: vec![PureFunctionArgument::Value(ProgramValue::Float32(
-                    MachineTerm::Variable(Variable(1008209)),
+                    OldMachineTerm::Variable(Variable(1008209)),
                 ))],
             },
         );
@@ -480,7 +480,7 @@ mod float_call_tests {
         ] {
             assert_eq!(
                 operand_fingerprint(MachineOperandView::Shared(&root), policy),
-                operand_fingerprint(MachineOperandView::Legacy(&native), policy)
+                operand_fingerprint(MachineOperandView::Old(&native), policy)
             );
         }
         let mut actual = BTreeSet::new();
@@ -497,15 +497,15 @@ mod float_call_identity_tests {
     #[test]
     fn float_call_fingerprints_are_session_independent_and_keep_argument_operators() {
         let native = |operator| {
-            MachineTerm::opaque_conversion(
+            OldMachineTerm::opaque_conversion(
                 "c_float32_to_int32",
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "float_identity".into(),
                     arguments: vec![PureFunctionArgument::Value(ProgramValue::Float32(
-                        MachineTerm::Float32Binary {
+                        OldMachineTerm::Float32Binary {
                             operator,
-                            left: Box::new(MachineTerm::Variable(Variable(1008213))),
-                            right: Box::new(MachineTerm::Variable(Variable(1008214))),
+                            left: Box::new(OldMachineTerm::Variable(Variable(1008213))),
+                            right: Box::new(OldMachineTerm::Variable(Variable(1008214))),
                         },
                     ))],
                 },
@@ -530,7 +530,7 @@ mod float_call_identity_tests {
                     let hash = operand_fingerprint(MachineOperandView::Shared(&root), policy);
                     assert_eq!(
                         hash,
-                        operand_fingerprint(MachineOperandView::Legacy(&source), policy)
+                        operand_fingerprint(MachineOperandView::Old(&source), policy)
                     );
                     hashes.push(hash);
                 }

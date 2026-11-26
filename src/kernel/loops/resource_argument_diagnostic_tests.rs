@@ -4,7 +4,7 @@ use super::*;
 fn missing_argument_read_retains_the_actual_state_and_permission() {
     let state = ExecutionState::new().with_local(
         "p",
-        ProgramValue::pointer(Address::symbolic(Variable(985_910))),
+        ProgramValue::pointer(OldAddress::symbolic(Variable(985_910))),
     );
     let expression =
         crate::kernel::program_expression::load(crate::kernel::program_expression::variable("p"));

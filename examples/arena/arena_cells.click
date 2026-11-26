@@ -3466,6 +3466,18 @@ int32 arena_region_length(struct region* region) {
 
 verifying "arena_pipeline.c";
 
+theorem arena_read_from_equal_array_addresses(p: int32*, q: int32*, capacity: int32, k: int32) {
+    requires p == q;
+    requires 0 <= k;
+    requires k < capacity;
+    requires viewable(p[0..capacity]);
+    ensures q[k] == p[k] by {
+        rewrite(q, p);
+        close();
+    }
+}
+
+
 int32 arena_pipeline(
     struct arena* arena,
     struct region* first,
@@ -3675,7 +3687,7 @@ int32 arena_pipeline(
     mark a2;
     let { outcome: o2 } = step(arena_alloc, { st: s0 });
     have contains(at(a2, s0) * memory(*second), statement(9).call(0).footprint) by { close(); }
-    have contains(memory(*first), memory(first->arena)) by { normalize(); }
+    have contains(memory(*first), memory(first->arena)) by { close(); }
     have separate(statement(9).call(0).footprint, memory(first->arena)) by {
         apply(separation::separate_restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).call(0).footprint, memory(first->arena)));
     }
@@ -3796,12 +3808,11 @@ int32 arena_pipeline(
                                 instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
                                 close();
                             }
-                            normalize() using {
-                                first->arena == arena;
-                                first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
-                                at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
-                                at(f1, arena->occupied[k]) == 0;
-                            };
+                            rewrite(arena, first->arena);
+                            rewrite(first->arena->occupied[k], at(f1, first->arena->occupied[k]));
+                            rewrite(at(f1, first->arena->occupied[k]), at(f1, arena->occupied[k]));
+                            rewrite(at(f1, arena->occupied[k]), 0);
+                            close();
                         }
                     }
                     have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
@@ -3810,10 +3821,8 @@ int32 arena_pipeline(
                             have k < first->end;
                             have arena->occupied[k] == 0 by {
                                 instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
-                                normalize() using {
-                                    first->arena == arena;
-                                    first->arena->occupied[k] == 0;
-                                };
+                                rewrite(arena, first->arena);
+                                close();
                             }
                             close();
                         }
@@ -3843,12 +3852,11 @@ int32 arena_pipeline(
                                 instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
                                 close();
                             }
-                            normalize() using {
-                                first->arena == arena;
-                                first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
-                                at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
-                                at(f1, arena->occupied[k]) == 0;
-                            };
+                            rewrite(arena, first->arena);
+                            rewrite(first->arena->occupied[k], at(f1, first->arena->occupied[k]));
+                            rewrite(at(f1, first->arena->occupied[k]), at(f1, arena->occupied[k]));
+                            rewrite(at(f1, arena->occupied[k]), 0);
+                            close();
                         }
                     }
                     if k < first->start {
@@ -3986,12 +3994,12 @@ int32 arena_pipeline(
     let r2 = fold(arena_region(second), { start: w1_start, end: w1_end });
     mark w1;
     step(arena_write, { r: r1, st: s0 }) {
-        requires 0 <= 0 by normalize();
+        requires 0 <= 0 by { close(); }
         requires r1.end <= s0.capacity by close();
         requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
             all {
                 defined(r1.start + 0) => {
-                    normalize();
+                    close();
                 }
                 (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) => {
                     close() using { to_integer(r1.start) < to_integer(r1.end); };
@@ -4000,7 +4008,7 @@ int32 arena_pipeline(
         }
     }
     have contains(at(w1, r1) * at(w1, s0), statement(11).footprint) by { close(); }
-    have contains(memory(*second), memory(second->arena)) by { normalize(); }
+    have contains(memory(*second), memory(second->arena)) by { close(); }
     have separate(statement(11).footprint, memory(second->arena)) by {
         apply(separation::separate_restrict(at(w1, r1) * at(w1, s0), memory(*second), statement(11).footprint, memory(second->arena)));
     }
@@ -4106,12 +4114,11 @@ int32 arena_pipeline(
                     instantiate(forall (j: int32) { 0 <= j and j < at(w1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w1, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                normalize() using {
-                    first->arena->occupied[k] == at(w1, first->arena->occupied[k]);
-                    at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]);
-                    at(w1, arena->occupied[k]) == 0;
-                    first->arena == arena;
-                };
+                rewrite(arena, first->arena);
+                rewrite(first->arena->occupied[k], at(w1, first->arena->occupied[k]));
+                rewrite(at(w1, first->arena->occupied[k]), at(w1, arena->occupied[k]));
+                rewrite(at(w1, arena->occupied[k]), 0);
+                close();
             }
         }
     }
@@ -4171,12 +4178,12 @@ int32 arena_pipeline(
     }
     mark w2;
     step(arena_write, { r: r2, st: s0 }) {
-        requires 0 <= 0 by normalize();
+        requires 0 <= 0 by { close(); }
         requires r2.end <= s0.capacity by close();
         requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
             all {
                 defined(r2.start + 0) => {
-                    normalize();
+                    close();
                 }
                 (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) => {
                     close() using { to_integer(r2.start) < to_integer(r2.end); };
@@ -4268,11 +4275,10 @@ int32 arena_pipeline(
         close();
     }
     have s0.capacity == arena->capacity by {
-        normalize() using {
-            s0.capacity == at(w2, s0.capacity);
-            at(w2, s0.capacity) == at(w2, arena->capacity);
-            arena->capacity == at(w2, arena->capacity);
-        };
+        rewrite(s0.capacity, at(w2, s0.capacity));
+        rewrite(at(w2, s0.capacity), at(w2, arena->capacity));
+        rewrite(arena->capacity, at(w2, arena->capacity));
+        close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) and (k < at(z2, second->start) or at(z2, second->end) <= k) implies arena->occupied[k] == 0 } by {
         intro() {
@@ -4292,21 +4298,18 @@ int32 arena_pipeline(
                     close();
                 }
                 have k < at(w2, arena->capacity) by {
-                    normalize() using {
-                        k < arena->capacity;
-                        arena->capacity == at(w2, arena->capacity);
-                    };
+                    rewrite(at(w2, arena->capacity), arena->capacity);
+                    close();
                 }
                 have at(w2, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) { 0 <= j and j < at(w2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w2, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                normalize() using {
-                    second->arena->occupied[k] == at(w2, second->arena->occupied[k]);
-                    at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]);
-                    at(w2, arena->occupied[k]) == 0;
-                    second->arena == arena;
-                };
+                rewrite(arena, second->arena);
+                rewrite(second->arena->occupied[k], at(w2, second->arena->occupied[k]));
+                rewrite(at(w2, second->arena->occupied[k]), at(w2, arena->occupied[k]));
+                rewrite(at(w2, arena->occupied[k]), 0);
+                close();
             }
         }
     }
@@ -4338,10 +4341,9 @@ int32 arena_pipeline(
         close();
     }
     have &first->arena->data[first->start + 0] == at(w2, &first->arena->data[first->start + 0]) by {
-        normalize() using {
-            first->arena->data == at(w2, first->arena->data);
-            first->start == at(w2, first->start);
-        };
+        rewrite(first->arena->data, at(w2, first->arena->data));
+        rewrite(first->start, at(w2, first->start));
+        close();
     }
     let { live: framed_live, capacity: framed_capacity } = unfold(s0);
     have at(region(25).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by close();
@@ -4369,7 +4371,8 @@ int32 arena_pipeline(
         close();
     }
     have first->start < r1.end by {
-        normalize() using { r1.start == first->start; r1.start < r1.end; };
+        rewrite(first->start, r1.start);
+        close();
     }
     have (r1.start as int32) <= ((first->start + 0) as int32) by {
         rewrite(first->start, r1.start);
@@ -4502,11 +4505,10 @@ int32 arena_pipeline(
         close();
     }
     have arena->capacity == at(m3, arena->capacity) by {
-        normalize() using {
-            arena->capacity == first->arena->capacity;
-            first->arena->capacity == at(m3, first->arena->capacity);
-            at(m3, first->arena->capacity) == at(m3, arena->capacity);
-        };
+        rewrite(arena->capacity, first->arena->capacity);
+        rewrite(first->arena->capacity, at(m3, first->arena->capacity));
+        rewrite(at(m3, first->arena->capacity), at(m3, arena->capacity));
+        close();
     }
     have s0.capacity == at(m3, s0.capacity) by {
         close();
@@ -4529,26 +4531,22 @@ int32 arena_pipeline(
                     close();
                 }
                 have at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]) by {
-                    normalize() using {
-                        at(m3, first->arena) == arena;
-                    };
+                    rewrite(at(m3, first->arena), arena);
+                    close();
                 }
                 have k < at(m3, arena->capacity) by {
-                    normalize() using {
-                        k < arena->capacity;
-                        arena->capacity == at(m3, arena->capacity);
-                    };
+                    rewrite(at(m3, arena->capacity), arena->capacity);
+                    close();
                 }
                 have at(m3, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) { 0 <= j and j < at(m3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(m3, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                normalize() using {
-                    first->arena->occupied[k] == at(m3, first->arena->occupied[k]);
-                    at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]);
-                    at(m3, arena->occupied[k]) == 0;
-                    first->arena == arena;
-                };
+                rewrite(arena, first->arena);
+                rewrite(first->arena->occupied[k], at(m3, first->arena->occupied[k]));
+                rewrite(at(m3, first->arena->occupied[k]), at(m3, arena->occupied[k]));
+                rewrite(at(m3, arena->occupied[k]), 0);
+                close();
             }
         }
     }
@@ -4571,27 +4569,24 @@ int32 arena_pipeline(
         close();
     }
     have &second->arena->data[second->start + 0] == (at(m3, second->arena->data) + kept_start) by {
-        normalize() using {
-            second->arena->data == at(m3, second->arena->data);
-            second->start == at(m3, second->start);
-            at(m3, second->start) == kept_start;
-        };
+        rewrite(second->arena->data, at(m3, second->arena->data));
+        rewrite(second->start, at(m3, second->start));
+        rewrite(at(m3, second->start), kept_start);
+        close();
     }
     have second->arena->data[(second->start + 0)] == 22 by {
         rewrite(&second->arena->data[second->start + 0], (at(m3, second->arena->data) + kept_start));
         close();
     }
     have (at(m3, second->arena->data) + at(m3, second->start)) == (second->arena->data + kept_start) by {
-        normalize() using {
-            second->arena->data == at(m3, second->arena->data);
-            at(m3, second->start) == kept_start;
-        };
+        rewrite(second->arena->data, at(m3, second->arena->data));
+        rewrite(at(m3, second->start), kept_start);
+        close();
     }
     have (at(m3, second->arena->data) + (at(m3, second->start) + 1)) == (second->arena->data + (kept_start + 1)) by {
-        normalize() using {
-            second->arena->data == at(m3, second->arena->data);
-            at(m3, second->start) == kept_start;
-        };
+        rewrite(second->arena->data, at(m3, second->arena->data));
+        rewrite(at(m3, second->start), kept_start);
+        close();
     }
     let r2 = fold(arena_region(second), { start: kept_start, end: kept_end });
     have r2.end <= s0.capacity by {
@@ -4607,6 +4602,15 @@ int32 arena_pipeline(
     }
     let r1 = fold(arena_region(first), { start: m4_start, end: m4_end });
     mark m4;
+    have second->arena == arena by close();
+    have forall (k: int32) { 0 <= k and k < arena->capacity implies second->arena->occupied[k] == arena->occupied[k] } by {
+        intro() {
+            intro() {
+                rewrite(second->arena, arena);
+                close();
+            }
+        }
+    }
     step(arena_read, { r: r2, st: s0 });
     have contains(at(m4, r2) * at(m4, s0), statement(14).call(0).footprint) by { close(); }
     have contains(memory(*first), memory(first->arena)) by { close(); }
@@ -4682,16 +4686,14 @@ int32 arena_pipeline(
         close();
     }
     have at(m4, second->arena->capacity) == at(m4, arena->capacity) by {
-        normalize() using {
-            at(m4, second->arena) == arena;
-        };
+        rewrite(at(m4, second->arena), arena);
+        close();
     }
     have arena->capacity == at(m4, arena->capacity) by {
-        normalize() using {
-            arena->capacity == second->arena->capacity;
-            second->arena->capacity == at(m4, second->arena->capacity);
-            at(m4, second->arena->capacity) == at(m4, arena->capacity);
-        };
+        rewrite(arena->capacity, second->arena->capacity);
+        rewrite(second->arena->capacity, at(m4, second->arena->capacity));
+        rewrite(at(m4, second->arena->capacity), at(m4, arena->capacity));
+        close();
     }
     have s0.capacity == at(m4, s0.capacity) by {
         close();
@@ -4707,36 +4709,30 @@ int32 arena_pipeline(
                 have k < at(z1, first->start) or at(z1, first->end) <= k;
                 have k < at(z2, second->start) or at(z2, second->end) <= k;
                 have k < second->arena->capacity by {
-                    normalize() using {
-                        k < arena->capacity;
-                        second->arena == arena;
-                    };
+                    rewrite(second->arena->capacity, arena->capacity);
+                    close();
                 }
                 have second->arena->occupied[k] == at(m4, second->arena->occupied[k]) by {
                     instantiate(forall (j: int32) { 0 <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(m4, second->arena->occupied[j]) }, k);
                     close();
                 }
-                have at(m4, second->arena->occupied[k]) == at(m4, arena->occupied[k]) by {
-                    normalize() using {
-                        at(m4, second->arena) == arena;
-                    };
-                }
                 have k < at(m4, arena->capacity) by {
-                    normalize() using {
-                        k < arena->capacity;
-                        arena->capacity == at(m4, arena->capacity);
-                    };
+                    rewrite(at(m4, arena->capacity), arena->capacity);
+                    close();
+                }
+                have at(m4, second->arena->occupied[k]) == at(m4, arena->occupied[k]) by {
+                    instantiate(at(m4, forall (j: int32) { 0 <= j and j < arena->capacity implies second->arena->occupied[j] == arena->occupied[j] }), k);
+                    close();
                 }
                 have at(m4, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) { 0 <= j and j < at(m4, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(m4, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                normalize() using {
-                    second->arena->occupied[k] == at(m4, second->arena->occupied[k]);
-                    at(m4, second->arena->occupied[k]) == at(m4, arena->occupied[k]);
-                    at(m4, arena->occupied[k]) == 0;
-                    second->arena == arena;
-                };
+                rewrite(arena, second->arena);
+                rewrite(second->arena->occupied[k], at(m4, second->arena->occupied[k]));
+                rewrite(at(m4, second->arena->occupied[k]), at(m4, arena->occupied[k]));
+                rewrite(at(m4, arena->occupied[k]), 0);
+                close();
             }
         }
     }
@@ -4768,6 +4764,11 @@ int32 arena_pipeline(
     have first->arena == arena by { close(); }
     let { live: f2_live, capacity: f2_capacity } = unfold(s0);
     let { start: f2_start, end: f2_end } = unfold(r1);
+    unfold(arena_cells(arena->data, arena->occupied, arena->capacity));
+    have viewable(arena->occupied[0..arena->capacity]) by {
+        observe(arena->occupied[0..arena->capacity]);
+    }
+    fold(arena_cells(arena->data, arena->occupied, arena->capacity));
     let s0 = fold(arena_state(arena), { live: f2_live, capacity: f2_capacity });
     have separate(r2, memory(*first)) by { close(); }
     have separate(s0, memory(*first)) by { close(); }
@@ -4776,6 +4777,19 @@ int32 arena_pipeline(
     }
     let r1 = fold(arena_region(first), { start: f2_start, end: f2_end });
     mark f2;
+    have second->arena == arena by close();
+    have second->arena->occupied == arena->occupied by {
+        rewrite(second->arena, arena);
+        close();
+    }
+    have forall (k: int32) { 0 <= k and k < arena->capacity implies second->arena->occupied[k] == arena->occupied[k] } by {
+        intro() {
+            intro() {
+                apply(arena_read_from_equal_array_addresses(arena->occupied, second->arena->occupied, arena->capacity, k));
+                close();
+            }
+        }
+    }
     let { after: g2 } = step(arena_free, { r: r2, st: s0 });
     have contains(at(f2, r2) * at(f2, s0), statement(16).footprint) by { close(); }
     have contains(memory(*first), memory(first->arena)) by { close(); }
@@ -4813,16 +4827,14 @@ int32 arena_pipeline(
         close();
     }
     have at(f2, second->arena->capacity) == at(f2, arena->capacity) by {
-        normalize() using {
-            at(f2, second->arena) == arena;
-        };
+        rewrite(at(f2, second->arena), arena);
+        close();
     }
     have arena->capacity == at(f2, arena->capacity) by {
-        normalize() using {
-            arena->capacity == second->arena->capacity;
-            second->arena->capacity == at(f2, second->arena->capacity);
-            at(f2, second->arena->capacity) == at(f2, arena->capacity);
-        };
+        rewrite(arena->capacity, second->arena->capacity);
+        rewrite(second->arena->capacity, at(f2, second->arena->capacity));
+        rewrite(at(f2, second->arena->capacity), at(f2, arena->capacity));
+        close();
     }
     have second->start == at(f2, r2.start) by {
         close();
@@ -4854,16 +4866,13 @@ int32 arena_pipeline(
                             instantiate(forall (j: int32) { 0 <= j and j < second->start implies second->arena->occupied[j] == at(f2, second->arena->occupied[j]) }, k);
                             close();
                         }
-                        have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
-                            normalize() using {
-                                at(f2, second->arena) == arena;
-                            };
-                        }
                         have k < at(f2, arena->capacity) by {
-                            normalize() using {
-                                k < arena->capacity;
-                                arena->capacity == at(f2, arena->capacity);
-                            };
+                            rewrite(at(f2, arena->capacity), arena->capacity);
+                            close();
+                        }
+                        have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
+                            instantiate(at(f2, forall (j: int32) { 0 <= j and j < arena->capacity implies second->arena->occupied[j] == arena->occupied[j] }), k);
+                            close();
                         }
                         have k < at(z2, second->start) by {
                             close();
@@ -4875,12 +4884,11 @@ int32 arena_pipeline(
                             instantiate(forall (j: int32) { 0 <= j and j < at(f2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(f2, arena->occupied[j]) == 0 }, k);
                             close();
                         }
-                        normalize() using {
-                            second->arena->occupied[k] == at(f2, second->arena->occupied[k]);
-                            at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]);
-                            at(f2, arena->occupied[k]) == 0;
-                            second->arena == arena;
-                        };
+                        rewrite(arena, second->arena);
+                        rewrite(second->arena->occupied[k], at(f2, second->arena->occupied[k]));
+                        rewrite(at(f2, second->arena->occupied[k]), at(f2, arena->occupied[k]));
+                        rewrite(at(f2, arena->occupied[k]), 0);
+                        close();
                     }
                 }
                 have second->start <= k and k < second->end implies arena->occupied[k] == 0 by {
@@ -4889,10 +4897,8 @@ int32 arena_pipeline(
                         have k < second->end;
                         have arena->occupied[k] == 0 by {
                             instantiate(forall (j: int32) { second->start <= j and j < second->end implies second->arena->occupied[j] == 0 }, k);
-                            normalize() using {
-                                second->arena->occupied[k] == 0;
-                                second->arena == arena;
-                            };
+                            rewrite(arena, second->arena);
+                            close();
                         }
                         close();
                     }
@@ -4900,31 +4906,24 @@ int32 arena_pipeline(
                 have second->end <= k implies arena->occupied[k] == 0 by {
                     intro() {
                         have k < second->arena->capacity by {
-                            normalize() using {
-                                k < arena->capacity;
-                                second->arena == arena;
-                            };
+                            rewrite(second->arena->capacity, arena->capacity);
+                            close();
                         }
                         have second->arena->occupied[k] == at(f2, second->arena->occupied[k]) by {
                             instantiate(forall (j: int32) { second->end <= j and j < second->arena->capacity implies second->arena->occupied[j] == at(f2, second->arena->occupied[j]) }, k);
                             close();
                         }
-                        have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
-                            normalize() using {
-                                at(f2, second->arena) == arena;
-                            };
-                        }
                         have k < at(f2, arena->capacity) by {
-                            normalize() using {
-                                k < arena->capacity;
-                                arena->capacity == at(f2, arena->capacity);
-                            };
+                            rewrite(at(f2, arena->capacity), arena->capacity);
+                            close();
+                        }
+                        have at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]) by {
+                            instantiate(at(f2, forall (j: int32) { 0 <= j and j < arena->capacity implies second->arena->occupied[j] == arena->occupied[j] }), k);
+                            close();
                         }
                         have at(z2, second->end) <= k by {
-                            normalize() using {
-                                second->end <= k;
-                                second->end == at(z2, second->end);
-                            };
+                            rewrite(at(z2, second->end), second->end);
+                            close();
                         }
                         have k < at(z2, second->start) or at(z2, second->end) <= k by {
                             close();
@@ -4933,12 +4932,11 @@ int32 arena_pipeline(
                             instantiate(forall (j: int32) { 0 <= j and j < at(f2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(f2, arena->occupied[j]) == 0 }, k);
                             close();
                         }
-                        normalize() using {
-                            second->arena->occupied[k] == at(f2, second->arena->occupied[k]);
-                            at(f2, second->arena->occupied[k]) == at(f2, arena->occupied[k]);
-                            at(f2, arena->occupied[k]) == 0;
-                            second->arena == arena;
-                        };
+                        rewrite(arena, second->arena);
+                        rewrite(second->arena->occupied[k], at(f2, second->arena->occupied[k]));
+                        rewrite(at(f2, second->arena->occupied[k]), at(f2, arena->occupied[k]));
+                        rewrite(at(f2, arena->occupied[k]), 0);
+                        close();
                     }
                 }
                 if k < second->start {
@@ -5008,11 +5006,10 @@ int32 arena_pipeline(
         close();
     }
     have arena->capacity == at(f3, arena->capacity) by {
-        normalize() using {
-            arena->capacity == first->arena->capacity;
-            first->arena->capacity == at(f3, first->arena->capacity);
-            at(f3, first->arena->capacity) == at(f3, arena->capacity);
-        };
+        rewrite(arena->capacity, first->arena->capacity);
+        rewrite(first->arena->capacity, at(f3, first->arena->capacity));
+        rewrite(at(f3, first->arena->capacity), at(f3, arena->capacity));
+        close();
     }
     have first->start == at(f3, r1.start) by {
         close();
@@ -5044,9 +5041,8 @@ int32 arena_pipeline(
                             close();
                         }
                         have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
-                            normalize() using {
-                                at(f3, first->arena) == arena;
-                            };
+                            rewrite(at(f3, first->arena), arena);
+                            close();
                         }
                         have k < at(f3, arena->capacity) by {
                             close();
@@ -5061,12 +5057,11 @@ int32 arena_pipeline(
                             instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
                             close();
                         }
-                        normalize() using {
-                            first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
-                            at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
-                            at(f3, arena->occupied[k]) == 0;
-                            first->arena == arena;
-                        };
+                        rewrite(arena, first->arena);
+                        rewrite(first->arena->occupied[k], at(f3, first->arena->occupied[k]));
+                        rewrite(at(f3, first->arena->occupied[k]), at(f3, arena->occupied[k]));
+                        rewrite(at(f3, arena->occupied[k]), 0);
+                        close();
                     }
                 }
                 have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
@@ -5075,10 +5070,8 @@ int32 arena_pipeline(
                         have k < first->end;
                         have arena->occupied[k] == 0 by {
                             instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
-                            normalize() using {
-                                first->arena->occupied[k] == 0;
-                                first->arena == arena;
-                            };
+                            rewrite(arena, first->arena);
+                            close();
                         }
                         close();
                     }
@@ -5093,9 +5086,8 @@ int32 arena_pipeline(
                             close();
                         }
                         have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
-                            normalize() using {
-                                at(f3, first->arena) == arena;
-                            };
+                            rewrite(at(f3, first->arena), arena);
+                            close();
                         }
                         have k < at(f3, arena->capacity) by {
                             close();
@@ -5110,12 +5102,11 @@ int32 arena_pipeline(
                             instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
                             close();
                         }
-                        normalize() using {
-                            first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
-                            at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
-                            at(f3, arena->occupied[k]) == 0;
-                            first->arena == arena;
-                        };
+                        rewrite(arena, first->arena);
+                        rewrite(first->arena->occupied[k], at(f3, first->arena->occupied[k]));
+                        rewrite(at(f3, first->arena->occupied[k]), at(f3, arena->occupied[k]));
+                        rewrite(at(f3, arena->occupied[k]), 0);
+                        close();
                     }
                 }
                 if k < first->start {
@@ -5146,9 +5137,8 @@ int32 arena_pipeline(
         close();
     }
     have g3.live < 2147483647 by {
-        normalize() using {
-            g3.live == 0;
-        };
+        rewrite(g3.live, 0);
+        close();
     }
     mark a3;
     let { outcome: o3 } = step(arena_alloc, { st: g3 });
@@ -5156,7 +5146,7 @@ int32 arena_pipeline(
     step();
     have separate(memory(allocated), memory(combined->arena)) by { close(); }
     have separate(statement(18).assignment(allocated, 0).footprint, memory(combined->arena)) by {
-        normalize() using { separate(memory(allocated), memory(combined->arena)); };
+        close() using { separate(memory(allocated), memory(combined->arena)); };
     }
     have combined->arena == at(after_combined_alloc, combined->arena) by {
         preserve(memory(combined->arena), statement(18).assignment(allocated, 0));
@@ -5189,10 +5179,9 @@ int32 arena_pipeline(
                         instantiate(forall (j: int32) { 0 <= j and j < at(a3, arena->capacity) implies at(a3, arena->occupied[j]) == 0 }, k);
                         close();
                     }
-                    normalize() using {
-                        arena->occupied[k] == at(a3, arena->occupied[k]);
-                        at(a3, arena->occupied[k]) == 0;
-                    };
+                    rewrite(arena->occupied[k], at(a3, arena->occupied[k]));
+                    rewrite(at(a3, arena->occupied[k]), 0);
+                    close();
                 }
             }
         }
@@ -5277,10 +5266,9 @@ int32 arena_pipeline(
                                 instantiate(forall (j: int32) { allocated == 1 and combined->end <= j and j < arena->capacity implies arena->occupied[j] == at(a3, arena->occupied[j]) }, k);
                                 close();
                             }
-                            normalize() using {
-                                arena->occupied[k] == at(a3, arena->occupied[k]);
-                                at(a3, arena->occupied[k]) == 0;
-                            };
+                            rewrite(arena->occupied[k], at(a3, arena->occupied[k]));
+                            rewrite(at(a3, arena->occupied[k]), 0);
+                            close();
                         }
                     }
                 }
@@ -5335,11 +5323,9 @@ int32 arena_pipeline(
             rewrite(to_integer(at(z3, combined->end)), to_integer((at(z3, combined->start) + 4))); close();
         }
         have to_integer(r3.end) == (to_integer(r3.start) + 4) by {
-            normalize() using {
-                r3.start == at(z3, combined->start);
-                r3.end == at(z3, combined->end);
-                to_integer(at(z3, combined->end)) == (to_integer(at(z3, combined->start)) + 4);
-            };
+            rewrite(r3.start, at(z3, combined->start));
+            rewrite(r3.end, at(z3, combined->end));
+            close();
         }
         have r3.end <= g3.capacity by {
             close();
@@ -5420,12 +5406,11 @@ int32 arena_pipeline(
                         instantiate(forall (j: int32) { 0 <= j and j < at(w3, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(w3, arena->occupied[j]) == 0 }, k);
                         close();
                     }
-                    normalize() using {
-                        combined->arena->occupied[k] == at(w3, combined->arena->occupied[k]);
-                        at(w3, combined->arena->occupied[k]) == at(w3, arena->occupied[k]);
-                        at(w3, arena->occupied[k]) == 0;
-                        combined->arena == arena;
-                    };
+                    rewrite(arena, combined->arena);
+                    rewrite(combined->arena->occupied[k], at(w3, combined->arena->occupied[k]));
+                    rewrite(at(w3, combined->arena->occupied[k]), at(w3, arena->occupied[k]));
+                    rewrite(at(w3, arena->occupied[k]), 0);
+                    close();
                 }
             }
         }
@@ -5451,10 +5436,8 @@ int32 arena_pipeline(
             have r3.end <= at(w3, g3.capacity) by {
                 close();
             }
-            normalize() using {
-                r3.end <= at(w3, g3.capacity);
-                g3.capacity == at(w3, g3.capacity);
-            };
+            rewrite(g3.capacity, at(w3, g3.capacity));
+            close();
         }
         have defined((r3.start + 3)) by {
             close();
@@ -5495,7 +5478,7 @@ int32 arena_pipeline(
         have g3.capacity == arena->capacity by {
             close();
         }
-        have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z3, combined->start) or at(z3, combined->end) <= k) implies arena->occupied[k] == 0 } by {
+        have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z3, combined->start) or at(z3, combined->end) <= k) implies combined->arena->occupied[k] == 0 } by {
             intro() {
                 intro() {
                     have 0 <= k;
@@ -5518,12 +5501,10 @@ int32 arena_pipeline(
                         instantiate(forall (j: int32) { 0 <= j and j < at(m5, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(m5, arena->occupied[j]) == 0 }, k);
                         close();
                     }
-                    normalize() using {
-                        combined->arena->occupied[k] == at(m5, combined->arena->occupied[k]);
-                        at(m5, combined->arena->occupied[k]) == at(m5, arena->occupied[k]);
-                        at(m5, arena->occupied[k]) == 0;
-                        combined->arena == arena;
-                    };
+                    rewrite(combined->arena->occupied[k], at(m5, combined->arena->occupied[k]));
+                    rewrite(at(m5, combined->arena->occupied[k]), at(m5, arena->occupied[k]));
+                    rewrite(at(m5, arena->occupied[k]), 0);
+                    close();
                 }
             }
         }
@@ -5546,10 +5527,8 @@ int32 arena_pipeline(
             have r3.end <= at(m5, g3.capacity) by {
                 close();
             }
-            normalize() using {
-                r3.end <= at(m5, g3.capacity);
-                g3.capacity == at(m5, g3.capacity);
-            };
+            rewrite(g3.capacity, at(m5, g3.capacity));
+            close();
         }
         mark f4;
         let { after: g4 } = step(arena_free, { r: r3, st: g3 });
@@ -5585,36 +5564,25 @@ int32 arena_pipeline(
                                 instantiate(forall (j: int32) { 0 <= j and j < combined->start implies combined->arena->occupied[j] == at(f4, combined->arena->occupied[j]) }, k);
                                 close();
                             }
-                            have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {
-                                normalize() using {
-                                    at(f4, combined->arena) == arena;
-                                };
-                            }
                             have k < at(f4, arena->capacity) by {
-                                normalize() using {
-                                    k < arena->capacity;
-                                    arena->capacity == at(f4, arena->capacity);
-                                };
+                                rewrite(at(f4, arena->capacity), arena->capacity);
+                                close();
                             }
                             have k < at(z3, combined->start) by {
-                                normalize() using {
-                                    k < combined->start;
-                                    combined->start == at(z3, combined->start);
-                                };
+                                rewrite(at(z3, combined->start), combined->start);
+                                close();
                             }
                             have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
                                 close();
                             }
-                            have at(f4, arena->occupied[k]) == 0 by {
-                                instantiate(forall (j: int32) { 0 <= j and j < at(f4, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(f4, arena->occupied[j]) == 0 }, k);
+                            have at(f4, combined->arena->occupied[k]) == 0 by {
+                                instantiate(at(f4, forall (j: int32) { 0 <= j and j < arena->capacity and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies combined->arena->occupied[j] == 0 }), k);
                                 close();
                             }
-                            normalize() using {
-                                combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]);
-                                at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]);
-                                at(f4, arena->occupied[k]) == 0;
-                                combined->arena == arena;
-                            };
+                            rewrite(arena, combined->arena);
+                            rewrite(combined->arena->occupied[k], at(f4, combined->arena->occupied[k]));
+                            rewrite(at(f4, combined->arena->occupied[k]), 0);
+                            close();
                         }
                     }
                     have combined->start <= k and k < combined->end implies arena->occupied[k] == 0 by {
@@ -5623,10 +5591,8 @@ int32 arena_pipeline(
                             have k < combined->end;
                             have arena->occupied[k] == 0 by {
                                 instantiate(forall (j: int32) { combined->start <= j and j < combined->end implies combined->arena->occupied[j] == 0 }, k);
-                                normalize() using {
-                                    combined->arena->occupied[k] == 0;
-                                    combined->arena == arena;
-                                };
+                                rewrite(arena, combined->arena);
+                                close();
                             }
                             close();
                         }
@@ -5634,45 +5600,32 @@ int32 arena_pipeline(
                     have combined->end <= k implies arena->occupied[k] == 0 by {
                         intro() {
                             have k < combined->arena->capacity by {
-                                normalize() using {
-                                    k < arena->capacity;
-                                    combined->arena == arena;
-                                };
+                                rewrite(combined->arena->capacity, arena->capacity);
+                                close();
                             }
                             have combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]) by {
                                 instantiate(forall (j: int32) { combined->end <= j and j < combined->arena->capacity implies combined->arena->occupied[j] == at(f4, combined->arena->occupied[j]) }, k);
                                 close();
                             }
-                            have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {
-                                normalize() using {
-                                    at(f4, combined->arena) == arena;
-                                };
-                            }
                             have k < at(f4, arena->capacity) by {
-                                normalize() using {
-                                    k < arena->capacity;
-                                    arena->capacity == at(f4, arena->capacity);
-                                };
+                                rewrite(at(f4, arena->capacity), arena->capacity);
+                                close();
                             }
                             have at(z3, combined->end) <= k by {
-                                normalize() using {
-                                    combined->end <= k;
-                                    combined->end == at(z3, combined->end);
-                                };
+                                rewrite(at(z3, combined->end), combined->end);
+                                close();
                             }
                             have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
                                 close();
                             }
-                            have at(f4, arena->occupied[k]) == 0 by {
-                                instantiate(forall (j: int32) { 0 <= j and j < at(f4, arena->capacity) and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies at(f4, arena->occupied[j]) == 0 }, k);
+                            have at(f4, combined->arena->occupied[k]) == 0 by {
+                                instantiate(at(f4, forall (j: int32) { 0 <= j and j < arena->capacity and (j < at(z3, combined->start) or at(z3, combined->end) <= j) implies combined->arena->occupied[j] == 0 }), k);
                                 close();
                             }
-                            normalize() using {
-                                combined->arena->occupied[k] == at(f4, combined->arena->occupied[k]);
-                                at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]);
-                                at(f4, arena->occupied[k]) == 0;
-                                combined->arena == arena;
-                            };
+                            rewrite(arena, combined->arena);
+                            rewrite(combined->arena->occupied[k], at(f4, combined->arena->occupied[k]));
+                            rewrite(at(f4, combined->arena->occupied[k]), 0);
+                            close();
                         }
                     }
                     if k < combined->start {

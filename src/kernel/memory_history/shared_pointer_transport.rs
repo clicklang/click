@@ -90,10 +90,10 @@ impl<'a> Transport<'a> {
             && let AddressBase::Load(load) = node.base.native_atom()
         {
             let after = self.after.shared_memory().clone();
-            let target = Address::loaded_value(&after, load.cell());
-            let before = Address {
+            let target = OldAddress::loaded_value(&after, load.cell());
+            let before = OldAddress {
                 base: node.base.native_atom().clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             // Both observations carry the same displacement. The selected
             // complete-word frame check is on their load identities, so it
@@ -113,9 +113,9 @@ impl<'a> Transport<'a> {
         } else {
             // Only an atom crosses this existing leaf boundary. Its zero
             // offset neither exports nor inspects the shared displacement.
-            let atom = Address {
+            let atom = OldAddress {
                 base: node.base.native_atom().clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             let result = transport_framed_atomic_pointer(&atom, self.after, self.assumptions)?;
             let block = SharedAddressBase::import(&result.base);
@@ -190,20 +190,20 @@ pub(crate) fn transport_pointer(
 mod tests {
     use super::*;
     use std::sync::Arc;
-    pub(super) fn fixture() -> (SharedMemory, Address, Address) {
+    pub(super) fn fixture() -> (SharedMemory, OldAddress, OldAddress) {
         (
             intern_memory(
                 SymbolicMemory::new()
                     .with_block("local:transport-source", 8)
                     .with_block("local:transport-other", 8),
             ),
-            Address {
+            OldAddress {
                 base: AddressBase::Concrete("local:transport-source".into()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
-            Address {
+            OldAddress {
                 base: AddressBase::Concrete("local:transport-other".into()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
         )
     }
@@ -214,14 +214,14 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
-        let changed = before
-            .memory()
-            .clone()
-            .store(field.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
+        let changed = before.memory().clone().store(
+            field.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(3)),
+        );
         let context = PureFactContext::new();
         for wide in [None, Some(false), Some(true)] {
-            let load = MachineTerm::read_named(
+            let load = OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 if wide.is_some() {
@@ -231,12 +231,15 @@ mod tests {
                 },
             );
             let scaled = match wide {
-                None => AddressOffset::scaled_int32_node(load, 4),
-                Some(unsigned) => AddressOffset::scaled_int64_node(load, 8, unsigned),
+                None => OldAddressOffset::scaled_int32_node(load, 4),
+                Some(unsigned) => OldAddressOffset::scaled_int64_node(load, 8, unsigned),
             };
-            let source = Address {
+            let source = OldAddress {
                 base: AddressBase::Symbolic(Variable(1007000)),
-                offset: AddressOffset::Add(Box::new(scaled), Box::new(AddressOffset::Constant(0))),
+                offset: OldAddressOffset::Add(
+                    Box::new(scaled),
+                    Box::new(OldAddressOffset::Constant(0)),
+                ),
             };
             let shared = SharedAddress::import(&source);
             let expected = transport_framed_atomic_pointer(
@@ -269,8 +272,8 @@ mod tests {
             .export()
             .unwrap();
             assert_eq!(historical, expected);
-            let (AddressOffset::Int32Scaled { value, .. }
-            | AddressOffset::Int64Scaled { value, .. }) = &historical.offset
+            let (OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. }) = &historical.offset
             else {
                 panic!("retained read index")
             };
@@ -283,29 +286,29 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let after = SymbolicMemory::new();
         let cases = [
-            AddressOffset::Add(
-                Box::new(AddressOffset::Add(
-                    Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(1007020)),
+            OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::Variable(Variable(1007020)),
                         4,
                     )),
-                    Box::new(AddressOffset::Constant(2)),
+                    Box::new(OldAddressOffset::Constant(2)),
                 )),
-                Box::new(AddressOffset::Constant(3)),
+                Box::new(OldAddressOffset::Constant(3)),
             ),
-            AddressOffset::scaled_int32_node(MachineTerm::constant(u32::MAX), -4),
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::scaled_int32_node(OldMachineTerm::constant(u32::MAX), -4),
+            OldAddressOffset::Int64Scaled {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::UInt64,
-                    MachineTerm::Variable(Variable(1007021)),
+                    OldMachineTerm::Variable(Variable(1007021)),
                 ),
                 byte_width: 8,
                 unsigned: true,
             },
-            AddressOffset::scaled_int64_node(MachineTerm::uint64_constant(u64::MAX), 8, true),
+            OldAddressOffset::scaled_int64_node(OldMachineTerm::uint64_constant(u64::MAX), 8, true),
         ];
         for offset in cases {
-            let source = Address {
+            let source = OldAddress {
                 base: AddressBase::Concrete("local:transport-shape".into()),
                 offset,
             };
@@ -334,14 +337,14 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
         let source = OldPointer::new(
-            Address::symbolic(Variable(1007010)),
+            OldAddress::symbolic(Variable(1007010)),
             ProgramType::VoidPointer,
         )
         .with_bounds(Some(SubobjectBounds {
             start: field.clone(),
-            width: MachineTerm::read_named(
+            width: OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field),
                 LoadKind::Int32,
@@ -373,22 +376,22 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
-        let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let base = Address::from_integer_address(MachineTerm::read_named(
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
+        let loaded = Arc::new(OldAddress::loaded_value(&before, &field));
+        let base = OldAddress::from_integer_address(OldMachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(field),
             LoadKind::Bits64,
         ));
         for offset in [
-            AddressOffset::Constant(4),
-            AddressOffset::Add(
-                Box::new(AddressOffset::Constant(0)),
-                Box::new(AddressOffset::Constant(0)),
+            OldAddressOffset::Constant(4),
+            OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(0)),
+                Box::new(OldAddressOffset::Constant(0)),
             ),
         ] {
             let source = OldPointer::new(
-                Address {
+                OldAddress {
                     base: base.base.clone(),
                     offset,
                 },
@@ -422,10 +425,10 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
-        let loaded = Arc::new(Address::loaded_value(&before, &field));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
+        let loaded = Arc::new(OldAddress::loaded_value(&before, &field));
         let source = OldPointer::new(
-            Address::from_integer_address(MachineTerm::read_named(
+            OldAddress::from_integer_address(OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 LoadKind::Bits64,

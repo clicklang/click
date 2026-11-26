@@ -3619,7 +3619,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
         && argument_is_null_pointer_constant(literal, ty)
     {
         return SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::typed_pointer(Address::null(), ty.to_kernel_type()),
+            ProgramValue::typed_pointer(OldAddress::null(), ty.to_kernel_type()),
         ));
     }
     let Some((target_type, integer_mode)) = pure_function_parameter_conversion(parameter) else {
@@ -4954,9 +4954,9 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
             Some(ProgramExpression::Value(if value <= i32::MAX as u64 {
                 int32(value as u32)
             } else if value <= i64::MAX as u64 {
-                ProgramValue::Int64(MachineTerm::int64_constant(value as i64))
+                ProgramValue::Int64(OldMachineTerm::int64_constant(value as i64))
             } else {
-                ProgramValue::UInt64(MachineTerm::uint64_constant(value))
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))
             }))
         }
         SyntaxTerm::Negate(inner) => {
@@ -5237,6 +5237,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn integer_context_preserves_unbounded_arithmetic_and_rejects_machine_claims() {
         for source in [
             "theorem check() { ensures (4294967296 + 4294967296 : Integer) == 8589934592 by close(); }",

@@ -45,12 +45,12 @@ mod tests {
     fn algebraic_calls_preserve_numeric_argument_forms_and_exact_payloads() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = KernelMatch::test_scrutinee(vec![]).algebraic_type;
-        let word = MachineTerm::add(
-            MachineTerm::Variable(Variable(999701)),
-            MachineTerm::constant(1),
+        let word = OldMachineTerm::add(
+            OldMachineTerm::Variable(Variable(999701)),
+            OldMachineTerm::constant(1),
         );
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999702)),
+            OldAddress::symbolic(Variable(999702)),
             ProgramType::Int32Pointer,
         );
         let arguments = [
@@ -92,7 +92,7 @@ mod tests {
         let ty = native.algebraic_type.clone();
         let scrutinee = KernelTermImport::default().algebraic(&native);
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999703)),
+            OldAddress::symbolic(Variable(999703)),
             ProgramType::Int32Pointer,
         );
         native.node = AlgebraicTermNode::Constructor {
@@ -107,7 +107,7 @@ mod tests {
                     variant: "Arm".into(),
                     bindings: vec![KernelTermImport::default().argument(
                         &PureFunctionArgument::Value(ProgramValue::Pointer(OldPointer::new(
-                            Address::symbolic(Variable(999704)),
+                            OldAddress::symbolic(Variable(999704)),
                             ProgramType::Int32Pointer,
                         ))),
                     )],
@@ -126,7 +126,7 @@ mod tests {
         let guard = KernelTerm::algebraic_equal_raw([call, scrutinee]);
         let native_guard = KernelTermExport::condition(&guard).unwrap();
         let format = MachineIntegerType::Int32;
-        let branches = [MachineTerm::constant(1), MachineTerm::constant(2)];
+        let branches = [OldMachineTerm::constant(1), OldMachineTerm::constant(2)];
         let root = KernelTerm::machine_if_shared(
             format,
             [
@@ -138,7 +138,7 @@ mod tests {
         let observed = SharedMachineIntegerTerm::observe_shared(format, root).unwrap();
         let expected = SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::If {
+            OldMachineTerm::If {
                 condition: Box::new(native_guard),
                 then_term: Box::new(branches[0].clone()),
                 else_term: Box::new(branches[1].clone()),

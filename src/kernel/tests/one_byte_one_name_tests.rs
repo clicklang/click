@@ -5,24 +5,28 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn byte(offset: i64) -> Address {
-    Address {
+fn byte(offset: i64) -> OldAddress {
+    OldAddress {
         base: AddressBase::from("global:bytes"),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 
-fn read(offset: i64, kind: LoadKind) -> MachineTerm {
+fn read(offset: i64, kind: LoadKind) -> OldMachineTerm {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    MachineTerm::memory_read(memory, byte(offset), kind)
+    OldMachineTerm::memory_read(memory, byte(offset), kind)
 }
 
-fn constant(format: MachineIntegerType, value: i64) -> MachineTerm {
-    MachineTerm::narrow_constant(format, value as u128)
+fn constant(format: MachineIntegerType, value: i64) -> OldMachineTerm {
+    OldMachineTerm::narrow_constant(format, value as u128)
 }
 
-fn equal(format: MachineIntegerType, left: MachineTerm, right: MachineTerm) -> ConditionTerm {
-    ConditionTerm::narrow_compare(format, CompareRelation::Equal, left, right)
+fn equal(
+    format: MachineIntegerType,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
+    OldConditionTerm::narrow_compare(format, CompareRelation::Equal, left, right)
 }
 
 /// The signed/unsigned pairs every byte test checks: both halves of the
@@ -41,10 +45,10 @@ const BYTE_PAIRS: [(i64, i64); 7] = [
 fn a_signed_byte_read_is_its_own_load() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let signed = MachineTerm::memory_read(memory.clone(), byte(0), LoadKind::Int8);
+    let signed = OldMachineTerm::memory_read(memory.clone(), byte(0), LoadKind::Int8);
     assert!(matches!(
         signed,
-        MachineTerm::MemoryLoad(_, _, LoadKind::Int8)
+        OldMachineTerm::MemoryLoad(_, _, LoadKind::Int8)
     ));
     assert_eq!(signed.signed_byte_operand(), None);
     // Its canonical form is its own load's, and the read is named.
@@ -55,7 +59,7 @@ fn a_signed_byte_read_is_its_own_load() {
     assert!(crate::kernel::eval::load_variable_for_term(&signed).is_some());
     // The native sign cast still folds a constant: the byte 0xC8 is -56.
     assert_eq!(
-        MachineTerm::signed_byte(constant(MachineIntegerType::UInt8, 0xC8)),
+        OldMachineTerm::signed_byte(constant(MachineIntegerType::UInt8, 0xC8)),
         constant(MachineIntegerType::Int8, -56)
     );
 }
@@ -157,8 +161,8 @@ fn reads_of_different_bytes_are_not_related() {
 fn a_native_sign_cast_constant_decides_its_operand() {
     use MachineIntegerType::{Int8, UInt8};
     let _session = crate::kernel::VerificationSession::enter();
-    let operand = MachineTerm::Variable(Variable(612_201));
-    let signed = MachineTerm::signed_byte(operand.clone());
+    let operand = OldMachineTerm::Variable(Variable(612_201));
+    let signed = OldMachineTerm::signed_byte(operand.clone());
     for (signed_value, unsigned_value) in BYTE_PAIRS {
         let context = PureFactContext::new().assume_condition(
             equal(Int8, signed.clone(), constant(Int8, signed_value)),

@@ -12,7 +12,7 @@ struct ScalarKeyData {
 }
 #[derive(Debug, Hash)]
 enum ScalarShape {
-    Atom(MachineTerm),
+    Atom(OldMachineTerm),
     WordBinary(MachineBinaryOp, MachineIntegerType, [ScalarStorageKey; 2]),
     WordUnary(MachineIntegerType, MachineUnaryOp, ScalarStorageKey),
     If(ConditionStorageKey, [ScalarStorageKey; 2]),
@@ -92,7 +92,7 @@ impl ArgumentKey {
     }
 }
 impl ScalarStorageKey {
-    pub(in crate::kernel) fn native_atom(&self) -> Option<&MachineTerm> {
+    pub(in crate::kernel) fn native_atom(&self) -> Option<&OldMachineTerm> {
         match &self.0.shape {
             ScalarShape::Atom(word) => Some(word),
             _ => None,
@@ -108,10 +108,10 @@ impl ScalarStorageKey {
             fingerprint: hash.finish(),
         }))
     }
-    pub(in crate::kernel) fn native(value: &MachineTerm) -> Self {
+    pub(in crate::kernel) fn native(value: &OldMachineTerm) -> Self {
         #[derive(Clone, Copy)]
         enum Task<'a> {
-            Term(&'a MachineTerm),
+            Term(&'a OldMachineTerm),
             Argument(&'a PureFunctionArgument),
             Negate(bool),
             Binary(bool, FloatBinaryOperator),
@@ -120,7 +120,7 @@ impl ScalarStorageKey {
             ScalarArgument(ProgramType),
             WordBinary(MachineBinaryOp, MachineIntegerType),
             WordUnary(MachineIntegerType, MachineUnaryOp),
-            If(&'a ConditionTerm),
+            If(&'a OldConditionTerm),
             Fold(Variable, Variable),
             Match(&'a AlgebraicTerm, &'a [AlgebraicBitvectorMatchArm]),
             Cast(MachineCastSpelling, MachineIntegerType, MachineIntegerType),
@@ -130,7 +130,7 @@ impl ScalarStorageKey {
         let mut arguments = Vec::new();
         while let Some(task) = pending.pop() {
             match task {
-                Task::Term(MachineTerm::Binary {
+                Task::Term(OldMachineTerm::Binary {
                     op,
                     format,
                     left,
@@ -142,14 +142,14 @@ impl ScalarStorageKey {
                         Task::Term(left),
                     ]);
                 }
-                Task::Term(MachineTerm::Unary {
+                Task::Term(OldMachineTerm::Unary {
                     format,
                     op,
                     operand,
                 }) => {
                     pending.extend([Task::WordUnary(*format, *op), Task::Term(operand)]);
                 }
-                Task::Term(MachineTerm::If {
+                Task::Term(OldMachineTerm::If {
                     condition,
                     then_term,
                     else_term,
@@ -160,7 +160,7 @@ impl ScalarStorageKey {
                         Task::Term(then_term),
                     ]);
                 }
-                Task::Term(MachineTerm::RangeFold {
+                Task::Term(OldMachineTerm::RangeFold {
                     start,
                     end,
                     initial,
@@ -171,20 +171,20 @@ impl ScalarStorageKey {
                     pending.push(Task::Fold(*accumulator, *item));
                     pending.extend([body, initial, end, start].map(|term| Task::Term(term)));
                 }
-                Task::Term(MachineTerm::AlgebraicMatch { scrutinee, arms }) => {
+                Task::Term(OldMachineTerm::AlgebraicMatch { scrutinee, arms }) => {
                     pending.push(Task::Match(scrutinee, arms));
                     pending.extend(arms.iter().rev().map(|arm| Task::Term(&arm.body)));
                 }
-                Task::Term(MachineTerm::IntegerAddress(address, _)) => {
+                Task::Term(OldMachineTerm::IntegerAddress(address, _)) => {
                     values.push(Self::new(ScalarShape::Address(AddressKey::native(address))));
                 }
-                Task::Term(MachineTerm::IntegerToMachine { value, destination }) => {
+                Task::Term(OldMachineTerm::IntegerToMachine { value, destination }) => {
                     values.push(Self::new(ScalarShape::IntegerConversion(
                         value.clone(),
                         *destination,
                     )));
                 }
-                Task::Term(MachineTerm::Cast {
+                Task::Term(OldMachineTerm::Cast {
                     spelling,
                     value,
                     from,
@@ -192,26 +192,26 @@ impl ScalarStorageKey {
                 }) => {
                     pending.extend([Task::Cast(*spelling, *from, *to), Task::Term(value)]);
                 }
-                Task::Term(MachineTerm::BoolCast { to, value }) => {
+                Task::Term(OldMachineTerm::BoolCast { to, value }) => {
                     values.push(Self::new(ScalarShape::BoolCast(
                         *to,
                         ConditionStorageKey::native(value),
                     )));
                 }
-                Task::Term(MachineTerm::Float32Negate(v)) => {
+                Task::Term(OldMachineTerm::Float32Negate(v)) => {
                     pending.push(Task::Negate(false));
                     pending.push(Task::Term(v));
                 }
-                Task::Term(MachineTerm::Float64Negate(v)) => {
+                Task::Term(OldMachineTerm::Float64Negate(v)) => {
                     pending.push(Task::Negate(true));
                     pending.push(Task::Term(v));
                 }
-                Task::Term(MachineTerm::Float32Binary {
+                Task::Term(OldMachineTerm::Float32Binary {
                     operator,
                     left,
                     right,
                 })
-                | Task::Term(MachineTerm::Float64Binary {
+                | Task::Term(OldMachineTerm::Float64Binary {
                     operator,
                     left,
                     right,
@@ -220,17 +220,17 @@ impl ScalarStorageKey {
                         unreachable!()
                     };
                     pending.push(Task::Binary(
-                        matches!(term, MachineTerm::Float64Binary { .. }),
+                        matches!(term, OldMachineTerm::Float64Binary { .. }),
                         *operator,
                     ));
                     pending.push(Task::Term(right));
                     pending.push(Task::Term(left));
                 }
-                Task::Term(MachineTerm::PureFunctionApplication { name, arguments }) => {
+                Task::Term(OldMachineTerm::PureFunctionApplication { name, arguments }) => {
                     pending.push(Task::Application(name, arguments.len()));
                     pending.extend(arguments.iter().rev().map(Task::Term));
                 }
-                Task::Term(MachineTerm::ClickFunctionApplication { name, arguments }) => {
+                Task::Term(OldMachineTerm::ClickFunctionApplication { name, arguments }) => {
                     pending.push(Task::Call(name, arguments.len()));
                     pending.extend(arguments.iter().rev().map(Task::Argument));
                 }
@@ -433,20 +433,22 @@ impl ScalarStorageKey {
                 arguments.iter().map(ArgumentKey::shared).collect(),
             ),
             KernelTermNode::Variable(variable) => {
-                ScalarShape::Atom(MachineTerm::Variable(*variable))
+                ScalarShape::Atom(OldMachineTerm::Variable(*variable))
             }
-            KernelTermNode::MachineLiteral(literal) => ScalarShape::Atom(literal.legacy_term()),
+            KernelTermNode::MachineLiteral(literal) => ScalarShape::Atom(literal.old_term()),
             KernelTermNode::FloatLiteral { carrier, bits } => {
-                ScalarShape::Atom(MachineTerm::Constant {
+                ScalarShape::Atom(OldMachineTerm::Constant {
                     format: *carrier,
                     bits: *bits,
                 })
             }
-            KernelTermNode::ThreadHandle(id) => ScalarShape::Atom(MachineTerm::ThreadHandle(*id)),
+            KernelTermNode::ThreadHandle(id) => {
+                ScalarShape::Atom(OldMachineTerm::ThreadHandle(*id))
+            }
             KernelTermNode::ImportedScalar(input) => return Self::native(input.value()),
             _ => {
                 if let Some(view) = float {
-                    return Self::native(view.native_compat().expect("float atom key"));
+                    return Self::native(view.old_form().expect("float atom key"));
                 }
                 if let Some(value) = root
                     .retained_machine_input()
@@ -654,7 +656,7 @@ impl Drop for ScalarStorageKey {
             if let Some(data) = Arc::get_mut(&mut key.0) {
                 match std::mem::replace(
                     &mut data.shape,
-                    ScalarShape::Atom(MachineTerm::constant(0)),
+                    ScalarShape::Atom(OldMachineTerm::constant(0)),
                 ) {
                     ScalarShape::Negate(_, child)
                     | ScalarShape::WordUnary(_, _, child)

@@ -11,9 +11,10 @@
 //! [`Load::at`] is the only constructor, and [`Load::base`] the only builder
 //! of [`AddressBase::Load`]; `build_support/read_construction.rs` keeps it so.
 
+use crate::kernel::OffsetTree;
 use std::sync::Arc;
 
-use super::{Address, AddressBase, AddressOffset, ProgramPoint};
+use super::{AddressBase, OldAddress, OldAddressOffset, ProgramPoint};
 
 /// One load: a cell's bytes at a version point, interned by
 /// `(point.read_key(), cell)`. The term carries its point and cell, so
@@ -34,7 +35,7 @@ struct LoadNode {
     /// question 2): an `Exact` and an `IndexedCell` selection of one point
     /// are one load, as integer reads compare only `read_key()`.
     point: ProgramPoint,
-    cell: Address,
+    cell: OldAddress,
 }
 
 // A load's point holds memory whose cells hold addresses, which can hold
@@ -42,7 +43,7 @@ struct LoadNode {
 // overflows in downstream crates. Both parts are `Send` and `Sync` (asserted
 // below without the cycle), so the node is.
 //
-// SAFETY: `LoadNode` owns an id, a `ProgramPoint` and an `Address`, and has
+// SAFETY: `LoadNode` owns an id, a `ProgramPoint` and an `OldAddress`, and has
 // no interior mutability of its own; `assert_parts_thread_safe` checks that
 // both parts are `Send + Sync`.
 unsafe impl Send for LoadNode {}
@@ -53,7 +54,7 @@ unsafe impl Sync for LoadNode {}
 fn assert_parts_thread_safe() {
     fn thread_safe<T: Send + Sync>() {}
     thread_safe::<ProgramPoint>();
-    thread_safe::<Address>();
+    thread_safe::<OldAddress>();
 }
 
 /// How many slots load identities are hashed into. The capacity below
@@ -77,7 +78,7 @@ impl Load {
     /// The load of `cell` at `point`. The one constructor: the identity is
     /// the point's read key and the cell; a later selection with the same
     /// key returns the load already interned, keeping its first point.
-    pub(crate) fn at(point: ProgramPoint, cell: &Address) -> Self {
+    pub(crate) fn at(point: ProgramPoint, cell: &OldAddress) -> Self {
         use std::hash::{Hash, Hasher};
         // Terms of two memory arenas never meet: an arena starts only with a
         // verification session, which also clears this interner, and a
@@ -143,10 +144,10 @@ impl Load {
     }
 
     /// The pointer address this load holds, undisplaced.
-    pub(crate) fn address(&self) -> Address {
-        Address {
+    pub(crate) fn address(&self) -> OldAddress {
+        OldAddress {
             base: self.base(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -157,7 +158,7 @@ impl Load {
     }
 
     /// The cell whose bytes are loaded.
-    pub(crate) fn cell(&self) -> &Address {
+    pub(crate) fn cell(&self) -> &OldAddress {
         &self.node.cell
     }
 
@@ -221,7 +222,7 @@ impl std::fmt::Debug for Load {
 }
 
 /// The point the producer of an integer or float read selected
-/// (`MachineTerm::MemoryLoad`'s first field). Consumers branch on its
+/// (`OldMachineTerm::MemoryLoad`'s first field). Consumers branch on its
 /// selection kind (entry, exact, indexed write); it is no part of the term's
 /// identity, which its [`LoadCell`] holds, so it compares equal to every
 /// other read point, as [`super::AddressObjectClass`] does.
@@ -286,7 +287,7 @@ impl std::fmt::Debug for ReadPoint {
     }
 }
 
-/// The cell of an integer or float read (`MachineTerm::MemoryLoad`'s second
+/// The cell of an integer or float read (`OldMachineTerm::MemoryLoad`'s second
 /// field): the address as the producer spelled it, and the interned [`Load`]
 /// of that address at the producer's point. The load is the term's identity
 /// (`design/loads.md`, step 3a): equality, hashing and ordering compare its
@@ -297,7 +298,7 @@ impl std::fmt::Debug for ReadPoint {
 #[derive(Clone)]
 pub struct LoadCell {
     load: Load,
-    address: Box<Address>,
+    address: Box<OldAddress>,
 }
 
 impl LoadCell {
@@ -309,48 +310,48 @@ impl LoadCell {
     }
 
     /// The address as the producer spelled it.
-    pub(crate) fn address(&self) -> &Address {
+    pub(crate) fn address(&self) -> &OldAddress {
         &self.address
     }
 
     /// The address as the producer spelled it, boxed.
-    pub(crate) fn boxed(&self) -> Box<Address> {
+    pub(crate) fn boxed(&self) -> Box<OldAddress> {
         self.address.clone()
     }
 }
 
 impl std::ops::Deref for LoadCell {
-    type Target = Address;
-    fn deref(&self) -> &Address {
+    type Target = OldAddress;
+    fn deref(&self) -> &OldAddress {
         &self.address
     }
 }
 
-impl AsRef<Address> for LoadCell {
-    fn as_ref(&self) -> &Address {
+impl AsRef<OldAddress> for LoadCell {
+    fn as_ref(&self) -> &OldAddress {
         &self.address
     }
 }
 
-impl From<LoadCell> for Box<Address> {
+impl From<LoadCell> for Box<OldAddress> {
     fn from(cell: LoadCell) -> Self {
         cell.address
     }
 }
 
-impl From<&LoadCell> for Box<Address> {
+impl From<&LoadCell> for Box<OldAddress> {
     fn from(cell: &LoadCell) -> Self {
         cell.address.clone()
     }
 }
 
-impl From<LoadCell> for Address {
+impl From<LoadCell> for OldAddress {
     fn from(cell: LoadCell) -> Self {
         *cell.address
     }
 }
 
-impl From<&LoadCell> for Address {
+impl From<&LoadCell> for OldAddress {
     fn from(cell: &LoadCell) -> Self {
         (*cell.address).clone()
     }
@@ -390,9 +391,12 @@ impl std::fmt::Debug for LoadCell {
 
 /// The operands of the integer or float read of `address` at `point`: the
 /// producer's point, and the address with its interned load. The one builder
-/// of [`ReadPoint`] and [`LoadCell`], called by `MachineTerm::read_named`;
+/// of [`ReadPoint`] and [`LoadCell`], called by `OldMachineTerm::read_named`;
 /// `build_support/read_construction.rs` keeps it so.
-pub(crate) fn read_operands(point: ProgramPoint, address: Box<Address>) -> (ReadPoint, LoadCell) {
+pub(crate) fn read_operands(
+    point: ProgramPoint,
+    address: Box<OldAddress>,
+) -> (ReadPoint, LoadCell) {
     let load = Load::at(point.clone(), &address);
     (ReadPoint(point), LoadCell { load, address })
 }
@@ -405,7 +409,7 @@ pub(crate) fn read_operands(point: ProgramPoint, address: Box<Address>) -> (Read
 /// still ask the integer read machinery about a pointer cell, because that
 /// machinery has no form keyed by a load:
 ///
-/// - `Address::canonical_read` and `Address::canonical_loaded_value` select
+/// - `OldAddress::canonical_read` and `OldAddress::canonical_loaded_value` select
 ///   the cell's version through `canonical_scalar_read`, whose identity
 ///   cache, read observations and access widths are keyed by
 ///   `(memory, address, kind)` and shared with 64-bit integer reads of the
@@ -424,9 +428,9 @@ pub(crate) fn read_operands(point: ProgramPoint, address: Box<Address>) -> (Read
 pub(crate) fn legacy_pointer_word_read(
     memory: &crate::kernel::SharedMemory,
     site: Option<&ProgramPoint>,
-    cell: &Address,
-) -> crate::kernel::MachineTerm {
-    crate::kernel::MachineTerm::read_named(
+    cell: &OldAddress,
+) -> crate::kernel::OldMachineTerm {
+    crate::kernel::OldMachineTerm::read_named(
         ProgramPoint::read_at_optional(memory, site),
         cell.clone(),
         crate::kernel::LoadKind::Bits64,

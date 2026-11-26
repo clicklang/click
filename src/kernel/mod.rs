@@ -48,7 +48,6 @@ mod population_access;
 mod population_authority;
 pub(crate) use population_authority::storage_creation::CheckedPopulationAuthorityExchange;
 pub(crate) use population_authority::storage_creation::CheckedPopulationMemberExchange;
-mod quantified_frame;
 pub(crate) mod quantifiers;
 mod resource_description;
 mod thread_confinement;
@@ -78,7 +77,7 @@ pub(crate) use borrows::BorrowLedger;
 /// built the projection. One lookup; the canonical form is not rebuilt.
 pub(crate) fn load_projection_source(
     projected: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
 ) -> Option<SharedMemory> {
     reasoning::memory_resolution::canonical_load_projection_source(projected, pointer)
 }
@@ -129,13 +128,11 @@ pub(crate) use primitives::take_whole_normalization_facts;
 pub(crate) mod proof;
 mod publication;
 pub(crate) mod sorry;
+pub use fold_read_summary::{CheckedFoldReadSummary, FoldReadDecline, FoldReadDefinition};
 #[cfg(test)]
-pub(crate) use fold_read_summary::registered_fold_read_summary;
-pub use fold_read_summary::{
-    CheckedFoldReadSummary, FoldReadDecline, FoldReadDefinition, register_fold_read_definition,
+pub(crate) use fold_read_summary::{
+    clear_fold_read_summaries, register_fold_read_definition, registered_fold_read_summary,
 };
-pub(crate) use fold_read_summary::{FoldFrameRefusal, frame_fold_application_transport};
-pub(crate) use quantified_frame::{QuantifiedFrameRefusal, frame_quantified_transport};
 pub(crate) mod reasoning;
 #[cfg(test)]
 pub(crate) use reasoning::variable_collection::count_cells_collected;
@@ -153,6 +150,7 @@ pub(crate) use spec::{retained_sequence_equality_view, sequence_membership_view}
 mod termination;
 pub(crate) use termination::StatementProofInput;
 pub(crate) use termination::descent_completion::DescentStep;
+pub(crate) use termination::{CallDependency, program_function_call_dependencies};
 // Checked internal fork/join; binding to imported pthread declarations is a
 // separate checkpoint, so no C execution path invokes these rules yet.
 mod threads;
@@ -375,7 +373,6 @@ pub struct VerificationSessionState {
     loads: eval::LoadRegistryState,
     model_fields: model_fields::ModelFieldRegistryState,
     blocks: primitives::BlockRegistriesState,
-    fold_reads: fold_read_summary::FoldReadSummariesState,
     conjunctions: resource_conjunction::Registry,
     required_constructions: spec::required_constructions::RequiredConstructionsState,
     opening_witnesses: u64,
@@ -427,7 +424,6 @@ impl VerificationSession {
             model_fields::clear_model_field_registry();
             primitives::clear_block_alignment_registry();
             primitives::clear_never_address_taken_locals();
-            fold_read_summary::clear_fold_read_summaries();
             eval::clear_load_canonicalization_caches();
             eval::pointer_tags::clear_tag_bound_cache();
             memory_history::clear_canonical_form_caches();
@@ -467,7 +463,6 @@ impl VerificationSession {
             loads: eval::capture_load_variable_registry(),
             model_fields: model_fields::capture_model_field_registry(),
             blocks: primitives::capture_block_registries(),
-            fold_reads: fold_read_summary::capture_fold_read_summaries(),
             conjunctions: resource_conjunction::capture(),
             required_constructions: spec::required_constructions::capture_required_constructions(),
             opening_witnesses: quantifiers::opening_witness_count(),
@@ -506,7 +501,6 @@ impl VerificationSession {
         eval::restore_load_variable_registry(&state.loads);
         model_fields::restore_model_field_registry(&state.model_fields);
         primitives::restore_block_registries(&state.blocks);
-        fold_read_summary::restore_fold_read_summaries(&state.fold_reads);
         quantifiers::reset_opening_witnesses(state.opening_witnesses);
         reasoning::clear_memory_lacks_variable();
         eval::clear_load_canonicalization_caches();

@@ -63,11 +63,11 @@ fn rename_unreduced(
     to: Variable,
     sort: &Sort,
 ) -> Option<Proposition> {
-    let rename_program_occurrences = |body: &Proposition, pointer: Address| {
+    let rename_program_occurrences = |body: &Proposition, pointer: OldAddress| {
         let renamed =
-            substitute_int32_variable_in_proposition(body, from, MachineTerm::Variable(to));
+            substitute_int32_variable_in_proposition(body, from, OldMachineTerm::Variable(to));
         let renamed =
-            proof::restore_range_span_spelling(body, renamed, from, &MachineTerm::Variable(to));
+            proof::restore_range_span_spelling(body, renamed, from, &OldMachineTerm::Variable(to));
         // What is left of `from` after the machine-term rename is an address
         // base, possibly behind a load variable; without one, the body is done.
         if !mentions_possibly(&renamed, from) {
@@ -93,9 +93,9 @@ fn rename_unreduced(
     match sort {
         Sort::ProgramPointer(program_type) | Sort::ProgramObjectPointer(program_type, _) => {
             let pointer = if matches!(program_type, ProgramType::FunctionPointer(_)) {
-                Address::symbolic_function(to)
+                OldAddress::symbolic_function(to)
             } else {
-                Address::symbolic(to)
+                OldAddress::symbolic(to)
             };
             rename_program_occurrences(body, pointer)
         }
@@ -120,7 +120,7 @@ fn rename_unreduced(
             )]);
             typed_rename(body, &Default::default(), &Default::default(), &algebraic)
         }
-        _ => rename_program_occurrences(body, Address::symbolic(to)),
+        _ => rename_program_occurrences(body, OldAddress::symbolic(to)),
     }
 }
 
@@ -413,7 +413,7 @@ pub(crate) fn close_foralls(
             (
                 *var,
                 proof::term_rewrite::TypedProgramValueReplacement::Bitvector(
-                    MachineTerm::Variable(Variable::bound(*height)),
+                    OldMachineTerm::Variable(Variable::bound(*height)),
                 ),
             )
         })

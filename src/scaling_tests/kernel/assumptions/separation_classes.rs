@@ -1,16 +1,21 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn separation_class_lookup_visits_only_the_selected_payload() {
     for aliases in [false, true] {
         for size in [16u64, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = |id| Address::symbolic(Variable(id));
+            let pointer = |id| OldAddress::symbolic(Variable(id));
             let model = pointer(9_884_001);
             let node = pointer(9_884_002);
-            let program = Address {
+            let program = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_884_003)), 4),
+                offset: OldAddressOffset::scale_int32(
+                    OldMachineTerm::Variable(Variable(9_884_003)),
+                    4,
+                ),
             };
             let separation = |left, right| Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
@@ -34,15 +39,17 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
                 ));
                 if aliases {
                     context = context.assume_condition(
-                        ConditionTerm::address_equal(model.clone(), pointer(9_886_000 + index)),
+                        OldConditionTerm::address_equal(model.clone(), pointer(9_886_000 + index)),
                         true,
                     );
                 }
             }
             let selected = separation(model.offset_by_bytes(8), node.offset_by_bytes(16));
             context = context.assume_proposition(selected.clone());
-            context = context
-                .assume_condition(ConditionTerm::address_equal(model, program.clone()), true);
+            context = context.assume_condition(
+                OldConditionTerm::address_equal(model, program.clone()),
+                true,
+            );
             let before = SOURCE_VISITS.with(Cell::get);
             let candidates = context.separated_address_classes.candidates(
                 &program.offset_by_bytes(8),
@@ -69,7 +76,7 @@ fn exact_separation_lookup_ignores_related_widths_and_alias_history() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Address::symbolic(Variable(id));
+        let pointer = |id| OldAddress::symbolic(Variable(id));
         let model = pointer(9_940_001);
         let source = pointer(9_940_002);
         let copied = pointer(9_940_003);
@@ -100,14 +107,14 @@ fn exact_separation_lookup_ignores_related_widths_and_alias_history() {
                 i as u32 + 5,
             ));
             context = context.assume_condition(
-                ConditionTerm::address_equal(model.clone(), pointer(9_943_000 + i)),
+                OldConditionTerm::address_equal(model.clone(), pointer(9_943_000 + i)),
                 true,
             );
         }
         context = context.assume_proposition(separated(model.clone(), 1, source.clone(), 4));
         let branch = context
             .clone()
-            .assume_condition(ConditionTerm::address_equal(copied.clone(), model), true);
+            .assume_condition(OldConditionTerm::address_equal(copied.clone(), model), true);
         let before = SOURCE_VISITS.with(Cell::get);
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             branch.contains_known(&Proposition::ResourceSeparate {
@@ -131,12 +138,12 @@ fn symbolic_size_span_lookup_visits_only_its_authority() {
     // finding its stated separation reads that one authority among many.
     for size in [16u64, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Address::symbolic(Variable(id));
+        let pointer = |id| OldAddress::symbolic(Variable(id));
         let parameter = TypeParameterName::intern("ScaledSpanT");
-        let object = |p: Address| {
+        let object = |p: OldAddress| {
             Resource::Memory(MemoryRange::of_access(&p, AccessExtent::Object(parameter)))
         };
-        let bytes = |p: Address, n: u32| {
+        let bytes = |p: OldAddress, n: u32| {
             Resource::Memory(MemoryRange::new_with_element_width(
                 p,
                 0u32.into(),

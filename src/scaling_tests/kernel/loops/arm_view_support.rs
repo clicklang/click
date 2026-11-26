@@ -6,9 +6,9 @@ fn republished_arm_view_keeps_support_at_growing_context_sizes() {
     for size in [1, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let range = MemoryRange::new(
-            Address::symbolic(Variable(8_390_080)),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldAddress::symbolic(Variable(8_390_080)),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let owner = ResourceFact::own_memory(range.clone());
         let view = ResourceFact::view_memory(range);

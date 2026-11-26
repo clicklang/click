@@ -5,8 +5,8 @@ pub(crate) use super::integer_affine_atoms::IntegerAffineAtom;
 use super::integer_affine_atoms::{IntegerFoldAtomRecord, intern_integer_fold_key};
 
 use crate::kernel::{
-    ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelIntegerOperator, KernelTerm,
-    KernelTermNode, Proposition, SharedIntegerTerm, StoredConditionTerm,
+    IntegerComparisonOperator, IntegerTerm, KernelIntegerOperator, KernelTerm, KernelTermNode,
+    OldConditionTerm, Proposition, SharedIntegerTerm, StoredConditionTerm,
 };
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
@@ -207,16 +207,16 @@ fn integer_disequality(
     let (left, right) = match reading {
         condition_source @ Proposition::ConditionIs(_, _)
             if let Some(
-                (ConditionTerm::IntegerEqual(left, right), false)
-                | (ConditionTerm::IntegerNotEqual(left, right), true),
-            ) = condition_source.condition_native() =>
+                (OldConditionTerm::IntegerEqual(left, right), false)
+                | (OldConditionTerm::IntegerNotEqual(left, right), true),
+            ) = condition_source.old_condition() =>
         {
             (left, right)
         }
         Proposition::Not(body) => match body.as_ref() {
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::IntegerEqual(left, right), _)) =
+                    condition_source_0.old_condition() =>
             {
                 (left, right)
             }
@@ -279,9 +279,9 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
         let (left, right) = match reading {
             condition_source @ Proposition::ConditionIs(_, _)
                 if let Some(
-                    (ConditionTerm::IntegerNotEqual(left, right), true)
-                    | (ConditionTerm::IntegerEqual(left, right), false),
-                ) = condition_source.condition_native() =>
+                    (OldConditionTerm::IntegerNotEqual(left, right), true)
+                    | (OldConditionTerm::IntegerEqual(left, right), false),
+                ) = condition_source.old_condition() =>
             {
                 (left, right)
             }
@@ -314,9 +314,9 @@ pub(crate) fn excluded_type_bound(premise: &Proposition) -> Option<Proposition> 
     let (min, max) = value.ty().format().bounds();
     let observed = IntegerTerm::Machine(value);
     let condition = if constant == min {
-        ConditionTerm::integer_less_equal(IntegerTerm::constant(min + BigInt::one()), observed)
+        OldConditionTerm::integer_less_equal(IntegerTerm::constant(min + BigInt::one()), observed)
     } else if constant == max {
-        ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max - BigInt::one()))
+        OldConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max - BigInt::one()))
     } else {
         return None;
     };
@@ -358,7 +358,7 @@ pub(crate) fn integer_affine_machine_values(
     // A native comparison observes the machine values its Integer reading
     // does, as `integer_affine_claim` reads it.
     if !matches!(
-        condition.native_compat(),
+        condition.old_form(),
         crate::kernel::integer_comparison_condition!(_, _)
     ) && let Some(reading) =
         crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
@@ -369,12 +369,12 @@ pub(crate) fn integer_affine_machine_values(
     {
         return integer_affine_machine_values(&reading);
     }
-    let (left, right) = match condition.native_compat() {
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right) => (left, right),
+    let (left, right) = match condition.old_form() {
+        OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right)
+        | OldConditionTerm::IntegerEqual(left, right) => (left, right),
         _ => return Vec::new(),
     };
     retained_affine_machine_values([left.root(), right.root()])
@@ -533,8 +533,8 @@ fn integer_affine_claim_with_context(
     // comparison of their exact observations does, so it is that Integer
     // claim. One constant-size reading; nothing else is consulted.
     if !matches!(
-        condition.native_compat(),
-        crate::kernel::integer_comparison_condition!(_, _) | ConditionTerm::Constant(_)
+        condition.old_form(),
+        crate::kernel::integer_comparison_condition!(_, _) | OldConditionTerm::Constant(_)
     ) && let Some(reading) =
         crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
             &Proposition::condition_is(condition.clone(), value),
@@ -544,7 +544,7 @@ fn integer_affine_claim_with_context(
     {
         return integer_affine_claim_with_context(&reading, context);
     }
-    if let ConditionTerm::Constant(actual) = condition.native_compat() {
+    if let OldConditionTerm::Constant(actual) = condition.old_form() {
         return Some(IntegerAffineClaim {
             relation: IntegerAffineRelation::Equal,
             terms: BTreeMap::new(),
@@ -556,13 +556,13 @@ fn integer_affine_claim_with_context(
         });
     }
     use IntegerComparisonOperator as Op;
-    let (operator, operands) = match condition.native_compat() {
-        ConditionTerm::IntegerLessThan(left, right) => (Op::LessThan, [left, right]),
-        ConditionTerm::IntegerLessEqual(left, right) => (Op::LessEqual, [left, right]),
-        ConditionTerm::IntegerGreaterThan(left, right) => (Op::GreaterThan, [left, right]),
-        ConditionTerm::IntegerGreaterEqual(left, right) => (Op::GreaterEqual, [left, right]),
-        ConditionTerm::IntegerEqual(left, right) => (Op::Equal, [left, right]),
-        ConditionTerm::IntegerNotEqual(left, right) => (Op::NotEqual, [left, right]),
+    let (operator, operands) = match condition.old_form() {
+        OldConditionTerm::IntegerLessThan(left, right) => (Op::LessThan, [left, right]),
+        OldConditionTerm::IntegerLessEqual(left, right) => (Op::LessEqual, [left, right]),
+        OldConditionTerm::IntegerGreaterThan(left, right) => (Op::GreaterThan, [left, right]),
+        OldConditionTerm::IntegerGreaterEqual(left, right) => (Op::GreaterEqual, [left, right]),
+        OldConditionTerm::IntegerEqual(left, right) => (Op::Equal, [left, right]),
+        OldConditionTerm::IntegerNotEqual(left, right) => (Op::NotEqual, [left, right]),
         _ => return None,
     };
     integer_affine_comparison_claim(
@@ -887,14 +887,14 @@ pub(crate) fn literal_integer_value(term: &crate::kernel::SharedIntegerTerm) -> 
 
 /// Literal arithmetic is builtin proof checking, not a lowering rewrite.
 /// Cached shape flags refuse symbolic operands in constant time.
-pub(crate) fn literal_integer_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+pub(crate) fn literal_integer_comparison_value(condition: &OldConditionTerm) -> Option<bool> {
     let (left, right) = match condition {
-        ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right)
-        | ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+        OldConditionTerm::IntegerEqual(left, right)
+        | OldConditionTerm::IntegerNotEqual(left, right)
+        | OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
         _ => return None,
     };
     if !left.is_literal_arithmetic() || !right.is_literal_arithmetic() {
@@ -911,12 +911,12 @@ pub(crate) fn literal_integer_comparison_value(condition: &ConditionTerm) -> Opt
         return None;
     }
     Some(match condition {
-        ConditionTerm::IntegerEqual(..) => left == right,
-        ConditionTerm::IntegerNotEqual(..) => left != right,
-        ConditionTerm::IntegerLessThan(..) => left < right,
-        ConditionTerm::IntegerLessEqual(..) => left <= right,
-        ConditionTerm::IntegerGreaterThan(..) => left > right,
-        ConditionTerm::IntegerGreaterEqual(..) => left >= right,
+        OldConditionTerm::IntegerEqual(..) => left == right,
+        OldConditionTerm::IntegerNotEqual(..) => left != right,
+        OldConditionTerm::IntegerLessThan(..) => left < right,
+        OldConditionTerm::IntegerLessEqual(..) => left <= right,
+        OldConditionTerm::IntegerGreaterThan(..) => left > right,
+        OldConditionTerm::IntegerGreaterEqual(..) => left >= right,
         _ => unreachable!(),
     })
 }
@@ -1047,7 +1047,7 @@ mod tests {
         for _ in 0..64 {
             expression = IntegerTerm::add(expression.clone(), expression.clone());
         }
-        let goal = proposition(ConditionTerm::integer_less_equal(
+        let goal = proposition(OldConditionTerm::integer_less_equal(
             expression,
             IntegerTerm::constant_i64(0),
         ));
@@ -1078,7 +1078,7 @@ mod tests {
         IntegerTerm::Variable(Variable(id))
     }
 
-    fn proposition(condition: ConditionTerm) -> Proposition {
+    fn proposition(condition: OldConditionTerm) -> Proposition {
         Proposition::condition_is(condition, true)
     }
 
@@ -1096,10 +1096,12 @@ mod tests {
         use crate::kernel::{IntegerRangeFoldIndex, SharedIntegerRangeEndpoint};
         IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(crate::kernel::MachineTerm::constant(
+                start: SharedIntegerRangeEndpoint::intern(crate::kernel::OldMachineTerm::constant(
                     start,
                 )),
-                end: SharedIntegerRangeEndpoint::intern(crate::kernel::MachineTerm::constant(end)),
+                end: SharedIntegerRangeEndpoint::intern(crate::kernel::OldMachineTerm::constant(
+                    end,
+                )),
             },
             IntegerTerm::constant_i64(0),
             Variable(accumulator),
@@ -1138,7 +1140,7 @@ mod tests {
     fn machine_item(item: u64) -> IntegerTerm {
         IntegerTerm::from_machine(
             crate::kernel::MachineIntegerType::Int32,
-            crate::kernel::MachineTerm::Variable(Variable(item)),
+            crate::kernel::OldMachineTerm::Variable(Variable(item)),
         )
         .expect("a symbolic Int32 item should be a machine observation")
     }
@@ -1161,7 +1163,7 @@ mod tests {
         let changed_carrier = integer_fold(0, 8, 300, 301, fold_body(300, 301));
 
         for other in [changed_end, changed_body, changed_carrier] {
-            let goal = proposition(ConditionTerm::IntegerEqual(
+            let goal = proposition(OldConditionTerm::IntegerEqual(
                 baseline.clone().into(),
                 other.into(),
             ));
@@ -1172,33 +1174,34 @@ mod tests {
     #[test]
     fn fold_atom_identity_retains_the_exact_memory_state() {
         use crate::kernel::{
-            Address, AddressOffset, IntegerRangeFoldIndex, MachineIntegerType, MachineTerm,
-            ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm, SymbolicMemory,
+            IntegerRangeFoldIndex, MachineIntegerType, OldAddress, OldAddressOffset,
+            OldMachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
+            SymbolicMemory,
         };
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "affine-fold-retained_state".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("affine-fold-retained_state", 8),
         );
         let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let load_fold =
             |memory: &crate::kernel::SharedMemory, accumulator: u64, item: u64| -> IntegerTerm {
                 IntegerTerm::range_fold(
                     IntegerRangeFoldIndex::Int32 {
-                        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+                        start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+                        end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(2)),
                     },
                     IntegerTerm::constant_i64(0),
                     Variable(accumulator),
                     Variable(item),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        MachineTerm::read_named(
+                        OldMachineTerm::read_named(
                             crate::kernel::ProgramPoint::at(memory),
                             Box::new(pointer.clone()),
                             crate::kernel::LoadKind::Int32,
@@ -1210,13 +1213,13 @@ mod tests {
         let renamed_before_fold = load_fold(&before, 800, 801);
         let after_fold = load_fold(&after, 800, 801);
 
-        let renamed_goal = proposition(ConditionTerm::IntegerEqual(
+        let renamed_goal = proposition(OldConditionTerm::IntegerEqual(
             before_fold.clone().into(),
             renamed_before_fold.into(),
         ));
         assert!(claim(&renamed_goal).terms.is_empty());
 
-        let changed_state_goal = proposition(ConditionTerm::IntegerEqual(
+        let changed_state_goal = proposition(OldConditionTerm::IntegerEqual(
             before_fold.into(),
             after_fold.into(),
         ));
@@ -1228,10 +1231,10 @@ mod tests {
         let left = crate::kernel::SharedIntegerTerm::from(variable(995480));
         let right = crate::kernel::SharedIntegerTerm::from(variable(995481));
         let equality = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+            OldConditionTerm::IntegerEqual(left.clone(), right.clone()),
             true,
         );
-        let unequal = ConditionTerm::IntegerNotEqual(left, right);
+        let unequal = OldConditionTerm::IntegerNotEqual(left, right);
         let expected = integer_affine_claim(&equality).unwrap();
         for premise in [
             Proposition::condition_is(unequal.clone(), false),
@@ -1252,7 +1255,7 @@ mod tests {
                 crate::kernel::SharedIntegerTerm::from(IntegerTerm::constant_i64(1)),
             );
         }
-        let goal = proposition(ConditionTerm::IntegerLessEqual(
+        let goal = proposition(OldConditionTerm::IntegerLessEqual(
             crate::kernel::SharedIntegerTerm::from(expression),
             crate::kernel::SharedIntegerTerm::from(x),
         ));
@@ -1262,17 +1265,17 @@ mod tests {
     }
 
     fn less_equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        proposition(ConditionTerm::integer_less_equal(left, right))
+        proposition(OldConditionTerm::integer_less_equal(left, right))
     }
 
     #[test]
     fn a_disequality_bounds_only_at_a_type_endpoint() {
-        use crate::kernel::{MachineIntegerType, MachineTerm, SharedMachineIntegerTerm};
+        use crate::kernel::{MachineIntegerType, OldMachineTerm, SharedMachineIntegerTerm};
         let value =
-            |ty| SharedMachineIntegerTerm::intern(ty, MachineTerm::Variable(Variable(97301)));
+            |ty| SharedMachineIntegerTerm::intern(ty, OldMachineTerm::Variable(Variable(97301)));
         let differs = |ty, constant: i64| {
             Proposition::condition_is(
-                ConditionTerm::integer_equal(
+                OldConditionTerm::integer_equal(
                     IntegerTerm::Machine(value(ty)),
                     IntegerTerm::constant_i64(constant),
                 ),
@@ -1313,7 +1316,7 @@ mod tests {
             }
             let [left, right] = sides;
             let premise = Proposition::condition_is(
-                ConditionTerm::IntegerNotEqual(left.into(), right.into()),
+                OldConditionTerm::IntegerNotEqual(left.into(), right.into()),
                 true,
             );
             assert_eq!(
@@ -1326,7 +1329,7 @@ mod tests {
         }
         // An equality is no disequality.
         let equal = Proposition::condition_is(
-            ConditionTerm::integer_equal(
+            OldConditionTerm::integer_equal(
                 observed(MachineIntegerType::UInt64),
                 IntegerTerm::constant_i64(0),
             ),

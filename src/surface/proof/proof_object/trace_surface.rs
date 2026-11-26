@@ -9,13 +9,13 @@ const MAX_TRACE_STATES: usize = 32;
 impl Proof<'_> {
     pub(super) fn trace_pointer_pair(
         &self,
-        left: &Address,
-        right: &Address,
+        left: &OldAddress,
+        right: &OldAddress,
     ) -> Option<[crate::surface::proof_trace::PointerTraceView; 2]> {
         let view = self.execution_fixed_state_view()?;
         let locals = self.proof_local_values();
         let fact = Proposition::condition_is(
-            ConditionTerm::address_equal(left.clone(), right.clone()),
+            OldConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         );
         let surface = crate::kernel::search::ProofSearch::available_surface_fact(
@@ -26,7 +26,7 @@ impl Proof<'_> {
         )
         .or_else(|| {
             let reversed = Proposition::condition_is(
-                ConditionTerm::address_equal(right.clone(), left.clone()),
+                OldConditionTerm::address_equal(right.clone(), left.clone()),
                 true,
             );
             crate::kernel::search::ProofSearch::available_surface_fact(
@@ -58,9 +58,9 @@ impl Proof<'_> {
             ProofContext::Execution(context) => Some(context.parsed_function),
             _ => None,
         };
-        let name = |pointer: &Address| {
+        let name = |pointer: &OldAddress| {
             use crate::surface::proof_trace::{PointerTraceView, pointer_definition};
-            if pointer == &Address::null() {
+            if pointer == &OldAddress::null() {
                 return Some(PointerTraceView {
                     text: "0".into(),
                     retained_state: None,
@@ -82,7 +82,7 @@ impl Proof<'_> {
                     retained_state: None,
                 });
             }
-            let Some(MachineTerm::MemoryLoad(memory, address, _)) = pointer_definition(pointer)
+            let Some(OldMachineTerm::MemoryLoad(memory, address, _)) = pointer_definition(pointer)
             else {
                 return None;
             };
@@ -172,7 +172,7 @@ impl Proof<'_> {
 
 fn immutable_field_hint(
     expression: &SyntaxTerm,
-    address: &Address,
+    address: &OldAddress,
     locals: &BinderMap<SyntaxTerm>,
 ) -> Option<String> {
     let mut expression = expression;
@@ -234,7 +234,7 @@ mod pointer_trace_tests {
 
     #[test]
     fn field_hint_recovers_substituted_immutable_binders_only_at_their_exact_address() {
-        let base = Address::symbolic(Variable(990001));
+        let base = OldAddress::symbolic(Variable(990001));
         let value = ProgramValue::typed_pointer(base.clone(), ProgramType::Int32Pointer);
         let local = SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone()));
         let locals: BinderMap<_> = (BTreeMap::from([("zid".to_string(), local.clone())])).into();
@@ -273,7 +273,7 @@ mod pointer_trace_tests {
         let reassigned: BinderMap<_> = (BTreeMap::from([(
             "zid".to_string(),
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
-                Address::symbolic(Variable(990002)),
+                OldAddress::symbolic(Variable(990002)),
                 ProgramType::Int32Pointer,
             ))),
         )]))

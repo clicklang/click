@@ -1,7 +1,10 @@
 use super::*;
 
 fn opaque(id: u64) -> OldPointer {
-    OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    OldPointer::new(
+        OldAddress::symbolic(Variable(id)),
+        ProgramType::Int32Pointer,
+    )
 }
 
 /// The witness arrives after the entire related class has been built. Each
@@ -21,7 +24,10 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             let mut facts = PureFactContext::new();
             for i in 0..unrelated {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(opaque(998_100 + 2 * i), opaque(998_101 + 2 * i)),
+                    OldConditionTerm::pointer_equal(
+                        opaque(998_100 + 2 * i),
+                        opaque(998_101 + 2 * i),
+                    ),
                     true,
                 );
             }
@@ -29,12 +35,14 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             let mut previous = first.clone();
             for i in 1..related {
                 let next = opaque(999_000 + i);
-                facts = facts
-                    .assume_condition(ConditionTerm::pointer_equal(previous, next.clone()), true);
+                facts = facts.assume_condition(
+                    OldConditionTerm::pointer_equal(previous, next.clone()),
+                    true,
+                );
                 previous = next;
             }
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(previous, selected.clone()),
+                OldConditionTerm::pointer_equal(previous, selected.clone()),
                 true,
             );
             let ((domain, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -104,14 +112,14 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
         let mut memory = SymbolicMemory::new();
         for i in 0..stores {
             memory = memory.store(
-                Address::symbolic(Variable(1_000_000 + i)),
+                OldAddress::symbolic(Variable(1_000_000 + i)),
                 ProgramValue::Int32(7u32.into()),
             );
         }
         let memory = crate::kernel::intern_memory(memory);
-        let cell = Address::symbolic(Variable(1_001_000));
+        let cell = OldAddress::symbolic(Variable(1_001_000));
         let read = OldPointer::from_read(
-            Address::loaded_value(&memory, &cell),
+            OldAddress::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,

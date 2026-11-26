@@ -3,9 +3,10 @@ use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, ConditionTerm, MachineIntegerType, MachineOperandView,
-    MachineTerm, Proposition, Variable,
+    AddressBase, MachineIntegerType, MachineOperandView, OldAddress, OldConditionTerm,
+    OldMachineTerm, Proposition, Variable,
 };
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 use std::collections::BTreeSet;
 
@@ -16,7 +17,7 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct NumericAddressConnectivity {
     operands: PersistentMap<Key, u64>,
-    other_objects: PersistentMap<Address, u64>,
+    other_objects: PersistentMap<OldAddress, u64>,
     owner_forest: NumericAddressForest,
     next_id: u64,
     pointer_alias_roots: PersistentSet<u64>,
@@ -35,15 +36,15 @@ enum RawStoreCoordinate {
 /// snapshot without retaining read operands that may name the cache itself.
 #[derive(Clone, Debug, Default)]
 struct NumericAddressForest {
-    objects: PersistentMap<Address, u64>,
+    objects: PersistentMap<OldAddress, u64>,
     components: PersistentComponents<u64>,
 }
 
 impl NumericAddressConnectivity {
     pub(in crate::kernel) fn record(
         &mut self,
-        endpoints: [(&Key, &MachineTerm); 2],
-        has_pointer_alias: impl Fn(&Address) -> bool,
+        endpoints: [(&Key, &OldMachineTerm); 2],
+        has_pointer_alias: impl Fn(&OldAddress) -> bool,
     ) {
         let [left, right] = endpoints.map(|(key, term)| {
             if let Some(variable) = key.operand_view().variable() {
@@ -60,7 +61,7 @@ impl NumericAddressConnectivity {
                 let (object, inserted) = Self::node(objects, &mut self.next_id, &bucket);
                 self.join(operand, object);
                 if inserted && let Some(variable) = parameter_partition_variable(&bucket) {
-                    self.record_coordinate_bucket(*variable, object);
+                    self.record_coordinate_bucket(variable, object);
                 }
                 if has_pointer_alias(&bucket) {
                     self.mark_pointer_alias_node(object);
@@ -123,7 +124,7 @@ impl NumericAddressConnectivity {
     // The marks track which numeric components can reach an exact pointer
     // equality. An exact edge does not join numeric components or affect
     // the separate byte-overlap checks that read numeric connectivity.
-    pub(in crate::kernel) fn mark_pointer_alias_bucket(&mut self, bucket: &Address) {
+    pub(in crate::kernel) fn mark_pointer_alias_bucket(&mut self, bucket: &OldAddress) {
         if let Some(&node) = self.object_node(bucket) {
             self.mark_pointer_alias_node(node);
         }
@@ -138,27 +139,25 @@ impl NumericAddressConnectivity {
         self.pointer_alias_roots = Default::default();
     }
 
-    pub(super) fn reaches_pointer_alias(&self, bucket: &Address) -> bool {
+    pub(super) fn reaches_pointer_alias(&self, bucket: &OldAddress) -> bool {
         self.object_node(bucket).is_some_and(|node| {
             self.pointer_alias_roots
                 .contains(self.owner_forest.components.root(node))
         })
     }
 
-    fn object_node(&self, bucket: &Address) -> Option<&u64> {
+    fn object_node(&self, bucket: &OldAddress) -> Option<&u64> {
         self.owner_forest
             .objects
             .get(bucket)
             .or_else(|| self.other_objects.get(bucket))
     }
 
-    fn can_be_owner(bucket: &Address) -> bool {
+    fn can_be_owner(bucket: &OldAddress) -> bool {
         bucket.base == AddressBase::ExternalArgument
-            && match &bucket.offset {
-                AddressOffset::Variable(_) => true,
-                AddressOffset::Int32Scaled { value, .. } => {
-                    value.operand_view().variable().is_some()
-                }
+            && match bucket.offset.view() {
+                OffsetView::Variable(_) => true,
+                OffsetView::Int32Scaled { index, .. } => index.operand_view().variable().is_some(),
                 _ => false,
             }
     }
@@ -177,11 +176,11 @@ impl NumericAddressConnectivity {
         (id, true)
     }
 
-    pub(super) fn reaches_raw_store_coordinate(&self, bucket: &Address) -> bool {
+    pub(super) fn reaches_raw_store_coordinate(&self, bucket: &OldAddress) -> bool {
         // The write's own bucket may be absent from the numeric forest.
         parameter_partition_variable(bucket).is_some_and(|variable| {
             matches!(
-                self.raw_coordinates.get(variable),
+                self.raw_coordinates.get(&variable),
                 Some(RawStoreCoordinate::HasWideEquality)
             )
         }) || !self.raw_coordinate_roots.is_empty()
@@ -191,7 +190,7 @@ impl NumericAddressConnectivity {
             })
     }
 
-    pub(in crate::kernel) fn connected(&self, left: &Address, right: &Address) -> bool {
+    pub(in crate::kernel) fn connected(&self, left: &OldAddress, right: &OldAddress) -> bool {
         let node = |address| self.object_node(&parameter_alias_bucket(address));
         let Some(left) = node(left) else {
             return false;
@@ -202,7 +201,7 @@ impl NumericAddressConnectivity {
 }
 
 impl NumericAddressForest {
-    fn component(&self, bucket: &Address) -> Option<u64> {
+    fn component(&self, bucket: &OldAddress) -> Option<u64> {
         self.objects
             .get(bucket)
             .map(|node| *self.components.root(node))
@@ -220,7 +219,7 @@ pub(in crate::kernel) struct NumericAddressOwners {
 
 #[derive(Clone, Default)]
 struct PopulatedOwners {
-    owner: Option<Address>,
+    owner: Option<OldAddress>,
     children: PersistentSet<u64>,
 }
 
@@ -246,7 +245,7 @@ impl NumericAddressOwners {
         }
     }
 
-    pub(in crate::kernel) fn owners(&self, base: &Address) -> Option<BTreeSet<Address>> {
+    pub(in crate::kernel) fn owners(&self, base: &OldAddress) -> Option<BTreeSet<OldAddress>> {
         let root = self.forest.component(base)?;
         let mut owners = BTreeSet::new();
         let mut pending = vec![root];
@@ -260,13 +259,13 @@ impl NumericAddressOwners {
         Some(owners)
     }
 
-    pub(in crate::kernel) fn update_owner(&mut self, owner: Address, present: bool) {
+    pub(in crate::kernel) fn update_owner(&mut self, owner: OldAddress, present: bool) {
         if let Some(&node) = self.forest.objects.get(&owner) {
             self.set_owner(node, present.then_some(owner));
         }
     }
 
-    fn set_owner(&mut self, node: u64, owner: Option<Address>) {
+    fn set_owner(&mut self, node: u64, owner: Option<OldAddress>) {
         let mut bucket = self.populated.get(&node).cloned().unwrap_or_default();
         if bucket.owner != owner {
             bucket.owner = owner;
@@ -315,7 +314,7 @@ impl NumericAddressOwners {
     pub(in crate::kernel) fn refresh(
         &mut self,
         newer: &NumericAddressConnectivity,
-        populated: impl Fn(&Address) -> bool,
+        populated: impl Fn(&OldAddress) -> bool,
     ) {
         let newer = &newer.owner_forest;
         let older = self.forest.clone();
@@ -361,7 +360,7 @@ pub(in crate::kernel) struct WideEqualitySources {
 impl WideEqualitySources {
     pub(in crate::kernel) fn adjust(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         truth: bool,
         admitted_endpoints: Option<&(super::MachineAtom, super::MachineAtom)>,
     ) {
@@ -373,7 +372,7 @@ impl WideEqualitySources {
         }
         let operand_key = |operand: MachineOperandView<'_>,
                            admitted: Option<&super::MachineAtom>| {
-            if let MachineOperandView::Legacy(written) = operand
+            if let MachineOperandView::Old(written) = operand
                 && let Some(admitted) = admitted
                 && matches!(admitted.operand_view(), MachineOperandView::Shared(_))
                 && admitted.retains_written(written)

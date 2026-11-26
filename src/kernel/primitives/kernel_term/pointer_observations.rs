@@ -78,7 +78,7 @@ mod tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1024002)),
+            OldAddress::symbolic(Variable(1024002)),
             ProgramType::Int32Pointer,
         );
         let source = |class| {
@@ -120,16 +120,17 @@ mod tests {
     fn address_observation_identity_keeps_exact_object_annotations() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Address::symbolic(Variable(1024001));
+        let address = OldAddress::symbolic(Variable(1024001));
         let mut roots = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
-            let native = MachineTerm::IntegerAddress(
+            let native = OldMachineTerm::IntegerAddress(
                 Box::new(address.clone()),
                 AddressObjectClass::new(expected.clone()),
             );
             let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
-            let MachineTerm::IntegerAddress(_, actual) = KernelTermExport::machine(&root).unwrap()
+            let OldMachineTerm::IntegerAddress(_, actual) =
+                KernelTermExport::machine(&root).unwrap()
             else {
                 panic!("address");
             };

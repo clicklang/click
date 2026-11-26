@@ -8,9 +8,9 @@ fn retained_bitwise_masks_scale_without_exporting_prefixes() {
         let mut execution = ExecutionBudget::new();
         let budget = SpecEvaluation::logical(&mut execution);
         let mut root: SpecValue =
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(993470))).into();
-        let mask: SpecValue = ProgramValue::UInt64(MachineTerm::uint64_constant(!3)).into();
-        let tag: SpecValue = ProgramValue::UInt64(MachineTerm::uint64_constant(1)).into();
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(993470))).into();
+        let mask: SpecValue = ProgramValue::UInt64(OldMachineTerm::uint64_constant(!3)).into();
+        let tag: SpecValue = ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)).into();
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -36,11 +36,11 @@ fn retained_xor_normalizes_only_its_selected_component_without_exports() {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let mut root =
-            KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(993480)));
+        let mut root = KernelTermImport::default()
+            .machine(format, &OldMachineTerm::Variable(Variable(993480)));
         for index in 1..size {
             let next = KernelTermImport::default()
-                .machine(format, &MachineTerm::Variable(Variable(993480 + index)));
+                .machine(format, &OldMachineTerm::Variable(Variable(993480 + index)));
             root = KernelTerm::machine_binary_shared(
                 format,
                 MachineBinaryOp::BitwiseXor,
@@ -48,7 +48,8 @@ fn retained_xor_normalizes_only_its_selected_component_without_exports() {
             );
         }
         let left: SpecValue = root.into();
-        let right: SpecValue = ProgramValue::UInt32(MachineTerm::Variable(Variable(993480))).into();
+        let right: SpecValue =
+            ProgramValue::UInt32(OldMachineTerm::Variable(Variable(993480))).into();
         let mut execution = ExecutionBudget::new();
         let budget = SpecEvaluation::logical(&mut execution);
         let exports = KernelTermExport::machine_export_count();
@@ -60,8 +61,11 @@ fn retained_xor_normalizes_only_its_selected_component_without_exports() {
         let ProgramValue::UInt32(native) = native else {
             panic!("word");
         };
-        let expected =
-            MachineTerm::bitwise_xor_at(format, native, MachineTerm::Variable(Variable(993480)));
+        let expected = OldMachineTerm::bitwise_xor_at(
+            format,
+            native,
+            OldMachineTerm::Variable(Variable(993480)),
+        );
         assert_eq!(
             SpecValue::from(result.value).into_native(),
             ProgramValue::UInt32(expected)
@@ -74,20 +78,22 @@ fn retained_xor_normalizes_only_its_selected_component_without_exports() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn retained_tag_facts_use_constant_work_in_growing_contexts() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let f = MachineIntegerType::UInt64;
-        let word = MachineTerm::Variable(Variable(995610));
-        let tag = MachineTerm::Variable(Variable(995611));
+        let word = OldMachineTerm::Variable(Variable(995610));
+        let tag = OldMachineTerm::Variable(Variable(995611));
         let mut context = PureFactContext::new();
         for n in 0..size {
             for variable in [Variable(995612 + n), Variable(995610)] {
                 context = context.assume_condition(
-                    ConditionTerm::unsigned_less_equal(
-                        MachineTerm::Variable(variable),
-                        MachineTerm::uint32_constant(1000 + n as u32),
+                    OldConditionTerm::unsigned_less_equal(
+                        OldMachineTerm::Variable(variable),
+                        OldMachineTerm::uint32_constant(1000 + n as u32),
                     ),
                     true,
                 );
@@ -95,16 +101,16 @@ fn retained_tag_facts_use_constant_work_in_growing_contexts() {
         }
         context = context
             .assume_condition(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), tag.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), tag.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(tag.clone(), MachineTerm::constant(1)),
+                OldConditionTerm::signed_less_equal(tag.clone(), OldMachineTerm::constant(1)),
                 true,
             );
-        let inner = MachineTerm::uint64_bitwise_or(word, MachineTerm::uint64_from_int32(tag));
+        let inner = OldMachineTerm::uint64_bitwise_or(word, OldMachineTerm::uint64_from_int32(tag));
         let left = input(f, &inner, true);
-        let right = input(f, &MachineTerm::uint64_constant(!3), true);
+        let right = input(f, &OldMachineTerm::uint64_constant(!3), true);
         let result = bitwise::apply(MachineBinaryOp::BitwiseAnd, &left, &right)
             .unwrap()
             .value;
@@ -127,15 +133,15 @@ fn retained_bitwise_operations_do_not_export_growing_arithmetic_operands() {
             let _session = VerificationSession::enter();
             let mut root = KernelTerm::retained_machine_operand(
                 f,
-                MachineOperandView::Legacy(&MachineTerm::Variable(Variable(995615))),
+                MachineOperandView::Old(&OldMachineTerm::Variable(Variable(995615))),
             );
             let one = KernelTerm::retained_machine_operand(
                 f,
-                MachineOperandView::Legacy(
+                MachineOperandView::Old(
                     &crate::kernel::machine_integer::range::constant_word(f, &1.into()).unwrap(),
                 ),
             );
-            let right = input(f, &MachineTerm::Variable(Variable(995616)), true);
+            let right = input(f, &OldMachineTerm::Variable(Variable(995616)), true);
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {

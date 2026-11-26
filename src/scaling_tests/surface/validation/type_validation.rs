@@ -108,7 +108,7 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
             };
             let literal = |value| {
                 SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::uint32_constant(value),
+                    OldMachineTerm::uint32_constant(value),
                 )))
             };
             let expression = lambdas::range_fold(
@@ -188,7 +188,7 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
             };
             let literal = |value| {
                 SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::uint32_constant(value),
+                    OldMachineTerm::uint32_constant(value),
                 )))
             };
             let all = lambdas::range_proposition(literal(0), literal(3), predicate, true);

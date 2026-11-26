@@ -38,6 +38,8 @@ fn inventory() -> Vec<Entry> {
 /// respells equality arguments as two expression arguments and updates only
 /// the frozen digests; original digests and expected outcomes stay fixed.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_frozen_sidecars_are_pinned_and_parse() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for entry in inventory()

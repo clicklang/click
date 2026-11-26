@@ -28,12 +28,17 @@ int32 caller(struct node* p, const int32* slot) {
     requires separate(list(p), memory(*slot));
     ensures result == old(*slot);
 } by {
+    mark before_call;
     step() {
         requires separate(list(p), memory(*slot)) by close();
     }
+    have contains(list(p), statement(0).footprint) by close();
+    apply(separation::contains_refl(memory(*slot)));
+    apply(separation::separate_restrict(list(p), memory(*slot), statement(0).footprint, memory(*slot)));
+    have *slot == at(before_call, *slot) by {
+        preserve(memory(*slot), statement(0));
+    }
     step();
-    have result == old(*slot) by { normalize() using {}; }
-    close();
 }
 ```
 

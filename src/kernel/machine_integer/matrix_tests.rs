@@ -14,8 +14,8 @@ use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, MachineTerm,
-    OverflowOperation, Proposition, SharedMachineIntegerTerm, Variable,
+    IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, OldConditionTerm,
+    OldMachineTerm, OverflowOperation, Proposition, SharedMachineIntegerTerm, Variable,
 };
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
@@ -73,17 +73,17 @@ fn samples(ty: Ty) -> Vec<BigInt> {
     values
 }
 
-fn constant(ty: Ty, value: &BigInt) -> MachineTerm {
+fn constant(ty: Ty, value: &BigInt) -> OldMachineTerm {
     range::constant_word(ty, value).unwrap_or_else(|| panic!("{value} is in {ty:?}"))
 }
 
 /// A symbolic value of `ty` whose word is a canonical carrier: a variable
 /// at 32 bits and more, and for a narrow format the conversion of an
 /// `int32` variable, as a narrow value is never a bare unregistered word.
-fn value(ty: Ty, variable: u64) -> MachineTerm {
-    let word = MachineTerm::Variable(Variable(variable));
+fn value(ty: Ty, variable: u64) -> OldMachineTerm {
+    let word = OldMachineTerm::Variable(Variable(variable));
     if ty.format().bits() < 32 {
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(word),
             from: Ty::Int32,
@@ -94,16 +94,20 @@ fn value(ty: Ty, variable: u64) -> MachineTerm {
     }
 }
 
-fn observe(ty: Ty, word: MachineTerm) -> IntegerTerm {
+fn observe(ty: Ty, word: OldMachineTerm) -> IntegerTerm {
     IntegerTerm::from_machine(ty, word).expect("every format observes its values")
 }
 
-fn integer_condition(relation: Relation, left: IntegerTerm, right: IntegerTerm) -> ConditionTerm {
+fn integer_condition(
+    relation: Relation,
+    left: IntegerTerm,
+    right: IntegerTerm,
+) -> OldConditionTerm {
     match relation {
-        Relation::Less => ConditionTerm::IntegerLessThan(left.into(), right.into()),
-        Relation::LessEqual => ConditionTerm::IntegerLessEqual(left.into(), right.into()),
-        Relation::Equal => ConditionTerm::IntegerEqual(left.into(), right.into()),
-        Relation::NotEqual => ConditionTerm::IntegerNotEqual(left.into(), right.into()),
+        Relation::Less => OldConditionTerm::IntegerLessThan(left.into(), right.into()),
+        Relation::LessEqual => OldConditionTerm::IntegerLessEqual(left.into(), right.into()),
+        Relation::Equal => OldConditionTerm::IntegerEqual(left.into(), right.into()),
+        Relation::NotEqual => OldConditionTerm::IntegerNotEqual(left.into(), right.into()),
     }
 }
 
@@ -173,8 +177,8 @@ fn every_format_has_its_range_and_spells_its_constants() {
         };
         for upper in [false, true] {
             let condition_source = range::range_fact(&machine, upper);
-            let Some((ConditionTerm::IntegerLessEqual(low, high), true)) =
-                condition_source.condition_native()
+            let Some((OldConditionTerm::IntegerLessEqual(low, high), true)) =
+                condition_source.old_condition()
             else {
                 panic!("{ty:?} range fact is an order");
             };
@@ -242,7 +246,7 @@ fn exact_comparison_decides_alike_at_every_format() {
                     .unwrap();
                     assert_eq!(
                         folded,
-                        ConditionTerm::Constant(truth == holds(relation, &x, &y)),
+                        OldConditionTerm::Constant(truth == holds(relation, &x, &y)),
                         "{ty:?} {x} {relation:?} {y}"
                     );
                 }
@@ -271,7 +275,7 @@ fn every_order_is_native_at_its_own_format() {
             assert!(truth, "{ty:?} {relation:?}");
             assert_eq!(
                 native,
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: filed,
                     relation: compare,
                     left: Box::new(a.clone()),
@@ -325,14 +329,14 @@ fn in_range_identity_holds_at_every_format() {
             let bounds = |low: BigInt, high: BigInt| {
                 vec![
                     Proposition::condition_is(
-                        ConditionTerm::integer_less_equal(
+                        OldConditionTerm::integer_less_equal(
                             IntegerTerm::constant(low),
                             value.clone(),
                         ),
                         true,
                     ),
                     Proposition::condition_is(
-                        ConditionTerm::integer_less_equal(
+                        OldConditionTerm::integer_less_equal(
                             value.clone(),
                             IntegerTerm::constant(high),
                         ),
@@ -341,7 +345,7 @@ fn in_range_identity_holds_at_every_format() {
                 ]
             };
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_equal(observed.clone(), value.clone()),
+                OldConditionTerm::integer_equal(observed.clone(), value.clone()),
                 true,
             );
 
@@ -400,15 +404,15 @@ fn in_range_identity_holds_at_every_format() {
 fn folded_overflow(
     ty: Ty,
     operation: Operation,
-    left: MachineTerm,
-    right: MachineTerm,
-) -> ConditionTerm {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
     let op = match operation {
         Operation::Add => OverflowOperation::Add,
         Operation::Subtract => OverflowOperation::Subtract,
         Operation::Multiply => OverflowOperation::Multiply,
     };
-    ConditionTerm::machine_overflows(ty, op, left, right)
+    OldConditionTerm::machine_overflows(ty, op, left, right)
 }
 
 #[test]
@@ -454,14 +458,14 @@ fn definedness_is_the_range_of_the_exact_result_at_every_format() {
                 bounds,
                 vec![
                     Proposition::condition_is(
-                        ConditionTerm::integer_less_equal(
+                        OldConditionTerm::integer_less_equal(
                             value.clone(),
                             IntegerTerm::constant(max)
                         ),
                         true,
                     ),
                     Proposition::condition_is(
-                        ConditionTerm::integer_greater_equal(value, IntegerTerm::constant(min)),
+                        OldConditionTerm::integer_greater_equal(value, IntegerTerm::constant(min)),
                         true,
                     ),
                 ],
@@ -485,7 +489,7 @@ fn definedness_is_the_range_of_the_exact_result_at_every_format() {
                 for y in samples(ty) {
                     assert_eq!(
                         folded_overflow(ty, operation, constant(ty, &x), constant(ty, &y)),
-                        ConditionTerm::Constant(!contains(ty, &exact(operation, &x, &y))),
+                        OldConditionTerm::Constant(!contains(ty, &exact(operation, &x, &y))),
                         "{ty:?} {x} {operation:?} {y}"
                     );
                 }
@@ -499,10 +503,10 @@ fn definedness_is_the_range_of_the_exact_result_at_every_format() {
 fn division_word(
     ty: Ty,
     division: Division,
-    operand: MachineTerm,
-    divisor: MachineTerm,
-) -> Option<MachineTerm> {
-    use MachineTerm as T;
+    operand: OldMachineTerm,
+    divisor: OldMachineTerm,
+) -> Option<OldMachineTerm> {
+    use OldMachineTerm as T;
     let (operand, divisor) = (Box::new(operand), Box::new(divisor));
     let candidates = match division {
         Division::Quotient => [
@@ -636,8 +640,8 @@ fn operation_bounds_hold_at_every_format() {
                     assert_eq!(bound, None, "{ty:?}");
                     continue;
                 }
-                let Some((ConditionTerm::IntegerLessEqual(low, high), true)) =
-                    bound.as_ref().and_then(Proposition::condition_native)
+                let Some((OldConditionTerm::IntegerLessEqual(low, high), true)) =
+                    bound.as_ref().and_then(Proposition::old_condition)
                 else {
                     panic!("{ty:?} {division:?} upper {upper} has a bound");
                 };
@@ -668,7 +672,7 @@ fn operation_bounds_hold_at_every_format() {
 fn modular_equality_reduces_at_every_width() {
     // The projection is now shared. This matrix compares its explicit output
     // spelling with the old native construction, not its storage variant.
-    let native_spelling = |condition: ConditionTerm| {
+    let native_spelling = |condition: OldConditionTerm| {
         comparison::native_comparison_of_integer_observation(&condition, true)
             .map(|value| value.0)
             .unwrap_or(condition)
@@ -677,7 +681,7 @@ fn modular_equality_reduces_at_every_width() {
     for ty in FORMATS {
         let (a, b) = (value(ty, 172_051), value(ty, 172_052));
         let difference = IntegerTerm::subtract(observe(ty, a.clone()), observe(ty, b.clone()));
-        let condition = ConditionTerm::IntegerEqual(
+        let condition = OldConditionTerm::IntegerEqual(
             difference.into(),
             IntegerTerm::constant(BigInt::zero()).into(),
         );
@@ -731,7 +735,7 @@ fn modular_equality_reduces_at_every_width() {
     // to_integer(b) == 256` over bytes is the 8-bit `a + b == 0`, and says
     // nothing modulo 2^16, whose observations are of another width.
     let byte = |variable| observe(Ty::UInt8, value(Ty::UInt8, variable));
-    let wide_sum = ConditionTerm::IntegerEqual(
+    let wide_sum = OldConditionTerm::IntegerEqual(
         IntegerTerm::add(byte(172_054), byte(172_055)).into(),
         IntegerTerm::constant(BigInt::from(256)).into(),
     );
@@ -764,7 +768,7 @@ fn modular_equality_reduces_at_every_width() {
         );
     }
     // The fact context files the 32-bit reading.
-    let condition = ConditionTerm::IntegerEqual(
+    let condition = OldConditionTerm::IntegerEqual(
         observe(Ty::Int32, value(Ty::Int32, 172_053)).into(),
         IntegerTerm::constant(BigInt::from(-1)).into(),
     );
@@ -802,7 +806,8 @@ fn conversion_preserves_every_value_its_destination_holds() {
             // pair, and bounds its operand in the destination's range.
             let operand = value(source, 172_061);
             let original = observe(source, operand.clone());
-            let converted = MachineTerm::machine_integer_cast(source, destination, operand.clone());
+            let converted =
+                OldMachineTerm::machine_integer_cast(source, destination, operand.clone());
             let Some(observed) = IntegerTerm::from_machine(destination, converted) else {
                 panic!("{source:?} -> {destination:?} is observable");
             };
@@ -906,7 +911,7 @@ fn a_narrow_cast_word_is_the_carrier_of_its_value_at_every_narrow_format() {
                     );
                     // The cast itself folds to the native constant of its
                     // destination, whose bits are the word's low bits.
-                    let cast = MachineTerm::machine_integer_cast(source, destination, operand);
+                    let cast = OldMachineTerm::machine_integer_cast(source, destination, operand);
                     let mask = (1u128 << destination.format().bits()) - 1;
                     assert_eq!(
                         cast.narrow_constant_bits(destination),
@@ -963,7 +968,7 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
                     .unwrap();
                 assert_eq!(word, carrier, "{source:?} -> {destination:?}: {n}");
                 let folded =
-                    MachineTerm::machine_integer_cast(source, destination, constant(source, &n));
+                    OldMachineTerm::machine_integer_cast(source, destination, constant(source, &n));
                 assert_eq!(
                     folded.constant32(),
                     Some(carrier),
@@ -977,7 +982,7 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             let cast = conversion::convert_term(source, destination, operand.clone());
             assert!(matches!(
                 cast,
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     ..
                 }
@@ -985,8 +990,8 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             assert_eq!(cast.narrow_widening32_operand(), Some((source, &operand)));
             assert_eq!(cast.clone().into_word32(), cast);
             assert_ne!(
-                MachineTerm::add(cast, MachineTerm::constant(1)),
-                MachineTerm::add(operand, MachineTerm::constant(1)),
+                OldMachineTerm::add(cast, OldMachineTerm::constant(1)),
+                OldMachineTerm::add(operand, OldMachineTerm::constant(1)),
                 "{source:?} -> {destination:?}"
             );
         }
@@ -1074,7 +1079,7 @@ fn the_conversion_table_has_one_term_per_pair_of_formats() {
                 let term = conversion::convert_term(source, destination, operand.clone());
                 assert_eq!(
                     term,
-                    MachineTerm::machine_integer_cast(source, destination, operand),
+                    OldMachineTerm::machine_integer_cast(source, destination, operand),
                     "{source:?} -> {destination:?}"
                 );
             }
@@ -1100,14 +1105,14 @@ fn the_conversion_table_has_one_term_per_pair_of_formats() {
 #[test]
 fn a_division_reads_only_at_its_own_signedness() {
     let (x, four) = (
-        MachineTerm::Variable(Variable(172_071)),
-        MachineTerm::constant(4),
+        OldMachineTerm::Variable(Variable(172_071)),
+        OldMachineTerm::constant(4),
     );
     let signed = binary_node!(Int32, Divide, Box::new(x.clone()), Box::new(four.clone()));
     let unsigned = binary_node!(UInt32, Divide, Box::new(x), Box::new(four));
     assert!(representation::word_division(Ty::UInt32, &signed).is_none());
     assert!(representation::word_division(Ty::Int32, &unsigned).is_none());
-    let machine = |word: MachineTerm, ty: Ty| -> SharedMachineIntegerTerm {
+    let machine = |word: OldMachineTerm, ty: Ty| -> SharedMachineIntegerTerm {
         match IntegerTerm::from_machine(ty, word) {
             Some(IntegerTerm::Machine(machine)) => machine,
             other => panic!("{other:?}"),

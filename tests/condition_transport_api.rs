@@ -2,13 +2,13 @@ use click::kernel::*;
 use click::kernel::{CompareRelation, MachineIntegerType};
 
 fn true_source() -> Proposition {
-    Proposition::condition_is(ConditionTerm::Constant(true), true)
+    Proposition::condition_is(OldConditionTerm::Constant(true), true)
 }
 
 #[test]
 fn inconsistent_context_retains_its_false_premise() {
     let source = true_source();
-    let target = Proposition::condition_is(ConditionTerm::Constant(false), true);
+    let target = Proposition::condition_is(OldConditionTerm::Constant(false), true);
     let context = PureFactContext::new().assume_proposition(target.clone());
 
     let theorem = prove_program_condition_fact_target_transport(&source, &target, &context)
@@ -25,11 +25,11 @@ fn inconsistent_context_retains_its_false_premise() {
 fn consistent_context_retains_its_symbolic_premise() {
     let source = true_source();
     let target = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(777))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(777))),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -52,27 +52,27 @@ fn consistent_context_retains_its_symbolic_premise() {
 #[test]
 fn context_free_disjoint_store_transport_stays_closed() {
     let before = SymbolicMemory::new();
-    let written = Address {
+    let written = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let preserved = Address {
+    let preserved = OldAddress {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let after = before.clone().store(written, int32(7));
-    let old_load = MachineTerm::memory_read(
+    let old_load = OldMachineTerm::memory_read(
         click::kernel::intern_memory(before),
         preserved.clone(),
         LoadKind::Int32,
     );
-    let new_load = MachineTerm::memory_read(
+    let new_load = OldMachineTerm::memory_read(
         click::kernel::intern_memory(after),
         preserved,
         LoadKind::Int32,
     );
     let source = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(old_load.clone()),
@@ -81,7 +81,7 @@ fn context_free_disjoint_store_transport_stays_closed() {
         true,
     );
     let target = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(new_load),
@@ -103,11 +103,11 @@ fn context_free_disjoint_store_transport_stays_closed() {
 fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
     let source = true_source();
     let target = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(777))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(777))),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -123,7 +123,7 @@ fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
         let mut context = PureFactContext::new().assume_proposition(target.clone());
         for index in 0..size {
             context = context.assume_proposition(Proposition::condition_is(
-                ConditionTerm::Variable(Variable(10_000 + index)),
+                OldConditionTerm::Variable(Variable(10_000 + index)),
                 true,
             ));
         }

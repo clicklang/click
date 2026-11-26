@@ -1,7 +1,8 @@
 //! Complete pointer identity without exporting the enclosing descriptor.
-//! Offset indices keep exactly the handles used by native AddressOffset.
+//! Offset indices keep exactly the handles used by native OldAddressOffset.
 use super::*;
 use crate::kernel::{KernelAddressOffset, SharedAddress, SharedAddressOffset};
+use crate::kernel::{OffsetTree, OffsetView};
 
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct PointerStorageKey(Arc<PointerData>);
@@ -25,7 +26,7 @@ pub(in crate::kernel) struct AddressKey {
     offset: OffsetKey,
 }
 impl AddressKey {
-    pub(in crate::kernel) fn native(pointer: &Address) -> Self {
+    pub(in crate::kernel) fn native(pointer: &OldAddress) -> Self {
         Self {
             block: pointer.base.clone(),
             offset: OffsetKey::native(&pointer.offset),
@@ -110,7 +111,7 @@ pub(in crate::kernel) struct OffsetKey(OffsetShape);
 enum OffsetShape {
     // The native leaf is already the exact offset identity. Keep these
     // inline, especially constant offsets in ordinary resource keys.
-    Leaf(AddressOffset),
+    Leaf(OldAddressOffset),
     Add(Arc<OffsetAdd>),
 }
 #[derive(Debug)]
@@ -132,31 +133,35 @@ impl OffsetKey {
 
     fn rank(&self) -> u8 {
         match &self.0 {
-            OffsetShape::Leaf(AddressOffset::Constant(_)) => 0,
-            OffsetShape::Leaf(AddressOffset::Variable(_)) => 1,
             OffsetShape::Add(_) => 2,
-            OffsetShape::Leaf(AddressOffset::Int32Scaled { .. }) => 3,
-            OffsetShape::Leaf(AddressOffset::Int64Scaled { .. }) => 4,
-            OffsetShape::Leaf(AddressOffset::Add(..)) => unreachable!("offset leaf"),
+            OffsetShape::Leaf(leaf) => match leaf.view() {
+                OffsetView::Constant(_) => 0,
+                OffsetView::Variable(_) => 1,
+                OffsetView::Int32Scaled { .. } => 3,
+                OffsetView::Int64Scaled { .. } => 4,
+                OffsetView::Add(..) => unreachable!("offset leaf"),
+            },
         }
     }
 
-    pub(in crate::kernel) fn native(source: &AddressOffset) -> Self {
-        if !matches!(source, AddressOffset::Add(..)) {
+    pub(in crate::kernel) fn native(source: &OldAddressOffset) -> Self {
+        if !matches!(source.view(), OffsetView::Add(..)) {
             return Self(OffsetShape::Leaf(source.clone()));
         }
         enum Task<'a> {
-            Enter(&'a AddressOffset),
+            Enter(&'a OldAddressOffset),
             Add,
         }
         let mut pending = vec![Task::Enter(source)];
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
             match task {
-                Task::Enter(AddressOffset::Add(a, b)) => {
-                    pending.extend([Task::Add, Task::Enter(b), Task::Enter(a)]);
-                }
-                Task::Enter(leaf) => values.push(Self(OffsetShape::Leaf(leaf.clone()))),
+                Task::Enter(offset) => match offset.view() {
+                    OffsetView::Add(a, b) => {
+                        pending.extend([Task::Add, Task::Enter(b), Task::Enter(a)]);
+                    }
+                    _ => values.push(Self(OffsetShape::Leaf(offset.clone()))),
+                },
                 Task::Add => {
                     let b = values.pop().unwrap();
                     let a = values.pop().unwrap();
@@ -184,24 +189,19 @@ impl OffsetKey {
             KernelAddressOffset::index_key(root).expect("selected offset index key")
         };
         Self(OffsetShape::Leaf(match source.node() {
-            KernelAddressOffset::Constant(v) => AddressOffset::Constant(*v),
-            KernelAddressOffset::Variable(v) => AddressOffset::Variable(*v),
+            KernelAddressOffset::Constant(v) => OldAddressOffset::constant(*v),
+            KernelAddressOffset::Variable(v) => OldAddressOffset::variable(*v),
             KernelAddressOffset::Add(children) => {
                 return Self::add(children.each_ref().map(offset_for_root));
             }
-            KernelAddressOffset::Int32Scaled { value, byte_width } => AddressOffset::Int32Scaled {
-                value: index(value),
-                byte_width: *byte_width,
-            },
+            KernelAddressOffset::Int32Scaled { value, byte_width } => {
+                OldAddressOffset::int32_scaled(index(value), *byte_width)
+            }
             KernelAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
-            } => AddressOffset::Int64Scaled {
-                value: index(value),
-                byte_width: *byte_width,
-                unsigned: *unsigned,
-            },
+            } => OldAddressOffset::int64_scaled(index(value), *byte_width, *unsigned),
         }))
     }
 }
@@ -266,7 +266,7 @@ impl Drop for OffsetKey {
             if let OffsetShape::Add(add) = &mut key.0
                 && let Some(add) = Arc::get_mut(add)
             {
-                let leaf = || OffsetKey(OffsetShape::Leaf(AddressOffset::Constant(0)));
+                let leaf = || OffsetKey(OffsetShape::Leaf(OldAddressOffset::constant(0)));
                 pending.extend(std::mem::replace(&mut add.children, [leaf(), leaf()]));
             }
         }

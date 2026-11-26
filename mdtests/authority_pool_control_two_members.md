@@ -385,7 +385,7 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
             mark before_second;
             step();
             have separate(statement(4).footprint, memory(first->value)) by {
-                normalize() using { separate(memory(first->value), memory(second->value)); };
+                close() using { separate(memory(first->value), memory(second->value)); };
             }
             have first->value == at(before_second, first->value) by {
                 preserve(memory(first->value), statement(4));

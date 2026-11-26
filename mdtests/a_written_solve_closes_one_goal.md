@@ -1,7 +1,7 @@
-# A written `solve` closes one goal
+# A written `close()` closes one goal
 
-Written as a step of a script, `close();` closes the first open goal, and the
-next closer, here `normalize()`, takes the second.
+The first `close()` discharges the first open goal. The second `close()`
+discharges the second goal.
 
 ```c filename=a_written_solve_closes_one_goal.c
 int32 f(int32 n) {

@@ -1,9 +1,9 @@
 use super::*;
 
-fn address(offset: i64) -> Address {
-    Address {
+fn address(offset: i64) -> OldAddress {
+    OldAddress {
         base: "local:wide-storage".into(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 
@@ -14,7 +14,7 @@ fn literal(value: ProgramExpression) -> ProgramValue {
     value
 }
 
-fn load(pointer: Address, ty: ProgramType) -> ProgramExpression {
+fn load(pointer: OldAddress, ty: ProgramType) -> ProgramExpression {
     crate::kernel::program_expression::typed_load(
         crate::kernel::program_expression::typed_pointer_value(pointer, ProgramType::VoidPointer),
         ty,
@@ -42,7 +42,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
         literal(crate::kernel::program_expression::uint128_literal(
             (1u128 << 127) | (1u128 << 65) | 1,
         )),
-        ProgramValue::Int128(MachineTerm::Variable(Variable(152_001))),
+        ProgramValue::Int128(OldMachineTerm::Variable(Variable(152_001))),
     ] {
         let ty = value.program_type();
         let state = ExecutionState::new().with_memory(
@@ -106,15 +106,15 @@ fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
         let term = program_value_bitvector_term(value).unwrap();
         let raw = term;
         assert!(
-            matches!(&raw, MachineTerm::MemoryLoad(_, pointer, actual) if **pointer == address(0) && *actual == kind)
+            matches!(&raw, OldMachineTerm::MemoryLoad(_, pointer, actual) if **pointer == address(0) && *actual == kind)
         );
         assert_eq!(kind.byte_width(), 16);
         assert!(machine.accepts_wide_term(&raw));
         assert!(IntegerTerm::from_machine(machine, raw.clone()).is_some());
         assert_eq!(
-            crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(&raw)
-            )
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Old(
+                &raw
+            ))
             .unwrap()
             .bytes,
             16
@@ -150,7 +150,7 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
         (MachineIntegerType::UInt128, LoadKind::Int128),
         (MachineIntegerType::Int128, LoadKind::Bits64),
     ] {
-        let raw = MachineTerm::read_named(
+        let raw = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(address(0)),
             wrong,
@@ -194,9 +194,9 @@ fn wide_storage_symbolic_load_requires_full_span_and_local_initialization() {
                 .is_none()
         );
     }
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "local:wide-storage".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("local:wide-storage", 16);
     let state = ExecutionState::new().with_memory(memory);
@@ -210,13 +210,13 @@ fn wide_storage_symbolic_load_requires_full_span_and_local_initialization() {
 fn wide_storage_frame_transport_uses_all_sixteen_bytes() {
     let before = SymbolicMemory::new().with_block("local:wide-storage", 48);
     let condition = |memory: &SymbolicMemory| {
-        ConditionTerm::equal(
-            MachineTerm::read_named(
+        OldConditionTerm::equal(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),
                 LoadKind::Int128,
             ),
-            MachineTerm::Variable(Variable(152_003)),
+            OldMachineTerm::Variable(Variable(152_003)),
         )
     };
     let assumptions = PureFactContext::new();
@@ -254,13 +254,13 @@ fn wide_order_frame_transport_matches_across_a_disjoint_store() {
         literal(crate::kernel::program_expression::uint8_literal(3)),
     );
     let condition = |memory: &SymbolicMemory| {
-        ConditionTerm::uint64_less_than(
-            MachineTerm::read_named(
+        OldConditionTerm::uint64_less_than(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),
                 LoadKind::Bits64,
             ),
-            MachineTerm::Variable(Variable(152_004)),
+            OldMachineTerm::Variable(Variable(152_004)),
         )
     };
     assert!(
@@ -332,9 +332,9 @@ fn wide_storage_overlapping_store_invalidates_high_bytes_and_gap_skip() {
 
 #[test]
 fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "wide-external".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     for bytes in [8, 16] {
         let range =

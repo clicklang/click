@@ -201,7 +201,7 @@ impl From<&ProgramStatement> for StatementProofInput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct LoopEvidence {
-    pub(in crate::kernel) calls: Arc<BTreeSet<String>>,
+    pub(in crate::kernel) calls: Arc<BTreeSet<CallDependency>>,
     pub index: usize,
     pub measure: Option<LoopTerminationMeasure>,
     end: usize,

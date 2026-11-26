@@ -497,17 +497,17 @@ pub(super) fn apply_witness_tactic(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn comparison_condition(
-    actual: MachineTerm,
+    actual: OldMachineTerm,
     operator: ComparisonOperator,
-    expected: MachineTerm,
+    expected: OldMachineTerm,
     unsigned: bool,
-) -> Option<(ConditionTerm, bool)> {
+) -> Option<(OldConditionTerm, bool)> {
     match operator {
         ComparisonOperator::Equal => Some((bitvector32_equal(actual, expected), true)),
         ComparisonOperator::NotEqual => Some((bitvector32_equal(actual, expected), false)),
         ComparisonOperator::LessThan => Some((
             if unsigned {
-                ConditionTerm::unsigned_less_than(actual, expected)
+                OldConditionTerm::unsigned_less_than(actual, expected)
             } else {
                 signed_less_than(actual, expected)
             },
@@ -515,7 +515,7 @@ pub(super) fn comparison_condition(
         )),
         ComparisonOperator::LessEqual => Some((
             if unsigned {
-                ConditionTerm::unsigned_less_equal(actual, expected)
+                OldConditionTerm::unsigned_less_equal(actual, expected)
             } else {
                 signed_less_equal(actual, expected)
             },
@@ -523,7 +523,7 @@ pub(super) fn comparison_condition(
         )),
         ComparisonOperator::GreaterThan => Some((
             if unsigned {
-                ConditionTerm::unsigned_greater_than(actual, expected)
+                OldConditionTerm::unsigned_greater_than(actual, expected)
             } else {
                 signed_greater_than(actual, expected)
             },
@@ -531,7 +531,7 @@ pub(super) fn comparison_condition(
         )),
         ComparisonOperator::GreaterEqual => Some((
             if unsigned {
-                ConditionTerm::unsigned_greater_equal(actual, expected)
+                OldConditionTerm::unsigned_greater_equal(actual, expected)
             } else {
                 signed_greater_equal(actual, expected)
             },

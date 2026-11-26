@@ -1,4 +1,4 @@
-//! Value-origin equality. Address congruence must never enter this index.
+//! Value-origin equality. OldAddress congruence must never enter this index.
 use super::OldPointer;
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 
@@ -126,29 +126,34 @@ mod tests {
     }
 
     fn value(id: u64) -> OldPointer {
-        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+        OldPointer::new(
+            OldAddress::symbolic(Variable(id)),
+            ProgramType::Int32Pointer,
+        )
     }
     fn equality(a: &OldPointer, b: &OldPointer) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
+            OldConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
     }
     #[test]
     fn only_true_full_pointer_equalities_supply_numeric_index_equalities() {
-        let a = MachineTerm::Variable(Variable(809_998));
-        let b = MachineTerm::Variable(Variable(809_999));
+        let a = OldMachineTerm::Variable(Variable(809_998));
+        let b = OldMachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
             OldPointer::new(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(index, 4),
+                    offset: OldAddressOffset::scale_int32(index, 4),
                 },
                 ProgramType::Int32Pointer,
             )
         };
-        let equality =
-            ConditionTerm::PointerEqual(Box::new(pointer(a.clone())), Box::new(pointer(b.clone())));
+        let equality = OldConditionTerm::PointerEqual(
+            Box::new(pointer(a.clone())),
+            Box::new(pointer(b.clone())),
+        );
         let context = PureFactContext::new().assume_condition(equality.clone(), true);
         assert!(context.int32_values_known_equal(&a, &b));
         let unequal = PureFactContext::new().assume_condition(equality, false);
@@ -158,11 +163,11 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
+        let null = OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
-            ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null()),
             true,
         );
         assert!(context.pointer_provenance_match(&pointer, &null));
@@ -178,7 +183,7 @@ mod tests {
         let a = value(810_001);
         let b = value(810_002);
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
+            OldConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
@@ -300,8 +305,8 @@ mod tests {
             width: 4u32.into(),
         }));
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
-        let cell = Address::symbolic(Variable(824_002));
-        let read_address = Address::symbolic(Variable(824_003));
+        let cell = OldAddress::symbolic(Variable(824_002));
+        let read_address = OldAddress::symbolic(Variable(824_003));
         let read = OldPointer::from_read(
             read_address,
             ProgramType::Int32Pointer,
@@ -324,19 +329,19 @@ mod tests {
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let x = OldPointer::from_read(
-            Address::symbolic(Variable(825_003)),
+            OldAddress::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,
             &retained_state,
             a.address(),
         );
         let y = OldPointer::from_read(
-            Address::symbolic(Variable(825_004)),
+            OldAddress::symbolic(Variable(825_004)),
             ProgramType::Int32Pointer,
             &retained_state,
             b.address(),
         );
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
+            OldConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         assert!(!context.provenance_equal(a.provenance(), b.provenance()));
@@ -347,10 +352,10 @@ mod tests {
     fn pointer_value_equality_combines_with_a_scalar_offset_equality() {
         let a = value(830_001);
         let b = value(830_002);
-        let offset = MachineTerm::Variable(Variable(830_003));
+        let offset = OldMachineTerm::Variable(Variable(830_003));
         let facts = [
             equality(&a, &b),
-            Proposition::condition_is(ConditionTerm::equal(offset.clone(), 0u32.into()), true),
+            Proposition::condition_is(OldConditionTerm::equal(offset.clone(), 0u32.into()), true),
         ];
         let context = facts.iter().fold(PureFactContext::new(), |c, f| {
             c.assume_proposition(f.clone())

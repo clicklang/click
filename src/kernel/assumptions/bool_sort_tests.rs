@@ -6,41 +6,41 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-pub(super) fn binder(id: u64) -> ConditionTerm {
-    ConditionTerm::Variable(Variable(id))
+pub(super) fn binder(id: u64) -> OldConditionTerm {
+    OldConditionTerm::Variable(Variable(id))
 }
 
-pub(super) fn word(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+pub(super) fn word(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
 
 /// `x > 0` over the `int32` word `x`.
-pub(super) fn positive(id: u64) -> ConditionTerm {
-    ConditionTerm::signed_greater_than(word(id), MachineTerm::constant(0))
+pub(super) fn positive(id: u64) -> OldConditionTerm {
+    OldConditionTerm::signed_greater_than(word(id), OldMachineTerm::constant(0))
 }
 
 /// The application `name(x)` of a `-> Bool` function to the `int32` word `x`.
-pub(super) fn applied(name: &str, id: u64) -> ConditionTerm {
-    ConditionTerm::bool_application(
+pub(super) fn applied(name: &str, id: u64) -> OldConditionTerm {
+    OldConditionTerm::bool_application(
         name,
         vec![PureFunctionArgument::Value(ProgramValue::Int32(word(id)))],
     )
 }
 
 pub(super) fn bool_if(
-    condition: ConditionTerm,
-    then_condition: ConditionTerm,
-    else_condition: ConditionTerm,
-) -> ConditionTerm {
-    ConditionTerm::BoolIf {
+    condition: OldConditionTerm,
+    then_condition: OldConditionTerm,
+    else_condition: OldConditionTerm,
+) -> OldConditionTerm {
+    OldConditionTerm::BoolIf {
         condition: Box::new(condition),
         then_condition: Box::new(then_condition),
         else_condition: Box::new(else_condition),
     }
 }
 
-pub(super) fn bool_equal(left: ConditionTerm, right: ConditionTerm) -> ConditionTerm {
-    ConditionTerm::BoolEqual(Box::new(left), Box::new(right))
+pub(super) fn bool_equal(left: OldConditionTerm, right: OldConditionTerm) -> OldConditionTerm {
+    OldConditionTerm::BoolEqual(Box::new(left), Box::new(right))
 }
 
 #[test]
@@ -48,24 +48,27 @@ fn the_constructors_fold_only_what_their_shape_decides() {
     let _session = VerificationSession::enter();
     let (c, a, b) = (positive(1), binder(2), binder(3));
     assert_eq!(
-        ConditionTerm::bool_if(ConditionTerm::Constant(true), a.clone(), b.clone()),
+        OldConditionTerm::bool_if(OldConditionTerm::Constant(true), a.clone(), b.clone()),
         a
     );
     assert_eq!(
-        ConditionTerm::bool_if(ConditionTerm::Constant(false), a.clone(), b.clone()),
+        OldConditionTerm::bool_if(OldConditionTerm::Constant(false), a.clone(), b.clone()),
         b
     );
-    assert_eq!(ConditionTerm::bool_if(c.clone(), a.clone(), a.clone()), a);
     assert_eq!(
-        ConditionTerm::bool_if(c.clone(), a.clone(), b.clone()),
+        OldConditionTerm::bool_if(c.clone(), a.clone(), a.clone()),
+        a
+    );
+    assert_eq!(
+        OldConditionTerm::bool_if(c.clone(), a.clone(), b.clone()),
         bool_if(c, a.clone(), b.clone())
     );
     assert_eq!(
-        ConditionTerm::bool_equal(a.clone(), a.clone()),
-        ConditionTerm::Constant(true)
+        OldConditionTerm::bool_equal(a.clone(), a.clone()),
+        OldConditionTerm::Constant(true)
     );
     assert_eq!(
-        ConditionTerm::bool_equal(a.clone(), b.clone()),
+        OldConditionTerm::bool_equal(a.clone(), b.clone()),
         bool_equal(a, b)
     );
 }
@@ -180,7 +183,8 @@ fn applications_to_equal_arguments_are_congruent() {
         context.decide(&bool_equal(left.clone(), right.clone())),
         None
     );
-    let equal_arguments = context.assume_condition(ConditionTerm::equal(word(50), word(51)), true);
+    let equal_arguments =
+        context.assume_condition(OldConditionTerm::equal(word(50), word(51)), true);
     assert_eq!(
         equal_arguments.decide(&bool_equal(left.clone(), right.clone())),
         Some(true)
@@ -195,12 +199,12 @@ fn applications_to_equal_arguments_are_congruent() {
 #[test]
 fn an_unfolded_application_has_its_body_s_truth() {
     let _session = VerificationSession::enter();
-    let ConditionTerm::BoolApplication(application) = applied("positive", 60) else {
+    let OldConditionTerm::BoolApplication(application) = applied("positive", 60) else {
         unreachable!("an application")
     };
-    let equation = ConditionTerm::bool_unfold_equation(application.clone(), positive(60));
+    let equation = OldConditionTerm::bool_unfold_equation(application.clone(), positive(60));
     let context = PureFactContext::new().assume_proposition(equation);
-    let applied_value = ConditionTerm::BoolApplication(application);
+    let applied_value = OldConditionTerm::BoolApplication(application);
     assert_eq!(context.decide(&applied_value), None);
     assert_eq!(
         context
@@ -224,9 +228,9 @@ fn a_bool_read_is_one_value_per_cell() {
     let _session = VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let read = || {
-        ConditionTerm::boolean_cell_read(
+        OldConditionTerm::boolean_cell_read(
             crate::kernel::ProgramPoint::at(&memory),
-            Address::symbolic(Variable(70)),
+            OldAddress::symbolic(Variable(70)),
         )
     };
     let context = PureFactContext::new()
@@ -265,12 +269,12 @@ fn substitution_reaches_every_part_of_a_bool_value() {
 }
 
 /// `b as int32` (rule C1, Stage 5).
-pub(super) fn cast(condition: ConditionTerm) -> MachineTerm {
-    MachineTerm::bool_cast(MachineIntegerType::Int32, condition)
+pub(super) fn cast(condition: OldConditionTerm) -> OldMachineTerm {
+    OldMachineTerm::bool_cast(MachineIntegerType::Int32, condition)
 }
 
-fn word_equal(left: MachineTerm, right: MachineTerm) -> ConditionTerm {
-    ConditionTerm::equal(left, right)
+fn word_equal(left: OldMachineTerm, right: OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::equal(left, right)
 }
 
 /// Rule C1 links a cast with its `Bool` both ways: the constant the cast's
@@ -284,7 +288,10 @@ fn rule_c1_links_a_cast_with_its_bool_in_both_directions() {
     let with = |value: u32, truth: bool| {
         PureFactContext::new()
             .assume_condition(word_equal(x.clone(), cast(b.clone())), true)
-            .assume_condition(word_equal(x.clone(), MachineTerm::constant(value)), truth)
+            .assume_condition(
+                word_equal(x.clone(), OldMachineTerm::constant(value)),
+                truth,
+            )
     };
     assert_eq!(with(0, true).decide(&b), Some(false));
     assert_eq!(with(1, true).decide(&b), Some(true));
@@ -292,11 +299,11 @@ fn rule_c1_links_a_cast_with_its_bool_in_both_directions() {
     assert_eq!(with(1, false).decide(&b), Some(false));
     let decided = PureFactContext::new().assume_condition(b.clone(), true);
     assert_eq!(
-        decided.decide(&word_equal(cast(b.clone()), MachineTerm::constant(1))),
+        decided.decide(&word_equal(cast(b.clone()), OldMachineTerm::constant(1))),
         Some(true)
     );
     let two = PureFactContext::new()
-        .assume_condition(word_equal(cast(b), MachineTerm::constant(2)), true);
+        .assume_condition(word_equal(cast(b), OldMachineTerm::constant(2)), true);
     assert!(two.is_inconsistent());
 }
 
@@ -333,12 +340,13 @@ fn a_bool_equality_fact_decides_one_operand_from_the_other() {
 fn a_bool_binder_takes_the_truth_of_its_instance() {
     let _session = VerificationSession::enter();
     let flag = Variable(90);
-    let value = MachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Variable(flag));
+    let value =
+        OldMachineTerm::bool_cast(MachineIntegerType::UInt8, OldConditionTerm::Variable(flag));
     let instance = applied("q", 91);
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable(
         &value,
         flag,
-        &MachineTerm::bool_cast(MachineIntegerType::UInt8, instance.clone()),
+        &OldMachineTerm::bool_cast(MachineIntegerType::UInt8, instance.clone()),
     );
     assert_eq!(substituted.bool_cast_operand(), Some(&instance));
 }

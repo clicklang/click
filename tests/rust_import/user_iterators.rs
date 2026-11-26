@@ -6,6 +6,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/user-iterator/coun
 /// under `next`'s contract, and a proof reads the iterator's fields as
 /// `iter.n`. A wrong invariant and a wrong `next` contract are refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 7.7s in the parallel gate"]
 fn charon_user_iterator_loops_verify_from_next_contract() {
     let p = Project::from_fixture("design/charon-trial/user-iterator");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();

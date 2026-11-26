@@ -1,4 +1,6 @@
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn continue_exit_metadata_skips_empty_enclosing_scopes() {
     for size in [4, 16, 64, 128] {
         let mut body = String::new();

@@ -9,10 +9,10 @@ fn mixed_arithmetic_retains_growing_prefixes_without_exports() {
                 let _session = VerificationSession::enter();
                 let mut execution = ExecutionBudget::new();
                 let budget = SpecEvaluation::logical(&mut execution);
-                let mut root = operand(format, &MachineTerm::Variable(Variable(995458)), true);
+                let mut root = operand(format, &OldMachineTerm::Variable(Variable(995458)), true);
                 let right = operand(
                     MachineIntegerType::UInt16,
-                    &MachineTerm::Variable(Variable(995459)),
+                    &OldMachineTerm::Variable(Variable(995459)),
                     true,
                 );
                 let exports = KernelTermExport::machine_export_count();

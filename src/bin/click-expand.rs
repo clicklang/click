@@ -1635,8 +1635,19 @@ int32 bad(int32 x) {
     #[test]
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn lines_in_cases_arms_inside_a_have_body_select() {
-        let path = mdtest_path("proof_cases_after_c_branch_expands.md");
-        let original = fs::read_to_string(&path).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("cases.md");
+        let original = fs::read_to_string(mdtest_path("proof_cases_after_c_branch_expands.md"))
+            .unwrap()
+            .replace(
+                "result == 18 => {\n                close();",
+                "result == 18 => {\n                close() using { result == 18; };",
+            )
+            .replace(
+                "have result < 0 by {\n                    close();",
+                "have result < 0 by {\n                    close() using { result == -1; };",
+            );
+        fs::write(&path, &original).unwrap();
         let original_lines = original.lines().collect::<Vec<_>>();
         let line_of = |text: &str| {
             original_lines
@@ -1647,11 +1658,17 @@ int32 bad(int32 x) {
         };
         let direct = line_of("result == 18 => {") + 1;
         let have = line_of("have result < 0 by {");
-        assert_eq!(original_lines[direct - 1].trim(), "close();");
-        assert_eq!(original_lines[have].trim(), "close();");
+        assert_eq!(
+            original_lines[direct - 1].trim(),
+            "close() using { result == 18; };"
+        );
+        assert_eq!(
+            original_lines[have].trim(),
+            "close() using { result == -1; };"
+        );
         assert_eq!(original_lines[have + 1].trim(), "}");
         // (selected line, first and last rewritten line): selecting the
-        // `solve` in the smart `have` selects that whole `have`.
+        // closer in the nested `have` selects that whole `have`.
         for (line, first, last) in [(direct, direct, direct), (have + 1, have, have + 2)] {
             let expanded = run_location(&path, &line.to_string())
                 .unwrap_or_else(|error| panic!("line {line}: {error}"));
@@ -1749,37 +1766,37 @@ int32 bad(int32 x) {
             } by {\n\
             \x20   have x <= x by {\n\
             \x20       have x == x by { close(); }\n\
-            \x20       close();\n\
+            \x20       close() using {};\n\
             \x20   }\n\
-            \x20   have x >= x by { have x == x by close(); close(); }\n\
+            \x20   have x >= x by { have x == x by close(); close() using {}; }\n\
             \x20   step_until(function.exit);\n\
             \x20   close();\n\
             }\n";
         fs::write(&click_path, click_source).unwrap();
 
         // Selection controls the rewritten span, not the closer's strategy.
-        let assert_selected_solve_changed = |expanded: &str, offset: usize| {
-            let suffix = &click_source[offset + "close();".len()..];
+        let assert_selected_closer_changed = |expanded: &str, offset: usize| {
+            let suffix = &click_source[offset + "close() using {};".len()..];
             assert!(expanded.starts_with(&click_source[..offset]), "{expanded}");
             assert!(expanded.ends_with(suffix), "{expanded}");
             let replacement = &expanded[offset..expanded.len() - suffix.len()];
-            assert!(!replacement.contains("solve()"), "{expanded}");
+            assert!(replacement.contains("close();"), "{expanded}");
             assert_ne!(expanded, click_source);
         };
         let expanded = run_location(&click_path, "7").unwrap();
-        let selected = click_source.find("        close();\n").unwrap() + 8;
-        assert_selected_solve_changed(&expanded, selected);
+        let selected = click_source.find("        close() using {};\n").unwrap() + 8;
+        assert_selected_closer_changed(&expanded, selected);
         let ambiguous = run_location(&click_path, "9").expect_err("line 9 is ambiguous");
         let path = click_path.display();
         assert!(
             ambiguous.contains(&format!(
-                "{path}:9: 2 smart tactics start on this line; add the column of one of them:\n  {path}:9:22 `have` in `identity.contract`\n  {path}:9:46 `solve` in `identity.contract`"
+                "{path}:9: 2 smart tactics start on this line; add the column of one of them:\n  {path}:9:37 `close` in `identity.contract`\n  {path}:9:46 `close` in `identity.contract`"
             )),
             "{ambiguous}"
         );
         let expanded = run_location(&click_path, "9:46").unwrap();
-        let selected = click_source.rfind("close(); }").unwrap();
-        assert_selected_solve_changed(&expanded, selected);
+        let selected = click_source.rfind("close() using {}; }").unwrap();
+        assert_selected_closer_changed(&expanded, selected);
         let between =
             run_location(&click_path, "8:5").expect_err("a closing brace selects nothing");
         assert!(

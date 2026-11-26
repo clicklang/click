@@ -201,7 +201,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     pub(super) fn native_variables(
-        pointer: &Address,
+        pointer: &OldAddress,
         mode: FoldVariableRead,
     ) -> BTreeSet<Variable> {
         let mut result = BTreeSet::new();
@@ -241,24 +241,24 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
         let cases = [
-            Address {
+            OldAddress {
                 base: AddressBase::Symbolic(Variable(1001001)),
-                offset: AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable(1001002)),
+                offset: OldAddressOffset::scaled_int64_node(
+                    OldMachineTerm::Variable(Variable(1001002)),
                     8,
                     true,
                 ),
             },
-            Address {
+            OldAddress {
                 base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "dependency_call".into(),
                     vec![PureFunctionArgument::Integer(
                         IntegerTerm::Variable(Variable(1001003)).into(),
                     )],
                 )),
-                offset: AddressOffset::Variable(Variable(1001004)),
+                offset: OldAddressOffset::Variable(Variable(1001004)),
             },
-            Address::loaded_value(&memory, &Address::symbolic(Variable(1001005))),
+            OldAddress::loaded_value(&memory, &OldAddress::symbolic(Variable(1001005))),
         ];
         for source in cases {
             let shared = SharedAddress::import(&source);
@@ -290,13 +290,13 @@ mod tests {
             body: IntegerTerm::Variable(Variable(1001022)).into(),
         }
         .into();
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "fold_pointer".into(),
                 vec![PureFunctionArgument::Integer(fold.clone())],
             )),
-            offset: AddressOffset::scaled_int32_node(
-                MachineTerm::IntegerToMachine {
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::IntegerToMachine {
                     value: fold,
                     destination: MachineIntegerType::Int32,
                 },
@@ -327,14 +327,14 @@ mod tests {
     fn complete_pointer_readers_keep_native_metadata_and_coordinate_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = OldPointer::new(
-            Address::symbolic(Variable(1001010)),
+            OldAddress::symbolic(Variable(1001010)),
             ProgramType::VoidPointer,
         )
-        .with_provenance(Arc::new(Address::symbolic(Variable(1001011))))
-        .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1001012)))))
+        .with_provenance(Arc::new(OldAddress::symbolic(Variable(1001011))))
+        .with_bounds_owner(Some(Arc::new(OldAddress::symbolic(Variable(1001012)))))
         .with_bounds(Some(SubobjectBounds {
-            start: Address::symbolic(Variable(1001013)),
-            width: MachineTerm::Variable(Variable(1001014)),
+            start: OldAddress::symbolic(Variable(1001013)),
+            width: OldMachineTerm::Variable(Variable(1001014)),
         }));
         let shared = SharedPointer::import(&source);
         for mode in MODES {
@@ -358,9 +358,9 @@ mod tests {
             )
             .max
         );
-        let source = Address {
+        let source = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(1001015)),
+            offset: OldAddressOffset::Variable(Variable(1001015)),
         };
         let shared = SharedAddress::import(&source);
         let before = COORDINATE_VARIABLES.with(|flag| flag.replace(true));

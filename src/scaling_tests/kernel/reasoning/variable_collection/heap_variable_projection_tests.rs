@@ -8,9 +8,9 @@ use super::*;
 fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Address {
+        let pointer = |id| OldAddress {
             base: AddressBase::Symbolic(Variable(id)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut heap = crate::kernel::primitives::HeapMemory::default();
         for id in 1..=size {
@@ -64,7 +64,7 @@ fn shared_machine_variable_bookkeeping_reuses_prefixes_in_each_collection_mode()
                     [root.clone(), root.clone()],
                 );
                 let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
-                let condition = ConditionTerm::IntegerEqual(
+                let condition = OldConditionTerm::IntegerEqual(
                     IntegerTerm::Machine(machine.clone()).into(),
                     IntegerTerm::constant_i64(0).into(),
                 );
@@ -98,7 +98,7 @@ fn shared_machine_variable_collection_keeps_state_deferral_and_load_addresses() 
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
-        &Address::symbolic(address),
+        &OldAddress::symbolic(address),
         crate::kernel::LoadKind::Int32,
         4,
     );
@@ -109,17 +109,17 @@ fn shared_machine_variable_collection_keeps_state_deferral_and_load_addresses() 
         KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [leaf.clone(), leaf]),
     )
     .unwrap();
-    let shared = ConditionTerm::IntegerEqual(
+    let shared = OldConditionTerm::IntegerEqual(
         IntegerTerm::Machine(machine.clone()).into(),
         IntegerTerm::constant_i64(0).into(),
     );
-    let written = ConditionTerm::IntegerEqual(
-        IntegerTerm::from_machine(format, MachineTerm::Variable(load))
+    let written = OldConditionTerm::IntegerEqual(
+        IntegerTerm::from_machine(format, OldMachineTerm::Variable(load))
             .unwrap()
             .into(),
         IntegerTerm::constant_i64(0).into(),
     );
-    let collect = |condition: &ConditionTerm| {
+    let collect = |condition: &OldConditionTerm| {
         let mut variables = BTreeSet::new();
         let deferred = collect_condition_index_variables(condition, &mut variables);
         (variables, deferred)

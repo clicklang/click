@@ -148,7 +148,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
 
 #[derive(Clone, Debug)]
 struct StaticAddress {
-    pointer: crate::kernel::Address,
+    pointer: crate::kernel::OldAddress,
     interface_type: InterfaceType,
     constant: bool,
     /// The member subobject the address selects, if any.
@@ -431,13 +431,13 @@ impl CGlobal {
         let value = match self.interface_type {
             InterfaceType::Float32 => match initializer {
                 CExpression::Float32Literal(bits) => {
-                    crate::kernel::float32(crate::kernel::MachineTerm::constant(*bits))
+                    crate::kernel::float32(crate::kernel::OldMachineTerm::constant(*bits))
                 }
                 _ => return None,
             },
             InterfaceType::Float64 => match initializer {
                 CExpression::Float64Literal(bits) => {
-                    crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(*bits))
+                    crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(*bits))
                 }
                 _ => return None,
             },
@@ -1066,13 +1066,13 @@ fn kernel_integer_literal_value(
         }
         InterfaceType::Float32 => match initializer {
             CExpression::Float32Literal(bits) => {
-                crate::kernel::float32(crate::kernel::MachineTerm::constant(*bits))
+                crate::kernel::float32(crate::kernel::OldMachineTerm::constant(*bits))
             }
             _ => return None,
         },
         InterfaceType::Float64 => match initializer {
             CExpression::Float64Literal(bits) => {
-                crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(*bits))
+                crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(*bits))
             }
             _ => return None,
         },
@@ -1085,45 +1085,45 @@ fn kernel_integer_literal_value(
         InterfaceType::UInt32 => crate::kernel::uint32(initializer_integer_bits(initializer)?),
         InterfaceType::Int64(_) => match initializer {
             CExpression::Int64Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_constant(*value))
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_constant(*value))
             }
             CExpression::Int32Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_from_32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_from_32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             CExpression::UInt8Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_from_uint32(
-                    crate::kernel::MachineTerm::constant(u32::from(*value)),
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_from_uint32(
+                    crate::kernel::OldMachineTerm::constant(u32::from(*value)),
                 ))
             }
             CExpression::UInt32Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_from_uint32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_from_uint32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             _ => return None,
         },
         InterfaceType::UInt64(_) => match initializer {
             CExpression::UInt64Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(*value))
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_constant(*value))
             }
-            CExpression::Int64Literal(value) if *value >= 0 => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(*value as u64))
-            }
+            CExpression::Int64Literal(value) if *value >= 0 => crate::kernel::uint64(
+                crate::kernel::OldMachineTerm::uint64_constant(*value as u64),
+            ),
             CExpression::Int32Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_from_int32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_from_int32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             CExpression::UInt8Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_from_32(
-                    crate::kernel::MachineTerm::constant(u32::from(*value)),
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_from_32(
+                    crate::kernel::OldMachineTerm::constant(u32::from(*value)),
                 ))
             }
             CExpression::UInt32Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_from_32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_from_32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             _ => return None,
@@ -1135,7 +1135,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1166,7 +1166,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1192,7 +1192,7 @@ fn kernel_aggregate_initializer_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             ))
         }
@@ -1202,11 +1202,11 @@ fn kernel_aggregate_initializer_value(
         // writing the cell, so a later load dispatches to the concrete target.
         InterfaceType::FunctionPointer(_) => match initializer {
             CExpression::Int32Literal(0) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             )),
             CExpression::FunctionAddress(name) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::function(name.clone()),
+                crate::kernel::OldAddress::function(name.clone()),
                 interface_type.to_kernel_type(),
             )),
             _ => None,
@@ -1425,13 +1425,13 @@ impl CStaticLocal {
         let value = match self.interface_type {
             InterfaceType::Float32 => match &self.initializer {
                 CExpression::Float32Literal(bits) => {
-                    crate::kernel::float32(crate::kernel::MachineTerm::constant(*bits))
+                    crate::kernel::float32(crate::kernel::OldMachineTerm::constant(*bits))
                 }
                 _ => return None,
             },
             InterfaceType::Float64 => match &self.initializer {
                 CExpression::Float64Literal(bits) => {
-                    crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(*bits))
+                    crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(*bits))
                 }
                 _ => return None,
             },
@@ -3073,7 +3073,7 @@ pub enum CExpression {
         interface_type: InterfaceType,
         struct_name: Option<String>,
     },
-    /// Address of an embedded struct field. Aggregate objects have no
+    /// OldAddress of an embedded struct field. Aggregate objects have no
     /// runtime `ProgramValue`; this node carries the aggregate place through nested
     /// member selection until a scalar field is selected.
     AggregateAddress {
@@ -3107,7 +3107,7 @@ pub enum CExpression {
         union_name: String,
         pointee_constant: bool,
     },
-    /// Address of an embedded union. Union members overlap at offset zero and
+    /// OldAddress of an embedded union. Union members overlap at offset zero and
     /// are selected as typed scalar loads; the union itself has no runtime
     /// aggregate value.
     UnionAddress {
@@ -4317,6 +4317,7 @@ impl CStatement {
                     .as_ref()
                     .map(RecordLayout::to_kernel_aggregate_layout),
                 result_pointee_constant: *result_pointee_constant,
+                dispatch: crate::kernel::CallDispatch::Direct,
                 callee: callee.as_ref().map(CCallee::to_kernel),
             },
             Self::Call {
@@ -4331,6 +4332,8 @@ impl CStatement {
                     .map(CExpression::to_kernel_expression)
                     .collect(),
                 callee: callee.as_ref().map(CCallee::to_kernel),
+                dispatch: crate::kernel::CallDispatch::Direct,
+                cpp_binding: None,
             },
             Self::IndirectCall { .. } => {
                 unreachable!("indirect call statements must be lowered before kernel conversion")
@@ -9829,10 +9832,11 @@ impl Parser {
             closure_captures: 0,
             trait_interface: None,
             generic_instance: None,
-            dispatched_method: None,
+            cpp_virtual: false,
             receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
+            opaque_exception_constructor: None,
             parameters: header.parameters,
             body,
             callback_statement_sources: std::sync::Arc::new(
@@ -9841,6 +9845,7 @@ impl Parser {
             control_targets,
             structs: self.structs.clone(),
             prepared_record_layouts: std::sync::Arc::default(),
+            cpp_overload_paths: None,
             enums: self.enums.clone(),
             unions: self.unions.clone(),
             globals: self.globals.clone(),
@@ -13608,7 +13613,33 @@ impl Parser {
     ) -> Result<CStatement, CSyntaxError> {
         self.scalar_struct_value_layout(target_struct)?;
         let is_step_result = matches!(expression, CExpression::StepResult { .. });
-        let (source_pointer, source_struct) = match expression {
+        let (source_pointer, source_struct) = self.aggregate_copy_source(expression)?;
+        if target_struct != source_struct {
+            return Err(self.error_here(format!(
+                "cannot copy `struct {source_struct}` into `struct {target_struct}`"
+            )));
+        }
+        let layout = self
+            .structs
+            .get(target_struct)
+            .expect("validated struct value has a layout");
+        if is_step_result || !layout.aggregate_unions.is_empty() {
+            return Ok(CStatement::AggregateCopy {
+                target: target_pointer,
+                source: source_pointer,
+                layout: layout.clone(),
+                site: CSite::NONE,
+            });
+        }
+        self.aggregate_field_stores(target_pointer, source_pointer, layout)
+    }
+
+    /// The pointer an aggregate copy reads from, and the struct it holds.
+    fn aggregate_copy_source(
+        &self,
+        expression: CExpression,
+    ) -> Result<(CExpression, String), CSyntaxError> {
+        Ok(match expression {
             expression @ CExpression::StepResult { .. } => {
                 let struct_name = self.aggregate_struct_name(&expression).ok_or_else(|| {
                     self.error_here("aggregate copy requires an aggregate step result")
@@ -13640,24 +13671,15 @@ impl Parser {
                     "aggregate copies require another struct value or a direct struct lvalue load",
                 ));
             }
-        };
-        if target_struct != source_struct {
-            return Err(self.error_here(format!(
-                "cannot copy `struct {source_struct}` into `struct {target_struct}`"
-            )));
-        }
-        let layout = self
-            .structs
-            .get(target_struct)
-            .expect("validated struct value has a layout");
-        if is_step_result || !layout.aggregate_unions.is_empty() {
-            return Ok(CStatement::AggregateCopy {
-                target: target_pointer,
-                source: source_pointer,
-                layout: layout.clone(),
-                site: CSite::NONE,
-            });
-        }
+        })
+    }
+
+    fn aggregate_field_stores(
+        &self,
+        target_pointer: CExpression,
+        source_pointer: CExpression,
+        layout: &RecordLayout,
+    ) -> Result<CStatement, CSyntaxError> {
         let mut stores = Vec::new();
         for field in layout.aggregate_fields() {
             let (element_type, element_count) = match field.interface_type {
@@ -14295,6 +14317,9 @@ impl Parser {
         struct_name: String,
     ) -> Result<(Vec<CStatement>, CExpression), CSyntaxError> {
         let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+        let (binding, arguments, prepared) =
+            self.prepare_by_value_arguments(&function_name, arguments)?;
+        prefix.extend(binding);
         let call = self.next_call_result;
         self.next_call_result = self.next_call_result.saturating_add(1);
         // Value returns already materialize independent aggregate storage.
@@ -14312,6 +14337,7 @@ impl Parser {
             site: CSite::NONE,
             callee: None,
         });
+        prefix.extend(Self::end_prepared_arguments(prepared));
         Ok((
             prefix,
             CExpression::StepResult {
@@ -15286,7 +15312,7 @@ impl Parser {
         }
     }
 
-    /// Address formation does not read the designated object, but it can read
+    /// OldAddress formation does not read the designated object, but it can read
     /// mutable pointer and index values used to find that object.
     fn lvalue_address_reads_potentially_changed_value(&self, expression: &CExpression) -> bool {
         match expression {
@@ -15734,16 +15760,21 @@ impl Parser {
                 site,
                 callee,
             } => {
-                let (prefix, arguments) = self.lower_call_arguments(arguments)?;
-                Ok(prepend_statements(
-                    prefix,
-                    CStatement::Call {
-                        function_name,
-                        arguments,
-                        site,
-                        callee,
-                    },
-                ))
+                let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+                let (binding, arguments, prepared) =
+                    self.prepare_by_value_arguments(&function_name, arguments)?;
+                prefix.extend(binding);
+                let call = CStatement::Call {
+                    function_name,
+                    arguments,
+                    site,
+                    callee,
+                };
+                let call = match Self::end_prepared_arguments(prepared) {
+                    Some(end) => CStatement::Seq(Box::new(call), Box::new(end)),
+                    None => call,
+                };
+                Ok(prepend_statements(prefix, call))
             }
             statement @ CStatement::CallResult { .. } => Ok(statement),
             CStatement::IndirectCall {
@@ -15904,6 +15935,124 @@ impl Parser {
                 unreachable!("nested statements are lowered by lower_statement_calls")
             }
         }
+    }
+
+    /// Binds each by-value aggregate argument of a call to `function_name`
+    /// as C does: the argument is copied into a fresh parameter object, which
+    /// the call then receives. The copy is its own atomic region, so the
+    /// call's entry is the callee's entry, with the parameter object already
+    /// initialized. The object's lifetime ends when the call returns; the
+    /// caller ends it with the statement [`Self::end_prepared_arguments`]
+    /// returns.
+    #[inline(never)]
+    fn prepare_by_value_arguments(
+        &mut self,
+        function_name: &str,
+        arguments: Vec<CExpression>,
+    ) -> Result<(Vec<CStatement>, Vec<CExpression>, Vec<BindingName>), CSyntaxError> {
+        // With a prototype, its by-value struct parameters; without one (an
+        // undeclared callee), the argument's own type decides, and the object
+        // has no parameter name to carry.
+        let by_value: Vec<Option<(String, Option<String>)>> =
+            match self.function_declaration_for_call(function_name) {
+                Some(function) => function
+                    .parameters
+                    .iter()
+                    .map(|parameter| {
+                        let spelling = match &parameter.name {
+                            BindingName::Named(name) => Some(name.to_string()),
+                            name => name
+                                .local_id()
+                                .and_then(LocalBindingId::spelling)
+                                .map(str::to_owned),
+                        };
+                        parameter
+                            .is_struct_value()
+                            .then(|| parameter.struct_name.clone())
+                            .flatten()
+                            .map(|struct_name| (struct_name, spelling))
+                    })
+                    .collect(),
+                None => arguments
+                    .iter()
+                    .map(|argument| {
+                        self.struct_value_argument_name(argument)
+                            .map(|struct_name| (struct_name, None))
+                    })
+                    .collect(),
+            };
+        if by_value.iter().all(Option::is_none) {
+            return Ok((Vec::new(), arguments, Vec::new()));
+        }
+        let mut prefix = Vec::new();
+        let mut prepared = Vec::new();
+        let mut lowered = Vec::with_capacity(arguments.len());
+        for (index, argument) in arguments.into_iter().enumerate() {
+            let Some(Some((struct_name, parameter))) = by_value.get(index).cloned() else {
+                lowered.push(argument);
+                continue;
+            };
+            let layout = self.scalar_struct_value_layout(&struct_name)?;
+            let (source, source_struct) = self.aggregate_copy_source(argument)?;
+            if source_struct != struct_name {
+                return Err(self.error_here(format!(
+                    "cannot pass `struct {source_struct}` as a `struct {struct_name}` argument"
+                )));
+            }
+            let owner = self.binding_function.clone().ok_or_else(|| {
+                self.error_here("a by-value struct argument requires a function body")
+            })?;
+            let ordinal = self.next_local_binding;
+            self.next_local_binding = ordinal.checked_add(1).expect("binding ordinal fits u32");
+            let id = match &parameter {
+                Some(parameter) => LocalBindingId::prepared_argument_for(owner, ordinal, parameter),
+                None => LocalBindingId::prepared_argument(owner, ordinal),
+            };
+            let name: BindingName = id.with_scope_depth(self.scopes.len() as u32).into();
+            self.variable_types
+                .insert(name.clone(), record_value_type(&layout));
+            self.variable_structs
+                .insert(name.clone(), struct_name.clone());
+            self.variable_struct_values
+                .insert(name.clone(), struct_name.clone());
+            self.local_struct_values
+                .insert(name.clone(), Some(struct_name));
+            prefix.push(CStatement::DeclareStructValue {
+                name: name.clone().into(),
+                layout: layout.clone(),
+                site: CSite::NONE,
+            });
+            prefix.push(CStatement::AggregateCopy {
+                target: CExpression::Variable(name.clone()),
+                source,
+                layout,
+                site: CSite::NONE,
+            });
+            lowered.push(CExpression::Variable(name.clone()));
+            prepared.push(name);
+        }
+        Ok((prefix, lowered, prepared))
+    }
+
+    /// The struct an argument passes by value, when it is a struct value:
+    /// what an undeclared callee receives it as.
+    fn struct_value_argument_name(&self, argument: &CExpression) -> Option<String> {
+        match argument {
+            CExpression::Variable(name) => self.variable_struct_values.get(name).cloned(),
+            CExpression::AggregateAddress { struct_name, .. } => Some(struct_name.clone()),
+            CExpression::StepResult { .. } => self.aggregate_struct_name(argument),
+            _ => None,
+        }
+    }
+
+    /// Ends the parameter objects [`Self::prepare_by_value_arguments`]
+    /// created, once their call has returned.
+    fn end_prepared_arguments(prepared: Vec<BindingName>) -> Option<CStatement> {
+        (!prepared.is_empty()).then(|| CStatement::EndAggregateLifetimes {
+            names: prepared,
+            steps: Vec::new(),
+            site: CSite::NONE,
+        })
     }
 
     fn lower_call_arguments(
@@ -16546,6 +16695,9 @@ impl Parser {
                     ));
                 }
                 let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+                let (binding, arguments, prepared) =
+                    self.prepare_by_value_arguments(&function_name, arguments)?;
+                prefix.extend(binding);
                 let return_struct_name = self
                     .function_declaration(&function_name)
                     .and_then(|function| function.return_struct_name.clone());
@@ -16567,6 +16719,7 @@ impl Parser {
                         callee: None,
                         site: CSite::NONE,
                     });
+                    prefix.extend(Self::end_prepared_arguments(prepared));
                     return Ok((
                         prefix,
                         CExpression::StepResult {
@@ -16612,6 +16765,7 @@ impl Parser {
                     site: CSite::NONE,
                     callee: None,
                 });
+                prefix.extend(Self::end_prepared_arguments(prepared));
                 Ok((
                     prefix,
                     CExpression::StepResult {

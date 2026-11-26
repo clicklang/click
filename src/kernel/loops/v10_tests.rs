@@ -2,12 +2,12 @@ use super::*;
 
 fn memory_range(base: u32, end: u32) -> MemoryRange {
     MemoryRange::new(
-        Address {
+        OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
-        MachineTerm::constant(base),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(base),
+        OldMachineTerm::constant(end),
     )
 }
 
@@ -80,11 +80,11 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
 fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells() {
     let _session = crate::kernel::VerificationSession::enter();
     let field = OldPointer::new(
-        Address::symbolic(Variable(916_200)),
+        OldAddress::symbolic(Variable(916_200)),
         ProgramType::Int32Pointer,
     );
     let data = OldPointer::new(
-        Address::symbolic(Variable(916_201)),
+        OldAddress::symbolic(Variable(916_201)),
         ProgramType::Int32Pointer,
     );
     let field_range = MemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);

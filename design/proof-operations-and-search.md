@@ -216,8 +216,9 @@ checker or rebuilt proof state.
 
 ## Detailed caller classification
 
-The [caller audit](proof-boundary-classification.md) classifies the current 16 mixed and
-0 operation-to-driver records by why they invoke search or interpretation.
+The [historical caller audit](proof-boundary-classification.md) classifies the
+16 mixed records at its recorded revision by why they invoke search or
+interpretation. It recorded no operation-to-driver edges.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or

@@ -2781,8 +2781,8 @@ names the read of the word at the state where it was stated. The program's
 cast reads the word where it executes, so after a store through another
 pointer the two are different reads, and the cast no longer designates
 `parent` (`mdtests/a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`).
-Restate the fact before the cast, with `close()` across plain stores or with
-`transport` and the store's separation, and through a join's `ensuring`
+Restate the fact before the cast. Use `close()` or a proof of separation
+from the store, and use a join's `ensuring`
 clause when a branch lies between
 (`mdtests/a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced.md`).
 
@@ -4197,6 +4197,20 @@ it: an `if`'s own region is its test
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`,
 `mdtests/a_chained_assignment_counts_only_the_statement_s_own_regions.md`).
 
+A call to a function with a contract also has an `.effect` point between
+its `.entry` and `.exit`: the state once every value the call writes is in
+place, before its effects on initialization, liveness and allocation, which
+reach `.exit`. Every value is the same at `.effect` as at `.exit`; a read the
+call makes before its exit, such as one in a fact the call states about the
+memory it produced, is named there. `.effect` is a migration measure, to be
+removed once reads are named by the write that made their value
+(`mdtests/a_contract_call_names_its_effect_point.md`).
+
+<!-- verified-example: mdtests/a_contract_call_names_its_effect_point.md -->
+```click
+have at(call(set, 0).effect, *p) == 7 by close();
+```
+
 A call's region also has a value: `R.result` is the result of the call `R`
 names, such as `statement(0).call(make, 0).result`. It is the value the
 call returned, retained at the region's exit even if the source discards it.
@@ -4216,14 +4230,19 @@ temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
 
 A call's region also names the callee's copy of each by-value aggregate
-argument: `R.parameter(name)` is the object the call copied the argument into,
-read at the memory just after the copy, which is what the callee's contract
-reads. It is an object, read one field (or one element of an array field, by a
-literal index) at a time, as `statement(3).call(first, 0).parameter(p).a`. The
-step that runs the call has it while it proves the call's requirements at its
-pre-state, so a `requires` entry of that step can state one, and it names the
-same copy after the call. A name the callee does not take as a by-value
-aggregate, and a region whose call has not been prepared, are refused
+argument. As C specifies, the argument is copied into a parameter object
+before the call; that copy is an atomic region of its own (the object's
+allocation, then the copy), so the call's region is the call alone and its
+`.entry` is the callee's entry, where its contract is read; the object's
+lifetime ends when the call returns. `R.parameter(name)` names that object,
+the way a local's name does: from its allocation until the call returns, it
+is read in the current state, one field (or one element of an array field, by
+a literal index) at a time, as `statement(3).call(first, 0).parameter(p).a`,
+and the bare `R.parameter(name)` is the object itself, as in its `memory`.
+The step that runs the call starts at the call's entry, so a `requires` entry
+of that step can state a field of it; after the call, read it as
+`at(R.entry, R.parameter(name).a)`. A name the callee does not take as a
+by-value aggregate is refused
 (`mdtests/a_call_parameter_names_only_a_by_value_struct_parameter.md`).
 
 <!-- verified-example: mdtests/a_by_value_struct_argument_is_spelled_by_its_call_parameter.md -->
@@ -4231,7 +4250,7 @@ aggregate, and a region whose call has not been prepared, are refused
 step() {
     requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by close();
 }
-have statement(3).call(first, 0).parameter(p).a == x;
+have at(statement(3).call(first, 0).entry, statement(3).call(first, 0).parameter(p).a) == x;
 ```
 
 A completed volatile read exposes its observed value as
@@ -4315,8 +4334,8 @@ is still written `program::result` inside `at(...)` or `old(...)`.
 available where `result` is: in a postcondition and in a proof step after
 execution has returned, where it is the current path's state. It is refused
 before the return. Each returned path has its own `result`, so
-`transport(at(function.exit, P), P)` can close a `result` goal on a path
-whose own state proves it. Expansion can write the ordinary proof on each
+`close()` can prove a `result` goal from that path's own state.
+Expansion can write the ordinary proof on each
 such path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 `mdtests/a_function_exit_point_before_the_return_is_refused.md`,
 `mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).

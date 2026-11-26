@@ -11,6 +11,7 @@ mod rust_literals;
 mod rust_reference_authority;
 mod rust_type_resources;
 use super::names;
+use crate::kernel::OffsetTree;
 use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
 mod rust_trait_objects;
@@ -266,6 +267,10 @@ struct SourceBindingInfo {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) cpp_binding_conversions:
+        std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
+    pub(in crate::surface) cpp_binding_functions:
+        BTreeMap<String, crate::languages::interface::ImportedFunction>,
     pub(in crate::surface) local_bindings: std::sync::Arc<SourceBindingIndex>,
     pub(in crate::surface) string_literal_values:
         std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
@@ -325,11 +330,8 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ override with the virtual method it overrides, by their
     /// sidecar names: the override inherits that method's interface.
     pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
-    /// Each dispatch a C++ importer names for a call through a reference to
-    /// a class another derives from, with the virtual method it stands for,
-    /// by their sidecar names: without a contract of its own, it has the
-    /// method's.
-    pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
+    /// Methods that a C++ call invokes through their virtual interface.
+    pub(in crate::surface) virtual_dispatches: BTreeSet<String>,
     /// Each instance of a generic Rust function the import declares, with
     /// the generic function, the instance's parameter and result types, and
     /// its parameters' names as a head writes them: it has the generic
@@ -347,7 +349,8 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ function's calls of methods on a receiver that may be an
     /// object of a derived class, by sidecar names: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
-    pub(in crate::surface) receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
+    pub(in crate::surface) receiver_calls:
+        BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>,
     /// The layout name of each C++ record a head spells otherwise, by that
     /// spelling: `Stored<long long>` is `Stored__long_long`.
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
@@ -583,6 +586,7 @@ pub(super) fn parse_library_file_items(source: &str) -> Result<ClickFile, ClickE
 
 pub(in crate::surface) enum ImportedCallee<'a> {
     Function(&'a FunctionBlock),
+    CppBinding(&'a crate::kernel::CppBindingContract, &'a FunctionBlock),
     Tactic(&'a TacticDefinition),
     Contract(&'a ContractDefinition),
 }
@@ -686,7 +690,12 @@ pub(super) fn parse_file_items_for_module(
             .map(|(name, positions)| (name.clone(), positions.clone())),
     );
     for callee in imported_callees {
+        parser.current_cpp_binding = None;
         let (named_contract, block) = match callee {
+            ImportedCallee::CppBinding(contract, block) => {
+                parser.current_cpp_binding = Some((*contract).clone());
+                (false, *block)
+            }
             ImportedCallee::Function(block) => (false, *block),
             ImportedCallee::Tactic(tactic) => (false, tactic.function_block()),
             ImportedCallee::Contract(definition) => {
@@ -746,6 +755,7 @@ pub(super) fn parse_file_items_for_module(
         }
     }
     parser.in_contract_definition = false;
+    parser.current_cpp_binding = None;
     for definition in imported_resources {
         parser
             .declared_resource_fields
@@ -825,6 +835,9 @@ fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
 pub(super) enum Token {
     /// The input view carried into the loan of a generated shared pack.
     SharedObjectView,
+    /// Frontend-only marker for a C++ method’s virtual interface.
+    CppVirtualInterface,
+    CppBindingContract(std::sync::Arc<crate::kernel::CppBindingContract>),
     Ident(String),
     Number(u32),
     // Keep literal metadata shared so adding Rust forms does not enlarge
@@ -932,6 +945,8 @@ impl Token {
             | Self::String(_)
             | Self::ByteString(_) => "",
             Self::SharedObjectView => "shared object view",
+            Self::CppVirtualInterface => "virtual method interface",
+            Self::CppBindingContract(_) => "C++ reference binding contract",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -1029,6 +1044,13 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    cpp_binding_functions: BTreeMap<String, crate::languages::interface::ImportedFunction>,
+    cpp_binding_layouts: BTreeMap<String, super::lowering::SourceExecutionLayout>,
+    cpp_binding_conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
+    current_cpp_binding: Option<crate::kernel::CppBindingContract>,
+    cpp_binding_binders:
+        BTreeMap<crate::kernel::CppBindingContract, BTreeMap<String, CalleeResourceBinder>>,
+    cpp_binding_function: Option<String>,
     checked_expansion_closers: BTreeSet<SourcePosition>,
     local_bindings: std::sync::Arc<SourceBindingIndex>,
     string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
@@ -1164,8 +1186,8 @@ struct Parser {
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
-    cpp_dispatches: Vec<(String, String)>,
-    cpp_receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
+    cpp_dispatches: BTreeSet<String>,
+    cpp_receiver_calls: BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>,
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
@@ -1912,6 +1934,8 @@ impl Parser {
             imported_models,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.cpp_binding_functions = layouts.cpp_binding_functions;
+        parser.cpp_binding_conversions = layouts.cpp_binding_conversions;
         parser.local_bindings = layouts.local_bindings;
         parser.string_literal_values = layouts.string_literal_values;
         parser.string_literal_owners = layouts.string_literal_owners;
@@ -2284,7 +2308,7 @@ impl Parser {
             rust_written_instances: BTreeSet::new(),
             cpp_generic_instances: BTreeMap::new(),
             rust_trait_implementations: Vec::new(),
-            cpp_dispatches: Vec::new(),
+            cpp_dispatches: BTreeSet::new(),
             cpp_receiver_calls: BTreeMap::new(),
             tokens,
             positions,
@@ -2305,6 +2329,12 @@ impl Parser {
             loop_name_context: None,
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
+            cpp_binding_functions: BTreeMap::new(),
+            cpp_binding_layouts: BTreeMap::new(),
+            cpp_binding_conversions: Default::default(),
+            current_cpp_binding: None,
+            cpp_binding_binders: BTreeMap::new(),
+            cpp_binding_function: None,
             program_object_names_by_function: BTreeMap::new(),
             c_library_names_by_function: BTreeMap::new(),
             c_library_names: None,
@@ -2707,6 +2737,11 @@ impl Parser {
         let mut deferred_theorems = Vec::new();
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
+        let mut cpp_virtual_interfaces = BTreeMap::new();
+        let mut cpp_bindings = CppBindingContracts {
+            conversions: self.cpp_binding_conversions.clone(),
+            written: BTreeMap::new(),
+        };
         let mut tactic_definitions = Vec::new();
         let mut termination_proof = None;
         let mut termination_span = None;
@@ -2839,6 +2874,31 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(true)?);
             } else if self.peek_ident() == Some("resource") {
                 resource_definitions.push(self.parse_resource_definition(false)?);
+            } else if self.peek() == Some(&Token::CppVirtualInterface) {
+                self.position += 1;
+                let interface = self.parse_function_block(true)?;
+                let method = interface.signature().name().to_owned();
+                if cpp_virtual_interfaces
+                    .insert(method.clone(), interface)
+                    .is_some()
+                {
+                    return Err(self.error(format!(
+                        "duplicate virtual interface for `{}`",
+                        crate::languages::display_source_names(&method)
+                    )));
+                }
+            } else if let Some(Token::CppBindingContract(contract)) = self.peek().cloned() {
+                self.position += 1;
+                self.current_cpp_binding = Some((*contract).clone());
+                let block = self.parse_function_block(true)?;
+                self.current_cpp_binding = None;
+                if cpp_bindings
+                    .written
+                    .insert((*contract).clone(), block)
+                    .is_some()
+                {
+                    return Err(self.error(format!("duplicate contract for {contract}")));
+                }
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
             } else if self.verifies_cpp()
@@ -2983,21 +3043,18 @@ impl Parser {
                 .map_err(|message| ClickError::new(message).at_declaration(&generic))?;
             function_blocks.push(alias);
         }
-        // A dispatch the sidecar does not state has the contract of the
-        // method it stands for.
-        for (dispatch, method) in std::mem::take(&mut self.cpp_dispatches) {
-            if function_blocks
+        // A virtual call without an object interface uses the method's contract.
+        if !self.cpp_dispatches.is_empty() {
+            let ordinary_methods = function_blocks
                 .iter()
-                .any(|block| block.signature().name() == dispatch)
-            {
-                continue;
-            }
-            if let Some(block) = function_blocks
-                .iter()
-                .find(|block| block.signature().name() == method)
-            {
-                let alias = block.dispatch_alias(&dispatch);
-                function_blocks.push(alias);
+                .map(|block| (block.signature().name(), block))
+                .collect::<BTreeMap<_, _>>();
+            for method in std::mem::take(&mut self.cpp_dispatches) {
+                if let Some(block) = ordinary_methods.get(method.as_str()) {
+                    cpp_virtual_interfaces
+                        .entry(method.clone())
+                        .or_insert_with(|| block.external_contract_as(&method));
+                }
             }
         }
         // A method of a class another derives from holds its memory, and a
@@ -3007,9 +3064,13 @@ impl Parser {
         for (caller, calls) in &self.cpp_receiver_calls {
             let caller_class = crate::languages::cpp::names::cpp_display_name(caller)
                 .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
-            for (callee, holder) in calls {
-                let message = match holder {
+            for call in calls {
+                let callee = &call.method;
+                let message = match &call.holder {
                     None => {
+                        if call.dispatch != crate::kernel::CallDispatch::CppVirtual {
+                            continue;
+                        }
                         let (Some((class, method)), Some((_, (root, derived)))) = (
                             methods.dispatches.get(callee),
                             caller_class
@@ -3035,7 +3096,9 @@ impl Parser {
                         else {
                             continue;
                         };
-                        if !methods.on_memory.contains(callee) {
+                        if call.dispatch != crate::kernel::CallDispatch::Direct
+                            || !methods.on_memory.contains(callee)
+                        {
                             continue;
                         }
                         let (root, derived) = &methods.derived_from[class];
@@ -3114,6 +3177,8 @@ impl Parser {
             theorem_definitions,
             contract_definitions,
             function_blocks,
+            cpp_virtual_interfaces,
+            cpp_bindings,
             tactic_definitions,
             termination_proof,
             termination_span,
@@ -5571,6 +5636,7 @@ impl Parser {
                 .get(&table_name)
                 .cloned(),
         );
+        let previous_cpp_binding_function = self.cpp_binding_function.replace(table_name.clone());
         let previous_c_library_names = std::mem::replace(
             &mut self.c_library_names,
             self.c_library_names_by_function.get(&table_name).cloned(),
@@ -6300,6 +6366,7 @@ impl Parser {
         self.names.program_parameter_types = previous_c_parameter_types;
         self.abstract_pointer_params = previous_abstract_pointer_params;
         self.names.program_object_names = previous_c_object_names;
+        self.cpp_binding_function = previous_cpp_binding_function;
         self.c_library_names = previous_c_library_names;
         self.rust_loop_iterators = previous_loop_iterators;
         self.rust_slice_locals = previous_slice_locals;
@@ -6630,7 +6697,9 @@ impl Parser {
             parsed_return_type.interface_type
         };
         let mut c_source = None;
-        let (name, receiver) = if self.verifies_cpp() {
+        let (name, receiver) = if let Some(binding) = &self.current_cpp_binding {
+            (binding.to_string(), None)
+        } else if self.verifies_cpp() {
             let declarator = self.parse_cpp_declarator(is_static)?;
             if declarator.returnless != returnless {
                 return Err(self.error(if declarator.returnless {
@@ -8444,20 +8513,67 @@ impl Parser {
         output: Option<CallOutputPattern>,
         tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let mut callee = self.expect_ident(if tactic {
-            "tactic name"
+        let source_binding = if !tactic
+            && matches!(self.peek_ident(), Some("call" | "statement"))
+            && self.peek_next() == Some(&Token::LParen)
+        {
+            let region = self.parse_code_region_ref()?;
+            if !matches!(
+                &region,
+                CodeRegionRef::Path(steps)
+                    if matches!(steps.last(), Some(SourcePathStep::Binding { .. }))
+            ) {
+                return Err(self.error("`step` needs a callee or a C++ reference binding"));
+            }
+            Some(region)
         } else {
-            "call step callee"
-        })?;
+            None
+        };
+        let binding_contract = if let Some(CodeRegionRef::Path(steps)) = &source_binding {
+            let function = self
+                .cpp_binding_function
+                .as_ref()
+                .ok_or_else(|| self.error("a C++ reference binding needs a function proof"))?;
+            if !self.cpp_binding_layouts.contains_key(function) {
+                let imported = self
+                    .cpp_binding_functions
+                    .get(function)
+                    .ok_or_else(|| self.error("a reference binding needs an imported C++ body"))?;
+                let layout = super::lowering::SourceExecutionLayout::for_function(imported)?;
+                self.cpp_binding_layouts.insert(function.clone(), layout);
+            }
+            Some(
+                self.cpp_binding_layouts[function]
+                    .cpp_binding_target(steps)
+                    .map_err(|message| self.error(message))?
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        let mut callee = if let Some(region) = &source_binding {
+            super::diagnostics::describe_code_region_ref(region)
+        } else {
+            self.expect_ident(if tactic {
+                "tactic name"
+            } else {
+                "call step callee"
+            })?
+        };
         if !tactic && self.verifies_rust() {
             // A Rust callee is named as its function head is: its path, and a
             // generic function's instance its type arguments,
             // `cells::write<u32>(...)`.
             callee = self.rust_step_callee(callee)?;
-        } else if !tactic && self.peek() == Some(&Token::ColonColon) {
-            self.position += 1;
-            callee.push_str("::");
-            callee.push_str(&self.expect_ident("C function name")?);
+        } else if !tactic {
+            while self.peek() == Some(&Token::ColonColon) {
+                self.position += 1;
+                callee.push_str("::");
+                callee.push_str(&self.expect_ident("called function")?);
+                if !self.verifies_cpp() {
+                    break;
+                }
+            }
         }
         let form = if tactic { "name(...)" } else { "step(...)" };
         // Select the declared named contract when present. Otherwise the name
@@ -8495,15 +8611,16 @@ impl Parser {
         } else if has_map {
             self.position += 1;
         }
-        let mut declared = if named_contract {
-            &self.contract_resource_binders
+        let mut declared = if let Some(binding) = &binding_contract {
+            self.cpp_binding_binders.get(binding)
+        } else if named_contract {
+            self.contract_resource_binders.get(&callee)
         } else {
-            &self.callee_resource_binders
+            self.callee_resource_binders.get(&callee)
         }
-        .get(&callee)
         .cloned()
         .unwrap_or_default();
-        if has_map && !named_contract && declared.is_empty() {
+        if has_map && binding_contract.is_none() && !named_contract && declared.is_empty() {
             declared = self.library_callee_value_parameters(&callee)?;
         }
         if has_map {
@@ -8801,6 +8918,7 @@ impl Parser {
         }
         Ok(CallBinderTransport {
             callee,
+            source_binding,
             named_contract,
             // A named function's arguments are the frontier call's.
             frontier: named_function,
@@ -9066,12 +9184,18 @@ impl Parser {
             return;
         };
         crate::instrumentation::record_deterministic_work(1);
-        let registry = if self.in_contract_definition {
-            &mut self.contract_resource_binders
+        let binders = if let Some(binding) = &self.current_cpp_binding {
+            self.cpp_binding_binders.entry(binding.clone()).or_default()
+        } else if self.in_contract_definition {
+            self.contract_resource_binders
+                .entry(function.to_string())
+                .or_default()
         } else {
-            &mut self.callee_resource_binders
+            self.callee_resource_binders
+                .entry(function.to_string())
+                .or_default()
         };
-        registry.entry(function.to_string()).or_default().insert(
+        binders.insert(
             binding.name.clone(),
             CalleeResourceBinder {
                 identity: binding.identity,
@@ -12399,17 +12523,6 @@ impl Parser {
                     right,
                 ))
             }
-            "transport" => {
-                self.expect(Token::LParen)?;
-                let source = self.parse_proposition()?;
-                self.expect(Token::Comma)?;
-                let target = self.parse_proposition()?;
-                self.expect(Token::RParen)?;
-                if self.peek_ident() == Some("using") {
-                    return Err(self.error("`transport ... using` is retired; use `have`, `preserve`, and `rewrite` for explicit frame proofs"));
-                }
-                ProofTactic::Transport { source, target }
-            }
             "instantiate" => {
                 self.expect(Token::LParen)?;
                 let quantified = self.parse_proposition()?;
@@ -13077,6 +13190,34 @@ impl Parser {
                 }
             }
         }
+        if matches!(
+            steps.last(),
+            Some(SourcePathStep::Call(..) | SourcePathStep::AnyCall(_))
+        ) && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(kind)) if matches!(kind.as_str(), "argument" | "receiver"))
+        {
+            use crate::kernel::CppBindingSlot;
+            self.expect(Token::Dot)?;
+            let slot = if self.expect_ident("argument or receiver")? == "argument" {
+                self.expect(Token::LParen)?;
+                let index = self.expect_index("argument index")?;
+                self.expect(Token::RParen)?;
+                CppBindingSlot::Argument(index)
+            } else {
+                CppBindingSlot::Receiver
+            };
+            self.expect(Token::Dot)?;
+            if self.expect_ident("binding")? != "binding" {
+                return Err(self.error("expected `.binding` after a call argument or receiver"));
+            }
+            let release = self.peek() == Some(&Token::Dot)
+                && matches!(self.peek_next(), Some(Token::Ident(step)) if step == "release");
+            if release {
+                self.expect(Token::Dot)?;
+                self.expect_ident("release")?;
+            }
+            steps.push(SourcePathStep::Binding { slot, release });
+        }
         if self.chained_region_follows(&["read_event"]) {
             self.expect(Token::Dot)?;
             self.expect_ident("read_event")?;
@@ -13107,7 +13248,15 @@ impl Parser {
         if self.peek() == Some(&Token::Amp) && matches!(self.peek_next(), Some(Token::Ident(_))) {
             self.position += 1;
         }
-        let function = self.expect_ident("called function")?;
+        let mut function = self.expect_ident("called function")?;
+        if self.verifies_cpp() && self.peek() == Some(&Token::ColonColon) {
+            let mut path = vec![function];
+            while self.peek() == Some(&Token::ColonColon) {
+                self.position += 1;
+                path.push(self.expect_ident("C++ method name")?);
+            }
+            function = path.join("::");
+        }
         self.expect(Token::Comma)?;
         let index = self.expect_index("call index")?;
         self.expect(Token::RParen)?;
@@ -13121,7 +13270,7 @@ impl Parser {
             Some(Token::Ident(kind)) if kind == "call" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let step = self.parse_call_step()?;
-                Ok(CodeRegionRef::Path(vec![step]))
+                self.parse_source_path(vec![step])
             }
             Some(Token::Ident(kind)) if kind == "loop" => {
                 self.expect(Token::LParen)?;
@@ -13930,7 +14079,7 @@ impl Parser {
                 && let Some(parameter) = self.abstract_referent(binding)
             {
                 let start = ProgramExpression::Value(ProgramValue::UInt64(
-                    crate::kernel::MachineTerm::uint64_constant(0),
+                    crate::kernel::OldMachineTerm::uint64_constant(0),
                 ));
                 let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
                 return Ok(vec![ContractSegment {
@@ -14009,7 +14158,7 @@ impl Parser {
                 && let Some(parameter) = self.abstract_referent(binding)
             {
                 let start = ProgramExpression::Value(ProgramValue::UInt64(
-                    crate::kernel::MachineTerm::uint64_constant(0),
+                    crate::kernel::OldMachineTerm::uint64_constant(0),
                 ));
                 let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
                 return Ok(vec![ContractSegment {
@@ -14205,7 +14354,7 @@ impl Parser {
         // A symbolic struct's object is its `sizeof` bytes from `p`.
         if let crate::kernel::LayoutSize::Of(_) = layout.size() {
             let start = ProgramExpression::Value(ProgramValue::UInt64(
-                crate::kernel::MachineTerm::uint64_constant(0),
+                crate::kernel::OldMachineTerm::uint64_constant(0),
             ));
             let end = ProgramExpression::Value(ProgramValue::UInt64(layout.size().term()));
             let surface_base = SyntaxTerm::ProgramExpression(base.clone());
@@ -14523,7 +14672,7 @@ impl Parser {
                 && parameter.has_abstract_size()
             {
                 let start = ProgramExpression::Value(ProgramValue::UInt64(
-                    crate::kernel::MachineTerm::uint64_constant(0),
+                    crate::kernel::OldMachineTerm::uint64_constant(0),
                 ));
                 let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
                 return ContractSegment {
@@ -15652,7 +15801,7 @@ impl Parser {
     }
 
     // A recorded allocation names an identity, even if the pointer returned
-    // by the allocator has since been reassigned. Address transformations of
+    // by the allocator has since been reassigned. OldAddress transformations of
     // that identity do not read a pointer value from another program state.
     fn is_allocation_address(expression: &SyntaxTerm) -> bool {
         match expression {
@@ -15768,7 +15917,7 @@ impl Parser {
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
                 return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+                    ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
                 )));
             }
             self.position += 1;
@@ -15820,7 +15969,7 @@ impl Parser {
                 ..
             } = &expression
             {
-                // Address the typed field lvalue without evaluating its load.
+                // OldAddress the typed field lvalue without evaluating its load.
                 // This preserves the field's pointee type and qualifiers even
                 // when the aggregate itself uses byte-addressed storage.
                 // The member is its own subobject, as the C frontend narrows
@@ -16774,9 +16923,9 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    crate::kernel::Address {
+                    crate::kernel::OldAddress {
                         base: crate::kernel::AddressBase::StaticObject { binding: id },
-                        offset: crate::kernel::AddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 ),
@@ -17015,12 +17164,12 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(Some(SyntaxTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Address {
+                    crate::kernel::OldAddress {
                         base: crate::kernel::AddressBase::AutomaticLocal {
                             binding: id,
                             instance,
                         },
-                        offset: crate::kernel::AddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -17180,9 +17329,9 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    crate::kernel::Address {
+                    crate::kernel::OldAddress {
                         base: block,
-                        offset: crate::kernel::AddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 ),
@@ -17698,16 +17847,16 @@ impl Parser {
                 ProgramExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
             Some(Token::UInt32Number(value)) => Ok(SyntaxTerm::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
+                ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::uint32_constant(value))),
             )),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
             )),
             Some(Token::Int64Number(value)) => Ok(SyntaxTerm::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::Int64(MachineTerm::int64_constant(value))),
+                ProgramExpression::Value(ProgramValue::Int64(OldMachineTerm::int64_constant(value))),
             )),
             Some(Token::UInt64Number(value)) => Ok(SyntaxTerm::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(value))),
+                ProgramExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))),
             )),
             Some(Token::CharLiteral(value)) => Ok(SyntaxTerm::ProgramExpression(
                 ProgramExpression::Value(self.character_constant_value(value)?),
@@ -18240,6 +18389,7 @@ impl Parser {
         let kind = match self.expect_ident("program point kind")?.as_str() {
             "entry" => ProgramPointKind::Entry,
             "exit" => ProgramPointKind::Exit,
+            "effect" => ProgramPointKind::Effect,
             kind => {
                 return Err(self.error(format!(
                     "expected program point kind `entry` or `exit`, got `{kind}`"
@@ -18980,7 +19130,7 @@ impl Parser {
             Some(syntax::PlainChar::Unsigned) => {
                 Ok(crate::kernel::uint8(u32::from(byte)))
             }
-            Some(plain @ syntax::PlainChar::Signed) => Ok(ProgramValue::Int32(MachineTerm::constant(
+            Some(plain @ syntax::PlainChar::Signed) => Ok(ProgramValue::Int32(OldMachineTerm::constant(
                 plain.character_value(byte) as i32 as u32,
             ))),
             None => Err(self.error(format!(
@@ -19417,7 +19567,7 @@ fn source_nesting_error_message(
 fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> SyntaxProposition {
     let uint64 = |value: u64| {
         SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(value),
+            OldMachineTerm::uint64_constant(value),
         )))
     };
     SyntaxProposition::Comparison {
@@ -19700,7 +19850,7 @@ fn struct_byte_stride(index: ProgramExpression, width: u32) -> ProgramExpression
             explicit_qualification: false,
         }),
         Box::new(ProgramExpression::Value(crate::kernel::int64(
-            crate::kernel::MachineTerm::int64_constant(i64::from(width)),
+            crate::kernel::OldMachineTerm::int64_constant(i64::from(width)),
         ))),
     )
 }
@@ -19877,7 +20027,6 @@ mod tactic_classification_tests {
         ("contradiction", "contradiction(x == 1);"),
         ("contradiction-false", "contradiction();"),
         ("rewrite", "rewrite(x, 1);"),
-        ("transport", "transport(x == 1, y == 1);"),
         ("instantiate", "instantiate(F, 1);"),
         ("close-using", "close() using { x == 1; };"),
         ("close-bounds", "close() using bounds { x <= 1; };"),
@@ -19924,6 +20073,15 @@ mod tactic_classification_tests {
     }
 
     #[test]
+    fn rejects_removed_transport_tactic() {
+        let error = parse("void f() {} by { transport(true, true); }").unwrap_err();
+        assert!(
+            error.message().contains("unknown tactic `transport`"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn named_theorem_application_rejects_an_evidence_list() {
         let mut parser = Parser::new("apply(lemma(x)) using { x == 1; };").unwrap();
         let error = parser.parse_proof_tactic().unwrap_err();
@@ -19941,13 +20099,11 @@ mod tactic_classification_tests {
     #[test]
     fn every_public_form_has_one_class() {
         let instances = FORM_INSTANCES.iter().map(|&(id, _)| id).collect::<Vec<_>>();
-        let registry = PUBLIC_TACTIC_FORMS
-            .iter()
-            .map(|form| form.id)
-            .collect::<Vec<_>>();
-        assert_eq!(instances, registry, "one instance per registered form");
+        let forms = PUBLIC_TACTIC_FORMS.iter();
+        let registry = forms.clone().map(|form| form.id).collect::<Vec<_>>();
+        assert_eq!(instances, registry, "one instance per checked form");
         let mut failures = Vec::new();
-        for (form, &(_, written)) in PUBLIC_TACTIC_FORMS.iter().zip(FORM_INSTANCES) {
+        for (form, &(_, written)) in forms.zip(FORM_INSTANCES) {
             let parsed = Parser::new(written).and_then(|mut parser| {
                 let cell = BTreeMap::from([(
                     "cell".to_string(),

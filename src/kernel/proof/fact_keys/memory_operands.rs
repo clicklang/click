@@ -18,7 +18,7 @@ enum Node {
         MemoryErasedBitvectorKey,
         MemoryErasedBitvectorKey,
     ),
-    Exact(MachineTerm),
+    Exact(OldMachineTerm),
     ExactOperand(crate::kernel::SharedMachineIntegerTerm),
 }
 
@@ -118,7 +118,7 @@ fn intern(node: Node) -> MemoryErasedBitvectorKey {
     MemoryErasedBitvectorKey(record)
 }
 
-pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
+pub(super) fn written(term: &OldMachineTerm) -> MemoryErasedBitvectorKey {
     // Conversions remain exact opaque keys, with the same identity on both
     // sides of the native/shared boundary. Import without evaluating the call.
     if let Some(root) =
@@ -127,13 +127,13 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
         return operand(crate::kernel::MachineOperandView::Shared(&root));
     }
     let node = match term {
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             Node::Address(Box::new(memory_erased_address_key(pointer)))
         }
-        MachineTerm::MemoryLoad(_, pointer, kind) => {
+        OldMachineTerm::MemoryLoad(_, pointer, kind) => {
             Node::Load(Box::new(memory_erased_address_key(pointer)), *kind)
         }
-        MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
+        OldMachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             match (
                 crate::kernel::registered_load_for_variable(variable),
                 crate::kernel::registered_load_kind_for_variable(variable),
@@ -146,7 +146,7 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
         }
         // Keep the existing opaque If boundary for Integer and Bool
         // predicates; only top-level machine observations have a key view.
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -161,7 +161,7 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
                 memory_erased_bitvector_key(else_term),
             )
         }
-        MachineTerm::If { .. } | MachineTerm::RangeFold { .. } => {
+        OldMachineTerm::If { .. } | OldMachineTerm::RangeFold { .. } => {
             Node::ExactOperand(crate::kernel::SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
                 term.clone(),
@@ -195,9 +195,7 @@ pub(super) fn clear() {
 pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryErasedBitvectorKey {
     use crate::kernel::{KernelTermNode, MachineOperandView as V};
     let V::Shared(root) = view else {
-        let V::Legacy(term) = view else {
-            unreachable!()
-        };
+        let V::Old(term) = view else { unreachable!() };
         return written(term);
     };
     let get = |root: &crate::kernel::KernelTerm| {
@@ -262,7 +260,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
         } else if let Some(value) = root.machine_conversion_leaf() {
             written(value)
         } else if let Some(variable) = view.variable() {
-            written(&MachineTerm::Variable(*variable))
+            written(&OldMachineTerm::Variable(*variable))
         } else if let Some(literal) = view.literal() {
             intern(Node::Exact(literal))
         } else if let Some((format, op, [a, b])) = view.binary() {
@@ -318,9 +316,9 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for name in ["c_float32_to_int32", "c_float32_to_uint64"] {
             let native =
-                MachineTerm::opaque_conversion(name, MachineTerm::Variable(Variable(998209)));
+                OldMachineTerm::opaque_conversion(name, OldMachineTerm::Variable(Variable(998209)));
             let different =
-                MachineTerm::opaque_conversion(name, MachineTerm::Variable(Variable(998210)));
+                OldMachineTerm::opaque_conversion(name, OldMachineTerm::Variable(Variable(998210)));
             let expected = written(&native);
             assert_ne!(expected, written(&different));
             assert!(!expected.requires_checked_match());
@@ -337,20 +335,20 @@ mod tests {
     fn conditional_keys_preserve_guard_policy_and_shared_arms() {
         let _session = crate::kernel::VerificationSession::enter();
         for condition in [
-            ConditionTerm::Variable(Variable(998203)),
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(998204)),
-                MachineTerm::constant(0),
+            OldConditionTerm::Variable(Variable(998203)),
+            OldConditionTerm::equal(
+                OldMachineTerm::Variable(Variable(998204)),
+                OldMachineTerm::constant(0),
             ),
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 crate::kernel::IntegerTerm::Variable(Variable(998205)).into(),
                 crate::kernel::IntegerTerm::constant_i64(0).into(),
             ),
         ] {
-            let native = MachineTerm::If {
+            let native = OldMachineTerm::If {
                 condition: Box::new(condition),
-                then_term: Box::new(MachineTerm::Variable(Variable(998206))),
-                else_term: Box::new(MachineTerm::constant(1)),
+                then_term: Box::new(OldMachineTerm::Variable(Variable(998206))),
+                else_term: Box::new(OldMachineTerm::constant(1)),
             };
             for format in crate::kernel::machine_integer::FORMATS {
                 let shared = KernelTermImport::default().machine(format, &native);
@@ -383,11 +381,11 @@ mod tests {
                 MachineBinaryOp::ShiftLeft,
                 MachineBinaryOp::ShiftRight,
             ] {
-                let native = MachineTerm::Binary {
+                let native = OldMachineTerm::Binary {
                     format,
                     op,
-                    left: Box::new(MachineTerm::Variable(Variable(998201))),
-                    right: Box::new(MachineTerm::Variable(Variable(998202))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(998201))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(998202))),
                 };
                 let shared = KernelTermImport::default()
                     .machine_arithmetic(format, &native)
@@ -403,14 +401,14 @@ mod tests {
     #[test]
     fn retained_read_candidate_keys_keep_kind_and_do_not_build_a_native_load() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Address::symbolic(Variable(998203));
+        let address = OldAddress::symbolic(Variable(998203));
         let before = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let after = crate::kernel::intern_memory(before.memory().clone().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let source = |memory: &SharedMemory, kind| {
-            MachineTerm::read_named(ProgramPoint::at(memory), Box::new(address.clone()), kind)
+            OldMachineTerm::read_named(ProgramPoint::at(memory), Box::new(address.clone()), kind)
         };
         let before_read = source(&before, LoadKind::Int32);
         let after_read = source(&after, LoadKind::Int32);
@@ -426,7 +424,7 @@ mod tests {
         assert_eq!(key(&before_read), key(&after_read));
         assert_ne!(key(&after_read), key(&other_kind));
         let (name, _) = crate::kernel::eval::load_variable_for_term(&before_read).unwrap();
-        assert_eq!(written(&MachineTerm::Variable(name)), key(&before_read));
+        assert_eq!(written(&OldMachineTerm::Variable(name)), key(&before_read));
     }
 
     #[test]
@@ -436,9 +434,9 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("retained_state-comparison", 4),
         );
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "retained_state-comparison".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -448,32 +446,28 @@ mod tests {
             &memory,
         );
         let format = MachineIntegerType::Int32;
-        let native = MachineTerm::Binary {
+        let native = OldMachineTerm::Binary {
             format,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::Variable(variable)),
+            right: Box::new(OldMachineTerm::constant(1)),
         };
         let shared = KernelTermImport::default()
             .machine_arithmetic(format, &native)
             .unwrap();
-        let limit = MachineTerm::constant(20);
+        let limit = OldMachineTerm::constant(20);
         for relation in [
             CompareRelation::Equal,
             CompareRelation::LessThan,
             CompareRelation::LessEqual,
         ] {
             let native = Proposition::condition_is(
-                ConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
+                OldConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
             let shared = Proposition::condition_is(
-                condition_for_operand_views(
-                    format,
-                    relation,
-                    [V::Shared(&shared), V::Legacy(&limit)],
-                ),
+                condition_for_operand_views(format, relation, [V::Shared(&shared), V::Old(&limit)]),
                 true,
             );
             let key = memory_erased_proposition_key(&shared);
@@ -490,9 +484,9 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("retained_state-key", 4),
         );
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "retained_state-key".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -507,7 +501,7 @@ mod tests {
         assert!(key.requires_checked_match());
         assert_eq!(
             key,
-            written(&MachineTerm::read_named(
+            written(&OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 LoadKind::Int32

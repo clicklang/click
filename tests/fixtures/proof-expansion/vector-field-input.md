@@ -89,7 +89,7 @@ int32 composite_resource_vector_fill_loop_state(
     }
     step();
     have result == owner->len by {
-        normalize();
+        close();
     }
     close();
     close();

@@ -54,13 +54,11 @@ fn source_contract_application(name: &str, arguments: &[SyntaxTerm]) -> Option<S
     })
 }
 
-/// Click source that parses back. Every spelling is chosen by its caller;
-/// no output depends on who else is printing.
-/// Diagnostic spelling for a kernel conjunction without complete Surface labels.
-pub(super) const COMPATIBILITY_FACT_TRANSPORT: &str = "<verification-only fact transport>";
 pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
+/// Diagnostic spelling for a kernel conjunction without complete Surface labels.
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
+/// Click source that parses back. The caller supplies the spelling.
 pub(in crate::surface) fn source_click_proposition(proposition: &SyntaxProposition) -> String {
     with_lexical_binder_names(|| identity_click_proposition(proposition))
 }
@@ -1381,18 +1379,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("rewrite({});", source_rewrite_arguments(equality)),
         ),
-        ProofTactic::Transport { source, target } => line(
-            output,
-            &prefix,
-            &format!(
-                "transport({}, {});",
-                source_click_proposition(source),
-                source_click_proposition(target)
-            ),
-        ),
-        ProofTactic::CompatibilityFactTransport { .. } => {
-            line(output, &prefix, COMPATIBILITY_FACT_TRANSPORT)
-        }
         ProofTactic::Instantiate {
             quantified,
             arguments,
@@ -1799,7 +1785,7 @@ mod tests {
     fn negative_int64_source_barrier_does_not_change_diagnostic_spelling() {
         let word = |n| {
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
-                crate::kernel::MachineTerm::int64_constant(n),
+                crate::kernel::OldMachineTerm::int64_constant(n),
             )))
         };
         let proposition = SyntaxProposition::Comparison {
@@ -1846,7 +1832,7 @@ mod tests {
                 panic!("expected a pointer-to-address cast");
             };
             **expression = ProgramExpression::Value(ProgramValue::typed_pointer(
-                Address::null(),
+                OldAddress::null(),
                 ProgramType::Int32Pointer,
             ));
 
@@ -1913,7 +1899,7 @@ mod tests {
         }
         let word = |value: u64| {
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-                crate::kernel::MachineTerm::uint64_constant(value),
+                crate::kernel::OldMachineTerm::uint64_constant(value),
             )))
         };
         let n = || SyntaxTerm::ProgramExpression(ProgramExpression::Variable("n".into()));
@@ -1976,7 +1962,7 @@ mod tests {
         let address = ProgramExpression::CheckedObjectAddress(Box::new(
             ProgramExpression::Variable("value".into()),
         ));
-        let zero = ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)));
+        let zero = ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0)));
         // Call substitution retains a Surface index; lowered C expressions
         // can also carry the read. Both must print the original lvalue.
         for read in [
@@ -1993,7 +1979,7 @@ mod tests {
                 left: read,
                 operator: ComparisonOperator::LessEqual,
                 right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(MachineTerm::constant(10)),
+                    ProgramValue::Int32(OldMachineTerm::constant(10)),
                 )),
             };
             let source = source_click_proposition(&proposition);
@@ -2011,6 +1997,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn array_field_read_through_an_erased_pointer_keeps_its_element_type() {
         let read = SyntaxTerm::Index(
             Box::new(SyntaxTerm::Field {

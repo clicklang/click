@@ -1,13 +1,13 @@
 use super::*;
-use crate::kernel::{ConditionTerm, MachineTerm, MemoryRange, Resource, Variable};
+use crate::kernel::{MemoryRange, OldConditionTerm, OldMachineTerm, Resource, Variable};
 
 #[test]
 fn stated_symbolic_write_separation_ignores_nearby_facts_and_aliases() {
-    let write = Address::symbolic(Variable(70_100));
-    let protected = Address::symbolic(Variable(70_101));
-    let alias = Address::symbolic(Variable(70_102));
-    let symbolic = |value| MachineTerm::Variable(Variable(value));
-    let memory = |base: &Address, end| {
+    let write = OldAddress::symbolic(Variable(70_100));
+    let protected = OldAddress::symbolic(Variable(70_101));
+    let alias = OldAddress::symbolic(Variable(70_102));
+    let symbolic = |value| OldMachineTerm::Variable(Variable(value));
+    let memory = |base: &OldAddress, end| {
         Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             base.clone(),
             0.into(),
@@ -31,14 +31,14 @@ fn stated_symbolic_write_separation_ignores_nearby_facts_and_aliases() {
     let mut samples = Vec::new();
     for count in [4, 16, 64, 256] {
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(write.clone(), alias.clone()),
+            OldConditionTerm::address_equal(write.clone(), alias.clone()),
             true,
         );
         for candidate in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     write.clone(),
-                    Address::symbolic(Variable(71_000 + candidate)),
+                    OldAddress::symbolic(Variable(71_000 + candidate)),
                 ),
                 true,
             );
@@ -55,9 +55,9 @@ fn stated_symbolic_write_separation_ignores_nearby_facts_and_aliases() {
         let mut cold = fixed.clone();
         for candidate in 0..count {
             cold = cold.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     write.clone(),
-                    Address::symbolic(Variable(73_000 + candidate)),
+                    OldAddress::symbolic(Variable(73_000 + candidate)),
                 ),
                 true,
             );

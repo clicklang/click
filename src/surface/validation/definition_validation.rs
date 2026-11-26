@@ -310,9 +310,18 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .map(|definition| definition.function_block().clone())
         .collect::<Vec<_>>();
     contract_and_function_blocks.extend(combined_external_function_blocks(file)?);
-    for function in contract_and_function_blocks {
+    let function_blocks = contract_and_function_blocks
+        .iter()
+        .map(|block| (block, false))
+        .chain(
+            file.cpp_virtual_interfaces
+                .values()
+                .chain(file.cpp_bindings.written.values())
+                .map(|block| (block, true)),
+        );
+    for (function, internal_interface) in function_blocks {
         crate::surface::enter_ambient_declaration(function.signature().name());
-        if !function_specs.insert(function.signature().name().to_string()) {
+        if !internal_interface && !function_specs.insert(function.signature().name().to_string()) {
             return Err(ClickError::new(format!(
                 "duplicate contract or C function spec `{}`",
                 function.signature().name()
@@ -1601,7 +1610,9 @@ fn validate_resource_fact_memory_read_authority(
         values.insert(
             witness.name().to_string(),
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::symbolic(crate::kernel::Variable(4_100_000 + index as u64)),
+                crate::kernel::OldAddress::symbolic(crate::kernel::Variable(
+                    4_100_000 + index as u64,
+                )),
                 witness.interface_type().to_kernel_type(),
             ),
         );
@@ -2280,8 +2291,8 @@ fn quantified_index_interval(
 fn unsigned_binder_zero(binder_type: &ClickType) -> Option<ProgramExpression> {
     let value = match binder_type.interface_type()? {
         InterfaceType::UInt8 => crate::kernel::uint8(0),
-        InterfaceType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
-        InterfaceType::UInt64(_) => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        InterfaceType::UInt32 => ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
+        InterfaceType::UInt64(_) => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         _ => return None,
     };
     Some(ProgramExpression::Value(value))
@@ -2941,7 +2952,7 @@ fn collect_resource_fact_reads_from_program_expression(
             collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                index: ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 expression: describe_program_expression(expression),
                 enclosing_range: None,
                 extent: None,
@@ -2955,7 +2966,7 @@ fn collect_resource_fact_reads_from_program_expression(
             collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                index: ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 expression: describe_program_expression(expression),
                 enclosing_range: None,
                 extent: Some(crate::kernel::AccessExtent::of_type(*value_type)),
@@ -3527,20 +3538,20 @@ mod read_authority_tests {
             ProgramExpression::Value(int32(0)),
             bound.clone(),
         ));
-        let index_value = MachineTerm::Variable(Variable(12_001));
-        let bound_value = MachineTerm::Variable(Variable(12_002));
+        let index_value = OldMachineTerm::Variable(Variable(12_001));
+        let bound_value = OldMachineTerm::Variable(Variable(12_002));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::constant(0)),
+                    left: Box::new(OldMachineTerm::constant(0)),
                     right: Box::new(index_value.clone()),
                 },
                 true,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(index_value.clone()),

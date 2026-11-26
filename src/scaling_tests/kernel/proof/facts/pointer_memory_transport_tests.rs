@@ -2,33 +2,33 @@ use super::*;
 #[test]
 fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let _session = VerificationSession::enter();
-    let cell = Address {
+    let cell = OldAddress {
         base: "pointer-retained_state-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
         OldPointer::from_read(
-            Address::loaded_value(memory, &cell),
+            OldAddress::loaded_value(memory, &cell),
             ProgramType::Int32Pointer,
             memory,
             &cell,
         )
     };
     let rhs = OldPointer::new(
-        Address::symbolic(Variable(991_100)),
+        OldAddress::symbolic(Variable(991_100)),
         ProgramType::Int32Pointer,
     );
     let fact = |pointer| {
         Proposition::condition_is(
-            ConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
+            OldConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
             true,
         )
     };
     let source = fact(pointer(&before));
     let target = fact(pointer(&after));
-    let origin = Arc::new(Address::symbolic(Variable(991_101)));
+    let origin = Arc::new(OldAddress::symbolic(Variable(991_101)));
     let forged = fact(
         pointer(&after)
             .with_provenance(origin.clone())
@@ -44,9 +44,9 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         for index in 0..size {
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(992_100 + index)),
-                    MachineTerm::constant(7),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(992_100 + index)),
+                    OldMachineTerm::constant(7),
                 ),
                 true,
             ));
@@ -54,10 +54,10 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
         for index in 0..size {
             let selected = pointer(&before).with_bounds(Some(SubobjectBounds {
                 start: cell.clone(),
-                width: MachineTerm::constant(u32::try_from(index + 1).unwrap()),
+                width: OldMachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
+                OldConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
                 true,
             ));
         }

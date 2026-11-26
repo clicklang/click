@@ -7,7 +7,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   `close() using`, and `step_until`, which steps to a target and proves what
   each step needs. Smart tactics also include the implicit closer, which
   ends proofs including loop `maintain` scripts and finishes a `step()` or
-  `fold`, and the frame search in bare `transport(P, Q)`. They
+  `fold`. They
   are the tactics that `click profile` may recommend expanding. The parser
   refuses retired forms such as `known()` and `solve()` and names their
   replacement, `close()`.
@@ -98,23 +98,12 @@ when the default misses or when a proof must not search.
   For a proof that must replay without search, use `click verify --checked-only`.
 - **Equalities and states.** `rewrite(from, to)` rewrites the goal with an
   equality at the current state.
-  `transport(P, Q)` carries a fact stated at an earlier state to the current
-  one when `step` did not carry it. For explicit frame evidence, establish
-  it with `have`, use `preserve` for a read across a separated footprint,
-  and apply the resulting equality with `rewrite`. Expansion emits these
-  ordinary steps when it has a replayable derivation. `close()` tries
-  rewriting and frame reasoning within its bounds.
+  To establish a fact after a state change, write `have Q;`. Its closer
+  searches for a frame proof. For explicit evidence, use `preserve` for a
+  read across a separated footprint and apply that equality with `rewrite`.
   A full pointer-value equality also rewrites displaced copies such as `p + i`,
   retaining their selected bounds. An equality of `address(p)` and `address(q)`
   supplies numeric addresses without transferring object identity or bounds.
-  A frame refusal prints both written operands and the checked propositions,
-  followed by the frontier effects and a shared memory/value legend. The
-  checked propositions may simplify to `true` or `false`; those are the
-  terms the checker compared. With `--trace-proof`, a rejected written
-  transport retains the preceding checked path without admitting its target. A planning
-  budget failure retains that prefix too; if source and target were already
-  lowered, it prints their checked identities and memory legend without
-  running more proof checks.
 - **Case splits: `if`, `cases`, `match`, `branch`.** `if P` splits on any
   proposition. `cases` checks that its written alternatives cover the path.
   `match` splits on constructors and `branch` follows a C `if`. Tactics written
@@ -841,8 +830,8 @@ from the arm's state, with its path condition available.
 
 The loop does not search the facts it entered with for ones its frame
 preserves. A fact about memory stated before the loop and needed after it is
-carried by the loop's invariants, or afterwards by
-[`transport`](#fact-transport) from the point it was stated at.
+carried by the loop's invariants or established afterwards with a
+[frame proof](#fact-transport).
 
 **Failure, checking, and tools:**
 
@@ -941,12 +930,13 @@ contract inputs, and the `let` pattern names outputs such as
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-  In a Rust or C++ object pack contract, `object_resource()` selects the
-  packed object's resource. For example,
-  `let { object_resource(): packed } = step(Square__click_pack_const__Shape);`
-  names that instance `packed`. Other resources still use their declared
-  output binders. Use the same selector in the input map of an unpack step
-  to supply the packed instance.
+  In a Rust object pack contract or a C++ reference binding, `object_resource()`
+  selects the object resource. For a C++ call `total(sq)`, write
+  `let { object_resource(): packed } = step(call(total, 0).argument(0).binding);`
+  to name that instance `packed`. A method's receiver uses `.receiver.binding`.
+  The binding must be at the frontier. The optional map supplies resources
+  through their declared binders. The corresponding `.binding.release`
+  selects the transfer back after the call.
 - Omit the input map when there are no entries. An empty map is equivalent,
   and expansion uses the shorter spelling. Either form can bind a call result
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
@@ -1177,8 +1167,8 @@ with the frontier it stands at; the end of a body is one `step()` of its own
 (`mdtests/solve_before_exit_in_arm_names_the_frontier.md`).
 
 Inside a `have` body, a tactic that already closed the goal (an `unfold`
-whose refreshed goal is an available fact, a `transport` onto the goal, a
-theorem whose conclusion is the goal) may be followed only by `close()`
+whose refreshed goal is an available fact or a theorem application whose
+conclusion is the goal) may be followed only by `close()`
 or `normalize()`, which then assert the closed judgment and emit
 nothing. So `unfold(f(x)); normalize();` means the same whether or not the
 unfold alone closed the goal
@@ -1465,8 +1455,6 @@ A goal that held at function entry or at one of the eight most recently
 recorded points can use the frame evidence for that state. Lowering keeps
 an aliased read as written
 ([`fold_argument_reads_through_model_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_argument_reads_through_model_pointer.md)).
-If verification needs a legacy frame check and search finds no ordinary
-proof, expansion reports that it is unavailable for the claim.
 
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the
@@ -1831,7 +1819,7 @@ already held as a fact retains its existing exact-lookup behavior.
   as `y > x implies 0 < y` from `x < y implies y > 0`: `intro()`, then close
   the body.
 - A fact from another point whose reads that check does not show
-  unchanged: an explicit transport step first.
+  unchanged: use `preserve` and `rewrite` to establish the fact first.
 
 **Failure, checking, and tools:**
 
@@ -1866,9 +1854,12 @@ this step unchanged, and profiling charges one simple leaf.
 
 **Form:** `normalize()`
 
-**Expansion output.** `click expand` writes it; by hand, write it to close a
-goal that is true by evaluation alone, typically after `unfold` or `rewrite`.
-It reads no facts, so it proves the same goal in every context.
+**Compatibility.** For new proofs, use `close()` after any needed `unfold`
+or `rewrite`. For an existing proof, use
+[`click expand --migrate-normalize`](../cli/expand.md#options) to try a
+replacement and check that the expanded proof replays without normalization.
+
+`normalize()` reads no facts, so it proves the same goal in every context.
 
 **Accepts** a goal that is not itself a conjunction, disjunction, implication,
 or quantifier, when evaluation makes it true:
@@ -1945,10 +1936,12 @@ No operand history or ambient facts are read.
 
 **Form:** `normalize() using { P; ... }`
 
-This compatibility form checks a goal under its named premises. Expansion
-retains written calls. The tactic decides conditions in the goal from the cited
-premises and the equality graph, then applies `normalize()`'s check (see
-[Context-free normalization](#context-free-normalization)) to the result.
+This compatibility form checks a goal under its named premises. For new proofs
+with selected facts, use `close() using { P; ... }` or cite them in explicit
+proof steps. Expansion retains written calls. The tactic decides conditions in
+the goal from the cited premises and the equality graph, then applies
+the [context-free normalization check](#context-free-normalization) to the
+result.
 
 For a signed `int32` order goal, the cited comparisons can form a chain in
 list order from the goal's lower endpoint to its upper endpoint. A strict
@@ -1993,8 +1986,7 @@ For an integer converted to `float` or `double`, `close()` can check
 the rounded limits of the source type. A tighter bound can cite a constant
 integer endpoint. The check rounds that endpoint at the destination precision.
 `close()` prefers named library laws when they cover the selected bounds.
-For other supported shapes it can still expand to `normalize() using` with
-those premises.
+Expansion requires a checked proof for the shape of the selected bounds.
 
 
 For a positive signed divisor `y`, cite `y > 0` and `x <= MAX / y`
@@ -2491,8 +2483,8 @@ Integer composition plans expand their premise, addition, scaling, and
 equality-direction nodes into ordinary `have`, `apply(...)`, `rewrite`,
 and `close()` steps. Each intermediate fact is established once and later
 nodes reuse it. Context-free identities relate the plan's flat affine forms
-to the written operands. Expansion uses checked `normalize()` when the
-bounded algebra emitter cannot spell an identity. Integer antisymmetry uses
+to the written operands. Expansion requires the bounded algebra emitter to
+produce a checked proof of each identity. Integer antisymmetry uses
 `integer::le_antisymmetric`.
 
 Strict Integer premises and goals use the successor-order law. Linear
@@ -2517,8 +2509,8 @@ For example, from `flag == true`, `close()` proves
 `(if flag { Some(x) } else { None }) == Some(x)`. Nested selections expose
 one arm at a time and retain each proof as an explicit rewrite. A Boolean
 comparison with a literal can also use the selected arm's exact truth fact.
-Definition refutations whose unfolding also needs constructor-match reduction
-can retain a checked `normalize() using` step with the selected branch facts.
+Definition refutations that still depend on compatibility normalization for
+constructor-match reduction are unavailable to expansion.
 See [the explicit arm proofs](https://github.com/clicklang/click/blob/master/mdtests/non_numeric_conditional_arm_equations.md).
 
 Scalar signed interval claims, operation bounds, and narrowed casts expand
@@ -3587,7 +3579,6 @@ mathematical product.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `transport(P, Q)` | smart | Specialized | Carry a fact from an earlier memory state. | [Reference](#fact-transport) |
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a composite or create an ordinary token at return. | [Reference](#folding-resources) |
@@ -3603,27 +3594,18 @@ mathematical product.
 
 Predicate calls are opaque to framing until their definitions are unfolded.
 To carry such a fact across C execution, unfold the selected application before the relevant
-steps and transport the unfolded definition.
+steps and prove that the unfolded definition still holds.
 
 ### Fact transport
 
-**Form:** `transport(P, Q)`
+To establish a fact `Q` in the current state, write `have Q;`.
+`close()` can use a fact from an earlier point when its reads have been
+preserved. State supporting facts at their named points with `have`.
+For a direct frame proof, establish separation from the region's footprint,
+use `preserve` to obtain a read equality, and use `rewrite` to relate
+the reads.
 
-**Specialized.** Write it when a fact stated at an earlier state is needed at
-the current one and neither `step` nor `close()` carried it. When exact source `P`
-is available, derive target `Q` at another certified point, citing `P` alone
-as frame evidence. For additional premises, use `have` to establish the relevant
-facts. Prove unchanged reads across named footprints with `preserve` and use
-`rewrite` to relate them.
-
-**Failure, checking, and tools:**
-
-Unrelated propositions, unsafe writes, or a source that does not carry the
-target alone fail. The diagnostic identifies the recorded effects and, for a
-quantified fact, the leaf still needing proof. Expansion writes the ordinary checks, such as `preserve` and
-`rewrite`, when it records a replayable derivation.
-
-**Checked examples:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
+**Checked example:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md).
 
 ### Unfolding predicates
 
@@ -4072,7 +4054,7 @@ aggregate search cost is significant even though each smart tactic is prompt.
 
 `click profile` reports smart and simple work under the same concepts:
 statement transitions are `step`, checked loop transitions are `loop`,
-fact transports are `transport`, and atomic
+and atomic
 reasoning uses rules such as `close()`, `normalize`, `rewrite`, and named
 theorem applications. A slow simple leaf is a Click performance bug. A
 successful slow smart tactic is an expansion candidate. An unsuccessful smart

@@ -807,6 +807,8 @@ fn zlib_imports(root: &Path, source: &str) -> Result<Vec<PreparedCImport>, Strin
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
     let root = zlib_project();
     let imports =
@@ -979,6 +981,8 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
     let root = zlib_project();
     let imports = zlib_imports(root.path(), ZLIB_ADLER32).unwrap();
@@ -1000,6 +1004,8 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.1s in the parallel gate"]
 fn adler_c_rust_correspondence_requires_matched_inputs() {
     let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
         "import \"../adler32-spec-u64.click\";",

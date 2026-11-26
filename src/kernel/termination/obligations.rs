@@ -74,6 +74,7 @@ impl TerminationObligations {
             inline_bodies,
             heights,
             assumed_terminating,
+            &BTreeSet::new(),
             declared_diverging,
             diverging_contracts,
             allow_unused_recursive_measure,
@@ -89,6 +90,7 @@ impl TerminationObligations {
         inline_bodies: &[&ProgramFunction],
         heights: &BTreeMap<String, usize>,
         assumed_terminating: &BTreeSet<String>,
+        cpp_virtual_terminating: &BTreeSet<String>,
         declared_diverging: &BTreeSet<String>,
         diverging_contracts: &BTreeSet<String>,
         allow_unused_recursive_measure: bool,
@@ -151,6 +153,16 @@ impl TerminationObligations {
             let mut recursive_callees = BTreeSet::new();
             for callee in &calls[name] {
                 charge_termination_work(1);
+                let callee = match callee {
+                    CallDependency::CppVirtual(method) => {
+                        requirements.push(TerminationCallObligation::External {
+                            callee: method.clone(),
+                            assumed: cpp_virtual_terminating.contains(method),
+                        });
+                        continue;
+                    }
+                    CallDependency::Named(callee) => callee,
+                };
                 if callee == MODELED_REALLOC {
                     continue;
                 }

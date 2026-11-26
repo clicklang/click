@@ -285,6 +285,8 @@ pub(super) fn validate_library_assertion_metadata(
     Ok(())
 }
 
+pub(super) const IOS_FAILURE_CONSTRUCTOR: &str = "std::ios_base::failure::failure";
+
 impl CppLibraryAssertion {
     pub(crate) fn pins(&self) -> impl Iterator<Item = (&str, &str, &str)> {
         std::iter::once((
@@ -303,7 +305,7 @@ impl CppLibraryAssertion {
 
     pub(crate) fn validate(&self) -> Result<(), String> {
         if self.kind == CppLibraryAssertionKind::OpaqueExceptionConstructor
-            && self.function != "std::ios_base::failure::failure"
+            && self.function != IOS_FAILURE_CONSTRUCTOR
         {
             return Err("only the pinned std::ios_base::failure constructor is supported".into());
         }
@@ -1431,47 +1433,6 @@ pub struct CppSpan {
 }
 
 impl CppExport {
-    pub(crate) fn uses_ios_failure_factory(&self) -> bool {
-        match self.exception_behavior {
-            CppExceptionBehavior::IosFailure => return true,
-            CppExceptionBehavior::Typed => {}
-            _ => return false,
-        }
-        let mut pending = self
-            .functions
-            .iter()
-            .chain(&self.reachable_functions)
-            .map(|function| function.body.as_slice())
-            .collect::<Vec<_>>();
-        while let Some(body) = pending.pop() {
-            for statement in body {
-                crate::instrumentation::record_deterministic_work(1);
-                match statement {
-                    CppStatement::ThrowIosFailure { .. } => return true,
-                    CppStatement::If {
-                        then_branch,
-                        else_branch,
-                        ..
-                    } => {
-                        pending.push(then_branch);
-                        pending.push(else_branch);
-                    }
-                    CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
-                        pending.push(body)
-                    }
-                    CppStatement::TryCatchInt32 {
-                        try_body, handler, ..
-                    } => {
-                        pending.push(try_body);
-                        pending.push(handler);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        false
-    }
-
     pub(crate) fn validate(
         &self,
         logical_source: &str,

@@ -38,9 +38,9 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     ));
     let foreign =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: "local:foreign".into(),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             },
             0.into(),
             1.into(),
@@ -234,9 +234,9 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
 #[test]
 fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let (state, authority) = source_state();
-    let external = crate::kernel::Address {
+    let external = crate::kernel::OldAddress {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::Constant(16),
+        offset: crate::kernel::OldAddressOffset::Constant(16),
     };
     let Resource::PopulationAuthority(description) = authority.resource() else {
         unreachable!()
@@ -280,7 +280,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let span = |bytes| Proposition::MemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
-        bytes: (MachineTerm::constant(bytes)).into(),
+        bytes: (OldMachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let small = PureFactStore::default().with_fact(span(1));
@@ -535,7 +535,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
     )
     .unwrap();
     let forged_facts = exposed.with_fact(Proposition::condition_is(
-        crate::kernel::ConditionTerm::Constant(false),
+        crate::kernel::OldConditionTerm::Constant(false),
         true,
     ));
     assert!(
@@ -662,8 +662,8 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     };
     let memory = ResourceFact::own_memory(MemoryRange::new(
         pointer.address().clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let definition = CompositeResourceDefinition::new(
         "reference",

@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::program_expression::{int32_literal, variable};
 
 pub(super) fn named(
-    pointer: Address,
+    pointer: OldAddress,
     identity: u64,
 ) -> (ResourceFact, CompositeResourceDefinition) {
     let schema = ResourceFieldSchema::new(vec![(
@@ -15,7 +15,7 @@ pub(super) fn named(
         "named_box".into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
         schema.clone(),
-        vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
+        vec![ProgramValue::Int32(OldMachineTerm::constant(7)).into()].into(),
     )
     .unwrap();
     let definition = CompositeResourceDefinition::new(
@@ -40,14 +40,14 @@ fn emitted(fact: ResourceFact, facts: &PureFactContext) -> EvaluatedReturnResour
         .unwrap()
 }
 
-pub(super) fn anchor(identity: u64) -> Address {
-    Address {
+pub(super) fn anchor(identity: u64) -> OldAddress {
+    OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(identity)),
+        offset: OldAddressOffset::Variable(Variable(identity)),
     }
 }
 
-pub(super) fn authority(pointer: Address, family: &str) -> ResourceFact {
+pub(super) fn authority(pointer: OldAddress, family: &str) -> ResourceFact {
     ResourceFact::own(Resource::PopulationAuthority(ResourceDescription::new(
         family.into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
@@ -55,7 +55,7 @@ pub(super) fn authority(pointer: Address, family: &str) -> ResourceFact {
     )))
 }
 
-pub(super) fn control(pointer: Address) -> (ResourceFact, CompositeResourceDefinition) {
+pub(super) fn control(pointer: OldAddress) -> (ResourceFact, CompositeResourceDefinition) {
     let member = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "member".into(),
@@ -98,7 +98,7 @@ pub(super) fn control(pointer: Address) -> (ResourceFact, CompositeResourceDefin
     )
 }
 
-pub(super) fn ledger(pointer: Address) -> ExecutionState {
+pub(super) fn ledger(pointer: OldAddress) -> ExecutionState {
     let authority = authority(pointer, "member");
     ExecutionState::new()
         .with_population_creation_tracking()
@@ -134,7 +134,7 @@ pub(super) fn matched_type() -> AlgebraicType {
     }
 }
 
-pub(super) fn constructor(pointer: Address) -> AlgebraicTerm {
+pub(super) fn constructor(pointer: OldAddress) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: matched_type(),
         node: AlgebraicTermNode::Constructor {
@@ -206,9 +206,9 @@ pub(super) fn matched(
 fn named_instances_carry_exact_fields_occurrences_and_projection_without_definitions() {
     let facts = PureFactContext::new();
     let mut outputs = EvaluatedReturnResources::new(&facts);
-    let pointer = Address::symbolic(Variable(8_870_000));
+    let pointer = OldAddress::symbolic(Variable(8_870_000));
     let (head, definition) = named(pointer.clone(), 8_870_001);
-    let (other, _) = named(Address::symbolic(Variable(8_870_002)), 8_870_003);
+    let (other, _) = named(OldAddress::symbolic(Variable(8_870_002)), 8_870_003);
     outputs = outputs
         .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
         .unwrap()
@@ -274,7 +274,7 @@ fn named_instances_carry_exact_fields_occurrences_and_projection_without_definit
 #[test]
 fn named_model_pointer_does_not_gain_parameter_borrow_custody() {
     let facts = PureFactContext::new();
-    let pointer = Address::symbolic(Variable(8_870_010));
+    let pointer = OldAddress::symbolic(Variable(8_870_010));
     let schema = ResourceFieldSchema::new(vec![(
         "address".into(),
         ResourceFieldType::Program(ProgramType::Int32Pointer),
@@ -324,7 +324,7 @@ fn named_model_pointer_does_not_gain_parameter_borrow_custody() {
 #[test]
 fn named_fixed_memory_preserves_the_consumed_input_selected_at_entry() {
     let facts = PureFactContext::new();
-    let pointer = Address::symbolic(Variable(8_870_020));
+    let pointer = OldAddress::symbolic(Variable(8_870_020));
     let (head, definition) = named(pointer.clone(), 8_870_021);
     let schema = definition.instance_schema.clone().unwrap();
     let inner = ResourceSpec::composite(
@@ -457,7 +457,7 @@ fn authority_identity_cannot_be_recovered_through_a_pointer_alias() {
     let pointer = anchor(8_870_040);
     let alias = anchor(8_870_041);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
+        OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
     let state = ledger(pointer);
@@ -477,7 +477,7 @@ fn authority_identity_cannot_be_recovered_through_a_pointer_alias() {
 
 #[test]
 fn matched_returns_carry_one_selected_constructor_and_keep_unknown_models_opaque() {
-    let pointer = Address::symbolic(Variable(8_870_050));
+    let pointer = OldAddress::symbolic(Variable(8_870_050));
     let model = AlgebraicTerm {
         algebraic_type: matched_type(),
         node: AlgebraicTermNode::Variable(Variable(8_870_051)),

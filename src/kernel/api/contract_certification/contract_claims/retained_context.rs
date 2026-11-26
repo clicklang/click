@@ -593,9 +593,9 @@ mod tests {
         )
         .unwrap();
         let memory = prepared.caller_state.memory().clone();
-        let address = Address {
+        let address = OldAddress {
             base: "global:counter".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let extent = crate::kernel::AccessExtent::Bytes(4);
         let range = MemoryRange::of_access(&address, extent);

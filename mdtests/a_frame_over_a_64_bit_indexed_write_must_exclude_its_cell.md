@@ -32,13 +32,10 @@ void set_at(int32* p, const struct S* s, uint64 i, int32 v) {
         apply(click::separation::separate_restrict(memory(p[0u64..s->e.n]), memory(s->e.n), memory(p[i]), memory(s->e.n)));
     }
     step_until(function.exit);
-    transport(
-        forall (k: uint64) { k < s->e.n implies old(p[k]) == old(p[k]) },
-        forall (k: uint64) { k < s->e.n implies p[k] == old(p[k]) }
-    );
+    have forall (k: uint64) { k < s->e.n implies p[k] == old(p[k]) } by { close(); }
 }
 ```
 
 ```expect
-fail: found no frame evidence
+fail: the store to `p[i]` may have written it
 ```

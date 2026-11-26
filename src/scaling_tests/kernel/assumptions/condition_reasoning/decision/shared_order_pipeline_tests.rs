@@ -7,6 +7,8 @@ fn shared_order_reflexivity_keeps_zero_addend_prefixes_shared() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn unresolved_shared_order_keeps_zero_addend_prefixes_shared() {
     check_zero_prefixes(true, false);
 }
@@ -17,6 +19,8 @@ fn shared_order_reuses_cancelled_prefixes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn unresolved_shared_order_reuses_cancelled_prefixes() {
     check_zero_prefixes(true, true);
 }
@@ -55,13 +59,13 @@ fn check_zero_prefixes(unresolved: bool, cancellation: bool) {
                     KernelTerm::machine_binary_shared(format, Op::Add, [root.clone(), zero.clone()])
                 };
                 context = context.assume_condition(
-                    ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(997640 + n as u64)),
+                    OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(997640 + n as u64)),
                         (n as u32).into(),
                     ),
                     true,
                 );
-                let query = ConditionTerm::integer_less_than(
+                let query = OldConditionTerm::integer_less_than(
                     observed(root.clone()),
                     observed(right.clone()),
                 );

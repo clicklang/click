@@ -46,9 +46,9 @@ fn loop_head_havoc_work_over_cells_and_symbolic_borrows() {
         // Before the removal, every cell searched the whole borrow bucket.
         for index in 0..count {
             assert!(
-                !havoced.has_known_cell_at(&Address {
+                !havoced.has_known_cell_at(&OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(4 * index as i64),
+                    offset: OldAddressOffset::Constant(4 * index as i64),
                 }),
                 "a cell no borrow protects must not survive the havoc"
             );

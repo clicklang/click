@@ -583,7 +583,7 @@ that a fix lands in one of them rather than beside it.
 
 | Predicate | Home |
 | --- | --- |
-| `AddressBase::proven_distinct`, `may_alias`, `observable_by_load`; `Address::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
+| `AddressBase::proven_distinct`, `may_alias`, `observable_by_load`; `OldAddress::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
 | `pointers_proven_distinct_for_memory_resolution`, `pointers_distinct_through_one_exact_alias`, `never_address_taken_local_versus_pointer_value`, `pointer_offsets_with_common_base_proven_distinct` and its `_distinctness_condition`, `cell_disjoint_from_load_by_constant_offset`, `cell_is_observable_by_load`, `local_block_no_pointer_can_reach` | `src/kernel/reasoning/memory_resolution.rs` |
 | `range_proven_disjoint_from_pointer`, `ranges_proven_disjoint_from_pointer`, `ranges_directly_disjoint_from_pointer`, `pointers_directly_disjoint_by_range`, `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, `pointers_proven_disjoint_by_shallow_explicit_range` | `src/kernel/assumptions/memory_reasoning.rs` |
 | `typed_store_separated_ranges_evidence`, `typed_range_disjoint_from_pointer_evidence`, `typed_ranges_disjoint_from_pointer_evidence`, `heap_allocation_proven_separate_from_pointer`, `owned_composition_store_separated_evidence` | `src/kernel/memory_history.rs` |
@@ -635,7 +635,7 @@ read's *value* is the read's kind's question, below.
 A load term is a value, and what a read returns depends on more than its
 address: a byte of `0xFF` is `-1` read as `int8` and `255` read as `uint8`, and
 an `int32` read at the same address returns all four bytes. A
-`MachineTerm::MemoryLoad` therefore carries a `LoadKind`
+`OldMachineTerm::MemoryLoad` therefore carries a `LoadKind`
 (`src/kernel/primitives.rs`) beside its state and address: `UInt8`,
 `Int16`, `UInt16`, `Int32`, `UInt32`, `Bits64`, `Float32` or `Float64`.
 Four- and eight-byte integer reads keep their bit pattern in the term;
@@ -660,7 +660,7 @@ pointer field's cells hold it.
 read. A signed (`Int8`) read of the byte is not a load term of its own; it is
 the two's-complement conversion of that one term,
 the generic `Cast { UInt8 -> Int8 }`, built only by
-`MachineTerm::memory_read` (and `canonical_form_of_load`, which delegates
+`OldMachineTerm::memory_read` (and `canonical_form_of_load`, which delegates
 to it for the `Int8` kind). So a signed and an unsigned read of the same byte
 are related by construction: `s[i] == -1` names the same unknown as
 `u[i] == 255`. A `MemoryLoad` of kind `Int8` is never formed; the load
@@ -672,7 +672,7 @@ type read an object's bytes, and the reinterpretation is the same modular
 conversion.
 
 **A load term's identity is its load and its kind** (`design/loads.md`, step
-3a). `MachineTerm::MemoryLoad(point, cell, kind)` holds a `ReadPoint`, the
+3a). `OldMachineTerm::MemoryLoad(point, cell, kind)` holds a `ReadPoint`, the
 point its producer selected, and a `LoadCell`, the address as the producer
 spelled it together with its interned `Load` (`src/kernel/primitives/load.rs`),
 keyed by the point's read key and the cell. Equality and hashing compare the
@@ -690,7 +690,7 @@ Two reads of one cell at one read key are one term whichever selection (exact,
 indexed write, indexed cell) built each, and each keeps its own selection:
 consumers branch on the term's `ReadPoint`, never on `Load::point`, which is the
 first selection of that key. Reads of one cell at two kinds share the load and
-are two terms. `MachineTerm::read_named` is the only builder, through
+are two terms. `OldMachineTerm::read_named` is the only builder, through
 `read_operands`; a substitution or rewrite that changes the address builds a
 new read and so interns the load of the new cell
 (`build_support/read_construction.rs`). Because the fields compare as a whole
@@ -1371,37 +1371,16 @@ whole `int32[]` argument `left` by its entry state would be false outright
 (a pure function may read `left[n]`). A frame therefore stays a checked fact
 about the reads a guard admits.
 
-`src/kernel/quantified_frame.rs` is that fact. An explicit `transport(P, Q)`
-whose single-fact route refuses walks `P` and `Q` in parallel: each universal
-binder is renamed to a fresh identity, the target's guard is assumed on the
-proving side (an implication's antecedent is proved in the opposite
-direction), and each differing condition leaf is carried by the kernel's
-checked load-history question (`explicit_atomic_equality_from_memory_derivations`
-and the condition bridge's `memory_loads_proven_equal`), read in the querying
-context's own facts rather than only the listed ones, or by the ordinary
-single-fact transport, read in its own listed and certified premises. A
-differing `defined(..)` leaf is carried by that single-fact transport, which
-preserves initialization and lifetime evidence. A source conjunction meets a target
-that is not one by conjunction elimination, so `memset`'s
-`defined(dst[k]) and dst[k] == v` carries its value conjunct alone. So `forall (k) { 0 <= k and k < n and k != cur implies
-at(before, visited[k]) == visited[k] }` crosses the store to `visited[cur]`,
-and `forall (k) { 0 <= k and k < n implies old(left[k]) == left[k] }` crosses
-it and a call whose checked write set is `visited[0..n]`. Every per-read
-decision is the store, call and history rule above; the frame adds only which
-facts a leaf may read, and like the fold read frame its answer enters no name
-and no assumption-free cache. A source that is a reflexive equality under
-binders and guards needs no proof, and `close()` offers `at(label, x) == x` its
-reflexive source as it already offered `old(x) == x`.
+An ordinary quantified proof states which reads survive a write. Introduce
+the binder and its guard, use the guard to establish separation from the
+recorded footprint, and prove the unchanged read with `preserve`. Use that
+equality to rewrite the guarded proposition. Expansion of quantified
+preservation retains those same proof steps.
 
-The attacks are the `mdtests/quantified_frame_rejects_*.md` family: a guard
-that admits the written cell, a guard past a stated separation, a read past
-a separated range (the `visited == left + n` witness), an eight-byte store
-beside the excluded element, an unseparated alias, a global that may be the
-array, a call and a recursive call writing the range, a parameter
-reassigned before the store, both state orders, a second store the guard
-admits, a guard whose own read the store widens, a loop havoc and a release
-by `free`. Each is refused with the leaf it
-had and the leaf it wanted.
+The `mdtests/quantified_frame_rejects_*.md` fixtures verify that this reasoning
+cannot cross a write that the guard admits, a possibly aliased or out-of-range
+read, a changed guard, a call or loop that writes the range, or a release by
+`free`.
 
 ## Iterated guarded ownership
 

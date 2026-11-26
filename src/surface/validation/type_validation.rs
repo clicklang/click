@@ -3265,7 +3265,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Choose(_)
             | ProofTactic::Solve
             | ProofTactic::ImplicitSolve
-            | ProofTactic::CompatibilityFactTransport { .. }
             | ProofTactic::SolveUsing(_) => {}
             ProofTactic::IntroBlock { body, .. } => {
                 validate_pure_theorem_tactics(theorem_name, body)?;
@@ -3319,7 +3318,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::ObserveResource(_)
             | ProofTactic::ObserveSubject(_)
             | ProofTactic::Iterated(_)
-            | ProofTactic::Transport { .. }
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::FoldResource(_)
@@ -3392,9 +3390,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::CloseInvariantsBy(_) => "close_invariants",
         ProofTactic::Preserve(_) => "preserve",
         ProofTactic::Rewrite(_) => "rewrite",
-        ProofTactic::Transport { .. } | ProofTactic::CompatibilityFactTransport { .. } => {
-            "transport"
-        }
         ProofTactic::Instantiate { .. } => "instantiate",
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",

@@ -137,6 +137,9 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
                 file.function_blocks()
                     .iter()
                     .map(parser::ImportedCallee::Function)
+                    .chain(file.cpp_bindings.written.iter().map(|(contract, block)| {
+                        parser::ImportedCallee::CppBinding(contract, block)
+                    }))
                     .chain(
                         file.tactic_definitions()
                             .iter()
@@ -473,6 +476,14 @@ fn merge_modules(
         theorem_definitions: Vec::new(),
         contract_definitions: Vec::new(),
         function_blocks: Vec::new(),
+        cpp_virtual_interfaces: BTreeMap::new(),
+        cpp_bindings: CppBindingContracts {
+            conversions: locals
+                .get(entry)
+                .map(|file| file.cpp_bindings.conversions.clone())
+                .unwrap_or_default(),
+            written: BTreeMap::new(),
+        },
         tactic_definitions: Vec::new(),
         termination_proof: locals
             .get(entry)
@@ -557,6 +568,30 @@ fn merge_modules(
         merged
             .function_blocks
             .extend(local.function_blocks.iter().cloned());
+        for (contract, block) in &local.cpp_bindings.written {
+            if merged
+                .cpp_bindings
+                .written
+                .insert(contract.clone(), block.clone())
+                .is_some()
+            {
+                return Err(ClickError::new(format!(
+                    "conflicting contracts for {contract}"
+                )));
+            }
+        }
+        for (method, interface) in &local.cpp_virtual_interfaces {
+            if merged
+                .cpp_virtual_interfaces
+                .insert(method.clone(), interface.clone())
+                .is_some()
+            {
+                return Err(ClickError::new(format!(
+                    "conflicting virtual interfaces for `{}`",
+                    crate::languages::display_source_names(method),
+                )));
+            }
+        }
         merged
             .tactic_definitions
             .extend(local.tactic_definitions.iter().cloned());
@@ -884,6 +919,8 @@ theorem local_conditional(x: int32) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn imported_theorem_statement_can_certify_a_selected_c_contract() {
         let project = ClickProject::new(
             "entry.click",
@@ -919,6 +956,8 @@ int32 identity(int32 x) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn imported_c_contract_and_tactic_are_assumed_until_their_module_is_selected() {
         let library = ClickModuleSource::new(
             "library.click",
@@ -988,13 +1027,15 @@ void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); c
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn explicit_function_selection_respects_imported_proof_ownership() {
         let library = ClickModuleSource::new(
             "library.click",
             r#"
 verifying "test.c";
 int32 helper(int32 x) { ensures result == x; }
-tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
+tactic keep(x: int32) { ensures x == x; } by { have x == x by close(); }
 "#,
             [],
         );
@@ -1056,6 +1097,8 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn artifacts_bind_imported_inputs_and_retain_the_selection_boundary() {
         let entry = ClickModuleSource::new(
             "entry.click",
@@ -1218,6 +1261,8 @@ theorem sibling_bad() { ensures 0 == 1 by close(); }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn prepared_c_inputs_use_the_same_module_selection_and_expansion_path() {
         let project = ClickProject::new(
             "entry.click",
@@ -1347,6 +1392,8 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn c_interface_constants_link_as_stable_values() {
         let interface = r#"FILE *const stdout;
 const int32 library_status;
@@ -1401,6 +1448,8 @@ FILE* via_library() { ensures result == stdout; }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn standalone_theorems_share_linked_library_values_with_c() {
         let interface = r#"FILE *const default_stream;
 theorem default_nonnull() {
@@ -1472,6 +1521,8 @@ FILE *output(void) { return default_stream; }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn proofless_interface_theorems_are_assumptions_for_consumers() {
         let export = r#"theorem library_value(n: int32) {
     requires n > 0;

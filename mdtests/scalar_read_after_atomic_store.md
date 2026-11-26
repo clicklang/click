@@ -39,7 +39,8 @@ int32 later(int32 u) {
     have a[u] == 7 by { close(); }
     have a[0] == 3 or a[0] == 7 by {
         if u == 0 {
-            have a[0] == 7 by { normalize() using { a[u] == 7; u == 0; }; }
+            have &a[0] == &a[u] by { rewrite(u, 0); close(); }
+            have a[0] == 7 by { rewrite(&a[0], &a[u]); close(); }
             close();
         } else {
             have separate(memory(a[u]), memory(a[0])) by {

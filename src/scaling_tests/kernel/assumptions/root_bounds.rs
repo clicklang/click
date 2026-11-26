@@ -2,16 +2,16 @@ use super::*;
 
 fn bounds_work(steps: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(982_000),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
     let mut previous = OldPointer::new(base, ProgramType::Int32Pointer);
     let mut facts = PureFactContext::new();
     for i in 0..unrelated {
         facts = facts.assume_condition(
-            ConditionTerm::pointer_equal(
+            OldConditionTerm::pointer_equal(
                 read_pointer(983_000 + 2 * i),
                 read_pointer(983_001 + 2 * i),
             ),
@@ -21,8 +21,10 @@ fn bounds_work(steps: u64, unrelated: u64) -> usize {
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         for i in 0..steps {
             let next = read_pointer(984_000 + i);
-            facts =
-                facts.assume_condition(ConditionTerm::pointer_equal(next.clone(), previous), true);
+            facts = facts.assume_condition(
+                OldConditionTerm::pointer_equal(next.clone(), previous),
+                true,
+            );
             assert!(facts.access_provenance_match(next.access_provenance(), &held));
             previous = next;
         }

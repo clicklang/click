@@ -13,8 +13,8 @@ fn storage_function(name: &str, globals: Vec<Global>) -> ProgramFunction {
 fn scalar_ownership(name: &str) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
         SymbolicMemory::global_pointer(name),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ))
 }
 
@@ -258,8 +258,8 @@ fn startup_includes_uncalled_local_statics_and_typed_arrays() {
     );
     let owned = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         SymbolicMemory::global_pointer("values"),
-        MachineTerm::constant(0),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(2),
         2,
     ));
     assert!(
@@ -279,9 +279,9 @@ fn zero_element(element_type: ProgramType) -> ProgramValue {
         ProgramType::UInt8 => uint8(0),
         ProgramType::UInt16 => uint16(0),
         ProgramType::UInt32 => uint32(0),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(0)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
-        pointer => ProgramValue::typed_pointer(Address::null(), pointer),
+        ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(0)),
+        ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
+        pointer => ProgramValue::typed_pointer(OldAddress::null(), pointer),
     }
 }
 
@@ -383,7 +383,7 @@ fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
             .expect("no run limit is installed");
         let mut reference = SymbolicMemory::new();
         let mut per_element =
-            |pointer: Address, element_type: ProgramType, contents: &ArrayContents| {
+            |pointer: OldAddress, element_type: ProgramType, contents: &ArrayContents| {
                 reference = reference.clone().with_block_or_read_only(
                     pointer.base.clone(),
                     length * element_type.byte_width(),
@@ -542,7 +542,7 @@ fn owned_bytes(resources: &ResourceContext) -> BTreeMap<AddressBase, Vec<(i64, i
         let range = fact
             .memory_own_range()
             .expect("startup permissions own memory");
-        let AddressOffset::Constant(offset) = range.base().offset else {
+        let OldAddressOffset::Constant(offset) = range.base().offset else {
             panic!("startup ranges have constant bases");
         };
         let width = i64::from(range.element_width());

@@ -410,28 +410,28 @@ mod tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             let ty = format.program_type();
             let binding = AlgebraicValue::Program(if format == MachineIntegerType::Int32 {
-                ProgramValue::Int32(MachineTerm::Variable(Variable(7)))
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(7)))
             } else {
-                ProgramValue::UInt64(MachineTerm::Variable(Variable(7)))
+                ProgramValue::UInt64(OldMachineTerm::Variable(Variable(7)))
             });
             let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ty)]);
             scrutinee.node = AlgebraicTermNode::Constructor {
                 variant: "Arm".into(),
                 fields: vec![AlgebraicValue::Program(
                     if format == MachineIntegerType::Int32 {
-                        ProgramValue::Int32(MachineTerm::Variable(Variable(8)))
+                        ProgramValue::Int32(OldMachineTerm::Variable(Variable(8)))
                     } else {
-                        ProgramValue::UInt64(MachineTerm::Variable(Variable(8)))
+                        ProgramValue::UInt64(OldMachineTerm::Variable(Variable(8)))
                     },
                 )],
             };
-            let native = MachineTerm::AlgebraicMatch {
+            let native = OldMachineTerm::AlgebraicMatch {
                 scrutinee: Box::new(scrutinee.clone()),
                 arms: vec![AlgebraicBitvectorMatchArm {
                     variant: "Arm".into(),
                     bindings: vec![binding],
                     binding_names: Default::default(),
-                    body: MachineTerm::Variable(Variable(7)),
+                    body: OldMachineTerm::Variable(Variable(7)),
                 }],
             };
             let common =
@@ -443,7 +443,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 KernelTermExport::machine(&result).unwrap(),
-                MachineTerm::Variable(Variable(8))
+                OldMachineTerm::Variable(Variable(8))
             );
         }
         let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
@@ -512,7 +512,7 @@ mod tests {
         assert!(new.scope.integer.is_empty());
         assert!(!new.integer_shadowed);
 
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
                 AlgebraicValueType::Program(ProgramType::Int32),
             ])),
@@ -520,13 +520,13 @@ mod tests {
                 variant: "Arm".into(),
                 binding_names: Default::default(),
                 bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(2)),
+                    OldMachineTerm::Variable(Variable(2)),
                 ))],
-                body: MachineTerm::Binary {
+                body: OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
-                    left: Box::new(MachineTerm::Variable(Variable(1))),
-                    right: Box::new(MachineTerm::Variable(Variable(2))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(1))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(2))),
                 },
             }],
         };
@@ -537,8 +537,8 @@ mod tests {
         )
         .unwrap();
         for target in [Variable(1), Variable(2)] {
-            let source = MachineTerm::Variable(target);
-            let replacement = MachineTerm::Variable(Variable(2));
+            let source = OldMachineTerm::Variable(target);
+            let replacement = OldMachineTerm::Variable(Variable(2));
             let mut old = TermRewrite::for_bits(&source, &replacement);
             let expected = old.bits(&native);
             assert_eq!(old.refusal(), None);
@@ -563,13 +563,13 @@ mod tests {
         let source = Variable(3);
         let bound = Variable(2);
         let read = |variable| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address::symbolic(variable)),
+                Box::new(OldAddress::symbolic(variable)),
                 LoadKind::Int32,
             )
         };
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
                 AlgebraicValueType::Program(ProgramType::Int32Pointer),
             ])),
@@ -577,10 +577,10 @@ mod tests {
                 variant: "Arm".into(),
                 binding_names: Default::default(),
                 bindings: vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
-                    Address::symbolic(bound),
+                    OldAddress::symbolic(bound),
                     ProgramType::Int32Pointer,
                 ))],
-                body: MachineTerm::Binary {
+                body: OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
                     left: Box::new(read(source)),
@@ -594,7 +594,7 @@ mod tests {
             &native,
         )
         .unwrap();
-        let replacement = Address::symbolic(bound);
+        let replacement = OldAddress::symbolic(bound);
         let mut old = TermRewrite::for_pointer_variable(source, &replacement);
         let expected = old.bits(&native);
         assert_eq!(old.refusal(), None);
@@ -614,7 +614,7 @@ mod tests {
         use crate::kernel::effective_type::{CAccessClass, CStructClass};
         let class = CAccessClass::Struct(CStructClass::opaque("RetainedPointer"));
         let original = ProgramValue::typed_pointer(
-            Address::symbolic(Variable(991940)),
+            OldAddress::symbolic(Variable(991940)),
             ProgramType::Int32Pointer,
         );
         let replacement = original
@@ -681,13 +681,13 @@ mod tests {
 
     #[test]
     fn common_match_refusal_restores_scope_and_keeps_the_native_refusal() {
-        let source = MachineTerm::Binary {
+        let source = OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::Variable(Variable(2))),
         };
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
                 AlgebraicValueType::Program(ProgramType::Int32),
             ])),
@@ -695,7 +695,7 @@ mod tests {
                 variant: "Arm".into(),
                 binding_names: Default::default(),
                 bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(2)),
+                    OldMachineTerm::Variable(Variable(2)),
                 ))],
                 body: source.clone(),
             }],
@@ -706,7 +706,7 @@ mod tests {
             &native,
         )
         .unwrap();
-        let replacement = MachineTerm::constant(7);
+        let replacement = OldMachineTerm::constant(7);
         let mut old = TermRewrite::for_bits(&source, &replacement);
         let _ = old.bits(&native);
         let expected = old

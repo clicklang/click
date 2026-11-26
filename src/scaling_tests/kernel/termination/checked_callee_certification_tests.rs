@@ -10,7 +10,7 @@ fn checked_callee_claim_reuse_shares_the_dependency_set() {
     for size in [16, 64, 256, 1024] {
         let calls = Arc::new(
             (0..size)
-                .map(|n| format!("callee_{n}"))
+                .map(|n| CallDependency::from(format!("callee_{n}")))
                 .collect::<BTreeSet<_>>(),
         );
         let (merged, work) = crate::instrumentation::measure_deterministic_work(|| {

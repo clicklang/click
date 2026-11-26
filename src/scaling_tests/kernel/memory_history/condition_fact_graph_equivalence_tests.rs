@@ -5,15 +5,17 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn condition_fact_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let source = less_than(sum(var(0)), var(9000));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context =
-                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+                context.assume_condition(OldConditionTerm::equal(var(index), var(index + 1)), true);
         }
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -33,16 +35,16 @@ fn condition_fact_graph_queries_scale_without_fact_index() {
 #[test]
 fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: "diagnostic-access".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new()
             .with_block(base.base.clone(), 128)
             .store(
-                Address::symbolic(Variable(982_000)),
-                ProgramValue::Int32(MachineTerm::constant(9)),
+                OldAddress::symbolic(Variable(982_000)),
+                ProgramValue::Int32(OldMachineTerm::constant(9)),
             ),
     );
     let mut samples = Vec::new();
@@ -50,7 +52,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(var(990_000 + index), MachineTerm::constant(7)),
+                OldConditionTerm::equal(var(990_000 + index), OldMachineTerm::constant(7)),
                 true,
             );
         }

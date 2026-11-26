@@ -12,9 +12,9 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
         let mut premises = vec![source.clone()];
         premises.extend((0..size).map(|index| {
             Proposition::condition_is(
-                ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(982_000 + index)),
-                    MachineTerm::uint64_constant(index),
+                OldConditionTerm::uint64_equal(
+                    OldMachineTerm::Variable(Variable(982_000 + index)),
+                    OldMachineTerm::uint64_constant(index),
                 ),
                 true,
             )
@@ -22,16 +22,16 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
         let wrapped = |body| {
             Proposition::Implies(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Constant(true),
+                    OldConditionTerm::Constant(true),
                     true,
                 )),
                 Box::new(body),
             )
         };
         for index in 0..size {
-            let address = |id| MachineTerm::integer_address(Address::symbolic(Variable(id)));
+            let address = |id| OldMachineTerm::integer_address(OldAddress::symbolic(Variable(id)));
             premises.push(wrapped(Proposition::condition_is(
-                ConditionTerm::uint64_equal(address(984_000 + index), address(985_000 + index)),
+                OldConditionTerm::uint64_equal(address(984_000 + index), address(985_000 + index)),
                 true,
             )));
         }

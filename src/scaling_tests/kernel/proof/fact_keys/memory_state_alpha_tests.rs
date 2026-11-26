@@ -50,7 +50,7 @@ fn state_alpha_registered_load_dags_scale_linearly() {
             Variable(321_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(load),
+                OldMachineTerm::Variable(load),
             )),
         );
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -78,7 +78,7 @@ fn state_alpha_registered_load_branching_dags_stay_linear() {
             Variable(323_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(load),
+                OldMachineTerm::Variable(load),
             )),
         );
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -144,7 +144,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
             Variable(98123),
             Sort::ProgramInteger(format),
             Proposition::condition_is(
-                ConditionTerm::IntegerLessThan(
+                OldConditionTerm::IntegerLessThan(
                     IntegerTerm::Machine(operand.clone()).into(),
                     IntegerTerm::Constant(BigInt::from(100)).into(),
                 ),
@@ -185,9 +185,9 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::MemoryLoad {
                 point: crate::kernel::ProgramPoint::at(&memory.clone()),
-                pointer: Box::new(Address {
+                pointer: Box::new(OldAddress {
                     base: AddressBase::Heap(992_000),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
             },
         };
@@ -211,9 +211,9 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
         let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: AddressBase::Heap(993_000 + index),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(0u32.into()),
             );

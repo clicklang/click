@@ -46,10 +46,10 @@ fn retained_signedness_casts_match_native_terms_and_boundary_constants() {
             let high = num_bigint::BigInt::from(1u8)
                 << (width - u32::from(source.format().is_signed())) as usize;
             let mut leaves = vec![
-                MachineTerm::Variable(Variable(995420)),
-                MachineTerm::opaque_conversion(
+                OldMachineTerm::Variable(Variable(995420)),
+                OldMachineTerm::opaque_conversion(
                     "cast_boundary",
-                    MachineTerm::Variable(Variable(995421)),
+                    OldMachineTerm::Variable(Variable(995421)),
                 ),
             ];
             for value in [
@@ -82,11 +82,11 @@ fn retained_signedness_casts_match_native_terms_and_boundary_constants() {
 #[test]
 fn signed_64_conversion_preserves_existing_extension_spellings() {
     let _session = VerificationSession::enter();
-    let variable = MachineTerm::Variable(Variable(995422));
+    let variable = OldMachineTerm::Variable(Variable(995422));
     for native in [
-        MachineTerm::uint64_from_32(variable.clone()),
-        MachineTerm::uint64_from_int32(variable.clone()),
-        MachineTerm::uint64_from_int64(variable),
+        OldMachineTerm::uint64_from_32(variable.clone()),
+        OldMachineTerm::uint64_from_int32(variable.clone()),
+        OldMachineTerm::uint64_from_int64(variable),
     ] {
         let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
         check_native_parity(root, MachineIntegerType::Int64);
@@ -96,16 +96,21 @@ fn signed_64_conversion_preserves_existing_extension_spellings() {
 #[test]
 fn signedness_producer_leaves_other_cast_boundaries_unchanged() {
     let _session = VerificationSession::enter();
-    let native = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995423))));
+    let native = SpecValue::Native(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
+        995423,
+    ))));
     assert!(shared_machine::cast_signedness(&native, ProgramType::UInt32).is_none());
     let general_call = SpecValue::Shared(KernelTermImport::default().machine(
         MachineIntegerType::Int32,
-        &MachineTerm::opaque_conversion("unmigrated_call", MachineTerm::Variable(Variable(995426))),
+        &OldMachineTerm::opaque_conversion(
+            "unmigrated_call",
+            OldMachineTerm::Variable(Variable(995426)),
+        ),
     ));
     assert!(shared_machine::cast_signedness(&general_call, ProgramType::UInt32).is_none());
     let root = KernelTermImport::default().machine(
         MachineIntegerType::Int32,
-        &MachineTerm::Variable(Variable(995423)),
+        &OldMachineTerm::Variable(Variable(995423)),
     );
     let value = SpecValue::Shared(root);
     for target in [
@@ -119,7 +124,7 @@ fn signedness_producer_leaves_other_cast_boundaries_unchanged() {
     }
     let wide = SpecValue::Shared(KernelTermImport::default().machine(
         MachineIntegerType::Int128,
-        &MachineTerm::Variable(Variable(995424)),
+        &OldMachineTerm::Variable(Variable(995424)),
     ));
     assert!(shared_machine::cast_signedness(&wide, ProgramType::UInt128).is_none());
 }
@@ -134,7 +139,7 @@ fn cast_variable_guards_keep_native_spelling_without_exporting_arithmetic() {
     use crate::kernel::{CompareRelation, MachineOperandView as V};
     let _session = VerificationSession::enter();
     for (source, destination) in [PAIRS[2], (PAIRS[2].1, PAIRS[2].0)] {
-        let variable = MachineTerm::Variable(Variable(995427));
+        let variable = OldMachineTerm::Variable(Variable(995427));
         let root = KernelTermImport::default().machine(source, &variable);
         let cast =
             shared_machine::cast_signedness(&SpecValue::Shared(root), destination.program_type())
@@ -148,12 +153,17 @@ fn cast_variable_guards_keep_native_spelling_without_exporting_arithmetic() {
             let actual = condition_for_operand_views(
                 destination,
                 relation,
-                [V::Legacy(&zero), V::Shared(&cast)],
+                [V::Old(&zero), V::Shared(&cast)],
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert_eq!(
                 actual,
-                ConditionTerm::machine_compare(destination, relation, zero.clone(), native.clone())
+                OldConditionTerm::machine_compare(
+                    destination,
+                    relation,
+                    zero.clone(),
+                    native.clone()
+                )
             );
         }
     }

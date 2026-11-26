@@ -10,7 +10,7 @@ fn certificate_argument_capture_keeps_growing_machine_terms_shared() {
             for size in [8, 32, 128] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let atom = SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::UInt64(MachineTerm::Variable(Variable(997010))),
+                    ProgramValue::UInt64(OldMachineTerm::Variable(Variable(997010))),
                 ));
                 let mut expression = atom.clone();
                 for _ in 0..size {

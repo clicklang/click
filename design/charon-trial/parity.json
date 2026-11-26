@@ -30,7 +30,7 @@
     "diagnostic": "local `i` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click",
     "frozen_sidecar": "design/charon-trial/loop-headers/sum.click",
-    "frozen_sha256": "52aa2ff0aa100d3f9bbf3e948d57881e993ba8ea9e4aaf3d4b9a41f99cce4f11",
+    "frozen_sha256": "732e55a5db408c794bdd495fcdf30802f7c415859429e9c2e0c1ec0384b0b90c",
     "original_sha256": "1afb6f97d57a035f80f0ec44493ad3494592af572349068f500c05d76e740149"
   },
   {
@@ -63,7 +63,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
-    "frozen_sha256": "44106c7a72cfd81bd84844e58bd56c451d6eacaa4d4e1caf340c13043df6fbba",
+    "frozen_sha256": "95dd0167ae06222391ab81d5c55433b92c51f7528208607ae5a27f6c134d5b08",
     "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {
@@ -72,7 +72,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iterators/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iterators/frozen.click",
-    "frozen_sha256": "44106c7a72cfd81bd84844e58bd56c451d6eacaa4d4e1caf340c13043df6fbba",
+    "frozen_sha256": "781afd63a5d2088df7a6bf414eb457c9c6bb28b255cb28585e14c21df31b39e0",
     "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {

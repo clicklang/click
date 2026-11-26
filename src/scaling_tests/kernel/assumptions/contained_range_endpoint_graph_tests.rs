@@ -10,7 +10,7 @@ fn signed_containment_order_graph_queries_scale_without_fact_index() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(variable(index), variable(index + 1)),
+                OldConditionTerm::equal(variable(index), variable(index + 1)),
                 true,
             );
         }
@@ -39,16 +39,16 @@ fn recorded_order_fact_graph_matches_scale_without_fact_index() {
         let upper = variable(9_330_011);
         let mut context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(endpoint(0), upper.clone()),
+                OldConditionTerm::signed_less_equal(endpoint(0), upper.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(lower.clone(), endpoint(0)),
+                OldConditionTerm::signed_less_than(lower.clone(), endpoint(0)),
                 true,
             );
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(variable(index), variable(index + 1)),
+                OldConditionTerm::equal(variable(index), variable(index + 1)),
                 true,
             );
         }
@@ -87,12 +87,15 @@ fn retained_memory_bound_candidates_do_not_export_shared_endpoints() {
         let source = condition_for_operand_views(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
-            [V::Shared(&retained), V::Legacy(&upper)],
+            [V::Shared(&retained), V::Old(&upper)],
         );
         let mut context = PureFactContext::new().assume_condition(source, true);
         for n in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(variable(9_340_000 + n), MachineTerm::constant(n as u32)),
+                OldConditionTerm::equal(
+                    variable(9_340_000 + n),
+                    OldMachineTerm::constant(n as u32),
+                ),
                 true,
             );
         }
@@ -104,7 +107,7 @@ fn retained_memory_bound_candidates_do_not_export_shared_endpoints() {
             assert!(candidates.iter().any(|(l, _, _)| {
                 crate::kernel::reasoning::int32_operand_values_equal_for_memory_resolution(
                     *l,
-                    V::Legacy(&lower),
+                    V::Old(&lower),
                     &context,
                 )
             }));
@@ -124,8 +127,8 @@ fn retained_memory_bound_sources_keep_written_direction_and_branch_isolation() {
     let _session = crate::kernel::VerificationSession::enter();
     let lower = endpoint(9_331_101);
     let upper = variable(9_331_102);
-    let reversed = ConditionTerm::signed_greater_equal(upper.clone(), lower.clone());
-    let source = ConditionTerm::signed_less_than(lower.clone(), upper.clone());
+    let reversed = OldConditionTerm::signed_greater_equal(upper.clone(), lower.clone());
+    let source = OldConditionTerm::signed_less_than(lower.clone(), upper.clone());
     let parent = PureFactContext::new().assume_condition(reversed, true);
     assert!(
         recorded_less_equal_candidates(&lower, &upper, &parent)

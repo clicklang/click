@@ -215,7 +215,16 @@ void set_parent(struct rb_node* node, struct rb_node* parent) {
     step();
     have to_integer(node->__rb_parent_color) ==
          to_integer(address(parent) + (old(node->__rb_parent_color) & 1)) by {
-        normalize() using { at(function.entry, aligned(parent, 8)); };
+        have (address(parent) & 1u64) == 0u64 by {
+            close() using { at(function.entry, aligned(parent, 8)); };
+        }
+        have node->__rb_parent_color == ((old(node->__rb_parent_color) & 1u64) | address(parent)) by close();
+        apply(click::integer::uint64_or_commute(old(node->__rb_parent_color) & 1u64, address(parent)));
+        apply(click::integer::uint64_or_masked(address(parent), old(node->__rb_parent_color), 1u64));
+        rewrite(node->__rb_parent_color, (old(node->__rb_parent_color) & 1u64) | address(parent));
+        rewrite((old(node->__rb_parent_color) & 1u64) | address(parent), address(parent) | (old(node->__rb_parent_color) & 1u64));
+        rewrite(address(parent) | (old(node->__rb_parent_color) & 1u64), (address(parent) + (old(node->__rb_parent_color) & 1u64)) as uint64);
+        close();
     }
     close();
 }
@@ -267,9 +276,27 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
     ensures result == 0;
 } by {
     step();
-    have address(parent) == (node->__rb_parent_color & ~3) by normalize() using {
-        aligned(parent, 8);
-    };
+    have node->__rb_parent_color == ((old(node->__rb_parent_color) & 1u64) | address(parent)) by close();
+    have (address(parent) & 3u64) == 0u64 by close() using { aligned(parent, 8); };
+    apply(click::integer::uint64_mask_keep(address(parent), ~3u64));
+    apply(click::integer::uint64_and_associate(old(node->__rb_parent_color), 1u64, ~3u64));
+    have ((old(node->__rb_parent_color) & 1u64) & ~3u64) == 0u64 by {
+        rewrite((old(node->__rb_parent_color) & 1u64) & ~3u64, old(node->__rb_parent_color) & (1u64 & ~3u64));
+        have (1u64 & ~3u64) == 0u64 by close();
+        rewrite(1u64 & ~3u64, 0u64);
+        apply(click::integer::uint64_and_zero(old(node->__rb_parent_color)));
+    }
+    apply(click::integer::uint64_and_or(old(node->__rb_parent_color) & 1u64, address(parent), ~3u64));
+    apply(click::integer::uint64_or_commute(0u64, address(parent)));
+    apply(click::integer::uint64_or_zero(address(parent)));
+    have address(parent) == (node->__rb_parent_color & ~3) by {
+        rewrite(node->__rb_parent_color, (old(node->__rb_parent_color) & 1u64) | address(parent));
+        rewrite(((old(node->__rb_parent_color) & 1u64) | address(parent)) & ~3u64, ((old(node->__rb_parent_color) & 1u64) & ~3u64) | (address(parent) & ~3u64));
+        rewrite((old(node->__rb_parent_color) & 1u64) & ~3u64, 0u64);
+        rewrite(address(parent) & ~3u64, address(parent));
+        rewrite(0u64 | address(parent), address(parent) | 0u64);
+        close();
+    }
     have address(node) == (address(node) & ~3) by close() using {
         aligned(node, 8);
     };

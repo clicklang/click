@@ -186,7 +186,7 @@ impl RetainedIntegerKey {
                 } else {
                     let machine = KernelTermExport::machine(operand).ok()?;
                     alpha_machine_key::<false>(
-                        MachineOperandView::Legacy(&machine),
+                        MachineOperandView::Old(&machine),
                         bindings,
                         next_binder,
                     )?
@@ -422,11 +422,11 @@ mod tests {
     use super::*;
     use crate::kernel::{IntegerRangeFoldIndex, KernelTermImport};
 
-    fn machine_fold(accumulator: u64, item: u64, body: MachineTerm) -> MachineTerm {
-        MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::constant(9)),
-            initial: Box::new(MachineTerm::Variable(Variable(80))),
+    fn machine_fold(accumulator: u64, item: u64, body: OldMachineTerm) -> OldMachineTerm {
+        OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::constant(9)),
+            initial: Box::new(OldMachineTerm::Variable(Variable(80))),
             accumulator: Variable(accumulator),
             item: Variable(item),
             body: Box::new(body),
@@ -435,11 +435,11 @@ mod tests {
 
     #[test]
     fn common_machine_fold_keys_agree_with_native_binders_and_free_variables() {
-        let left = machine_fold(81, 82, MachineTerm::Variable(Variable(81)));
+        let left = machine_fold(81, 82, OldMachineTerm::Variable(Variable(81)));
         for right in [
-            machine_fold(91, 92, MachineTerm::Variable(Variable(91))),
-            machine_fold(91, 92, MachineTerm::Variable(Variable(81))),
-            machine_fold(91, 92, MachineTerm::Variable(Variable(92))),
+            machine_fold(91, 92, OldMachineTerm::Variable(Variable(91))),
+            machine_fold(91, 92, OldMachineTerm::Variable(Variable(81))),
+            machine_fold(91, 92, OldMachineTerm::Variable(Variable(92))),
         ] {
             let expected = bitvector_folds_alpha_equivalent(&left, &right);
             assert!(expected.is_some());
@@ -480,7 +480,7 @@ mod tests {
         let machine_bound = |format| {
             KernelTerm::retained_machine_operand(
                 format,
-                MachineOperandView::Legacy(&MachineTerm::Variable(Variable(80))),
+                MachineOperandView::Old(&OldMachineTerm::Variable(Variable(80))),
             )
         };
         let fold = |kind, format| {
@@ -568,16 +568,16 @@ mod tests {
     fn common_fold_keys_preserve_state_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::SymbolicMemory::new();
-        let pointer = Address::symbolic(Variable(101));
+        let pointer = OldAddress::symbolic(Variable(101));
         let later = memory.clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let fold = |memory: &crate::kernel::SymbolicMemory| {
             let native = machine_fold(
                 81,
                 82,
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,

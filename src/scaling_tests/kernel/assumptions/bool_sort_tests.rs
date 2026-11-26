@@ -26,7 +26,7 @@ fn a_nested_bool_conditional_is_decided_in_work_linear_in_its_depth() {
             body = bool_if(
                 positive(501_000 + level),
                 body,
-                ConditionTerm::Constant(false),
+                OldConditionTerm::Constant(false),
             );
         }
         let (context, assumed) = crate::instrumentation::measure_deterministic_work(|| {
@@ -63,11 +63,12 @@ fn bool_equality_merges_cost_constant_work_per_link() {
                     bool_equal(binder(510_000 + link), binder(510_000 + link + 1)),
                     true,
                 );
-                let ConditionTerm::BoolApplication(application) = applied("level", 511_000 + link)
+                let OldConditionTerm::BoolApplication(application) =
+                    applied("level", 511_000 + link)
                 else {
                     unreachable!("an application")
                 };
-                context = context.assume_proposition(ConditionTerm::bool_unfold_equation(
+                context = context.assume_proposition(OldConditionTerm::bool_unfold_equation(
                     application,
                     binder(510_000 + link),
                 ));
@@ -103,14 +104,14 @@ fn rule_c1_links_cost_constant_work_per_cast() {
         let (context, assumed) = crate::instrumentation::measure_deterministic_work(|| {
             let mut context = PureFactContext::new();
             for link in 0..size {
-                let cast = MachineTerm::bool_cast(
+                let cast = OldMachineTerm::bool_cast(
                     MachineIntegerType::Int32,
                     applied("member", 520_000 + link),
                 );
                 context = context
-                    .assume_condition(ConditionTerm::equal(word(521_000 + link), cast), true)
+                    .assume_condition(OldConditionTerm::equal(word(521_000 + link), cast), true)
                     .assume_condition(
-                        ConditionTerm::equal(word(521_000 + link), MachineTerm::constant(0)),
+                        OldConditionTerm::equal(word(521_000 + link), OldMachineTerm::constant(0)),
                         true,
                     );
             }

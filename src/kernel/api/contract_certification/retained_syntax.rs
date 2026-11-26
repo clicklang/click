@@ -10,7 +10,7 @@ mod pointers;
 enum CallArgument<'a> {
     Native(&'a A),
     Shared(&'a KernelTerm),
-    Scalar(ProgramType, &'a MachineTerm),
+    Scalar(ProgramType, &'a OldMachineTerm),
 }
 
 impl<'a> CallArgument<'a> {
@@ -27,9 +27,9 @@ impl<'a> CallArgument<'a> {
 
     fn scalar_operand(self) -> Option<(ProgramType, Operand<'a>)> {
         match self {
-            Self::Scalar(ty, word) => Some((ty, Operand::Legacy(word))),
+            Self::Scalar(ty, word) => Some((ty, Operand::Old(word))),
             Self::Native(A::Value(value)) => {
-                Some((value.program_type(), Operand::Legacy(scalar(value)?)))
+                Some((value.program_type(), Operand::Old(scalar(value)?)))
             }
             Self::Native(A::SharedMachine(value)) => {
                 Some((value.ty().program_type(), value.operand_view()))
@@ -48,7 +48,7 @@ impl<'a> CallArgument<'a> {
     }
 }
 
-fn scalar(value: &ProgramValue) -> Option<&MachineTerm> {
+fn scalar(value: &ProgramValue) -> Option<&OldMachineTerm> {
     match value {
         crate::kernel::integer_c_value!(term)
         | ProgramValue::Bool(term)
@@ -63,7 +63,7 @@ struct Comparison {
     seen: HashSet<(u64, u64)>,
 }
 
-pub(super) fn conditions_equal(left: &ConditionTerm, right: &ConditionTerm) -> bool {
+pub(super) fn conditions_equal(left: &OldConditionTerm, right: &OldConditionTerm) -> bool {
     Comparison::default().condition(left, right)
 }
 
@@ -78,9 +78,9 @@ pub(super) fn stored_algebraic_equal(
     let mut comparison = Comparison::default();
     match (left.root(), right.root()) {
         (Some(left), Some(right)) => comparison.common_algebraic(left, right),
-        (Some(left), None) => comparison.mixed_algebraic(left, right.native_compat()),
-        (None, Some(right)) => comparison.mixed_algebraic(right, left.native_compat()),
-        (None, None) => algebraic_equal(left.native_compat(), right.native_compat()),
+        (Some(left), None) => comparison.mixed_algebraic(left, right.old_form()),
+        (None, Some(right)) => comparison.mixed_algebraic(right, left.old_form()),
+        (None, None) => algebraic_equal(left.old_form(), right.old_form()),
     }
 }
 
@@ -122,8 +122,8 @@ impl Comparison {
             _ => false,
         }
     }
-    fn condition(&mut self, left: &ConditionTerm, right: &ConditionTerm) -> bool {
-        use ConditionTerm as C;
+    fn condition(&mut self, left: &OldConditionTerm, right: &OldConditionTerm) -> bool {
+        use OldConditionTerm as C;
         crate::instrumentation::record_deterministic_work(1);
         match (left, right) {
             (
@@ -142,8 +142,8 @@ impl Comparison {
             ) => {
                 a == b
                     && ar == br
-                    && self.machine(Operand::Legacy(al), Operand::Legacy(bl))
-                    && self.machine(Operand::Legacy(av), Operand::Legacy(bv))
+                    && self.machine(Operand::Old(al), Operand::Old(bl))
+                    && self.machine(Operand::Old(av), Operand::Old(bv))
             }
             (C::Constant(a), C::Constant(b)) => a == b,
             (C::Variable(a), C::Variable(b)) => a == b,
@@ -231,8 +231,8 @@ impl Comparison {
                     if crate::kernel::FloatOperandView::from_shared(root).is_some() =>
                 {
                     crate::kernel::FloatOperandView::from_shared(root)?
-                        .native_compat()
-                        .map(Operand::Legacy)
+                        .old_form()
+                        .map(Operand::Old)
                 }
                 view => Some(view),
             };
@@ -285,9 +285,9 @@ impl Comparison {
                 continue;
             }
             // Selected native leaves are already stored payloads, not exports.
-            fn native(view: Operand<'_>) -> Option<&MachineTerm> {
+            fn native(view: Operand<'_>) -> Option<&OldMachineTerm> {
                 match view {
-                    Operand::Legacy(term) => Some(term),
+                    Operand::Old(term) => Some(term),
                     Operand::Shared(root) => root
                         .machine_conversion_leaf()
                         .or_else(|| root.machine_read_leaf()),
@@ -298,11 +298,11 @@ impl Comparison {
             };
             match (a, b) {
                 (
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: an,
                         arguments: aa,
                     },
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: bn,
                         arguments: ba,
                     },
@@ -315,11 +315,11 @@ impl Comparison {
                     }
                 }
                 (
-                    MachineTerm::PureFunctionApplication {
+                    OldMachineTerm::PureFunctionApplication {
                         name: an,
                         arguments: aa,
                     },
-                    MachineTerm::PureFunctionApplication {
+                    OldMachineTerm::PureFunctionApplication {
                         name: bn,
                         arguments: ba,
                     },
@@ -330,16 +330,16 @@ impl Comparison {
                     pending.extend(
                         aa.iter()
                             .zip(ba)
-                            .map(|(a, b)| (Operand::Legacy(a), Operand::Legacy(b))),
+                            .map(|(a, b)| (Operand::Old(a), Operand::Old(b))),
                     );
                 }
                 (
-                    MachineTerm::If {
+                    OldMachineTerm::If {
                         condition: ac,
                         then_term: at,
                         else_term: ae,
                     },
-                    MachineTerm::If {
+                    OldMachineTerm::If {
                         condition: bc,
                         then_term: bt,
                         else_term: be,
@@ -349,11 +349,14 @@ impl Comparison {
                         return false;
                     }
                     pending.extend([
-                        (Operand::Legacy(at), Operand::Legacy(bt)),
-                        (Operand::Legacy(ae), Operand::Legacy(be)),
+                        (Operand::Old(at), Operand::Old(bt)),
+                        (Operand::Old(ae), Operand::Old(be)),
                     ]);
                 }
-                (MachineTerm::MemoryLoad(am, ap, ak), MachineTerm::MemoryLoad(bm, bp, bk)) => {
+                (
+                    OldMachineTerm::MemoryLoad(am, ap, ak),
+                    OldMachineTerm::MemoryLoad(bm, bp, bk),
+                ) => {
                     if am.read_version_id() != bm.read_version_id()
                         || am.shared_memory().arena_id() != bm.shared_memory().arena_id()
                         || ak != bk
@@ -433,7 +436,7 @@ impl Comparison {
                     crate::kernel::integer_c_value!(bits)
                     | ProgramValue::Float32(bits)
                     | ProgramValue::Float64(bits) => {
-                        self.machine(Operand::Shared(a), Operand::Legacy(bits))
+                        self.machine(Operand::Shared(a), Operand::Old(bits))
                     }
                     _ => false,
                 }
@@ -502,14 +505,14 @@ impl Comparison {
             }
             (A::SharedMachine(a), A::Value(b)) | (A::Value(b), A::SharedMachine(a)) => {
                 a.ty().program_type() == b.program_type()
-                    && scalar(b).is_some_and(|b| self.machine(a.operand_view(), Operand::Legacy(b)))
+                    && scalar(b).is_some_and(|b| self.machine(a.operand_view(), Operand::Old(b)))
             }
             (A::Value(a), A::Value(b)) => {
                 if a.program_type() != b.program_type() {
                     return false;
                 }
                 match (scalar(a), scalar(b)) {
-                    (Some(a), Some(b)) => self.machine(Operand::Legacy(a), Operand::Legacy(b)),
+                    (Some(a), Some(b)) => self.machine(Operand::Old(a), Operand::Old(b)),
                     _ => match (a, b) {
                         (ProgramValue::Void, ProgramValue::Void) => true,
                         (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
@@ -543,17 +546,17 @@ impl Comparison {
     }
 }
 
-fn boolean_argument_word(root: &KernelTerm) -> Option<MachineTerm> {
+fn boolean_argument_word(root: &KernelTerm) -> Option<OldMachineTerm> {
     if let Some(value) = crate::kernel::BooleanOperandView::Shared(root).constant() {
-        return Some(MachineTerm::bool_cast(
+        return Some(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::Constant(value),
+            OldConditionTerm::Constant(value),
         ));
     }
     if root.ty() == &KernelType::Program(ProgramType::Bool)
         && let N::Variable(variable) = root.node()
     {
-        return Some(MachineTerm::Variable(*variable));
+        return Some(OldMachineTerm::Variable(*variable));
     }
     None
 }
@@ -573,7 +576,7 @@ fn numeric_call(view: Operand<'_>) -> Option<(&str, Vec<CallArgument<'_>>)> {
             }
             _ => None,
         },
-        Operand::Legacy(MachineTerm::ClickFunctionApplication { name, arguments }) => {
+        Operand::Old(OldMachineTerm::ClickFunctionApplication { name, arguments }) => {
             Some((name, arguments.iter().map(CallArgument::Native).collect()))
         }
         _ => None,
@@ -590,13 +593,13 @@ fn numeric_conversion(view: Operand<'_>) -> Option<((ProgramType, ProgramType), 
             } => Some(((*source, *destination), Operand::Shared(operand))),
             _ => None,
         },
-        Operand::Legacy(MachineTerm::PureFunctionApplication { name, arguments }) => {
+        Operand::Old(OldMachineTerm::PureFunctionApplication { name, arguments }) => {
             let [operand] = arguments.as_slice() else {
                 return None;
             };
             Some((
                 crate::kernel::primitives::float_conversion::numeric_float_conversion_types(name)?,
-                Operand::Legacy(operand),
+                Operand::Old(operand),
             ))
         }
         _ => None,
@@ -612,7 +615,7 @@ mod tests {
     fn imported_scalar_call_arguments_compare_through_borrowed_carriers() {
         let _session = VerificationSession::enter();
         let word = |bits| {
-            A::Value(ProgramValue::Bool(MachineTerm::Constant {
+            A::Value(ProgramValue::Bool(OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits,
             }))
@@ -634,31 +637,31 @@ mod tests {
     fn shared_pointer_certification_preserves_complete_metadata_and_bounds_admission() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         use crate::kernel::{
-            Address, IntegerTerm, ObjectTypeEvidence, OldPointer, SharedPointer, SubobjectBounds,
+            IntegerTerm, ObjectTypeEvidence, OldAddress, OldPointer, SharedPointer, SubobjectBounds,
         };
         let _session = VerificationSession::enter();
         let base = OldPointer::new(
-            Address::symbolic(Variable(999980)),
+            OldAddress::symbolic(Variable(999980)),
             ProgramType::Int32Pointer,
         );
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let bounds = SubobjectBounds {
             start: base.address().clone(),
-            width: MachineTerm::constant(4),
+            width: OldMachineTerm::constant(4),
         };
         let values = vec![
             base.clone(),
             base.clone().with_type(ProgramType::VoidPointer),
             base.clone()
-                .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(999979)))),
+                .with_provenance(std::sync::Arc::new(OldAddress::symbolic(Variable(999979)))),
             base.clone()
-                .with_bounds_owner(Some(std::sync::Arc::new(Address::symbolic(Variable(
+                .with_bounds_owner(Some(std::sync::Arc::new(OldAddress::symbolic(Variable(
                     999978,
                 ))))),
             base.clone().with_bounds(Some(bounds)),
             base.clone().with_bounds(Some(SubobjectBounds {
                 start: base.address().clone(),
-                width: MachineTerm::IntegerToMachine {
+                width: OldMachineTerm::IntegerToMachine {
                     destination: MachineIntegerType::Int32,
                     value: IntegerTerm::Variable(Variable(999977)).into(),
                 },
@@ -702,15 +705,15 @@ mod tests {
 
     #[test]
     fn shared_captured_pointer_certification_preserves_memory_state() {
-        use crate::kernel::{Address, OldPointer, SharedPointer, SymbolicMemory};
+        use crate::kernel::{OldAddress, OldPointer, SharedPointer, SymbolicMemory};
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
         let changed = memory.clone().store(
-            Address::null(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            OldAddress::null(),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999976)),
+            OldAddress::symbolic(Variable(999976)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
@@ -745,16 +748,16 @@ mod tests {
     #[test]
     fn shared_algebraic_read_certification_preserves_address_and_state_identity() {
         use crate::kernel::{
-            Address, AlgebraicTermNode, AlgebraicType, SharedAddress, SymbolicMemory,
+            AlgebraicTermNode, AlgebraicType, OldAddress, SharedAddress, SymbolicMemory,
         };
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory_ref(&SymbolicMemory::new());
         let changed = crate::kernel::intern_memory_ref(&memory.memory().clone().store(
-            Address::null(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            OldAddress::null(),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         ));
-        let pointer = Address::symbolic(Variable(999974));
-        let other = Address::symbolic(Variable(999973));
+        let pointer = OldAddress::symbolic(Variable(999974));
+        let other = OldAddress::symbolic(Variable(999973));
         let ty = AlgebraicType::parameter("T".into());
         let root = KernelTerm::algebraic_read(
             ty.clone(),
@@ -792,20 +795,22 @@ mod tests {
     #[test]
     fn shared_pointer_opaque_indices_keep_the_native_refusal() {
         use crate::kernel::{
-            Address, IntegerTerm, KernelAddressOffset, OldPointer, SharedAddress, SharedPointer,
+            IntegerTerm, KernelAddressOffset, OldAddress, OldPointer, SharedAddress, SharedPointer,
         };
         let _session = VerificationSession::enter();
-        let native = MachineTerm::PureFunctionApplication {
+        let native = OldMachineTerm::PureFunctionApplication {
             name: "opaque_index".into(),
-            arguments: vec![MachineTerm::IntegerToMachine {
+            arguments: vec![OldMachineTerm::IntegerToMachine {
                 destination: MachineIntegerType::Int32,
                 value: IntegerTerm::Variable(Variable(999975)).into(),
             }],
         };
         let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
         assert!(matches!(index.node(), N::WrittenMachine(_)));
-        let base =
-            SharedPointer::import(&OldPointer::new(Address::null(), ProgramType::Int32Pointer));
+        let base = SharedPointer::import(&OldPointer::new(
+            OldAddress::null(),
+            ProgramType::Int32Pointer,
+        ));
         let mut value = base.node().clone();
         value.address = SharedAddress::new(
             value.address.node().base.clone(),
@@ -829,23 +834,23 @@ mod tests {
         let _session = VerificationSession::enter();
         let mut cases = Vec::new();
         for condition in [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(999983)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(999983)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(999983))),
-                right: Box::new(MachineTerm::constant(4)),
+                left: Box::new(OldMachineTerm::Variable(Variable(999983))),
+                right: Box::new(OldMachineTerm::constant(4)),
             },
-            ConditionTerm::BoolIf {
-                condition: Box::new(ConditionTerm::Variable(Variable(999983))),
-                then_condition: Box::new(ConditionTerm::Constant(true)),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+            OldConditionTerm::BoolIf {
+                condition: Box::new(OldConditionTerm::Variable(Variable(999983))),
+                then_condition: Box::new(OldConditionTerm::Constant(true)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             },
         ] {
             let root = crate::kernel::KernelTermImport::default().condition(&condition);
-            let native = A::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+            let native = A::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
                 condition,
             )));
@@ -853,9 +858,11 @@ mod tests {
         }
         cases.push((
             KernelTerm::variable(KernelType::Program(ProgramType::Bool), Variable(999983)),
-            A::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(999983)))),
+            A::Value(ProgramValue::Bool(OldMachineTerm::Variable(Variable(
+                999983,
+            )))),
         ));
-        let raw = A::Value(ProgramValue::Bool(MachineTerm::Constant {
+        let raw = A::Value(ProgramValue::Bool(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         }));
@@ -886,7 +893,7 @@ mod tests {
             node: AlgebraicTermNode::PureFunctionApplication {
                 name: "identity_boundary".into(),
                 arguments: vec![A::Value(ProgramValue::Int32(
-                    MachineTerm::IntegerToMachine {
+                    OldMachineTerm::IntegerToMachine {
                         destination: MachineIntegerType::Int32,
                         value: IntegerTerm::Variable(Variable(999982)).into(),
                     },
@@ -903,15 +910,15 @@ mod tests {
     #[test]
     fn retained_numeric_calls_keep_native_admission_without_argument_exports() {
         let _session = VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(999984));
+        let variable = OldMachineTerm::Variable(Variable(999984));
         for argument in [
             A::Value(ProgramValue::Float32(variable.clone())),
             A::Value(ProgramValue::Float64(variable.clone())),
-            A::Value(ProgramValue::Float32(MachineTerm::Float32Negate(Box::new(
-                variable,
-            )))),
+            A::Value(ProgramValue::Float32(OldMachineTerm::Float32Negate(
+                Box::new(variable),
+            ))),
         ] {
-            let native = MachineTerm::ClickFunctionApplication {
+            let native = OldMachineTerm::ClickFunctionApplication {
                 name: "numeric_boundary".into(),
                 arguments: vec![argument],
             };
@@ -919,11 +926,11 @@ mod tests {
                 .machine(MachineIntegerType::Int32, &native);
             assert!(matches!(root.node(), N::Call { .. }));
             let expected =
-                Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native));
+                Comparison::default().machine(Operand::Old(&native), Operand::Old(&native));
             let exports = KernelTermExport::float_export_count();
             for (left, right) in [
-                (Operand::Shared(&root), Operand::Legacy(&native)),
-                (Operand::Legacy(&native), Operand::Shared(&root)),
+                (Operand::Shared(&root), Operand::Old(&native)),
+                (Operand::Old(&native), Operand::Shared(&root)),
             ] {
                 assert_eq!(Comparison::default().machine(left, right), expected);
             }
@@ -934,24 +941,24 @@ mod tests {
     #[test]
     fn retained_float_conversions_keep_native_certification_admission() {
         let _session = VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(999985));
+        let variable = OldMachineTerm::Variable(Variable(999985));
         for source in [
             variable.clone(),
-            MachineTerm::opaque_conversion("c_float64_to_float32", variable.clone()),
-            MachineTerm::Float32Negate(Box::new(variable)),
+            OldMachineTerm::opaque_conversion("c_float64_to_float32", variable.clone()),
+            OldMachineTerm::Float32Negate(Box::new(variable)),
         ] {
-            let native = MachineTerm::opaque_conversion("c_float32_to_int32", source);
+            let native = OldMachineTerm::opaque_conversion("c_float32_to_int32", source);
             let root = crate::kernel::KernelTermImport::default()
                 .machine(MachineIntegerType::Int32, &native);
             let expected =
-                Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native));
+                Comparison::default().machine(Operand::Old(&native), Operand::Old(&native));
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(
-                Comparison::default().machine(Operand::Shared(&root), Operand::Legacy(&native)),
+                Comparison::default().machine(Operand::Shared(&root), Operand::Old(&native)),
                 expected
             );
             assert_eq!(
-                Comparison::default().machine(Operand::Legacy(&native), Operand::Shared(&root)),
+                Comparison::default().machine(Operand::Old(&native), Operand::Shared(&root)),
                 expected
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -961,21 +968,23 @@ mod tests {
     fn retained_leaf(value: u32) -> KernelTerm {
         KernelTerm::retained_native_machine_operand(
             MachineIntegerType::UInt64,
-            &MachineTerm::ClickFunctionApplication {
+            &OldMachineTerm::ClickFunctionApplication {
                 name: "strict_leaf".into(),
-                arguments: vec![A::Value(ProgramValue::Int32(MachineTerm::constant(value)))],
+                arguments: vec![A::Value(ProgramValue::Int32(OldMachineTerm::constant(
+                    value,
+                )))],
             },
         )
     }
-    fn condition(argument: KernelTerm) -> ConditionTerm {
-        ConditionTerm::Compare {
+    fn condition(argument: KernelTerm) -> OldConditionTerm {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::Constant {
+            left: Box::new(OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 48,
             }),
-            right: Box::new(MachineTerm::ClickFunctionApplication {
+            right: Box::new(OldMachineTerm::ClickFunctionApplication {
                 name: "strict_digit".into(),
                 arguments: vec![A::SharedMachine(
                     SharedMachineIntegerTerm::from_shared(MachineIntegerType::UInt64, argument)
@@ -1008,7 +1017,9 @@ mod tests {
 
     #[test]
     fn algebraic_call_certification_ignores_allocation_but_keeps_written_inputs() {
-        use crate::kernel::{Address, AlgebraicTermNode, AlgebraicType, SymbolicMemory, Variable};
+        use crate::kernel::{
+            AlgebraicTermNode, AlgebraicType, OldAddress, SymbolicMemory, Variable,
+        };
         let _session = VerificationSession::enter();
         let ty = AlgebraicType::parameter("T".into());
         let variable = AlgebraicTerm {
@@ -1044,12 +1055,12 @@ mod tests {
         let memory = SymbolicMemory::new();
         let other = memory
             .clone()
-            .store(Address::null(), ProgramValue::Int32(1u32.into()));
+            .store(OldAddress::null(), ProgramValue::Int32(1u32.into()));
         let read = |memory: &SymbolicMemory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
                 point: crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
-                pointer: Box::new(Address::null()),
+                pointer: Box::new(OldAddress::null()),
             },
         };
         assert!(!algebraic_equal(
@@ -1100,12 +1111,12 @@ mod tests {
         ));
         let left = condition(retained_leaf(7));
         let mut right = left.clone();
-        if let ConditionTerm::Compare { format, .. } = &mut right {
+        if let OldConditionTerm::Compare { format, .. } = &mut right {
             *format = MachineIntegerType::Int8;
         }
         assert!(!conditions_equal(&left, &right));
         let mut right = left.clone();
-        if let ConditionTerm::Compare { relation, .. } = &mut right {
+        if let OldConditionTerm::Compare { relation, .. } = &mut right {
             *relation = CompareRelation::LessThan;
         }
         assert!(!conditions_equal(&left, &right));
@@ -1115,22 +1126,22 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::SymbolicMemory::new();
         let changed = memory.clone().store(
-            crate::kernel::Address::null(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            crate::kernel::OldAddress::null(),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let read = |memory: &crate::kernel::SymbolicMemory| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(crate::kernel::Address::null()),
+                Box::new(crate::kernel::OldAddress::null()),
                 crate::kernel::LoadKind::Int32,
             )
         };
-        assert!(!Comparison::default().machine(
-            Operand::Legacy(&read(&memory)),
-            Operand::Legacy(&read(&changed))
-        ));
+        assert!(
+            !Comparison::default()
+                .machine(Operand::Old(&read(&memory)), Operand::Old(&read(&changed)))
+        );
         let pointer = crate::kernel::OldPointer::new(
-            crate::kernel::Address::null(),
+            crate::kernel::OldAddress::null(),
             crate::kernel::ProgramType::Int32Pointer,
         );
         let qualified = pointer.clone().with_declared_object_class(Some(
@@ -1146,7 +1157,7 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_argument_order_and_cast_spelling() {
         let _session = VerificationSession::enter();
-        let call = |a, b| MachineTerm::ClickFunctionApplication {
+        let call = |a, b| OldMachineTerm::ClickFunctionApplication {
             name: "ordered_call".into(),
             arguments: vec![a, b],
         };
@@ -1161,7 +1172,7 @@ mod tests {
         };
         let left = call(argument(7), argument(9));
         let right = call(argument(9), argument(7));
-        assert!(!Comparison::default().machine(Operand::Legacy(&left), Operand::Legacy(&right)));
+        assert!(!Comparison::default().machine(Operand::Old(&left), Operand::Old(&right)));
         let cast = |encoding, source, destination| {
             KernelTerm::machine_cast_shared(
                 encoding,
@@ -1169,7 +1180,7 @@ mod tests {
                 destination,
                 KernelTerm::retained_native_machine_operand(
                     source,
-                    &MachineTerm::Variable(crate::kernel::Variable(711)),
+                    &OldMachineTerm::Variable(crate::kernel::Variable(711)),
                 ),
             )
         };
@@ -1207,26 +1218,27 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            Address, AddressOffset, LoadKind, OldPointer, ProgramType, SymbolicMemory, Variable,
+            LoadKind, OldAddress, OldAddressOffset, OldPointer, ProgramType, SymbolicMemory,
+            Variable,
         };
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
         let other = memory.clone().store(
-            Address::null(),
-            ProgramValue::Int32(MachineTerm::constant(5)),
+            OldAddress::null(),
+            ProgramValue::Int32(OldMachineTerm::constant(5)),
         );
         let pointer = |retained_state: &SymbolicMemory| {
             OldPointer::new(
-                Address {
+                OldAddress {
                     base: "indexed".into(),
-                    offset: AddressOffset::Int32Scaled {
+                    offset: OldAddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
-                            MachineTerm::read_named(
+                            OldMachineTerm::read_named(
                                 ProgramPoint::at(
                                     &(crate::kernel::intern_memory_ref(retained_state)),
                                 ),
-                                Box::new(Address::symbolic(Variable(712))),
+                                Box::new(OldAddress::symbolic(Variable(712))),
                                 LoadKind::Int32,
                             ),
                         ),
@@ -1250,9 +1262,9 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_unchecked_evidence_and_hidden_declaration_class() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-        use crate::kernel::{Address, ObjectTypeEvidence, OldPointer, ProgramType};
+        use crate::kernel::{ObjectTypeEvidence, OldAddress, OldPointer, ProgramType};
         let _session = VerificationSession::enter();
-        let base = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
+        let base = OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer);
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let evidence = |fingerprint| ObjectTypeEvidence {
             class: class.clone(),
@@ -1292,23 +1304,25 @@ mod float_call_tests {
     fn float_calls_keep_native_certification_admission_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
         for argument in [
-            A::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(1008213)))),
-            A::Value(ProgramValue::Bool(MachineTerm::Constant {
+            A::Value(ProgramValue::Bool(OldMachineTerm::Variable(Variable(
+                1008213,
+            )))),
+            A::Value(ProgramValue::Bool(OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 1,
             })),
-            A::Value(ProgramValue::Bool(MachineTerm::uint32_constant(1))),
-            A::Value(ProgramValue::Float32(MachineTerm::Variable(Variable(
+            A::Value(ProgramValue::Bool(OldMachineTerm::uint32_constant(1))),
+            A::Value(ProgramValue::Float32(OldMachineTerm::Variable(Variable(
                 1008210,
             )))),
             A::Integer(crate::kernel::IntegerTerm::Variable(Variable(1008211)).into()),
-            A::Value(ProgramValue::Float32(MachineTerm::Float32Negate(Box::new(
-                MachineTerm::Variable(Variable(1008212)),
-            )))),
+            A::Value(ProgramValue::Float32(OldMachineTerm::Float32Negate(
+                Box::new(OldMachineTerm::Variable(Variable(1008212))),
+            ))),
         ] {
-            let native = MachineTerm::opaque_conversion(
+            let native = OldMachineTerm::opaque_conversion(
                 "c_float32_to_int32",
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "float_certification".into(),
                     arguments: vec![argument],
                 },
@@ -1316,14 +1330,14 @@ mod float_call_tests {
             let root = crate::kernel::KernelTermImport::default()
                 .machine(MachineIntegerType::Int32, &native);
             let expected =
-                Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native));
+                Comparison::default().machine(Operand::Old(&native), Operand::Old(&native));
             let exports = crate::kernel::KernelTermExport::float_export_count();
             assert_eq!(
-                Comparison::default().machine(Operand::Shared(&root), Operand::Legacy(&native)),
+                Comparison::default().machine(Operand::Shared(&root), Operand::Old(&native)),
                 expected
             );
             assert_eq!(
-                Comparison::default().machine(Operand::Legacy(&native), Operand::Shared(&root)),
+                Comparison::default().machine(Operand::Old(&native), Operand::Shared(&root)),
                 expected
             );
             assert_eq!(

@@ -815,6 +815,11 @@ fn append_library_module(file: &mut ClickFile, module: ClickFile) {
     file.contract_definitions
         .extend(module.contract_definitions);
     file.function_blocks.extend(module.function_blocks);
+    file.cpp_virtual_interfaces
+        .extend(module.cpp_virtual_interfaces);
+    file.cpp_bindings
+        .written
+        .extend(module.cpp_bindings.written);
     file.tactic_definitions.extend(module.tactic_definitions);
 }
 
@@ -1148,7 +1153,12 @@ fn expand_declared_resource_clauses_with_rules(
         )?;
     }
 
-    for function in &mut file.function_blocks {
+    for function in file
+        .function_blocks
+        .iter_mut()
+        .chain(file.cpp_virtual_interfaces.values_mut())
+        .chain(file.cpp_bindings.written.values_mut())
+    {
         resource_definitions.begin_declaration();
         expand_declared_resources_in_function_block(function, &resource_definitions)?;
     }
@@ -1637,8 +1647,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ApplyFactUsing { .. }
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
-        | ProofTactic::Transport { .. }
-        | ProofTactic::CompatibilityFactTransport { .. }
         | ProofTactic::SolveUsing(_)
         | ProofTactic::NormalizeUsing(_)
         | ProofTactic::CloseBounds(_)) => {
@@ -1967,22 +1975,6 @@ fn expand_declared_resource_tactic_with_propositions(
         ProofTactic::Rewrite(proposition) => Ok(ProofTactic::Rewrite(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
-        ProofTactic::Transport { source, target } => Ok(ProofTactic::Transport {
-            source: expand_declared_resource_proposition(source, resource_definitions)?,
-            target: expand_declared_resource_proposition(target, resource_definitions)?,
-        }),
-        ProofTactic::CompatibilityFactTransport {
-            source,
-            target,
-            premises,
-        } => Ok(ProofTactic::CompatibilityFactTransport {
-            source: expand_declared_resource_proposition(source, resource_definitions)?,
-            target: expand_declared_resource_proposition(target, resource_definitions)?,
-            premises: premises
-                .into_iter()
-                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
         ProofTactic::SolveUsing(solve) => Ok(ProofTactic::SolveUsing(ProofSolveUsing {
             premises: solve
                 .premises

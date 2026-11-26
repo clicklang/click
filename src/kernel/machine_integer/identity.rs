@@ -14,9 +14,9 @@
 
 use super::{Operation, definedness, range, representation};
 #[cfg(test)]
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineIntegerType, Proposition, SharedMachineIntegerTerm,
+    IntegerTerm, MachineIntegerType, OldConditionTerm, Proposition, SharedMachineIntegerTerm,
 };
 use num_bigint::BigInt;
 
@@ -116,13 +116,13 @@ impl IntegerOperationRangeBound {
         let bound = IntegerTerm::constant(self.bound.clone());
         let forms = if self.lower {
             [
-                ConditionTerm::integer_greater_equal(self.exact.clone(), bound.clone()),
-                ConditionTerm::integer_less_equal(bound, self.exact.clone()),
+                OldConditionTerm::integer_greater_equal(self.exact.clone(), bound.clone()),
+                OldConditionTerm::integer_less_equal(bound, self.exact.clone()),
             ]
         } else {
             [
-                ConditionTerm::integer_less_equal(self.exact.clone(), bound.clone()),
-                ConditionTerm::integer_greater_equal(bound, self.exact.clone()),
+                OldConditionTerm::integer_less_equal(self.exact.clone(), bound.clone()),
+                OldConditionTerm::integer_greater_equal(bound, self.exact.clone()),
             ]
         };
         let mut facts = forms
@@ -245,17 +245,17 @@ pub(crate) fn machine_operation_of_integer_value(
 
 #[test]
 fn explicit_operation_identity_keeps_its_read_operands() {
-    use crate::kernel::{Address, LoadKind, ProgramValue, SymbolicMemory, Variable};
+    use crate::kernel::{LoadKind, OldAddress, ProgramValue, SymbolicMemory, Variable};
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let x = MachineTerm::Variable(Variable(989_773));
-    let y = MachineTerm::Variable(Variable(989_774));
-    let address = Address::symbolic(Variable(989_775));
-    let stored = MachineTerm::logical_machine_binary(
+    let x = OldMachineTerm::Variable(Variable(989_773));
+    let y = OldMachineTerm::Variable(Variable(989_774));
+    let address = OldAddress::symbolic(Variable(989_775));
+    let stored = OldMachineTerm::logical_machine_binary(
         format,
         crate::kernel::MachineBinaryOp::Add,
         x.clone(),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(1),
     );
     let memory = SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(stored));
     let read = crate::kernel::canonical_form_of_load(
@@ -264,7 +264,7 @@ fn explicit_operation_identity_keeps_its_read_operands() {
         LoadKind::Int32,
     );
     let observe = |value| IntegerTerm::from_machine(format, value).unwrap();
-    let sum = observe(MachineTerm::logical_machine_binary(
+    let sum = observe(OldMachineTerm::logical_machine_binary(
         format,
         crate::kernel::MachineBinaryOp::Add,
         read.clone(),
@@ -295,7 +295,7 @@ fn boxed_machine_operation_of_integer_value(
     // An operand's word is the one, as written or widened, whose
     // observation in `ty` gives the operand back; its range is its own
     // format's, or the constant itself.
-    let operand = |side: &IntegerTerm| -> Option<(MachineTerm, BigInt, BigInt)> {
+    let operand = |side: &IntegerTerm| -> Option<(OldMachineTerm, BigInt, BigInt)> {
         // An observation is read through its value relations (rule W): the
         // range of `to_integer(x as uint32)` is `x`'s own format's.
         match side.value_read() {
@@ -306,7 +306,7 @@ fn boxed_machine_operation_of_integer_value(
                 let widened = if super::conversion::extension_encoding(machine.ty(), ty).is_some() {
                     super::conversion::convert_term(machine.ty(), ty, word.clone())
                 } else {
-                    MachineTerm::Cast {
+                    OldMachineTerm::Cast {
                         spelling: crate::kernel::MachineCastSpelling::Generic,
                         value: Box::new(word.clone()),
                         from: machine.ty(),
@@ -371,7 +371,7 @@ fn inverse_operation_mapping_matches_boxed_conversion_routes() {
     let _session = crate::kernel::VerificationSession::enter();
     for source in super::FORMATS {
         let value =
-            IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(989781))).unwrap();
+            IntegerTerm::from_machine(source, OldMachineTerm::Variable(Variable(989781))).unwrap();
         for target in super::FORMATS {
             for rhs in [
                 value.clone(),
@@ -379,7 +379,7 @@ fn inverse_operation_mapping_matches_boxed_conversion_routes() {
                 IntegerTerm::constant((-1).into()),
                 IntegerTerm::from_machine(
                     source,
-                    MachineTerm::IntegerToMachine {
+                    OldMachineTerm::IntegerToMachine {
                         value: IntegerTerm::Variable(Variable(989782)).into(),
                         destination: source,
                     },
@@ -465,11 +465,11 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let written = MachineTerm::Binary {
+    let written = OldMachineTerm::Binary {
         format,
         op: MachineBinaryOp::Add,
-        left: Box::new(MachineTerm::Variable(Variable(989798))),
-        right: Box::new(MachineTerm::Variable(Variable(989799))),
+        left: Box::new(OldMachineTerm::Variable(Variable(989798))),
+        right: Box::new(OldMachineTerm::Variable(Variable(989799))),
     };
     let operand = SharedMachineIntegerTerm::from_shared(
         format,
@@ -487,11 +487,11 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
         lower: false,
     };
     let source = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
             left: Box::new(written),
-            right: Box::new(MachineTerm::constant(2)),
+            right: Box::new(OldMachineTerm::constant(2)),
         },
         false,
     );

@@ -1,6 +1,6 @@
 //! Ordered execution evidence with persistent storage across path forks.
 use super::equality_graph::MachineAtom;
-use super::{ConditionTerm, ExecutionPureFact, Proposition};
+use super::{ExecutionPureFact, OldConditionTerm, Proposition};
 use super::{MachineIntegerType, MachineOperandView};
 use std::sync::Arc;
 
@@ -49,7 +49,7 @@ type BorrowedFacts<'a> = Box<dyn DoubleEndedIterator<Item = &'a ExecutionPureFac
 /// The order used by PureFactContext::pure_facts: conditions, then propositions.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(super) enum ContextFactKey {
-    Condition(ConditionTerm),
+    Condition(OldConditionTerm),
     Proposition(Proposition),
 }
 pub(super) type ContextFacts = imbl::OrdMap<ContextFactKey, Arc<ExecutionPureFact>>;
@@ -120,7 +120,7 @@ impl FactIndexes {
 
 fn guard_upper_bound(proposition: &Proposition) -> Option<(MachineIntegerType, MachineAtom, u64)> {
     use super::machine_integer::{Relation, comparison::comparison_view};
-    let (condition, truth) = proposition.condition_native()?;
+    let (condition, truth) = proposition.old_condition()?;
     let view = comparison_view(condition, *truth)?;
     if !matches!(view.format.format().bits(), 32 | 64) {
         return None;
@@ -959,13 +959,13 @@ impl<const N: usize> From<[ExecutionPureFact; N]> for ExecutionFacts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MachineTerm, PureFactContext, Variable};
+    use crate::kernel::{OldMachineTerm, PureFactContext, Variable};
 
     fn guard(index: u32, value: bool) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(index as u64)),
-                MachineTerm::constant(0),
+            OldConditionTerm::equal(
+                OldMachineTerm::Variable(Variable(index as u64)),
+                OldMachineTerm::constant(0),
             ),
             value,
         )
@@ -1084,6 +1084,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn context_blocks_preserve_order_isolation_and_share_fact_objects() {
         for size in [16, 64, 256, 1024] {
             let root = (0..size).fold(PureFactContext::new(), |context, index| {

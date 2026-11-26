@@ -8,8 +8,8 @@ use super::*;
 fn alpha_identity_work_scales_with_nested_binder_depth() {
     let make = |depth: u64, offset: u64| {
         let mut proposition = equal(
-            MachineTerm::Variable(Variable(offset + depth - 1)),
-            MachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(offset + depth - 1)),
+            OldMachineTerm::constant(1),
         );
         for index in (0..depth).rev() {
             proposition = forall(offset + index, proposition);
@@ -35,9 +35,9 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
     for size in [8u32, 32, 128, 512] {
-        let array = Address {
+        let array = OldAddress {
             base: "local:defined-array".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new().with_uninitialized_block(array.base.clone(), 4);
         for index in 0..size {
@@ -47,9 +47,9 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
         let key = proposition_identity_key(&local_definedness_fact(&memory, 82_000)).unwrap();
         for index in 0..size {
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: format!("local:defined-unrelated-{index}").into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(index.into()),
             );

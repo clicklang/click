@@ -29,11 +29,11 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
         vec![],
     )]);
     let interface = boxed.contract_interface();
-    let heap = |id: u64| Address {
+    let heap = |id: u64| OldAddress {
         base: AddressBase::Heap(id),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let bytes = MachineTerm::constant(4);
+    let bytes = OldMachineTerm::constant(4);
     let samples = [16, 64, 256]
         .into_iter()
         .map(|size| {
@@ -119,12 +119,12 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
         vec![],
     )]);
     let interface = function.contract_interface();
-    let heap = |id| Address {
+    let heap = |id| OldAddress {
         base: AddressBase::Heap(id),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let consumed = heap(933_000);
-    let bytes = MachineTerm::constant(4);
+    let bytes = OldMachineTerm::constant(4);
     let input = ResourceContext::new().unchecked_with_fact(ResourceFact::own_allocation(
         consumed.clone(),
         bytes.clone(),
@@ -193,14 +193,14 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
 fn allocation_size_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let var = |id| MachineTerm::Variable(Variable(id));
-        let offset = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let var = |id| OldMachineTerm::Variable(Variable(id));
+        let offset = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let base = external_pointer(930_020);
         let input_size = offset(var(0));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context =
-                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+                context.assume_condition(OldConditionTerm::equal(var(index), var(index + 1)), true);
         }
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -232,10 +232,10 @@ fn allocation_size_graph_queries_scale_without_fact_index() {
 fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let var = |id| MachineTerm::Variable(Variable(id));
+        let var = |id| OldMachineTerm::Variable(Variable(id));
         let allocation_size = |value| {
             AllocationSize::new(
-                MachineTerm::uint64_add(value, MachineTerm::uint64_constant(1)),
+                OldMachineTerm::uint64_add(value, OldMachineTerm::uint64_constant(1)),
                 AllocationSizeKind::UInt64,
             )
         };
@@ -244,7 +244,7 @@ fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(var(index), var(index + 1)),
+                OldConditionTerm::uint64_equal(var(index), var(index + 1)),
                 true,
             );
         }
@@ -265,6 +265,8 @@ fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars() {
     for hit in [false, true] {
         let mut work = Vec::new();
@@ -274,21 +276,21 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
             let mut facts = PureFactContext::new();
             for id in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         base.clone(),
-                        Address::symbolic(Variable(10_000_000 + id)),
+                        OldAddress::symbolic(Variable(10_000_000 + id)),
                     ),
                     true,
                 );
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
-                        Address::symbolic(Variable(20_000_000 + id)),
-                        Address::symbolic(Variable(30_000_000 + id)),
+                    OldConditionTerm::address_equal(
+                        OldAddress::symbolic(Variable(20_000_000 + id)),
+                        OldAddress::symbolic(Variable(30_000_000 + id)),
                     ),
                     true,
                 );
             }
-            let alias = Address::symbolic(Variable(if hit {
+            let alias = OldAddress::symbolic(Variable(if hit {
                 10_000_000 + size - 1
             } else {
                 40_000_000

@@ -4,14 +4,14 @@ use crate::kernel::assumptions::load_state_and_pointer;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::reasoning::memories_match_for_pointer_load;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, Proposition};
+use crate::kernel::{OldConditionTerm, Proposition};
 use std::collections::BTreeSet;
 
 impl EqualityGraph {
     pub(in crate::kernel) fn offsets_with_an_alias_at_root(
         &self,
-        root: &Option<AddressOffset>,
-    ) -> Vec<AddressOffset> {
+        root: &Option<OldAddressOffset>,
+    ) -> Vec<OldAddressOffset> {
         self.admitted
             .pointer_offset_aliases_by_root
             .get(root)
@@ -30,21 +30,24 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_pointer_offset_aliases(
         &self,
-        pointer: &Address,
-    ) -> impl Iterator<Item = Address> + '_ {
+        pointer: &OldAddress,
+    ) -> impl Iterator<Item = OldAddress> + '_ {
         let block = pointer.base.clone();
         self.admitted
             .pointer_offset_aliases
             .get(&pointer.offset)
             .into_iter()
             .flat_map(|aliases| aliases.iter())
-            .map(move |offset| Address {
+            .map(move |offset| OldAddress {
                 base: block.clone(),
                 offset: offset.clone(),
             })
     }
 
-    pub(in crate::kernel) fn exact_pointer_offset_alias_count(&self, pointer: &Address) -> usize {
+    pub(in crate::kernel) fn exact_pointer_offset_alias_count(
+        &self,
+        pointer: &OldAddress,
+    ) -> usize {
         self.admitted
             .pointer_offset_aliases
             .get(&pointer.offset)
@@ -53,7 +56,7 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exactly_aliased_pointers(
         &self,
-    ) -> impl ExactSizeIterator<Item = &Address> {
+    ) -> impl ExactSizeIterator<Item = &OldAddress> {
         self.admitted.address_base_aliases.keys()
     }
 
@@ -61,8 +64,8 @@ impl EqualityGraph {
     /// Multiple alternatives belong to premise search, not checked lookup.
     pub(in crate::kernel) fn unique_exact_pointer_alias(
         &self,
-        pointer: &Address,
-    ) -> Option<&Address> {
+        pointer: &OldAddress,
+    ) -> Option<&OldAddress> {
         let aliases = self.admitted.address_base_aliases.get(pointer)?;
         if aliases.len() != 1 {
             return None;
@@ -72,8 +75,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_pointer_aliases(
         &self,
-        pointer: &Address,
-    ) -> impl Iterator<Item = &Address> {
+        pointer: &OldAddress,
+    ) -> impl Iterator<Item = &OldAddress> {
         self.admitted
             .address_base_aliases
             .get(pointer)
@@ -83,15 +86,15 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_uint64_equalities(
         &self,
-        term: &MachineTerm,
-    ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
-        self.exact_uint64_equalities_view(crate::kernel::MachineOperandView::Legacy(term))
+        term: &OldMachineTerm,
+    ) -> impl Iterator<Item = (&OldMachineTerm, &OldConditionTerm)> {
+        self.exact_uint64_equalities_view(crate::kernel::MachineOperandView::Old(term))
     }
 
     pub(in crate::kernel) fn exact_uint64_equalities_view(
         &self,
         term: crate::kernel::MachineOperandView<'_>,
-    ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
+    ) -> impl Iterator<Item = (&OldMachineTerm, &OldConditionTerm)> {
         self.admitted
             .bitvector64_equality_facts
             .get(
@@ -119,15 +122,15 @@ impl EqualityGraph {
 impl EqualityGraph {
     pub(in crate::kernel) fn recorded_uint64_equals(
         &self,
-        term: &MachineTerm,
-    ) -> Vec<(MachineTerm, ConditionTerm)> {
+        term: &OldMachineTerm,
+    ) -> Vec<(OldMachineTerm, OldConditionTerm)> {
         let exact = self
             .admitted
             .bitvector64_equality_facts
             .get(
                 &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
                     MachineIntegerType::UInt64,
-                    crate::kernel::MachineOperandView::Legacy(term),
+                    crate::kernel::MachineOperandView::Old(term),
                 ),
             )
             .map(|neighbors| {
@@ -150,7 +153,7 @@ impl EqualityGraph {
             .get(&(pointer.clone(), kind));
         for condition in candidates.into_iter().flat_map(|sources| sources.iter()) {
             crate::instrumentation::record_deterministic_work(1);
-            let ConditionTerm::Compare {
+            let OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left,
@@ -180,15 +183,15 @@ impl EqualityGraph {
 impl EqualityGraph {
     pub(in crate::kernel) fn exact_literal_sources(
         &self,
-        term: &MachineTerm,
-    ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
-        self.exact_literal_sources_view(crate::kernel::MachineOperandView::Legacy(term))
+        term: &OldMachineTerm,
+    ) -> Option<&crate::persistent::PersistentMap<OldConditionTerm, i64>> {
+        self.exact_literal_sources_view(crate::kernel::MachineOperandView::Old(term))
     }
 
     pub(in crate::kernel) fn exact_literal_sources_view(
         &self,
         term: crate::kernel::MachineOperandView<'_>,
-    ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
+    ) -> Option<&crate::persistent::PersistentMap<OldConditionTerm, i64>> {
         self.admitted
             .exact_constant_equalities
             .get(&crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::new(term))
@@ -196,7 +199,10 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    pub(in crate::kernel) fn has_parameter_store_alias_sources(&self, pointer: &Address) -> bool {
+    pub(in crate::kernel) fn has_parameter_store_alias_sources(
+        &self,
+        pointer: &OldAddress,
+    ) -> bool {
         let bucket = parameter_alias_bucket(pointer);
         self.admitted
             .wide_pointer_alias_endpoints_by_object
@@ -206,7 +212,7 @@ impl EqualityGraph {
                 .pointer_alias_endpoints_by_object
                 .contains_key(&bucket)
             || parameter_partition_variable(&bucket).is_some_and(|variable| {
-                self.exact_uint64_equalities(&MachineTerm::Variable(*variable))
+                self.exact_uint64_equalities(&OldMachineTerm::Variable(variable))
                     .next()
                     .is_some()
             })
@@ -214,7 +220,7 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn parameter_store_numeric_connectivity(
         &self,
-        base: Option<&Address>,
+        base: Option<&OldAddress>,
     ) -> Option<&super::NumericAddressConnectivity> {
         // A write can use the numeric projection unless its own component
         // can reach an exact pointer edge or a raw coordinate equality.
@@ -234,8 +240,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn parameter_store_alias_bases(
         &self,
-        base: &Address,
-    ) -> Option<BTreeSet<Address>> {
+        base: &OldAddress,
+    ) -> Option<BTreeSet<OldAddress>> {
         let mut pending = vec![base.clone()];
         let mut seen = BTreeSet::new();
         let mut bases = BTreeSet::new();
@@ -250,9 +256,7 @@ impl EqualityGraph {
                 if self.admitted.bitvector64_equality_facts.contains_key(
                     &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
                         MachineIntegerType::UInt64,
-                        crate::kernel::MachineOperandView::Legacy(&MachineTerm::Variable(
-                            *variable,
-                        )),
+                        crate::kernel::MachineOperandView::Old(&OldMachineTerm::Variable(variable)),
                     ),
                 ) {
                     return None;
@@ -277,7 +281,7 @@ impl EqualityGraph {
                 if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(
                     &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
                         MachineIntegerType::UInt64,
-                        crate::kernel::MachineOperandView::Legacy(&term),
+                        crate::kernel::MachineOperandView::Old(&term),
                     ),
                 ) {
                     terms.extend(neighbors.keys().cloned());
@@ -301,8 +305,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn addresses_numerically_connected(
         &self,
-        left: &Address,
-        right: &Address,
+        left: &OldAddress,
+        right: &OldAddress,
     ) -> bool {
         self.admitted
             .numeric_address_connectivity

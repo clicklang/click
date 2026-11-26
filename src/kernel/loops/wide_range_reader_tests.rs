@@ -3,11 +3,11 @@ use super::*;
 // signed run optimization must fall back when it sees one.
 #[test]
 fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
-    let base = Address::symbolic(Variable(984_500));
+    let base = OldAddress::symbolic(Variable(984_500));
     let wide = MemoryRange::new_wide(
         base.clone(),
-        MachineTerm::uint64_constant(0),
-        MachineTerm::uint64_constant(1 << 33),
+        OldMachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(1 << 33),
         4,
     );
     let segment = EvaluatedMemorySegment {
@@ -27,8 +27,8 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     ));
     let bytes = MemoryRange::new_wide(
         base.clone(),
-        MachineTerm::uint64_constant(0),
-        MachineTerm::uint64_constant(1 << 33),
+        OldMachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(1 << 33),
         1,
     );
     assert!(!loop_effect_segment_contains_range(

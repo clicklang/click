@@ -24,7 +24,7 @@ gets a new value.
 
 Read construction and comparison identity selection have separate APIs:
 
-- `MachineTerm::memory_read(memory, pointer, kind)` constructs the exact
+- `OldMachineTerm::memory_read(memory, pointer, kind)` constructs the exact
   descriptor. It retains the supplied memory state and performs no version
   selection, stored-value lookup, or observation publication.
 - `ScalarReadDescriptor` borrows that exact descriptor. The memory-load
@@ -389,7 +389,7 @@ Two consequences are worth knowing when reading proofs. Where crossing a
 write needs evidence and no cell was materialized before it (a havoc of
 `*other` against a pointer that is only separate by a `requires`),
 the read before the call and the read after it are different variables
-unless a step's frame check or an explicit `transport` carries the fact
+unless a step's frame check or a later frame proof carries the fact
 across; facts never match across such an effect structurally, and a step
 keeps the pre-step form of a carried fact beside the carried one, since
 both stay true. And `old(x)` denotes the entry value: it is the

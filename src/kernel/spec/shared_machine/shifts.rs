@@ -88,7 +88,7 @@ fn with_count_width(
             relation,
             [
                 MachineOperandView::Shared(root),
-                MachineOperandView::Legacy(&bound),
+                MachineOperandView::Old(&bound),
             ],
         )
     };
@@ -114,7 +114,7 @@ fn with_count_width(
     if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
         require_false(compare(format, &left, CompareRelation::LessThan, 0));
         domain.push(Proposition::condition_is(
-            ConditionTerm::signed_shift_result_fits_views(
+            OldConditionTerm::signed_shift_result_fits_views(
                 format,
                 MachineOperandView::Shared(&left),
                 MachineOperandView::Shared(&count),

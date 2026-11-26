@@ -131,7 +131,7 @@ pub(super) fn is_int32_add_sub_obligation(goal: &Proposition) -> bool {
                 && matches!(value.operand_view().binary(),
                     Some((MachineIntegerType::Int32, op, _)) if operation(exact) == Some(op)))
     };
-    let Some((condition, true)) = goal.condition_native() else {
+    let Some((condition, true)) = goal.old_condition() else {
         return false;
     };
     let at_limit = |endpoint: &IntegerTerm, limit: i32| {
@@ -140,9 +140,9 @@ pub(super) fn is_int32_add_sub_obligation(goal: &Proposition) -> bool {
             .is_some_and(|n| n == &BigInt::from(limit))
     };
     let (left, right) = match condition {
-        ConditionTerm::IntegerLessEqual(left, right) => (left, right),
-        ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
-        ConditionTerm::IntegerEqual(left, right) => {
+        OldConditionTerm::IntegerLessEqual(left, right) => (left, right),
+        OldConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+        OldConditionTerm::IntegerEqual(left, right) => {
             return observation(left, right) || observation(right, left);
         }
         _ => return false,
@@ -160,7 +160,7 @@ fn bounded_observation_shape(
     &crate::kernel::IntegerTerm,
 )> {
     use crate::kernel::machine_integer::{conversion, identity};
-    let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native() else {
+    let Some((OldConditionTerm::IntegerEqual(a, b), true)) = goal.old_condition() else {
         return None;
     };
     for (observed, exact, exact_on_left) in [(a, b, false), (b, a, true)] {
@@ -191,11 +191,11 @@ fn integer_order(
     &crate::kernel::SharedIntegerTerm,
     bool,
 )> {
-    match proposition.condition_native()? {
-        (ConditionTerm::IntegerLessEqual(a, b), true) => Some((a, b, false)),
-        (ConditionTerm::IntegerGreaterEqual(a, b), true) => Some((b, a, false)),
-        (ConditionTerm::IntegerLessThan(a, b), true) => Some((a, b, true)),
-        (ConditionTerm::IntegerGreaterThan(a, b), true) => Some((b, a, true)),
+    match proposition.old_condition()? {
+        (OldConditionTerm::IntegerLessEqual(a, b), true) => Some((a, b, false)),
+        (OldConditionTerm::IntegerGreaterEqual(a, b), true) => Some((b, a, false)),
+        (OldConditionTerm::IntegerLessThan(a, b), true) => Some((a, b, true)),
+        (OldConditionTerm::IntegerGreaterThan(a, b), true) => Some((b, a, true)),
         _ => None,
     }
 }
@@ -411,9 +411,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // State the two original observations at their own types first.
         let observed = if bounded_observation_shape(goal).is_none()
             && matches!(
-                goal.condition_native(),
+                goal.old_condition(),
                 Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         relation: crate::kernel::CompareRelation::Equal,
                         ..
                     },
@@ -514,9 +514,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && format.bits() < 32
                 && matches!(exact, IntegerTerm::Machine(value) if value.ty() == MachineIntegerType::UInt32)
                 && matches!(
-                    goal.condition_native(),
+                    goal.old_condition(),
                     Some((
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::UInt32,
                             ..
                         },
@@ -566,10 +566,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_int32_add_sub_using");
         use super::super::wide_arithmetic::have;
         use crate::kernel::IntegerTerm;
-        let Some((goal, true)) = input.goal().and_then(Proposition::condition_native) else {
+        let Some((goal, true)) = input.goal().and_then(Proposition::old_condition) else {
             return Ok(None);
         };
-        if matches!(goal, ConditionTerm::IntegerEqual(..)) {
+        if matches!(goal, OldConditionTerm::IntegerEqual(..)) {
             return if Self::known_bridge_using(input, premises)? {
                 input.driver().apply_step(ProofStep::Known).map(Some)
             } else {
@@ -577,8 +577,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
         }
         let (left, right) = match goal {
-            ConditionTerm::IntegerLessEqual(left, right) => (left, right),
-            ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+            OldConditionTerm::IntegerLessEqual(left, right) => (left, right),
+            OldConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
             _ => return Ok(None),
         };
         let Some(SyntaxProposition::Comparison {
@@ -635,9 +635,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &premise,
                 );
             for premise in std::iter::once(&premise).chain(&readings) {
-                let (lo, hi) = match premise.condition_native() {
-                    Some((ConditionTerm::IntegerLessEqual(lo, hi), true))
-                    | Some((ConditionTerm::IntegerGreaterEqual(hi, lo), true)) => (lo, hi),
+                let (lo, hi) = match premise.old_condition() {
+                    Some((OldConditionTerm::IntegerLessEqual(lo, hi), true))
+                    | Some((OldConditionTerm::IntegerGreaterEqual(hi, lo), true)) => (lo, hi),
                     _ => continue,
                 };
                 for ((operand, slot), lower) in operands.iter().zip(&mut endpoints).zip(directions)
@@ -768,7 +768,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Native unsigned comparisons use their own observation, rather than
         // relabelling their bits int32. Transport a written cast explicitly.
         if matches!(goal, Proposition::ConditionIs(condition, _) if
-            crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat())
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition.old_form())
                 .is_some_and(|view| view.format == MachineIntegerType::UInt32))
             && let Some(surface @ SyntaxProposition::Comparison { left, right, .. }) =
                 input.surface_goal()
@@ -891,7 +891,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
 
         let Some((difference, previous, amount)) = selected.iter().find_map(|(premise, source)| {
-            let (ConditionTerm::IntegerEqual(left, right), true) = premise.condition_native()?
+            let (OldConditionTerm::IntegerEqual(left, right), true) = premise.old_condition()?
             else {
                 return None;
             };
@@ -908,7 +908,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 if observation != &current
                     && !input.facts().pure_known_available(&Proposition::condition_is(
-                        ConditionTerm::IntegerEqual(
+                        OldConditionTerm::IntegerEqual(
                             IntegerTerm::Machine(current.clone()).into(),
                             result.clone(),
                         ),
@@ -1833,6 +1833,8 @@ mod tests {
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.6s in the parallel gate"]
     fn signed_interval_addition_expands_ordinary() {
         check(
             "x: int32, y: int32",
@@ -1841,6 +1843,8 @@ mod tests {
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn signed_interval_product_expands_ordinary() {
         check(
             "x: int32",
@@ -1853,6 +1857,8 @@ mod tests {
         check("x: int32", "", "(x & 255) <= 255");
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.2s in the parallel gate"]
     fn native_interval_observations_survive_fresh_replay() {
         check(
             "x: int32",
@@ -1928,6 +1934,8 @@ mod tests {
         assert!(failures.is_empty(), "{failures:?}");
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.0s in the parallel gate"]
     fn signed_interval_migration_rejects_missing_evidence_and_undefined_operations() {
         for source in [
             "theorem rejected(x: int32,y: int32) {requires 0<=x; requires x<=10; requires 0<=y; requires y<=10; ensures defined(x+y) by {close() using {0<=x;0<=y;};}}",
@@ -1977,6 +1985,8 @@ by {step(); have defined(pool->capacity - 1) by close();}
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn signed_definedness_32_expands_ordinary() {
         check(
             "x: int32, y: int32",
@@ -1985,6 +1995,8 @@ by {step(); have defined(pool->capacity - 1) by close();}
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.0s in the parallel gate"]
     fn signed_definedness_64_expands_ordinary() {
         check(
             "x: int64, y: int64",

@@ -896,12 +896,17 @@ impl<'a> Proof<'a> {
                     .predicates
                     .function_execution_name(callee)
             };
-            selected_environment = environment.with_selected_call_binders_and_types(
-                execution_callee,
-                arity,
-                bindings,
-                type_arguments,
-            );
+            let target = match frontier_call
+                .as_ref()
+                .and_then(|call| call.cpp_binding.as_ref())
+            {
+                Some(binding) => {
+                    crate::kernel::CallBinderTarget::CppBinding(binding.contract.clone())
+                }
+                None => crate::kernel::CallBinderTarget::Function(execution_callee.into()),
+            };
+            selected_environment =
+                environment.with_call_binder_target(target, arity, bindings, type_arguments);
             selected_context = context.with_loop_binding(
                 context.function_block,
                 context.function,
@@ -1116,7 +1121,7 @@ impl<'a> Proof<'a> {
                 && matches!(&argument, SyntaxTerm::IntegerLiteral(text) if text == "0")
             {
                 arguments.push(ProgramValue::typed_pointer(
-                    crate::kernel::Address::null(),
+                    crate::kernel::OldAddress::null(),
                     parameter.program_type(),
                 ));
                 continue;
@@ -1232,6 +1237,21 @@ impl<'a> Proof<'a> {
         context: &ExecutionProofContext<'_>,
         transport: &CallBinderTransport,
     ) -> Result<FrontierCall, ClickError> {
+        if let Some(CodeRegionRef::Path(steps)) = &transport.source_binding {
+            let region = context
+                .constants
+                .source_layout
+                .source_path_region(steps, ProgramPointKind::Entry)
+                .map_err(|message| self.step_error(message))?;
+            if !self
+                .execution()
+                .is_some_and(|execution| execution.core.frontier.next_statement_index == region)
+            {
+                return Err(self.step_error(format!(
+                    "`{transport}` requires that reference binding at the current frontier"
+                )));
+            }
+        }
         let written = transport.callee();
         let remaining =
             self.execution()
@@ -1261,25 +1281,47 @@ impl<'a> Proof<'a> {
             ProgramStatement::Call {
                 function_name,
                 arguments,
+                dispatch,
+                cpp_binding,
                 ..
-            }
-            | ProgramStatement::CallConstruct {
+            } => Some(FrontierCall {
+                callee: function_name.clone(),
+                arguments: arguments.clone(),
+                dispatch: *dispatch,
+                cpp_binding: cpp_binding.clone(),
+            }),
+            ProgramStatement::CallResult {
                 function_name,
                 arguments,
+                dispatch,
                 ..
-            }
-            | ProgramStatement::CallResult {
+            } => Some(FrontierCall {
+                callee: function_name.clone(),
+                arguments: arguments.clone(),
+                dispatch: *dispatch,
+                cpp_binding: None,
+            }),
+            ProgramStatement::CallConstruct {
                 function_name,
                 arguments,
                 ..
             } => Some(FrontierCall {
                 callee: function_name.clone(),
                 arguments: arguments.clone(),
+                dispatch: crate::kernel::CallDispatch::Direct,
+                cpp_binding: None,
             }),
             _ => None,
         });
+        let source_target = self.execution().and_then(|execution| {
+            context
+                .constants
+                .source_layout
+                .call_target(execution.core.frontier.next_statement_index)
+        });
         let names_written = |callee: &str| {
             callee == written
+                || source_target == Some(written)
                 || crate::surface::call_source_spelling(callee) == written
                 || context
                     .spec_definitions
@@ -1289,7 +1331,10 @@ impl<'a> Proof<'a> {
                 || crate::languages::c::formatted_output::function_format(callee)
                     .is_some_and(|(function, _)| function.source_name() == written)
         };
-        let Some(call) = call.filter(|call| names_written(&call.callee)) else {
+        let Some(call) = call.filter(|call| match &call.cpp_binding {
+            Some(_) => transport.source_binding.is_some(),
+            None => transport.source_binding.is_none() && names_written(&call.callee),
+        }) else {
             return Err(self.step_error(format!(
                 "`{transport}` requires a call to `{written}` at the current frontier"
             )));
@@ -1301,7 +1346,10 @@ impl<'a> Proof<'a> {
             crate::languages::c::formatted_output::describe_function(&call.callee)
                 .unwrap_or_else(|| format!("`{written}`"))
         };
-        let Some(function) = context.function_environment.get_function(&call.callee) else {
+        let Some(function) = context
+            .function_environment
+            .get_call_function(&call.callee, call.dispatch)
+        else {
             return Err(self.step_error(format!(
                 "`{transport}` gives values to {}, which has no Click contract",
                 named()
@@ -1338,52 +1386,6 @@ impl<'a> Proof<'a> {
         self.state
             .replace_frontier_presentation(presentation)
             .map_err(|error| self.execution_update_error("`mark`", error))
-    }
-
-    /// This frontier with the by-value parameters of the call `candidate`
-    /// prepared, as that preparation bound them: the call's parameter point
-    /// (`R.parameter(name)`), copied from the candidate's recorded states.
-    /// The call's requirements read those parameters, so a step proves them
-    /// here, at its pre-state, with that point named. Only the presentation
-    /// changes; the facts and the proof node are this frontier's.
-    pub(in crate::surface::proof) fn with_prepared_call_parameters(
-        &self,
-        candidate: &Self,
-    ) -> Self {
-        let (Some(execution), Some(prepared)) = (self.execution(), candidate.execution()) else {
-            return self.clone();
-        };
-        let Some(point) = &prepared.presentation.surface_record.last_call_parameters else {
-            return self.clone();
-        };
-        let Some(bound) = prepared.presentation.recorded_states.get(point) else {
-            return self.clone();
-        };
-        if execution.presentation.recorded_states.get(point) == Some(bound)
-            && execution
-                .presentation
-                .surface_record
-                .last_call_parameters
-                .as_ref()
-                == Some(point)
-        {
-            return self.clone();
-        }
-        let point = point.clone();
-        let mut presentation = execution.presentation.clone();
-        presentation
-            .recorded_states
-            .insert(point.clone(), bound.clone());
-        presentation.surface_record.last_call_parameters = Some(point);
-        let Ok(state) = self.state.replace_frontier_presentation(presentation) else {
-            return self.clone();
-        };
-        Self {
-            site: self.site.clone(),
-            context: self.context.clone(),
-            state,
-            node: self.node.clone(),
-        }
     }
 
     /// Publish a prepared operation after its caller has proved
@@ -2148,7 +2150,7 @@ fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<Unresolved
 fn requirement_deduplication_uses_replay_truth_and_polarity() {
     let requirement = |left: u32, right: u32| UnresolvedRequirement {
         proposition: Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(left.into()),
@@ -2203,6 +2205,8 @@ pub fn without_implicit_solve<R>(operation: impl FnOnce() -> R) -> R {
 /// name and argument expressions.
 struct FrontierCall {
     callee: String,
+    dispatch: crate::kernel::CallDispatch,
+    cpp_binding: Option<Arc<crate::kernel::CppBindingOperation>>,
     arguments: Vec<ProgramExpression>,
 }
 
@@ -2255,8 +2259,6 @@ thread_local! {
 
 #[path = "../driver/obligations.rs"]
 mod driver;
-
-mod search;
 
 /// Where the statement at the frontier leaves the result a `step` binds.
 enum FrontierResult {

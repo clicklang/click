@@ -1,7 +1,8 @@
 use super::*;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn inline_array_element_addresses_are_logical_without_granting_access() {
     let source = r#"
         struct packet { int32 values[4]; uint8 bytes[4]; };
@@ -95,6 +96,8 @@ fn historical_wide_view_bound_reads_the_marked_counter() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 // Read-only C locals have actual storage and can initialize from a checked helper result.
 fn readonly_scalar_initialization_preserves_address_and_expands() {
     let source = "int32 seven() { return 7; } int32 probe() { const int32 x = seven(); const int32* p = &x; return *p; }";
@@ -113,6 +116,8 @@ fn readonly_scalar_initialization_preserves_address_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 // A historical pointer value and the memory state of a load are independent.
 fn typed_load_through_entry_pointer_reads_current_memory() {
     let source = "void probe(int32* p, int32* q) { *p = 7; p = q; }";
@@ -138,6 +143,8 @@ fn typed_load_through_entry_pointer_reads_current_memory() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 // Pointer-valued historical loads must also keep their operand and print parseable certificates.
 fn typed_pointer_load_through_entry_pointer_expands() {
     let source = "void probe(int32** p, int32* q, int32** r) { *p = q; p = r; }";
@@ -156,6 +163,8 @@ fn typed_pointer_load_through_entry_pointer_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 // Byte views must retain allocation identity and scale subsequent offsets in bytes.
 fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
     let source = "uint32* probe(uint32* p) { return p + 1; }";
@@ -1457,7 +1466,8 @@ fn grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn grouped_calls_keep_contract_transitions_on_proof() {
     let set_source = r#"
             void set_one(int32* data, int32 permit) {
@@ -1600,7 +1610,8 @@ fn outcome_solve_spells_a_call_postcondition_across_two_states() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
     let borrow_source = r#"
             int32 borrow_token(int32 key) {
@@ -1856,7 +1867,8 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
     let c_source = r#"
             int32 add_twice(int32 x) {
@@ -2760,7 +2772,8 @@ fn grouped_outcome_fold_is_local_to_the_returning_branch() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_11")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn aggregate_return_claims_retain_checked_completions() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/struct_aggregate_return_postcondition.md");
@@ -3042,7 +3055,7 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
             requires o.size == -1;
             ensures (o.size as int64) == -1i64;
         } by {
-            have (o.size as int32) == o.size by normalize();
+            have (o.size as int32) == o.size by close();
             step_until(function.exit); close();
         }
     "#;
@@ -3061,7 +3074,8 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_13")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn contract_claims_cannot_hide_overflow_behind_reflexivity() {
     let c = "int32 identity(int32 x) { return x; }";
     // Specification `/` and `%` are total at a zero divisor, so only signed
@@ -3109,12 +3123,12 @@ fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
         ),
         (
             "forall (k: int32) { to_integer(k + 1) == to_integer(k + 1) }",
-            "intro() { normalize(); }",
+            "intro() { close(); }",
             false,
         ),
         (
             "not (exists (k: int32) { to_integer(k + 1) != to_integer(k + 1) })",
-            "intro() { normalize(); }",
+            "intro() { close(); }",
             false,
         ),
         (
@@ -3170,7 +3184,8 @@ fn opaque_contract_predicate_proof_still_owes_its_body_domain() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_14")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn exceptional_contract_claims_discharge_their_own_domains() {
     let c = "int32 helper(int32 x) { return x; } int32 caller(int32 x) { return helper(x); }";
     for (exception, claim, passes) in [
@@ -3272,7 +3287,6 @@ test_batches! {
     file: "contract_tests.rs",
     marker: "contract_batch_",
     contract_batch_00: [
-        inline_array_element_addresses_are_logical_without_granting_access,
         historical_wide_view_bound_reads_the_marked_counter,
         unsigned_word_array_field_contracts_decay_to_typed_addresses,
         modular_exceptional_call_continues_through_a_normal_assignment,
@@ -3312,11 +3326,8 @@ test_batches! {
         grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance,
         grouped_n_way_function_outcomes_stay_on_one_proof,
         grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof,
-        grouped_calls_keep_contract_transitions_on_proof,
     ],
     contract_batch_07: [
-        grouped_opaque_calls_keep_declared_composite_resources_on_proof,
-        grouped_sequential_top_level_scopes_stay_on_one_proof,
         grouped_predicate_contracts_stay_on_one_proof,
         heap_backed_predicate_contract_stays_on_checked_proof,
     ],
@@ -3340,7 +3351,6 @@ test_batches! {
     ],
     contract_batch_11: [
         source_have_failures_keep_the_written_operation_in_each_execution_phase,
-        aggregate_return_claims_retain_checked_completions,
         sorry_without_the_flag_is_rejected_at_parse,
         sorry_admits_a_grouped_contract_under_the_flag_without_counting_it_verified,
     ],
@@ -3351,19 +3361,19 @@ test_batches! {
         casts_of_resource_fields_keep_their_declared_scalar_types,
     ],
     contract_batch_13: [
-        contract_claims_cannot_hide_overflow_behind_reflexivity,
         contract_quantifier_domains_keep_the_chosen_witness_and_polarity,
         contract_logical_read_facts_do_not_grant_access,
         opaque_contract_predicate_proof_still_owes_its_body_domain,
     ],
     contract_batch_14: [
-        exceptional_contract_claims_discharge_their_own_domains,
         contract_arithmetic_domain_refusal_retains_the_actual_goal_and_checked_context,
         contract_domain_refusal_retains_the_actual_goal_and_checked_context,
     ],
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn contract_closing_preserves_proposition_identity_through_explicit_proofs() {
     let source = "struct packet { uint32 n; }; void change(uint32* n) { *n = 9; } uint32 consume(struct packet p) { uint32 before = p.n; change(&p.n); return before; }";
     let proof = r#"verifying "closing.c";
@@ -3400,7 +3410,7 @@ fn contract_closing_keeps_state_clauses_as_local_obligations() {
     let proof = r#"verifying "closing.c";
         int32 unchanged(int32 x) {
             ensures result == at(region(0).entry, x);
-        } by { step(); normalize(); }
+        } by { step(); close(); }
     "#;
     let inputs = [("closing.c", source)];
     verify_c_sources(proof, &inputs).unwrap();
@@ -3412,6 +3422,8 @@ fn contract_closing_keeps_state_clauses_as_local_obligations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn contract_closing_retains_resource_and_write_footprint_completions() {
     let inputs = [(
         "closing.c",

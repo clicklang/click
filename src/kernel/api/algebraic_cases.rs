@@ -224,18 +224,15 @@ mod tests {
         else {
             panic!("constructor equation")
         };
-        assert_eq!(scrutinee.native_compat(), &value);
+        assert_eq!(scrutinee.old_form(), &value);
         assert!(
             constructor
-                .native_compat()
+                .old_form()
                 .checked_constructor_fields()
                 .is_some()
         );
         assert_eq!(
-            constructor
-                .native_compat()
-                .checked_constructor_fields()
-                .unwrap(),
+            constructor.old_form().checked_constructor_fields().unwrap(),
             &[
                 AlgebraicValue::Program(symbolic_call_result(
                     ProgramType::Int32Pointer,
@@ -346,7 +343,7 @@ mod tests {
             panic!("equation")
         };
         // Exhaustion preserves the expression, including its unknown match.
-        assert_eq!(original.native_compat(), &value);
+        assert_eq!(original.old_form(), &value);
         let mut incomplete_match = value.clone();
         let AlgebraicTermNode::Match { arms, .. } = &mut incomplete_match.node else {
             unreachable!()
@@ -573,7 +570,7 @@ mod tests {
             };
             assert!(
                 constructor
-                    .native_compat()
+                    .old_form()
                     .checked_constructor_fields()
                     .is_some()
             );

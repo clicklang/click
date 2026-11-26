@@ -5,10 +5,10 @@ fn shared_address_queries_reuse_growing_index_dags() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let graph = EqualityGraph::default();
-        let base = Address::symbolic(Variable(991411));
+        let base = OldAddress::symbolic(Variable(991411));
         let ty = MachineIntegerType::Int32;
         let mut root = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::Variable(Variable(991412)))
+            .machine_arithmetic(ty, &OldMachineTerm::Variable(Variable(991412)))
             .unwrap();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -65,18 +65,18 @@ fn scaled_offset_admission_and_queries_keep_cold_dags_shared() {
             };
             let value = V::Shared(&root).retain(container);
             let offset = if ty == MachineIntegerType::Int32 {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value,
                     byte_width: 4,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width: 4,
                     unsigned: ty == MachineIntegerType::UInt64,
                 }
             };
-            let named = AddressOffset::Variable(Variable(991431));
+            let named = OldAddressOffset::Variable(Variable(991431));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut graph = EqualityGraph::default();

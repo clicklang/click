@@ -2270,6 +2270,9 @@ fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
 }
 
+const FEE_EVALUATION_CONVERSIONS: &str =
+    include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateConversions.click");
+
 fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
     let (div, caller) = match mode {
         "Down" => (
@@ -2288,7 +2291,7 @@ fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhas
     };
     let (imports, div) = fixture_imports_and_body(div);
     let source = format!(
-        "{imports}\n{}\n{div}\n{caller}",
+        "{imports}\n{FEE_EVALUATION_CONVERSIONS}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2396,7 +2399,7 @@ fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase)
         include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
     };
     let source = format!(
-        "{imports}\n{}\n{div}\n{caller}",
+        "{imports}\n{FEE_EVALUATION_CONVERSIONS}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2553,7 +2556,7 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitUp.click")
     });
     format!(
-        "{imports}\n{}\n{div}\n{fragment}",
+        "{imports}\n{FEE_EVALUATION_CONVERSIONS}\n{}\n{div}\n{fragment}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     )
 }
@@ -4572,6 +4575,8 @@ fn axiomatic_std_array_element_access_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.4s in the parallel gate"]
 fn axiomatic_std_array_reference_element_resources_verify() {
     for (name, harness, return_type, parameters, postcondition, clauses, refusals) in [
         (
@@ -4823,6 +4828,8 @@ fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 // Consistent rehashing cannot substitute another nominal enum or move its
 // declaration to another locked source to manufacture byte alias privilege.
 fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
@@ -5917,13 +5924,23 @@ fn pinned_spanreader_ignore_verifies_both_outcomes_offline() {
     fs::write(&path, &source).unwrap();
     let project = read_click_project(&path, &source).unwrap();
     click::surface::with_proof_trace("SpanReader::ignore", || {
-        verify_program_prepared_project(&project, &import).unwrap_or_else(|error| {
+        let (summary, verification) =
+            click::surface::verify_project_with_summary(&project, &ProgramInputs::program(&import))
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        verification.unwrap_or_else(|error| {
             panic!(
                 "{}\n{}",
                 error.report(),
                 error.trace_context_report().unwrap_or_default()
             )
         });
+        let ignore = click::languages::cpp::names::path_name(&["SpanReader", "ignore"]);
+        for function in [ignore.as_str(), "probe"] {
+            assert!(summary.assumptions[function].iter().any(|assumption| {
+                assumption.family == click::surface::ModelFamily::CppStd
+                    && assumption.name == "std::ios_base::failure::failure"
+            }));
+        }
     });
     fs::remove_dir_all(root).unwrap();
 }

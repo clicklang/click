@@ -11,21 +11,23 @@ const FORMATS: [MachineIntegerType; 8] = [
     MachineIntegerType::UInt64,
 ];
 fn value(format: MachineIntegerType, id: u64) -> SpecExpression {
-    SpecExpression::Value(format.value_from_term(MachineTerm::Variable(Variable(id))))
+    SpecExpression::Value(format.value_from_term(OldMachineTerm::Variable(Variable(id))))
 }
 fn literal(format: MachineIntegerType, n: i64) -> SpecExpression {
     SpecExpression::Value(format.value_from_term(
         crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap(),
     ))
 }
-fn input(format: MachineIntegerType, term: &MachineTerm, shared: bool) -> SpecValue {
+fn input(format: MachineIntegerType, term: &OldMachineTerm, shared: bool) -> SpecValue {
     if shared {
-        KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(term)).into()
+        KernelTerm::retained_machine_operand(format, MachineOperandView::Old(term)).into()
     } else {
         format.value_from_term(term.clone()).into()
     }
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn bitwise_all_promotions_match_native_terms_without_exports() {
     let _session = VerificationSession::enter();
     for a in FORMATS {
@@ -33,13 +35,13 @@ fn bitwise_all_promotions_match_native_terms_without_exports() {
             let terms = |f: MachineIntegerType| {
                 let (lo, hi) = f.format().bounds();
                 let mut v = vec![
-                    MachineTerm::Variable(Variable(995600)),
-                    MachineTerm::opaque_conversion("bits", MachineTerm::Variable(Variable(995601))),
+                    OldMachineTerm::Variable(Variable(995600)),
+                    OldMachineTerm::opaque_conversion("bits", OldMachineTerm::Variable(Variable(995601))),
                 ];
                 if f.format().bits() >= 32 {
                     let one =
                         crate::kernel::machine_integer::range::constant_word(f, &1.into()).unwrap();
-                    v.push(MachineTerm::Binary {
+                    v.push(OldMachineTerm::Binary {
                         format: f,
                         op: MachineBinaryOp::Add,
                         left: Box::new(one.clone()),
@@ -95,8 +97,8 @@ fn bitwise_not_and_annotated_narrow_match_native() {
     let _session = VerificationSession::enter();
     for format in FORMATS {
         for term in [
-            MachineTerm::Variable(Variable(995602)),
-            MachineTerm::opaque_conversion("not", MachineTerm::Variable(Variable(995603))),
+            OldMachineTerm::Variable(Variable(995602)),
+            OldMachineTerm::opaque_conversion("not", OldMachineTerm::Variable(Variable(995603))),
             crate::kernel::machine_integer::range::constant_word(format, &0.into()).unwrap(),
         ] {
             for shared in [false, true] {
@@ -168,14 +170,14 @@ fn shared_bitwise_smart_constructors_preserve_native_component_normalization() {
     let format = MachineIntegerType::UInt64;
     let mask = |n| {
         Box::new(SpecExpression::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(n),
+            OldMachineTerm::uint64_constant(n),
         )))
     };
     for operand in [
         value(format, 993452),
-        SpecExpression::Value(ProgramValue::UInt64(MachineTerm::opaque_conversion(
+        SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::opaque_conversion(
             "opaque_bits",
-            MachineTerm::Variable(Variable(993453)),
+            OldMachineTerm::Variable(Variable(993453)),
         ))),
     ] {
         for inner in [
@@ -195,33 +197,33 @@ fn shared_bitwise_smart_constructors_preserve_native_component_normalization() {
 #[test]
 fn retained_tag_side_facts_use_exact_bounds_without_changing_the_word() {
     let _session = VerificationSession::enter();
-    let word = MachineTerm::Variable(Variable(993460));
-    let tag = MachineTerm::Variable(Variable(993461));
+    let word = OldMachineTerm::Variable(Variable(993460));
+    let tag = OldMachineTerm::Variable(Variable(993461));
     let empty = PureFactContext::new();
     let bounded = empty
         .clone()
         .assume_condition(
-            ConditionTerm::signed_less_equal(MachineTerm::constant(0), tag.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), tag.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(tag.clone(), MachineTerm::constant(1)),
+            OldConditionTerm::signed_less_equal(tag.clone(), OldMachineTerm::constant(1)),
             true,
         );
     let clear = empty.clone().assume_condition(
-        ConditionTerm::uint64_equal(
-            MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(1)),
-            MachineTerm::uint64_constant(0),
+        OldConditionTerm::uint64_equal(
+            OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(1)),
+            OldMachineTerm::uint64_constant(0),
         ),
         true,
     );
     for (case, (inner, context)) in [
         (
-            MachineTerm::uint64_bitwise_or(word.clone(), MachineTerm::uint64_from_int32(tag)),
+            OldMachineTerm::uint64_bitwise_or(word.clone(), OldMachineTerm::uint64_from_int32(tag)),
             bounded,
         ),
         (
-            MachineTerm::uint64_add(word, MachineTerm::uint64_constant(1)),
+            OldMachineTerm::uint64_add(word, OldMachineTerm::uint64_constant(1)),
             clear,
         ),
     ]
@@ -231,7 +233,7 @@ fn retained_tag_side_facts_use_exact_bounds_without_changing_the_word() {
         let expression = SpecExpression::BitwiseAnd(
             Box::new(SpecExpression::Value(ProgramValue::UInt64(inner))),
             Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                MachineTerm::uint64_constant(!3),
+                OldMachineTerm::uint64_constant(!3),
             ))),
         );
         let baseline = evaluate_with_assumptions(&expression, false, &empty);
@@ -253,29 +255,29 @@ fn retained_tag_side_facts_use_exact_bounds_without_changing_the_word() {
 #[test]
 fn retained_tag_addition_selects_only_a_true_exact_clear_guard() {
     let _session = VerificationSession::enter();
-    let word = MachineTerm::Variable(Variable(993462));
-    let low = MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(1));
+    let word = OldMachineTerm::Variable(Variable(993462));
+    let low = OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(1));
     let expression = SpecExpression::BitwiseAnd(
         Box::new(SpecExpression::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_add(word, MachineTerm::uint64_constant(1)),
+            OldMachineTerm::uint64_add(word, OldMachineTerm::uint64_constant(1)),
         ))),
         Box::new(SpecExpression::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(!3),
+            OldMachineTerm::uint64_constant(!3),
         ))),
     );
     for (guard, truth, expected) in [
         (
-            ConditionTerm::uint64_equal(MachineTerm::uint64_constant(0), low.clone()),
+            OldConditionTerm::uint64_equal(OldMachineTerm::uint64_constant(0), low.clone()),
             true,
             1,
         ),
         (
-            ConditionTerm::uint64_equal(low.clone(), MachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_equal(low.clone(), OldMachineTerm::uint64_constant(0)),
             false,
             0,
         ),
         (
-            ConditionTerm::uint64_equal(low, MachineTerm::uint64_constant(1)),
+            OldConditionTerm::uint64_equal(low, OldMachineTerm::uint64_constant(1)),
             true,
             0,
         ),
@@ -322,7 +324,7 @@ fn nested_bitwise_evaluator_retains_values_and_unsupported_widths_decline() {
         assert_eq!(native_results(actual), evaluate(&expression, true));
     }
     for f in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
-        let x = input(f, &MachineTerm::Variable(Variable(995621)), true);
+        let x = input(f, &OldMachineTerm::Variable(Variable(995621)), true);
         assert!(bitwise_not(&x, None).is_none());
         for op in [
             MachineBinaryOp::BitwiseAnd,
@@ -338,15 +340,15 @@ fn nested_bitwise_evaluator_retains_values_and_unsupported_widths_decline() {
 fn retained_pointer_masks_admit_alignment_without_exporting_operands() {
     let _session = VerificationSession::enter();
     let f = MachineIntegerType::UInt64;
-    let pointer = Address::symbolic(Variable(995625));
-    let address = MachineTerm::IntegerAddress(
+    let pointer = OldAddress::symbolic(Variable(995625));
+    let address = OldMachineTerm::IntegerAddress(
         Box::new(pointer.clone()),
         crate::kernel::AddressObjectClass::NONE,
     );
     let masked = bitwise::apply(
         MachineBinaryOp::BitwiseAnd,
         &input(f, &address, true),
-        &input(f, &MachineTerm::uint64_constant(7), true),
+        &input(f, &OldMachineTerm::uint64_constant(7), true),
     )
     .unwrap()
     .value;
@@ -356,7 +358,7 @@ fn retained_pointer_masks_admit_alignment_without_exporting_operands() {
         CompareRelation::Equal,
         [
             MachineOperandView::Shared(&masked),
-            MachineOperandView::Legacy(&MachineTerm::uint64_constant(0)),
+            MachineOperandView::Old(&OldMachineTerm::uint64_constant(0)),
         ],
     );
     assert_eq!(condition.as_pointer_alignment(), Some((&pointer, 8)));

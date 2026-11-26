@@ -5,9 +5,9 @@ use crate::kernel::{
 };
 
 fn aggregate_entry(count: u32) -> (ExecutionState, ProgramValueBindings) {
-    let source = Address {
+    let source = OldAddress {
         base: "local:caller_packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         8,

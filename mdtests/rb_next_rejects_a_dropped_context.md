@@ -2061,10 +2061,6 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 close();
                                             }
                                             let { sibling: s, up: u } = unfold(c);
-                                            have defined(parent->rb_right) by {
-                                                rewrite(parent, frame_identity);
-                                                normalize();
-                                            }
                                             match s.model {
                                                 RbTree::Empty => {
                                                     unfold(s);

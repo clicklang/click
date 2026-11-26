@@ -6,9 +6,10 @@ fn retained_contract_result_storage_and_exit_memory_skip_expression_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let mut root =
-            KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(998340)));
-        let three = KernelTermImport::default().machine(format, &MachineTerm::uint32_constant(3));
+        let mut root = KernelTermImport::default()
+            .machine(format, &OldMachineTerm::Variable(Variable(998340)));
+        let three =
+            KernelTermImport::default().machine(format, &OldMachineTerm::uint32_constant(3));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -53,7 +54,7 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
     let payload = SharedPointer::import(&OldPointer::new(
-        Address::symbolic(Variable(1027300)),
+        OldAddress::symbolic(Variable(1027300)),
         ProgramType::Int32Pointer,
     ));
     for unrelated in [0, 128, 512] {
@@ -61,7 +62,7 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
         for n in 0..unrelated {
             state.locals.set_typed(
                 format!("other_{n}"),
-                ProgramValue::Int32(MachineTerm::constant(n)),
+                ProgramValue::Int32(OldMachineTerm::constant(n)),
                 ProgramType::Int32,
             );
         }
@@ -200,7 +201,7 @@ fn prepared_argument_checks_lookup_only_the_live_destination_and_its_resources()
         state
             .locals
             .set_aggregate_object_at(name.clone(), layout.clone(), address.clone());
-        let token = |key: Address, index: u32| {
+        let token = |key: OldAddress, index: u32| {
             ResourceFact::own_token(
                 "logical_state".into(),
                 vec![
@@ -265,7 +266,7 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
         ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    let model = |id: u64, address: Address| {
+    let model = |id: u64, address: OldAddress| {
         ResourceFact::own(Resource::Instance(
             ResourceInstance::new(
                 InstanceId::from_variable(Variable(id)),
@@ -280,8 +281,10 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
     let mut samples = Vec::new();
     for count in [16u32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let placeholder =
-            ProgramValue::typed_pointer(Address::symbolic(Variable(1)), ProgramType::UInt8Pointer);
+        let placeholder = ProgramValue::typed_pointer(
+            OldAddress::symbolic(Variable(1)),
+            ProgramType::UInt8Pointer,
+        );
         let mut caller = bind_program_function_arguments_with(
             &ExecutionState::new(),
             &function,
@@ -320,15 +323,18 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
             1
         );
 
-        let ordinary = bind_program_function_arguments_retained(
-            &caller,
-            &function,
-            values,
-            &[],
-            &mut Vec::new(),
-        )
-        .unwrap();
-        assert_ne!(ordinary.locals.slot("parameter"), Some(&address));
+        // An ordinary call never reuses the proof input: it receives only an
+        // object its frontend prepared, so this one is refused.
+        assert!(
+            bind_program_function_arguments_retained(
+                &caller,
+                &function,
+                values,
+                &[],
+                &mut Vec::new(),
+            )
+            .is_none()
+        );
         let other_entry =
             bind_program_function_arguments(&caller, &other_function, values).unwrap();
         assert_ne!(other_entry.locals.slot("parameter"), Some(&address));

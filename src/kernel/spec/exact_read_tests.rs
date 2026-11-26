@@ -5,9 +5,9 @@
 use super::*;
 
 fn read(point: &str, value_type: ProgramType, exact: bool) -> SpecExpression {
-    let cell = Address {
+    let cell = OldAddress {
         base: point.into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
@@ -39,13 +39,13 @@ fn evaluate(state: &ExecutionState, read: &SpecExpression) -> ProgramValue {
 #[test]
 fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = Address {
+    let cell = OldAddress {
         base: "exact-read-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "exact-read-other".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let stored = SymbolicMemory::new()
         .with_block("exact-read-cell", 4)
@@ -57,7 +57,7 @@ fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
     let stored = ExecutionState::new().with_memory(stored);
     let after = stored.clone().with_memory(after);
     let own_read = |state: &ExecutionState| {
-        int32(MachineTerm::read_named(
+        int32(OldMachineTerm::read_named(
             state.program_point().for_exact_read(),
             Box::new(cell.clone()),
             LoadKind::Int32,
@@ -74,13 +74,13 @@ fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
 #[test]
 fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = Address {
+    let cell = OldAddress {
         base: "exact-pointer-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "exact-pointer-other".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let after = SymbolicMemory::new()
         .with_block("exact-pointer-cell", 8)
@@ -114,7 +114,7 @@ fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     };
     assert_eq!(
         ordinary.address(),
-        &Address::canonical_read(&state, None, &cell)
+        &OldAddress::canonical_read(&state, None, &cell)
     );
     assert_ne!(ordinary.address(), exact.address());
 }

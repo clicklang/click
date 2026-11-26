@@ -3,6 +3,16 @@ use click::surface::{
     c_smart_tactic_source_sites, c_tactic_source_position, verify_c_sources, verify_c_sources_at,
 };
 
+fn audit_all_sites(path: &Path) {
+    let arguments = parse_arguments([
+        "--time-limit".into(),
+        "120s".into(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+}
+
 #[test]
 fn theorem_replay_with_a_partial_expression_in_an_unselected_theorem() {
     let path =
@@ -44,7 +54,7 @@ fn generic_rust_clause_proofs_stay_on_the_generic_function() {
     let original = fs::read_to_string(&path).unwrap();
     let invalid = original.replacen(
         "ensures result == Option<T>::Some(value);",
-        "ensures result == Option<T>::Some(value) by { have 0 == 1 by normalize(); }",
+        "ensures result == Option<T>::Some(value) by { have 0 == 1 by close(); }",
         1,
     );
     assert_ne!(invalid, original);
@@ -53,7 +63,7 @@ fn generic_rust_clause_proofs_stay_on_the_generic_function() {
         Ok(_) => panic!("the generic function's invalid proof must still be checked"),
         Err(error) => error,
     };
-    assert!(error.contains("normalize"), "{error}");
+    assert!(error.contains("goal: 0 == 1"), "{error}");
     assert!(
         !error.contains("external function contracts cannot carry proof"),
         "{error}"
@@ -66,7 +76,7 @@ fn generic_rust_clause_proofs_stay_on_the_generic_function() {
     let original = fs::read_to_string(path.with_file_name("ffi.interface.click")).unwrap();
     let invalid = original.replacen(
         "ensures 0 <= result and result <= 100;",
-        "ensures 0 <= result and result <= 100 by { normalize(); }",
+        "ensures 0 <= result and result <= 100 by { close(); }",
         1,
     );
     assert_ne!(invalid, original);
@@ -176,7 +186,7 @@ fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
     let original = fs::read_to_string(&path).unwrap();
     let invalid = original.replacen(
         "ensures result == this->value;",
-        "ensures result == this->value by { have 0 == 1 by normalize(); }",
+        "ensures result == this->value by { have 0 == 1 by close(); }",
         1,
     );
     assert_ne!(invalid, original);
@@ -185,14 +195,14 @@ fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
         Ok(_) => panic!("the generic method's invalid proof must still be checked"),
         Err(error) => error,
     };
-    assert!(error.contains("normalize"), "{error}");
+    assert!(error.contains("goal: 0 == 1"), "{error}");
     assert!(
         !error.contains("external function contracts cannot carry proof"),
         "{error}"
     );
 
     let error = verify_c_sources(
-        "extern int32 f() { ensures result == 0 by { normalize(); } }",
+        "extern int32 f() { ensures result == 0 by { close(); } }",
         &[],
     )
     .unwrap_err();
@@ -839,7 +849,7 @@ int32 example() {
             .collect::<Vec<_>>(),
         vec![
             ("example.contract", 0, "step_until"),
-            ("example.contract", 1, "solve"),
+            ("example.contract", 1, "close"),
         ]
     );
     verify_c_sources(click_source, &sources).unwrap();
@@ -931,7 +941,7 @@ int32 count_to_one() {
         "{inventory:?}"
     );
     assert!(inventory.iter().any(|site| {
-        site.claim_label == "count_to_one.contract" && site.tactic_name == "solve"
+        site.claim_label == "count_to_one.contract" && site.tactic_name == "close"
     }));
 }
 
@@ -1201,8 +1211,8 @@ int32 write_selected(int32 p[2], int32 flag) {
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
     let site = sites
         .iter()
-        .find(|site| site.tactic_name == "have")
-        .expect("the branch should expose an auditable smart have");
+        .find(|site| site.tactic_name == "close")
+        .expect("the branch should expose a closer inside a have");
     let expanded = expand_location(&format_location(&site_location(site)))
         .expect("the audit expansion path should handle branched frames");
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
@@ -1210,10 +1220,16 @@ int32 write_selected(int32 p[2], int32 flag) {
     verify_c_sources(&source.click_source, &refs)
         .expect("the audited branched expansion should verify");
 
-    assert_eq!(
-        reexpand_source(&click_path, &site.claim, &expanded).unwrap(),
-        expanded
-    );
+    let limits = AuditLimits::default();
+    let mut worker = AuditSessionWorker::start(&click_path, limits.session).unwrap();
+    audit_site(
+        site,
+        &mut worker,
+        &limits,
+        true,
+        Instant::now() + Duration::from_secs(60),
+    )
+    .expect("the emitted site is a checked fixed point");
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1266,10 +1282,16 @@ int32 flag(int32 x) {
     verify_c_sources(&source.click_source, &refs)
         .expect("the audited dropped-arm expansion should verify");
 
-    assert_eq!(
-        reexpand_source(&click_path, &site.claim, &expanded).unwrap(),
-        expanded
-    );
+    let limits = AuditLimits::default();
+    let mut worker = AuditSessionWorker::start(&click_path, limits.session).unwrap();
+    audit_site(
+        site,
+        &mut worker,
+        &limits,
+        true,
+        Instant::now() + Duration::from_secs(60),
+    )
+    .expect("the emitted site is a checked fixed point");
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1406,16 +1428,16 @@ void object_retain_many(struct object* obj, int32 amount) {
             .iter()
             .find(|site| site.position.line == line)
             .unwrap_or_else(|| panic!("line {line} should be an auditable site"));
-        let expanded = expand_location(&format_location(&site_location(site)))
-            .unwrap_or_else(|error| panic!("line {line} should expand: {error}"));
-        let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();
-        let refs = source_refs(&source.c_sources);
-        verify_c_sources(&source.click_source, &refs)
-            .unwrap_or_else(|error| panic!("line {line} rewrite: {}", error.message()));
-        assert_eq!(
-            reexpand_source(&click_path, &site.claim, &expanded).unwrap(),
-            expanded
-        );
+        let limits = AuditLimits::default();
+        let mut worker = AuditSessionWorker::start(&click_path, limits.session).unwrap();
+        audit_site(
+            site,
+            &mut worker,
+            &limits,
+            true,
+            Instant::now() + Duration::from_secs(60),
+        )
+        .unwrap_or_else(|error| panic!("line {line} should audit: {error}"));
     }
     fs::remove_dir_all(directory).unwrap();
 }
@@ -1446,8 +1468,6 @@ int32 compare_self(uint8 bytes[]) {
     ensures 1 == 1 by {
         step();
         step();
-        have 1 == 1 by { normalize(); }
-        close();
     }
 }
 
@@ -1637,10 +1657,14 @@ uint32 count_live(struct cell* node) {
     let refs = source_refs(&source.c_sources);
     verify_c_sources(&source.click_source, &refs)
         .unwrap_or_else(|error| panic!("the rewritten arm should reverify: {}", error.message()));
-    assert_eq!(
-        reexpand_source(&click_path, "count_live.contract", &expanded).unwrap(),
-        expanded
-    );
+    cold_verify_expansion(
+        &expanded,
+        &original,
+        "count_live.contract",
+        AuditLimits::default().verification,
+        true,
+    )
+    .expect("the expanded claim should cold check without search");
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1723,10 +1747,16 @@ int32 stop_at(int32 n) {
             error.message()
         )
     });
-    assert_eq!(
-        reexpand_source(&click_path, &site.claim, &expanded).unwrap(),
-        expanded
-    );
+    let limits = AuditLimits::default();
+    let mut worker = AuditSessionWorker::start(&click_path, limits.session).unwrap();
+    audit_site(
+        site,
+        &mut worker,
+        &limits,
+        true,
+        Instant::now() + Duration::from_secs(60),
+    )
+    .expect("the emitted site is a checked fixed point");
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1790,24 +1820,9 @@ fn a_field_selected_memory_endpoint_audits_every_site() {
 fn an_unfold_bound_scalar_field_audits_every_site() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/resource_unfold_binds_scalar_field.md");
-    let deadline = Instant::now() + Duration::from_secs(120);
     let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
     assert!(sites.len() >= 2, "{sites:?}");
-    let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-    for (index, site) in sites.iter().enumerate() {
-        if let Err(message) = audit_site(
-            site,
-            &mut worker,
-            &AuditLimits::default(),
-            index == 0,
-            deadline,
-        ) {
-            panic!(
-                "{}:{} should audit: {message}",
-                site.position.line, site.position.column
-            );
-        }
-    }
+    audit_all_sites(&path);
 }
 
 #[test]
@@ -1853,7 +1868,7 @@ int32 double_it(int32 x) {
     .unwrap();
     let sites = inventory_sites(std::slice::from_ref(&click_path))
         .expect("the sidecar should load under its project root");
-    assert!(sites.iter().any(|site| site.tactic_name == "solve"));
+    assert!(sites.iter().any(|site| site.tactic_name == "close"));
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -2035,29 +2050,13 @@ fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
         ("mdtests/resource_witness_unfold_fold.md", 3),
-        ("mdtests/rb_parent_family.md", 15),
+        ("mdtests/rb_parent_family.md", 36),
         ("mdtests/population_count_states_its_transition.md", 2),
     ] {
         let path = root.join(relative);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
         assert_eq!(sites.len(), expected_sites, "{relative}");
-        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(120);
-        for (index, site) in sites.iter().enumerate() {
-            audit_site(
-                site,
-                &mut worker,
-                &AuditLimits::default(),
-                index == 0,
-                deadline,
-            )
-            .unwrap_or_else(|message| {
-                panic!(
-                    "{relative}:{}:{}: {message}",
-                    site.position.line, site.position.column
-                )
-            });
-        }
+        audit_all_sites(&path);
     }
 }
 
@@ -2141,18 +2140,7 @@ fn result_parameter_postconditions_audit_every_site() {
         let path = root.join(relative);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
         assert!(!sites.is_empty(), "{relative} must have tactic sites");
-        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(120);
-        for (index, site) in sites.iter().enumerate() {
-            audit_site(
-                site,
-                &mut worker,
-                &AuditLimits::default(),
-                index == 0,
-                deadline,
-            )
-            .unwrap_or_else(|message| panic!("{relative}: {message}"));
-        }
+        audit_all_sites(&path);
     }
 }
 
@@ -2775,7 +2763,7 @@ fn a_fully_explicit_script_has_an_auditable_fixed_point() {
         "```c filename=explicit_identity.c\nint32 identity(int32 x) {\n    return x;\n}\n```\n\n\
          ```click\nverifying \"explicit_identity.c\";\n\n\
          int32 identity(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    \
-         normalize();\n}\n```\n\n\
+         close();\n}\n```\n\n\
          ```expect\npass\n```\n",
     )
     .unwrap();

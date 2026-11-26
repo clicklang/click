@@ -181,7 +181,7 @@ impl<T> generic_container::Stack<T> {
                         let { tail: next } = unfold(tail);
                         have self.head.next == old(self.head.next).next by {
                             rewrite(self.head, old(self.head.next));
-                            normalize();
+                            close();
                         }
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more), tail: next });
                         have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);

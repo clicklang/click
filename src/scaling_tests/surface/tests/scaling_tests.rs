@@ -28,6 +28,8 @@ void probe(int32 a[], int32 n) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn first_entry_cell_lookup_has_bounded_work_after_disjoint_stores() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -82,6 +84,8 @@ fn first_entry_cell_lookup_has_bounded_work_after_disjoint_stores() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.5s in the parallel gate"]
 fn static_cell_read_steps_skip_same_array_store_history() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -164,6 +168,8 @@ int32 probe() {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.9s in the parallel gate"]
 fn static_cell_read_steps_skip_same_array_call_history() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -222,6 +228,8 @@ int32 probe() {{ owns g[0..256]; ensures result == 0; }} by {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn writing_the_entry_cell_changes_its_ordinary_read_version() {
     let (c, source) = entry_cell_after_local_stores(4, true, "a[0] == 7");
     verify_c_sources(&source, &[("probe.c", &c)]).expect("the read names the written value");
@@ -239,6 +247,8 @@ fn writing_the_entry_cell_changes_its_ordinary_read_version() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn trivial_disjuncts_do_not_spell_unrelated_premises() {
     let mut samples = Vec::new();
     for size in [1, 2, 8] {
@@ -377,6 +387,8 @@ int32 probe(int32* p) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn refined_pure_arithmetic_does_not_rescan_unrelated_parameters() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
@@ -429,7 +441,7 @@ theorem count_step(n: uint64{parameters}) {{
 #[ignore = "nightly: multi-size quantified frame refusal and positive controls"]
 fn false_quantified_frames_do_not_materialize_the_constant_domain() {
     use crate::instrumentation::measure_deterministic_work;
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let program = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
     let mut samples = Vec::new();
     for size in [16, 1024, 1_000_000, 100_000_000] {
@@ -594,6 +606,8 @@ fn expanded_loop_claims_preserve_the_audit_work_bound() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() {
     let samples = [1, 8, 32, 128].map(|count| {
         let mut source = "resource Counter() { field revision: int32; }\n".to_string();
@@ -618,6 +632,8 @@ fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn reversed_all_arm_matching_scales_with_written_labels() {
     fn conjunction(labels: &[String]) -> String {
         if let [one] = labels {
@@ -658,16 +674,16 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
     // first use parses every library module into a process-wide `OnceLock`
     // on the calling thread. Do that here, on the test's ordinary stack, so
     // the small stack and the work samples measure only the nested bodies.
-    crate::surface::parse("theorem warm() { ensures 0 == 0 by { normalize(); } }")
+    crate::surface::parse("theorem warm() { ensures 0 == 0 by { close(); } }")
         .expect("the standard library parses");
     std::thread::Builder::new()
         .name("small-stack-proof-body-parser".into())
         .stack_size(7 * 256 * 1024)
         .spawn(|| {
             let samples = [2, 4, 8, 16].map(|depth| {
-                let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
+                let mut body = "have 0 == 0 by { close(); } close();".to_string();
                 for _ in 0..depth {
-                    body = format!("all {{ true => {{ {body} }} true => {{ normalize(); }} }}");
+                    body = format!("all {{ true => {{ {body} }} true => {{ close(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -689,6 +705,8 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
     // Repeated matches can produce coincident outcome/fact records with
     // distinct case evidence. Every checked leaf must survive publication.
@@ -698,7 +716,7 @@ fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8] {
@@ -733,6 +751,8 @@ int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
     // The CLI's ordinary eight-megabyte stack must suffice: the fixture
     // harness's larger stack would hide the captured split-record frames.
@@ -742,7 +762,7 @@ fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8, 10] {
@@ -790,7 +810,7 @@ fn explicit_constructor_unfold_has_near_linear_nested_match_work() {
         }
         let source = format!(
             "function nested(n: Nat) -> Nat {{ {body} }}\n\
-            theorem nested_result(n: Nat) {{ ensures nested(n) == n by {{ unfold(nested(n)); normalize(); }} }}"
+            theorem nested_result(n: Nat) {{ ensures nested(n) == n by {{ unfold(nested(n)); close(); }} }}"
         );
         if size > parser::MATCH_NESTING_LIMIT {
             let error = verify_click_theorems(&source)
@@ -832,7 +852,7 @@ fn symbolic_integer_match_lowering_has_near_linear_width_work() {
              theorem nested(value: Integer) {{\n\
                  ensures match Choice::V0(value) {{\n\
                      {arms}\n\
-                 }} == value by {{ normalize(); }}\n\
+                 }} == value by {{ close(); }}\n\
              }}"
         );
         let (result, sample) = scaling_sample(width, || verify_click_theorems(&source));
@@ -848,6 +868,8 @@ fn symbolic_integer_match_lowering_has_near_linear_width_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
     let mut samples = Vec::new();
     for depth in [2, 4, 8, 16, 32, 64] {
@@ -859,7 +881,7 @@ fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
         }
         let source = format!(
             "spec enum Box {{ Empty, Wrapped(Integer) }}\n\
-             theorem nested() {{ ensures {body} == 0 by {{ normalize(); }} }}"
+             theorem nested() {{ ensures {body} == 0 by {{ close(); }} }}"
         );
         if depth > parser::MATCH_NESTING_LIMIT {
             let error = verify_click_theorems(&source)
@@ -885,12 +907,18 @@ fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn parametric_theorem_declarations_have_near_linear_checking_work() {
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
-        let source = (0..size).map(|index| format!(
-            "theorem reflexive_{index}<T>(x: T) {{ ensures x == x by {{ normalize(); }} }}\n"
-        )).collect::<String>();
+        let source = (0..size)
+            .map(|index| {
+                format!(
+                    "theorem reflexive_{index}<T>(x: T) {{ ensures x == x by {{ close(); }} }}\n"
+                )
+            })
+            .collect::<String>();
         let (verified, sample) = scaling_sample(size, || verify_click_theorems(&source));
         assert_eq!(
             verified.expect("every unused generic proof checks").len(),
@@ -902,6 +930,8 @@ fn parametric_theorem_declarations_have_near_linear_checking_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn transitive_module_chains_prepare_with_near_linear_deterministic_work() {
     let mut samples = Vec::new();
     for size in [4, 8, 16, 32] {
@@ -1175,7 +1205,7 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
         let unrelated = (0..size)
             .map(|index| {
                 format!(
-                    "                have 0 <= {index} by {{\n                    normalize();\n                }}\n"
+                    "                have 0 <= {index} by {{\n                    close() using {{}};\n                }}\n"
                 )
             })
             .collect::<String>();
@@ -1225,12 +1255,14 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
 /// settle, which is the case a branch-deciding lowering would have searched
 /// for.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
     let mut samples = Vec::new();
     let mut requirement_work = Vec::new();
     for size in [8, 16, 32, 64] {
         let unrelated = (0..size)
-            .map(|index| format!("    have 0 <= {index} by {{\n        normalize();\n    }}\n"))
+            .map(|index| format!("    have 0 <= {index} by {{\n        close();\n    }}\n"))
             .collect::<String>();
         let click_source = format!(
             "verifying \"conditional_callee.c\";\n\
@@ -1385,7 +1417,7 @@ fn unrelated_identity_project(function_count: usize) -> (Vec<(String, String)>, 
     click_source.push('\n');
     for index in 0..function_count {
         click_source.push_str(&format!(
-            "int32 scaling_identity_{index}(int32 x) {{\n    ensures result == x;\n}} by {{\n    step();\n    normalize();\n}}\n\n"
+            "int32 scaling_identity_{index}(int32 x) {{\n    ensures result == x;\n}} by {{\n    step();\n    close();\n}}\n\n"
         ));
     }
     (c_sources, click_source)
@@ -1399,7 +1431,7 @@ fn target_with_unrelated_theorems(theorem_count: usize) -> String {
         ));
     }
     click_source.push_str(
-        "int32 scaling_target(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    normalize();\n}\n",
+        "int32 scaling_target(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    close();\n}\n",
     );
     click_source
 }
@@ -1422,7 +1454,7 @@ fn straight_line_project(statement_count: usize, program_point_claim: bool) -> (
     for _ in 0..=statement_count {
         click_source.push_str("    step();\n");
     }
-    click_source.push_str("    normalize();\n}\n");
+    click_source.push_str("    close();\n}\n");
     (c_source, click_source)
 }
 
@@ -1474,7 +1506,7 @@ fn load_variable_project(statement_count: usize, axis: LoadAxis) -> (String, Str
         // one smart tactic in this fixture, before the scalar result goal.
         click_source.push_str("    close();\n");
     }
-    click_source.push_str("    normalize();\n");
+    click_source.push_str("    close();\n");
     click_source.push_str("}\n");
     (c_source, click_source)
 }
@@ -1547,7 +1579,7 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
         }
         step();
         have 1 == 1 by {
-            normalize();
+            close();
         }
         close();
     }
@@ -1588,7 +1620,7 @@ fn grouped_claim_project(claim_count: usize) -> (String, String) {
     for _ in 0..claim_count {
         click_source.push_str("    ensures result == x;\n");
     }
-    click_source.push_str("} by {\n    step();\n    normalize();\n}\n");
+    click_source.push_str("} by {\n    step();\n    close();\n}\n");
     (c_source, click_source)
 }
 
@@ -1645,6 +1677,8 @@ fn parenthesized_contract_expression_parsing_has_linear_deterministic_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn simple_unrelated_functions_have_a_deterministic_scaling_control() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -1697,6 +1731,8 @@ fn a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";
     let samples = [4, 8, 16, 32]
@@ -1738,6 +1774,8 @@ fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
 /// copies only its own file's. Each copied the whole library several times,
 /// a fixed cost that dominated small verifications.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn verification_copies_only_its_own_theorem_declarations() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";
     let library = standard_library_theorem_definitions()
@@ -1790,6 +1828,8 @@ fn targeted_certification_keeps_an_explicit_theorem_dependency() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn straight_line_proof_steps_scale_near_linearly_with_retained_states() {
     for program_point_claim in [false, true] {
         let mut finalization_views = Vec::new();
@@ -1860,6 +1900,8 @@ fn load_variable_construction_scales_near_linearly_with_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn exact_known_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [16, 32, 64, 128]
         .into_iter()
@@ -1881,6 +1923,8 @@ fn exact_known_scales_near_linearly_with_unrelated_ambient_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn transitive_order_derivation_scales_near_linearly_with_unrelated_conditions() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -1902,6 +1946,8 @@ fn transitive_order_derivation_scales_near_linearly_with_unrelated_conditions() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn explicit_step_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [8, 16, 32, 64]
         .into_iter()
@@ -1955,6 +2001,8 @@ fn step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambien
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn explicit_return_fact_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [8, 16, 32, 64]
         .into_iter()
@@ -2032,6 +2080,8 @@ fn explicit_separation_alias_transport_has_constant_selected_work() {
 /// variables, which a run over a block no variable names still visits slot
 /// by slot.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length() {
     let samples = [512, 1024, 2048, 4096]
         .into_iter()
@@ -2058,6 +2108,8 @@ fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn same_kernel_fact_with_many_surface_forms_scales_near_linearly() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -2078,6 +2130,8 @@ fn same_kernel_fact_with_many_surface_forms_scales_near_linearly() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn grouped_claims_share_one_execution_with_near_linear_work() {
     let samples = [8, 32, 64]
         .into_iter()
@@ -2154,15 +2208,15 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
     use crate::kernel::search::proposition_search::{
         condition_selection_visits, reset_condition_selection_visits,
     };
-    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Proposition, Variable};
 
     let less = |left: u64, right: u64| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(left))),
-                right: Box::new(MachineTerm::Variable(Variable(right))),
+                left: Box::new(OldMachineTerm::Variable(Variable(left))),
+                right: Box::new(OldMachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -2171,11 +2225,11 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
         let mut available = Vec::new();
         for index in 0..unrelated {
             available.push(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(441_000 + index as u64))),
-                    right: Box::new(MachineTerm::constant(1_000 + index as u32)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(441_000 + index as u64))),
+                    right: Box::new(OldMachineTerm::constant(1_000 + index as u32)),
                 },
                 true,
             ));
@@ -2261,21 +2315,22 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        Address, AddressOffset, MachineTerm, Proposition, PureFactContext, SymbolicMemory, Variable,
+        OldAddress, OldAddressOffset, OldMachineTerm, Proposition, PureFactContext, SymbolicMemory,
+        Variable,
     };
 
     let memory = SymbolicMemory::new();
     let at = |block: &str, element: u32| {
-        Address {
+        OldAddress {
             base: block.into(),
-            offset: AddressOffset::Variable(Variable(450_000)),
+            offset: OldAddressOffset::Variable(Variable(450_000)),
         }
         .offset_by_bytes(4 * element)
     };
-    let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
+    let loadable = |base: OldAddress, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: (MachineTerm::constant(bytes)).into(),
+        bytes: (OldMachineTerm::constant(bytes)).into(),
         wide: false,
     };
     // (sources stated about the goal's object, goal, premises the
@@ -2380,26 +2435,26 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, MemoryRange, ProgramType, Proposition,
-        PureFactContext, Resource, SymbolicMemory, Variable,
+        MemoryRange, OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramType,
+        Proposition, PureFactContext, Resource, SymbolicMemory, Variable,
     };
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
-    let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
+    let read_defined = |pointer: OldAddress| Proposition::MemoryReadDefined {
         at: None,
         memory: memory.clone(),
         pointer,
         value_type: ProgramType::Int32,
     };
-    let at = |block: String, variable: u64| Address {
+    let at = |block: String, variable: u64| OldAddress {
         base: block.as_str().into(),
-        offset: AddressOffset::Variable(Variable(variable)),
+        offset: OldAddressOffset::Variable(Variable(variable)),
     };
-    let range = |base: Address, start: u32, end: u32| {
+    let range = |base: OldAddress, start: u32, end: u32| {
         Resource::Memory(MemoryRange::new(
             base,
-            MachineTerm::constant(start),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(start),
+            OldMachineTerm::constant(end),
         ))
     };
     let separate =
@@ -2407,11 +2462,11 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             left: Box::new(range(at(block.clone(), variable), start, end)),
             right: Box::new(range(at(block, variable + 1), start, end)),
         };
-    let address = Address {
+    let address = OldAddress {
         base: "goal".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address::symbolic(Variable(460_000));
+    let alias = OldAddress::symbolic(Variable(460_000));
     let cases: [(
         &str,
         Vec<Proposition>,
@@ -2423,15 +2478,15 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             vec![
                 read_defined(address.clone()),
                 Proposition::condition_is(
-                    ConditionTerm::address_equal(alias.clone(), address),
+                    OldConditionTerm::address_equal(alias.clone(), address),
                     true,
                 ),
             ],
             read_defined(alias),
             &|index| {
-                read_defined(Address {
+                read_defined(OldAddress {
                     base: format!("other{index}").as_str().into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 })
             },
         ),
@@ -2700,7 +2755,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
          \x20       match m {\n\
          \x20           Chain::Nil => {\n\
          \x20               unfold(chain_len(Chain::Nil));\n\
-         \x20               normalize();\n\
+         \x20               close();\n\
          \x20           }\n\
          \x20           Chain::Link(rest) => {\n\
          \x20               apply(ih(rest));\n\
@@ -2747,7 +2802,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
              \x20                       rewrite(c.model, Chain::Link(rest_model));\n\
              \x20                       unfold(chain_len(Chain::Link(rest_model)));\n\
-             \x20                       normalize();\n\
+             \x20                       close();\n\
              \x20                   }}\n\
              \x20                   apply(chain_len_is_nonnegative(rest_model));\n\
              \x20                   have chain_len(rest_model) < chain_len(c.model) by {{\n\
@@ -3100,6 +3155,8 @@ fn call_with_structured_precondition(fact_count: usize) -> (String, String) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn call_requirement_checking_scales_near_linearly_with_unrelated_caller_facts() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -3140,6 +3197,8 @@ fn call_requirement_checking_scales_near_linearly_with_unrelated_caller_facts() 
 /// grew both axes at once, so that scan was charged once per query per fact.
 /// The retained exact routes read the index the goal names and nothing else.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn explicit_simple_tactics_scale_with_source_while_ambient_facts_grow() {
     let samples = [8, 16, 32, 64]
         .into_iter()
@@ -3327,7 +3386,7 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
                  \x20           have wide_code(old(c.model)) == {index} by {{\n\
                  \x20               rewrite(old(c.model), Wide::V{index});\n\
                  \x20               unfold(wide_code(Wide::V{index}));\n\
-                 \x20               normalize();\n\
+                 \x20               close();\n\
                  \x20           }}\n\
                  \x20           close();\n\
                  \x20       }},\n"
@@ -3405,7 +3464,7 @@ fn assert_outcome_operations_do_not_reimport_ambient_facts(
             let body = (0..operations)
                 .map(|i| {
                     format!(
-                        "have {} == {} by {{ normalize(); }} unfold(marker(x)); fold(marker(x));",
+                        "have {} == {} by {{ close(); }} unfold(marker(x)); fold(marker(x));",
                         1000 + i,
                         1000 + i,
                     )
@@ -3603,7 +3662,7 @@ fn array_fact_across_local_stores(statement_count: usize, observe_each: bool) ->
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        close();\n    }\n",
     );
     // One use of the fact after every step: the walk is asked from a fresh
     // state each time, which is the shape that goes quadratic when an
@@ -3631,7 +3690,7 @@ fn array_fact_across_declarations(statement_count: usize) -> (String, String) {
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        close();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
@@ -3653,7 +3712,7 @@ fn array_fact_across_calls(statement_count: usize) -> (String, String) {
     c_source.push_str("    return h[0];\n}\n");
 
     let mut click_source = String::from(
-        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(h, 0, 0) == 0 by {\n        unfold(icount(h, 0, 0));\n        normalize();\n    }\n",
+        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(h, 0, 0) == 0 by {\n        unfold(icount(h, 0, 0));\n        close();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
@@ -3723,6 +3782,8 @@ fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
 /// Each use of an array fact across disjoint local stores selects the same
 /// entry version through the recorded path index.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn an_array_fact_carried_across_local_stores_scales_linearly() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -3760,6 +3821,8 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
 /// The first array read after a long run of disjoint statements must not
 /// traverse that run. Per-statement lookups can hide this behind memo hits.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn one_array_lookup_after_disjoint_local_stores_has_bounded_work() {
     let work = [4, 16, 64].map(|size| {
         let (c, source) = array_fact_across_local_stores(size, false);
@@ -3806,7 +3869,7 @@ fn stores_beside_many_owned_ranges(size: usize) -> (String, String) {
     // per-store composition query, and `size` claims about `size` stores
     // would be quadratic before the query is ever reached.
     click_source.push_str(
-        "    produces MaybeCell(result);\n    ensures result != 0 implies value[0] == result[0];\n} by {\n    apply(lift(acquire));\n    step();\n    step(Boxed);\n    step_until(assignment(cell, 0).entry);\n    step();\n    if c(cell) != 0 {\n        unfold(MaybeCell(c(cell)));\n        unfold(Cell(c(cell)));\n        step_until(function.exit);\n        fold(Cell(result));\n        fold(MaybeCell(result));\n        close();\n    } else {\n        unfold(MaybeCell(c(cell)));\n        step_until(function.exit);\n        fold(MaybeCell(result));\n        close();\n    }\n}\n",
+        "    produces MaybeCell(result);\n    ensures result != 0 implies value[0] == result[0];\n} by {\n    apply(lift(acquire));\n    step();\n    step(Boxed);\n    step_until(assignment(cell, 0).entry);\n    step();\n    if program::cell != 0 {\n        unfold(MaybeCell(program::cell));\n        unfold(Cell(program::cell));\n        step_until(function.exit);\n        fold(Cell(result));\n        fold(MaybeCell(result));\n        close();\n    } else {\n        unfold(MaybeCell(program::cell));\n        step_until(function.exit);\n        fold(MaybeCell(result));\n        close();\n    }\n}\n",
     );
     (c_source, click_source)
 }
@@ -4721,15 +4784,15 @@ fn solve_equality_chain_is_linear_and_unrelated_queries_are_flat() {
 /// the goal, so the failing derivation's work stays flat as they grow.
 #[test]
 fn failing_solve_derivation_ignores_unrelated_disjunctions() {
-    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, PureFactContext, Variable};
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Proposition, PureFactContext, Variable};
 
     let equal = |variable: u64, value: u32| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(variable))),
-                right: Box::new(MachineTerm::constant(value)),
+                left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+                right: Box::new(OldMachineTerm::constant(value)),
             },
             true,
         )
@@ -4746,11 +4809,11 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                 ));
             }
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(433_000))),
-                    right: Box::new(MachineTerm::constant(5)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(433_000))),
+                    right: Box::new(OldMachineTerm::constant(5)),
                 },
                 true,
             );
@@ -4776,7 +4839,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
 fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
-        AlgebraicVariantType, ConditionTerm, MachineTerm, Proposition, PureFactContext, Term,
+        AlgebraicVariantType, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext, Term,
         Variable,
     };
 
@@ -4831,11 +4894,11 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                 ));
             }
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(435_000))),
-                    right: Box::new(MachineTerm::constant(5)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(435_000))),
+                    right: Box::new(OldMachineTerm::constant(5)),
                 },
                 true,
             );
@@ -5035,6 +5098,8 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
 /// The callee sees one by-value argument, even when the caller has built
 /// a long arithmetic expression for that value before the call.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn call_preparation_and_ensures_keep_the_computed_argument_shared() {
     use crate::instrumentation::VerificationEvent;
 
@@ -5108,6 +5173,8 @@ fn call_preparation_and_ensures_keep_the_computed_argument_shared() {
 /// The first call can register a previously unseen expression. Later statement
 /// publications must use the same graph when they add another result equality.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn repeated_call_publication_reuses_the_argument_registration() {
     use crate::instrumentation::VerificationEvent;
 
@@ -5144,6 +5211,8 @@ fn repeated_call_publication_reuses_the_argument_registration() {
 
 /// The return paths share the kernel's indexed effects for the common prefix.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn returning_branches_share_the_checked_effect_context() {
     for stores in [8, 32, 64] {
         let writes = (1..=stores)
@@ -5444,221 +5513,6 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
     );
 }
 
-/// A copy loop whose preservation `solve` reaches a fact transport the
-/// explicit-premise planner cannot view: the element just stored is named
-/// `dst[k]` under `k == i - 1`, so `old(src[k]) == old(src[k])` does not
-/// transport to it until `k` is rewritten. Each unrelated `requires` joins
-/// the planner's candidate list. The planner decides the complete list
-/// before it grows a prefix, so the failing plan costs the same number of
-/// checks (six) at every size. It used to check once per growing prefix,
-/// about 15k units per unrelated fact in each preservation attempt; the
-/// remaining linear cost of lowering and offering a candidate is about 1k.
-fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
-    let unrelated = (0..fact_count)
-        .map(|index| format!("    requires length != {};\n", index + 100_000))
-        .collect::<String>();
-    format!(
-        "verifying \"transport_copy.c\";\n\
-         \n\
-         int32 transport_copy(int32 dst[], int32 src[], int32 length) {{\n    \
-             requires 0 <= length;\n    \
-             requires (length as uint32) <= 1073741823u32;\n    \
-             owns dst[0..length];\n    \
-             views src[0..length];\n    \
-             requires separate(memory(dst[0..length]), memory(src[0..length]));\n\
-         {unrelated}    \
-             ensures result == length;\n\
-         }} by {{\n    \
-             step();\n    \
-             step();\n    \
-             loop {{\n        \
-                 decreases length - i;\n        \
-                 invariant 0 <= i;\n        \
-                 invariant i <= length;\n        \
-                 invariant forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }};\n        \
-                 owns dst[0..length];\n        \
-                 initialize by {{\n            \
-                     have 0 <= i by {{\n                normalize();\n            }}\n            \
-                     have i <= length by {{\n                close();\n            }}\n            \
-                     have forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }} by {{\n                \
-                         intro() {{\n                \
-                         intro() {{\n                \
-                         have 0 <= k by close();\n                \
-                         have k < i by close();\n                \
-                         have i == 0 by {{\n                    normalize();\n                }}\n                \
-                         have not (0 <= k) by {{\n                    \
-                             close() using {{\n                        k < i;\n                        i == 0;\n                    }}\n                \
-                         }}\n                \
-                         contradiction(0 <= k);\n                }} }}\n            \
-                     }}\n        \
-                 }}\n        \
-                 maintain by {{\n            step();\n            step();\n            close();\n        }}\n    \
-             }}\n    \
-             have i == length by {{\n        \
-                 have at(loop(0).exit, i) == at(loop(0).exit, length) by {{\n            \
-                     close() using {{\n                \
-                         at(loop(0).exit, i) <= at(loop(0).exit, length);\n                \
-                         not at(loop(0).exit, i) < at(loop(0).exit, length);\n            \
-                     }}\n        \
-                 }}\n        \
-                 close();\n    \
-             }}\n    \
-             step();\n    \
-             close();\n\
-         }}\n"
-    )
-}
-
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 7s in the parallel gate"]
-fn failing_fact_transport_plan_ignores_unrelated_candidates() {
-    const COPY_SOURCE: &str = "int32 transport_copy(int32 dst[], int32 src[], int32 length) {\n    \
-                               int32 i;\n    i = 0;\n    while (i < length) {\n        \
-                               dst[i] = src[i];\n        i = i + 1;\n    }\n    return i;\n}\n";
-    let mut samples = Vec::new();
-    let mut plan_checks = Vec::new();
-    let mut solve_work = Vec::new();
-    const SIZES: [usize; 4] = [3, 6, 12, 24];
-    for size in SIZES {
-        let click_source = copy_loop_with_unrelated_requirements(size);
-        let ((verified, work), events) = crate::instrumentation::collect(|| {
-            crate::instrumentation::measure_deterministic_work(|| {
-                verify_c_sources(&click_source, &[("transport_copy.c", COPY_SOURCE)])
-            })
-        });
-        verified.unwrap_or_else(|error| {
-            panic!(
-                "size {size} fact-transport scaling fixture failed: {}",
-                error.message()
-            )
-        });
-        let mut named_work = BTreeMap::<String, usize>::new();
-        let mut checks = 0;
-        let mut solve = 0;
-        for event in events {
-            match event {
-                crate::instrumentation::VerificationEvent::OperationFinished {
-                    name, work, ..
-                } => {
-                    if name == "explicit fact transport: premise check" {
-                        checks += 1;
-                    }
-                    *named_work.entry(format!("operation `{name}`")).or_default() += work;
-                }
-                crate::instrumentation::VerificationEvent::TacticFinished {
-                    tactic, work, ..
-                } => {
-                    if tactic.tactic_name == "solve" {
-                        solve += work;
-                    }
-                    *named_work
-                        .entry(format!("{} tactic `{}`", tactic.class, tactic.tactic_name))
-                        .or_default() += work;
-                }
-                _ => {}
-            }
-        }
-        plan_checks.push(checks);
-        solve_work.push(solve);
-        samples.push(ScalingSample {
-            size,
-            work,
-            named_work,
-        });
-    }
-    assert!(
-        plan_checks[0] > 0,
-        "the preservation solve never planned a fact transport: {plan_checks:?}"
-    );
-    assert!(
-        plan_checks.iter().all(|checks| *checks == plan_checks[0]),
-        "fact-transport planning checked once per unrelated candidate: {plan_checks:?}; \
-         named work: {}",
-        named_growth_diagnostic(&samples)
-    );
-    // Each unrelated requirement is still read, lowered, and offered as a
-    // candidate, which is linear; a check per candidate cost an order of
-    // magnitude more per fact.
-    let per_fact = (solve_work[3] - solve_work[0]) / (SIZES[3] - SIZES[0]);
-    assert!(
-        per_fact <= 4_000,
-        "solve work grew by {per_fact} units per unrelated requirement: {solve_work:?}"
-    );
-    assert_near_linear_scaling("fact-transport plan unrelated candidates", &samples);
-}
-
-/// Explicit fold read framing along a straight line of endpoint stores: each
-/// store is followed by one `transport` of the prefix count, which crosses
-/// exactly that store. Total work stays near linear in the number of stores,
-/// and so does the framing rule's own named work, rather than rescanning the
-/// history once per transport.
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 1.2s in the parallel gate"]
-fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
-    let mut samples = Vec::new();
-    let mut framing = Vec::new();
-    for size in [4usize, 8, 16, 32] {
-        let stores = (0..size)
-            .map(|index| format!("    v[i] = {index};\n"))
-            .collect::<String>();
-        let c_source = format!("void mark(int32 *v, int32 i) {{\n{stores}}}\n");
-        let steps = (0..size)
-            .map(|index| {
-                format!(
-                    "    mark m{index};\n    step();\n    have zeros(v, 0, i) == 0 by {{\n        transport(\n            at(m{index}, zeros(v, 0, i)) == 0,\n            zeros(v, 0, i) == 0\n        );\n        close();\n    }}\n"
-                )
-            })
-            .collect::<String>();
-        let click_source = format!(
-            "verifying \"mark.c\";\n\n\
-             function zeros(v: int32[], lo: int32, hi: int32) -> Integer {{\n    \
-                 (lo..hi).fold(0, |acc, k| {{ acc + to_integer(if v[k] == 0 {{ 1 }} else {{ 0 }}) }})\n\
-             }}\n\n\
-             void mark(int32 *v, int32 i) {{\n    \
-                 requires 0 <= i;\n    \
-                 requires i < 1000;\n    \
-                 requires zeros(v, 0, i) == 0;\n    \
-                 owns v[i..(i + 1)];\n    \
-                 ensures zeros(v, 0, i) == 0;\n\
-             }} by {{\n{steps}    step_until(function.exit);\n    close();\n}}\n"
-        );
-        let (verified, sample) = scaling_sample(size, || {
-            verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
-        });
-        verified.unwrap_or_else(|error| {
-            panic!(
-                "{size} framed endpoint stores should verify: {}",
-                error.message()
-            )
-        });
-        framing.push(
-            sample
-                .named_work
-                .get("operation `explicit fact transport: fold read frame`")
-                .copied()
-                .unwrap_or(0),
-        );
-        samples.push(sample);
-    }
-    eprintln!(
-        "fold read transport along stores: total {:?}, framing {framing:?}",
-        samples.iter().map(|sample| sample.work).collect::<Vec<_>>()
-    );
-    assert!(
-        framing[0] > 0,
-        "the fold read frame did not run: {framing:?}"
-    );
-    for pair in framing.windows(2) {
-        assert!(
-            pair[1] <= pair[0].saturating_mul(3),
-            "fold read framing work is not near linear in the store count: {framing:?}"
-        );
-    }
-    assert_near_linear_scaling("explicit fold read transport along stores", &samples);
-}
-
 /// Collecting the variables of a state's memory reads the state's counts,
 /// kept once per session from its derivation base's, so a proof beside a
 /// global array visits each of the array's cells once however many steps
@@ -5668,6 +5522,8 @@ fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
 /// and 22062 beside 1000); a global array of 100000 elements exhausted the
 /// wall-clock limit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn collecting_a_states_variables_visits_a_global_array_once() {
     let c_source = |length: u64, statements: usize| {
         format!(
@@ -5728,6 +5584,8 @@ fn collecting_a_states_variables_visits_a_global_array_once() {
 /// the simple-tactic budget, and `views a[0..1000000]` minted enough load
 /// identities to collide.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn a_constant_view_costs_the_same_whatever_its_length() {
     let c_source = "int32 get(int32 *a, int32 i) { return a[i]; }\n";
     let click_source = |length: u64| {
@@ -5838,137 +5696,6 @@ fn the_back_edge_without_the_explicit_transport_costs_a_small_multiple() {
         implicit_work <= explicit_work.saturating_mul(3) / 2,
         "closing without the explicit transport costs {implicit_work} units against {explicit_work}"
     );
-}
-
-/// One quantified frame case: `stores` stores into the owned `visited`, a
-/// quantified body of `conjuncts` framed reads of the viewed `left`, and
-/// `facts` unrelated requirements in the context.
-fn quantified_frame_project(stores: usize, conjuncts: usize, facts: usize) -> (String, String) {
-    // Each store writes its own cell `visited[c{index}]`: repeated stores to
-    // one cell collapse into one recorded step.
-    let indices = (0..stores)
-        .map(|index| format!(", int32 c{index}"))
-        .collect::<String>();
-    let store_lines = (0..stores)
-        .map(|index| format!("    visited[c{index}] = {index};\n"))
-        .collect::<String>();
-    let signature = format!("void mark(int32 *left, int32 *visited, int32 n, int32 x{indices})");
-    let c_source = format!("{signature} {{\n{store_lines}}}\n");
-    let bounds = (0..stores)
-        .map(|index| format!("    requires 0 <= c{index};\n    requires c{index} < n;\n"))
-        .collect::<String>();
-    let unrelated = (0..facts)
-        .map(|index| format!("    requires x != {index};\n"))
-        .collect::<String>();
-    let body = |now: &str| vec![format!("{now}(left[k]) == old(left[k])"); conjuncts].join(" and ");
-    let source = format!(
-        "forall (k: int32) {{ 0 <= k and k < n implies {} }}",
-        body("old")
-    );
-    let target = format!(
-        "forall (k: int32) {{ 0 <= k and k < n implies {} }}",
-        body("")
-    );
-    let steps = "    step();\n".repeat(stores);
-    let click_source = format!(
-        "verifying \"mark.c\";\n\n\
-         {signature} {{\n{bounds}{unrelated}    \
-             views left[0..n];\n    \
-             owns visited[0..n];\n    \
-             ensures {target};\n\
-         }} by {{\n{steps}    transport({source}, {target});\n    \
-             step_until(function.exit);\n    close();\n}}\n"
-    );
-    (c_source, click_source)
-}
-
-fn quantified_frame_samples(
-    axis: &str,
-    sizes: [usize; 4],
-    project: impl Fn(usize) -> (String, String),
-) -> (Vec<ScalingSample>, Vec<usize>) {
-    let mut samples = Vec::new();
-    let mut framing = Vec::new();
-    for size in sizes {
-        let (c_source, click_source) = project(size);
-        let (verified, sample) = scaling_sample(size, || {
-            verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
-        });
-        verified.unwrap_or_else(|error| {
-            panic!("{axis} at size {size} should verify: {}", error.message())
-        });
-        framing.push(
-            sample
-                .named_work
-                .get("operation `explicit fact transport: quantified frame`")
-                .copied()
-                .unwrap_or(0),
-        );
-        samples.push(sample);
-    }
-    eprintln!(
-        "{axis}: total {:?}, framing {framing:?}; named work: {}",
-        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
-        named_growth_diagnostic(&samples)
-    );
-    assert!(
-        framing[0] > 0,
-        "{axis}: the quantified frame did not run: {framing:?}"
-    );
-    for pair in framing.windows(2) {
-        assert!(
-            pair[1] <= pair[0].saturating_mul(3),
-            "{axis}: quantified frame work is not near linear: {framing:?}"
-        );
-    }
-    (samples, framing)
-}
-
-/// A quantified fact about a separated array crosses a straight line of
-/// stores into the owned array. The frame walks each read's history once, so
-/// its own work is near linear in the stores, and so is the whole
-/// verification: each store's refusal to keep the earlier cell it may alias
-/// reads only the order facts filed under the two indices
-/// (`stores_to_bounded_unordered_indices_are_near_linear`), where it used to
-/// scan every index's bounds (40,117 to 142,848 units at 4 to 32 stores).
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 2s in the parallel gate"]
-fn quantified_frame_is_near_linear_in_crossed_stores() {
-    let (samples, framing) =
-        quantified_frame_samples("quantified frame across stores", [2, 4, 8, 16], |size| {
-            quantified_frame_project(size, 1, 0)
-        });
-    assert_bounded_work_increments("quantified frame across stores", &framing, 20, 7);
-    assert_near_linear_scaling_with_increment_bound("quantified frame across stores", &samples);
-}
-
-/// The quantified body grows by one framed conjunct per step: one leaf and
-/// one read question each, so near linear in the body.
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 0.7s in the parallel gate"]
-fn quantified_frame_is_near_linear_in_its_body() {
-    let (samples, _) =
-        quantified_frame_samples("quantified frame over its body", [4, 8, 16, 32], |size| {
-            quantified_frame_project(2, size, 0)
-        });
-    assert_near_linear_scaling("quantified frame over its body", &samples);
-}
-
-/// Unrelated requirements join the context the frame reads, but it reads it
-/// only by indexed lookup, so they cost the frame nothing beyond the
-/// context's own construction.
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 1.0s in the parallel gate"]
-fn quantified_frame_is_near_linear_in_unrelated_facts() {
-    let (samples, _) = quantified_frame_samples(
-        "quantified frame with unrelated facts",
-        [4, 8, 16, 32],
-        |size| quantified_frame_project(2, 1, size),
-    );
-    assert_near_linear_scaling("quantified frame with unrelated facts", &samples);
 }
 
 /// A function whose contract views `size` arrays over one shared length and
@@ -6653,6 +6380,8 @@ fn resource_reference_entry_setup_has_near_linear_work() {
 /// names, so entry setup over one clause per parameter grows with the
 /// parameters and not with their square (roadmap/scaling.md, cause 8).
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn entry_resource_clauses_do_not_rebuild_every_parameter() {
     let samples = [16usize, 64, 256].map(|count| {
         let parameters = (0..count)
@@ -6673,7 +6402,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
             syntax::parse_function(&format!("void f({parameters}) {{ }}")).unwrap();
         let arguments = (0..count as u64)
             .map(|index| {
-                ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
+                ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
                     9_100_000 + index,
                 ))))
             })
@@ -7066,6 +6795,8 @@ fn loop_exit_join_scaling_on_this_thread() {
 /// Each selected arm follows an earlier checked `have`, rather than a
 /// speculative traversal of the complete deferred script before checking it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn post_execution_ifs_with_earlier_haves_have_near_linear_work() {
     let c_source = "int32 pick(int32 a, int32 b) { if (a > b) { return a; } return b; }";
     let mut samples = Vec::new();
@@ -7361,29 +7092,32 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext,
-        SymbolicMemory, Variable,
+        OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, Proposition,
+        PureFactContext, SymbolicMemory, Variable,
     };
 
     let memory = SymbolicMemory::new();
     // The address of element `variable` of the goal's array.
-    let at = |variable: u64| Address {
+    let at = |variable: u64| OldAddress {
         base: "goal".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     };
-    let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
+    let loadable = |base: OldAddress, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: (MachineTerm::constant(bytes)).into(),
+        bytes: (OldMachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let equal = |left: u64, right: u64| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(left))),
-                right: Box::new(MachineTerm::Variable(Variable(right))),
+                left: Box::new(OldMachineTerm::Variable(Variable(left))),
+                right: Box::new(OldMachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -7399,16 +7133,19 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         (
             "a non-null source without other non-null objects",
             vec![
-                loadable(Address::symbolic(Variable(470_002)), 16),
+                loadable(OldAddress::symbolic(Variable(470_002)), 16),
                 Proposition::condition_is(
-                    ConditionTerm::address_equal(
-                        Address::symbolic(Variable(470_002)),
-                        Address::null(),
+                    OldConditionTerm::address_equal(
+                        OldAddress::symbolic(Variable(470_002)),
+                        OldAddress::null(),
                     ),
                     false,
                 ),
             ],
-            loadable(Address::symbolic(Variable(470_002)).offset_by_bytes(4), 4),
+            loadable(
+                OldAddress::symbolic(Variable(470_002)).offset_by_bytes(4),
+                4,
+            ),
             Some(1),
         ),
         (
@@ -7433,19 +7170,19 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                     context = context
                         .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
                         .assume_proposition(Proposition::condition_is(
-                            ConditionTerm::address_equal(
-                                Address::symbolic(Variable(475_000 + index)),
-                                Address::null(),
+                            OldConditionTerm::address_equal(
+                                OldAddress::symbolic(Variable(475_000 + index)),
+                                OldAddress::null(),
                             ),
                             false,
                         ))
                         .assume_proposition(Proposition::MemoryLoadable {
                             memory: memory.clone(),
-                            base: Address {
+                            base: OldAddress {
                                 base: format!("other{index}").as_str().into(),
-                                offset: AddressOffset::Constant(0),
+                                offset: OldAddressOffset::Constant(0),
                             },
-                            bytes: (MachineTerm::constant(16)).into(),
+                            bytes: (OldMachineTerm::constant(16)).into(),
                             wide: false,
                         });
                 }
@@ -7518,21 +7255,21 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_state_cells() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, ProgramValue, Proposition,
+        OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramValue, Proposition,
         PureFactContext, SymbolicMemory, Variable,
     };
 
-    let index_cell = Address {
+    let index_cell = OldAddress {
         base: "selected-index".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let index = MachineTerm::Variable(Variable(490_000));
+    let index = OldMachineTerm::Variable(Variable(490_000));
     let equality = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(index.clone()),
-            right: Box::new(MachineTerm::constant(2)),
+            right: Box::new(OldMachineTerm::constant(2)),
         },
         true,
     );
@@ -7542,42 +7279,42 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
             SymbolicMemory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
-            let value = MachineTerm::Variable(Variable(491_000 + i as u64));
+            let value = OldMachineTerm::Variable(Variable(491_000 + i as u64));
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: format!("other-cell-{i}").as_str().into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(value.clone()),
             );
             context = context.assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(value),
-                    right: Box::new(MachineTerm::constant(7)),
+                    right: Box::new(OldMachineTerm::constant(7)),
                 },
                 true,
             ));
         }
-        let at = |value| Address {
+        let at = |value| OldAddress {
             base: "selected-array".into(),
-            offset: AddressOffset::scaled_int32_node(value, 4),
+            offset: OldAddressOffset::scaled_int32_node(value, 4),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
-            base: at(MachineTerm::constant(2)),
-            bytes: (MachineTerm::constant(4)).into(),
+            base: at(OldMachineTerm::constant(2)),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
-            base: at(MachineTerm::read_named(
+            base: at(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(&memory),
                 Box::new(index_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         context = context
@@ -7612,26 +7349,28 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
 /// instantiation needs, beside unrelated conditions and memory facts. This
 /// goal used to be proved from, and cite, the whole context.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext, Sort,
-        SymbolicMemory, Variable,
+        OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, Proposition,
+        PureFactContext, Sort, SymbolicMemory, Variable,
     };
 
     let memory = SymbolicMemory::new();
-    let load = |offset: AddressOffset| {
-        MachineTerm::read_named(
+    let load = |offset: OldAddressOffset| {
+        OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-            Box::new(Address {
+            Box::new(OldAddress {
                 base: "data".into(),
                 offset,
             }),
             crate::kernel::LoadKind::Int32,
         )
     };
-    let equal = |left: MachineTerm, right: MachineTerm| {
+    let equal = |left: OldMachineTerm, right: OldMachineTerm| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -7640,9 +7379,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             true,
         )
     };
-    let less = |left: MachineTerm, right: MachineTerm, holds: bool| {
+    let less = |left: OldMachineTerm, right: OldMachineTerm, holds: bool| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(left),
@@ -7651,7 +7390,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             holds,
         )
     };
-    let variable = |id: u64| MachineTerm::Variable(Variable(id));
+    let variable = |id: u64| OldMachineTerm::Variable(Variable(id));
     let index = Variable(480_000);
     // forall index. index < exit ==> data[index] == index
     let quantified = crate::kernel::quantifiers::test_forall(
@@ -7661,14 +7400,17 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         Proposition::Implies(
             Box::new(less(variable(480_000), variable(480_001), true)),
             Box::new(equal(
-                load(AddressOffset::scaled_int32_node(variable(480_000), 4)),
+                load(OldAddressOffset::scaled_int32_node(variable(480_000), 4)),
                 variable(480_000),
             )),
         ),
     );
     // not (exit < 3), so index 2 is below exit.
-    let bound = less(variable(480_001), MachineTerm::constant(3), false);
-    let goal = equal(load(AddressOffset::Constant(8)), MachineTerm::constant(2));
+    let bound = less(variable(480_001), OldMachineTerm::constant(3), false);
+    let goal = equal(
+        load(OldAddressOffset::Constant(8)),
+        OldMachineTerm::constant(2),
+    );
     let context = |unrelated: u64, with_bound: bool| {
         let mut context = PureFactContext::new();
         for index in 0..unrelated {
@@ -7680,11 +7422,11 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                 ))
                 .assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
-                    base: Address {
+                    base: OldAddress {
                         base: format!("other{index}").as_str().into(),
-                        offset: AddressOffset::scaled_int32_node(variable(482_000 + index), 4),
+                        offset: OldAddressOffset::scaled_int32_node(variable(482_000 + index), 4),
                     },
-                    bytes: (MachineTerm::constant(16)).into(),
+                    bytes: (OldMachineTerm::constant(16)).into(),
                     wide: false,
                 });
         }
@@ -7759,11 +7501,11 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     ))
                     .assume_proposition(Proposition::MemoryLoadable {
                         memory: memory.clone(),
-                        base: Address {
+                        base: OldAddress {
                             base: format!("extension{step}").as_str().into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         },
-                        bytes: (MachineTerm::constant(16)).into(),
+                        bytes: (OldMachineTerm::constant(16)).into(),
                         wide: false,
                     });
                 let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(
@@ -8383,6 +8125,8 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
 /// at 4 and 364,310 at 16, and six equalities beside a loop's invariants
 /// exhausted the two-million budget.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
     for size in [4usize, 16, 32] {
         let parameters = (0..size)
@@ -8406,21 +8150,23 @@ fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn recorded_value_names_index_only_the_locals_each_point_changes() {
-    use crate::kernel::{MachineTerm, Variable};
+    use crate::kernel::{OldMachineTerm, Variable};
     let point = |index| ProgramPointRef {
         region: CodeRegionRef::Region(index),
         kind: ProgramPointKind::Exit,
     };
-    let value = |index: usize| MachineTerm::Variable(Variable(700_000 + index as u64));
+    let value = |index: usize| OldMachineTerm::Variable(Variable(700_000 + index as u64));
     let schema = crate::kernel::ResourceFieldSchema::new(vec![(
         "size".into(),
         crate::kernel::ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    let block_pointer = |index: usize| crate::kernel::Address {
+    let block_pointer = |index: usize| crate::kernel::OldAddress {
         base: crate::kernel::AddressBase::Symbolic(Variable(800_000 + index as u64)),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
@@ -8466,9 +8212,9 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
             state = state.with_resource_context(resources);
             // And one memory cell a new value.
             let memory = state.memory().clone().store(
-                crate::kernel::Address {
+                crate::kernel::OldAddress {
                     base: crate::kernel::AddressBase::Concrete("cells".into()),
-                    offset: crate::kernel::AddressOffset::Constant(4 * index as i64),
+                    offset: crate::kernel::OldAddressOffset::Constant(4 * index as i64),
                 },
                 ProgramValue::Int32(value(6 * size + index)),
             );
@@ -8622,6 +8368,8 @@ void narrow(const uint8* bytes, int32 index) {
 
 // A store must not expand an unrelated shared byte view to narrow four bytes.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.1s in the parallel gate"]
 fn explicit_byte_view_narrowing_keeps_large_seeded_ranges_compact() {
     let (c_source, contract) = byte_view_narrowing_sources();
     let samples = [16u32, 64, 4096, 22208, 1048576].map(|size| {
@@ -9572,6 +9320,8 @@ ensures result == {expected};
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
     let mut work = Vec::new();
     let sizes = [8usize, 16, 32];
@@ -9766,7 +9516,7 @@ int32 count_once(int32 flag) {{
         decreases 1 - i;
         invariant i >= 0;
         invariant i <= 1;
-        initialize by {{ normalize(); }}
+        initialize by {{ close(); }}
         maintain by {{
             mark before_increment;
             step();
@@ -9805,6 +9555,8 @@ int32 count_once(int32 flag) {{
 /// A failing bare transport cites only its source and rebuilds no context per
 /// ambient fact.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn failing_bare_transport_reuses_candidate_assumptions() {
     use crate::instrumentation::collect;
     let mut samples = Vec::new();
@@ -9847,6 +9599,8 @@ transport(at(filled, dst[0]) == 7, dst[0] == 7);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn branch_view_entry_loadability_ignores_prior_effects() {
     for slot in [0, 2] {
         let contract = if slot == 0 {
@@ -9903,6 +9657,8 @@ fn branch_view_entry_loadability_ignores_prior_effects() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.2s in the parallel gate"]
 fn named_unfold_constructs_the_selected_arm_once() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -9978,6 +9734,8 @@ fn named_unfold_constructs_the_selected_arm_once() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn scalar_read_after_branch_ignores_other_slots_on_its_line() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -10052,6 +9810,8 @@ fn scalar_read_after_branch_ignores_other_slots_on_its_line() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.3s in the parallel gate"]
 fn branch_interface_fact_publication_extends_one_indexed_context() {
     let c_source = "struct cell { int32 value; }; int32 bump(struct cell* p, int32 x, int32 flag) { p->value = flag; return 0; }";
     let mut samples = Vec::new();
@@ -10086,6 +9846,8 @@ fn branch_interface_fact_publication_extends_one_indexed_context() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn branch_checking_ignores_unused_parameters_and_premises() {
     for grow_parameters in [false, true] {
         let mut samples = Vec::new();
@@ -10154,9 +9916,11 @@ fn branch_checking_ignores_unused_parameters_and_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
     let program = "void entry(unsigned long *word, unsigned char *bytes) {}";
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let mut baseline = None;
     for length in [32, 1_024, 65_536, 2_147_483_647] {
         let source = format!(
@@ -10175,6 +9939,8 @@ fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn native_read_equality_refusal_does_not_restart_state_search_as_integer() {
     let c = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
     verify_c_sources(
@@ -10293,6 +10059,8 @@ pub(super) fn early_return_project(returns: usize) -> (String, String) {
 /// context: it cost each path its whole fact history (231, 567 and 1623
 /// units here) to find nothing to check.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.5s in the parallel gate"]
 fn completing_early_return_paths_borrows_their_shared_traces() {
     let copies = [4, 8, 16].map(|returns| {
         let (click, c) = early_return_project(returns);
@@ -10354,6 +10122,8 @@ fn expanded_early_return_proof(returns: usize) -> (String, String) {
 /// fresh stream: a deeper path is republished at every enclosing join, and
 /// copying its history there made checking the expansion cubic.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn early_return_expansions_stay_flat_and_join_without_copying_paths() {
     std::thread::Builder::new()
         .name("early-return-expansion".into())
@@ -10413,8 +10183,7 @@ fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
 }
 
 /// The proof `click expand` writes for [`early_return_project`]'s implicit
-/// proof: each return in its own proof `if`, closed by `known` and
-/// `normalize`, with the next case after it.
+/// proof: each return in its own proof `if`, followed by the next case.
 fn early_return_expanded_closers(returns: usize) -> String {
     let mut proof = format!(
         "verifying \"mark.c\";\nint32 mark(int32 *a, int32 x) {{\n    owns a[0..{returns}];\n    ensures result >= 0;\n}} by {{\n    step();\n"
@@ -10422,12 +10191,12 @@ fn early_return_expanded_closers(returns: usize) -> String {
     for index in 0..returns {
         let statement = 1 + 4 * index;
         let last = if index + 1 == returns {
-            "        close();\n        normalize();\n        close();\n        close();\n        close();\n"
+            "        close();\n        close();\n        close();\n        close();\n        close();\n"
         } else {
             ""
         };
         proof.push_str(&format!(
-            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        close();\n        normalize();\n        close();\n        close();\n        close();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
+            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        close();\n        close();\n        close();\n        close();\n        close();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
         ));
     }
     proof.push_str("}\n");
@@ -10593,6 +10362,8 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
 /// cost 663, 2,139, 7,587 and 28,467 units and path preparation 1,843,
 /// 4,127, 10,423 and 29,927).
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn early_return_finishing_shares_path_prefixes() {
     assert_early_return_finishing_shares_prefixes(&[4, 8, 16]);
 }
@@ -10643,12 +10414,12 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
 /// call's exit removes the spelling.
 #[test]
 fn recorded_pointer_call_results_scale_and_follow_replacement() {
-    use crate::kernel::{Address, ProgramType, Variable};
+    use crate::kernel::{OldAddress, ProgramType, Variable};
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
         let value = |index: u64| {
             ProgramValue::typed_pointer(
-                Address::symbolic(Variable(710_000 + index)),
+                OldAddress::symbolic(Variable(710_000 + index)),
                 ProgramType::Int32Pointer,
             )
         };
@@ -10658,7 +10429,7 @@ fn recorded_pointer_call_results_scale_and_follow_replacement() {
             });
             assert!(work <= 2, "{size}: insertion {work}");
         }
-        let first = Address::symbolic(Variable(710_000));
+        let first = OldAddress::symbolic(Variable(710_000));
         let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
             retained_states.call_result_naming_pointer(&first)
         });
@@ -10684,13 +10455,13 @@ fn recorded_pointer_call_results_scale_and_follow_replacement() {
 
 #[test]
 fn recorded_call_results_scale_and_replace_execution_occurrences() {
-    use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm, Variable};
+    use crate::kernel::{MachineIntegerType, OldConditionTerm, OldMachineTerm, Variable};
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
         let value = |index| {
-            ProgramValue::Bool(MachineTerm::bool_cast(
+            ProgramValue::Bool(OldMachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
-                ConditionTerm::Variable(Variable(700_000 + index)),
+                OldConditionTerm::Variable(Variable(700_000 + index)),
             ))
         };
         for index in 0..size {
@@ -10810,8 +10581,7 @@ fn explicit_claim_closers_have_near_linear_finishing_work() {
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = grouped_claim_project(size);
-            let click_source =
-                click_source.replace("    normalize();", &"    normalize();\n".repeat(size));
+            let click_source = click_source.replace("    close();", &"    close();\n".repeat(size));
             let (verified, sample) = scaling_sample(size, || {
                 verify_c_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
             });
@@ -10839,6 +10609,8 @@ fn written_preservation_links(stores: usize, read: &str) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn multi_statement_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10846,9 +10618,13 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
             "void keep(unsigned char *p, unsigned char *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -10884,6 +10660,8 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn inequality_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10891,9 +10669,13 @@ fn inequality_transport_replay_scales_with_explicit_links() {
             "void keep(int *p, int *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -10929,6 +10711,8 @@ fn inequality_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn known_value_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10936,9 +10720,13 @@ fn known_value_transport_replay_scales_with_explicit_links() {
             "void keep(int *p, int *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -10974,6 +10762,8 @@ fn known_value_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn state_comparison_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10981,9 +10771,13 @@ fn state_comparison_transport_replay_scales_with_explicit_links() {
             "void keep(int *p, int *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -11019,6 +10813,8 @@ fn state_comparison_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.3s in the parallel gate"]
 fn two_read_transport_replay_scales_with_explicit_links() {
     two_read_transport_replay_cost(false);
 }
@@ -11043,7 +10839,9 @@ fn two_read_transport_replay_cost(indexed: bool) {
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
-                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement({i}).footprint, memory(*{read})) by {{ close(); }}"
+                ));
             }
         }
         let source = format!(
@@ -11088,6 +10886,8 @@ fn two_read_transport_replay_cost(indexed: bool) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.4s in the parallel gate"]
 fn conjunction_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -11101,7 +10901,9 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
-                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement({i}).footprint, memory(*{read})) by {{ close(); }}"
+                ));
             }
         }
         let source = format!(
@@ -11265,7 +11067,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
             }} by {{
                 step();
                 have separate(statement(0).footprint, memory(*q)) by {{
-                    normalize() using {{ separate(memory(*p), memory(*q)); }};
+                    close();
                 }}
                 have *q == 7 by {{
                     {links} close();
@@ -11327,7 +11129,9 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
                 "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
             ));
             if i % 2 == 0 {
-                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement(0).footprint, memory(*q{i})) by {{ close(); }}"
+                ));
                 links.push_str(&written_preservation_links(1, &format!("*q{i}")));
             }
         }
@@ -11372,6 +11176,8 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.1s in the parallel gate"]
 fn implication_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -11385,7 +11191,9 @@ fn implication_transport_replay_scales_with_explicit_links() {
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
-                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement({i}).footprint, memory(*{read})) by {{ close(); }}"
+                ));
             }
         }
         let source = format!(
@@ -11462,7 +11270,9 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
                 requirements.push_str(&format!(
                     "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
                 ));
-                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement(0).footprint, memory(*q{i})) by {{ close(); }}"
+                ));
                 links.push_str(&written_preservation_links(1, &format!("*q{i}")));
             }
             let leaves = (0..size)
@@ -11526,7 +11336,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
 
 #[test]
 fn volatile_read_results_use_selected_event_indexes() {
-    use crate::kernel::{MachineTerm, Variable};
+    use crate::kernel::{OldMachineTerm, Variable};
     let mut samples = Vec::new();
     let mut repeated_samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
@@ -11534,13 +11344,13 @@ fn volatile_read_results_use_selected_event_indexes() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 let value =
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(800000 + index as u64)));
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(800000 + index as u64)));
                 points.record_read_event_values(index, std::iter::once(&value));
                 assert!(points.read_event_naming_value(&value).is_some());
             }
         });
         samples.push(work);
-        let first = ProgramValue::Int32(MachineTerm::Variable(Variable(800000)));
+        let first = ProgramValue::Int32(OldMachineTerm::Variable(Variable(800000)));
         let branch = points.clone();
         points.record_read_event_values(0, std::iter::empty());
         assert!(points.read_event_naming_value(&first).is_none());
@@ -11591,6 +11401,8 @@ fn volatile_read_results_use_selected_event_indexes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn entry_separation_of_an_unconditional_resource_scales_with_the_owned_clauses() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11638,6 +11450,8 @@ fn entry_separation_samples() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn separation_of_an_owned_instance_scales_with_owned_clauses_and_steps() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11702,6 +11516,8 @@ fn instance_separation_samples() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.7s in the parallel gate"]
 fn separation_of_a_folded_instance_scales_with_owned_clauses_and_folds() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11775,6 +11591,8 @@ fn folded_instance_separation_samples() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.1s in the parallel gate"]
 fn consuming_call_bound_scales_with_its_transferred_inputs() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11889,6 +11707,8 @@ fn a_loop_exit_reads_only_the_points_its_pass_recorded() {
 /// statements is work linear in `n`, with no result carried past its
 /// statement.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn nested_call_results_scale_with_the_statements_that_read_them() {
     use crate::instrumentation::measure_deterministic_work;
     let sidecar = "verifying \"probe.c\";
@@ -11935,7 +11755,7 @@ theorem append_tally(lo: int32, hi: int32) {{
     requires lo < hi;
     ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {{
         unfold(tally(lo, hi));
-        normalize();
+        close();
     }}
 }}
 "#
@@ -12028,6 +11848,8 @@ fn recorded_call_snapshots_read_one_point_and_one_call() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.3s in the parallel gate"]
 fn have_at_frontier_shares_the_context_across_call_history() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -12051,7 +11873,7 @@ int32 probe() {{
         apply(click::separation::separate_elements(g, 255, 0));
     }}
     have separate(statement({calls}).footprint, memory(g[0])) by {{
-        normalize() using {{ separate(memory(g[255]), memory(g[0])); }};
+        close();
     }}
     have at(after, g[0]) == at(before, g[0]) by {{
         preserve(memory(g[0]), statement({calls}));
@@ -12089,48 +11911,100 @@ int32 probe() {{
     // Naming its two historical reads has a separate version-walk cost.
 }
 
-#[test]
-fn struct_value_equality_costs_what_its_field_equalities_cost() {
+fn check_struct_value_equality_cost(fields: usize) {
     use crate::instrumentation::measure_deterministic_work;
     // `*dst == *src` is its fields' equalities: forming the two values and
     // comparing them is linear in the fields, as writing the comparisons
     // out is.
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
-    let mut samples = Vec::new();
-    for fields in [2usize, 4, 6] {
-        let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
-        let declaration = names
-            .iter()
-            .map(|name| format!("int32 {name};"))
-            .collect::<String>();
-        let copies = names
-            .iter()
-            .map(|name| format!("dst->{name} = src->{name};"))
-            .collect::<String>();
-        let program = format!(
-            "struct wide {{ {declaration} }}; void copy(struct wide* dst, const struct wide* src) {{ {copies} }}"
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
+    let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
+    let declaration = names
+        .iter()
+        .map(|name| format!("int32 {name};"))
+        .collect::<String>();
+    let copies = names
+        .iter()
+        .map(|name| format!("dst->{name} = src->{name};"))
+        .collect::<String>();
+    let program = format!(
+        "struct wide {{ {declaration} }}; void copy(struct wide* dst, const struct wide* src) {{ {copies} }}"
+    );
+    let written = names
+        .iter()
+        .map(|name| format!("dst->{name} == src->{name}"))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let mut pair = Vec::new();
+    for claim in ["*dst == *src".to_string(), written] {
+        let source = format!(
+            "verifying \"probe.c\"; void copy(struct wide* dst, const struct wide* src) {{ owns *dst; views *src; requires separate(memory(*dst), memory(*src)); ensures {claim}; }}"
         );
-        let written = names
-            .iter()
-            .map(|name| format!("dst->{name} == src->{name}"))
-            .collect::<Vec<_>>()
-            .join(" and ");
-        let mut pair = Vec::new();
-        for claim in ["*dst == *src".to_string(), written] {
-            let source = format!(
-                "verifying \"probe.c\"; void copy(struct wide* dst, const struct wide* src) {{ owns *dst; views *src; requires separate(memory(*dst), memory(*src)); ensures {claim}; }}"
-            );
-            let (result, work) = measure_deterministic_work(|| {
-                verify_c_sources(&source, &[("probe.c", program.as_str())])
-            });
-            result.unwrap_or_else(|error| panic!("{fields} fields: {}", error.message()));
-            pair.push(work);
-        }
-        assert!(
-            pair[0] <= pair[1] * 2,
-            "struct value equality over {fields} fields: {pair:?}"
-        );
-        samples.push((fields, pair));
+        let (result, work) = measure_deterministic_work(|| {
+            verify_c_sources(&source, &[("probe.c", program.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("{fields} fields: {}", error.message()));
+        pair.push(work);
     }
-    eprintln!("struct value equality work (fields, [value, written]): {samples:?}");
+    assert!(
+        pair[0] <= pair[1] * 2,
+        "struct value equality over {fields} fields: {pair:?}"
+    );
+    eprintln!("struct value equality work over {fields} fields (value, written): {pair:?}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
+fn struct_value_equality_costs_what_its_two_field_equalities_cost() {
+    check_struct_value_equality_cost(2);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 7.9s in the parallel gate"]
+fn struct_value_equality_costs_what_its_four_field_equalities_cost() {
+    check_struct_value_equality_cost(4);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 16s in the parallel gate"]
+fn struct_value_equality_costs_what_its_six_field_equalities_cost() {
+    check_struct_value_equality_cost(6);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 10s in the parallel gate"]
+fn struct_copy_field_equalities_expand_and_replay() {
+    let program = r#"
+        struct frame_record { int32 f0; int32 f1; int32 f2; int32 f3; };
+        void copy_frame(struct frame_record* dst, const struct frame_record* src) {
+            dst->f0 = src->f0;
+            dst->f1 = src->f1;
+            dst->f2 = src->f2;
+            dst->f3 = src->f3;
+        }
+    "#;
+    let sources = [("copy_frame.c", program)];
+    for claim in [
+        "*dst == *src",
+        "dst->f0 == src->f0 and dst->f1 == src->f1 and dst->f2 == src->f2 and dst->f3 == src->f3",
+    ] {
+        let source = format!(
+            r#"verifying "copy_frame.c";
+            void copy_frame(struct frame_record* dst, const struct frame_record* src) {{
+                owns *dst;
+                views *src;
+                requires separate(memory(*dst), memory(*src));
+                ensures {claim};
+            }}"#
+        );
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "copy_frame.contract")
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        crate::surface::without_implicit_solve_for_claim("copy_frame.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+    }
 }

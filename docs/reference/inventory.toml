@@ -2,6 +2,10 @@
 # IDs are stable review keys; paths are relative to docs/.
 
 [[item]]
+id = "cpp.resource.class-object"
+path = "reference/cli/capture.md#class-templates-verified-once"
+
+[[item]]
 id = "c.type.void"
 path = "reference/language/c.md#supported-types"
 
@@ -926,10 +930,6 @@ id = "language.word.then"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.transport"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.true"
 path = "reference/language/grammar.md#word-index"
 
@@ -1383,10 +1383,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 
 
 [[item]]
-id = "tactic.transport"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
 id = "tactic.unfold"
 path = "reference/tactics/index.md#resources-and-transport"
 
@@ -1553,9 +1549,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.rewrite"
 path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.transport"
-path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.instantiate"
 path = "reference/tactics/index.md#proposition-reasoning"

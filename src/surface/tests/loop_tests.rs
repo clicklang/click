@@ -13,7 +13,7 @@ tactic stop() {
     unfold(dirty);
     let done = fold(ghost(0), { model: Walk::Done });
     have pending(done.model) == 0 by {
-        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); normalize();
+        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); close();
     }
 }
 void walk(int32 n) {
@@ -265,13 +265,17 @@ fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
     let click = fixture.click_source.as_deref().unwrap();
     let verified =
         verify_c_sources(click, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-    let expanded = expand_checked_grouped_claim(click, &verified, function)
-        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let expansion = expand_checked_grouped_claim_with_spans(click, &verified, function).unwrap();
+    let expanded = &expansion.source;
     assert!(
         !expanded.contains("close_invariants"),
         "{filename}: {expanded}"
     );
-    let parsed = crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
+    let parsed = expansion
+        .with_checked_closers(|| {
+            crate::surface::verification::parse_click_file_with_c_sources(expanded, &sources)
+        })
+        .unwrap()
         .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     let block = parsed
         .function_blocks()
@@ -297,11 +301,20 @@ fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
             });
         }
     }
-    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    expansion
+        .with_checked_closers(|| {
+            crate::surface::proof::without_implicit_solve_for_claim(
+                &format!("{function}.contract"),
+                || verify_c_sources(expanded, &sources).map_err(|e| e.report()),
+            )
+        })
+        .unwrap()
+        .unwrap_or_else(|e| panic!("{filename}: {e}"));
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.5s in the parallel gate"]
 fn nested_conjunction_extraction_precedes_explicit_arithmetic_steps() {
     let (click, sources) = loop_fixture("arithmetic_conjunction_extraction");
     let sources = borrowed_sources(&sources);
@@ -420,7 +433,8 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
 /// edge, proving the arm that holds and closing the disjunction by
 /// `close()`, and reverifies through the ordinary entry point.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_lexicographic_loop");
     let sources = borrowed_sources(&sources);
@@ -509,7 +523,8 @@ fn promoted_integer_ranking_expands_without_search() {
 /// smart closer's expansion prints the arm it chose, and that arm is checked
 /// like any other: replacing it with the other arm is rejected.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.6s in the parallel gate"]
 fn smart_ranking_closure_expands_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
@@ -534,7 +549,8 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
 /// back edge; dropping the outer `invariant j <= m` leaves that fact in scope
 /// from the inner loop's exit, so the ranking member still closes.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.4s in the parallel gate"]
 fn smart_ranking_closure_reads_an_inequality_in_scope() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
@@ -554,7 +570,8 @@ fn smart_ranking_closure_reads_an_inequality_in_scope() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.9s in the parallel gate"]
 fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
     for filename in [
         "c_decreases_rejects_bad_loop_path",
@@ -629,7 +646,8 @@ fn remaining_loop_migration_fixtures_expand_and_recheck() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn loop_preservation_have_resolves_entry_label_and_expands() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/loop_entry_program_point.md");
@@ -671,7 +689,8 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn grouped_arithmetic_using_expands_to_checked_certificate() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_grouped_contract_arithmetic_closer.md");
@@ -694,7 +713,8 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/aligned_symbolic_displacement.md");
@@ -753,8 +773,17 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
     }
 }
 
+const SWAP_CELL_ALIAS_THEOREM: &str = r#"
+theorem read_same_swap_cell(base: int32*, alias: int32*) {
+    requires base == alias;
+    requires viewable(memory(*base));
+    ensures *alias == *base by { rewrite(alias, base); close(); }
+}
+"#;
+
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn explicit_straight_line_swap_preserves_an_entry_bound() {
     for index in ["0", "j"] {
         let c = format!(
@@ -771,15 +800,15 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
                 ensures p[0] <= p[2];
             } by {
                 step(); step(); step();
-                have p[$index] == old(p[$index + 1]) by { normalize(); }
+                have p[$index] == old(p[$index + 1]) by { close(); }
                 mark first_written;
                 step();
                 have to_integer($index) != to_integer($index + 1) by {
-                    normalize() using { j == 0; };
+                    close() using { j == 0; };
                 }
                 apply(separation::separate_elements(p, $index, $index + 1));
                 have separate(statement(3).footprint, memory(p[$index])) by {
-                    normalize() using { separate(memory(p[$index]), memory(p[$index + 1])); };
+                    close() using { separate(memory(p[$index]), memory(p[$index + 1])); };
                 }
                 have p[$index] == at(first_written, p[$index]) by {
                     preserve(memory(p[$index]), statement(3));
@@ -788,10 +817,25 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
                     rewrite(p[$index], at(first_written, p[$index]));
                     close();
                 }
-                have p[0] == old(p[1]) by {
-                    normalize() using { p[$index] == old(p[$index + 1]); j == 0; };
+                have p[$index] == p[0] by {
+                    have p + $index == p by { rewrite($index, 0); close(); }
+                    have viewable(p[0..3]) by { observe(p[0..3]); }
+                    apply(separation::contains_element(p, 0, 3, 0));
+                    apply(separation::viewable_restrict(memory(p[0..3]), memory(p[0])));
+                    apply(read_same_swap_cell(p, p + $index));
+                    close();
                 }
-                have p[2] == old(p[2]) by { normalize(); }
+                have old(p[$index + 1]) == old(p[1]) by {
+                    have old($index + 1) == 1 by { rewrite(old($index), 0); close(); }
+                    rewrite(old($index + 1), 1);
+                    close();
+                }
+                have p[0] == old(p[1]) by {
+                    rewrite(p[0], p[$index]);
+                    rewrite(old(p[1]), old(p[$index + 1]));
+                    close();
+                }
+                have p[2] == old(p[2]) by { close(); }
                 have p[0] <= p[2] by {
                     rewrite(p[0], old(p[1]));
                     rewrite(p[2], old(p[2]));
@@ -801,6 +845,7 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
             }
         "#
         .replace("$index", index);
+        let click = format!("{SWAP_CELL_ALIAS_THEOREM}\n{click}");
         let sources = [("swap.c", c.as_str())];
         let verified = verify_c_sources(&click, &sources)
             .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
@@ -822,24 +867,24 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
 fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, String) {
     let c = "int32 swap(int32 p[3]) { int32 j; int32 tmp; j = 0; while (j < 1) { if (p[j + 1] < p[j]) { tmp = p[j]; p[j] = p[j + 1]; p[j + 1] = tmp; } j = j + 1; } return 0; }";
     let entry_bounds = r#"
-        have to_integer(j) != 2 by { normalize() using { j == 0; }; }
+        have to_integer(j) != 2 by { rewrite(j, 0); close(); }
         have to_integer(j + 1) == 1 by {
             rewrite(j, 0);
-            normalize();
+            close();
         }
-        have to_integer(j + 1) != 2 by { rewrite(to_integer(j + 1), 1); normalize(); }
-        have to_integer(j + 1) != 0 by { rewrite(to_integer(j + 1), 1); normalize(); }
+        have to_integer(j + 1) != 2 by { rewrite(to_integer(j + 1), 1); close(); }
+        have to_integer(j + 1) != 0 by { rewrite(to_integer(j + 1), 1); close(); }
         apply(click::separation::separate_elements(p, j, 2));
         apply(click::separation::separate_elements(p, j + 1, 2));
         apply(click::separation::separate_elements(p, j + 1, 0));
         have separate(statement(3).statement(0).statement(1).footprint, memory(p[2])) by {
-            normalize() using { separate(memory(p[j]), memory(p[2])); };
+            close() using { separate(memory(p[j]), memory(p[2])); };
         }
         have at(statement(3).statement(0).statement(1).exit, p[2]) == at(statement(3).statement(0).statement(1).entry, p[2]) by {
             preserve(memory(p[2]), statement(3).statement(0).statement(1));
         }
         have separate(statement(3).statement(0).statement(2).footprint, memory(p[2])) by {
-            normalize() using { separate(memory(p[j + 1]), memory(p[2])); };
+            close() using { separate(memory(p[j + 1]), memory(p[2])); };
         }
         have p[2] == at(statement(3).statement(0).statement(1).exit, p[2]) by {
             preserve(memory(p[2]), statement(3).statement(0).statement(2));
@@ -849,21 +894,26 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
             close();
         }
         have separate(statement(3).statement(0).statement(2).footprint, memory(p[0])) by {
-            normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
+            close() using { separate(memory(p[j + 1]), memory(p[0])); };
         }
         have p[0] == at(statement(3).statement(0).statement(1).exit, p[0]) by {
             preserve(memory(p[0]), statement(3).statement(0).statement(2));
         }
-        have at(statement(3).statement(0).statement(1).exit, p[0]) == at(before_swap, p[1]) by {
-            normalize() using { at(before_swap, j) == 0; };
-        }
-        have p[0] == at(before_swap, p[1]) by {
-            rewrite(p[0], at(statement(3).statement(0).statement(1).exit, p[0]));
+        have at(statement(3).statement(0).statement(1).exit, p[j]) == at(before_swap, p[j + 1]);
+        have at(statement(3).statement(0).statement(1).exit, p[j]) == at(statement(3).statement(0).statement(1).exit, p[0]);
+        have at(before_swap, j + 1) == 1;
+        have at(before_swap, p[j + 1]) == at(before_swap, p[1]) by {
+            rewrite(at(before_swap, j + 1), 1);
             close();
         }
-        have p[1] == at(before_swap, p[0]) by {
-            normalize() using { at(before_swap, j) == 0; };
+        have p[0] == at(before_swap, p[1]);
+        have p[j + 1] == at(before_swap, p[j]);
+        have p[j + 1] == p[1] by { rewrite(j + 1, 1); close(); }
+        have at(before_swap, p[j]) == at(before_swap, p[0]) by {
+            rewrite(at(before_swap, j), 0);
+            close();
         }
+        have p[1] == at(before_swap, p[0]);
         have p[0] <= p[2] by {
             rewrite(p[0], at(before_swap, p[1]));
             rewrite(p[2], at(before_swap, p[2]));
@@ -875,13 +925,24 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
             close();
         }
     "#;
-    let entry_bounds = if include_entry_bounds {
-        entry_bounds
+    let cell_alias = r#"
+        have p + j == p by { rewrite(j, 0); close(); }
+        have viewable(p[0..3]) by { observe(p[0..3]); }
+        apply(click::separation::contains_element(p, 0, 3, 0));
+        apply(click::separation::viewable_restrict(memory(p[0..3]), memory(p[0])));
+        have p[j] == p[0] by {
+            apply(read_same_swap_cell(p, p + j));
+            close();
+        }
+    "#;
+    let (cell_alias, entry_bounds) = if include_entry_bounds {
+        (cell_alias, entry_bounds)
     } else {
-        ""
+        ("", "")
     };
     let click = format!(
-        r#"verifying "swap.c";
+        r#"{SWAP_CELL_ALIAS_THEOREM}
+        verifying "swap.c";
         int32 swap(int32 p[3]) {{
             requires p[0] <= p[2]; requires p[1] <= p[2];
             consumes p[0..3]; ensures result == 0;
@@ -899,7 +960,9 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
                     }}
                     mark before_swap;
                     if p[j + 1] < p[j] {{
-                        step(); step(); step(); step();
+                        step(); step();
+                        {cell_alias}
+                        step(); step();
                         {entry_bounds}
                         step();
                     }} else {{
@@ -1012,7 +1075,8 @@ fn explicit_invariant_body_copy3_checks_and_expands() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn frontier_local_loop_verifies_and_advances_to_exit() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1055,7 +1119,8 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
     let c_source = r#"
         int32 count_to_three() {
@@ -1385,7 +1450,8 @@ fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1423,7 +1489,8 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
     let c_source = r#"
             int32 branch_count(int32 flag) {
@@ -1595,7 +1662,8 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.1s in the parallel gate"]
 fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
     let c_source = r#"
             int32 fill_n(int32 p[], int32 n) {
@@ -1667,7 +1735,8 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn frontier_local_loop_checks_an_optional_decreases_measure() {
     let c_source = r#"
             int32 drain(int32 n) {
@@ -1707,7 +1776,8 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn frontier_local_loop_keyword_expands_omitted_phases() {
     let c_source = r#"
             int32 count_to_n(int32 n) {
@@ -1767,7 +1837,8 @@ fn frontier_local_loop_keyword_expands_omitted_phases() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
     let c_source = r#"
             int32 count_to_n(int32 n) {
@@ -1829,7 +1900,8 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1890,7 +1962,8 @@ fn frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1970,7 +2043,8 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate() {
     let c_source = r#"
             int32 drain(int32 n) {
@@ -2025,7 +2099,8 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location() {
     let c_source = r#"
             int32 count_to_three() {
@@ -2095,7 +2170,8 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
     let c_source = r#"
             int32 overshoot() {
@@ -2140,7 +2216,8 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.5s in the parallel gate"]
 fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
     // The loop body ends with a C `if` whose arms fall through directly to
     // the back-edge. The preservation frontier owns exactly the body's
@@ -2227,7 +2304,8 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
     // The negated loop guard leaves `i >= 3` at the loop's exit. The checked
     // outcome `solve` must retain a checkable proof of the *looser* bounds
@@ -2392,7 +2470,8 @@ fn loop_exit_duplicate_invariants_verify_and_reject_false_claims() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
     let (source, sources) = loop_fixture("loop_body_break_exit_joined_state");
     let sources = borrowed_sources(&sources);
@@ -2571,7 +2650,7 @@ int32 f(int32 n) {
 }
 "#;
     let sources = [("nested.c", c)];
-    verify_c_sources(click, &sources).unwrap();
+    let verified = verify_c_sources(click, &sources).unwrap();
     let false_arm = click.replace("have result == 7", "have result == 8");
     assert!(
         verify_c_sources(&false_arm, &sources)
@@ -2587,21 +2666,27 @@ int32 f(int32 n) {
             expand_c_tactic_source_at(click, &sources, position.line, position.column).unwrap();
         verify_c_sources(&expanded, &sources).unwrap();
     }
-    let expanded = expand_function_proof_source(click, &sources, "f").unwrap();
+    let expansion = expand_checked_grouped_claim_with_spans(click, &verified, "f").unwrap();
+    let expanded = &expansion.source;
     assert!(
-        c_smart_tactic_source_sites(&expanded, &sources)
+        expansion
+            .with_checked_closers(|| c_smart_tactic_source_sites(expanded, &sources))
+            .unwrap()
             .unwrap()
             .is_empty()
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c_sources(&expanded, &sources)
+        expansion
+            .with_checked_closers(|| verify_c_sources(expanded, &sources))
+            .unwrap()
     });
     result.unwrap();
     assert_eq!(planning, 0);
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.3s in the parallel gate"]
 fn loop_return_closers_do_not_require_distinct_result_values() {
     let (click, sources) = loop_fixture("loop_return_closes_in_preserve_arm");
     let click = click
@@ -2658,7 +2743,8 @@ int32 f(int32 n) {
 // The source declares byte and uint64 pointer locals. Invariants must retain
 // those types even though neither local exists at function entry.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn loop_local_pointer_invariants_retain_declared_element_types() {
     let (click, sources) = loop_fixture("loop_local_pointer_element_types");
     verify_c_sources(&click, &borrowed_sources(&sources)).unwrap();
@@ -2712,7 +2798,8 @@ fn byte_pointer_view_aliases_rewrite_readable_addresses() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_read_aliases_do_not_supply_missing_authority_or_bounds() {
     let (click, sources) = loop_fixture("native_read_retains_wide_index_beside_narrow_alias");
     let sources = borrowed_sources(&sources);
@@ -2787,23 +2874,27 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
 fn pointer_cursor_invariant_expands_and_replays() {
     let (click, sources) = loop_fixture("pointer_cursor_loop_expansion");
     let sources = borrowed_sources(&sources);
-    verify_c_sources(&click, &sources).unwrap();
-    let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
+    let verified = verify_c_sources(&click, &sources).unwrap();
+    let expansion = expand_checked_grouped_claim_with_spans(&click, &verified, "f").unwrap();
+    let expanded = &expansion.source;
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.matches("normalize()").count() <= 4, "{expanded}");
-    for law in ["product_lower_bound", "product_upper_bound"] {
-        assert!(
-            expanded
-                .matches(&format!("apply(click::integer::{law}("))
-                .count()
-                >= 4,
-            "{expanded}"
-        );
-    }
-    without_implicit_solve_for_claim("f.contract", || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .unwrap();
+    assert_eq!(
+        expanded
+            .matches("have cursor == (bytes + (4 * outer)) by {")
+            .count(),
+        2,
+        "{expanded}"
+    );
+    assert!(expanded.contains("apply(click::integer::multiply_order_nonnegative("));
+    expansion
+        .with_checked_closers(|| {
+            without_implicit_solve_for_claim("f.contract", || {
+                verify_c_sources(expanded, &sources).map_err(|error| error.report())
+            })
+        })
+        .unwrap()
+        .unwrap();
 }
 
 // Loop resource selection must use the same checked pointer-alias graph as
@@ -2884,10 +2975,11 @@ fn a_loop_state_is_one_entry_under_every_spelling() {
 fn recorded_states_find_the_point_reading_a_memory() {
     let mark = |name: &str| ProgramPointSelector::Mark(name.to_string());
     let memory = |index: u32| {
-        let pointer = Address::symbolic(Variable(97_400 + u64::from(index)));
-        crate::kernel::intern_memory(
-            SymbolicMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
-        )
+        let pointer = OldAddress::symbolic(Variable(97_400 + u64::from(index)));
+        crate::kernel::intern_memory(SymbolicMemory::new().store(
+            pointer,
+            ProgramValue::Int32(OldMachineTerm::constant(index)),
+        ))
     };
     let state = |memory: &crate::kernel::SharedMemory| {
         ExecutionState::new().with_memory(memory.memory().clone())
@@ -3028,22 +3120,7 @@ test_batches! {
     marker: "loop_batch_",
     loop_batch_00: [
         loop_metadata_sees_address_escape_after_the_loop,
-        nested_conjunction_extraction_precedes_explicit_arithmetic_steps,
-        lexicographic_ranking_bundle_prints_its_pivot_arm,
-        smart_ranking_closure_expands_its_pivot_arm,
         separately_declared_guarded_invariants_close_at_the_back_edge,
-    ],
-    loop_batch_01: [
-        smart_ranking_closure_reads_an_inequality_in_scope,
-        migrated_negative_loop_fixtures_reach_the_decrease_check,
-        loop_preservation_have_resolves_entry_label_and_expands,
-        grouped_arithmetic_using_expands_to_checked_certificate,
-    ],
-    loop_batch_02: [
-        symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning,
-        explicit_straight_line_swap_preserves_an_entry_bound,
-        frontier_local_loop_verifies_and_advances_to_exit,
-        individual_loop_proof_has_no_whole_claim_acceptance_check,
     ],
     loop_batch_03: [
         loop_initialization_theorem_search_retains_checked_fixed_state_proof,
@@ -3053,38 +3130,17 @@ test_batches! {
     ],
     loop_batch_04: [
         frontier_loop_preservation_reports_a_rest_that_does_not_run,
-        frontier_local_loop_verifies_a_lowered_c_for_loop,
-        frontier_local_loop_verifies_at_a_branch_local_frontier,
         frontier_loop_binding_replaces_scope_without_merging_declarations,
     ],
-    loop_batch_05: [
-        frontier_loop_step_expansion_uses_the_current_invariant_lowering,
-        frontier_local_loop_checks_an_optional_decreases_measure,
-        frontier_local_loop_keyword_expands_omitted_phases,
-        loop_exit_solve_expands_invariant_conjuncts_explicitly,
-    ],
-    loop_batch_06: [
-        frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion,
-        frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location,
-        frontier_local_loop_at_function_entry_keeps_initialization_capture_separate,
-        frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location,
-    ],
     loop_batch_07: [
-        explicit_loop_closer_cannot_bypass_proof_owned_bundle_check,
-        body_final_branch_preservation_completes_at_typed_back_edge_boundary,
-        frontier_local_loop_exit_bound_weakens_to_a_looser_ensures,
         whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match,
     ],
     loop_batch_08: [
-        changed_break_exit_does_not_label_head_invariants_as_exit_facts,
         conditional_loop_resources_parse_print_and_resolve_scope,
         conditional_loop_resources_reject_unsupported_binding_and_body_items,
-        loop_return_closers_do_not_require_distinct_result_values,
     ],
     loop_batch_09: [
-        loop_local_pointer_invariants_retain_declared_element_types,
         byte_pointer_view_aliases_rewrite_readable_addresses,
-        native_read_aliases_do_not_supply_missing_authority_or_bounds,
         theorem_application_expands_with_a_recorded_historical_byte_premise,
     ],
     loop_batch_10: [

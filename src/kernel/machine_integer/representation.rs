@@ -7,8 +7,8 @@
 //! operation, comparison or overflow test at a format, or for the format
 //! and operation a node spells, and never match on a width themselves.
 //!
-//! Conditions carry their format (`ConditionTerm::Compare` and
-//! `ConditionTerm::Overflows`), so a comparison or overflow test exists at
+//! Conditions carry their format (`OldConditionTerm::Compare` and
+//! `OldConditionTerm::Overflows`), so a comparison or overflow test exists at
 //! every format. Where a format has no operator node the answer is `None`,
 //! and the rule is unavailable there: there are no 128-bit operators. That
 //! is the representation gap `design/machine-integers.md` Stage 3 removes;
@@ -17,7 +17,7 @@
 use super::{Operation, Relation};
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, OverflowOperation};
-use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm};
+use crate::kernel::{MachineIntegerType, OldConditionTerm, OldMachineTerm};
 
 /// The word a format's values ride in, which decides its nodes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,19 +78,19 @@ pub(super) fn operator_format(ty: MachineIntegerType) -> Option<MachineIntegerTy
 pub(crate) fn operation_word(
     ty: MachineIntegerType,
     operation: Operation,
-    left: Box<MachineTerm>,
-    right: Box<MachineTerm>,
-) -> Option<MachineTerm> {
+    left: Box<OldMachineTerm>,
+    right: Box<OldMachineTerm>,
+) -> Option<OldMachineTerm> {
     let format = operator_format(ty)?;
     let (left, right) = if word(ty) == Word::Bits32 {
         (
-            Box::new(MachineTerm::operand32(format, *left)),
-            Box::new(MachineTerm::operand32(format, *right)),
+            Box::new(OldMachineTerm::operand32(format, *left)),
+            Box::new(OldMachineTerm::operand32(format, *right)),
         )
     } else {
         (left, right)
     };
-    Some(MachineTerm::Binary {
+    Some(OldMachineTerm::Binary {
         op: machine_binary_op_of(operation),
         format,
         left,
@@ -121,7 +121,7 @@ pub(crate) fn operation_observation(
             if word(ty) == Word::Bits32
                 && let crate::kernel::KernelTermNode::MachineLiteral(literal) = term.node()
             {
-                let literal = MachineTerm::operand32(format, literal.legacy_term());
+                let literal = OldMachineTerm::operand32(format, literal.old_term());
                 return KernelTermImport::default()
                     .machine_arithmetic(format, &literal)
                     .expect("literal arithmetic operand");
@@ -150,15 +150,15 @@ pub(crate) fn operation_observation(
 }
 
 /// The machine operation `left op right` at `ty`, built by the folding
-/// constructors (`MachineTerm::machine_binary`), which simplify constant
+/// constructors (`OldMachineTerm::machine_binary`), which simplify constant
 /// operands. `None` where `ty` has no such node.
 pub(crate) fn folded_operation_word(
     ty: MachineIntegerType,
     operation: Operation,
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Option<MachineTerm> {
-    Some(MachineTerm::machine_binary(
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> Option<OldMachineTerm> {
+    Some(OldMachineTerm::machine_binary(
         operator_format(ty)?,
         machine_binary_op_of(operation),
         left,
@@ -170,11 +170,10 @@ pub(crate) fn folded_operation_word(
 /// machine `+`, `-` or `*` at `ty`.
 pub(crate) fn word_operation(
     ty: MachineIntegerType,
-    value: &MachineTerm,
-) -> Option<(Operation, &MachineTerm, &MachineTerm)> {
+    value: &OldMachineTerm,
+) -> Option<(Operation, &OldMachineTerm, &OldMachineTerm)> {
     use crate::kernel::MachineOperandView as View;
-    let (operation, [View::Legacy(left), View::Legacy(right)]) =
-        view_operation(ty, View::Legacy(value))?
+    let (operation, [View::Old(left), View::Old(right)]) = view_operation(ty, View::Old(value))?
     else {
         unreachable!("boxed view has boxed children")
     };
@@ -215,7 +214,7 @@ fn operation_of_machine_binary_op(op: MachineBinaryOp) -> Option<Operation> {
 }
 
 /// Whether `value` is a machine `+`, `-` or `*` at any format.
-pub(crate) fn is_ring_operation(value: &MachineTerm) -> bool {
+pub(crate) fn is_ring_operation(value: &OldMachineTerm) -> bool {
     [
         MachineIntegerType::Int32,
         MachineIntegerType::Int64,
@@ -227,21 +226,21 @@ pub(crate) fn is_ring_operation(value: &MachineTerm) -> bool {
 
 /// The native comparison `left REL right` at `ty`, with the truth it is
 /// filed at (`!=` is a false equality), built by the folding constructor
-/// (`ConditionTerm::machine_compare`). A narrow comparison is native at its
+/// (`OldConditionTerm::machine_compare`). A narrow comparison is native at its
 /// own format.
 pub(crate) fn comparison(
     ty: MachineIntegerType,
     relation: Relation,
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Option<(ConditionTerm, bool)> {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> Option<(OldConditionTerm, bool)> {
     let compare = match relation {
         Relation::Less => CompareRelation::LessThan,
         Relation::LessEqual => CompareRelation::LessEqual,
         Relation::Equal | Relation::NotEqual => CompareRelation::Equal,
     };
     Some((
-        ConditionTerm::machine_compare(ty, compare, left, right),
+        OldConditionTerm::machine_compare(ty, compare, left, right),
         relation != Relation::NotEqual,
     ))
 }
@@ -261,10 +260,14 @@ pub(crate) fn spells_comparison_natively(ty: MachineIntegerType) -> bool {
 /// observation. An equality reads no sign, so it reads at both formats of
 /// its width.
 pub(crate) fn comparison_readings(
-    condition: &ConditionTerm,
-) -> Option<(&MachineTerm, &MachineTerm, &'static [MachineIntegerType])> {
+    condition: &OldConditionTerm,
+) -> Option<(
+    &OldMachineTerm,
+    &OldMachineTerm,
+    &'static [MachineIntegerType],
+)> {
     use MachineIntegerType as Ty;
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -324,10 +327,10 @@ fn overflow_operation_of(operation: Operation) -> OverflowOperation {
 pub(crate) fn overflow_condition(
     ty: MachineIntegerType,
     operation: Operation,
-    left: Box<MachineTerm>,
-    right: Box<MachineTerm>,
-) -> Option<ConditionTerm> {
-    has_overflow_test(ty).then(|| ConditionTerm::Overflows {
+    left: Box<OldMachineTerm>,
+    right: Box<OldMachineTerm>,
+) -> Option<OldConditionTerm> {
+    has_overflow_test(ty).then(|| OldConditionTerm::Overflows {
         format: ty,
         op: overflow_operation_of(operation),
         left,
@@ -338,9 +341,14 @@ pub(crate) fn overflow_condition(
 /// The format, operation and operands of an overflow test of `+`, `-` or
 /// `*`.
 pub(crate) fn overflow_operation(
-    condition: &ConditionTerm,
-) -> Option<(MachineIntegerType, Operation, &MachineTerm, &MachineTerm)> {
-    let ConditionTerm::Overflows {
+    condition: &OldConditionTerm,
+) -> Option<(
+    MachineIntegerType,
+    Operation,
+    &OldMachineTerm,
+    &OldMachineTerm,
+)> {
+    let OldConditionTerm::Overflows {
         format,
         op,
         left,
@@ -377,13 +385,13 @@ pub(crate) enum Division {
 #[cfg(test)]
 pub(crate) fn word_division(
     ty: MachineIntegerType,
-    value: &MachineTerm,
-) -> Option<(Division, &MachineTerm, &MachineTerm)> {
+    value: &OldMachineTerm,
+) -> Option<(Division, &OldMachineTerm, &OldMachineTerm)> {
     let (division, [left, right]) =
-        view_division(ty, crate::kernel::MachineOperandView::Legacy(value))?;
+        view_division(ty, crate::kernel::MachineOperandView::Old(value))?;
     let (
-        crate::kernel::MachineOperandView::Legacy(left),
-        crate::kernel::MachineOperandView::Legacy(right),
+        crate::kernel::MachineOperandView::Old(left),
+        crate::kernel::MachineOperandView::Old(right),
     ) = (left, right)
     else {
         unreachable!()
@@ -420,10 +428,12 @@ pub(crate) fn has_legacy_conversions(ty: MachineIntegerType) -> bool {
 /// The 32-bit word a 32- or 64-bit value's low bits ride in: the value
 /// itself at 32 bits, its `UInt32From64` narrowing at 64. `None` for a
 /// narrow or 128-bit format.
-pub(crate) fn low_word(ty: MachineIntegerType, value: &MachineTerm) -> Option<MachineTerm> {
+pub(crate) fn low_word(ty: MachineIntegerType, value: &OldMachineTerm) -> Option<OldMachineTerm> {
     match (word(ty), ty.format().bits()) {
         (Word::Bits32, 32) => Some(value.clone()),
-        (Word::Signed64 | Word::Unsigned64, _) => Some(MachineTerm::uint32_from_64(value.clone())),
+        (Word::Signed64 | Word::Unsigned64, _) => {
+            Some(OldMachineTerm::uint32_from_64(value.clone()))
+        }
         _ => None,
     }
 }
@@ -468,21 +478,21 @@ pub(crate) fn narrow_carrier_mask(ty: MachineIntegerType) -> Option<(u32, Option
 pub(crate) fn narrow_cast_word(
     source: MachineIntegerType,
     destination: MachineIntegerType,
-    value: MachineTerm,
-) -> Option<MachineTerm> {
+    value: OldMachineTerm,
+) -> Option<OldMachineTerm> {
     let (mask, sign) = narrow_carrier_mask(destination)?;
     let word = match source.format().bits() {
-        8 | 16 => MachineTerm::machine_integer_cast(source, MachineIntegerType::Int32, value),
+        8 | 16 => OldMachineTerm::machine_integer_cast(source, MachineIntegerType::Int32, value),
         32 => value,
-        64 => MachineTerm::uint32_from_64(value),
+        64 => OldMachineTerm::uint32_from_64(value),
         _ => return None,
     };
-    let low = MachineTerm::bitwise_and(word, MachineTerm::constant(mask));
+    let low = OldMachineTerm::bitwise_and(word, OldMachineTerm::constant(mask));
     Some(match sign {
         None => low,
-        Some(sign) => MachineTerm::subtract(
-            MachineTerm::bitwise_xor(low, MachineTerm::constant(sign)),
-            MachineTerm::constant(sign),
+        Some(sign) => OldMachineTerm::subtract(
+            OldMachineTerm::bitwise_xor(low, OldMachineTerm::constant(sign)),
+            OldMachineTerm::constant(sign),
         ),
     })
 }
@@ -492,12 +502,12 @@ mod mixed_observation_tests {
     use super::*;
     use crate::kernel::*;
 
-    fn opaque() -> MachineTerm {
+    fn opaque() -> OldMachineTerm {
         // Conditionals now have common nodes; an unmigrated call exercises
         // the native operand side of this mixed-boundary regression.
-        MachineTerm::PureFunctionApplication {
+        OldMachineTerm::PureFunctionApplication {
             name: "mixed_observation_opaque".into(),
-            arguments: vec![MachineTerm::Variable(Variable(1007001))],
+            arguments: vec![OldMachineTerm::Variable(Variable(1007001))],
         }
     }
 
@@ -519,15 +529,15 @@ mod mixed_observation_tests {
             let legacy = SharedMachineIntegerTerm::intern(ty, native.clone());
             assert!(legacy.shared_operand().is_none());
             for source in [
-                MachineTerm::Constant {
+                OldMachineTerm::Constant {
                     format: ty,
                     bits: 3,
                 },
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: ty,
                     op: MachineBinaryOp::Add,
-                    left: MachineTerm::Variable(Variable(1007003)).into(),
-                    right: MachineTerm::Variable(Variable(1007004)).into(),
+                    left: OldMachineTerm::Variable(Variable(1007003)).into(),
+                    right: OldMachineTerm::Variable(Variable(1007004)).into(),
                 },
             ] {
                 let shared = SharedMachineIntegerTerm::from_shared(
@@ -590,7 +600,7 @@ mod mixed_observation_tests {
         .unwrap();
         for native in [
             opaque(),
-            MachineTerm::add(opaque(), MachineTerm::Variable(Variable(1007011))),
+            OldMachineTerm::add(opaque(), OldMachineTerm::Variable(Variable(1007011))),
         ] {
             let legacy = SharedMachineIntegerTerm::intern(ty, native);
             let exact = Operation::Add.exact(
@@ -606,7 +616,7 @@ mod mixed_observation_tests {
             assert!(super::super::identity::same_exact_value(&reading, &exact));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_less_than(exact, IntegerTerm::constant_i64(0)),
+                OldConditionTerm::integer_less_than(exact, IntegerTerm::constant_i64(0)),
                 true,
             );
             let premises: Vec<_> = bounds

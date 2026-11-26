@@ -63,12 +63,12 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         have whole.model == plug(old(up.model), RbTree::Empty) by {
             rewrite(whole.model, plug(at(balanced, deficit.model), at(balanced, hole.model)));
             rewrite(at(balanced, hole.model), RbTree::Empty);
-            rewrite(at(balanced, deficit.model), old(up.model)); normalize();
+            rewrite(at(balanced, deficit.model), old(up.model)); close();
         }
         have whole.model == erase_leaf_result(old(up.model), rb_color(old(tree.model))) by {
             rewrite(whole.model, plug(old(up.model), RbTree::Empty));
             rewrite(erase_leaf_result(old(up.model), rb_color(old(tree.model))), plug(at(balanced, deficit.model), RbTree::Empty));
-            rewrite(old(up.model), at(balanced, deficit.model)); normalize();
+            rewrite(old(up.model), at(balanced, deficit.model)); close();
         }
         have is_rb_root(whole.model) == 1 by {
             rewrite(whole.model, plug(old(up.model), RbTree::Empty));

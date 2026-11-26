@@ -3,9 +3,9 @@ fn retained_delta_and_affine_queries_scale_with_the_selected_dag() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: "shared_delta_scaling".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut root = KernelTerm::variable(
             KernelType::Program(MachineIntegerType::Int32.program_type()),
@@ -30,7 +30,7 @@ fn retained_delta_and_affine_queries_scale_with_the_selected_dag() {
             assert_eq!(
                 affine_bitvector_difference_constant_views(
                     MachineOperandView::Shared(&root),
-                    MachineOperandView::Legacy(&MachineTerm::constant(0))
+                    MachineOperandView::Old(&OldMachineTerm::constant(0))
                 ),
                 Some(0)
             );
@@ -48,9 +48,9 @@ fn wide_coordinate_reconstruction_retains_cold_index_dags() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: "wide_shared_indices".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut root = KernelTerm::variable(
             KernelType::Program(MachineIntegerType::UInt64.program_type()),
@@ -64,9 +64,9 @@ fn wide_coordinate_reconstruction_retains_cold_index_dags() {
             );
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64);
-        let pointer = Address {
+        let pointer = OldAddress {
             base: base.base.clone(),
-            offset: AddressOffset::Int64Scaled {
+            offset: OldAddressOffset::Int64Scaled {
                 value: index.clone(),
                 byte_width: 8,
                 unsigned: true,

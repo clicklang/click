@@ -138,7 +138,8 @@ fn check_rewritten_integer_division_goal(quotient: bool) {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn rewritten_remainder_goals_synthesize_through_both() {
     check_rewritten_integer_division_goal(false);
 }
@@ -193,7 +194,8 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
     let source = r#"theorem zero_add_bound(q: int64) {
  requires -9223372036854775808 <= to_integer(q);
@@ -230,9 +232,9 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
         theorem pair(x: int32) {
             ensures x == x and (x <= x and x >= x) by {
                 all {
-                    x == x => { normalize(); }
+                    x == x => { close(); }
                     (x <= x and x >= x) => {
-                        all { x <= x => { normalize(); } x >= x => { normalize(); } }
+                        all { x <= x => { close(); } x >= x => { close(); } }
                     }
                 }
             }
@@ -243,13 +245,13 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     };
     verify_explicit(source).expect("nested exact conjunction proofs");
     for bad in [
-        source.replacen("x == x => { normalize(); }", "x == x => { }", 1),
+        source.replacen("x == x => { close(); }", "x == x => { }", 1),
         source.replace("x >= x", "x > x"),
-        source.replacen("x >= x => { normalize(); }", "", 1),
+        source.replacen("x >= x => { close(); }", "", 1),
         source.replacen("x == x =>", "x <= x =>", 1),
         source.replace(
-            "all { x <= x => { normalize(); } x >= x => { normalize(); } }",
-            "all { normalize(); } and { normalize(); }",
+            "all { x <= x => { close(); } x >= x => { close(); } }",
+            "all { close(); } and { close(); }",
         ),
     ] {
         assert!(verify_explicit(&bad).is_err(), "{bad}");
@@ -705,27 +707,6 @@ fn rejects_apply_theorem_with_explicit_premises() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
-fn rejects_transport_with_explicit_premises() {
-    let source = FILL3_CLICK.replace(
-        "== 2;",
-        "== 2 by {
-            step();
-            transport(old(p[0]) == 0, p[0] == 0) using {
-                old(p[0]) == 0;
-            }
-            step_until(function.exit);
-            close();
-        }",
-    );
-    let error = parse(&source).expect_err("the selected-premise form is retired");
-    assert!(
-        error.message().contains("`transport ... using` is retired"),
-        "{error}"
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn parses_and_classifies_simple_and_smart_tactics() {
     let source = r#"
             theorem rewritten(x: int32, y: int32) {
@@ -782,29 +763,6 @@ fn parses_and_classifies_simple_and_smart_tactics() {
         }
         .class(),
         TacticClass::Simple(SimpleTactic::ApplyTheorem)
-    ));
-    let transport_source = SyntaxProposition::Defined {
-        expression: current_int(0),
-    };
-    let transport_target = SyntaxProposition::Defined {
-        expression: current_int(1),
-    };
-    assert!(matches!(
-        ProofTactic::Transport {
-            source: transport_source.clone(),
-            target: transport_target.clone(),
-        }
-        .class(),
-        TacticClass::Smart(SmartSite::FactTransport)
-    ));
-    assert!(matches!(
-        ProofTactic::CompatibilityFactTransport {
-            source: transport_source,
-            target: transport_target,
-            premises: Vec::new(),
-        }
-        .class(),
-        TacticClass::Simple(SimpleTactic::FactTransport)
     ));
     assert!(matches!(
         ProofTactic::Step.class(),
@@ -1311,7 +1269,8 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure() {
     // The final `solve` certifies `ordered_pair(pair)` while `unfold` is
     // active, so the kernel goal is already the body conjunction while the
@@ -1439,13 +1398,11 @@ test_batches! {
         integer_rewrite_reaches_nested_native_uint64_bounds,
     ],
     control_batch_02: [
-        rewritten_remainder_goals_synthesize_through_both,
         rewritten_quotient_goals_synthesize_through_both,
         conditional_quotient_claim_reuses_its_checked_domain,
         conditional_quotient_claim_keeps_its_domain_in_expansion,
     ],
     control_batch_03: [
-        integer_certificate_keeps_negative_observation_bounds_when_adding,
         both_and_proves_exact_conjuncts_and_rejects_incomplete_arms,
         both_and_outcome_expands_and_rechecks,
     ],
@@ -1468,7 +1425,6 @@ test_batches! {
         rejects_apply_theorem_with_explicit_premises,
     ],
     control_batch_07: [
-        rejects_transport_with_explicit_premises,
         parses_and_classifies_simple_and_smart_tactics,
         canonical_tactic_printer_round_trips_nested_surface_certificate,
         canonical_tactic_printer_round_trips_cases_certificate,
@@ -1489,7 +1445,6 @@ test_batches! {
         step_certificate_rejects_a_loop_step_with_an_unplanned_phase,
         smart_have_splits_an_unfolded_predicate_conjunction_goal,
         fixed_state_have_certifies_a_post_call_fact_across_a_later_store,
-        grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure,
     ],
     control_batch_11: [
         parses_execute_until_assignment_and_preserves_same_spelled_labels,
@@ -1503,9 +1458,9 @@ fn named_conjunct_proofs_match_labels_in_either_order() {
         theorem conjunction(x: int32) {
             ensures (x == x and x <= x) and x == x by {
                 all {
-                    x <= x => { normalize(); }
-                    x == x => { normalize(); }
-                    x == x => { normalize(); }
+                    x <= x => { close(); }
+                    x == x => { close(); }
+                    x == x => { close(); }
                 }
             }
         }
@@ -1518,9 +1473,9 @@ fn named_conjunct_proofs_match_labels_in_either_order() {
             ensures (forall (i: int32) { i == i }) and (2 == 2 and 3 == 3) by {
                 all {
                     (2 == 2 and 3 == 3) => {
-                        all { 3 == 3 => { normalize(); } 2 == 2 => { normalize(); } }
+                        all { 3 == 3 => { close(); } 2 == 2 => { close(); } }
                     }
-                    forall (j: int32) { j == j } => { intro() { normalize(); } }
+                    forall (j: int32) { j == j } => { intro() { close(); } }
                 }
             }
         }
@@ -1529,17 +1484,17 @@ fn named_conjunct_proofs_match_labels_in_either_order() {
     crate::surface::proof::without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     for (changed, reason) in [
         (
-            source.replace("x <= x => { normalize(); }", ""),
+            source.replace("x <= x => { close(); }", ""),
             "is missing an arm for this conjunct",
         ),
         (
-            source.replace("x <= x => { normalize(); }", "x < x => { normalize(); }"),
+            source.replace("x <= x => { close(); }", "x < x => { close(); }"),
             "is missing an arm for this conjunct",
         ),
         (
             source.replace(
-                "x <= x => { normalize(); }",
-                "x <= x => { normalize(); } x <= x => { normalize(); }",
+                "x <= x => { close(); }",
+                "x <= x => { close(); } x <= x => { close(); }",
             ),
             "has no corresponding conjunct",
         ),

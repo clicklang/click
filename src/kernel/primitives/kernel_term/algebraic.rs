@@ -13,7 +13,7 @@ impl KernelTermImport {
     pub(crate) fn algebraic(&mut self, source: &AlgebraicTerm) -> KernelTerm {
         enum Task<'a> {
             Term(&'a AlgebraicTerm),
-            If(&'a AlgebraicType, &'a ConditionTerm),
+            If(&'a AlgebraicType, &'a OldConditionTerm),
             Field(&'a AlgebraicValue),
             Argument(&'a PureFunctionArgument),
             Call(&'a AlgebraicType, &'a str, &'a [PureFunctionArgument]),
@@ -401,7 +401,7 @@ mod tests {
     fn algebraic_constructor_match_keys_keep_native_field_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999620)),
+            OldAddress::symbolic(Variable(999620)),
             ProgramType::Int32Pointer,
         );
         let make = |pointer| {
@@ -413,27 +413,27 @@ mod tests {
                 variant: "Arm".into(),
                 fields: vec![
                     AlgebraicValue::Program(ProgramValue::Pointer(pointer)),
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::add(
-                        MachineTerm::Variable(Variable(999621)),
-                        MachineTerm::constant(1),
+                    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::add(
+                        OldMachineTerm::Variable(Variable(999621)),
+                        OldMachineTerm::constant(1),
                     ))),
                 ],
             };
-            MachineTerm::AlgebraicMatch {
+            OldMachineTerm::AlgebraicMatch {
                 scrutinee: Box::new(source),
                 arms: vec![AlgebraicBitvectorMatchArm {
                     variant: "Arm".into(),
                     bindings: vec![
                         AlgebraicValue::Program(ProgramValue::Pointer(OldPointer::new(
-                            Address::symbolic(Variable(999623)),
+                            OldAddress::symbolic(Variable(999623)),
                             ProgramType::Int32Pointer,
                         ))),
-                        AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                        AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
                             Variable(999624),
                         ))),
                     ],
                     binding_names: Default::default(),
-                    body: MachineTerm::Variable(Variable(999622)),
+                    body: OldMachineTerm::Variable(Variable(999622)),
                 }],
             }
         };
@@ -475,7 +475,7 @@ mod tests {
         assert_ne!(root, KernelTermImport::default().algebraic(&other));
 
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999600)),
+            OldAddress::symbolic(Variable(999600)),
             ProgramType::Int32Pointer,
         );
         let values = [pointer.clone(), pointer].map(|pointer| {

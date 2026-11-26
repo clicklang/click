@@ -37,10 +37,10 @@ fn annotated_narrow_results_match_native_modular_arithmetic() {
     for format in FORMATS {
         let (low, high) = format.format().bounds();
         let mut operands = vec![
-            format.value_from_term(MachineTerm::Variable(Variable(995460))),
-            format.value_from_term(MachineTerm::opaque_conversion(
+            format.value_from_term(OldMachineTerm::Variable(Variable(995460))),
+            format.value_from_term(OldMachineTerm::opaque_conversion(
                 "narrow_operand",
-                MachineTerm::Variable(Variable(995461)),
+                OldMachineTerm::Variable(Variable(995461)),
             )),
         ];
         for n in [low.clone(), high.clone(), 0.into(), 1.into()] {
@@ -74,7 +74,7 @@ fn annotated_narrow_results_match_native_modular_arithmetic() {
             }
         }
         let native =
-            SpecValue::Native(format.value_from_term(MachineTerm::Variable(Variable(995462))));
+            SpecValue::Native(format.value_from_term(OldMachineTerm::Variable(Variable(995462))));
         for n in [low - 1u8, high + 1u8] {
             let outside = ProgramValue::Int32(
                 crate::kernel::machine_integer::range::constant_word(MachineIntegerType::Int32, &n)
@@ -83,7 +83,7 @@ fn annotated_narrow_results_match_native_modular_arithmetic() {
             .into();
             assert!(narrow::apply(format, MachineBinaryOp::Add, &native, &outside).is_none());
         }
-        let different = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995463))));
+        let different = SpecValue::Native(ProgramValue::Int32(OldMachineTerm::Variable(Variable(995463))));
         assert!(narrow::apply(format, MachineBinaryOp::Add, &native, &different).is_none());
         assert!(narrow::apply(format, MachineBinaryOp::Divide, &native, &native).is_none());
     }
@@ -94,7 +94,7 @@ fn annotated_narrow_evaluator_retains_nested_results() {
     for format in FORMATS {
         for op in OPS {
             let leaf = SpecExpression::Value(
-                format.value_from_term(MachineTerm::Variable(Variable(995464))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(995464))),
             );
             let inner = SpecExpression::NarrowArithmetic(
                 Box::new(expression(op, leaf.clone(), leaf.clone())),

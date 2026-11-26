@@ -220,7 +220,7 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     have second_link.link == ParentLink::Linked(at(before_read, second->kid)) by { close(); }
     have second_link.link != ParentLink::Empty by {
         rewrite(second_link.link, ParentLink::Linked(at(before_read, second->kid)));
-        normalize();
+        close();
     }
     step();
     have second->kid == kid;

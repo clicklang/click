@@ -108,10 +108,10 @@ fn shared_conversion_collectors_visit_common_integer_payloads_once() {
         }
         let mut importer = KernelTermImport::default();
         let mut root = importer
-            .machine_arithmetic(format, &MachineTerm::constant(0))
+            .machine_arithmetic(format, &OldMachineTerm::constant(0))
             .unwrap();
         for index in 0..size {
-            let conversion = MachineTerm::IntegerToMachine {
+            let conversion = OldMachineTerm::IntegerToMachine {
                 destination: format,
                 value: IntegerTerm::Add(
                     common.clone(),
@@ -160,12 +160,12 @@ fn pointer_index_collectors_keep_cold_dags_shared() {
             }
             let machine = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
             let offset = if ty == MachineIntegerType::Int32 {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: machine,
                     byte_width: 4,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value: machine,
                     byte_width: 8,
                     unsigned: ty == MachineIntegerType::UInt64,

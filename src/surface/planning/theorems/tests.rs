@@ -4,6 +4,8 @@ const SHIFT: &str = "function shifted(x: Integer) -> Integer { x + 7 }";
 const BOUND: &str = "theorem shifted_bound(x: Integer) { requires 0 <= x; ensures 7 <= shifted(x) by { unfold(shifted(x)); close(); } }";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn single_theorem_discovery_expands_and_rechecks() {
     let proof = "by { close() using { 0 <= value; }; }";
     let source = format!(
@@ -34,6 +36,8 @@ fn single_theorem_discovery_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn single_theorem_discovery_keeps_unlisted_facts_unavailable() {
     for premises in ["", "1 <= value;"] {
         let source = format!(
@@ -48,6 +52,8 @@ fn single_theorem_discovery_keeps_unlisted_facts_unavailable() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn single_theorem_discovery_does_not_invent_arguments_or_chain() {
     let hidden = format!(
         "{SHIFT} theorem hidden(x: Integer, witness: Integer) {{ requires 0 <= witness; requires x == witness; ensures 7 <= shifted(x) by {{ unfold(shifted(x)); close(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ close() using {{ 0 <= value; }}; }} }}"
@@ -74,6 +80,8 @@ fn single_theorem_discovery_finds_generic_library_law() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn single_theorem_discovery_closes_c_outcome_and_expands() {
     let proof = "by { step_until(function.exit); close() using { 0 <= to_integer(x); }; }";
     let source = format!(
@@ -167,6 +175,8 @@ fn theorem_matching_retains_typed_c_binding_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn equivalent_comparison_spellings_discover_and_expand() {
     for (conclusion, goal) in [
         ("fixed(x) == 7", "7 == fixed(value)"),
@@ -193,6 +203,8 @@ fn equivalent_comparison_spellings_discover_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn equality_orientation_is_disambiguated_by_listed_prerequisites() {
     for (function, operator) in [("0", "=="), ("x", "!=")] {
         let proof = "by { close() using { a < b; }; }";
@@ -237,6 +249,8 @@ fn nested_comparison_matching_preserves_shared_arguments() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn mirrored_float_orders_do_not_complement_nan_comparisons() {
     for (ty, bits, one) in [
         ("float", "float32_from_bits", "0x3f800000"),
@@ -244,7 +258,7 @@ fn mirrored_float_orders_do_not_complement_nan_comparisons() {
     ] {
         let proof = "by { close() using {}; }";
         let source = format!(
-            "function fixed(x: {ty}) -> {ty} {{ {bits}({one}) }} theorem law(x: {ty}) {{ ensures fixed(x) > {bits}(0) by {{ unfold(fixed(x)); normalize(); }} }} theorem test(value: {ty}) {{ ensures {bits}(0) < fixed(value) {proof} }}"
+            "function fixed(x: {ty}) -> {ty} {{ {bits}({one}) }} theorem law(x: {ty}) {{ ensures fixed(x) > {bits}(0) by {{ unfold(fixed(x)); close(); }} }} theorem test(value: {ty}) {{ ensures {bits}(0) < fixed(value) {proof} }}"
         );
         let verified = verify_click_theorems(&source).unwrap_or_else(|e| panic!("{}", e.report()));
         let expanded = verified.last().unwrap().expanded_proof_source().unwrap();

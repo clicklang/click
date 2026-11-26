@@ -281,7 +281,7 @@ pub(super) fn checked_returned_instance_body_facts(
         );
         facts.extend(read_projection);
         facts.extend(clauses.into_iter().filter_map(|clause| {
-            (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _)))))
+            (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(false), _)))))
             .then_some(clause.proposition)
         }));
     }
@@ -350,7 +350,7 @@ pub(super) fn selected_resource_instance_case_facts(
                 // can simplify it to `false`; publishing that as a premise
                 // would make every subsequent obligation vacuous.
                 .filter_map(|clause| {
-                    (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _)))))
+                    (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(false), _)))))
                     .then_some(clause.proposition)
                 }),
             )
@@ -369,7 +369,7 @@ pub(super) fn selected_instance_resource_load_values(
     state: &ExecutionState,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> BTreeMap<(Address, ProgramType), ProgramValue> {
+) -> BTreeMap<(OldAddress, ProgramType), ProgramValue> {
     let Some(bindings) = state.resource_bindings.as_ref() else {
         return BTreeMap::new();
     };

@@ -95,7 +95,7 @@ pub(crate) struct OrdinaryTerminationScope {
 
 fn conjunction(mut goals: Vec<Proposition>) -> Proposition {
     if goals.is_empty() {
-        return Proposition::condition_is(ConditionTerm::Constant(true), true);
+        return Proposition::condition_is(OldConditionTerm::Constant(true), true);
     }
     while goals.len() > 1 {
         let mut next = Vec::with_capacity(goals.len().div_ceil(2));
@@ -240,7 +240,7 @@ impl OrdinaryTerminationScope {
             spellings,
             components,
             component_of,
-            goal: Proposition::condition_is(ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(OldConditionTerm::Constant(true), true),
             bindings,
         };
         let mut goals = Vec::new();
@@ -747,6 +747,7 @@ mod tests {
                 },
                 plans: &[],
                 assumed_terminating: &BTreeSet::new(),
+                cpp_virtual_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })

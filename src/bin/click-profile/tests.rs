@@ -1406,17 +1406,26 @@ pass
         !searched(&replay),
         "the written arms must close without member planning"
     );
-    assert_eq!(
-        replay
-            .slow_steps
-            .iter()
-            .filter(is_closer)
-            .filter(|step| !step.loop_closer_has_proof)
-            .count(),
-        2
+    let replay_closers = replay
+        .slow_steps
+        .iter()
+        .filter(is_closer)
+        .collect::<Vec<_>>();
+    assert_eq!(replay_closers.len(), 2);
+    let report = render_profiles(
+        std::slice::from_ref(&replay),
+        thresholds,
+        DEFAULT_TIME_LIMIT,
     );
-    let report = render_profiles(&[replay], thresholds, DEFAULT_TIME_LIMIT);
-    assert!(!report.contains("expand: click expand"), "{report}");
+    for closer in replay_closers {
+        assert!(!closer.loop_closer_has_proof);
+        let position = closer.key.position.as_ref().unwrap();
+        let selector = format!("{}:{}:{}", output.display(), position.line, position.column);
+        assert!(
+            !report.contains(&format!("--claim {}", shell_quote(&selector))),
+            "{report}"
+        );
+    }
 }
 
 #[test]
@@ -1477,7 +1486,7 @@ fn profile_resolves_a_project_once_for_reporting_as_tactic_rows_grow() {
             "verifying \"identity.c\";\n\
              int32 identity(int32 x) {{ ensures result == x; }} by {{\n\
              step();\n{}close();\n}}\n",
-            "have result == x by { normalize(); }\n".repeat(count)
+            "have result == x by { close(); }\n".repeat(count)
         );
         fs::write(&path, source).unwrap();
         let targets = profile_targets(&path).unwrap();

@@ -1,13 +1,8 @@
 # A closer after an `unfold` that already closed the goal is a no-op
 
-`unfold` refreshes the goal through one defining equation, and when the
-refreshed goal is already an available fact the goal is closed by that
-alone; when it is not, a `normalize()` closes what is left. A proof cannot
-always tell which it will be, so a trailing `known`, `solve`, or
-`normalize` after a closed goal asserts a closed judgment and emits nothing,
-in any position. The first `have` below needs its `normalize()`; the second
-does not, because unfolding `red_bit_value()` leaves exactly the fact the
-first established, and the same script shape is accepted for both.
+The first `have` proves the concrete color's bit value. In the second
+`have`, unfolding `red_bit_value()` exposes the equality already established
+by the first proof. Both proofs accept a trailing `close()`.
 
 ```c filename=closer_after_unfold_closed_goal.c
 int32 red_bit(int32 n) {

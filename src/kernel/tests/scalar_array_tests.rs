@@ -1,10 +1,10 @@
 //! Compact scalar arrays keep checked authority independent of logical length.
 use super::*;
 
-fn pointer(block: &str, offset: i64) -> Address {
-    Address {
+fn pointer(block: &str, offset: i64) -> OldAddress {
+    OldAddress {
         base: block.into(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 fn fresh(count: u32) -> SymbolicMemory {
@@ -18,7 +18,7 @@ fn seeded(count: u32) -> SymbolicMemory {
             &pointer("local:array-source", 0),
             ProgramType::UInt32,
             count,
-            ProgramValue::UInt32(MachineTerm::Variable(Variable(912_345))),
+            ProgramValue::UInt32(OldMachineTerm::Variable(Variable(912_345))),
             false,
         )
         .unwrap()
@@ -47,7 +47,7 @@ fn scalar_array_copy_after_partial_call_keeps_known_lanes_and_rejects_bad_storag
         .unwrap();
     assert_eq!(
         copied.load(&target),
-        ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+        ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::Variable(Variable(
             912_345
         )),))
     );

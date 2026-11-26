@@ -60,12 +60,13 @@ fn truncating_integer_congruence_visits_shared_nodes_once() {
                 IntegerTerm::TruncatingRemainder(term.clone(), term).into()
             };
         }
-        let goal = Proposition::condition_is(ConditionTerm::IntegerEqual(term.clone(), term), true);
+        let goal =
+            Proposition::condition_is(OldConditionTerm::IntegerEqual(term.clone(), term), true);
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::substitute_integer_term_in_proposition(&goal, &from, &to).unwrap()
         });
         assert!(work <= 4 * depth + 8, "depth={depth}, work={work}");
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) = rewritten.condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) = rewritten.old_condition()
         else {
             unreachable!()
         };
@@ -111,8 +112,8 @@ fn widened_and_read_sums(n: u32) -> (SharedIntegerTerm, SharedIntegerTerm) {
     let mut widened: Option<SharedIntegerTerm> = None;
     let mut read: Option<SharedIntegerTerm> = None;
     for k in 0..n {
-        let byte = MachineTerm::Variable(Variable(940_000 + u64::from(k)));
-        let widening = MachineTerm::Cast {
+        let byte = OldMachineTerm::Variable(Variable(940_000 + u64::from(k)));
+        let widening = OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(byte.clone()),
             from: MachineIntegerType::UInt8,
@@ -147,7 +148,7 @@ fn widened_and_read_sums(n: u32) -> (SharedIntegerTerm, SharedIntegerTerm) {
 #[test]
 fn widening_value_reading_is_computed_once_per_node() {
     use std::hash::{Hash, Hasher};
-    let hash = |condition: &ConditionTerm| {
+    let hash = |condition: &OldConditionTerm| {
         let mut state = std::collections::hash_map::DefaultHasher::new();
         condition.hash(&mut state);
         state.finish()
@@ -162,7 +163,7 @@ fn widening_value_reading_is_computed_once_per_node() {
         assert_eq!(reading, read, "n={n}");
         assert_eq!(reading_work, 0, "n={n}: the reading is a lookup");
         let bound = |value: SharedIntegerTerm| {
-            ConditionTerm::IntegerLessEqual(value, IntegerTerm::constant_i64(7).into())
+            OldConditionTerm::IntegerLessEqual(value, IntegerTerm::constant_i64(7).into())
         };
         let (written, stated) = (bound(widened.clone()), bound(read.clone()));
         let (same, identity_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -200,7 +201,8 @@ fn widened_observations_are_one_affine_atom_with_their_operands() {
     let mut costs = Vec::new();
     for n in [16u32, 64, 256, 1024] {
         let (widened, read) = widened_and_read_sums(n);
-        let equality = Proposition::condition_is(ConditionTerm::IntegerEqual(widened, read), true);
+        let equality =
+            Proposition::condition_is(OldConditionTerm::IntegerEqual(widened, read), true);
         let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::integer_arithmetic::integer_affine_claim(&equality)
         });
@@ -220,13 +222,13 @@ fn importing_an_opposite_numeric_reading_reuses_the_retained_word_dag() {
     ] {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut native = MachineTerm::Variable(Variable(993281));
+            let mut native = OldMachineTerm::Variable(Variable(993281));
             for index in 0..size {
-                native = MachineTerm::Binary {
+                native = OldMachineTerm::Binary {
                     format: signed,
                     op: MachineBinaryOp::Multiply,
                     left: Box::new(native),
-                    right: Box::new(MachineTerm::Variable(Variable(993282 + index))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(993282 + index))),
                 };
             }
             let original = SharedMachineIntegerTerm::intern(unsigned, native.clone());
@@ -277,8 +279,8 @@ fn shared_call_argument_readers_keep_dags_through_collection_and_rewrite() {
                 panic!("common call");
             };
             assert_eq!(arguments[0], root);
-            let source = MachineTerm::Variable(variable);
-            let target = MachineTerm::Variable(replacement_variable);
+            let source = OldMachineTerm::Variable(variable);
+            let target = OldMachineTerm::Variable(replacement_variable);
             let mut rewrite =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, &target);
             let result = rewrite.term(&Term::Integer(original.into()));
@@ -287,10 +289,7 @@ fn shared_call_argument_readers_keep_dags_through_collection_and_rewrite() {
                 panic!("Integer call");
             };
             let mut variables = BTreeSet::new();
-            crate::kernel::prelude::collect_integer_variables(
-                result.native_compat(),
-                &mut variables,
-            );
+            crate::kernel::prelude::collect_integer_variables(result.old_form(), &mut variables);
             assert!(variables.contains(&replacement_variable));
             assert!(!variables.contains(&variable));
         });
@@ -316,7 +315,7 @@ fn repeated_call_payloads_share_identity_without_accumulating_versions() {
         };
         let variable = Variable(998_730);
         let native =
-            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::Variable(variable)));
+            PureFunctionArgument::Value(ProgramValue::UInt32(OldMachineTerm::Variable(variable)));
         let shared = PureFunctionArgument::SharedMachine(
             SharedMachineIntegerTerm::from_shared(
                 MachineIntegerType::UInt32,

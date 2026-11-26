@@ -28,7 +28,7 @@ fn boolean_calls_keep_shared_arguments_across_selected_native_readings() {
             };
             assert_eq!(arguments[0], operand);
             for _ in 0..size {
-                let ConditionTerm::BoolApplication(native) = root.boolean_call_native().unwrap()
+                let OldConditionTerm::BoolApplication(native) = root.old_boolean_call().unwrap()
                 else {
                     panic!();
                 };
@@ -41,7 +41,7 @@ fn boolean_calls_keep_shared_arguments_across_selected_native_readings() {
                 crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                     &root,
                     Variable(999411),
-                    &MachineTerm::constant(1)
+                    &OldMachineTerm::constant(1)
                 ),
                 Some(root.clone())
             );
@@ -49,7 +49,7 @@ fn boolean_calls_keep_shared_arguments_across_selected_native_readings() {
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
                     Variable(999411),
-                    &Address::null()
+                    &OldAddress::null()
                 ),
                 Some(root)
             );
@@ -69,7 +69,7 @@ fn nested_boolean_argument_handoffs_retain_linear_shared_prefixes() {
             for _ in 0..size {
                 let application = SharedPureApplication::intern(
                     "nested_bool".into(),
-                    vec![root.boolean_argument_native().unwrap().clone()],
+                    vec![root.old_boolean_argument().unwrap().clone()],
                 );
                 let next = KernelTermImport::default()
                     .boolean_call_with_retained(&application, &[Some(root.clone())]);

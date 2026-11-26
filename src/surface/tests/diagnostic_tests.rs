@@ -4,7 +4,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn full_and_concise_reports_keep_named_pointer_prerequisites() {
-    use crate::kernel::{Address, OldPointer, ProgramType, Variable};
+    use crate::kernel::{OldAddress, OldPointer, ProgramType, Variable};
     use crate::surface::proof_diagnostics::{
         ProofDiagnosticOrigin, ProofDiagnosticState, ProofFailureDiagnostic,
         render::MemoryStateLabels,
@@ -12,8 +12,8 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
     use std::sync::Arc;
 
     struct NamedPointers {
-        node: Address,
-        identity: Address,
+        node: OldAddress,
+        identity: OldAddress,
     }
     impl ProofDiagnosticState for NamedPointers {
         fn kernel_goal(&self) -> Option<&Proposition> {
@@ -31,12 +31,12 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
         }
     }
     let names = NamedPointers {
-        node: Address::symbolic(Variable(990_101)),
-        identity: Address::symbolic(Variable(990_102)),
+        node: OldAddress::symbolic(Variable(990_101)),
+        identity: OldAddress::symbolic(Variable(990_102)),
     };
-    let pointer = |p: &Address| OldPointer::new(p.clone(), ProgramType::Int32Pointer);
+    let pointer = |p: &OldAddress| OldPointer::new(p.clone(), ProgramType::Int32Pointer);
     let requirement = Proposition::condition_is(
-        ConditionTerm::PointerEqual(
+        OldConditionTerm::PointerEqual(
             Box::new(pointer(&names.node)),
             Box::new(pointer(&names.identity)),
         ),
@@ -65,6 +65,8 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn pointer_cast_goal_keeps_its_written_operands_in_diagnostics() {
     let c = "float* next32(float* p) { return p + 1; }";
     let source = r#"
@@ -134,6 +136,8 @@ fn subobject_access_concrete_bounds_are_reported() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn subobject_access_opaque_bounds_are_reported() {
     assert_subobject_access_reports(
         "struct node { int tag; struct node *left; }; void f(struct node *p, struct node *g) { struct node *parent = g->left; if (parent == p) { parent->tag = 0; } }",
@@ -144,7 +148,8 @@ fn subobject_access_opaque_bounds_are_reported() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn implicit_tail_handles_unsigned_statement_cases_with_tracing() {
     let c = r#"int32 unsigned_index(uint32 x) {
         int32 values[4] = {1, 2, 3, 4};
@@ -747,12 +752,12 @@ fn concise_reason_keeps_list_entries_and_definitions_whole() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn click_addition_cancels_a_negated_pointer_base() {
-    let base = MachineTerm::Variable(Variable(90));
-    let index = MachineTerm::Variable(Variable(91));
+    let base = OldMachineTerm::Variable(Variable(90));
+    let index = OldMachineTerm::Variable(Variable(91));
     let negative_base = binary_node!(
         Int32,
         Subtract,
-        Box::new(MachineTerm::constant(0)),
+        Box::new(OldMachineTerm::constant(0)),
         Box::new(base.clone()),
     );
 
@@ -775,9 +780,12 @@ fn click_addition_cancels_a_negated_pointer_base() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn an_unnamed_store_index_is_spelled_through_its_own_base() {
-    let base = |variable: u64| Address {
+    let base = |variable: u64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     };
     let parameters = vec![
         crate::languages::interface::ImportedParameter::new(
@@ -802,12 +810,12 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
         )),
     ];
     // `visited + old_cur * 4`, with `old_cur` a variable no local names.
-    let store = Address {
+    let store = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Add(
+        offset: OldAddressOffset::Add(
             Box::new(base(100_001).offset),
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(1_000_000)),
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(1_000_000)),
                 4,
             )),
         ),
@@ -825,9 +833,9 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100000)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100000)), 4),
     };
     let field = base.offset_by_bytes(4);
 
@@ -835,7 +843,7 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
         super::checking::pointer_element_index_from_base(&field, &base, &PureFactContext::new())
     });
 
-    assert_eq!(index, Some(MachineTerm::constant(1)));
+    assert_eq!(index, Some(OldMachineTerm::constant(1)));
 }
 
 #[test]
@@ -862,9 +870,9 @@ fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_06")]
 fn execution_effect_diagnostics_omit_raw_memory_states() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     let before = SymbolicMemory::new().store(pointer.clone(), int32(1));
     let after = before.clone().store(pointer.clone(), int32(2));
@@ -879,15 +887,15 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
             after: after.clone(),
             mutable_ranges: vec![MemoryRange::new(
                 pointer.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )],
         }),
         ExecutionPureFact::new(Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base: pointer,
-            bytes: crate::kernel::AllocationSize::int32(MachineTerm::constant(4)),
+            bytes: crate::kernel::AllocationSize::int32(OldMachineTerm::constant(4)),
         }),
     ];
 
@@ -914,21 +922,21 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_06")]
 fn a_condition_search_miss_spells_its_goal_and_premises() {
-    let x = MachineTerm::Variable(Variable(1));
-    let y = MachineTerm::Variable(Variable(2));
-    let at_most = |term: &MachineTerm, bound: u32| {
+    let x = OldMachineTerm::Variable(Variable(1));
+    let y = OldMachineTerm::Variable(Variable(2));
+    let at_most = |term: &OldMachineTerm, bound: u32| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(term.clone()),
-                right: Box::new(MachineTerm::constant(bound)),
+                right: Box::new(OldMachineTerm::constant(bound)),
             },
             true,
         )
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(x.clone()),
@@ -970,11 +978,11 @@ fn verifier_diagnostics_bound_fact_items() {
     let facts = (0..20)
         .map(|index| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::constant(index)),
-                    right: Box::new(MachineTerm::constant(index)),
+                    left: Box::new(OldMachineTerm::constant(index)),
+                    right: Box::new(OldMachineTerm::constant(index)),
                 },
                 true,
             )
@@ -1130,7 +1138,8 @@ fn failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump() 
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn negative_mdtest_failures_include_structured_proof_context() {
     for name in [
         "max_bad_ensure",
@@ -1323,17 +1332,17 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
-    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
+    use crate::kernel::{AddressBase, MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm};
     use crate::kernel::{BorrowRefusal, BorrowRefusalOperation, BorrowRefusalSubject};
 
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("selected_resource".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let selected = ResourceFact::own_memory(MemoryRange::new(
         pointer,
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     ));
     let diagnostic = BorrowRefusal::ActiveDependency.diagnostic_with_subject(
         BorrowRefusalOperation::MemoryAccess,
@@ -1359,16 +1368,16 @@ fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
-    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
+    use crate::kernel::{AddressBase, MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm};
     use crate::kernel::{BorrowRefusal, BorrowRefusalOperation, BorrowRefusalSubject};
 
     let range = MemoryRange::new(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete("selected_range".to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
-        MachineTerm::constant(1),
-        MachineTerm::constant(3),
+        OldMachineTerm::constant(1),
+        OldMachineTerm::constant(3),
     );
     let diagnostic = BorrowRefusal::UnsupportedPartition.diagnostic_with_subject(
         BorrowRefusalOperation::Plan,
@@ -1516,11 +1525,11 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
 
     // An inequality the facts already state is not offered again: stating it
     // a second time cannot change what this check concludes.
-    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
-    let i = MachineTerm::Variable(Variable(1));
-    let j = MachineTerm::Variable(Variable(2));
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Proposition, Variable};
+    let i = OldMachineTerm::Variable(Variable(1));
+    let j = OldMachineTerm::Variable(Variable(2));
     let differ = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(j.clone()),
@@ -1542,11 +1551,11 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
          it again will not help."
     );
     let unrelated = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(i.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         false,
     );
@@ -1567,19 +1576,19 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
-    let global = Address {
+    let global = OldAddress {
         base: "global:counter".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(982_001)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = SymbolicMemory::new().with_block(global.base.clone(), 4);
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
-        Proposition::condition_is(ConditionTerm::address_equal(alias.clone(), global), true);
+        Proposition::condition_is(OldConditionTerm::address_equal(alias.clone(), global), true);
     let facts = [
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),
@@ -1591,8 +1600,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
             after,
             mutable_ranges: vec![MemoryRange::new(
                 alias,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )],
         }),
     ];
@@ -1623,14 +1632,14 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn a_conditional_term_spells_its_unsigned_guard() {
-    let x = MachineTerm::Variable(crate::kernel::Variable(7));
-    let term = MachineTerm::If {
-        condition: Box::new(ConditionTerm::unsigned_less_than(
+    let x = OldMachineTerm::Variable(crate::kernel::Variable(7));
+    let term = OldMachineTerm::If {
+        condition: Box::new(OldConditionTerm::unsigned_less_than(
             x.clone(),
-            MachineTerm::constant(4),
+            OldMachineTerm::constant(4),
         )),
         then_term: Box::new(x),
-        else_term: Box::new(MachineTerm::constant(5)),
+        else_term: Box::new(OldMachineTerm::constant(5)),
     };
     let rendered = super::diagnostics::describe_bitvector(&term);
     assert!(rendered.contains(" < 4 (unsigned)"), "{rendered}");
@@ -1643,28 +1652,28 @@ fn a_conditional_term_spells_its_unsigned_guard() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn a_uint32_order_is_named_as_unsigned() {
     let (x, y) = (
-        MachineTerm::Variable(crate::kernel::Variable(8)),
-        MachineTerm::Variable(crate::kernel::Variable(9)),
+        OldMachineTerm::Variable(crate::kernel::Variable(8)),
+        OldMachineTerm::Variable(crate::kernel::Variable(9)),
     );
     for (condition, kind) in [
         (
-            ConditionTerm::unsigned_less_than(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_less_than(x.clone(), y.clone()),
             "uint32 less-than",
         ),
         (
-            ConditionTerm::unsigned_less_equal(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_less_equal(x.clone(), y.clone()),
             "uint32 less-or-equal",
         ),
         (
-            ConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
             "uint32 greater-than",
         ),
         (
-            ConditionTerm::unsigned_greater_equal(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_greater_equal(x.clone(), y.clone()),
             "uint32 greater-or-equal",
         ),
         (
-            ConditionTerm::uint64_less_than(x.clone(), y.clone()),
+            OldConditionTerm::uint64_less_than(x.clone(), y.clone()),
             "uint64 less-than",
         ),
     ] {
@@ -1675,9 +1684,9 @@ fn a_uint32_order_is_named_as_unsigned() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_11")]
 fn missing_mutex_use_names_the_required_resource_without_borrow_internals() {
-    let mutex = crate::kernel::Address {
+    let mutex = crate::kernel::OldAddress {
         base: "selected_mutex".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let rendered = super::diagnostics::describe_runtime_error(
         &crate::kernel::RuntimeError::MissingMutexUse {
@@ -1770,7 +1779,8 @@ fn split_statement_sites(message: &str) -> (String, Vec<String>) {
 /// from the `C statement at` line each refusal gains, which names the line
 /// and column the statement moved to and quotes it without its comment.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_11")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn statement_sites_change_nothing_but_the_location_line() {
     let shifted = shifted_sited_c_source();
     let original = crate::languages::c::syntax::parse_functions(SITED_C_SOURCE).unwrap();
@@ -1911,16 +1921,16 @@ theorem split(x: int32) {
         cases {
             x == 1 => {
                 rewrite(x, 1);
-                normalize();
+                close();
             }
             x == 2 => {
                 rewrite(x, 2);
-                normalize();
+                close();
             }
         }
     }
 }
-theorem unproved(x: int32) { ensures x == 0 by { normalize(); } }
+theorem unproved(x: int32) { ensures x == 0 by { close(); } }
 int32 f() { ensures result == 2; } by { step(); close(); }
 "#;
     let project = ClickProject::new(
@@ -1970,7 +1980,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
         .unwrap();
         assert!(
             right.ends_with(
-                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@18: rewrite\n  tactic@19: normalize()"
+                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@18: rewrite\n  tactic@19: close()"
             ),
             "{right}"
         );
@@ -1992,7 +2002,8 @@ fn folded_child_loop_fixture() -> crate::cli::MdTest {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
     let fixture = folded_child_loop_fixture();
     let sources = fixture
@@ -2023,7 +2034,8 @@ fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn unfolded_algebraic_field_keeps_its_captured_model() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/loop_invariant_binds_model_from_a_folded_parent.md");
@@ -2078,18 +2090,23 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, OldPointer, ProgramType,
+        AddressBase, MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm, OldPointer,
+        ProgramType,
     };
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("unknown".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_local(
         "cursor",
         ProgramValue::Pointer(OldPointer::new(base.clone(), ProgramType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
-    let range = MemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
+    let range = MemoryRange::new(
+        base,
+        OldMachineTerm::constant(1),
+        OldMachineTerm::constant(2),
+    );
     assert_eq!(
         super::diagnostics::describe_memory_range(
             &range,
@@ -2102,13 +2119,13 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
 #[test]
 fn address_mismatch_diagnostic_compares_selected_read_points() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MemoryRange, ProgramType, ResourceContext,
+        AddressBase, MemoryRange, OldAddress, OldAddressOffset, ProgramType, ResourceContext,
         ResourceFact, SpecExpression, SpecPoint,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let address = Address {
+    let address = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let first = ExecutionState::new()
         .begin_function_entry_memory()
@@ -2119,8 +2136,8 @@ fn address_mismatch_diagnostic_compares_selected_read_points() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::view_memory(MemoryRange::new(
                 address.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(2),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(2),
             )),
         ));
     let second = first.clone().begin_function_entry_memory();
@@ -2386,7 +2403,7 @@ fn pure_theorem_tactics_emit_claims_and_nested_written_source_paths() {
             have x <= 1000 by { close() using { x <= 100; } }
             close();
         }
-        ensures x == x by { normalize(); }
+        ensures x == x by { close(); }
     }"#;
     let (result, events) = collect(|| verify_click_theorems(source));
     assert_eq!(result.unwrap().len(), 2);
@@ -2474,13 +2491,13 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     use crate::instrumentation::{VerificationEvent, collect};
     let source = r#"
     spec enum TestList<T> { Nil, Cons(T, TestList<T>), }
-    theorem reflexive<T>(x: T) { ensures x == x by { normalize(); } }
+    theorem reflexive<T>(x: T) { ensures x == x by { close(); } }
     theorem induction_shape(xs: TestList<int32>) {
         ensures xs == xs by {
             let ih = induct(xs);
             match xs {
-                TestList::Nil => { normalize(); }
-                TestList::Cons(head, tail) => { apply(ih(tail)); normalize(); }
+                TestList::Nil => { close(); }
+                TestList::Cons(head, tail) => { apply(ih(tail)); close(); }
             }
         }
     }"#;
@@ -2501,6 +2518,8 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn induction_failure_trace_retains_the_constructor_equation() {
     let source = r#"
         spec enum Chain { End, Next(Chain), }
@@ -2568,6 +2587,8 @@ fn pure_theorem_wide_arithmetic_has_attributed_work_at_growing_sizes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.5s in the parallel gate"]
 fn loop_closer_reuses_published_invariant_facts() {
     let c = "void run(int n, int x) { while (n > 0) { n--; } }";
     let source = r#"verifying "reuse.c";
@@ -2674,7 +2695,7 @@ fn implicit_theorem_search_is_timed_without_a_written_tactic_path() {
 fn linear_function_proofs_execute_once_at_multiple_sizes() {
     use crate::instrumentation::{VerificationEvent, collect};
     for size in [16, 64, 256] {
-        let premises = "have 0 == 0 by { normalize(); }\n".repeat(size);
+        let premises = "have 0 == 0 by { close(); }\n".repeat(size);
         let source = format!(
             "verifying \"f.c\"; int32 f() {{ ensures result == 0; }} by {{ {premises} step_until(function.exit); close(); }}"
         );
@@ -2832,7 +2853,8 @@ fn a_labelled_resource_fact_is_refused_by_name() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_15")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
     let c = "void f(int *p) { *p = 9; }";
     for (resource, proof) in [
@@ -2912,32 +2934,32 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     use crate::surface::proof_diagnostics::render::{
         MemoryStateLabels, render_memory_history_check, render_proposition_labeled,
     };
-    let read = Address {
+    let read = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(992001)),
+        offset: OldAddressOffset::Variable(Variable(992001)),
     };
-    let written = Address::symbolic(Variable(992002));
+    let written = OldAddress::symbolic(Variable(992002));
     let before = SymbolicMemory::new();
     let blocked = before.clone().store(
         written.clone(),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(42)),
     );
     let after = blocked.clone().store(
-        Address {
+        OldAddress {
             base: "local:unrelated".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         int32(1),
     );
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(read.clone()),
             LoadKind::Bits64,
         )
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(load(&after)),
@@ -3013,7 +3035,7 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
         );
         for index in 0..size {
             source.push_str(&format!(
-                " have x <= {index} by {{ rewrite(x, 0); normalize(); }}\n"
+                " have x <= {index} by {{ rewrite(x, 0); close(); }}\n"
             ));
         }
         source.push_str(" close();\n }\n}\n");
@@ -3059,7 +3081,8 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
 /// Retargeting changes a resource's index; the next call must show both
 /// actual indices and identify the equality it rejected.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn call_resource_diagnostic_shows_the_rejected_argument() {
     let c = r#"void retarget(int32 *p, int32 *q, int32 *anchor) {}
 void call(int32 *p, int32 *q, int32 *anchor) { retarget(p, q, anchor); retarget(p, q, anchor); }
@@ -3119,15 +3142,15 @@ void call(int32* p, int32* q, int32* anchor) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn call_resource_diagnostic_read_shows_state_and_access() {
-    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
-    let address = Address {
+    use crate::kernel::{AddressBase, MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm};
+    let address = OldAddress {
         base: AddressBase::Concrete("selected_child_cell".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let required = ResourceFact::View(crate::kernel::Resource::Memory(MemoryRange::new(
         address,
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     )));
     let error = crate::kernel::RuntimeError::ContractResourceDiagnostic {
         reason: "resource `child` argument 1 could not be evaluated: required access authority is unavailable".into(),
@@ -3154,7 +3177,7 @@ fn call_resource_diagnostic_read_shows_state_and_access() {
 fn smart_have_budget_refusal_retains_checked_trace_prefix() {
     for nested in [false, true] {
         let body = if nested {
-            "have value == value by { normalize(); } close();"
+            "have value == value by { close(); } close();"
         } else {
             "close();"
         };
@@ -3220,7 +3243,7 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
             step(); step();
             loop {
                 invariant i >= 0;
-                initialize by { normalize(); }
+                initialize by { close(); }
                 maintain by {
                     step();
                     have cell[0] == value + 1 by { close(); }
@@ -3250,6 +3273,8 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn loop_certification_refusal_retains_the_loop_frontier_trace() {
     // The `loop` tactic certifies its phases and transitions inside one
     // checked operation. A refusal there, here the loop head's write
@@ -3374,7 +3399,8 @@ uint64 drain(uint64 len) {
 "#;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_17")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
     with_proof_trace("drain", || {
         let error = verify_c_sources(CLOSURE_TRACE_CLICK, &[("loop.c", CLOSURE_TRACE_C)])
@@ -3446,10 +3472,11 @@ fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_18")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.6s in the parallel gate"]
 fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
     for size in [16, 32, 64] {
-        let repeated = "   have len == len by normalize();\n".repeat(size);
+        let repeated = "   have len == len by close();\n".repeat(size);
         let source = CLOSURE_TRACE_CLICK.replace(
             "   have len == 0u64 by close();\n",
             &format!("{repeated}   have len == 0u64 by close();\n"),
@@ -3514,7 +3541,8 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 /// Native prefix proofs retain the source view and its coverage bound even
 /// when unrelated bounds exceed the general premise-reduction budget.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_18")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn native_view_solve_selects_only_coverage_premises() {
     let extra_bounds = 63;
     for body in [
@@ -3558,27 +3586,27 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, ProofObligation, Proposition,
-        RuntimeError, SymbolicMemory,
+        OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProofObligation,
+        Proposition, RuntimeError, SymbolicMemory,
     };
     use crate::surface::proof_diagnostics::render::{
         MemoryStateLabels, render_proposition_labeled,
     };
     let memory = SymbolicMemory::new();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "pending_read_cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -3712,30 +3740,30 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, AlgebraicValue, LoadKind, OldPointer, ProgramType,
-        ProgramValue, Resource, SymbolicMemory, Variable, intern_memory,
+        AddressBase, AlgebraicValue, LoadKind, OldAddress, OldAddressOffset, OldPointer,
+        ProgramType, ProgramValue, Resource, SymbolicMemory, Variable, intern_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let read = Address {
+    let read = OldAddress {
         base: AddressBase::Concrete("child_cell".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = SymbolicMemory::new();
     let after = before.clone().store(read.clone(), int32(7));
     let argument = |memory: SymbolicMemory| {
         AlgebraicValue::Program(ProgramValue::Pointer(OldPointer::new(
-            Address {
+            OldAddress {
                 base: AddressBase::Concrete("nodes".into()),
-                offset: AddressOffset::scale_int32(
+                offset: OldAddressOffset::scale_int32(
                     binary_node!(
                         Int32,
                         Subtract,
-                        Box::new(MachineTerm::read_named(
+                        Box::new(OldMachineTerm::read_named(
                             crate::kernel::ProgramPoint::at(&(intern_memory(memory))),
                             Box::new(read.clone()),
                             LoadKind::Int32,
                         )),
-                        Box::new(MachineTerm::Variable(Variable(993451))),
+                        Box::new(OldMachineTerm::Variable(Variable(993451))),
                     ),
                     4,
                 ),
@@ -3815,11 +3843,11 @@ fn failed_final_known_preserves_its_checked_trace_context() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
-fn known_transport_trace_retains_its_written_source_occurrence() {
+fn known_have_trace_retains_its_written_source_occurrence() {
     let source = r#"verifying "f.c";
         void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
             step(); mark saved;
-            transport(at(saved, p[0] == 7), p[0] == 7);
+            have p[0] == 7 by { close(); }
             step_until(function.exit); close();
         }
     "#;
@@ -3828,12 +3856,11 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
             source,
             &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
         )
-        .expect("identity transport should verify");
+        .expect("the already known read should close");
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-            .expect("accepted transport retains its trace");
-        let expected = "have p[0] == 7 (from `transport`)";
+            .expect("the accepted have retains its trace");
+        let expected = "have p[0] == 7";
         assert!(trace.contains(&format!("tactic 2: {expected}")), "{trace}");
-        assert!(!trace.contains("checked transport target:"), "{trace}");
         let focused = accepted_proof_trace(
             &|_, path| {
                 let line = path.first()? + 1;
@@ -3843,12 +3870,12 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
             &|_, _, _| false,
             Some(&SourcePosition::new(3, 1)),
         )
-        .expect("the written transport source occurrence remains traceable");
+        .expect("the written have source occurrence remains traceable");
         assert!(
             focused.contains(&format!("tactic@3: {expected}")),
             "{focused}"
         );
-        assert!(!focused.contains("checked transport target:"), "{focused}");
+        assert!(focused.contains("adds: int32 =(read<Bits32>"), "{focused}");
     });
 }
 
@@ -3862,7 +3889,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
     let source = r#"verifying "f.c";
         void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
             step(); mark saved;
-            transport(at(saved, p[0] == 7), p[0] == 7);
+            have p[0] == 7 by { close(); }
             step_until(function.exit); close();
         }
     "#;
@@ -3871,11 +3898,10 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
             source,
             &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
         )
-        .expect("identity transport should verify");
+        .expect("the already known read should close");
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-            .expect("accepted transport retains its trace");
-        let chosen = "chosen: transport(";
-        assert!(!trace.contains(chosen), "{trace}");
+            .expect("the accepted have retains its trace");
+        assert!(!trace.contains("chosen: close("), "{trace}");
         assert!(
             trace.contains("tactic 3: step (from `step_until`)"),
             "{trace}"
@@ -3885,10 +3911,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
             "{trace}"
         );
         assert!(trace.contains("tactic 0: step\n"), "{trace}");
-        assert!(
-            trace.contains("tactic 2: have p[0] == 7 (from `transport`)\n"),
-            "{trace}"
-        );
+        assert!(trace.contains("tactic 2: have p[0] == 7\n"), "{trace}");
     });
     let source = r#"verifying "f.c";
         theorem le_trans(a: int32, b: int32, c: int32) {
@@ -3914,7 +3937,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
-fn rejected_transport_prints_checked_reads_and_retains_prefix() {
+fn rejected_historical_fact_retains_store_prefix() {
     let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();
     let c = format!("void f(int32 *p) {{ {stores} p[0] = 9; return; }}");
     let steps = "step(); ".repeat(9);
@@ -3922,7 +3945,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
         r#"verifying "f.c";
         void f(int32 *p) {{ owns p[0..10]; requires p[0] == 7; ensures true; }} by {{
             {steps} mark stored; step();
-            transport(at(stored, p[0] == 7), p[0] == 7);
+            have p[0] == 7 by {{ close(); }}
             step_until(function.exit); close();
         }}
     "#
@@ -3930,36 +3953,15 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     with_proof_trace("f", || {
         let error = verify_c_sources(&source, &[("f.c", c.as_str())])
             .expect_err("a write invalidates the transported value");
-        let message = error.message();
+        let report = error.report();
         assert!(
-            message.contains("`transport` found no frame evidence"),
-            "{message}"
+            report.contains("could not establish `p[0] == 7`"),
+            "{report}"
         );
-        assert!(
-            message.contains("this is the refusal with the source as the only premise"),
-            "{message}"
-        );
-        assert!(message.contains("at this frontier (10):"), "{message}");
-        assert!(message.contains("checked source (holds):"), "{message}");
-        assert!(message.contains("checked target (wanted):"), "{message}");
-        assert!(message.contains("read<Bits32>"), "{message}");
-        assert!(message.contains("state#"), "{message}");
-        // The target names the read of the overwritten cell, not the
-        // value the store left there.
-        assert!(
-            message.contains("checked target (wanted): int32 =(read<Bits32>"),
-            "{message}"
-        );
-        assert!(
-            !message.contains("additional effect facts omitted"),
-            "{message}"
-        );
-        let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-            .expect("the rejected written transport retains its checked prefix");
-        assert!(
-            trace.contains("checked prefix; certification failed"),
-            "{trace}"
-        );
+        let trace = error
+            .trace_context_report()
+            .expect("the rejected have retains its checked prefix");
+        assert!(trace.contains("read<Bits32>"), "{trace}");
         assert!(trace.contains("steps through: p[1] = 9"), "{trace}");
         assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
     });
@@ -4003,39 +4005,29 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
-fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
+fn rejected_wide_historical_fact_retains_store_prefix() {
     let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
     let source = r#"verifying "f.c";
         void f(uint64 *p) {
             owns p[0]; requires p[0] == 7u64; ensures true;
         } by {
             mark before_write; step();
-            transport(at(before_write, p[0] == 7u64), p[0] == 7u64);
-            step_until(function.exit); normalize();
+            have p[0] == 7u64 by { close(); }
+            step_until(function.exit); close();
         }
     "#;
     with_proof_trace("f", || {
         let error = verify_c_sources(source, &[("f.c", c)])
             .expect_err("a real write invalidates the old word");
-        let message = error.message();
-        for expected in [
-            "cell walks performed while checking transport",
-            "address: value#",
-            "width: 8 bytes",
-            "start: state#",
-            "stop: state#",
-            "oldest recorded state reached",
-            "step affects the queried bytes",
-            "transport label definitions",
-            "store",
-            "read<Bits64>",
-        ] {
-            assert!(message.contains(expected), "missing {expected}: {message}");
-        }
-        assert!(!message.contains("information unavailable"), "{message}");
+        let report = error.report();
+        assert!(
+            report.contains("could not establish `p[0] == 7u64`"),
+            "{report}"
+        );
         let trace = error
             .trace_context_report()
             .expect("retain the failed written check's prefix");
+        assert!(trace.contains("read<Bits64>"), "{trace}");
         assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
     });
 }
@@ -4113,7 +4105,7 @@ fn have_failure_trace_retains_checked_call_prefix() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
-fn budget_stopped_transport_retains_its_checked_loop_prefix() {
+fn budget_stopped_close_retains_its_checked_loop_prefix() {
     use crate::instrumentation::{TacticWorkLimits, with_tactic_work_limits};
     let source = r#"verifying "f.c";
         void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
@@ -4125,11 +4117,11 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 maintain by {
                     mark before;
                     step();
-                    transport(at(before, p[0] == 7), p[0] == 7);
+                    have p[0] == 7 by { close(); }
                     step();
                 }
             }
-            step_until(function.exit); normalize();
+            step_until(function.exit); close();
         }
     "#;
     with_proof_trace("f", || {
@@ -4145,7 +4137,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 )
             },
         )
-        .expect_err("the written smart transport has no work allowance");
+        .expect_err("the written close has no work allowance");
         assert!(error.message().contains("budget"), "{}", error.message());
         let trace = error
             .trace_context_report()
@@ -4169,7 +4161,7 @@ fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
         /* REFINEMENT */
         int32 accept(void (*f)(struct node*)) {
             requires Callback(f); ensures result == 0;
-        } by { step_until(function.exit); normalize(); }
+        } by { step_until(function.exit); close(); }
         int32 caller() { ensures result == 0; } by { /* APPLY */ step_until(function.exit); }
     "#;
     let c = [(
@@ -4271,7 +4263,8 @@ fn a_uint32_equality_above_int32_max_prints_in_its_own_type() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_23")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn resource_separation_matches_written_goal_with_pointer_alias() {
     let c = r#"struct callbacks { void (*call)(int *p); };
         static void target(int *p) { }
@@ -4300,9 +4293,9 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
     )
     .unwrap();
     let pointer = crate::kernel::OldPointer::new(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete("array".into()),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         ProgramType::Int32PointerPointer,
     );
@@ -4312,8 +4305,8 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
     for (start, end) in [(0, 4), (1, 3)] {
         let range = MemoryRange::from_pointer_value(
             &pointer,
-            MachineTerm::constant(start),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(start),
+            OldMachineTerm::constant(end),
             8,
         );
         assert_eq!(
@@ -4434,7 +4427,6 @@ test_batches! {
     file: "diagnostic_tests.rs",
     marker: "diagnostic_batch_",
     diagnostic_batch_00: [
-        implicit_tail_handles_unsigned_statement_cases_with_tracing,
         unclosed_have_script_retains_its_remaining_goal_and_introduced_premise,
         unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise,
         missing_write_permission_explains_the_available_view_and_failed_check,
@@ -4481,7 +4473,6 @@ test_batches! {
         failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump,
     ],
     diagnostic_batch_08: [
-        negative_mdtest_failures_include_structured_proof_context,
         undecided_c_branch_step_reports_its_paths_without_a_memory_dump,
         maybe_throwing_step_diagnostic_teaches_outcomes_syntax,
         branch_split_step_diagnostic_does_not_offer_outcomes,
@@ -4500,13 +4491,10 @@ test_batches! {
     ],
     diagnostic_batch_11: [
         missing_mutex_use_names_the_required_resource_without_borrow_internals,
-        statement_sites_change_nothing_but_the_location_line,
         failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic,
         a_passing_theorem_retains_its_accepted_trace_path,
     ],
     diagnostic_batch_12: [
-        folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy,
-        unfolded_algebraic_field_keeps_its_captured_model,
         unheld_field_without_a_checked_consumption_does_not_invent_one,
         source_unknown_local_pointer_diagnostics_identify_byte_units,
     ],
@@ -4526,11 +4514,9 @@ test_batches! {
         execute_failure_trace_retains_checked_call_facts,
         fold_over_a_hidden_record_names_the_failed_fact,
         a_labelled_resource_fact_is_refused_by_name,
-        fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources,
     ],
     diagnostic_batch_16: [
         memory_history_diagnostic_names_the_store_and_limits_its_claim,
-        call_resource_diagnostic_shows_the_rejected_argument,
         call_resource_diagnostic_read_shows_state_and_access,
         smart_have_budget_refusal_retains_checked_trace_prefix,
     ],
@@ -4538,12 +4524,9 @@ test_batches! {
         loop_have_budget_refusal_retains_checked_store_trace,
         ordinary_concise_diagnostics_bound_late_requirement_context,
         ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full,
-        failed_invariant_closure_retains_body_trace_and_focused_fact,
     ],
     diagnostic_batch_18: [
-        failed_invariant_closure_trace_prefix_is_lazy_and_scales,
         failed_invariant_closure_trace_keeps_its_branch_guard,
-        native_view_solve_selects_only_coverage_premises,
         native_view_solve_distinguishes_a_rejected_kernel_query,
     ],
     diagnostic_batch_19: [
@@ -4553,15 +4536,15 @@ test_batches! {
         failed_final_known_preserves_its_checked_trace_context,
     ],
     diagnostic_batch_20: [
-        known_transport_trace_retains_its_written_source_occurrence,
+        known_have_trace_retains_its_written_source_occurrence,
         a_trace_marks_searched_steps_and_their_chosen_arguments,
-        rejected_transport_prints_checked_reads_and_retains_prefix,
+        rejected_historical_fact_retains_store_prefix,
         failed_normalize_using_retains_actual_wide_read_resolution,
     ],
     diagnostic_batch_21: [
-        rejected_wide_transport_shows_actual_walk_stop_and_prefix,
+        rejected_wide_historical_fact_retains_store_prefix,
         have_failure_trace_retains_checked_call_prefix,
-        budget_stopped_transport_retains_its_checked_loop_prefix,
+        budget_stopped_close_retains_its_checked_loop_prefix,
     ],
     diagnostic_batch_22: [
         callback_refinement_hint_with_produced_resource_is_a_checked_proof,
@@ -4569,7 +4552,6 @@ test_batches! {
         a_uint32_equality_above_int32_max_prints_in_its_own_type,
     ],
     diagnostic_batch_23: [
-        resource_separation_matches_written_goal_with_pointer_alias,
         struct_pointer_pointer_ranges_print_pointer_units,
         failed_invariant_after_branch_join_reports_the_join,
         failed_postcondition_after_branch_join_keeps_the_join_trace,
@@ -4577,7 +4559,6 @@ test_batches! {
     diagnostic_batch_24: [
         child_argument_goal_reports_scalar_indices,
         a_failing_tactic_on_an_opened_claim_reports_its_own_source,
-        an_open_callback_obligation_through_a_static_object_reads_back,
         a_static_struct_field_goal_reads_back_with_a_dot,
     ],
 }
@@ -4612,7 +4593,8 @@ fn a_static_struct_field_goal_reads_back_with_a_dot() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_24")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn an_open_callback_obligation_through_a_static_object_reads_back() {
     // The field of a file-static object read through its address is written
     // `(&"file.c"::static(0))->field`; without the parentheses, `&` would
@@ -4691,6 +4673,8 @@ fn a_failing_tactic_on_an_opened_claim_reports_its_own_source() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn explicit_call_constant_proofs_reject_changed_values() {
     for (name, markdown, before, after) in [
         (

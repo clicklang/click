@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{CompareRelation, ConditionTerm};
+use crate::kernel::{CompareRelation, OldConditionTerm};
 
 const DEPTHS: [u64; 4] = [8, 32, 128, 512];
 
@@ -39,9 +39,9 @@ fn narrow_equation_width_reads_are_root_bounded() {
         for depth in DEPTHS {
             let mut side = var(20_000);
             for index in 1..depth {
-                side = MachineTerm::machine_binary(format, Op::Add, side, var(20_000 + index));
+                side = OldMachineTerm::machine_binary(format, Op::Add, side, var(20_000 + index));
             }
-            let equation = |right| ConditionTerm::Compare {
+            let equation = |right| OldConditionTerm::Compare {
                 format: Ty::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(side.clone()),
@@ -87,7 +87,8 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
         let graph = EqualityGraph::default();
         let mut state = graph.state.lock().expect("equality graph");
         let operand = var(30_000);
-        let mut chain = MachineTerm::machine_integer_cast(Ty::UInt32, formats[0], operand.clone());
+        let mut chain =
+            OldMachineTerm::machine_integer_cast(Ty::UInt32, formats[0], operand.clone());
         let mut bits: u128 = 0x1f0 & 0xff;
         let mut last = formats[0];
         for index in 1..depth {
@@ -96,7 +97,7 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
             state
                 .terms
                 .add_typed_equality(W::of_machine_type(last), &link, &chain);
-            chain = MachineTerm::machine_integer_cast(last, next, link);
+            chain = OldMachineTerm::machine_integer_cast(last, next, link);
             // The cast's bits: the source's value at the destination's width.
             let source_bits = last.format().bits();
             let value = if last.format().is_signed() && bits >> (source_bits - 1) & 1 == 1 {
@@ -108,12 +109,12 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
             last = next;
         }
         let width = W::of_machine_type(last);
-        let expected = MachineTerm::narrow_constant(last, bits);
+        let expected = OldMachineTerm::narrow_constant(last, bits);
         assert!(!state.terms.are_typed_equal(width, &chain, &expected));
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             state
                 .terms
-                .add_typed_equality(W::Bits32, &operand, &MachineTerm::constant(0x1f0));
+                .add_typed_equality(W::Bits32, &operand, &OldMachineTerm::constant(0x1f0));
             assert!(
                 state.terms.are_typed_equal(width, &chain, &expected),
                 "depth {depth}: {last:?} {bits:#x}"
@@ -142,9 +143,9 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
             let mut samples = Vec::new();
             for size in sizes {
                 let _session = crate::kernel::VerificationSession::enter();
-                let cell = |i| Address {
+                let cell = |i| OldAddress {
                     base: "narrow".into(),
-                    offset: AddressOffset::Constant(i * 4),
+                    offset: OldAddressOffset::Constant(i * 4),
                 };
                 let stored = narrow_stored_value(format, 7);
                 let mut memory = SymbolicMemory::new().with_block("narrow", (size as u32 + 1) * 4);
@@ -152,17 +153,19 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                 for i in 1..=size {
                     memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
-                            Address::symbolic(Variable(995000 + i)),
+                        OldConditionTerm::address_equal(
+                            OldAddress::symbolic(Variable(995000 + i)),
                             if related { cell(0) } else { cell(i as i64) },
                         ),
                         true,
                     );
                 }
                 memory = memory.store(cell(0), stored.clone());
-                let query = Address::symbolic(Variable(999999));
-                facts = facts
-                    .assume_condition(ConditionTerm::address_equal(query.clone(), cell(0)), true);
+                let query = OldAddress::symbolic(Variable(999999));
+                facts = facts.assume_condition(
+                    OldConditionTerm::address_equal(query.clone(), cell(0)),
+                    true,
+                );
                 facts = facts.assume_proposition(
                     crate::kernel::memory_history::store_value_equation(&memory, &cell(0), &stored)
                         .unwrap(),

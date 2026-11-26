@@ -7,6 +7,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/ranges/ranges.clic
 /// indexed by the loop variable, and nested ranges verify from invariants
 /// over the range's fields, `iter.start` and `iter.end`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 9.3s in the parallel gate"]
 fn charon_range_loops_verify_from_their_bounds() {
     let p = Project::from_fixture("design/charon-trial/ranges");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
@@ -119,6 +121,8 @@ fn charon_range_loops_bind_their_variable_without_an_option() {
 /// inside the loop and `loop(0).iter.start` after it, and its points by the
 /// `for` statement: no compiler temporary or bare region index appears.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_range_loop_failures_name_the_iterator_as_the_proof_does() {
     let p = Project::from_fixture("design/charon-trial/ranges");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();

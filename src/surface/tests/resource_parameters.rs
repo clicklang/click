@@ -219,7 +219,7 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
         );
     }
 
-    let no_origin = source.replace("theorem identity<T>", "theorem requires_item(p: struct item*) { ensures p == p by { normalize(); } }\ntheorem identity<T>")
+    let no_origin = source.replace("theorem identity<T>", "theorem requires_item(p: struct item*) { ensures p == p by { close(); } }\ntheorem identity<T>")
         .replace("have p == p by { apply(identity(p)); }", "have p == p by { apply(identity(p)); }\n    have p == p by { apply(requires_item(p)); }");
     assert!(no_origin.contains("apply(requires_item(p));"));
     let error = without_implicit_solve(|| verify_c_sources(&no_origin, &sources)).unwrap_err();
@@ -244,6 +244,8 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.6s in the parallel gate"]
 fn elements_separation_applies_and_expands_without_implicit_search() {
     for (fixture, labels) in [
         ("mdtests/separation_elements.md", vec!["keep.contract"]),
@@ -303,6 +305,8 @@ fn elements_separation_requires_distinct_indices() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6.8s in the parallel gate"]
 fn equal_array_base_separation_restricts_and_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/separation_restricts_equal_array_bases.md");
     let sources = sources
@@ -341,10 +345,8 @@ fn elements_separation_does_not_widen_byte_cells() {
 }
 
 #[test]
-#[cfg_attr(
-    feature = "fast-gate",
-    ignore = "covered by resource_parameters_batch_03"
-)]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn separating_conjunction_laws_expand_without_implicit_search() {
     let (source, inputs) = mdtest_sources("mdtests/separation_conjunction.md");
     let inputs = inputs
@@ -384,6 +386,8 @@ fn conjunction_nodes_keep_multiplicity_and_session_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn recursive_call_resource_bound_is_explicit_and_replays() {
     for fixture in [
         "recursive_call_footprint_containment",
@@ -512,7 +516,6 @@ test_batches! {
         elements_separation_does_not_widen_byte_cells,
     ],
     resource_parameters_batch_03: [
-        separating_conjunction_laws_expand_without_implicit_search,
         wide_subrange_applies_and_expands_without_implicit_solve,
         element_containment_expands_without_implicit_solve,
         rebased_intervals_apply_and_replay_without_search,

@@ -7,15 +7,15 @@ use super::*;
 #[test]
 fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
     let _session = crate::kernel::VerificationSession::enter();
-    let held = int32(MachineTerm::Variable(Variable(927_020)));
-    let fresh = int32(MachineTerm::Variable(Variable(927_021)));
+    let held = int32(OldMachineTerm::Variable(Variable(927_020)));
+    let fresh = int32(OldMachineTerm::Variable(Variable(927_021)));
     let guard = |value| {
         program_value_comparison_proposition(value, ComparisonOperator::Equal, &int32(3)).unwrap()
     };
     let range = MemoryRange::new_with_element_width(
-        Address::symbolic(Variable(927_022)),
-        MachineTerm::constant(0),
-        MachineTerm::Variable(Variable(927_020)),
+        OldAddress::symbolic(Variable(927_022)),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::Variable(Variable(927_020)),
         4,
     );
     let slot = SymbolicMemory::local_pointer("counter");
@@ -71,9 +71,9 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         let mut memory = SymbolicMemory::new().with_block("shared", 4 * size);
         for index in 0..size {
             shared = shared.with_local(format!("spare{index}"), int32(index));
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: AddressBase::from("shared"),
-                offset: AddressOffset::Constant(i64::from(index) * 4),
+                offset: OldAddressOffset::Constant(i64::from(index) * 4),
             };
             memory = memory.store(pointer, int32(index));
         }
@@ -176,7 +176,7 @@ fn exit_cell_separation_shares_the_active_borrow_footprint() {
     use crate::kernel::borrows::BorrowLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(927_000));
+    let pointer = OldAddress::symbolic(Variable(927_000));
     let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), 4u32.into(), 1);
     let expected_left = Box::new(Resource::Memory(range(pointer.clone())));
     let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
@@ -188,7 +188,7 @@ fn exit_cell_separation_shares_the_active_borrow_footprint() {
             // Include overlap with the changed cell. Construction must retain
             // the prerequisite even here, without trying to prove it.
             let view =
-                ResourceFact::view_memory(range(Address::symbolic(Variable(927_000 + index))));
+                ResourceFact::view_memory(range(OldAddress::symbolic(Variable(927_000 + index))));
             let (_, occurrences) =
                 ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
             let opening = ledger
@@ -281,13 +281,13 @@ fn contract_exit_marker_join_work_is_linear_in_exits_and_skips_ambient_cells() {
 #[test]
 fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "shared".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "other".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [4usize, 64, 1024] {
@@ -329,9 +329,9 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
 #[test]
 fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("shared".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.
@@ -350,9 +350,9 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
         let mut facts = (0..count)
             .map(|k| {
                 ExecutionPureFact::new(Proposition::condition_is(
-                    ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(Variable(926_000 + k as u64)),
-                        MachineTerm::constant(k as u32),
+                    OldConditionTerm::signed_less_than(
+                        OldMachineTerm::Variable(Variable(926_000 + k as u64)),
+                        OldMachineTerm::constant(k as u32),
                     ),
                     true,
                 ))
@@ -396,8 +396,8 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
 #[test]
 fn loop_exit_cell_pins_use_indexed_constants() {
     let _session = crate::kernel::VerificationSession::enter();
-    let held = int32(MachineTerm::Variable(Variable(1)));
-    let missing = int32(MachineTerm::Variable(Variable(2)));
+    let held = int32(OldMachineTerm::Variable(Variable(1)));
+    let missing = int32(OldMachineTerm::Variable(Variable(2)));
     let equation = |left: &ProgramValue, right: &ProgramValue| {
         program_value_comparison_proposition(left, ComparisonOperator::Equal, right).unwrap()
     };
@@ -407,10 +407,10 @@ fn loop_exit_cell_pins_use_indexed_constants() {
         for index in 0..size {
             context = context.assume_proposition(equation(
                 &held,
-                &int32(MachineTerm::Variable(Variable(100 + u64::from(index)))),
+                &int32(OldMachineTerm::Variable(Variable(100 + u64::from(index)))),
             ));
             context = context.assume_proposition(equation(
-                &int32(MachineTerm::Variable(Variable(1000 + u64::from(index)))),
+                &int32(OldMachineTerm::Variable(Variable(1000 + u64::from(index)))),
                 &int32(7),
             ));
         }

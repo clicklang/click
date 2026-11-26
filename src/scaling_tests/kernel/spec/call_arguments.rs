@@ -69,8 +69,10 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
 
         // The declared pointer origin selects only argument 1. Determining a
         // null result must not materialize the unrelated exponential DAG.
-        let null =
-            ProgramValue::Pointer(OldPointer::new(Address::null(), ProgramType::Int32Pointer));
+        let null = ProgramValue::Pointer(OldPointer::new(
+            OldAddress::null(),
+            ProgramType::Int32Pointer,
+        ));
         let arguments = [
             argument,
             SpecPureFunctionArgument::Value(SpecExpression::Value(null.clone())),
@@ -111,10 +113,10 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
     let scope = SpecScope::unbound(&state, None);
     let argument = SpecPureFunctionArgument::Value(SpecExpression::Subtract(
         Box::new(SpecExpression::Value(ProgramValue::Int32(
-            MachineTerm::constant(2),
+            OldMachineTerm::constant(2),
         ))),
         Box::new(SpecExpression::Value(ProgramValue::Int32(
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         ))),
     ));
     let mut execution = ExecutionBudget::new();
@@ -133,23 +135,23 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
         panic!("scalar call");
     };
     let produced = root.machine_conversion_leaf().unwrap();
-    let native = MachineTerm::ClickFunctionApplication {
+    let native = OldMachineTerm::ClickFunctionApplication {
         name: "retained_steps".into(),
         arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         ))],
     };
-    let MachineTerm::ClickFunctionApplication { arguments, .. } = produced else {
+    let OldMachineTerm::ClickFunctionApplication { arguments, .. } = produced else {
         panic!("call");
     };
-    let expected = PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(1)));
+    let expected = PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::constant(1)));
     assert_eq!(
         arguments[0].machine_identity(),
         expected.machine_identity(),
         "produced: {arguments:?}"
     );
-    let known = ConditionTerm::equal(native, MachineTerm::constant(0));
-    let required = ConditionTerm::equal(produced.clone(), MachineTerm::constant(0));
+    let known = OldConditionTerm::equal(native, OldMachineTerm::constant(0));
+    let required = OldConditionTerm::equal(produced.clone(), OldMachineTerm::constant(0));
     let proof_facts =
         crate::kernel::proof::PureFactStore::from_ordered(&[Proposition::condition_is(
             known.clone(),

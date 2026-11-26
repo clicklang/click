@@ -36,14 +36,14 @@ mod tests {
         let left = KernelMatch::test_scrutinee(vec![]);
         let mut right = left.clone();
         right.node = AlgebraicTermNode::Variable(Variable(999721));
-        let guard = ConditionTerm::integer_equal(
+        let guard = OldConditionTerm::integer_equal(
             IntegerTerm::var(Variable(999722)),
             IntegerTerm::constant_i64(0),
         );
         for (condition, right) in [
             (guard.clone(), right),
             (guard, left.clone()),
-            (ConditionTerm::Constant(true), left.clone()),
+            (OldConditionTerm::Constant(true), left.clone()),
         ] {
             let raw = AlgebraicTerm {
                 algebraic_type: left.algebraic_type.clone(),
@@ -81,7 +81,7 @@ mod tests {
             variant: "Arm".into(),
             fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(
                 OldPointer::new(
-                    Address::symbolic(Variable(999728)),
+                    OldAddress::symbolic(Variable(999728)),
                     ProgramType::Int32Pointer,
                 ),
             ))],
@@ -89,7 +89,7 @@ mod tests {
         let native = AlgebraicTerm {
             algebraic_type: source.algebraic_type.clone(),
             node: AlgebraicTermNode::If {
-                condition: Box::new(ConditionTerm::Variable(Variable(999729))),
+                condition: Box::new(OldConditionTerm::Variable(Variable(999729))),
                 then_term: Box::new(source),
                 else_term: Box::new(variable.clone()),
             },
@@ -107,9 +107,10 @@ mod tests {
             KernelTermImport::default().algebraic(&variable),
         ]);
         let format = MachineIntegerType::Int32;
-        let native_condition = ConditionTerm::AlgebraicEqual(Box::new(native), Box::new(variable));
-        let a = MachineTerm::constant(1);
-        let b = MachineTerm::constant(2);
+        let native_condition =
+            OldConditionTerm::AlgebraicEqual(Box::new(native), Box::new(variable));
+        let a = OldMachineTerm::constant(1);
+        let b = OldMachineTerm::constant(2);
         let common = KernelTerm::machine_if_shared(
             format,
             [
@@ -123,7 +124,7 @@ mod tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         let expected = SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::If {
+            OldMachineTerm::If {
                 condition: Box::new(native_condition),
                 then_term: Box::new(a),
                 else_term: Box::new(b),
@@ -138,7 +139,7 @@ mod tests {
         let format = MachineIntegerType::Int32;
         let argument = SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "word_result".into(),
                 arguments: vec![],
             },
@@ -159,7 +160,7 @@ mod tests {
         for exact in [false, true] {
             let sources = [false, true].map(|qualified| {
                 let pointer = OldPointer::new(
-                    Address::symbolic(Variable(999730)),
+                    OldAddress::symbolic(Variable(999730)),
                     ProgramType::Int32Pointer,
                 );
                 let application = SharedPureApplication::intern(
@@ -200,7 +201,7 @@ mod tests {
                     *source
                 );
             }
-            let condition = ConditionTerm::Variable(Variable(999731));
+            let condition = OldConditionTerm::Variable(Variable(999731));
             let reduced = KernelTerm::algebraic_if([
                 KernelTermImport::default().condition(&condition),
                 roots[0].clone(),

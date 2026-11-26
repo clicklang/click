@@ -1131,7 +1131,6 @@ fn certified_transitions_from_execution(
                 return Ok(CertifiedStatementTransition {
                     native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(|value| RetainedProgramValue::from(value.into_value())),
-                call_parameters: path.call_parameters().cloned(),
                     theorem: path.theorem().clone(),
                     context: executed_under.clone(),
                     outcome: outcome.clone(),
@@ -1156,7 +1155,6 @@ fn certified_transitions_from_execution(
             Ok(CertifiedStatementTransition {
                     native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(|value| RetainedProgramValue::from(value.into_value())),
-                call_parameters: path.call_parameters().cloned(),
                 theorem: path.theorem().clone(),
                 context: executed_under.clone(),
                 outcome: outcome.clone(),
@@ -1248,9 +1246,9 @@ mod condition_transition_tests {
     fn condition_transition_still_checks_execution_obligations() {
         let state = ExecutionState::new().with_local(
             "p",
-            ProgramValue::pointer(Address {
+            ProgramValue::pointer(OldAddress {
                 base: "havoc:condition-obligation".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }),
         );
         let condition = crate::kernel::program_expression::load(
@@ -1280,19 +1278,19 @@ mod condition_transition_tests {
     #[test]
     fn generated_load_binding_collection_tombstones_conflicting_keys() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let load = |pointer: Address| {
-            MachineTerm::read_named(
+        let load = |pointer: OldAddress| {
+            OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )
         };
         let variable = Variable(0xfeed);
-        let producer_fact = |pointer: Address| {
+        let producer_fact = |pointer: OldAddress| {
             let mut facts = crate::kernel::ExecutionFacts::new();
             crate::kernel::record_load_variable_defining_fact(variable, load(pointer), &mut facts);
             facts.pop().expect("producer emits defining fact")
@@ -1307,13 +1305,13 @@ mod condition_transition_tests {
         ));
 
         let conflicting = generated_load_bindings_from_facts(&[
-            producer_fact(Address {
+            producer_fact(OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }),
-            producer_fact(Address {
+            producer_fact(OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4),
             }),
         ]);
         assert!(matches!(
@@ -1326,9 +1324,9 @@ mod condition_transition_tests {
 
     #[test]
     fn real_scalar_load_transition_retains_its_read_without_a_binding() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
@@ -1349,8 +1347,8 @@ mod condition_transition_tests {
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                 )),
             ));
         let mut next_opaque_call = 0;
@@ -1376,7 +1374,7 @@ mod condition_transition_tests {
         assert!(transition.generated_load_source_events.is_empty());
         assert!(matches!(&transition.outcome,
             StatementOutcome::Return { value, .. }
-                if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
+                if matches!(value.native().as_ref(), ProgramValue::Int32(OldMachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
 
         // Feed the producer-issued transition metadata through the same
         // persistent presentation store used by the execution cursor. This
@@ -1412,9 +1410,9 @@ mod condition_transition_tests {
 
     #[test]
     fn parsed_compound_field_update_retains_its_structural_read() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
@@ -1435,8 +1433,8 @@ mod condition_transition_tests {
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                 )),
             ));
         let mut next_opaque_call = 0;
@@ -1471,11 +1469,11 @@ mod condition_transition_tests {
         };
         assert!(crate::kernel::proposition_mentions_scalar_read(
             &Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: Box::new(value),
-                    right: Box::new(MachineTerm::constant(0))
+                    right: Box::new(OldMachineTerm::constant(0))
                 },
                 true
             )
@@ -1486,7 +1484,7 @@ mod condition_transition_tests {
     fn failed_typed_load_publishes_no_source_event() {
         let statement = ProgramStatement::Return(ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(7),
+                OldMachineTerm::constant(7),
             ))),
             value_type: ProgramType::Int32,
             volatile: false,
@@ -1530,9 +1528,9 @@ mod condition_transition_tests {
     #[test]
     fn typed_load_source_metadata_is_semantically_neutral() {
         use std::collections::HashSet;
-        let pointer = ProgramExpression::Value(ProgramValue::pointer(Address {
+        let pointer = ProgramExpression::Value(ProgramValue::pointer(OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8),
         }));
         let source = |occurrence| {
             crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {

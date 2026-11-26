@@ -13,7 +13,7 @@ fn variable(format: MachineIntegerType, id: u64) -> SpecValue {
         Variable(id),
     ))
 }
-fn join(condition: &ConditionTerm, left: &SpecValue, right: &SpecValue) -> SpecValue {
+fn join(condition: &OldConditionTerm, left: &SpecValue, right: &SpecValue) -> SpecValue {
     SpecValue::conditional(
         &Proposition::condition_is(condition.clone(), true),
         left,
@@ -47,7 +47,7 @@ fn conditional_arms_keep_shared_identity_and_native_observations() {
             .value,
         );
         let right = variable(format, 998101);
-        let guard = ConditionTerm::Variable(Variable(998102));
+        let guard = OldConditionTerm::Variable(Variable(998102));
         let native = conditional_spec_value(
             &Proposition::condition_is(guard.clone(), true),
             left.clone().into_native(),
@@ -81,9 +81,9 @@ fn opaque_guard_observations_keep_identity_without_exporting_arms() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::UInt64;
     let guard = |id| {
-        ConditionTerm::address_equal(
-            Address::symbolic(Variable(id)),
-            Address::symbolic(Variable(998110)),
+        OldConditionTerm::address_equal(
+            OldAddress::symbolic(Variable(id)),
+            OldAddress::symbolic(Variable(998110)),
         )
     };
     let left = variable(format, 998111);
@@ -100,7 +100,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     let _session = VerificationSession::enter();
     let left = variable(MachineIntegerType::Int32, 998120);
     let right = variable(MachineIntegerType::UInt32, 998121);
-    let guard = ConditionTerm::Variable(Variable(998122));
+    let guard = OldConditionTerm::Variable(Variable(998122));
     let result = join(&guard, &left, &right);
     assert_eq!(result.program_type(), ProgramType::UInt32);
     let expected = conditional_spec_value(
@@ -110,7 +110,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     )
     .unwrap();
     assert_eq!(result.into_native(), expected);
-    let boolean = SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_cast(
+    let boolean = SpecValue::Native(ProgramValue::Bool(OldMachineTerm::bool_cast(
         MachineIntegerType::UInt8,
         guard.clone(),
     )));
@@ -129,7 +129,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
 fn conditional_evaluation_keeps_guarded_domains_and_ignores_ambient_truth() {
     let _session = VerificationSession::enter();
     let state =
-        ExecutionState::new().with_local("x", int32(MachineTerm::Variable(Variable(998130))));
+        ExecutionState::new().with_local("x", int32(OldMachineTerm::Variable(Variable(998130))));
     let x = || SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
     let condition = SpecProposition::Comparison {
         left: x(),
@@ -163,11 +163,11 @@ fn conditional_evaluation_keeps_guarded_domains_and_ignores_ambient_truth() {
     assert_eq!(retained.value.observe(), native.value.observe());
     assert_eq!(retained.obligations, native.obligations);
     assert!(!retained.obligations.is_empty());
-    let condition = ConditionTerm::machine_compare(
+    let condition = OldConditionTerm::machine_compare(
         MachineIntegerType::Int32,
         CompareRelation::GreaterThan,
-        MachineTerm::Variable(Variable(998130)),
-        MachineTerm::constant(0),
+        OldMachineTerm::Variable(Variable(998130)),
+        OldMachineTerm::constant(0),
     );
     for truth in [false, true] {
         assert_eq!(
@@ -189,12 +189,12 @@ mod scaling_tests {
 fn independent_opaque_call_guard_imports_have_the_same_observation() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let guard = ConditionTerm::equal(
-        MachineTerm::ClickFunctionApplication {
+    let guard = OldConditionTerm::equal(
+        OldMachineTerm::ClickFunctionApplication {
             name: "flag".into(),
             arguments: vec![],
         },
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(1),
     );
     let left = variable(format, 998204);
     let right = word(format, 0);
@@ -211,9 +211,9 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
     use crate::kernel::proof::term_rewrite::TermRewrite;
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let guard = ConditionTerm::address_equal(
-        Address::symbolic(Variable(998205)),
-        Address::symbolic(Variable(998206)),
+    let guard = OldConditionTerm::address_equal(
+        OldAddress::symbolic(Variable(998205)),
+        OldAddress::symbolic(Variable(998206)),
     );
     let source = join(&guard, &word(format, 1), &word(format, 0))
         .observe()
@@ -227,13 +227,13 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
         assert_eq!(current, source);
     }
     let goal = Proposition::condition_is(
-        ConditionTerm::integer_less_equal(IntegerTerm::constant(1.into()), source),
+        OldConditionTerm::integer_less_equal(IntegerTerm::constant(1.into()), source),
         true,
     );
     let unrelated = Proposition::condition_is(
-        ConditionTerm::equal(
-            MachineTerm::Variable(Variable(998207)),
-            MachineTerm::constant(99),
+        OldConditionTerm::equal(
+            OldMachineTerm::Variable(Variable(998207)),
+            OldMachineTerm::constant(99),
         ),
         true,
     );
@@ -249,7 +249,7 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
 fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     let _session = VerificationSession::enter();
     let pointer = OldPointer::new(
-        Address::symbolic(Variable(1026100)),
+        OldAddress::symbolic(Variable(1026100)),
         ProgramType::Int32Pointer,
     );
     let native = SpecValue::Native(ProgramValue::Pointer(pointer.clone()));
@@ -261,7 +261,7 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
             ),
         )),
     ));
-    let condition = Proposition::condition_is(ConditionTerm::Variable(Variable(1026101)), true);
+    let condition = Proposition::condition_is(OldConditionTerm::Variable(Variable(1026101)), true);
     for left in [native.clone(), shared.clone()] {
         for right in [
             other_payload.clone(),
@@ -278,7 +278,7 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
         }
     }
     let distinct = SpecValue::Native(ProgramValue::Pointer(OldPointer::new(
-        Address::symbolic(Variable(1026102)),
+        OldAddress::symbolic(Variable(1026102)),
         ProgramType::Int32Pointer,
     )));
     for retain in [false, true] {
@@ -351,9 +351,11 @@ fn closed_comparison_if(
     };
     SpecExpression::If {
         condition: Box::new(SpecProposition::Comparison {
-            left: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(9))),
+            left: SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(9))),
             operator,
-            right: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(bound))),
+            right: SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(
+                bound,
+            ))),
         }),
         then_branch: Box::new(then_branch),
         else_branch: Box::new(else_branch),
@@ -392,7 +394,7 @@ fn lower_closed_order_if(
 #[test]
 fn closed_order_guard_stays_in_the_lowered_machine_value() {
     let _session = VerificationSession::enter();
-    let value = |n| SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
+    let value = |n| SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(n)));
     for truth in [true, false] {
         let path = lower_closed_order_if(
             &closed_order_if(value(9), value(3), truth),

@@ -118,7 +118,7 @@ mod tests {
                         formed_root,
                         crate::kernel::KernelTerm::retained_native_machine_operand(
                             crate::kernel::MachineIntegerType::UInt64,
-                            &crate::kernel::MachineTerm::uint64_constant(0),
+                            &crate::kernel::OldMachineTerm::uint64_constant(0),
                         ),
                     ],
                     retained.clone(),
@@ -175,12 +175,12 @@ mod tests {
     fn shared_pointer_equality_uses_the_names_of_distinct_same_address_operands() {
         let _session = VerificationSession::enter();
         let left = OldPointer::new(
-            Address::symbolic(Variable(1018020)),
+            OldAddress::symbolic(Variable(1018020)),
             ProgramType::Int32Pointer,
         );
         let right = left.clone().with_bounds(Some(SubobjectBounds {
             start: left.address().clone(),
-            width: crate::kernel::MachineTerm::uint64_constant(4),
+            width: crate::kernel::OldMachineTerm::uint64_constant(4),
         }));
         let root = crate::kernel::KernelTerm::pointer_equal_raw(
             [&left, &right].map(SharedPointer::import),
@@ -222,18 +222,18 @@ mod tests {
     #[test]
     fn numeric_pointer_observation_roots_raise_and_lower_through_existing_casts() {
         use crate::kernel::{
-            KernelTermImport, MachineIntegerType, MachineTerm, PureFunctionArgument,
+            KernelTermImport, MachineIntegerType, OldMachineTerm, PureFunctionArgument,
         };
         let _session = VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1024950)),
+            OldAddress::symbolic(Variable(1024950)),
             ProgramType::Int32Pointer,
         );
         let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(pointer.clone()));
         let bindings =
             ProgramValueBindings::from([("p".to_string(), ProgramValue::Pointer(pointer.clone()))]);
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
-            let value = format.value_from_term(MachineTerm::object_pointer_address(
+            let value = format.value_from_term(OldMachineTerm::object_pointer_address(
                 pointer.address().clone(),
                 pointer.object_class(),
             ));
@@ -274,7 +274,7 @@ mod tests {
     fn pointer_proof_names_preserve_qualifiers_instead_of_address_equality() {
         let _session = VerificationSession::enter();
         let plain = OldPointer::new(
-            Address::symbolic(Variable(1015000)),
+            OldAddress::symbolic(Variable(1015000)),
             ProgramType::Int32Pointer,
         );
         let qualified = plain.clone().with_declared_object_class(Some(
@@ -296,14 +296,14 @@ mod tests {
         let before = SymbolicMemory::new().with_block("pointer-name-width", 4);
         let after = before.clone().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(12)),
+            ProgramValue::Int32(OldMachineTerm::constant(12)),
         );
-        let pointer = Address::symbolic(Variable(1015010));
+        let pointer = OldAddress::symbolic(Variable(1015010));
         let make = |memory| {
             OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
                 SubobjectBounds {
                     start: pointer.clone(),
-                    width: MachineTerm::read_named(
+                    width: OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         crate::kernel::LoadKind::Int32,
@@ -318,7 +318,7 @@ mod tests {
     fn pointer_read_roots_raise_through_exact_complete_names() {
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
-        let address = Address::symbolic(Variable(1018010));
+        let address = OldAddress::symbolic(Variable(1018010));
         let seeded = memory.clone().with_seeded_cells(
             address.clone(),
             8,
@@ -350,7 +350,7 @@ mod tests {
     fn pointer_proof_name_scopes_restore_exact_payload_bindings() {
         let _session = VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1015020)),
+            OldAddress::symbolic(Variable(1015020)),
             ProgramType::Int32Pointer,
         );
         let shared = SharedPointer::import(&pointer);

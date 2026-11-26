@@ -23,10 +23,11 @@
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_term;
 use crate::kernel::integer_exclusions::ExcludedIntegers;
-use crate::kernel::{Address, AddressOffset, ConditionTerm, MachineTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
+use crate::kernel::{OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
     native_constant, uint64_constant,
@@ -107,7 +108,7 @@ struct PendingLink {
 #[derive(Clone, Default)]
 pub(crate) struct DifferenceGraph {
     shared_queries: operand_views::cache::SharedQueryCache,
-    nodes: PersistentMap<(Domain, MachineTerm), NodeId>,
+    nodes: PersistentMap<(Domain, OldMachineTerm), NodeId>,
     /// Stable node/offset names justified when each shared operand is admitted.
     operand_affines: PersistentMap<(Domain, OperandKey), Affine>,
     /// Native-only contexts need no syntax bridge on a native query miss.
@@ -245,7 +246,7 @@ impl DifferenceGraph {
 
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
-    pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(crate) fn assume_condition(&mut self, condition: &OldConditionTerm, value: bool) {
         if let Some(view) = shared_narrow_comparison(condition, value) {
             // Widening is injective. Share fresh aliases in their original
             // narrow domain before introducing the widening links, so each
@@ -267,16 +268,16 @@ impl DifferenceGraph {
         {
             return self.assume_condition(&widened, value);
         }
-        if let ConditionTerm::PointerEqual(a, b) = condition {
+        if let OldConditionTerm::PointerEqual(a, b) = condition {
             if value {
                 self.assume_condition(
-                    &ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
+                    &OldConditionTerm::address_equal(a.address().clone(), b.address().clone()),
                     true,
                 );
             }
             return;
         }
-        if let ConditionTerm::AddressEqual(a, b) = condition {
+        if let OldConditionTerm::AddressEqual(a, b) = condition {
             if !self.pointers.assume(a, b, value) {
                 self.contradictory = true;
             }
@@ -376,7 +377,7 @@ impl DifferenceGraph {
     }
 
     fn exclude_views(&mut self, format: MachineIntegerType, a: V<'_>, b: V<'_>) {
-        if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
+        if let (V::Old(a), V::Old(b)) = (a, b) {
             return self.exclude(format, a, b);
         }
         for &domain in equality_domains(format) {
@@ -393,7 +394,7 @@ impl DifferenceGraph {
     }
 
     fn alias_equality_views(&mut self, format: MachineIntegerType, a: V<'_>, b: V<'_>) -> bool {
-        if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
+        if let (V::Old(a), V::Old(b)) = (a, b) {
             return self.alias_equality(format, a, b);
         }
         let domains = equality_domains(format);
@@ -428,10 +429,10 @@ impl DifferenceGraph {
         for (domain, (node, _)) in targets {
             charge();
             let node = node.expect("checked above");
-            if let Some(atom) = new.variable().copied().map(MachineTerm::Variable) {
+            if let Some(atom) = new.variable().copied().map(OldMachineTerm::Variable) {
                 self.nodes.insert((domain, atom.clone()), node);
                 self.index_operand_node(domain, &atom, node);
-            } else if let V::Legacy(term) = new {
+            } else if let V::Old(term) = new {
                 self.nodes.insert((domain, term.clone()), node);
                 self.index_operand_node(domain, term, node);
             } else {
@@ -452,7 +453,7 @@ impl DifferenceGraph {
     /// Records `a != b` when one side is a constant and the other a node
     /// plus an offset: the node excludes one value, and its interval steps
     /// off that value if it is an end.
-    fn exclude(&mut self, format: MachineIntegerType, a: &MachineTerm, b: &MachineTerm) {
+    fn exclude(&mut self, format: MachineIntegerType, a: &OldMachineTerm, b: &OldMachineTerm) {
         let domains = equality_domains(format);
         for domain in domains {
             let (term, value) = match (constant(*domain, a), constant(*domain, b)) {
@@ -478,7 +479,7 @@ impl DifferenceGraph {
     /// Whether the facts exclude a zero `divisor`: its interval lies above
     /// zero, or `divisor != 0` was recorded. A remainder or quotient by a
     /// divisor that may be zero is an opaque value and bounds nothing.
-    fn nonzero_divisor(&self, domain: Domain, divisor: &MachineTerm) -> bool {
+    fn nonzero_divisor(&self, domain: Domain, divisor: &OldMachineTerm) -> bool {
         self.term_interval(domain, divisor).0 >= 1
             || matches!(
                 self.resolve(domain, divisor),
@@ -503,11 +504,11 @@ impl DifferenceGraph {
     fn alias_equality(
         &mut self,
         format: MachineIntegerType,
-        a: &MachineTerm,
-        b: &MachineTerm,
+        a: &OldMachineTerm,
+        b: &OldMachineTerm,
     ) -> bool {
         let domains = equality_domains(format);
-        let fresh = |graph: &Self, term: &MachineTerm| {
+        let fresh = |graph: &Self, term: &OldMachineTerm| {
             domains.iter().all(|domain| {
                 constant(*domain, term).is_none()
                     && link_parts(*domain, term).is_none()
@@ -856,13 +857,13 @@ impl DifferenceGraph {
         distance
     }
 
-    fn affine(&mut self, domain: Domain, term: &MachineTerm) -> Affine {
-        self.affine_view(domain, V::Legacy(term))
+    fn affine(&mut self, domain: Domain, term: &OldMachineTerm) -> Affine {
+        self.affine_view(domain, V::Old(term))
     }
 
     fn lookup_operand(&self, domain: Domain, term: V<'_>) -> Option<NodeId> {
         match term {
-            V::Legacy(written) => self.nodes.get(&(domain, written.clone())).copied(),
+            V::Old(written) => self.nodes.get(&(domain, written.clone())).copied(),
             V::Shared(_) => self
                 .operand_affines
                 .get(&(
@@ -881,7 +882,7 @@ impl DifferenceGraph {
         let node = self.next;
         self.next += 1;
         match term {
-            V::Legacy(written) => {
+            V::Old(written) => {
                 self.nodes.insert((domain, written.clone()), node);
                 self.index_operand_node(domain, written, node);
             }
@@ -984,7 +985,7 @@ impl DifferenceGraph {
     /// values `x + 1`, `x + 2`, ... share `x`'s node instead of each
     /// hanging an edge pair off it that every bound on `x` must walk.
     fn affine_view(&mut self, domain: Domain, term: V<'_>) -> Affine {
-        if let V::Legacy(written) = term
+        if let V::Old(written) = term
             && !self.nodes.contains_key(&(domain, written.clone()))
             && let Some(affine) = self.shared_coordinate_for_native(domain, written)
         {
@@ -993,7 +994,7 @@ impl DifferenceGraph {
         if matches!(term, V::Shared(_))
             && let Some(atom) = term
                 .literal()
-                .or_else(|| term.variable().copied().map(MachineTerm::Variable))
+                .or_else(|| term.variable().copied().map(OldMachineTerm::Variable))
         {
             return self.affine(domain, &atom);
         }
@@ -1049,7 +1050,7 @@ impl DifferenceGraph {
     /// share a node, whether or not the sum wraps. Only the absence of
     /// overflow is keyed this way, which depends on the operands' bitvector
     /// values alone.
-    fn modular_affine(&mut self, domain: Domain, term: &MachineTerm) -> Affine {
+    fn modular_affine(&mut self, domain: Domain, term: &OldMachineTerm) -> Affine {
         match modular_parts(domain, term) {
             Some((base, k)) => {
                 let (node, offset) = self.modular_affine(domain, base);
@@ -1063,7 +1064,7 @@ impl DifferenceGraph {
     }
 
     /// `modular_affine` without adding to the graph.
-    fn modular_resolve(&self, domain: Domain, term: &MachineTerm) -> Option<Affine> {
+    fn modular_resolve(&self, domain: Domain, term: &OldMachineTerm) -> Option<Affine> {
         match modular_parts(domain, term) {
             Some((base, k)) => {
                 let (node, offset) = self.modular_resolve(domain, base)?;
@@ -1079,7 +1080,11 @@ impl DifferenceGraph {
     /// Both admission and lookup must reuse an existing shared coordinate.
     /// Native-only graphs avoid importing a missing native query; mixed
     /// graphs memoize the explicitly supplied arithmetic syntax once.
-    fn shared_coordinate_for_native(&self, domain: Domain, term: &MachineTerm) -> Option<Affine> {
+    fn shared_coordinate_for_native(
+        &self,
+        domain: Domain,
+        term: &OldMachineTerm,
+    ) -> Option<Affine> {
         if !self.has_shared_admissions {
             return None;
         }
@@ -1098,7 +1103,7 @@ impl DifferenceGraph {
     /// `term` as known nodes and constants, without adding to the graph.
     /// A term not in the graph resolves through a link its base's interval
     /// already justifies; otherwise `None`.
-    fn resolve(&self, domain: Domain, term: &MachineTerm) -> Option<Affine> {
+    fn resolve(&self, domain: Domain, term: &OldMachineTerm) -> Option<Affine> {
         if let Some(value) = constant(domain, term) {
             return Some((None, value));
         }
@@ -1203,7 +1208,7 @@ impl DifferenceGraph {
         by_path.map_or(by_intervals, |path| path.min(by_intervals))
     }
 
-    fn decide_native_wide_equality(&self, a: &MachineTerm, b: &MachineTerm) -> Option<bool> {
+    fn decide_native_wide_equality(&self, a: &OldMachineTerm, b: &OldMachineTerm) -> Option<bool> {
         let domains = &[Domain::Int64, Domain::UInt64];
         for domain in domains {
             if let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b)) {
@@ -1235,14 +1240,14 @@ impl DifferenceGraph {
                 return Some(false);
             }
         }
-        self.residues.decide_equal_views(V::Legacy(a), V::Legacy(b))
+        self.residues.decide_equal_views(V::Old(a), V::Old(b))
     }
 
     /// What the inserted facts decide about `condition`: its truth value,
     /// or `None` when difference logic leaves it open or the facts are
     /// contradictory.
-    pub(crate) fn decide(&self, condition: &ConditionTerm) -> Option<bool> {
-        use ConditionTerm as C;
+    pub(crate) fn decide(&self, condition: &OldConditionTerm) -> Option<bool> {
+        use OldConditionTerm as C;
         if let C::Constant(value) = condition {
             return Some(*value);
         }
@@ -1443,7 +1448,7 @@ impl DifferenceGraph {
         {
             // `a / b` overflows when `a` is the domain's least value and `b`
             // is `-1`. The `int64` condition also holds for a zero divisor
-            // (`ConditionTerm::int64_signed_divide_overflows`); the `int32`
+            // (`OldConditionTerm::int64_signed_divide_overflows`); the `int32`
             // one leaves zero to a separate check. As above, only the
             // absence is answered.
             let int64 = matches!(
@@ -1482,7 +1487,7 @@ impl DifferenceGraph {
         // `[0, a]`: it is at most `a`, and below `a` when `b >= 1`.
         if let (
             Domain::UInt64,
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Subtract,
                 left: a,
@@ -1493,7 +1498,7 @@ impl DifferenceGraph {
         {
             // `a - a % k` by a nonzero `k`: the remainder is at most `a`.
             if !strict
-                && let MachineTerm::Binary {
+                && let OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Remainder,
                     left: dividend,
@@ -1513,8 +1518,8 @@ impl DifferenceGraph {
         }
         if domain == Domain::UInt64
             && let Some(value) = self.decide_rounded_upper_bound(
-                crate::kernel::MachineOperandView::Legacy(lower),
-                crate::kernel::MachineOperandView::Legacy(upper),
+                crate::kernel::MachineOperandView::Old(lower),
+                crate::kernel::MachineOperandView::Old(upper),
                 strict,
             )
         {
@@ -1524,7 +1529,7 @@ impl DifferenceGraph {
         // dividend. `a % 0` is an opaque value and bounds nothing.
         if let (
             Domain::UInt64,
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Remainder,
                 left: a,
@@ -1584,7 +1589,7 @@ impl DifferenceGraph {
     /// the bitvector operation does not wrap). Anything else ranges over
     /// `domain`. Work is the term's size, plus the difference reads of
     /// `difference_interval`.
-    fn term_interval(&self, domain: Domain, term: &MachineTerm) -> (i128, i128) {
+    fn term_interval(&self, domain: Domain, term: &OldMachineTerm) -> (i128, i128) {
         // A compound term a fact mentioned has a node of its own, whose
         // interval holds only what facts about the term said; its operands'
         // intervals may say more, so both are read.
@@ -1614,9 +1619,9 @@ impl DifferenceGraph {
     }
 
     /// `term_interval` from `term`'s operands alone.
-    fn structural_interval(&self, domain: Domain, term: &MachineTerm) -> (i128, i128) {
+    fn structural_interval(&self, domain: Domain, term: &OldMachineTerm) -> (i128, i128) {
         use crate::kernel::MachineIntegerType as M;
-        use MachineTerm as T;
+        use OldMachineTerm as T;
         if domain == Domain::UInt32 {
             // Masking a word bounds its unsigned value even when no fact
             // has named the compound term. Inspect only its operands.
@@ -2010,8 +2015,8 @@ impl DifferenceGraph {
     fn difference_interval(
         &self,
         domain: Domain,
-        a: &MachineTerm,
-        b: &MachineTerm,
+        a: &OldMachineTerm,
+        b: &OldMachineTerm,
     ) -> (i128, i128) {
         if a == b {
             return (0, 0);
@@ -2033,8 +2038,8 @@ impl DifferenceGraph {
     fn decide_overflow(
         &self,
         domain: Domain,
-        a: &MachineTerm,
-        b: &MachineTerm,
+        a: &OldMachineTerm,
+        b: &OldMachineTerm,
         operation: Operation,
     ) -> Option<bool> {
         let (a_low, a_high) = self.term_interval(domain, a);
@@ -2084,7 +2089,7 @@ impl std::fmt::Debug for ContextDifferenceGraph {
 impl ContextDifferenceGraph {
     /// Follows the context assuming `condition` with `value`; a cleared
     /// graph stays cleared until its rebuild.
-    pub(crate) fn assume(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(crate) fn assume(&mut self, condition: &OldConditionTerm, value: bool) {
         if !expresses(condition) {
             return;
         }
@@ -2109,7 +2114,7 @@ impl ContextDifferenceGraph {
     /// The graph of the context's `facts`, rebuilt from them when cleared.
     pub(crate) fn graph<'a>(
         &self,
-        facts: impl FnOnce() -> Vec<(&'a ConditionTerm, bool)>,
+        facts: impl FnOnce() -> Vec<(&'a OldConditionTerm, bool)>,
     ) -> &DifferenceGraph {
         self.0.get_or_init(|| {
             let mut graph = DifferenceGraph::new();
@@ -2135,10 +2140,10 @@ fn equality_domains(format: MachineIntegerType) -> &'static [Domain] {
 // Keep the existing native widening boundary for explicitly written inputs.
 // Shared inputs add only the two cast roots, retaining the operand DAGs.
 fn shared_narrow_comparison(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     truth: bool,
 ) -> Option<crate::kernel::machine_integer::comparison::NativeComparisonView<'_>> {
-    if matches!(condition, ConditionTerm::Compare { .. }) {
+    if matches!(condition, OldConditionTerm::Compare { .. }) {
         return None;
     }
     let view = crate::kernel::machine_integer::comparison::comparison_view(condition, truth)?;
@@ -2146,8 +2151,8 @@ fn shared_narrow_comparison(
 }
 
 /// Whether difference logic reads anything from a fact about `condition`.
-fn expresses(condition: &ConditionTerm) -> bool {
-    use ConditionTerm as C;
+fn expresses(condition: &OldConditionTerm) -> bool {
+    use OldConditionTerm as C;
     // The context cache must observe every order source accepted by
     // `assume_condition`, including retained Integer observations. Otherwise a
     // graph built before the source was added misses its incremental update.
@@ -2194,9 +2199,9 @@ enum Operation {
 /// The parts of an overflow condition: its operation, the operands'
 /// domain, the operands, and whether the operation is commutative.
 fn overflow_parts(
-    condition: &ConditionTerm,
-) -> Option<(u8, Domain, &MachineTerm, &MachineTerm, bool)> {
-    use ConditionTerm as C;
+    condition: &OldConditionTerm,
+) -> Option<(u8, Domain, &OldMachineTerm, &OldMachineTerm, bool)> {
+    use OldConditionTerm as C;
     Some(match condition {
         C::Overflows {
             format: MachineIntegerType::Int32,
@@ -2307,8 +2312,8 @@ fn narrow_range(kind: crate::kernel::MachineIntegerType) -> Option<(i128, i128)>
 /// destination's modulus. The cast keeps the operand modulo that modulus.
 /// When `term` is `x ^ MIN` in a signed `domain`: `x`. Flipping the sign
 /// bit moves a value of known sign by half the modulus.
-fn sign_flip_base(domain: Domain, term: &MachineTerm) -> Option<&MachineTerm> {
-    use MachineTerm as T;
+fn sign_flip_base(domain: Domain, term: &OldMachineTerm) -> Option<&OldMachineTerm> {
+    use OldMachineTerm as T;
     let (a, b) = match (domain, term) {
         (Domain::Int32, binary_term!(Bits32, BitwiseXor, a, b))
         | (
@@ -2333,7 +2338,7 @@ fn sign_flip_base(domain: Domain, term: &MachineTerm) -> Option<&MachineTerm> {
 }
 
 /// A word AND a literal mask, in either operand order.
-fn word_constant_mask(term: &MachineTerm) -> Option<(i128, &MachineTerm)> {
+fn word_constant_mask(term: &OldMachineTerm) -> Option<(i128, &OldMachineTerm)> {
     let binary_term!(Bits32, BitwiseAnd, a, b) = term else {
         return None;
     };
@@ -2360,8 +2365,8 @@ fn wrap_range((min, max): (i128, i128), low: i128, high: i128) -> (i128, i128) {
 /// The domain a 64-bit operand's value is read in: unsigned for an unsigned
 /// operation or constant, signed otherwise. Both readings bound each other
 /// (`term_interval`), so either is sound.
-fn word_domain(term: &MachineTerm) -> Domain {
-    use MachineTerm as T;
+fn word_domain(term: &OldMachineTerm) -> Domain {
+    use OldMachineTerm as T;
     match term {
         uint64_constant!(_)
         | T::Binary {
@@ -2397,18 +2402,17 @@ fn flip_sign(domain: Domain, value: i128) -> i128 {
 
 /// A pointer offset as `value * width` for an `int32` value, or a constant
 /// byte offset. Exact: the product is formed in 64 bits.
-enum ScaledOffset<'a> {
-    Scaled(V<'a>, i64),
+enum ScaledOffset {
+    Scaled(crate::kernel::SharedMachineIntegerTerm, i64),
     Bytes(i64),
 }
 
-fn scaled_offset(offset: &crate::kernel::AddressOffset) -> Option<ScaledOffset<'_>> {
-    use crate::kernel::AddressOffset as O;
-    match offset {
-        O::Int32Scaled { value, byte_width } if *byte_width != 0 => {
-            Some(ScaledOffset::Scaled(value.operand_view(), *byte_width))
+fn scaled_offset(offset: &crate::kernel::OldAddressOffset) -> Option<ScaledOffset> {
+    match offset.view() {
+        OffsetView::Int32Scaled { index, byte_width } if byte_width != 0 => {
+            Some(ScaledOffset::Scaled(index, byte_width))
         }
-        O::Constant(bytes) => Some(ScaledOffset::Bytes(*bytes)),
+        OffsetView::Constant(bytes) => Some(ScaledOffset::Bytes(bytes)),
         _ => None,
     }
 }
@@ -2416,14 +2420,14 @@ fn scaled_offset(offset: &crate::kernel::AddressOffset) -> Option<ScaledOffset<'
 /// `a == b` for two pointer offsets as an index-domain equality: equal widths
 /// compare their values, and a constant byte offset that is a whole
 /// number of elements compares the value with that count.
-fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::AddressOffsetEqual(a, b) = condition else {
+fn offset_equality(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
+    let OldConditionTerm::AddressOffsetEqual(a, b) = condition else {
         return None;
     };
     // Field offsets from equal bases (`p->size`, `q->size`) are equal
     // exactly when the bases are.
     if let Some((a, b)) = same_field_bases(a, b) {
-        return offset_equality(&ConditionTerm::AddressOffsetEqual(
+        return offset_equality(&OldConditionTerm::AddressOffsetEqual(
             Box::new(a.clone()),
             Box::new(b.clone()),
         ));
@@ -2431,46 +2435,42 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
     // Wide scaled offsets also denote exact products, so cancelling their
     // common nonzero stride preserves equality and disequality. Keep the
     // full index domain; no low-word projection is involved.
-    use crate::kernel::AddressOffset as O;
-    let wide = match (a.as_ref(), b.as_ref()) {
+    let wide = match (a.view(), b.view()) {
         (
-            O::Int64Scaled {
-                value: a,
+            OffsetView::Int64Scaled {
+                index: a,
                 byte_width: wa,
                 unsigned: ua,
             },
-            O::Int64Scaled {
-                value: b,
+            OffsetView::Int64Scaled {
+                index: b,
                 byte_width: wb,
                 unsigned: ub,
             },
-        ) if wa == wb && *wa != 0 && ua == ub => Some((a.clone(), b.clone())),
+        ) if wa == wb && wa != 0 && ua == ub => Some((a, b)),
         (
-            O::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index: value,
                 byte_width,
                 unsigned,
             },
-            O::Constant(bytes),
+            OffsetView::Constant(bytes),
         )
         | (
-            O::Constant(bytes),
-            O::Int64Scaled {
-                value,
+            OffsetView::Constant(bytes),
+            OffsetView::Int64Scaled {
+                index: value,
                 byte_width,
                 unsigned,
             },
-        ) if bytes.checked_rem(*byte_width) == Some(0) => {
-            let count = bytes.checked_div(*byte_width)?;
-            let count = if *unsigned {
-                MachineTerm::uint64_constant(u64::try_from(count).ok()?)
+        ) if bytes.checked_rem(byte_width) == Some(0) => {
+            let count = bytes.checked_div(byte_width)?;
+            let count = if unsigned {
+                OldMachineTerm::uint64_constant(u64::try_from(count).ok()?)
             } else {
-                MachineTerm::int64_constant(count)
+                OldMachineTerm::int64_constant(count)
             };
-            Some((
-                value.clone(),
-                V::Legacy(&count).retain(MachineIntegerType::Int64),
-            ))
+            Some((value, V::Old(&count).retain(MachineIntegerType::Int64)))
         }
         _ => None,
     };
@@ -2482,20 +2482,20 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
         let literals = operands.map(|operand| {
             operand
                 .uint64_constant()
-                .map(|bits| MachineTerm::int64_constant(bits as i64))
+                .map(|bits| OldMachineTerm::int64_constant(bits as i64))
         });
         return Some(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::Int64,
                 CompareRelation::Equal,
-                std::array::from_fn(|i| literals[i].as_ref().map(V::Legacy).unwrap_or(operands[i])),
+                std::array::from_fn(|i| literals[i].as_ref().map(V::Old).unwrap_or(operands[i])),
             ),
         );
     }
     let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
         (ScaledOffset::Scaled(a, wa), ScaledOffset::Scaled(b, wb)) if wa == wb => (
-            a.retain(MachineIntegerType::Int32),
-            b.retain(MachineIntegerType::Int32),
+            a.operand_view().retain(MachineIntegerType::Int32),
+            b.operand_view().retain(MachineIntegerType::Int32),
         ),
         (ScaledOffset::Scaled(value, width), ScaledOffset::Bytes(bytes))
         | (ScaledOffset::Bytes(bytes), ScaledOffset::Scaled(value, width))
@@ -2503,8 +2503,8 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
         {
             let count = i32::try_from(bytes / width).ok()?;
             (
-                value.retain(MachineIntegerType::Int32),
-                V::Legacy(&MachineTerm::constant(count as u32)).retain(MachineIntegerType::Int32),
+                value.operand_view().retain(MachineIntegerType::Int32),
+                V::Old(&OldMachineTerm::constant(count as u32)).retain(MachineIntegerType::Int32),
             )
         }
         _ => return None,
@@ -2522,18 +2522,17 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
 /// (`p->size` and `q->size`): the offsets are equal exactly when the bases
 /// are, since adding one constant is injective.
 fn same_field_bases<'a>(
-    a: &'a AddressOffset,
-    b: &'a AddressOffset,
-) -> Option<(&'a AddressOffset, &'a AddressOffset)> {
-    use crate::kernel::AddressOffset as O;
-    match (a, b) {
-        (O::Add(a_base, a_field), O::Add(b_base, b_field))
+    a: &'a OldAddressOffset,
+    b: &'a OldAddressOffset,
+) -> Option<(&'a OldAddressOffset, &'a OldAddressOffset)> {
+    match (a.view(), b.view()) {
+        (OffsetView::Add(a_base, a_field), OffsetView::Add(b_base, b_field))
             if matches!(
-                (a_field.as_ref(), b_field.as_ref()),
-                (O::Constant(a_field), O::Constant(b_field)) if a_field == b_field
+                (a_field.view(), b_field.view()),
+                (OffsetView::Constant(a_field), OffsetView::Constant(b_field)) if a_field == b_field
             ) =>
         {
-            Some((a_base.as_ref(), b_base.as_ref()))
+            Some((a_base, b_base))
         }
         _ => None,
     }
@@ -2542,8 +2541,8 @@ fn same_field_bases<'a>(
 /// Two pointer offsets that cannot be equal whatever their values: a
 /// constant byte offset that no whole number of `int32` elements reaches.
 fn offset_mismatch(
-    a: &crate::kernel::AddressOffset,
-    b: &crate::kernel::AddressOffset,
+    a: &crate::kernel::OldAddressOffset,
+    b: &crate::kernel::OldAddressOffset,
 ) -> Option<bool> {
     match (scaled_offset(a)?, scaled_offset(b)?) {
         (ScaledOffset::Scaled(_, width), ScaledOffset::Bytes(bytes))
@@ -2563,7 +2562,7 @@ fn offset_mismatch(
 #[derive(Clone, Debug, Default)]
 struct Residues {
     known: PersistentMap<OperandKey, Residue>,
-    native_keys: PersistentMap<MachineTerm, OperandKey>,
+    native_keys: PersistentMap<OldMachineTerm, OperandKey>,
     has_shared_sources: bool,
     /// The terms each term was stated equal to, at most `EDGE_LIMIT` each.
     equal_to: PersistentMap<OperandKey, crate::persistent::PersistentSet<OperandKey>>,
@@ -2614,7 +2613,7 @@ impl Residues {
     const DEPTH: u32 = 6;
 
     fn admission_key(&mut self, term: V<'_>) -> OperandKey {
-        if let V::Legacy(written) = term {
+        if let V::Old(written) = term {
             if let Some(key) = self.native_keys.get(written) {
                 return key.clone();
             }
@@ -2633,7 +2632,7 @@ impl Residues {
     }
 
     fn query_key(&self, term: V<'_>) -> OperandKey {
-        if let V::Legacy(written) = term {
+        if let V::Old(written) = term {
             if let Some(key) = self.native_keys.get(written) {
                 return key.clone();
             }
@@ -2750,7 +2749,7 @@ impl Residues {
                     }
                     _ => None,
                 }
-            } else if let V::Legacy(MachineTerm::IntegerAddress(pointer, _)) = term {
+            } else if let V::Old(OldMachineTerm::IntegerAddress(pointer, _)) = term {
                 self.address_residue(pointer, depth - 1)
             } else {
                 None
@@ -2760,22 +2759,21 @@ impl Residues {
 
     /// `addr(p + o)` is `addr(p) + o`: the address of a pointer whose
     /// offset is a sum, read through the address of one summand's pointer.
-    fn address_residue(&self, pointer: &Address, depth: u32) -> Option<Residue> {
-        use crate::kernel::AddressOffset as O;
-        let O::Add(left, right) = &pointer.offset else {
+    fn address_residue(&self, pointer: &OldAddress, depth: u32) -> Option<Residue> {
+        let OffsetView::Add(left, right) = pointer.offset.view() else {
             return None;
         };
         let mut best = None;
         for (base, offset) in [(left, right), (right, left)] {
-            let base = MachineTerm::IntegerAddress(
-                Box::new(Address {
+            let base = OldMachineTerm::IntegerAddress(
+                Box::new(OldAddress {
                     base: pointer.base.clone(),
-                    offset: base.as_ref().clone(),
+                    offset: base.clone(),
                 }),
                 crate::kernel::AddressObjectClass::NONE,
             );
             let found = self
-                .residue(V::Legacy(&base), depth)
+                .residue(V::Old(&base), depth)
                 .zip(offset_residue(offset))
                 .map(|(a, b)| a.combine(b, u64::wrapping_add));
             best = Residue::better(best, found);
@@ -2786,21 +2784,22 @@ impl Residues {
 
 /// The residue of a pointer offset's byte count: exact for constants, and
 /// `0 mod 2^tz(w)` for `w` times an unknown index.
-fn offset_residue(offset: &AddressOffset) -> Option<Residue> {
-    use crate::kernel::AddressOffset as O;
+fn offset_residue(offset: &OldAddressOffset) -> Option<Residue> {
     charge();
-    match offset {
-        O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
-        O::Int32Scaled { value, byte_width } => match value.operand_view().word32_constant() {
-            Some(index) => Some(Residue::exact(
-                i64::from(index as i32).wrapping_mul(*byte_width) as u64,
-            )),
-            None => (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
-        },
-        O::Int64Scaled { byte_width, .. } => {
-            (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0))
+    match offset.view() {
+        OffsetView::Constant(bytes) => Some(Residue::exact(bytes as u64)),
+        OffsetView::Int32Scaled { index, byte_width } => {
+            match index.operand_view().word32_constant() {
+                Some(index) => Some(Residue::exact(
+                    i64::from(index as i32).wrapping_mul(byte_width) as u64,
+                )),
+                None => (byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
+            }
         }
-        O::Add(a, b) => offset_residue(a)
+        OffsetView::Int64Scaled { byte_width, .. } => {
+            (byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0))
+        }
+        OffsetView::Add(a, b) => offset_residue(a)
             .zip(offset_residue(b))
             .map(|(a, b)| a.combine(b, u64::wrapping_add)),
         _ => None,
@@ -2813,10 +2812,10 @@ fn offset_residue(offset: &AddressOffset) -> Option<Residue> {
 /// smaller class's disequalities into the larger's.
 #[derive(Clone, Debug, Default)]
 struct PointerClasses {
-    ids: PersistentMap<Address, NodeId>,
-    terms: PersistentMap<NodeId, Address>,
+    ids: PersistentMap<OldAddress, NodeId>,
+    terms: PersistentMap<NodeId, OldAddress>,
     /// The ids of the pointers with each offset, for an offset question.
-    by_offset: PersistentMap<AddressOffset, crate::persistent::PersistentSet<NodeId>>,
+    by_offset: PersistentMap<OldAddressOffset, crate::persistent::PersistentSet<NodeId>>,
     parent: PersistentMap<NodeId, NodeId>,
     size: PersistentMap<NodeId, usize>,
     unequal: PersistentMap<NodeId, crate::persistent::PersistentSet<NodeId>>,
@@ -2824,7 +2823,7 @@ struct PointerClasses {
 }
 
 impl PointerClasses {
-    fn id(&mut self, pointer: &Address) -> NodeId {
+    fn id(&mut self, pointer: &OldAddress) -> NodeId {
         if let Some(id) = self.ids.get(pointer) {
             return *id;
         }
@@ -2873,7 +2872,7 @@ impl PointerClasses {
 
     /// Records `a == b` (`value`) or `a != b`; false when that contradicts
     /// what is recorded.
-    fn assume(&mut self, a: &Address, b: &Address, value: bool) -> bool {
+    fn assume(&mut self, a: &OldAddress, b: &OldAddress, value: bool) -> bool {
         let (a, b) = (self.id(a), self.id(b));
         let (root_a, root_b) = (self.find(a), self.find(b));
         if !value {
@@ -2913,7 +2912,7 @@ impl PointerClasses {
         true
     }
 
-    fn decide(&self, a: &Address, b: &Address) -> Option<bool> {
+    fn decide(&self, a: &OldAddress, b: &OldAddress) -> Option<bool> {
         let (a, b) = (self.ids.get(a)?, self.ids.get(b)?);
         let (root_a, root_b) = (self.find(*a), self.find(*b));
         if root_a == root_b {
@@ -2926,7 +2925,7 @@ impl PointerClasses {
     /// `a == b` for two offsets of one block, read from recorded pointers
     /// in a common block with those offsets: such pointers are equal
     /// exactly when their offsets are.
-    fn decide_offsets(&self, a: &AddressOffset, b: &AddressOffset) -> Option<bool> {
+    fn decide_offsets(&self, a: &OldAddressOffset, b: &OldAddressOffset) -> Option<bool> {
         let (with_a, with_b) = (self.by_offset.get(a)?, self.by_offset.get(b)?);
         let pairs = with_a
             .iter()
@@ -2947,8 +2946,8 @@ impl PointerClasses {
 
 /// A sum or difference with a constant, as its other operand and the
 /// constant added.
-fn modular_parts(domain: Domain, term: &MachineTerm) -> Option<(&MachineTerm, i128)> {
-    use MachineTerm as T;
+fn modular_parts(domain: Domain, term: &OldMachineTerm) -> Option<(&OldMachineTerm, i128)> {
+    use OldMachineTerm as T;
     match (domain, term) {
         (Domain::Int32, binary_term!(Bits32, Add, a, b))
         | (
@@ -3003,7 +3002,7 @@ fn wrap(domain: Domain, value: i128) -> i128 {
 }
 
 /// `term`'s value in `domain` when it is a constant there.
-fn constant(domain: Domain, term: &MachineTerm) -> Option<i128> {
+fn constant(domain: Domain, term: &OldMachineTerm) -> Option<i128> {
     match (domain, term) {
         // A `uint32` constant's word is the `Constant` of its bits (K1).
         (Domain::Int32, bits32_constant!(value)) => Some(i128::from(constant_u32(*value) as i32)),
@@ -3025,8 +3024,11 @@ fn constant(domain: Domain, term: &MachineTerm) -> Option<i128> {
 /// When `term` is a base plus a constant in `domain`, or a conversion that
 /// keeps its operand's value: the base's domain, the base, the constant,
 /// and whether only a non-negative base keeps its value.
-fn link_parts(domain: Domain, term: &MachineTerm) -> Option<(Domain, &MachineTerm, i128, bool)> {
-    use MachineTerm as T;
+fn link_parts(
+    domain: Domain,
+    term: &OldMachineTerm,
+) -> Option<(Domain, &OldMachineTerm, i128, bool)> {
+    use OldMachineTerm as T;
     match (domain, term) {
         // A 32-bit widening of a narrow value holds its operand's value, of
         // the operand's own format and range (rule K8, a relation across
@@ -3125,10 +3127,10 @@ fn link_parts(domain: Domain, term: &MachineTerm) -> Option<(Domain, &MachineTer
 /// a true equality is two. Empty for a fact difference logic does not
 /// express.
 fn condition_orders(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
-) -> Vec<(Domain, MachineTerm, MachineTerm, bool)> {
-    use ConditionTerm as C;
+) -> Vec<(Domain, OldMachineTerm, OldMachineTerm, bool)> {
+    use OldConditionTerm as C;
     let (domain, left, right, strict) = match condition {
         C::Compare {
             format: MachineIntegerType::Int32,

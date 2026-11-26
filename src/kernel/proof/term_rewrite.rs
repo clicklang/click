@@ -11,7 +11,8 @@ use crate::kernel::{
     AlgebraicBitvectorMatchArm, AlgebraicResultMatchArm, AlgebraicTerm, AlgebraicTermNode,
     AlgebraicValue, PureFunctionArgument,
 };
-use crate::kernel::{MachineCastSpelling, MachineTerm, cast_term};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
 #[cfg(test)]
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
@@ -66,7 +67,7 @@ fn collect_machine_operand_carriers(
 ) {
     let root = match operand {
         MachineOperandView::Shared(root) => root,
-        MachineOperandView::Legacy(term) => {
+        MachineOperandView::Old(term) => {
             collect_bitvector_carriers(term, variables);
             return;
         }
@@ -145,7 +146,7 @@ pub(crate) enum BindingCarrier {
 /// cannot be substituted accidentally.
 #[derive(Clone)]
 pub(crate) enum TypedProgramValueReplacement {
-    Bitvector(MachineTerm),
+    Bitvector(OldMachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject bounds.
     Pointer(OldPointer),
@@ -235,8 +236,8 @@ struct CarrierVariables {
     pointer_applications: BTreeSet<u64>,
     shared_machine_operands: BTreeSet<u64>,
     mathematical_integers: BTreeSet<u64>,
-    pointer_terms: Option<Vec<Address>>,
-    read_terms: Option<BTreeMap<((u32, u32), Address, LoadKind), MachineTerm>>,
+    pointer_terms: Option<Vec<OldAddress>>,
+    read_terms: Option<BTreeMap<((u32, u32), OldAddress, LoadKind), OldMachineTerm>>,
 }
 
 impl CarrierVariables {
@@ -278,40 +279,40 @@ impl CarrierVariables {
     }
 }
 
-pub(super) fn is_simple_int32_match(value: &MachineTerm) -> bool {
-    let MachineTerm::AlgebraicMatch { arms, .. } = value else {
+pub(super) fn is_simple_int32_match(value: &OldMachineTerm) -> bool {
+    let OldMachineTerm::AlgebraicMatch { arms, .. } = value else {
         return false;
     };
     arms.iter().all(|arm| {
         arm.body.as_const().is_some()
-            || matches!(&arm.body, MachineTerm::Variable(variable) if arm.bindings.iter().any(|binding|
-                matches!(binding, AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(bound))) if bound == variable)))
+            || matches!(&arm.body, OldMachineTerm::Variable(variable) if arm.bindings.iter().any(|binding|
+                matches!(binding, AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(bound))) if bound == variable)))
     })
 }
 
 fn program_value_variable(value: &ProgramValue) -> Option<Variable> {
     match value {
         ProgramValue::PointerInteger(record) => program_value_variable(&record.numeric),
-        ProgramValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::Int8(OldMachineTerm::Variable(variable)) => Some(*variable),
         // A `Bool` binder (Stage 5), carried as its cast.
-        ProgramValue::Bool(MachineTerm::BoolCast { value, .. })
-            if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
+        ProgramValue::Bool(OldMachineTerm::BoolCast { value, .. })
+            if matches!(value.as_ref(), crate::kernel::OldConditionTerm::Variable(_)) =>
         {
             match value.as_ref() {
-                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+                crate::kernel::OldConditionTerm::Variable(variable) => Some(*variable),
                 _ => None,
             }
         }
-        ProgramValue::Bool(MachineTerm::Variable(variable))
-        | ProgramValue::Int16(MachineTerm::Variable(variable))
-        | ProgramValue::UInt8(MachineTerm::Variable(variable))
-        | ProgramValue::UInt16(MachineTerm::Variable(variable))
-        | ProgramValue::Int32(MachineTerm::Variable(variable))
-        | ProgramValue::UInt32(MachineTerm::Variable(variable))
-        | ProgramValue::Int64(MachineTerm::Variable(variable))
-        | ProgramValue::UInt64(MachineTerm::Variable(variable))
-        | ProgramValue::Float32(MachineTerm::Variable(variable))
-        | ProgramValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::Bool(OldMachineTerm::Variable(variable))
+        | ProgramValue::Int16(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt8(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt16(OldMachineTerm::Variable(variable))
+        | ProgramValue::Int32(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt32(OldMachineTerm::Variable(variable))
+        | ProgramValue::Int64(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt64(OldMachineTerm::Variable(variable))
+        | ProgramValue::Float32(OldMachineTerm::Variable(variable))
+        | ProgramValue::Float64(OldMachineTerm::Variable(variable)) => Some(*variable),
         ProgramValue::Pointer(pointer) => match &pointer.base {
             AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                 Some(*variable)
@@ -410,9 +411,9 @@ fn typed_binding_variable(
 
 /// The integer a `bool` value converts, `w` in C's conversion `w != 0`
 /// (Stage 5: the cast of the `Bool` `not (w == 0)`), or `None`.
-fn bool_operand(term: &MachineTerm) -> Option<&MachineTerm> {
+fn bool_operand(term: &OldMachineTerm) -> Option<&OldMachineTerm> {
     let condition = term.bool_cast_operand()?.bool_negation_operand()?;
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
         relation: CompareRelation::Equal,
         left: operand,
@@ -430,11 +431,11 @@ fn bool_binder_variable(value: &ProgramValue) -> Option<Variable> {
     let ProgramValue::Bool(term) = value else {
         return None;
     };
-    if let Some(ConditionTerm::Variable(variable)) = term.bool_cast_operand() {
+    if let Some(OldConditionTerm::Variable(variable)) = term.bool_cast_operand() {
         return Some(*variable);
     }
     match bool_operand(term)? {
-        MachineTerm::Variable(variable) => Some(*variable),
+        OldMachineTerm::Variable(variable) => Some(*variable),
         _ => None,
     }
 }
@@ -455,7 +456,10 @@ fn typed_field_replacement(
             return None;
         };
         if let ProgramValue::Bool(binder) = binding
-            && matches!(binder.bool_cast_operand(), Some(ConditionTerm::Variable(_)))
+            && matches!(
+                binder.bool_cast_operand(),
+                Some(OldConditionTerm::Variable(_))
+            )
         {
             return Some(TypedProgramValueReplacement::Bitvector(term.clone()));
         }
@@ -476,31 +480,31 @@ pub(crate) fn program_declaration_variable(value: &ProgramValue) -> Option<Varia
 fn program_value_declaration_variable(value: &ProgramValue) -> Option<Variable> {
     match value {
         ProgramValue::PointerInteger(record) => program_value_declaration_variable(&record.numeric),
-        ProgramValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::Int8(OldMachineTerm::Variable(variable)) => Some(*variable),
         // A `Bool` binder (Stage 5), carried as its cast.
-        ProgramValue::Bool(MachineTerm::BoolCast { value, .. })
-            if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
+        ProgramValue::Bool(OldMachineTerm::BoolCast { value, .. })
+            if matches!(value.as_ref(), crate::kernel::OldConditionTerm::Variable(_)) =>
         {
             match value.as_ref() {
-                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+                crate::kernel::OldConditionTerm::Variable(variable) => Some(*variable),
                 _ => None,
             }
         }
-        ProgramValue::Bool(MachineTerm::Variable(variable))
-        | ProgramValue::Int16(MachineTerm::Variable(variable))
-        | ProgramValue::UInt8(MachineTerm::Variable(variable))
-        | ProgramValue::UInt16(MachineTerm::Variable(variable))
-        | ProgramValue::Int32(MachineTerm::Variable(variable))
-        | ProgramValue::UInt32(MachineTerm::Variable(variable))
-        | ProgramValue::Int64(MachineTerm::Variable(variable))
-        | ProgramValue::UInt64(MachineTerm::Variable(variable))
-        | ProgramValue::Float32(MachineTerm::Variable(variable))
-        | ProgramValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
+        ProgramValue::Bool(OldMachineTerm::Variable(variable))
+        | ProgramValue::Int16(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt8(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt16(OldMachineTerm::Variable(variable))
+        | ProgramValue::Int32(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt32(OldMachineTerm::Variable(variable))
+        | ProgramValue::Int64(OldMachineTerm::Variable(variable))
+        | ProgramValue::UInt64(OldMachineTerm::Variable(variable))
+        | ProgramValue::Float32(OldMachineTerm::Variable(variable))
+        | ProgramValue::Float64(OldMachineTerm::Variable(variable)) => Some(*variable),
         ProgramValue::Pointer(pointer)
             if matches!(
                 &pointer.address().base,
                 AddressBase::Symbolic(_) | AddressBase::FunctionSymbolic(_)
-            ) && matches!(&pointer.address().offset, AddressOffset::Constant(0)) =>
+            ) && matches!(pointer.address().offset.view(), OffsetView::Constant(0)) =>
         {
             match pointer.address().base {
                 AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
@@ -520,8 +524,8 @@ fn replace_binding_variable(
 ) {
     match (carrier, value) {
         (BindingCarrier::Program, AlgebraicValue::Program(value)) => match value {
-            ProgramValue::Int8(term) if matches!(term, MachineTerm::Variable(_)) => {
-                *term = MachineTerm::Variable(variable);
+            ProgramValue::Int8(term) if matches!(term, OldMachineTerm::Variable(_)) => {
+                *term = OldMachineTerm::Variable(variable);
             }
             ProgramValue::Bool(term)
             | ProgramValue::Int16(term)
@@ -535,9 +539,9 @@ fn replace_binding_variable(
             | ProgramValue::UInt128(term)
             | ProgramValue::Float32(term)
             | ProgramValue::Float64(term)
-                if matches!(term, MachineTerm::Variable(_)) =>
+                if matches!(term, OldMachineTerm::Variable(_)) =>
             {
-                *term = MachineTerm::Variable(variable);
+                *term = OldMachineTerm::Variable(variable);
             }
             ProgramValue::Pointer(pointer)
                 if matches!(
@@ -613,7 +617,7 @@ fn collect_stored_condition_carriers(
             }
         }
     } else {
-        collect_condition_carriers(condition.native_compat(), variables);
+        collect_condition_carriers(condition.old_form(), variables);
     }
 }
 
@@ -921,12 +925,12 @@ fn collect_algebraic_carriers_seen(
     }
 }
 
-fn collect_pointer_carriers(pointer: &Address, variables: &mut CarrierVariables) {
+fn collect_pointer_carriers(pointer: &OldAddress, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     if let Some(pointers) = &mut variables.pointer_terms
-        && *pointer != Address::null()
+        && *pointer != OldAddress::null()
     {
         pointers.push(pointer.clone());
     }
@@ -962,17 +966,17 @@ fn collect_address_base_carriers(block: &AddressBase, variables: &mut CarrierVar
     }
 }
 
-fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut CarrierVariables) {
+fn collect_condition_carriers(condition: &OldConditionTerm, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             collect_program_value_carriers(&ProgramValue::Pointer((**left).clone()), variables);
             collect_program_value_carriers(&ProgramValue::Pointer((**right).clone()), variables);
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             let mut seen = BTreeSet::new();
             collect_algebraic_carriers_seen(left, variables, &mut seen);
             if variables.exhausted() {
@@ -988,7 +992,7 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
             }
             collect_integer_shared_carriers(right, variables, &mut seen);
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_carriers(left, variables);
             if variables.exhausted() {
@@ -996,28 +1000,28 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
             }
             collect_bitvector_carriers(right, variables);
         }
-        ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float32(float_condition) | OldConditionTerm::Float64(float_condition) => {
             float_condition.for_each_bitvector_term(|term| {
                 if !variables.exhausted() {
                     collect_bitvector_carriers(term, variables);
                 }
             });
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
             collect_pointer_offset_carriers(right, variables);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
             collect_pointer_carriers(right, variables);
         }
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             let mut seen = BTreeSet::new();
             for argument in application.arguments() {
                 collect_argument_carriers(argument, variables, &mut seen);
@@ -1026,7 +1030,7 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
                 }
             }
         }
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -1038,7 +1042,7 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
                 }
             }
         }
-        ConditionTerm::BoolEqual(left, right) => {
+        OldConditionTerm::BoolEqual(left, right) => {
             collect_condition_carriers(left, variables);
             if variables.exhausted() {
                 return;
@@ -1048,14 +1052,14 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
     }
 }
 
-fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariables) {
+fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     match term {
-        MachineTerm::ThreadHandle(_) => {}
-        MachineTerm::Constant { .. } => {}
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::ThreadHandle(_) => {}
+        OldMachineTerm::Constant { .. } => {}
+        OldMachineTerm::Variable(variable) => {
             variables.program_values.insert(*variable);
             collect_registered_load_carriers(*variable, variables);
         }
@@ -1067,8 +1071,8 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
             collect_bitvector_carriers(right, variables);
         }
         crate::kernel::unary_machine_term!(value) => collect_bitvector_carriers(value, variables),
-        MachineTerm::BoolCast { value, .. } => collect_condition_carriers(value, variables),
-        MachineTerm::If {
+        OldMachineTerm::BoolCast { value, .. } => collect_condition_carriers(value, variables),
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -1083,7 +1087,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
             }
             collect_bitvector_carriers(else_term, variables);
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -1110,7 +1114,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
             variables.program_values.insert(*accumulator);
             variables.program_values.insert(*item);
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_bitvector_carriers(argument, variables);
                 if variables.exhausted() {
@@ -1118,7 +1122,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
                 }
             }
         }
-        MachineTerm::ClickFunctionApplication { arguments, .. } => {
+        OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             let mut seen = BTreeSet::new();
             for argument in arguments {
                 collect_argument_carriers(argument, variables, &mut seen);
@@ -1127,7 +1131,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
                 }
             }
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             let mut seen = BTreeSet::new();
             collect_algebraic_carriers_seen(scrutinee, variables, &mut seen);
             if variables.exhausted() {
@@ -1148,7 +1152,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
         }
         // SymbolicMemory states are opaque proof-state values.  Only the selected
         // pointer expression participates in freshness collection.
-        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+        OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
             if let Some(terms) = &mut variables.read_terms {
                 terms
                     .entry((
@@ -1160,14 +1164,14 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
             }
             collect_pointer_carriers(pointer, variables);
         }
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
-        MachineTerm::IntegerToMachine { value, .. } => {
+        OldMachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_shared_carriers(value, variables, &mut BTreeSet::new());
         }
-        MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_carriers(left, variables);
             if variables.exhausted() {
                 return;
@@ -1181,10 +1185,10 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
 /// Machine comparisons use their smart constructors; concrete nullary enum
 /// constructors use the algebraic equality decision. Other guards stay intact.
 pub(in crate::kernel::proof) fn folded_machine_condition(
-    condition: ConditionTerm,
-) -> ConditionTerm {
+    condition: OldConditionTerm,
+) -> OldConditionTerm {
     match condition {
-        ConditionTerm::AlgebraicEqual(ref left, ref right)
+        OldConditionTerm::AlgebraicEqual(ref left, ref right)
             if matches!(&left.node, AlgebraicTermNode::Constructor { fields, .. } if fields.is_empty())
                 && matches!(&right.node, AlgebraicTermNode::Constructor { fields, .. } if fields.is_empty()) =>
         {
@@ -1198,39 +1202,39 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
                 Term::Algebraic(right.as_ref().clone().into()),
             );
             crate::kernel::spec::constant_spec_condition_value(&equality)
-                .map(ConditionTerm::Constant)
+                .map(OldConditionTerm::Constant)
                 .unwrap_or(condition)
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::machine_compare(format, CompareRelation::Equal, *left, *right),
-        ConditionTerm::Compare {
+        } => OldConditionTerm::machine_compare(format, CompareRelation::Equal, *left, *right),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
-        } => ConditionTerm::signed_less_than(*left, *right),
-        ConditionTerm::Compare {
+        } => OldConditionTerm::signed_less_than(*left, *right),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
-        } => ConditionTerm::signed_less_equal(*left, *right),
-        ConditionTerm::Compare {
+        } => OldConditionTerm::signed_less_equal(*left, *right),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
-        } => ConditionTerm::signed_greater_than(*left, *right),
-        ConditionTerm::Compare {
+        } => OldConditionTerm::signed_greater_than(*left, *right),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
-        } => ConditionTerm::signed_greater_equal(*left, *right),
+        } => OldConditionTerm::signed_greater_equal(*left, *right),
         condition => condition,
     }
 }
@@ -1273,7 +1277,7 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 ///
 /// *Exactness.* Only the exact pointer is looked up. No alias is decided, no
 /// pointer is compared, and no fact set is consulted.
-fn materialized_registered_load_value(variable: Variable) -> Option<MachineTerm> {
+fn materialized_registered_load_value(variable: Variable) -> Option<OldMachineTerm> {
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
     let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
     if !kind.is_word32() || !pointer_addresses_four_byte_elements(&pointer) {
@@ -1304,17 +1308,17 @@ fn materialized_registered_load_value(variable: Variable) -> Option<MachineTerm>
 /// element's size rather than the field's. A pointer shape this does not
 /// recognize answers `false`, so an unfamiliar address is refused rather than
 /// assumed.
-fn pointer_addresses_four_byte_elements(pointer: &Address) -> bool {
-    fn offset_scales_by_four(offset: &AddressOffset) -> bool {
-        match offset {
-            AddressOffset::Int32Scaled { byte_width, .. } => *byte_width == 4,
-            AddressOffset::Int64Scaled { byte_width, .. } => *byte_width == 4,
-            AddressOffset::Add(left, right) => {
+fn pointer_addresses_four_byte_elements(pointer: &OldAddress) -> bool {
+    fn offset_scales_by_four(offset: &OldAddressOffset) -> bool {
+        match offset.view() {
+            OffsetView::Int32Scaled { byte_width, .. } => byte_width == 4,
+            OffsetView::Int64Scaled { byte_width, .. } => byte_width == 4,
+            OffsetView::Add(left, right) => {
                 offset_scales_by_four(left) && offset_scales_by_four(right)
             }
             // A bare constant or variable offset carries no element width of
             // its own, so it cannot witness one.
-            AddressOffset::Constant(_) | AddressOffset::Variable(_) => false,
+            OffsetView::Constant(_) | OffsetView::Variable(_) => false,
         }
     }
     offset_scales_by_four(&pointer.offset)
@@ -1333,25 +1337,26 @@ fn collect_registered_load_carriers(load: Variable, variables: &mut CarrierVaria
     collect_pointer_carriers(&pointer, variables);
 }
 
-fn collect_pointer_offset_carriers(offset: &AddressOffset, variables: &mut CarrierVariables) {
+fn collect_pointer_offset_carriers(offset: &OldAddressOffset, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
-    match offset {
-        AddressOffset::Constant(_) => {}
-        AddressOffset::Variable(variable) => {
-            variables.program_values.insert(*variable);
-            collect_registered_load_carriers(*variable, variables);
+    match offset.view() {
+        OffsetView::Constant(_) => {}
+        OffsetView::Variable(variable) => {
+            variables.program_values.insert(variable);
+            collect_registered_load_carriers(variable, variables);
         }
-        AddressOffset::Add(left, right) => {
+        OffsetView::Add(left, right) => {
             collect_pointer_offset_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
             collect_pointer_offset_carriers(right, variables);
         }
-        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
-            collect_machine_carriers(value, variables)
+        OffsetView::Int32Scaled { index: value, .. }
+        | OffsetView::Int64Scaled { index: value, .. } => {
+            collect_machine_carriers(&value, variables)
         }
     }
 }
@@ -1444,7 +1449,7 @@ impl IntegerSubstitutionVariableCollector {
         self.carriers.read_terms = Some(BTreeMap::new());
     }
 
-    pub(crate) fn take_read_terms(&mut self) -> impl Iterator<Item = MachineTerm> {
+    pub(crate) fn take_read_terms(&mut self) -> impl Iterator<Item = OldMachineTerm> {
         self.carriers
             .read_terms
             .take()
@@ -1471,7 +1476,7 @@ impl IntegerSubstitutionVariableCollector {
 
 /// Collect only pointer expressions reachable from this explicit goal. SymbolicMemory
 /// states remain opaque, just as in capture-avoiding term rewriting.
-pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<Address> {
+pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<OldAddress> {
     let mut carriers = CarrierVariables::for_rewrite(false);
     carriers.pointer_terms = Some(Vec::new());
     collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
@@ -1492,7 +1497,7 @@ fn collect_integer_substitution_variables_with_carriers(
         match proposition {
             Proposition::VolatileAccess(event) => {
                 collect_pointer_carriers(&event.pointer, carriers);
-                collect_program_value_carriers(event.value.native_compat(), carriers);
+                collect_program_value_carriers(event.value.old_form(), carriers);
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
@@ -1510,7 +1515,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 collect_integer_substitution_term_variables(right, carriers);
             }
             Proposition::SequenceMembership { element, sequence } => {
-                collect_program_value_carriers(element.native_compat(), carriers);
+                collect_program_value_carriers(element.old_form(), carriers);
                 collect_sequence_carriers(sequence, carriers);
             }
             Proposition::ConditionIs(condition, _) => {
@@ -1528,7 +1533,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 if carriers.exhausted() {
                     return;
                 }
-                collect_bitvector_carriers(bytes.native_compat(), carriers);
+                collect_bitvector_carriers(bytes.old_form(), carriers);
             }
             Proposition::ResourceViewable { resource, .. } => {
                 collect_resource_carriers(resource, carriers)
@@ -1615,22 +1620,20 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
             if let Some(root) = value.root().filter(|root| root.is_mathematical_integer()) {
                 collect_mathematical_integer_carriers(root, variables);
             } else {
-                collect_integer_carriers(value.native_compat(), variables, &mut BTreeSet::new());
+                collect_integer_carriers(value.old_form(), variables, &mut BTreeSet::new());
             }
         }
-        Term::Bitvector32(value) => collect_bitvector_carriers(value.native_compat(), variables),
-        Term::ProgramValue(value) => {
-            collect_program_value_carriers(value.native_compat(), variables)
-        }
+        Term::Bitvector32(value) => collect_bitvector_carriers(value.old_form(), variables),
+        Term::ProgramValue(value) => collect_program_value_carriers(value.old_form(), variables),
         Term::Condition(value) => collect_stored_condition_carriers(value, variables),
         Term::PointerOffset(value) => {
             if let Some(root) = value.root() {
                 collect_retained_offset_carriers(root, variables);
             } else {
-                collect_pointer_offset_carriers(value.native_compat(), variables);
+                collect_pointer_offset_carriers(value.old_form(), variables);
             }
         }
-        Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
+        Term::Algebraic(value) => collect_algebraic_carriers(value.old_form(), variables),
         Term::Sequence(value)
             if value
                 .element_type
@@ -1664,15 +1667,15 @@ fn exhausted_integer(term: &IntegerTerm) -> IntegerTerm {
     }
 }
 
-fn exhausted_pointer() -> Address {
-    Address {
+fn exhausted_pointer() -> OldAddress {
+    OldAddress {
         base: AddressBase::Concrete(String::new()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     }
 }
 
-fn exhausted_offset() -> AddressOffset {
-    AddressOffset::Constant(0)
+fn exhausted_offset() -> OldAddressOffset {
+    OldAddressOffset::constant(0)
 }
 
 fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
@@ -1687,10 +1690,10 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
         ProgramValue::Int16(_) => crate::kernel::int16(0),
         ProgramValue::UInt8(_) => crate::kernel::uint8(0),
         ProgramValue::UInt16(_) => crate::kernel::uint16(0),
-        ProgramValue::Int32(_) => ProgramValue::Int32(MachineTerm::constant(0)),
-        ProgramValue::UInt32(_) => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
-        ProgramValue::Int64(_) => ProgramValue::Int64(MachineTerm::int64_constant(0)),
-        ProgramValue::UInt64(_) => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        ProgramValue::Int32(_) => ProgramValue::Int32(OldMachineTerm::constant(0)),
+        ProgramValue::UInt32(_) => ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
+        ProgramValue::Int64(_) => ProgramValue::Int64(OldMachineTerm::int64_constant(0)),
+        ProgramValue::UInt64(_) => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         ProgramValue::Int128(_) => MachineIntegerType::Int128
             .constant_value(
                 crate::kernel::MachineIntegerConstant::from_signed(
@@ -1709,8 +1712,8 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
                 .unwrap(),
             )
             .unwrap(),
-        ProgramValue::Float32(_) => ProgramValue::Float32(MachineTerm::constant(0)),
-        ProgramValue::Float64(_) => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+        ProgramValue::Float32(_) => ProgramValue::Float32(OldMachineTerm::constant(0)),
+        ProgramValue::Float64(_) => ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
         ProgramValue::Pointer(pointer) => {
             ProgramValue::Pointer(OldPointer::new(exhausted_pointer(), pointer.program_type()))
         }
@@ -1756,10 +1759,10 @@ fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
 
 fn exhausted_term(term: &Term) -> Term {
     match term {
-        Term::Condition(_) => Term::Condition(ConditionTerm::Constant(false).into()),
-        Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0).into()),
+        Term::Condition(_) => Term::Condition(OldConditionTerm::Constant(false).into()),
+        Term::Bitvector32(_) => Term::Bitvector32(OldMachineTerm::constant(0).into()),
         Term::Integer(value) if value.root().is_some() => term.clone(),
-        Term::Integer(value) => Term::Integer(exhausted_integer(value.native_compat()).into()),
+        Term::Integer(value) => Term::Integer(exhausted_integer(value.old_form()).into()),
         Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset().into()),
         Term::ProgramValue(value) => match value.value() {
             ExecutionValue::Shared(_) => term.clone(),
@@ -1769,15 +1772,13 @@ fn exhausted_term(term: &Term) -> Term {
         },
         Term::Sequence(value) => Term::Sequence(exhausted_sequence(value)),
         Term::Algebraic(value) if value.root().is_some() => term.clone(),
-        Term::Algebraic(value) => {
-            Term::Algebraic(exhausted_algebraic(value.native_compat()).into())
-        }
+        Term::Algebraic(value) => Term::Algebraic(exhausted_algebraic(value.old_form()).into()),
         _ => term.clone(),
     }
 }
 
 fn exhausted_proposition() -> Proposition {
-    Proposition::condition_is(ConditionTerm::Constant(false), true)
+    Proposition::condition_is(OldConditionTerm::Constant(false), true)
 }
 
 struct IntegerVariableRewrite<'a> {
@@ -1837,7 +1838,7 @@ impl BoundedIndexKey {
 // conditions. Later offset queries check their full-width index by key. Scalar
 // normalization never prepares this pointer-only index.
 fn bounded_uint64_indices(
-    conditions: &HashMap<ConditionTerm, bool>,
+    conditions: &HashMap<OldConditionTerm, bool>,
 ) -> std::collections::HashSet<BoundedIndexKey> {
     conditions
         .iter()
@@ -1845,7 +1846,7 @@ fn bounded_uint64_indices(
             crate::instrumentation::record_deterministic_work(1);
             let (lower, upper, strict) = match (condition, *value) {
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessEqual,
                         left: a,
@@ -1854,7 +1855,7 @@ fn bounded_uint64_indices(
                     true,
                 )
                 | (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::GreaterThan,
                         left: a,
@@ -1863,7 +1864,7 @@ fn bounded_uint64_indices(
                     false,
                 ) => (a, b, false),
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessThan,
                         left: a,
@@ -1872,7 +1873,7 @@ fn bounded_uint64_indices(
                     true,
                 )
                 | (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::GreaterEqual,
                         left: a,
@@ -1881,7 +1882,7 @@ fn bounded_uint64_indices(
                     false,
                 ) => (a, b, true),
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::GreaterEqual,
                         left: a,
@@ -1890,7 +1891,7 @@ fn bounded_uint64_indices(
                     true,
                 )
                 | (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessThan,
                         left: a,
@@ -1899,7 +1900,7 @@ fn bounded_uint64_indices(
                     false,
                 ) => (b, a, false),
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::GreaterThan,
                         left: a,
@@ -1908,7 +1909,7 @@ fn bounded_uint64_indices(
                     true,
                 )
                 | (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessEqual,
                         left: a,
@@ -1921,7 +1922,7 @@ fn bounded_uint64_indices(
             let limit = upper.uint64_as_const()?;
             let limit = if strict { limit.checked_sub(1)? } else { limit };
             (limit <= i32::MAX as u64).then(|| {
-                if let MachineTerm::Variable(variable) = lower.as_ref() {
+                if let OldMachineTerm::Variable(variable) = lower.as_ref() {
                     BoundedIndexKey::Variable(*variable)
                 } else {
                     BoundedIndexKey::Term(SharedMachineIntegerTerm::index(
@@ -1959,13 +1960,13 @@ impl ReadAddressDependencies {
 }
 
 struct OffsetReplacement<'a> {
-    from: &'a AddressOffset,
-    to: &'a AddressOffset,
+    from: &'a OldAddressOffset,
+    to: &'a OldAddressOffset,
     retained: std::cell::OnceCell<Option<(OffsetKey, SharedAddressOffset)>>,
 }
 
 impl<'a> OffsetReplacement<'a> {
-    fn new(from: &'a AddressOffset, to: &'a AddressOffset) -> Self {
+    fn new(from: &'a OldAddressOffset, to: &'a OldAddressOffset) -> Self {
         Self {
             from,
             to,
@@ -1990,23 +1991,23 @@ pub(crate) struct TermRewrite<'a> {
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
     bitvector: Option<(MachineOperandView<'a>, MachineOperandView<'a>)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
-    pointer_variable: Option<(Variable, &'a Address)>,
+    pointer_variable: Option<(Variable, &'a OldAddress)>,
     pointer_addresses_only: bool,
-    pointer_exact: Option<(&'a Address, &'a Address)>,
+    pointer_exact: Option<(&'a OldAddress, &'a OldAddress)>,
     pointer_value_exact: Option<(&'a OldPointer, &'a OldPointer)>,
     pointer_offset_exact: Option<OffsetReplacement<'a>>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
-    condition_exact: Option<(&'a ConditionTerm, &'a ConditionTerm)>,
-    conditions: Option<&'a HashMap<ConditionTerm, bool>>,
+    condition_exact: Option<(&'a OldConditionTerm, &'a OldConditionTerm)>,
+    conditions: Option<&'a HashMap<OldConditionTerm, bool>>,
     cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     cited_comparison_context: Option<&'a PureFactContext>,
     bounded_uint64_indices: Option<std::collections::HashSet<BoundedIndexKey>>,
     pointer_association_conditions:
-        Option<HashMap<(u64, u64), Vec<(MachineTerm, MachineTerm, bool)>>>,
+        Option<HashMap<(u64, u64), Vec<(OldMachineTerm, OldMachineTerm, bool)>>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     pointer_context: Option<&'a PureFactContext>,
-    collected_conditions: Option<Vec<ConditionTerm>>,
+    collected_conditions: Option<Vec<OldConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool, bool), IntegerTerm>,
     fold_integer_bridge: KernelTermExport,
     pointer_application_cache: HashMap<(u64, u64, bool, bool), AddressBase>,
@@ -2022,13 +2023,13 @@ pub(crate) struct TermRewrite<'a> {
     enforce_integer_work_limit: bool,
     typed_variables: Option<TypedVariableReplacements<'a>>,
     comparison_reads: Option<
-        &'a HashMap<((u32, u32), Address, LoadKind), (MachineTerm, ReadAddressDependencies)>,
+        &'a HashMap<((u32, u32), OldAddress, LoadKind), (OldMachineTerm, ReadAddressDependencies)>,
     >,
     /// Reads of a library or enum value at a fixed address, each with the
     /// value its state stores there: the read-over-write authority for
     /// values a scalar cell cannot hold.
     comparison_algebraic_reads:
-        Option<&'a HashMap<(crate::kernel::ProgramPoint, Address), AlgebraicTerm>>,
+        Option<&'a HashMap<(crate::kernel::ProgramPoint, OldAddress), AlgebraicTerm>>,
     // Recursive read-address walks must share this memo: each address can
     // reference the same earlier read more than once. Include lexical scope
     // and temporary rewrite modes so entries never cross interpretations.
@@ -2203,17 +2204,17 @@ impl<'a> TermRewrite<'a> {
             || MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get)
     }
 
-    fn preserves_closed_value_conditional(&self, guard: &ConditionTerm) -> bool {
+    fn preserves_closed_value_conditional(&self, guard: &OldConditionTerm) -> bool {
         (self.integer_variables.is_some() || MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get))
             && crate::kernel::proof::fact_reasoning::literal_value_if_guard(guard).is_some()
     }
 
-    fn preserves_machine_conditional(&self, guard: &ConditionTerm) -> bool {
+    fn preserves_machine_conditional(&self, guard: &OldConditionTerm) -> bool {
         self.integer_exact.is_some()
             || (self.integer_variables.is_some()
                 && matches!(
                     guard,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
@@ -2240,7 +2241,7 @@ impl<'a> TermRewrite<'a> {
     #[cfg(test)]
     pub(crate) fn comparison_read_batch(
         proposition: &Proposition,
-        replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
+        replacements: impl IntoIterator<Item = (OldMachineTerm, OldMachineTerm)>,
     ) -> Option<Proposition> {
         Self::comparison_read_batch_with_algebraic(proposition, replacements, &HashMap::new())
     }
@@ -2249,8 +2250,8 @@ impl<'a> TermRewrite<'a> {
     /// library or enum value in `algebraic_reads` by the value stored there.
     pub(crate) fn comparison_read_batch_with_algebraic(
         proposition: &Proposition,
-        replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
-        algebraic_reads: &HashMap<(crate::kernel::ProgramPoint, Address), AlgebraicTerm>,
+        replacements: impl IntoIterator<Item = (OldMachineTerm, OldMachineTerm)>,
+        algebraic_reads: &HashMap<(crate::kernel::ProgramPoint, OldAddress), AlgebraicTerm>,
     ) -> Option<Proposition> {
         let mut named = BTreeMap::new();
         let mut reads = HashMap::new();
@@ -2261,7 +2262,7 @@ impl<'a> TermRewrite<'a> {
             if let Some(read) = crate::kernel::eval::viewed_as_memory_load(&source) {
                 let mut carriers = CarrierVariables::for_rewrite(true);
                 // Collect the explicit address, never its state contents.
-                if let MachineTerm::MemoryLoad(_, pointer, _) = &read {
+                if let OldMachineTerm::MemoryLoad(_, pointer, _) = &read {
                     collect_pointer_carriers(pointer, &mut carriers);
                 }
                 if carriers.exhausted() {
@@ -2272,18 +2273,18 @@ impl<'a> TermRewrite<'a> {
                     integer: carriers.integer,
                     algebraic: carriers.algebraic,
                 };
-                let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+                let OldMachineTerm::MemoryLoad(memory, pointer, kind) = read else {
                     unreachable!()
                 };
                 reads.insert(
                     (
                         memory.shared_memory().arena_id(),
-                        Address::from(pointer),
+                        OldAddress::from(pointer),
                         kind,
                     ),
                     (value, dependencies),
                 );
-            } else if let MachineTerm::Variable(variable) = source {
+            } else if let OldMachineTerm::Variable(variable) = source {
                 // Registered names use the exact read table, including its
                 // lexical address dependencies, just like structural reads.
                 named.insert(variable, TypedProgramValueReplacement::Bitvector(value));
@@ -2368,17 +2369,20 @@ impl<'a> TermRewrite<'a> {
     /// The rewrite by a true `Bool` equality `from == to` (rule L-Eq): the
     /// two have the same truth, so either may stand for the other wherever
     /// a `Bool` is read.
-    pub(crate) fn for_condition_exact(from: &'a ConditionTerm, to: &'a ConditionTerm) -> Self {
+    pub(crate) fn for_condition_exact(
+        from: &'a OldConditionTerm,
+        to: &'a OldConditionTerm,
+    ) -> Self {
         let mut rewrite = Self::empty();
         rewrite.condition_exact = Some((from, to));
         rewrite
     }
 
-    pub(crate) fn for_bits(from: &'a MachineTerm, to: &'a MachineTerm) -> Self {
+    pub(crate) fn for_bits(from: &'a OldMachineTerm, to: &'a OldMachineTerm) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
         Self::for_bits_with_budget(
-            MachineOperandView::Legacy(from),
-            MachineOperandView::Legacy(to),
+            MachineOperandView::Old(from),
+            MachineOperandView::Old(to),
             false,
         )
     }
@@ -2473,23 +2477,26 @@ impl<'a> TermRewrite<'a> {
     }
 
     /// The ordinary substitution profile with a retained replacement.
-    pub(crate) fn for_machine_operand(from: &'a MachineTerm, to: MachineOperandView<'a>) -> Self {
+    pub(crate) fn for_machine_operand(
+        from: &'a OldMachineTerm,
+        to: MachineOperandView<'a>,
+    ) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
-        Self::for_bits_with_budget(MachineOperandView::Legacy(from), to, false)
+        Self::for_bits_with_budget(MachineOperandView::Old(from), to, false)
     }
 
     /// Construct the checked machine rewrite used by range-fold laws. Setup
     /// collection and the subsequent traversal share the tactic's bounded
     /// work state, so a partial term is never accepted as a checked result.
-    pub(crate) fn for_bits_checked(from: &'a MachineTerm, to: &'a MachineTerm) -> Self {
-        Self::for_machine_operand_checked(from, MachineOperandView::Legacy(to))
+    pub(crate) fn for_bits_checked(from: &'a OldMachineTerm, to: &'a OldMachineTerm) -> Self {
+        Self::for_machine_operand_checked(from, MachineOperandView::Old(to))
     }
 
     pub(crate) fn for_machine_operand_checked(
-        from: &'a MachineTerm,
+        from: &'a OldMachineTerm,
         to: MachineOperandView<'a>,
     ) -> Self {
-        Self::for_machine_operands_checked(MachineOperandView::Legacy(from), to)
+        Self::for_machine_operands_checked(MachineOperandView::Old(from), to)
     }
 
     pub(crate) fn for_machine_operands_checked(
@@ -2557,8 +2564,8 @@ impl<'a> TermRewrite<'a> {
             // A cell holding a stored read of the same kind reads as it.
             let stored = match memory.memory().known_value(&rewritten) {
                 Some(
-                    ProgramValue::Int32(MachineTerm::Variable(stored))
-                    | ProgramValue::UInt32(MachineTerm::Variable(stored)),
+                    ProgramValue::Int32(OldMachineTerm::Variable(stored))
+                    | ProgramValue::UInt32(OldMachineTerm::Variable(stored)),
                 ) if crate::kernel::is_load_variable(&stored)
                     && crate::kernel::registered_load_kind_for_variable(&stored) == Some(kind) =>
                 {
@@ -2584,7 +2591,7 @@ impl<'a> TermRewrite<'a> {
         Some(rewritten)
     }
 
-    pub(crate) fn for_conditions(conditions: &'a HashMap<ConditionTerm, bool>) -> Self {
+    pub(crate) fn for_conditions(conditions: &'a HashMap<OldConditionTerm, bool>) -> Self {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
@@ -2647,7 +2654,7 @@ impl<'a> TermRewrite<'a> {
     /// establish positive equality only; an unsuccessful query stays unknown.
     /// Like cited conditions, this context never enters binder bodies.
     pub(in crate::kernel) fn for_conditions_with_graph(
-        conditions: &'a HashMap<ConditionTerm, bool>,
+        conditions: &'a HashMap<OldConditionTerm, bool>,
         graph: &'a crate::kernel::equality_graph::EqualityGraph,
     ) -> Self {
         let mut rewrite = Self::for_conditions(conditions);
@@ -2656,7 +2663,7 @@ impl<'a> TermRewrite<'a> {
     }
 
     pub(in crate::kernel) fn for_cited_conditions_with_context(
-        conditions: &'a HashMap<ConditionTerm, bool>,
+        conditions: &'a HashMap<OldConditionTerm, bool>,
         selected: &'a PureFactContext,
         ambient: &'a PureFactContext,
     ) -> Self {
@@ -2673,7 +2680,7 @@ impl<'a> TermRewrite<'a> {
     /// The explicitly selected premises may decide either polarity. Their
     /// graph is built once by the selecting operation, never by a lookup.
     pub(in crate::kernel) fn for_cited_conditions_with_graph(
-        conditions: &'a HashMap<ConditionTerm, bool>,
+        conditions: &'a HashMap<OldConditionTerm, bool>,
         selected: &'a crate::kernel::equality_graph::EqualityGraph,
         ambient: &'a crate::kernel::equality_graph::EqualityGraph,
     ) -> Self {
@@ -2682,14 +2689,17 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_offset_exact(from: &'a AddressOffset, to: &'a AddressOffset) -> Self {
+    pub(crate) fn for_pointer_offset_exact(
+        from: &'a OldAddressOffset,
+        to: &'a OldAddressOffset,
+    ) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_offset_exact = Some(OffsetReplacement::new(from, to));
         rewrite.enforce_integer_work_limit = true;
         rewrite
     }
 
-    pub(crate) fn for_pointer_exact(from: &'a Address, to: &'a Address) -> Self {
+    pub(crate) fn for_pointer_exact(from: &'a OldAddress, to: &'a OldAddress) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_exact = Some((from, to));
         rewrite.enforce_integer_work_limit = true;
@@ -2721,13 +2731,13 @@ impl<'a> TermRewrite<'a> {
     }
 
     /// Numeric address equality cannot substitute an allocation or bounds identity.
-    pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a Address) -> Self {
+    pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a OldAddress) -> Self {
         let mut rewrite = Self::for_pointer_variable(from, to);
         rewrite.pointer_addresses_only = true;
         rewrite
     }
 
-    pub(crate) fn for_pointer_variable(from: Variable, to: &'a Address) -> Self {
+    pub(crate) fn for_pointer_variable(from: Variable, to: &'a OldAddress) -> Self {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
@@ -3120,22 +3130,22 @@ impl<'a> TermRewrite<'a> {
     /// narrowing is a value of its own width; only its widening has a word.
     fn widened_narrowed_cast_carrier(
         &mut self,
-        original: &MachineTerm,
-        rewritten: &MachineTerm,
+        original: &OldMachineTerm,
+        rewritten: &OldMachineTerm,
         source: crate::kernel::MachineIntegerType,
         destination: crate::kernel::MachineIntegerType,
-    ) -> Option<MachineTerm> {
+    ) -> Option<OldMachineTerm> {
         if !crate::kernel::is_narrow_widening32(source, destination) {
             return None;
         }
         let (
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: original,
                 from: original_source,
                 to: original_destination,
             },
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: rewritten,
                 from: rewritten_source,
@@ -3156,11 +3166,11 @@ impl<'a> TermRewrite<'a> {
 
     fn narrowed_cast_carrier(
         &mut self,
-        original: &MachineTerm,
-        rewritten: &MachineTerm,
+        original: &OldMachineTerm,
+        rewritten: &OldMachineTerm,
         source: crate::kernel::MachineIntegerType,
         destination: crate::kernel::MachineIntegerType,
-    ) -> Option<MachineTerm> {
+    ) -> Option<OldMachineTerm> {
         let (bounds, carrier) =
             crate::kernel::assumptions::narrowed_cast_identity(rewritten, source, destination)?;
         if let Some(collected) = &mut self.collected_conditions {
@@ -3181,10 +3191,10 @@ impl<'a> TermRewrite<'a> {
         let conditions = self.conditions?;
         let (original_bounds, _) =
             crate::kernel::assumptions::narrowed_cast_identity(original, source, destination)?;
-        let holds = |condition: &ConditionTerm| {
+        let holds = |condition: &OldConditionTerm| {
             crate::instrumentation::record_deterministic_work(1);
             conditions.get(condition) == Some(&true)
-                || folded_machine_condition(condition.clone()) == ConditionTerm::Constant(true)
+                || folded_machine_condition(condition.clone()) == OldConditionTerm::Constant(true)
         };
         bounds
             .iter()
@@ -3199,7 +3209,7 @@ impl<'a> TermRewrite<'a> {
             .then_some(carrier)
     }
 
-    pub(crate) fn conditional_guards(proposition: &Proposition) -> Vec<ConditionTerm> {
+    pub(crate) fn conditional_guards(proposition: &Proposition) -> Vec<OldConditionTerm> {
         let empty = HashMap::new();
         let mut walker = TermRewrite::for_conditions(&empty);
         walker.collected_conditions = Some(Vec::new());
@@ -3356,7 +3366,7 @@ impl<'a> TermRewrite<'a> {
                     collect_stored_condition_carriers(condition, &mut variables)
                 }
                 Term::Bitvector32(value) => {
-                    collect_bitvector_carriers(value.native_compat(), &mut variables)
+                    collect_bitvector_carriers(value.old_form(), &mut variables)
                 }
                 // This exact rewrite does not enter binders or freshen names.
                 Term::Integer(value)
@@ -3368,7 +3378,7 @@ impl<'a> TermRewrite<'a> {
                         collect_mathematical_integer_carriers(root, &mut variables);
                     } else {
                         collect_integer_shared_carriers(
-                            &SharedIntegerTerm::from(value.native_compat().clone()),
+                            &SharedIntegerTerm::from(value.old_form().clone()),
                             &mut variables,
                             &mut seen,
                         );
@@ -3378,18 +3388,16 @@ impl<'a> TermRewrite<'a> {
                     if let Some(root) = offset.root() {
                         collect_retained_offset_carriers(root, &mut variables);
                     } else {
-                        collect_pointer_offset_carriers(offset.native_compat(), &mut variables);
+                        collect_pointer_offset_carriers(offset.old_form(), &mut variables);
                     }
                 }
                 Term::ProgramValue(value) => {
-                    collect_program_value_carriers(value.native_compat(), &mut variables);
+                    collect_program_value_carriers(value.old_form(), &mut variables);
                 }
                 Term::Sequence(value) => collect_sequence_carriers(value, &mut variables),
-                Term::Algebraic(value) => collect_algebraic_carriers_seen(
-                    value.native_compat(),
-                    &mut variables,
-                    &mut seen,
-                ),
+                Term::Algebraic(value) => {
+                    collect_algebraic_carriers_seen(value.old_form(), &mut variables, &mut seen)
+                }
                 Term::ArrayReadPoint(_) | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
@@ -3412,7 +3420,7 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn reserve_bitvector_variables_once(&mut self, term: &MachineTerm) {
+    fn reserve_bitvector_variables_once(&mut self, term: &OldMachineTerm) {
         if self.source_variables_reserved {
             return;
         }
@@ -3421,7 +3429,7 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn reserve_condition_variables_once(&mut self, condition: &ConditionTerm) {
+    fn reserve_condition_variables_once(&mut self, condition: &OldConditionTerm) {
         if self.source_variables_reserved {
             return;
         }
@@ -3672,12 +3680,12 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(&event.pointer, &mut variables);
-                    collect_program_value_carriers(event.value.native_compat(), &mut variables);
+                    collect_program_value_carriers(event.value.old_form(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
                     pointer: self.pointer(&event.pointer),
-                    value: self.value(event.value.native_compat()).into(),
+                    value: self.value(event.value.old_form()).into(),
                     id: event.id,
                     kind: event.kind,
                     value_type: event.value_type,
@@ -3726,11 +3734,11 @@ impl<'a> TermRewrite<'a> {
                 {
                     return proposition.clone();
                 }
-                self.reserve_condition_variables_once(condition.native_compat());
+                self.reserve_condition_variables_once(condition.old_form());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                let condition = self.condition(condition.native_compat());
+                let condition = self.condition(condition.old_form());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -3747,11 +3755,11 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(base, &mut variables);
-                    collect_bitvector_carriers(bytes.native_compat(), &mut variables);
+                    collect_bitvector_carriers(bytes.old_form(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 let base = self.pointer(base);
-                let bytes = self.bits(bytes.native_compat());
+                let bytes = self.bits(bytes.old_form());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -3914,13 +3922,13 @@ impl<'a> TermRewrite<'a> {
             return exhausted_term(term);
         }
         let result = match term {
-            Term::Algebraic(v) => Term::Algebraic(self.algebraic(v.native_compat()).into()),
+            Term::Algebraic(v) => Term::Algebraic(self.algebraic(v.old_form()).into()),
             Term::Bitvector32(v) => Term::Bitvector32(v.map_native(|word| self.bits(word))),
             Term::Integer(v) => Term::Integer(self.stored_integer(v)),
-            Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
+            Term::ProgramValue(v) => Term::ProgramValue(self.value(v.old_form()).into()),
             Term::Condition(v) => Term::Condition(
                 self.rewrite_stored_integer_comparison(v)
-                    .unwrap_or_else(|| self.condition(v.native_compat()).into()),
+                    .unwrap_or_else(|| self.condition(v.old_form()).into()),
             ),
             Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
             Term::Sequence(v)
@@ -4005,7 +4013,7 @@ impl<'a> TermRewrite<'a> {
                 }
             }
         }
-        self.integer(value.native_compat()).into()
+        self.integer(value.old_form()).into()
     }
 
     fn rewrite_stored_integer_root(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
@@ -4229,7 +4237,7 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_algebraic(term);
                 }
-                if !preserve && let ConditionTerm::Constant(value) = condition {
+                if !preserve && let OldConditionTerm::Constant(value) = condition {
                     return self.algebraic(if value { then_term } else { else_term });
                 }
                 let then_term = self.algebraic(then_term);
@@ -4369,7 +4377,7 @@ impl<'a> TermRewrite<'a> {
                         && v.address() != from.address()
                         && v.address().base == from.address().base
                         && ((matches!(from.address().base, AddressBase::Symbolic(_))
-                            && from.address().offset == AddressOffset::Constant(0))
+                            && matches!(from.address().offset.view(), OffsetView::Constant(0)))
                             || (from.address().base == AddressBase::ExternalArgument
                                 && to.address().base == AddressBase::ExternalArgument))
                 });
@@ -4402,7 +4410,7 @@ impl<'a> TermRewrite<'a> {
                         return None;
                     }
                     // Lexical substitution replaces a complete formal value.
-                    // Address-equality rewrites use a separate constructor.
+                    // OldAddress-equality rewrites use a separate constructor.
                     Some(OldPointer::new(to.clone(), v.program_type()))
                 }));
                 let adopted = if !v.bounds_are_known() {
@@ -4751,7 +4759,7 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_integer(input());
                 }
-                if !preserve && let ConditionTerm::Constant(value) = condition {
+                if !preserve && let OldConditionTerm::Constant(value) = condition {
                     let result = self.integer_shared(if value { then_term } else { else_term });
                     if self.checked_work_exhausted() {
                         return exhausted_integer(input());
@@ -5105,8 +5113,8 @@ impl<'a> TermRewrite<'a> {
         replacement
     }
 
-    pub(super) fn reduce_known_int32_match(value: &MachineTerm) -> Option<MachineTerm> {
-        let MachineTerm::AlgebraicMatch { scrutinee, arms } = value else {
+    pub(super) fn reduce_known_int32_match(value: &OldMachineTerm) -> Option<OldMachineTerm> {
+        let OldMachineTerm::AlgebraicMatch { scrutinee, arms } = value else {
             return None;
         };
         if !matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
@@ -5123,7 +5131,7 @@ impl<'a> TermRewrite<'a> {
         &mut self,
         scrutinee: &AlgebraicTerm,
         arms: &[AlgebraicBitvectorMatchArm],
-    ) -> Option<MachineTerm> {
+    ) -> Option<OldMachineTerm> {
         let fields = scrutinee.checked_constructor_fields()?;
         let AlgebraicTermNode::Constructor { variant, .. } = &scrutinee.node else {
             return None;
@@ -5320,7 +5328,7 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn reserve_bitvector_scope_variables(&mut self, term: &MachineTerm) {
+    fn reserve_bitvector_scope_variables(&mut self, term: &OldMachineTerm) {
         self.ensure_replacement_carriers();
         if self.source_variables_reserved {
             return;
@@ -5529,7 +5537,7 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    fn pointer(&mut self, p: &Address) -> Address {
+    fn pointer(&mut self, p: &OldAddress) -> OldAddress {
         if self.checked_work_exhausted() {
             return exhausted_pointer();
         }
@@ -5542,20 +5550,20 @@ impl<'a> TermRewrite<'a> {
         }
         // A full value equality `p == q` also substitutes `p + d` by `q + d`
         // when `p` is the base of its block: the displaced pointer is formed
-        // from that same value. Address equality alone never moves a pointer
+        // from that same value. OldAddress equality alone never moves a pointer
         // to another origin, so this rule needs the full value equality.
         if let Some((from, to)) = self.pointer_exact
             && self.pointer_value_exact.is_some()
             && !self.source_disabled
             && p.base == from.base
-            && from.offset == AddressOffset::Constant(0)
+            && matches!(from.offset.view(), OffsetView::Constant(0))
             && matches!(from.base, AddressBase::Load(_))
         {
             self.changed = true;
             let displacement = self.offset(&p.offset);
-            return Address {
+            return OldAddress {
                 base: to.base.clone(),
-                offset: AddressOffset::add(to.offset.clone(), displacement),
+                offset: OldAddressOffset::add(to.offset.clone(), displacement),
             };
         }
         // A read depends on its selected address. Substitute full pointers
@@ -5575,7 +5583,7 @@ impl<'a> TermRewrite<'a> {
             let offset = self.offset(&read.displacement);
             if let Some(block) = self.pointer_origin_cache.get(&key) {
                 self.changed |= block != &p.base;
-                return Address {
+                return OldAddress {
                     base: block.clone(),
                     offset,
                 };
@@ -5585,12 +5593,12 @@ impl<'a> TermRewrite<'a> {
                 self.changed = true;
                 // Rewriting changes the selected address, not the read into
                 // its stored value. Keep the immutable defining state.
-                Address::version_read_at(&read.defining_memory, Some(&read.point), &address).base
+                OldAddress::version_read_at(&read.defining_memory, Some(&read.point), &address).base
             } else {
                 p.base.clone()
             };
             self.pointer_origin_cache.insert(key, block.clone());
-            return Address {
+            return OldAddress {
                 base: block,
                 offset,
             };
@@ -5599,7 +5607,7 @@ impl<'a> TermRewrite<'a> {
         // binding, never in numeric pointer rewrites.
         if let AddressBase::ExternalObject(variable) = &p.base {
             if let Some(mapped) = self.scope.program_values.get(variable) {
-                return Address {
+                return OldAddress {
                     base: AddressBase::ExternalObject(*mapped),
                     offset: self.offset(&p.offset),
                 };
@@ -5611,9 +5619,9 @@ impl<'a> TermRewrite<'a> {
             {
                 let root = replacement.provenance().clone();
                 self.changed = true;
-                return Address {
+                return OldAddress {
                     base: root.base,
-                    offset: AddressOffset::add(root.offset, self.offset(&p.offset)),
+                    offset: OldAddressOffset::add(root.offset, self.offset(&p.offset)),
                 };
             }
             if let Some((from, to)) = self.pointer_variable
@@ -5621,9 +5629,9 @@ impl<'a> TermRewrite<'a> {
             {
                 let root = to.object_identity();
                 self.changed = true;
-                return Address {
+                return OldAddress {
                     base: root.base,
-                    offset: AddressOffset::add(root.offset, self.offset(&p.offset)),
+                    offset: OldAddressOffset::add(root.offset, self.offset(&p.offset)),
                 };
             }
         }
@@ -5635,7 +5643,7 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: match &p.base {
                     AddressBase::FunctionSymbolic(_) => AddressBase::FunctionSymbolic(mapped),
                     _ => AddressBase::Symbolic(mapped),
@@ -5653,9 +5661,9 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: replacement.base.clone(),
-                offset: AddressOffset::add(replacement.offset.clone(), offset),
+                offset: OldAddressOffset::add(replacement.offset.clone(), offset),
             };
         }
         // A loop state's pointer value is a symbolic base plus its
@@ -5664,7 +5672,7 @@ impl<'a> TermRewrite<'a> {
         if let Some((from, to)) = self.pointer_value_exact
             && !self.source_disabled
             && matches!(from.address().base, AddressBase::Symbolic(_))
-            && from.address().offset == AddressOffset::Constant(0)
+            && matches!(from.address().offset.view(), OffsetView::Constant(0))
             && p.base == from.address().base
         {
             self.changed = true;
@@ -5672,9 +5680,9 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: to.address().base.clone(),
-                offset: AddressOffset::add(to.address().offset.clone(), offset),
+                offset: OldAddressOffset::add(to.address().offset.clone(), offset),
             };
         }
         if let Some((from, to)) = self.pointer_variable
@@ -5685,16 +5693,16 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: to.base.clone(),
-                offset: AddressOffset::add(to.offset.clone(), offset),
+                offset: OldAddressOffset::add(to.offset.clone(), offset),
             };
         }
         let offset = self.offset(&p.offset);
         if self.checked_work_exhausted() {
             return exhausted_pointer();
         }
-        Address {
+        OldAddress {
             base: match &p.base {
                 AddressBase::Symbolic(variable)
                     if self.resolve_registered_loads
@@ -5733,7 +5741,7 @@ impl<'a> TermRewrite<'a> {
                         // Use the same null representation as the original
                         // cast, keeping the displacement outside this block.
                         let result = if let Some(bits) = rewritten.integer_address_bits() {
-                            Address::from_integer_address(bits.clone()).base
+                            OldAddress::from_integer_address(bits.clone()).base
                         } else {
                             AddressBase::PureFunctionApplication(rewritten)
                         };
@@ -5751,7 +5759,7 @@ impl<'a> TermRewrite<'a> {
         // Root atoms retain the cheap native rewrite path without exporting.
         if let Some(atom) = operand
             .literal()
-            .or_else(|| operand.variable().map(|v| MachineTerm::Variable(*v)))
+            .or_else(|| operand.variable().map(|v| OldMachineTerm::Variable(*v)))
         {
             return SharedMachineIntegerTerm::index(value.ty(), self.bits(&atom));
         }
@@ -5773,7 +5781,7 @@ impl<'a> TermRewrite<'a> {
         value: SharedMachineIntegerTerm,
         byte_width: i64,
         wide: Option<bool>,
-    ) -> AddressOffset {
+    ) -> OldAddressOffset {
         let view = value.operand_view();
         // Native input and fixed-size leaves use the existing constant policy.
         let native = view
@@ -5787,11 +5795,13 @@ impl<'a> TermRewrite<'a> {
                 native.into_owned()
             };
             return match (wide, self.resolve_registered_loads) {
-                (None, true) => AddressOffset::scale_int32(native, byte_width),
-                (None, false) => AddressOffset::scaled_int32_node(native, byte_width),
-                (Some(unsigned), true) => AddressOffset::scale_int64(native, byte_width, unsigned),
+                (None, true) => OldAddressOffset::scale_int32(native, byte_width),
+                (None, false) => OldAddressOffset::scaled_int32_node(native, byte_width),
+                (Some(unsigned), true) => {
+                    OldAddressOffset::scale_int64(native, byte_width, unsigned)
+                }
                 (Some(unsigned), false) => {
-                    AddressOffset::scaled_int64_node(native, byte_width, unsigned)
+                    OldAddressOffset::scaled_int64_node(native, byte_width, unsigned)
                 }
             };
         }
@@ -5822,12 +5832,8 @@ impl<'a> TermRewrite<'a> {
             }
         }
         match wide {
-            None => AddressOffset::Int32Scaled { value, byte_width },
-            Some(unsigned) => AddressOffset::Int64Scaled {
-                value,
-                byte_width,
-                unsigned,
-            },
+            None => OldAddressOffset::int32_scaled(value, byte_width),
+            Some(unsigned) => OldAddressOffset::int64_scaled(value, byte_width, unsigned),
         }
     }
 
@@ -5836,7 +5842,7 @@ impl<'a> TermRewrite<'a> {
         value: &SharedMachineIntegerTerm,
         byte_width: i64,
         wide: Option<bool>,
-    ) -> AddressOffset {
+    ) -> OldAddressOffset {
         let value = self.index_bits(value);
         let bounded = wide == Some(true)
             && self.conditions.is_some_and(|conditions| {
@@ -5855,14 +5861,11 @@ impl<'a> TermRewrite<'a> {
             } else {
                 SharedMachineIntegerTerm::index(
                     MachineIntegerType::Int32,
-                    MachineTerm::uint32_from_64(value.value().clone()),
+                    OldMachineTerm::uint32_from_64(value.value().clone()),
                 )
             };
             // The checked narrowing keeps a written scaled node.
-            AddressOffset::Int32Scaled {
-                value: narrowed,
-                byte_width,
-            }
+            OldAddressOffset::int32_scaled(narrowed, byte_width)
         } else {
             self.rebuilt_index(value, byte_width, wide)
         }
@@ -5870,12 +5873,12 @@ impl<'a> TermRewrite<'a> {
 
     fn contract_offset(&mut self, offset: &StoredPointerOffset) -> StoredPointerOffset {
         let Some(source) = offset.root() else {
-            return self.offset(offset.native_compat()).into();
+            return self.offset(offset.old_form()).into();
         };
         let replacement = match &self.pointer_offset_exact {
             Some(exact) if self.pointer_value_exact.is_none() || !self.source_disabled => {
                 let Some(retained) = exact.retained() else {
-                    return self.offset(offset.native_compat()).into();
+                    return self.offset(offset.old_form()).into();
                 };
                 Some(retained.clone())
             }
@@ -5957,7 +5960,7 @@ impl<'a> TermRewrite<'a> {
         (!self.checked_work_exhausted()).then_some(root).ok_or(())
     }
 
-    fn offset(&mut self, v: &AddressOffset) -> AddressOffset {
+    fn offset(&mut self, v: &OldAddressOffset) -> OldAddressOffset {
         if let Some(exact) = &self.pointer_offset_exact
             && v == exact.from
             && (self.pointer_value_exact.is_none() || !self.source_disabled)
@@ -5968,32 +5971,32 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_offset();
         }
-        let result = match v {
-            AddressOffset::Constant(_) => v.clone(),
-            AddressOffset::Variable(variable)
-                if self.resolve_registered_loads && crate::kernel::is_load_variable(variable) =>
+        let result = match v.view() {
+            OffsetView::Constant(_) => v.clone(),
+            OffsetView::Variable(variable)
+                if self.resolve_registered_loads && crate::kernel::is_load_variable(&variable) =>
             {
-                self.rewrite_registered_load(*variable)
-                    .map_or_else(|| v.clone(), AddressOffset::Variable)
+                self.rewrite_registered_load(variable)
+                    .map_or_else(|| v.clone(), OldAddressOffset::variable)
             }
-            AddressOffset::Variable(_) => v.clone(),
-            AddressOffset::Add(a, b) => {
+            OffsetView::Variable(_) => v.clone(),
+            OffsetView::Add(a, b) => {
                 let left = self.offset(a);
                 let right = self.offset(b);
                 if self.resolve_registered_loads {
-                    AddressOffset::add(left, right)
+                    OldAddressOffset::add(left, right)
                 } else {
-                    AddressOffset::Add(Box::new(left), Box::new(right))
+                    OldAddressOffset::raw_add(left, right)
                 }
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
-                self.rewrite_offset_index(value, *byte_width, None)
+            OffsetView::Int32Scaled { index, byte_width } => {
+                self.rewrite_offset_index(&index, byte_width, None)
             }
-            AddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned,
-            } => self.rewrite_offset_index(value, *byte_width, Some(*unsigned)),
+            } => self.rewrite_offset_index(&index, byte_width, Some(unsigned)),
         };
         if self.checked_work_exhausted() {
             exhausted_offset()
@@ -6001,7 +6004,7 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
-    fn cited_condition_value(&self, condition: &ConditionTerm) -> Option<bool> {
+    fn cited_condition_value(&self, condition: &OldConditionTerm) -> Option<bool> {
         self.conditions
             .and_then(|conditions| {
                 conditions
@@ -6047,19 +6050,19 @@ impl<'a> TermRewrite<'a> {
             })
     }
 
-    pub(crate) fn condition(&mut self, v: &ConditionTerm) -> ConditionTerm {
+    pub(crate) fn condition(&mut self, v: &OldConditionTerm) -> OldConditionTerm {
         self.reserve_condition_variables_once(v);
         if self.checked_work_exhausted() {
-            return ConditionTerm::Constant(false);
+            return OldConditionTerm::Constant(false);
         }
         self.visit();
         if self.checked_work_exhausted() {
-            return ConditionTerm::Constant(false);
+            return OldConditionTerm::Constant(false);
         }
         // Only the explicitly cited facts can refute a condition here. The
         // shared graph makes address-origin annotations numerically transparent.
         if let Some(value) = self.cited_condition_value(v) {
-            return ConditionTerm::Constant(value);
+            return OldConditionTerm::Constant(value);
         }
         if let Some((from, to)) = self.condition_exact
             && v == from
@@ -6072,14 +6075,14 @@ impl<'a> TermRewrite<'a> {
         // `Bool` conditional's condition.
         if let Some(conditions) = &mut self.collected_conditions {
             match v {
-                ConditionTerm::Variable(_) | ConditionTerm::BoolApplication(_) => {
+                OldConditionTerm::Variable(_) | OldConditionTerm::BoolApplication(_) => {
                     conditions.push(v.clone())
                 }
                 // Each part of a `Bool` conditional or equality guards it.
                 v if v.is_bool_value_form() => conditions.extend(
                     v.bool_children()
                         .filter(|child| {
-                            !matches!(child, ConditionTerm::Constant(_))
+                            !matches!(child, OldConditionTerm::Constant(_))
                                 && !child.is_bool_value_form()
                         })
                         .cloned(),
@@ -6089,31 +6092,31 @@ impl<'a> TermRewrite<'a> {
         }
         // A `Bool` binder (Stage 5) is renamed with its scope and replaced
         // by the truth of the `Bool` word it is instantiated with.
-        if let ConditionTerm::Variable(variable) = v {
+        if let OldConditionTerm::Variable(variable) = v {
             if let Some(mapped) = self.scope.program_values.get(variable) {
-                return ConditionTerm::Variable(*mapped);
+                return OldConditionTerm::Variable(*mapped);
             }
             if let Some(replacements) = &self.typed_variables
                 && let Some(TypedProgramValueReplacement::Bitvector(replacement)) =
                     replacements.program_values.get(variable)
             {
                 self.changed = true;
-                return ConditionTerm::truth_of_bool_word(replacement);
+                return OldConditionTerm::truth_of_bool_word(replacement);
             }
         }
         let result = match v {
-            ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => v.clone(),
-            ConditionTerm::AlgebraicEqual(a, b) => ConditionTerm::AlgebraicEqual(
+            OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => v.clone(),
+            OldConditionTerm::AlgebraicEqual(a, b) => OldConditionTerm::AlgebraicEqual(
                 Box::new(self.algebraic(a)),
                 Box::new(self.algebraic(b)),
             ),
-            ConditionTerm::Float32(condition) => {
-                ConditionTerm::Float32(condition.map_bitvector_terms(|b| self.bits(b)))
+            OldConditionTerm::Float32(condition) => {
+                OldConditionTerm::Float32(condition.map_bitvector_terms(|b| self.bits(b)))
             }
-            ConditionTerm::Float64(condition) => {
-                ConditionTerm::Float64(condition.map_bitvector_terms(|b| self.bits(b)))
+            OldConditionTerm::Float64(condition) => {
+                OldConditionTerm::Float64(condition.map_bitvector_terms(|b| self.bits(b)))
             }
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
                 left,
@@ -6121,7 +6124,7 @@ impl<'a> TermRewrite<'a> {
             } if self.preserves_algebraic_matches()
                 && (is_simple_int32_match(left) || is_simple_int32_match(right)) =>
             {
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: *relation,
                     left: Box::new(
@@ -6132,7 +6135,7 @@ impl<'a> TermRewrite<'a> {
                     ),
                 }
             }
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: a,
@@ -6142,8 +6145,8 @@ impl<'a> TermRewrite<'a> {
                 let right = self.bits(b);
                 if matches!(
                     (&left, &right),
-                    (MachineTerm::IntegerAddress(_, _), zero)
-                        | (zero, MachineTerm::IntegerAddress(_, _))
+                    (OldMachineTerm::IntegerAddress(_, _), zero)
+                        | (zero, OldMachineTerm::IntegerAddress(_, _))
                         if zero.uint64_as_const() == Some(0)
                 ) {
                     // Rewriting can expose a null address after the original
@@ -6151,11 +6154,11 @@ impl<'a> TermRewrite<'a> {
                     // directly written zero-address comparison, then consume
                     // only the selected conditions for that relation.
                     self.changed = true;
-                    let canonical = ConditionTerm::int64_equal(left, right);
+                    let canonical = OldConditionTerm::int64_equal(left, right);
                     self.cited_condition_value(&canonical)
-                        .map_or(canonical, ConditionTerm::Constant)
+                        .map_or(canonical, OldConditionTerm::Constant)
                 } else {
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         left: Box::new(left),
@@ -6163,7 +6166,7 @@ impl<'a> TermRewrite<'a> {
                     }
                 }
             }
-            ConditionTerm::PointerEqual(a, b) => {
+            OldConditionTerm::PointerEqual(a, b) => {
                 let ProgramValue::Pointer(a) = self.value(&ProgramValue::Pointer((**a).clone()))
                 else {
                     unreachable!()
@@ -6173,17 +6176,17 @@ impl<'a> TermRewrite<'a> {
                     unreachable!()
                 };
                 let canonical = |value: OldPointer| {
-                    value.map_addresses(|p| Address {
+                    value.map_addresses(|p| OldAddress {
                         base: p.base.clone(),
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
                     })
                 };
-                ConditionTerm::pointer_equal(canonical(a), canonical(b))
+                OldConditionTerm::pointer_equal(canonical(a), canonical(b))
             }
-            ConditionTerm::AddressEqual(a, b) => {
-                ConditionTerm::AddressEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
+            OldConditionTerm::AddressEqual(a, b) => {
+                OldConditionTerm::AddressEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
             }
-            ConditionTerm::AddressOffsetEqual(a, b) => ConditionTerm::AddressOffsetEqual(
+            OldConditionTerm::AddressOffsetEqual(a, b) => OldConditionTerm::AddressOffsetEqual(
                 Box::new(self.offset(a)),
                 Box::new(self.offset(b)),
             ),
@@ -6192,21 +6195,23 @@ impl<'a> TermRewrite<'a> {
                 let left = self.integer_with_match_retention(a, retain_match).into();
                 let right = self.integer_with_match_retention(b, retain_match).into();
                 match v {
-                    ConditionTerm::IntegerLessThan(..) => {
-                        ConditionTerm::IntegerLessThan(left, right)
+                    OldConditionTerm::IntegerLessThan(..) => {
+                        OldConditionTerm::IntegerLessThan(left, right)
                     }
-                    ConditionTerm::IntegerLessEqual(..) => {
-                        ConditionTerm::IntegerLessEqual(left, right)
+                    OldConditionTerm::IntegerLessEqual(..) => {
+                        OldConditionTerm::IntegerLessEqual(left, right)
                     }
-                    ConditionTerm::IntegerGreaterThan(..) => {
-                        ConditionTerm::IntegerGreaterThan(left, right)
+                    OldConditionTerm::IntegerGreaterThan(..) => {
+                        OldConditionTerm::IntegerGreaterThan(left, right)
                     }
-                    ConditionTerm::IntegerGreaterEqual(..) => {
-                        ConditionTerm::IntegerGreaterEqual(left, right)
+                    OldConditionTerm::IntegerGreaterEqual(..) => {
+                        OldConditionTerm::IntegerGreaterEqual(left, right)
                     }
-                    ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
-                    ConditionTerm::IntegerNotEqual(..) => {
-                        ConditionTerm::IntegerNotEqual(left, right)
+                    OldConditionTerm::IntegerEqual(..) => {
+                        OldConditionTerm::IntegerEqual(left, right)
+                    }
+                    OldConditionTerm::IntegerNotEqual(..) => {
+                        OldConditionTerm::IntegerNotEqual(left, right)
                     }
                     _ => unreachable!("Integer comparison"),
                 }
@@ -6221,12 +6226,12 @@ impl<'a> TermRewrite<'a> {
                 }
                 let mut children = children.into_iter();
                 let rewritten = match v {
-                    ConditionTerm::BoolApplication(application) => {
+                    OldConditionTerm::BoolApplication(application) => {
                         let mut arguments = Vec::with_capacity(application.arguments().len());
                         for argument in application.arguments() {
                             arguments.push(self.argument(argument));
                         }
-                        ConditionTerm::BoolApplication(
+                        OldConditionTerm::BoolApplication(
                             crate::kernel::SharedPureApplication::intern(
                                 application.name().to_owned(),
                                 arguments,
@@ -6237,20 +6242,20 @@ impl<'a> TermRewrite<'a> {
                     // made an equality's operands one, leaves what the
                     // folding constructors would have built, as the word
                     // conditional above does.
-                    ConditionTerm::BoolIf { .. } if self.integer_exact.is_none() => {
+                    OldConditionTerm::BoolIf { .. } if self.integer_exact.is_none() => {
                         let condition = children.next().expect("a condition");
                         let then_condition = children.next().expect("a then branch");
                         let else_condition = children.next().expect("an else branch");
-                        ConditionTerm::bool_if(
+                        OldConditionTerm::bool_if(
                             folded_machine_condition(condition),
                             then_condition,
                             else_condition,
                         )
                     }
-                    ConditionTerm::BoolEqual(..) if self.integer_exact.is_none() => {
+                    OldConditionTerm::BoolEqual(..) if self.integer_exact.is_none() => {
                         let left = children.next().expect("a left operand");
                         let right = children.next().expect("a right operand");
-                        ConditionTerm::bool_equal(left, right)
+                        OldConditionTerm::bool_equal(left, right)
                     }
                     v => v
                         .map_bool_value_form(
@@ -6260,7 +6265,7 @@ impl<'a> TermRewrite<'a> {
                         .expect("a `Bool` value form maps"),
                 };
                 if self.checked_work_exhausted() {
-                    return ConditionTerm::Constant(false);
+                    return OldConditionTerm::Constant(false);
                 }
                 // A cited `Bool` value the rewrite of its parts produced,
                 // `f(if f(x) { x } else { y })` read under `f(x)`, is
@@ -6268,7 +6273,7 @@ impl<'a> TermRewrite<'a> {
                 if rewritten != *v
                     && let Some(value) = self.cited_condition_value(&rewritten)
                 {
-                    return ConditionTerm::Constant(value);
+                    return OldConditionTerm::Constant(value);
                 }
                 rewritten
             }
@@ -6288,16 +6293,16 @@ impl<'a> TermRewrite<'a> {
         // substitution path's constant result without simplifying symbolic
         // operands or revisiting an arithmetic prefix.
         if self.comparison_reads.is_some()
-            && let ConditionTerm::Compare {
+            && let OldConditionTerm::Compare {
                 format,
                 relation,
                 left,
                 right,
             } = &result
-            && matches!(left.as_ref(), MachineTerm::Constant { .. })
-            && matches!(right.as_ref(), MachineTerm::Constant { .. })
+            && matches!(left.as_ref(), OldMachineTerm::Constant { .. })
+            && matches!(right.as_ref(), OldMachineTerm::Constant { .. })
         {
-            return ConditionTerm::machine_compare(
+            return OldConditionTerm::machine_compare(
                 *format,
                 *relation,
                 left.as_ref().clone(),
@@ -6308,7 +6313,7 @@ impl<'a> TermRewrite<'a> {
             if let Some(conditions) = &mut self.collected_conditions {
                 // Planner output: the public guard carrier still owns native
                 // operands. Checking below never constructs this output.
-                conditions.push(ConditionTerm::signed_add_overflows(
+                conditions.push(OldConditionTerm::signed_add_overflows(
                     left.structural_value().clone(),
                     right.structural_value().clone(),
                 ));
@@ -6322,8 +6327,8 @@ impl<'a> TermRewrite<'a> {
                 })
             };
             let known_false = if let (Some(a), Some(b)) = (leaf(&left), leaf(&right)) {
-                let guard = ConditionTerm::signed_add_overflows(a, b);
-                guard == ConditionTerm::Constant(false)
+                let guard = OldConditionTerm::signed_add_overflows(a, b);
+                guard == OldConditionTerm::Constant(false)
                     || self
                         .conditions
                         .is_some_and(|conditions| conditions.get(&guard) == Some(&false))
@@ -6333,7 +6338,7 @@ impl<'a> TermRewrite<'a> {
                     let mut index = HashMap::<_, Vec<_>>::new();
                     for (condition, value) in conditions {
                         crate::instrumentation::record_deterministic_work(1);
-                        if let ConditionTerm::Overflows {
+                        if let OldConditionTerm::Overflows {
                             format: MachineIntegerType::Int32,
                             op: crate::kernel::OverflowOperation::Add,
                             left,
@@ -6341,8 +6346,8 @@ impl<'a> TermRewrite<'a> {
                         } = condition
                         {
                             let key = (
-                                fingerprint(MachineOperandView::Legacy(left)),
-                                fingerprint(MachineOperandView::Legacy(right)),
+                                fingerprint(MachineOperandView::Old(left)),
+                                fingerprint(MachineOperandView::Old(right)),
                             );
                             index.entry(key).or_default().push((
                                 left.as_ref().clone(),
@@ -6362,12 +6367,12 @@ impl<'a> TermRewrite<'a> {
                         !value
                             && crate::kernel::machine_operand_syntax_cmp(
                                 left.operand_view(),
-                                MachineOperandView::Legacy(a),
+                                MachineOperandView::Old(a),
                             )
                             .is_eq()
                             && crate::kernel::machine_operand_syntax_cmp(
                                 right.operand_view(),
-                                MachineOperandView::Legacy(b),
+                                MachineOperandView::Old(b),
                             )
                             .is_eq()
                     })
@@ -6376,7 +6381,7 @@ impl<'a> TermRewrite<'a> {
                 false
             };
             if known_false {
-                return ConditionTerm::Constant(true);
+                return OldConditionTerm::Constant(true);
             }
         }
         if let Some(guard) = result.pointer_offset_uint64_association_guard() {
@@ -6384,30 +6389,30 @@ impl<'a> TermRewrite<'a> {
                 conditions.push(guard.clone());
             }
             // One exact lookup, keyed by the guard the regrouped sum spells.
-            if guard == ConditionTerm::Constant(true)
+            if guard == OldConditionTerm::Constant(true)
                 || self
                     .conditions
                     .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
             {
-                return ConditionTerm::Constant(true);
+                return OldConditionTerm::Constant(true);
             }
         }
-        if let ConditionTerm::Compare {
+        if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: a,
             right: b,
         } = &result
         {
-            let le = ConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
-            let lt = ConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());
+            let le = OldConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
+            let lt = OldConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.extend([le.clone(), lt.clone()]);
             }
             if self.conditions.is_some_and(|conditions| {
                 conditions.get(&le) == Some(&true) && conditions.get(&lt) == Some(&false)
             }) {
-                return ConditionTerm::Constant(true);
+                return OldConditionTerm::Constant(true);
             }
         }
         if let Some(guards) = result.uint64_index_order_guards() {
@@ -6416,10 +6421,11 @@ impl<'a> TermRewrite<'a> {
             }
             if self.conditions.is_some_and(|conditions| {
                 guards.iter().all(|guard| {
-                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                    *guard == OldConditionTerm::Constant(true)
+                        || conditions.get(guard) == Some(&true)
                 })
             }) {
-                return ConditionTerm::Constant(true);
+                return OldConditionTerm::Constant(true);
             }
         }
         if let Some(guard) = result
@@ -6434,7 +6440,7 @@ impl<'a> TermRewrite<'a> {
                 .conditions
                 .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
             {
-                return ConditionTerm::Constant(true);
+                return OldConditionTerm::Constant(true);
             }
         }
         if let Some(guards) = result
@@ -6446,10 +6452,11 @@ impl<'a> TermRewrite<'a> {
             }
             if self.conditions.is_some_and(|conditions| {
                 guards.iter().all(|guard| {
-                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                    *guard == OldConditionTerm::Constant(true)
+                        || conditions.get(guard) == Some(&true)
                 })
             }) {
-                return ConditionTerm::Constant(true);
+                return OldConditionTerm::Constant(true);
             }
         }
         if let Some(guards) = result.nonnegative_division_bound_guards() {
@@ -6458,31 +6465,34 @@ impl<'a> TermRewrite<'a> {
             }
             if self.conditions.is_some_and(|conditions| {
                 guards.iter().all(|guard| {
-                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                    *guard == OldConditionTerm::Constant(true)
+                        || conditions.get(guard) == Some(&true)
                 })
             }) {
-                return ConditionTerm::Constant(true);
+                return OldConditionTerm::Constant(true);
             }
         }
         if self.checked_work_exhausted() {
-            ConditionTerm::Constant(false)
+            OldConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
-            ConditionTerm::PointerEqual(left, right) => {
+            OldConditionTerm::PointerEqual(left, right) => {
                 let matches = self.pointer_context.map_or_else(
                     || left.same_provenance_as(right),
                     |context| context.pointer_provenance_match(left, right),
                 );
                 matches && graph.are_equal(left.address(), right.address())
             }
-            ConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
-            ConditionTerm::AddressOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
-            ConditionTerm::Compare {
+            OldConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
+            OldConditionTerm::AddressOffsetEqual(left, right) => {
+                graph.are_offsets_equal(left, right)
+            }
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             } => graph.are_int32_equal(left, right),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left,
@@ -6490,7 +6500,7 @@ impl<'a> TermRewrite<'a> {
             } => graph.are_uint64_equal(left, right),
             _ => false,
         }) {
-            ConditionTerm::Constant(true)
+            OldConditionTerm::Constant(true)
         } else {
             result
         }
@@ -6516,16 +6526,16 @@ impl<'a> TermRewrite<'a> {
     /// Visit only the selected syntax; no source is exported for inspection.
     fn matches_machine_source(
         &mut self,
-        native: &MachineTerm,
+        native: &OldMachineTerm,
         source: MachineOperandView<'_>,
     ) -> bool {
         fn same_payload(
             rewrite: &mut TermRewrite<'_>,
-            left: &MachineTerm,
-            right: &MachineTerm,
+            left: &OldMachineTerm,
+            right: &OldMachineTerm,
         ) -> bool {
-            fn native(view: MachineOperandView<'_>) -> &MachineTerm {
-                let MachineOperandView::Legacy(term) = view else {
+            fn native(view: MachineOperandView<'_>) -> &OldMachineTerm {
+                let MachineOperandView::Old(term) = view else {
                     unreachable!("native syntax child")
                 };
                 term
@@ -6547,8 +6557,8 @@ impl<'a> TermRewrite<'a> {
                 if std::mem::discriminant(left) != std::mem::discriminant(right) {
                     return false;
                 }
-                let a = MachineOperandView::Legacy(left);
-                let b = MachineOperandView::Legacy(right);
+                let a = MachineOperandView::Old(left);
+                let b = MachineOperandView::Old(right);
                 if let (Some((af, ao, av)), Some((bf, bo, bv))) = (a.binary(), b.binary()) {
                     if (af, ao) != (bf, bo) {
                         return false;
@@ -6572,11 +6582,11 @@ impl<'a> TermRewrite<'a> {
                 }
                 match (left, right) {
                     (
-                        MachineTerm::ClickFunctionApplication {
+                        OldMachineTerm::ClickFunctionApplication {
                             name: a,
                             arguments: av,
                         },
-                        MachineTerm::ClickFunctionApplication {
+                        OldMachineTerm::ClickFunctionApplication {
                             name: b,
                             arguments: bv,
                         },
@@ -6588,12 +6598,12 @@ impl<'a> TermRewrite<'a> {
                         }
                     }
                     (
-                        MachineTerm::If {
+                        OldMachineTerm::If {
                             condition: a,
                             then_term: at,
                             else_term: af,
                         },
-                        MachineTerm::If {
+                        OldMachineTerm::If {
                             condition: b,
                             then_term: bt,
                             else_term: bf,
@@ -6609,7 +6619,7 @@ impl<'a> TermRewrite<'a> {
             true
         }
         let MachineOperandView::Shared(root) = source else {
-            let MachineOperandView::Legacy(source) = source else {
+            let MachineOperandView::Old(source) = source else {
                 unreachable!()
             };
             if same_payload(self, native, source) {
@@ -6620,14 +6630,16 @@ impl<'a> TermRewrite<'a> {
             // match that name to the exact structural read selected by the
             // caller, without choosing another state or resolving a value.
             let (variable, read) = match (native, source) {
-                (MachineTerm::Variable(variable), read @ MachineTerm::MemoryLoad(..))
-                | (read @ MachineTerm::MemoryLoad(..), MachineTerm::Variable(variable)) => {
+                (OldMachineTerm::Variable(variable), read @ OldMachineTerm::MemoryLoad(..))
+                | (read @ OldMachineTerm::MemoryLoad(..), OldMachineTerm::Variable(variable)) => {
                     (variable, read)
                 }
                 _ => return false,
             };
-            return crate::kernel::eval::viewed_as_memory_load(&MachineTerm::Variable(*variable))
-                .as_ref()
+            return crate::kernel::eval::viewed_as_memory_load(&OldMachineTerm::Variable(
+                *variable,
+            ))
+            .as_ref()
                 == Some(read);
         };
         let mut pending = vec![(native, root)];
@@ -6636,15 +6648,15 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return false;
             }
-            let view = MachineOperandView::Legacy(native);
+            let view = MachineOperandView::Old(native);
             match shared.node() {
                 KernelTermNode::ThreadHandle(id) => {
-                    if *native != MachineTerm::ThreadHandle(*id) {
+                    if *native != OldMachineTerm::ThreadHandle(*id) {
                         return false;
                     }
                 }
                 KernelTermNode::Match(matched) => {
-                    let MachineTerm::AlgebraicMatch { scrutinee, arms } = native else {
+                    let OldMachineTerm::AlgebraicMatch { scrutinee, arms } = native else {
                         return false;
                     };
                     let mut export = KernelTermExport::default();
@@ -6672,7 +6684,7 @@ impl<'a> TermRewrite<'a> {
                     }
                 }
                 KernelTermNode::MemoryLoad { .. } => {
-                    let MachineTerm::MemoryLoad(memory, address, kind) =
+                    let OldMachineTerm::MemoryLoad(memory, address, kind) =
                         shared.machine_read_leaf().expect("read descriptor")
                     else {
                         unreachable!("read descriptor")
@@ -6700,12 +6712,12 @@ impl<'a> TermRewrite<'a> {
                     }
                 }
                 KernelTermNode::MachineLiteral(literal) => {
-                    if *native != literal.legacy_term() {
+                    if *native != literal.old_term() {
                         return false;
                     }
                 }
                 KernelTermNode::MachineIf { arguments } => {
-                    let MachineTerm::If {
+                    let OldMachineTerm::If {
                         condition,
                         then_term,
                         else_term,
@@ -6729,7 +6741,7 @@ impl<'a> TermRewrite<'a> {
                     let Some((
                         actual_format,
                         actual_operator,
-                        [MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)],
+                        [MachineOperandView::Old(a), MachineOperandView::Old(b)],
                     )) = view.binary()
                     else {
                         return false;
@@ -6745,7 +6757,7 @@ impl<'a> TermRewrite<'a> {
                     operator,
                     operand,
                 } => {
-                    let Some((actual_format, actual_operator, MachineOperandView::Legacy(value))) =
+                    let Some((actual_format, actual_operator, MachineOperandView::Old(value))) =
                         view.unary()
                     else {
                         return false;
@@ -6765,7 +6777,7 @@ impl<'a> TermRewrite<'a> {
                         actual_encoding,
                         actual_source,
                         actual_destination,
-                        MachineOperandView::Legacy(value),
+                        MachineOperandView::Old(value),
                     )) = view.cast()
                     else {
                         return false;
@@ -6797,25 +6809,29 @@ impl<'a> TermRewrite<'a> {
         true
     }
 
-    pub(crate) fn bits(&mut self, v: &MachineTerm) -> MachineTerm {
+    pub(crate) fn bits(&mut self, v: &OldMachineTerm) -> OldMachineTerm {
         self.bits_with_match_reduction(v, !MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get))
     }
 
-    fn bits_with_match_reduction(&mut self, v: &MachineTerm, reduce_match: bool) -> MachineTerm {
+    fn bits_with_match_reduction(
+        &mut self,
+        v: &OldMachineTerm,
+        reduce_match: bool,
+    ) -> OldMachineTerm {
         self.reserve_bitvector_variables_once(v);
         if self.checked_work_exhausted() {
-            return MachineTerm::constant(0);
+            return OldMachineTerm::constant(0);
         }
         self.visit();
         if self.checked_work_exhausted() {
-            return MachineTerm::constant(0);
+            return OldMachineTerm::constant(0);
         }
-        if let MachineTerm::Variable(variable) = v
+        if let OldMachineTerm::Variable(variable) = v
             && let Some(mapped) = self.scope.program_values.get(variable)
         {
-            return MachineTerm::Variable(*mapped);
+            return OldMachineTerm::Variable(*mapped);
         }
-        if let MachineTerm::Variable(variable) = v
+        if let OldMachineTerm::Variable(variable) = v
             && let Some(replacements) = &self.typed_variables
             && let Some(TypedProgramValueReplacement::Bitvector(replacement)) =
                 replacements.program_values.get(variable)
@@ -6824,11 +6840,11 @@ impl<'a> TermRewrite<'a> {
             return replacement.clone();
         }
         if let Some(reads) = self.comparison_reads
-            && let Some(MachineTerm::MemoryLoad(memory, pointer, kind)) =
+            && let Some(OldMachineTerm::MemoryLoad(memory, pointer, kind)) =
                 crate::kernel::eval::viewed_as_memory_load(v)
             && let Some((replacement, variables)) = reads.get(&(
                 memory.shared_memory().arena_id(),
-                Address::from(pointer),
+                OldAddress::from(pointer),
                 kind,
             ))
             && !variables.is_bound_in(&self.scope)
@@ -6845,14 +6861,14 @@ impl<'a> TermRewrite<'a> {
             // Shared observation rewrites replace the retained node directly
             // before entering this legacy-output construction.
             return match to {
-                MachineOperandView::Legacy(term) => term.clone(),
+                MachineOperandView::Old(term) => term.clone(),
                 MachineOperandView::Shared(root) => {
                     KernelTermExport::machine(root).expect("shared machine replacement")
                 }
             };
         }
         if self.resolve_registered_loads
-            && let MachineTerm::Variable(variable) = v
+            && let OldMachineTerm::Variable(variable) = v
             && crate::kernel::is_load_variable(variable)
         {
             // Keep the load's state exact and rewrite only its selected
@@ -6874,20 +6890,20 @@ impl<'a> TermRewrite<'a> {
                 }
                 return if self.comparison_arithmetic {
                     crate::kernel::registered_load_term_for_variable(&rewritten)
-                        .unwrap_or(MachineTerm::Variable(rewritten))
+                        .unwrap_or(OldMachineTerm::Variable(rewritten))
                 } else {
-                    MachineTerm::Variable(rewritten)
+                    OldMachineTerm::Variable(rewritten)
                 };
             }
             if self.checked_work_exhausted() {
-                return MachineTerm::constant(0);
+                return OldMachineTerm::constant(0);
             }
             if self.unsupported_integer_scope {
-                return MachineTerm::Variable(*variable);
+                return OldMachineTerm::Variable(*variable);
             }
         }
         let result = match v {
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 from: source,
@@ -6898,7 +6914,7 @@ impl<'a> TermRewrite<'a> {
                 if self.integer_exact.is_some() {
                     // Exact Integer congruence preserves native syntax. Folding
                     // an unrelated cast changes the opaque observation's ID.
-                    MachineTerm::Cast {
+                    OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value: Box::new(value),
                         from: *source,
@@ -6909,22 +6925,22 @@ impl<'a> TermRewrite<'a> {
                 {
                     carrier
                 } else {
-                    MachineTerm::machine_integer_cast(*source, *destination, value)
+                    OldMachineTerm::machine_integer_cast(*source, *destination, value)
                 }
             }
 
-            MachineTerm::ThreadHandle(_)
-            | MachineTerm::Constant { .. }
-            | MachineTerm::Variable(_) => v.clone(),
+            OldMachineTerm::ThreadHandle(_)
+            | OldMachineTerm::Constant { .. }
+            | OldMachineTerm::Variable(_) => v.clone(),
             cast_term!(UInt32From64, v) => {
                 let value = self.bits(v);
                 if self.integer_exact.is_some() {
-                    MachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(value))
+                    OldMachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(value))
                 } else {
-                    MachineTerm::uint32_from_64(value)
+                    OldMachineTerm::uint32_from_64(value)
                 }
             }
-            MachineTerm::If {
+            OldMachineTerm::If {
                 condition,
                 then_term,
                 else_term,
@@ -6941,21 +6957,21 @@ impl<'a> TermRewrite<'a> {
                 } else {
                     folded_machine_condition(condition)
                 };
-                if !preserve && let ConditionTerm::Constant(value) = condition {
+                if !preserve && let OldConditionTerm::Constant(value) = condition {
                     return self.bits(if value { then_term } else { else_term });
                 }
                 let then_term = self.bits(then_term);
                 let else_term = self.bits(else_term);
                 if !preserve {
-                    return MachineTerm::if_then_else(condition, then_term, else_term);
+                    return OldMachineTerm::if_then_else(condition, then_term, else_term);
                 }
-                MachineTerm::If {
+                OldMachineTerm::If {
                     condition: Box::new(condition),
                     then_term: Box::new(then_term),
                     else_term: Box::new(else_term),
                 }
             }
-            MachineTerm::RangeFold {
+            OldMachineTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -6965,19 +6981,19 @@ impl<'a> TermRewrite<'a> {
             } => {
                 self.reserve_bitvector_scope_variables(v);
                 if self.checked_work_exhausted() {
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 }
                 let start = self.bits(start);
                 if self.checked_work_exhausted() {
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 }
                 let end = self.bits(end);
                 if self.checked_work_exhausted() {
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 }
                 let initial = self.bits(initial);
                 if self.checked_work_exhausted() {
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 }
                 let saved_scope_id = self.scope_id;
                 let saved_shadowed = self.integer_shadowed;
@@ -6985,11 +7001,11 @@ impl<'a> TermRewrite<'a> {
                 let Some(accumulator) = self.rewrite_program_binder(*accumulator, &mut changes)
                 else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 };
                 let Some(item) = self.rewrite_program_binder(*item, &mut changes) else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 };
                 let body = if self.conditions.is_some() {
                     body.clone()
@@ -6998,9 +7014,9 @@ impl<'a> TermRewrite<'a> {
                 };
                 self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                 if self.checked_work_exhausted() {
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 }
-                MachineTerm::RangeFold {
+                OldMachineTerm::RangeFold {
                     start: Box::new(start),
                     end: Box::new(end),
                     initial: Box::new(initial),
@@ -7009,37 +7025,37 @@ impl<'a> TermRewrite<'a> {
                     body,
                 }
             }
-            MachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::PureFunctionApplication { name, arguments } => {
                 let mut rewritten = Vec::with_capacity(arguments.len());
                 for argument in arguments {
                     rewritten.push(self.bits(argument));
                     if self.checked_work_exhausted() {
-                        return MachineTerm::constant(0);
+                        return OldMachineTerm::constant(0);
                     }
                 }
-                MachineTerm::rebuild_pure_application(name.clone(), rewritten)
+                OldMachineTerm::rebuild_pure_application(name.clone(), rewritten)
             }
-            MachineTerm::ClickFunctionApplication { name, arguments } => {
+            OldMachineTerm::ClickFunctionApplication { name, arguments } => {
                 let mut rewritten = Vec::with_capacity(arguments.len());
                 for argument in arguments {
                     rewritten.push(self.argument(argument));
                     if self.checked_work_exhausted() {
-                        return MachineTerm::constant(0);
+                        return OldMachineTerm::constant(0);
                     }
                 }
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: name.clone(),
                     arguments: rewritten,
                 }
             }
-            MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+            OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.reserve_bitvector_scope_variables(v);
                 if self.checked_work_exhausted() {
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 }
                 let scrutinee = self.algebraic(scrutinee);
                 if self.checked_work_exhausted() {
-                    return MachineTerm::constant(0);
+                    return OldMachineTerm::constant(0);
                 }
                 let mut rewritten_arms = Vec::with_capacity(arms.len());
                 for arm in arms {
@@ -7049,7 +7065,7 @@ impl<'a> TermRewrite<'a> {
                     let mut bindings = arm.bindings.clone();
                     if !self.rewrite_match_bindings(&mut bindings, &mut changes) {
                         self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                        return MachineTerm::constant(0);
+                        return OldMachineTerm::constant(0);
                     }
                     let body = if self.conditions.is_some() {
                         arm.body.clone()
@@ -7058,7 +7074,7 @@ impl<'a> TermRewrite<'a> {
                     };
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                     if self.checked_work_exhausted() {
-                        return MachineTerm::constant(0);
+                        return OldMachineTerm::constant(0);
                     }
                     rewritten_arms.push(AlgebraicBitvectorMatchArm {
                         binding_names: arm.binding_names.clone(),
@@ -7073,12 +7089,12 @@ impl<'a> TermRewrite<'a> {
                 {
                     return value;
                 }
-                MachineTerm::AlgebraicMatch {
+                OldMachineTerm::AlgebraicMatch {
                     scrutinee: Box::new(scrutinee),
                     arms: rewritten_arms,
                 }
             }
-            MachineTerm::MemoryLoad(memory, pointer, kind) => {
+            OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
                 let rewritten = self.pointer(pointer);
                 if rewritten == **pointer {
                     return v.clone();
@@ -7096,7 +7112,7 @@ impl<'a> TermRewrite<'a> {
                 // only describes the original address.
                 let use_origin = self.resolve_registered_loads;
                 let observation =
-                    crate::kernel::eval::scalar_read_observation(MachineOperandView::Legacy(v));
+                    crate::kernel::eval::scalar_read_observation(MachineOperandView::Old(v));
                 let bytes = observation
                     .as_ref()
                     .map(|read| read.bytes)
@@ -7138,7 +7154,7 @@ impl<'a> TermRewrite<'a> {
                         bytes,
                     );
                     return crate::kernel::eval::canonical_term(
-                        &crate::kernel::MachineTerm::read_named(
+                        &crate::kernel::OldMachineTerm::read_named(
                             ProgramPoint::walked(&source, memory.point()),
                             rewritten,
                             *kind,
@@ -7182,29 +7198,31 @@ impl<'a> TermRewrite<'a> {
                     bytes,
                 )
             }
-            MachineTerm::IntegerAddress(pointer, class) => {
-                MachineTerm::object_pointer_address(self.pointer(pointer), class.class())
+            OldMachineTerm::IntegerAddress(pointer, class) => {
+                OldMachineTerm::object_pointer_address(self.pointer(pointer), class.class())
             }
-            MachineTerm::IntegerToMachine { value, destination } => MachineTerm::IntegerToMachine {
-                value: self.integer_shared(value).into(),
-                destination: *destination,
-            },
+            OldMachineTerm::IntegerToMachine { value, destination } => {
+                OldMachineTerm::IntegerToMachine {
+                    value: self.integer_shared(value).into(),
+                    destination: *destination,
+                }
+            }
             // Rule C1: the cast of the rewritten `Bool`, folded when the
             // rewrite decided it. The `Bool` guards its cast's value.
-            MachineTerm::BoolCast { to, value } => {
+            OldMachineTerm::BoolCast { to, value } => {
                 if let Some(conditions) = &mut self.collected_conditions
-                    && !matches!(value.as_ref(), ConditionTerm::Constant(_))
+                    && !matches!(value.as_ref(), OldConditionTerm::Constant(_))
                 {
                     conditions.push(value.as_ref().clone());
                 }
                 let value = self.condition(value);
                 if self.integer_exact.is_some() {
-                    MachineTerm::BoolCast {
+                    OldMachineTerm::BoolCast {
                         to: *to,
                         value: Box::new(value),
                     }
                 } else {
-                    MachineTerm::bool_cast(*to, folded_machine_condition(value))
+                    OldMachineTerm::bool_cast(*to, folded_machine_condition(value))
                 }
             }
             term => match (term.as_binary(), term.as_unary()) {
@@ -7255,14 +7273,15 @@ impl<'a> TermRewrite<'a> {
             }
             if self.conditions.is_some_and(|conditions| {
                 guards.iter().all(|guard| {
-                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                    *guard == OldConditionTerm::Constant(true)
+                        || conditions.get(guard) == Some(&true)
                 })
             }) {
                 return replacement;
             }
         }
         if self.checked_work_exhausted() {
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         } else {
             result
         }
@@ -7273,16 +7292,16 @@ impl<'a> TermRewrite<'a> {
 /// after witness substitution. Pointer offsets use the canonical constant
 /// form, while ordinary Integer-to-machine observations remain symbolic so
 /// their surrounding range obligations are still visible to proof checking.
-fn canonicalize_integer_to_machine_constant(value: MachineTerm) -> MachineTerm {
-    let MachineTerm::IntegerToMachine { value, destination } = value else {
+fn canonicalize_integer_to_machine_constant(value: OldMachineTerm) -> OldMachineTerm {
+    let OldMachineTerm::IntegerToMachine { value, destination } = value else {
         return value;
     };
     let Some(constant) = value.as_ref().as_const() else {
-        return MachineTerm::IntegerToMachine { value, destination };
+        return OldMachineTerm::IntegerToMachine { value, destination };
     };
     let converted = MachineIntegerConstant::from_integer(destination.format(), constant)
         .and_then(|value| destination.constant_term(value));
-    converted.unwrap_or(MachineTerm::IntegerToMachine { value, destination })
+    converted.unwrap_or(OldMachineTerm::IntegerToMachine { value, destination })
 }
 
 #[cfg(test)]
@@ -7299,26 +7318,28 @@ mod tests {
     #[test]
     fn shared_pointer_index_reconstruction_matches_native_rules() {
         let _session = VerificationSession::enter();
-        let source = MachineTerm::Variable(Variable(1007300));
-        let target = MachineTerm::Variable(Variable(1007301));
+        let source = OldMachineTerm::Variable(Variable(1007300));
+        let target = OldMachineTerm::Variable(Variable(1007301));
         for ty in [
             MachineIntegerType::Int32,
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let mut cases = vec![MachineTerm::Binary {
+            let mut cases = vec![OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Add,
                 left: source.clone().into(),
                 right: source.clone().into(),
             }];
             if ty == MachineIntegerType::Int64 {
-                let widened =
-                    MachineTerm::int64_from_32(MachineTerm::add(source.clone(), source.clone()));
+                let widened = OldMachineTerm::int64_from_32(OldMachineTerm::add(
+                    source.clone(),
+                    source.clone(),
+                ));
                 cases.push(widened.clone());
-                cases.push(MachineTerm::int64_multiply(
+                cases.push(OldMachineTerm::int64_multiply(
                     widened,
-                    MachineTerm::int64_constant(3),
+                    OldMachineTerm::int64_constant(3),
                 ));
             }
             for native in cases {
@@ -7334,12 +7355,12 @@ mod tests {
                             .unwrap();
                         let value = SharedMachineIntegerTerm::from_shared(container, root).unwrap();
                         let offset = if ty == MachineIntegerType::Int32 {
-                            AddressOffset::Int32Scaled {
+                            OldAddressOffset::Int32Scaled {
                                 value,
                                 byte_width: stride,
                             }
                         } else {
-                            AddressOffset::Int64Scaled {
+                            OldAddressOffset::Int64Scaled {
                                 value,
                                 byte_width: stride,
                                 unsigned: ty == MachineIntegerType::UInt64,
@@ -7350,17 +7371,17 @@ mod tests {
                         let expected = reference.bits(&native);
                         let expected = match (ty, resolving) {
                             (MachineIntegerType::Int32, false) => {
-                                AddressOffset::scaled_int32_node(expected, stride)
+                                OldAddressOffset::scaled_int32_node(expected, stride)
                             }
                             (MachineIntegerType::Int32, true) => {
-                                AddressOffset::scale_int32(expected, stride)
+                                OldAddressOffset::scale_int32(expected, stride)
                             }
-                            (_, false) => AddressOffset::scaled_int64_node(
+                            (_, false) => OldAddressOffset::scaled_int64_node(
                                 expected,
                                 stride,
                                 ty == MachineIntegerType::UInt64,
                             ),
-                            (_, true) => AddressOffset::scale_int64(
+                            (_, true) => OldAddressOffset::scale_int64(
                                 expected,
                                 stride,
                                 ty == MachineIntegerType::UInt64,
@@ -7382,23 +7403,23 @@ mod tests {
     #[test]
     fn shared_unsigned_index_narrowing_requires_the_original_bound() {
         let _session = VerificationSession::enter();
-        let native = MachineTerm::uint64_add(
-            MachineTerm::Variable(Variable(1007310)),
-            MachineTerm::uint64_constant(1),
+        let native = OldMachineTerm::uint64_add(
+            OldMachineTerm::Variable(Variable(1007310)),
+            OldMachineTerm::uint64_constant(1),
         );
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int64, &native)
             .unwrap();
-        let offset = AddressOffset::Int64Scaled {
+        let offset = OldAddressOffset::Int64Scaled {
             value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int64, root).unwrap(),
             byte_width: 4,
             unsigned: true,
         };
         for limit in [i32::MAX as u64, i32::MAX as u64 + 1] {
             let conditions = HashMap::from([(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     native.clone(),
-                    MachineTerm::uint64_constant(limit),
+                    OldMachineTerm::uint64_constant(limit),
                 ),
                 true,
             )]);
@@ -7407,7 +7428,7 @@ mod tests {
             let actual = rewrite.offset(&offset);
             assert_eq!(KernelTermExport::machine_export_count(), before);
             assert_eq!(
-                matches!(actual, AddressOffset::Int32Scaled { .. }),
+                matches!(actual, OldAddressOffset::Int32Scaled { .. }),
                 limit == i32::MAX as u64
             );
         }
@@ -7416,12 +7437,12 @@ mod tests {
     #[test]
     fn signed_byte_offset_constants_fold_only_inside_their_range() {
         for value in [-129, -128, -1, 0, 127, 128] {
-            let input = MachineTerm::IntegerToMachine {
+            let input = OldMachineTerm::IntegerToMachine {
                 value: IntegerTerm::constant_i64(value).into(),
                 destination: MachineIntegerType::Int8,
             };
             let expected = if (-128..=127).contains(&value) {
-                MachineTerm::narrow_constant(MachineIntegerType::Int8, value as i8 as u8 as u128)
+                OldMachineTerm::narrow_constant(MachineIntegerType::Int8, value as i8 as u8 as u128)
             } else {
                 input.clone()
             };
@@ -7432,23 +7453,23 @@ mod tests {
     #[test]
     fn conditional_reduction_does_not_use_outer_facts_under_a_binder() {
         let variable = Variable(51);
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(variable)),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let conditions = HashMap::from([(condition.clone(), true)]);
-        let input = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::constant(2)),
-            initial: Box::new(MachineTerm::constant(0)),
+        let input = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::constant(2)),
+            initial: Box::new(OldMachineTerm::constant(0)),
             accumulator: Variable(52),
             item: variable,
-            body: Box::new(MachineTerm::If {
+            body: Box::new(OldMachineTerm::If {
                 condition: Box::new(condition),
-                then_term: Box::new(MachineTerm::constant(7)),
-                else_term: Box::new(MachineTerm::constant(0)),
+                then_term: Box::new(OldMachineTerm::constant(7)),
+                else_term: Box::new(OldMachineTerm::constant(0)),
             }),
         };
         assert_eq!(TermRewrite::for_conditions(&conditions).bits(&input), input);
@@ -7485,21 +7506,21 @@ mod tests {
         for size in [16, 64, 256] {
             let argument = |value: &AlgebraicTerm| {
                 PureFunctionArgument::Value(ProgramValue::Int32(
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: "observe".into(),
                         arguments: vec![PureFunctionArgument::Algebraic(value.clone())],
                     },
                 ))
             };
             let input = Term::Bitvector32(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "many".into(),
                     arguments: vec![argument(&from); size],
                 }
                 .into(),
             );
             let expected = Term::Bitvector32(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "many".into(),
                     arguments: vec![argument(&to); size],
                 }
@@ -7603,7 +7624,7 @@ mod tests {
     fn integer_rewrite_preserves_product_identities_and_scales() {
         let x = IntegerTerm::from_machine(
             MachineIntegerType::UInt32,
-            MachineTerm::Variable(Variable(65006)),
+            OldMachineTerm::Variable(Variable(65006)),
         )
         .unwrap();
         let y = IntegerTerm::var(Variable(65007));
@@ -7702,39 +7723,39 @@ mod tests {
         let payload = SharedIntegerTerm::from(IntegerTerm::Machine(
             crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                MachineTerm::Variable(Variable(880)),
+                OldMachineTerm::Variable(Variable(880)),
             ),
         ));
         let input = Term::Bitvector32(
-            MachineTerm::IntegerToMachine {
+            OldMachineTerm::IntegerToMachine {
                 value: payload,
                 destination: crate::kernel::MachineIntegerType::UInt32,
             }
             .into(),
         );
-        let from = MachineTerm::Variable(Variable(880));
-        let to = MachineTerm::Variable(Variable(881));
+        let from = OldMachineTerm::Variable(Variable(880));
+        let to = OldMachineTerm::Variable(Variable(881));
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&input);
         assert!(
-            matches!(&(output), term_source_0 @ Term::Bitvector32(_) if matches!((term_source_0.bitvector_native(),), (Some(MachineTerm::IntegerToMachine {
+            matches!(&(output), term_source_0 @ Term::Bitvector32(_) if matches!((term_source_0.bitvector_native(),), (Some(OldMachineTerm::IntegerToMachine {
             destination: crate::kernel::MachineIntegerType::UInt32,
             value,
         }),) if matches!(value.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(Variable(881)))))
+            if machine.value() == &OldMachineTerm::Variable(Variable(881)))))
         );
     }
 
     #[test]
     fn retained_contract_offset_rewrite_preserves_index_rules() {
         let _session = VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(3_103_905));
+        let variable = OldMachineTerm::Variable(Variable(3_103_905));
         for (replacement, wide) in [
-            (MachineTerm::constant(u32::MAX), None),
-            (MachineTerm::int64_constant(-1), Some(false)),
-            (MachineTerm::uint64_constant(1 << 63), Some(true)),
+            (OldMachineTerm::constant(u32::MAX), None),
+            (OldMachineTerm::int64_constant(-1), Some(false)),
+            (OldMachineTerm::uint64_constant(1 << 63), Some(true)),
             (
-                MachineTerm::PureFunctionApplication {
+                OldMachineTerm::PureFunctionApplication {
                     name: "opaque_index".into(),
                     arguments: vec![],
                 },
@@ -7742,10 +7763,13 @@ mod tests {
             ),
         ] {
             let index = match wide {
-                None => AddressOffset::scaled_int32_node(variable.clone(), 4),
-                Some(unsigned) => AddressOffset::scaled_int64_node(variable.clone(), 8, unsigned),
+                None => OldAddressOffset::scaled_int32_node(variable.clone(), 4),
+                Some(unsigned) => {
+                    OldAddressOffset::scaled_int64_node(variable.clone(), 8, unsigned)
+                }
             };
-            let native = AddressOffset::Add(Box::new(AddressOffset::Constant(0)), Box::new(index));
+            let native =
+                OldAddressOffset::Add(Box::new(OldAddressOffset::Constant(0)), Box::new(index));
             let input = StoredPointerOffset::from(native.clone());
             assert!(input.root().is_some());
             for resolve_registered_loads in [false, true] {
@@ -7768,7 +7792,7 @@ mod tests {
                 assert_eq!(retained.changed, reference.changed);
                 assert!(!input.has_cached_native_offset());
                 assert!(!actual.has_cached_native_offset());
-                assert_eq!(actual.native_compat(), &expected);
+                assert_eq!(actual.old_form(), &expected);
             }
         }
     }
@@ -7776,22 +7800,22 @@ mod tests {
     #[test]
     fn retained_contract_offset_uses_the_same_unsigned_narrowing_and_work_refusal() {
         let _session = VerificationSession::enter();
-        let variable = MachineTerm::Variable(Variable(3_103_906));
-        let native = AddressOffset::scaled_int64_node(variable.clone(), 8, true);
+        let variable = OldMachineTerm::Variable(Variable(3_103_906));
+        let native = OldAddressOffset::scaled_int64_node(variable.clone(), 8, true);
         let input = StoredPointerOffset::from(native.clone());
         let conditions = HashMap::from([(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(variable.clone()),
-                right: Box::new(MachineTerm::uint64_constant(i32::MAX as u64)),
+                right: Box::new(OldMachineTerm::uint64_constant(i32::MAX as u64)),
             },
             true,
         )]);
         let expected = TermRewrite::for_conditions(&conditions).offset(&native);
         assert!(matches!(
             expected,
-            AddressOffset::Int32Scaled { byte_width: 8, .. }
+            OldAddressOffset::Int32Scaled { byte_width: 8, .. }
         ));
         let Term::PointerOffset(actual) =
             TermRewrite::for_conditions(&conditions).term(&Term::PointerOffset(input.clone()))
@@ -7799,10 +7823,10 @@ mod tests {
             unreachable!();
         };
         assert!(!input.has_cached_native_offset());
-        assert_eq!(actual.native_compat(), &expected);
+        assert_eq!(actual.old_form(), &expected);
 
         let refused = with_checked_simple_budget(4, || {
-            let replacement = MachineTerm::Variable(Variable(3_103_907));
+            let replacement = OldMachineTerm::Variable(Variable(3_103_907));
             let mut rewrite = TermRewrite::for_bits_checked(&variable, &replacement);
             rewrite.term(&Term::PointerOffset(input.clone()));
             rewrite.refusal()
@@ -7819,8 +7843,8 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = AddressOffset::scaled_int32_node(
-            MachineTerm::IntegerToMachine {
+        let offset = OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
             },
@@ -7830,7 +7854,7 @@ mod tests {
         assert!(matches!(
             rewritten,
             Term::PointerOffset(offset)
-                if matches!(offset.native_compat(), AddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
+                if matches!(offset.old_form(), OldAddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), OldMachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if value.as_ref().as_const().and_then(|value| value.to_i64())
@@ -7846,8 +7870,8 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = AddressOffset::scaled_int32_node(
-            MachineTerm::IntegerToMachine {
+        let offset = OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
             },
@@ -7857,7 +7881,7 @@ mod tests {
         assert!(matches!(
             rewritten,
             Term::PointerOffset(offset)
-                if matches!(offset.native_compat(), AddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
+                if matches!(offset.old_form(), OldAddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), OldMachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903))))
@@ -7872,8 +7896,8 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = AddressOffset::scaled_int32_node(
-            MachineTerm::IntegerToMachine {
+        let offset = OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
             },
@@ -7882,24 +7906,24 @@ mod tests {
         let rewritten = rewrite.term(&Term::PointerOffset(offset.into()));
         assert_eq!(
             rewritten,
-            Term::PointerOffset(AddressOffset::Constant(-4).into())
+            Term::PointerOffset(OldAddressOffset::Constant(-4).into())
         );
     }
 
     #[test]
     fn array_ref_rewrite_preserves_opaque_memory_and_ignores_unrelated_blocks() {
         let source = Variable(9880);
-        let replacement = Address {
+        let replacement = OldAddress {
             base: AddressBase::Symbolic(Variable(9881)),
-            offset: AddressOffset::Constant(3),
+            offset: OldAddressOffset::Constant(3),
         };
-        let expected_pointer = Address {
+        let expected_pointer = OldAddress {
             base: replacement.base.clone(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
-        let input_pointer = Address {
+        let input_pointer = OldAddress {
             base: AddressBase::Symbolic(source),
-            offset: AddressOffset::Constant(1),
+            offset: OldAddressOffset::Constant(1),
         };
         let memory_with_unrelated_blocks = |count: u64| {
             let mut memory = SymbolicMemory::new().with_block("array", 8);
@@ -7908,7 +7932,7 @@ mod tests {
             }
             memory
         };
-        let observed_array = |memory: SymbolicMemory, pointer: Address| {
+        let observed_array = |memory: SymbolicMemory, pointer: OldAddress| {
             Term::Integer(
                 IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_array".into(),
@@ -8018,37 +8042,37 @@ mod tests {
         };
         let source = Variable(9890);
         let replacement = Variable(9891);
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(source),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let condition_for = |memory: SymbolicMemory, depth: usize, fanout: usize| {
-            let mut right = MachineTerm::Variable(source);
+            let mut right = OldMachineTerm::Variable(source);
             for index in 0..depth as u64 {
                 let mut arguments = Vec::with_capacity(fanout + 1);
                 arguments.push(PureFunctionArgument::Value(ProgramValue::Int32(right)));
                 arguments.extend((0..fanout).map(|_| {
-                    PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::constant(0)))
+                    PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::constant(0)))
                 }));
-                let fanout = MachineTerm::ClickFunctionApplication {
+                let fanout = OldMachineTerm::ClickFunctionApplication {
                     name: "wide_condition".into(),
                     arguments,
                 };
-                right = MachineTerm::If {
-                    condition: Box::new(ConditionTerm::Compare {
+                right = OldMachineTerm::If {
+                    condition: Box::new(OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: Box::new(OldMachineTerm::Variable(Variable(20_000 + index))),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     }),
                     then_term: Box::new(fanout),
-                    else_term: Box::new(MachineTerm::constant(0)),
+                    else_term: Box::new(OldMachineTerm::constant(0)),
                 };
             }
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(crate::kernel::MachineTerm::read_named(
+                left: Box::new(crate::kernel::OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::of_memory(&memory),
                     pointer.clone(),
                     crate::kernel::LoadKind::Int32,
@@ -8063,10 +8087,10 @@ mod tests {
             }
             memory
         };
-        let run = |condition: ConditionTerm, tactic: crate::instrumentation::TacticEvent| {
+        let run = |condition: OldConditionTerm, tactic: crate::instrumentation::TacticEvent| {
             let program_replacements = BTreeMap::from([(
                 source,
-                TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(replacement)),
+                TypedProgramValueReplacement::Bitvector(OldMachineTerm::Variable(replacement)),
             )]);
             let integer_replacements = BTreeMap::new();
             let algebraic_replacements = BTreeMap::new();
@@ -8168,7 +8192,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 fields: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(field_integer)),
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(field_c))),
+                    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(field_c))),
                 ],
             },
         };
@@ -8176,7 +8200,7 @@ mod tests {
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(bound_integer).into()),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(bound_c))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(bound_c))),
             ],
         ));
         let input = IntegerTerm::AlgebraicMatch {
@@ -8196,7 +8220,7 @@ mod tests {
                     variant: "Wrapped".into(),
                     bindings: vec![
                         AlgebraicValue::Integer(IntegerTerm::var(bound_integer)),
-                        AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                        AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
                             bound_c,
                         ))),
                     ],
@@ -8218,7 +8242,7 @@ mod tests {
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(field_integer).into()),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(field_c))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(field_c))),
             ],
         ));
         assert_eq!(output, expected);
@@ -8231,7 +8255,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 fields: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(field_integer)),
-                    AlgebraicValue::Program(ProgramValue::Int64(MachineTerm::Variable(field_c))),
+                    AlgebraicValue::Program(ProgramValue::Int64(OldMachineTerm::Variable(field_c))),
                 ],
             },
         };
@@ -8255,8 +8279,8 @@ mod tests {
         arms[1].bindings[1] = AlgebraicValue::Program(ProgramValue::Int32(binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(bound_c)),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(OldMachineTerm::Variable(bound_c)),
+            Box::new(OldMachineTerm::constant(1)),
         )));
         let mut malformed_binding_rewrite = TermRewrite::for_typed_variables(
             &program_replacements,
@@ -8301,23 +8325,23 @@ mod tests {
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
                 fields: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                    MachineTerm::constant(7),
+                    OldMachineTerm::constant(7),
                 ))],
             },
         };
-        let goal = MachineTerm::AlgebraicMatch {
+        let goal = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(scrutinee.clone()),
             arms: vec![AlgebraicBitvectorMatchArm {
                 binding_names: Default::default(),
                 variant: "Wrapped".into(),
                 bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                    MachineTerm::Variable(bound),
+                    OldMachineTerm::Variable(bound),
                 ))],
-                body: MachineTerm::Variable(bound),
+                body: OldMachineTerm::Variable(bound),
             }],
         };
         let mut rewrite = TermRewrite::new(&scrutinee, &constructor);
-        assert_eq!(rewrite.bits(&goal), MachineTerm::constant(7));
+        assert_eq!(rewrite.bits(&goal), OldMachineTerm::constant(7));
         assert!(rewrite.changed);
 
         let malformed = AlgebraicTerm {
@@ -8325,14 +8349,14 @@ mod tests {
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
                 fields: vec![AlgebraicValue::Program(ProgramValue::Int64(
-                    MachineTerm::constant(7),
+                    OldMachineTerm::constant(7),
                 ))],
             },
         };
         let mut malformed_rewrite = TermRewrite::new(&scrutinee, &malformed);
         assert!(matches!(
             malformed_rewrite.bits(&goal),
-            MachineTerm::AlgebraicMatch { .. }
+            OldMachineTerm::AlgebraicMatch { .. }
         ));
     }
 
@@ -8344,11 +8368,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let index = Variable(9_904);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(index), 8),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(index), 8),
         };
-        let loaded = Address::loaded_value(&memory, &address);
+        let loaded = OldAddress::loaded_value(&memory, &address);
         let mut carriers = CarrierVariables::default();
         collect_pointer_carriers(&loaded, &mut carriers);
         assert!(carriers.contains(BindingCarrier::Program, index));
@@ -8389,7 +8413,7 @@ mod tests {
         let mut program_replacements = BTreeMap::new();
         program_replacements.insert(
             c_source,
-            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(replacement)),
+            TypedProgramValueReplacement::Bitvector(OldMachineTerm::Variable(replacement)),
         );
         let mut integer_replacements = BTreeMap::new();
         integer_replacements.insert(integer_source, IntegerTerm::var(replacement));
@@ -8401,7 +8425,9 @@ mod tests {
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(integer_source).into()),
                 PureFunctionArgument::Integer(IntegerTerm::var(replacement).into()),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(c_source))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
+                    c_source,
+                ))),
                 PureFunctionArgument::Algebraic(algebraic_from),
             ],
         ));
@@ -8423,7 +8449,7 @@ mod tests {
             &[
                 PureFunctionArgument::Integer(IntegerTerm::var(replacement).into()),
                 PureFunctionArgument::Integer(IntegerTerm::constant_i64(7).into()),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
                     replacement
                 ))),
                 PureFunctionArgument::Algebraic(algebraic_to.clone()),
@@ -8500,13 +8526,13 @@ mod tests {
     #[test]
     fn checked_machine_rewrite_stops_after_work_exhaustion() {
         let source = Variable(880);
-        let mut payload = MachineTerm::Variable(source);
+        let mut payload = OldMachineTerm::Variable(source);
         for _ in 0..128 {
             payload = binary_node!(
                 Int32,
                 Add,
                 Box::new(payload),
-                Box::new(MachineTerm::constant(1))
+                Box::new(OldMachineTerm::constant(1))
             );
         }
         let input = Term::Integer(
@@ -8536,8 +8562,8 @@ mod tests {
                     crate::instrumentation::emit(
                         crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
                     );
-                    let source_term = MachineTerm::Variable(source);
-                    let replacement = MachineTerm::constant(7);
+                    let source_term = OldMachineTerm::Variable(source);
+                    let replacement = OldMachineTerm::constant(7);
                     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
                     let output = rewrite.term(&input);
                     let visits = rewrite.visits;
@@ -8559,14 +8585,14 @@ mod tests {
 
     #[test]
     fn checked_machine_replacement_collection_stops_before_rewrite() {
-        let source = MachineTerm::Variable(Variable(3_025_000));
-        let mut replacement = MachineTerm::Variable(Variable(3_025_001));
+        let source = OldMachineTerm::Variable(Variable(3_025_000));
+        let mut replacement = OldMachineTerm::Variable(Variable(3_025_001));
         for _ in 0..128 {
             replacement = binary_node!(
                 Int32,
                 Add,
                 Box::new(replacement),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::constant(1)),
             );
         }
         let (output, visits, exhausted) = with_checked_simple_budget(4, || {
@@ -8589,10 +8615,10 @@ mod tests {
 
     #[test]
     fn checked_rewrite_stops_before_wide_sibling_payloads() {
-        let source = MachineTerm::Variable(Variable(3_020_000));
-        let replacement = MachineTerm::constant(7);
+        let source = OldMachineTerm::Variable(Variable(3_020_000));
+        let replacement = OldMachineTerm::constant(7);
         let input = Term::Bitvector32(
-            MachineTerm::PureFunctionApplication {
+            OldMachineTerm::PureFunctionApplication {
                 name: "wide_checked_payload".into(),
                 arguments: vec![source.clone(); 256],
             }
@@ -8615,7 +8641,7 @@ mod tests {
         let binder = Variable(990);
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            MachineTerm::Variable(binder),
+            OldMachineTerm::Variable(binder),
         ));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Integer {
@@ -8627,8 +8653,8 @@ mod tests {
             binder,
             body,
         );
-        let from = MachineTerm::Variable(binder);
-        let to = MachineTerm::constant(7);
+        let from = OldMachineTerm::Variable(binder);
+        let to = OldMachineTerm::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&Term::Integer(fold.into()));
         let term_source_0 @ Term::Integer(_) = output else {
@@ -8648,20 +8674,22 @@ mod tests {
         let binder = Variable(990);
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            MachineTerm::Variable(binder),
+            OldMachineTerm::Variable(binder),
         ));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(2)),
             },
             IntegerTerm::constant_i64(0),
             Variable(991),
             binder,
             body,
         );
-        let from = MachineTerm::Variable(binder);
-        let to = MachineTerm::constant(7);
+        let from = OldMachineTerm::Variable(binder);
+        let to = OldMachineTerm::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&Term::Integer(fold.into()));
         let term_source_0 @ Term::Integer(_) = output else {
@@ -8673,7 +8701,7 @@ mod tests {
         };
         assert_eq!(*item, binder);
         assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(binder)));
+            if machine.value() == &OldMachineTerm::Variable(binder)));
     }
 
     #[test]
@@ -8681,14 +8709,14 @@ mod tests {
         let binder = Variable(992);
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            MachineTerm::Variable(binder),
+            OldMachineTerm::Variable(binder),
         ));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(
                     Variable(993),
                 )),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(
                     Variable(994),
                 )),
             },
@@ -8697,8 +8725,8 @@ mod tests {
             binder,
             body,
         );
-        let from = MachineTerm::Variable(Variable(996));
-        let to = MachineTerm::Variable(binder);
+        let from = OldMachineTerm::Variable(Variable(996));
+        let to = OldMachineTerm::Variable(binder);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
@@ -8709,7 +8737,7 @@ mod tests {
         };
         assert_ne!(*item, binder);
         assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(*item)));
+            if machine.value() == &OldMachineTerm::Variable(*item)));
     }
 
     #[test]
@@ -8719,14 +8747,16 @@ mod tests {
             IntegerTerm::Variable(source).into(),
             IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                MachineTerm::Variable(source),
+                OldMachineTerm::Variable(source),
             ))
             .into(),
         );
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(1_021),
@@ -8750,7 +8780,7 @@ mod tests {
         };
         assert!(matches!(integer.as_ref(), IntegerTerm::Constant(value) if value == &7.into()));
         assert!(matches!(machine.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &MachineTerm::Variable(source)));
+            if machine.value() == &OldMachineTerm::Variable(source)));
     }
 
     #[test]
@@ -8759,28 +8789,28 @@ mod tests {
             let _session = VerificationSession::enter();
             let source = Variable(989901);
             let item = Variable(989902);
-            let source_term = MachineTerm::Variable(source);
-            let replacement = MachineTerm::Variable(item);
+            let source_term = OldMachineTerm::Variable(source);
+            let replacement = OldMachineTerm::Variable(item);
             let format = if unsigned {
                 MachineIntegerType::UInt64
             } else {
                 MachineIntegerType::Int32
             };
-            let sum = |value: MachineTerm| MachineTerm::Binary {
+            let sum = |value: OldMachineTerm| OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
                 left: value.into(),
                 right: if unsigned {
-                    MachineTerm::uint64_constant(1)
+                    OldMachineTerm::uint64_constant(1)
                 } else {
-                    MachineTerm::constant(1)
+                    OldMachineTerm::constant(1)
                 }
                 .into(),
             };
             let root = KernelTermImport::default()
                 .machine_arithmetic(MachineIntegerType::Int32, &sum(source_term.clone()))
                 .unwrap();
-            let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+            let endpoint = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0))
                 .with_shared_operand(root)
                 .unwrap();
             let index = if unsigned {
@@ -8796,7 +8826,7 @@ mod tests {
             };
             let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 format,
-                MachineTerm::Variable(item),
+                OldMachineTerm::Variable(item),
             ));
             let fold = IntegerTerm::range_fold(
                 index,
@@ -8860,12 +8890,14 @@ mod tests {
         let nested_accumulator = Variable(1_103);
         let leaf = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            MachineTerm::Variable(source),
+            OldMachineTerm::Variable(source),
         ));
         let nested = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             nested_accumulator,
@@ -8874,16 +8906,18 @@ mod tests {
         );
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(1_104),
             replacement_item,
             nested,
         );
-        let source_term = MachineTerm::Variable(source);
-        let replacement = MachineTerm::Variable(replacement_item);
+        let source_term = OldMachineTerm::Variable(source);
+        let replacement = OldMachineTerm::Variable(replacement_item);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
         let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
@@ -8917,7 +8951,7 @@ mod tests {
             IntegerTerm::Variable(accumulator).into(),
             IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                MachineTerm::Variable(source),
+                OldMachineTerm::Variable(source),
             ))
             .into(),
         );
@@ -8931,11 +8965,11 @@ mod tests {
             Variable(1_032),
             body,
         );
-        let replacement = MachineTerm::IntegerToMachine {
+        let replacement = OldMachineTerm::IntegerToMachine {
             value: SharedIntegerTerm::from(IntegerTerm::Variable(accumulator)),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
-        let source_term = MachineTerm::Variable(source);
+        let source_term = OldMachineTerm::Variable(source);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
         let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
@@ -8984,7 +9018,7 @@ mod tests {
                 nested,
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
-                    MachineTerm::Variable(source),
+                    OldMachineTerm::Variable(source),
                 )),
             ),
         );
@@ -8998,11 +9032,11 @@ mod tests {
             Variable(1_054),
             body,
         );
-        let replacement = MachineTerm::IntegerToMachine {
+        let replacement = OldMachineTerm::IntegerToMachine {
             value: SharedIntegerTerm::from(IntegerTerm::Variable(accumulator)),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
-        let source_term = MachineTerm::Variable(source);
+        let source_term = OldMachineTerm::Variable(source);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
         let body = KernelTermImport::default().integer(&match &fold {
             IntegerTerm::RangeFold { body, .. } => body.clone(),
@@ -9074,7 +9108,7 @@ mod tests {
                 IntegerTerm::var(integer_source).into(),
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
-                    MachineTerm::Variable(c_source),
+                    OldMachineTerm::Variable(c_source),
                 ))
                 .into(),
             )
@@ -9089,7 +9123,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
                         collision_c,
                     ))),
                 ],
@@ -9098,7 +9132,7 @@ mod tests {
         };
         let program_replacements = BTreeMap::from([(
             c_source,
-            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(collision_c)),
+            TypedProgramValueReplacement::Bitvector(OldMachineTerm::Variable(collision_c)),
         )]);
         let integer_replacements =
             BTreeMap::from([(integer_source, IntegerTerm::var(collision_integer))]);
@@ -9109,8 +9143,10 @@ mod tests {
         // scope must freshen independently before walking the nested body.
         let fold_with_match = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             collision_integer,
@@ -9149,7 +9185,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
+            AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(variable)))
                 if *variable != collision_c
         ));
         let mut free_integer = BTreeSet::new();
@@ -9157,11 +9193,11 @@ mod tests {
             &IntegerTerm::RangeFold {
                 index: crate::kernel::IntegerRangeFoldIndex::Int32 {
                     start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        MachineTerm::constant(0),
+                        OldMachineTerm::constant(0),
                     ),
-                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(
-                        1,
-                    )),
+                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(
+                        OldMachineTerm::constant(1),
+                    ),
                 },
                 initial: IntegerTerm::constant_i64(0).into(),
                 accumulator: *accumulator,
@@ -9176,11 +9212,11 @@ mod tests {
             &IntegerTerm::RangeFold {
                 index: crate::kernel::IntegerRangeFoldIndex::Int32 {
                     start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        MachineTerm::constant(0),
+                        OldMachineTerm::constant(0),
                     ),
-                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(
-                        1,
-                    )),
+                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(
+                        OldMachineTerm::constant(1),
+                    ),
                 },
                 initial: IntegerTerm::constant_i64(0).into(),
                 accumulator: *accumulator,
@@ -9203,7 +9239,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
                         collision_c,
                     ))),
                 ],
@@ -9237,7 +9273,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
+            AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(variable)))
                 if *variable != collision_c
         ));
         let IntegerTerm::RangeFold {
@@ -9346,17 +9382,17 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(integer_x)),
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(c_x))),
+                    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(c_x))),
                 ],
                 body: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_typed_capture".into(),
                     vec![
                         PureFunctionArgument::Integer(IntegerTerm::var(integer_x).into()),
                         PureFunctionArgument::Integer(IntegerTerm::var(integer_y).into()),
-                        PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                        PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
                             c_x,
                         ))),
-                        PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                        PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
                             c_y,
                         ))),
                     ],
@@ -9367,11 +9403,11 @@ mod tests {
         let program_replacements = BTreeMap::from([
             (
                 c_x,
-                TypedProgramValueReplacement::Bitvector(MachineTerm::constant(0)),
+                TypedProgramValueReplacement::Bitvector(OldMachineTerm::constant(0)),
             ),
             (
                 c_y,
-                TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(c_x)),
+                TypedProgramValueReplacement::Bitvector(OldMachineTerm::Variable(c_x)),
             ),
         ]);
         let integer_replacements = BTreeMap::from([
@@ -9396,7 +9432,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(variable)))
+            AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(variable)))
                 if *variable != c_x
         ));
         let IntegerTerm::PureFunctionApplication(application) = arm.body.as_ref() else {
@@ -9415,12 +9451,12 @@ mod tests {
         assert!(matches!(
             &application.arguments()[2],
             PureFunctionArgument::Value(ProgramValue::Int32(value))
-                if matches!(value, MachineTerm::Variable(variable) if *variable != c_x)
+                if matches!(value, OldMachineTerm::Variable(variable) if *variable != c_x)
         ));
         assert!(matches!(
             &application.arguments()[3],
             PureFunctionArgument::Value(ProgramValue::Int32(value))
-                if matches!(value, MachineTerm::Variable(variable) if *variable == c_x)
+                if matches!(value, OldMachineTerm::Variable(variable) if *variable == c_x)
         ));
     }
 
@@ -9435,14 +9471,16 @@ mod tests {
         let source = binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(source_variable)),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(OldMachineTerm::Variable(source_variable)),
+            Box::new(OldMachineTerm::constant(1)),
         );
-        let replacement = MachineTerm::Variable(Variable(3_104_001));
+        let replacement = OldMachineTerm::Variable(Variable(3_104_001));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(3_104_002),
@@ -9462,14 +9500,16 @@ mod tests {
         let source = binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(source_variable)),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(OldMachineTerm::Variable(source_variable)),
+            Box::new(OldMachineTerm::constant(1)),
         );
-        let replacement = MachineTerm::Variable(Variable(3_103_001));
+        let replacement = OldMachineTerm::Variable(Variable(3_103_001));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(3_103_002),
@@ -9491,11 +9531,11 @@ mod tests {
         let source = Variable(3_104_100);
         let atom = Proposition::MemoryLoadable {
             memory: SymbolicMemory::new(),
-            base: Address {
+            base: OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 4),
+                offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(source), 4),
             },
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -9526,14 +9566,14 @@ mod pointer_integer_rewrite_tests {
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = OldPointer::new(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
         let to = OldPointer::new(
-            Address::symbolic(Variable(996_021)),
+            OldAddress::symbolic(Variable(996_021)),
             ProgramType::Int32Pointer,
         );
         let parameter = TypeParameterName::intern("RewriteReadT");
@@ -9542,9 +9582,9 @@ mod pointer_integer_rewrite_tests {
             node: AlgebraicTermNode::Variable(Variable(996_022)),
         }));
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().store(
-            Address {
+            OldAddress {
                 base: AddressBase::Heap(996_023),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             stored.clone(),
         ));
@@ -9556,9 +9596,9 @@ mod pointer_integer_rewrite_tests {
         // A separate four-byte observation must not replace the generic
         // read's eight-byte origin when the same version name is reused.
         let partial = crate::kernel::intern_memory(memory.memory().clone().store(
-            Address {
+            OldAddress {
                 base: AddressBase::Heap(996_023),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::UInt32(7u32.into()),
         ));
@@ -9575,14 +9615,14 @@ mod pointer_integer_rewrite_tests {
     fn full_pointer_rewrite_keeps_the_read_version_and_state() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = OldPointer::new(
-            Address::symbolic(Variable(996_010)),
+            OldAddress::symbolic(Variable(996_010)),
             ProgramType::Int32PointerPointer,
         );
         let to = OldPointer::new(
-            Address::symbolic(Variable(996_011)),
+            OldAddress::symbolic(Variable(996_011)),
             ProgramType::Int32PointerPointer,
         );
-        let stored = ProgramValue::pointer(Address::symbolic(Variable(996_012)));
+        let stored = ProgramValue::pointer(OldAddress::symbolic(Variable(996_012)));
         let memory = SymbolicMemory::new().store(to.address().clone(), stored.clone());
         let read =
             memory.symbolic_pointer_version_load(None, from.address(), ProgramType::Int32Pointer);
@@ -9593,7 +9633,7 @@ mod pointer_integer_rewrite_tests {
         assert_eq!(rewrite(), expected);
         let later = memory.store(
             to.address().clone(),
-            ProgramValue::pointer(Address::symbolic(Variable(996_013))),
+            ProgramValue::pointer(OldAddress::symbolic(Variable(996_013))),
         );
         let later_read =
             later.symbolic_pointer_version_load(None, to.address(), ProgramType::Int32Pointer);
@@ -9608,21 +9648,21 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn numeric_index_rewrite_keeps_nested_pointer_read_versions_and_states() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = MachineTerm::Variable(Variable(996_020));
-        let to = MachineTerm::Variable(Variable(996_021));
-        let address = |index| Address {
+        let from = OldMachineTerm::Variable(Variable(996_020));
+        let to = OldMachineTerm::Variable(Variable(996_021));
+        let address = |index| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(index, 8),
+            offset: OldAddressOffset::scale_int32(index, 8),
         };
         let destination = address(to.clone());
-        let stored = ProgramValue::pointer(Address::symbolic(Variable(996_022)));
+        let stored = ProgramValue::pointer(OldAddress::symbolic(Variable(996_022)));
         let memory = SymbolicMemory::new().store(destination.clone(), stored.clone());
         let shared = crate::kernel::intern_memory(memory.clone());
         let mut input = address(from.clone());
         let mut expected = destination.clone();
         for depth in 1..=32 {
-            input = Address::version_read(&shared, &input);
-            expected = Address::version_read(&shared, &expected);
+            input = OldAddress::version_read(&shared, &input);
+            expected = OldAddress::version_read(&shared, &expected);
             assert_eq!(
                 TermRewrite::for_bits(&from, &to).pointer(&input),
                 expected,
@@ -9631,7 +9671,7 @@ mod pointer_integer_rewrite_tests {
         }
         let later = memory.store(
             destination,
-            ProgramValue::pointer(Address::symbolic(Variable(996_023))),
+            ProgramValue::pointer(OldAddress::symbolic(Variable(996_023))),
         );
         let _ = later.symbolic_pointer_version_load(
             None,
@@ -9651,7 +9691,7 @@ mod pointer_integer_rewrite_tests {
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(996_001)),
+            OldAddress::symbolic(Variable(996_001)),
             ProgramType::Int32Pointer,
         );
         let word = crate::kernel::eval::cast_program_value_to_type(
@@ -9663,7 +9703,7 @@ mod pointer_integer_rewrite_tests {
         )
         .unwrap();
         let from = crate::kernel::spec::program_value_bitvector_term(&word).unwrap();
-        let alias = MachineTerm::Variable(Variable(996_002));
+        let alias = OldMachineTerm::Variable(Variable(996_002));
         let rewritten = TermRewrite::for_bits(&from, &alias).value(&word);
         let ProgramValue::PointerInteger(record) = &rewritten else {
             panic!("complete word")
@@ -9714,7 +9754,7 @@ pub(crate) fn without_match_reduction<R>(operation: impl FnOnce() -> R) -> R {
 mod comparison_read_batch_tests {
     use super::*;
 
-    fn atom(value: MachineTerm) -> Proposition {
+    fn atom(value: OldMachineTerm) -> Proposition {
         Proposition::Predicate {
             name: "selected_read".into(),
             arguments: vec![Term::Bitvector32(value.into())],
@@ -9731,13 +9771,13 @@ mod comparison_read_batch_tests {
             (MachineIntegerType::Int64, LoadKind::Bits64),
             (MachineIntegerType::UInt64, LoadKind::Bits64),
         ] {
-            let read = crate::kernel::MachineTerm::read_named(
+            let read = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Address::symbolic(Variable(401_020)),
+                OldAddress::symbolic(Variable(401_020)),
                 kind,
             );
             let literal = |bits| {
-                MachineTerm::machine_constant(
+                OldMachineTerm::machine_constant(
                     crate::kernel::MachineIntegerConstant::from_bits(format.format(), bits)
                         .unwrap(),
                 )
@@ -9750,7 +9790,7 @@ mod comparison_read_batch_tests {
                 (CompareRelation::LessThan, 3, false),
             ] {
                 let input = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format,
                         relation,
                         left: Box::new(read.clone()),
@@ -9761,7 +9801,7 @@ mod comparison_read_batch_tests {
                 assert_eq!(
                     TermRewrite::comparison_read_batch(&input, [(read.clone(), three.clone())]),
                     Some(Proposition::condition_is(
-                        ConditionTerm::Constant(expected),
+                        OldConditionTerm::Constant(expected),
                         true
                     )),
                 );
@@ -9770,7 +9810,7 @@ mod comparison_read_batch_tests {
                 let result = structural.proposition(&input);
                 assert!(structural.refusal().is_none());
                 assert!(
-                    matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+                    matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _))))
                 );
             }
         }
@@ -9781,9 +9821,9 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let read = |index| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Address::symbolic(Variable(index)),
+                OldAddress::symbolic(Variable(index)),
                 LoadKind::Int32,
             )
         };
@@ -9797,7 +9837,7 @@ mod comparison_read_batch_tests {
             &input,
             [
                 (first, second.clone()),
-                (second.clone(), MachineTerm::constant(7)),
+                (second.clone(), OldMachineTerm::constant(7)),
             ],
         )
         .expect("selected carriers");
@@ -9805,7 +9845,7 @@ mod comparison_read_batch_tests {
             actual,
             Proposition::And(
                 Box::new(atom(second)),
-                Box::new(atom(MachineTerm::constant(7))),
+                Box::new(atom(OldMachineTerm::constant(7))),
             )
         );
 
@@ -9818,14 +9858,17 @@ mod comparison_read_batch_tests {
             Proposition::Predicate {
                 name: "pair".into(),
                 arguments: vec![
-                    Term::Bitvector32(MachineTerm::Variable(source).into()),
-                    Term::Bitvector32(MachineTerm::Variable(binder).into()),
+                    Term::Bitvector32(OldMachineTerm::Variable(source).into()),
+                    Term::Bitvector32(OldMachineTerm::Variable(binder).into()),
                 ],
             },
         );
         let actual = TermRewrite::comparison_read_batch(
             &input,
-            [(MachineTerm::Variable(source), MachineTerm::Variable(binder))],
+            [(
+                OldMachineTerm::Variable(source),
+                OldMachineTerm::Variable(binder),
+            )],
         )
         .expect("quantified carrier");
         let Proposition::ForAll { var, body, .. } = actual else {
@@ -9837,8 +9880,8 @@ mod comparison_read_batch_tests {
             Proposition::Predicate {
                 name: "pair".into(),
                 arguments: vec![
-                    Term::Bitvector32(MachineTerm::Variable(binder).into()),
-                    Term::Bitvector32(MachineTerm::Variable(*var).into())
+                    Term::Bitvector32(OldMachineTerm::Variable(binder).into()),
+                    Term::Bitvector32(OldMachineTerm::Variable(*var).into())
                 ],
             }
         );
@@ -9852,17 +9895,21 @@ mod comparison_read_batch_tests {
             atom(scoped_read.clone()),
         );
         assert_eq!(
-            TermRewrite::comparison_read_batch(&scoped, [(scoped_read, MachineTerm::constant(9)),]),
+            TermRewrite::comparison_read_batch(
+                &scoped,
+                [(scoped_read, OldMachineTerm::constant(9)),]
+            ),
             Some(scoped)
         );
 
-        let scoped_pointer = Address::symbolic(binder);
-        let scoped_name = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
-            &memory,
-            &scoped_pointer,
-            LoadKind::Int32,
-            4,
-        ));
+        let scoped_pointer = OldAddress::symbolic(binder);
+        let scoped_name =
+            OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &scoped_pointer,
+                LoadKind::Int32,
+                4,
+            ));
         let scoped_named = crate::kernel::quantifiers::test_forall(
             BinderName::written("address"),
             binder,
@@ -9873,7 +9920,7 @@ mod comparison_read_batch_tests {
             assert_eq!(
                 TermRewrite::comparison_read_batch(
                     &scoped_named,
-                    [(source, MachineTerm::constant(9)),]
+                    [(source, OldMachineTerm::constant(9)),]
                 ),
                 Some(scoped_named.clone())
             );
@@ -9881,7 +9928,7 @@ mod comparison_read_batch_tests {
 
         // Equal numeric IDs in different carriers are independent binders.
         let named_address_read =
-            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 &scoped_pointer,
                 LoadKind::Int32,
@@ -9898,13 +9945,13 @@ mod comparison_read_batch_tests {
                 BinderName::written("integer_k"),
                 binder,
                 Sort::Integer,
-                atom(MachineTerm::constant(9)),
+                atom(OldMachineTerm::constant(9)),
             );
             for source in [read(binder.0), named_address_read.clone()] {
                 assert_eq!(
                     TermRewrite::comparison_read_batch(
                         &input,
-                        [(source, MachineTerm::constant(9)),]
+                        [(source, OldMachineTerm::constant(9)),]
                     ),
                     Some(expected.clone())
                 );
@@ -9915,12 +9962,15 @@ mod comparison_read_batch_tests {
             "read".into(),
             source,
             Sort::ProgramInt32,
-            atom(MachineTerm::Variable(source)),
+            atom(OldMachineTerm::Variable(source)),
         );
         assert_eq!(
             TermRewrite::comparison_read_batch(
                 &shadowed,
-                [(MachineTerm::Variable(source), MachineTerm::constant(9)),]
+                [(
+                    OldMachineTerm::Variable(source),
+                    OldMachineTerm::constant(9)
+                ),]
             ),
             Some(shadowed)
         );
@@ -9931,14 +9981,14 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let binder = Variable(403_001);
         let accumulator = Variable(403_002);
-        let pointer = Address::symbolic(binder);
+        let pointer = OldAddress::symbolic(binder);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let raw = crate::kernel::MachineTerm::read_named(
+        let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer.clone(),
             LoadKind::Int32,
         );
-        let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        let named = OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &pointer,
             LoadKind::Int32,
@@ -9963,15 +10013,15 @@ mod comparison_read_batch_tests {
             )]))),
         };
         for read in [&raw, &named] {
-            let machine_fold = MachineTerm::RangeFold {
-                start: Box::new(MachineTerm::constant(0)),
-                end: Box::new(MachineTerm::constant(2)),
-                initial: Box::new(MachineTerm::constant(0)),
+            let machine_fold = OldMachineTerm::RangeFold {
+                start: Box::new(OldMachineTerm::constant(0)),
+                end: Box::new(OldMachineTerm::constant(2)),
+                initial: Box::new(OldMachineTerm::constant(0)),
                 accumulator,
                 item: binder,
                 body: Box::new(read.clone()),
             };
-            let machine_match = MachineTerm::AlgebraicMatch {
+            let machine_match = OldMachineTerm::AlgebraicMatch {
                 scrutinee: Box::new(AlgebraicTerm {
                     algebraic_type: algebraic_type.clone(),
                     node: AlgebraicTermNode::Variable(Variable(403_003)),
@@ -9980,15 +10030,15 @@ mod comparison_read_batch_tests {
                     binding_names: Default::default(),
                     variant: "Bound".into(),
                     bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                        MachineTerm::Variable(binder),
+                        OldMachineTerm::Variable(binder),
                     ))],
                     body: read.clone(),
                 }],
             };
             let integer_fold = IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                    end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+                    start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+                    end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(2)),
                 },
                 IntegerTerm::constant_i64(0),
                 accumulator,
@@ -10010,7 +10060,7 @@ mod comparison_read_batch_tests {
                 for source in [&raw, &named] {
                     let result = TermRewrite::comparison_read_batch(
                         &input,
-                        [(source.clone(), MachineTerm::constant(9))],
+                        [(source.clone(), OldMachineTerm::constant(9))],
                     )
                     .expect("internal bound read remains scoped");
                     assert_eq!(result, input);
@@ -10023,21 +10073,21 @@ mod comparison_read_batch_tests {
     fn batch_read_comparison_preserves_states_and_sealed_resources() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Variable(402_001);
-        let pointer = Address::symbolic(Variable(402_002));
+        let pointer = OldAddress::symbolic(Variable(402_002));
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(source)),
+            ProgramValue::Int32(OldMachineTerm::Variable(source)),
         ));
-        let untouched = crate::kernel::MachineTerm::read_named(
+        let untouched = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer,
             LoadKind::Int32,
         );
         let sealed = Resource::MutexGuard(MutexIdentity {
             epoch: Some(123),
-            mutex: Address {
+            mutex: OldAddress {
                 base: "sealed".into(),
-                offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 1),
+                offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(source), 1),
             },
         });
         let input = Proposition::And(
@@ -10050,7 +10100,10 @@ mod comparison_read_batch_tests {
         assert_eq!(
             TermRewrite::comparison_read_batch(
                 &input,
-                [(MachineTerm::Variable(source), MachineTerm::constant(9)),]
+                [(
+                    OldMachineTerm::Variable(source),
+                    OldMachineTerm::constant(9)
+                ),]
             ),
             Some(input)
         );
@@ -10065,41 +10118,41 @@ mod pointer_association_boundary_tests {
     fn shared_pointer_association_requires_exact_nonoverflow_source() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = MachineTerm::Variable(Variable(1081801));
-        let y = MachineTerm::Variable(Variable(1081802));
-        let z = MachineTerm::Variable(Variable(1081803));
-        let native = MachineTerm::add(x, y);
-        let left = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&native));
-        let right = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&z));
+        let x = OldMachineTerm::Variable(Variable(1081801));
+        let y = OldMachineTerm::Variable(Variable(1081802));
+        let z = OldMachineTerm::Variable(Variable(1081803));
+        let native = OldMachineTerm::add(x, y);
+        let left = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&native));
+        let right = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&z));
         let sum = KernelTerm::machine_binary_shared(
             ty,
             MachineBinaryOp::Add,
             [left.clone(), right.clone()],
         );
-        let scaled = |root| AddressOffset::Int32Scaled {
+        let scaled = |root| OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };
-        let condition = ConditionTerm::AddressOffsetEqual(
-            Box::new(AddressOffset::Add(
+        let condition = OldConditionTerm::AddressOffsetEqual(
+            Box::new(OldAddressOffset::Add(
                 Box::new(scaled(left)),
                 Box::new(scaled(right)),
             )),
             Box::new(scaled(sum)),
         );
-        let guard = ConditionTerm::signed_add_overflows(native, z);
+        let guard = OldConditionTerm::signed_add_overflows(native, z);
         let present = HashMap::from([(guard.clone(), false)]);
         let opposite = HashMap::from([(guard, true)]);
         let absent = HashMap::new();
         let exports = KernelTermExport::machine_export_count();
         assert_eq!(
             TermRewrite::for_conditions(&present).condition(&condition),
-            ConditionTerm::Constant(true)
+            OldConditionTerm::Constant(true)
         );
         for conditions in [&absent, &opposite] {
             assert_ne!(
                 TermRewrite::for_conditions(conditions).condition(&condition),
-                ConditionTerm::Constant(true)
+                OldConditionTerm::Constant(true)
             );
         }
         assert_eq!(KernelTermExport::machine_export_count(), exports);

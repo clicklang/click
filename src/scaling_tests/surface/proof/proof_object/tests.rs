@@ -5,27 +5,27 @@
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 #[test]
 fn a_missing_premise_spelling_walks_recorded_history_only_once() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let visible = MachineTerm::Variable(Variable(8_179_800));
+    let visible = OldMachineTerm::Variable(Variable(8_179_800));
     let state = ExecutionState::new().with_local("visible", ProgramValue::Int32(visible.clone()));
     let equal_zero = |term| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         )
     };
-    let missing = equal_zero(MachineTerm::Variable(Variable(8_179_801)));
+    let missing = equal_zero(OldMachineTerm::Variable(Variable(8_179_801)));
     let named = equal_zero(visible);
     let facts = [missing.clone(), named.clone()];
     let surfaces = SurfacePropositionMap::default();
@@ -48,7 +48,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             "missing premise raising",
             0,
             &facts,
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&state, &state, None, &retained_states),
             Some(&anchor),
@@ -104,58 +104,61 @@ fn same_block_offset_rewrite_work(
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let base = Address {
+    let base = OldAddress {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(8_179_100)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(8_179_100)),
+            4,
+        ),
     };
-    let remaining = MachineTerm::Variable(Variable(8_179_101));
+    let remaining = OldMachineTerm::Variable(Variable(8_179_101));
     // `k as uint32 as int32`: σ of the low word, as written.
-    let k = MachineTerm::sign_cast32(
+    let k = OldMachineTerm::sign_cast32(
         MachineIntegerType::UInt32,
         MachineIntegerType::Int32,
-        MachineTerm::legacy_cast(
+        OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
             Box::new(remaining.clone()),
         ),
     );
-    let shifted = Address {
+    let shifted = OldAddress {
         base: base.base.clone(),
-        offset: AddressOffset::Add(
+        offset: OldAddressOffset::Add(
             Box::new(base.offset.clone()),
-            Box::new(AddressOffset::scaled_int32_node(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 binary_node!(
                     Int32,
                     Subtract,
-                    Box::new(MachineTerm::constant(4)),
+                    Box::new(OldMachineTerm::constant(4)),
                     Box::new(k.clone()),
                 ),
                 4,
             )),
         ),
     };
-    let cursor = Address::symbolic(Variable(8_179_099));
+    let cursor = OldAddress::symbolic(Variable(8_179_099));
     let state = ExecutionState::new()
         .with_local("cursor", ProgramValue::pointer(cursor.clone()))
         .with_local("base", ProgramValue::pointer(base.clone()))
         .with_local("k", ProgramValue::UInt64(remaining));
     let mut facts = (0..pointer_history)
         .flat_map(|i| {
-            let old = MachineTerm::legacy_cast(
+            let old = OldMachineTerm::legacy_cast(
                 MachineCastSpelling::UInt32From64,
-                Box::new(MachineTerm::Variable(Variable(8_180_000 + i as u64))),
+                Box::new(OldMachineTerm::Variable(Variable(8_180_000 + i as u64))),
             );
             [
                 Proposition::condition_is(
-                    ConditionTerm::address_equal(
-                        Address {
+                    OldConditionTerm::address_equal(
+                        OldAddress {
                             base: base.base.clone(),
-                            offset: AddressOffset::Add(
+                            offset: OldAddressOffset::Add(
                                 Box::new(base.offset.clone()),
-                                Box::new(AddressOffset::scaled_int32_node(
+                                Box::new(OldAddressOffset::scaled_int32_node(
                                     binary_node!(
                                         Int32,
                                         Subtract,
-                                        Box::new(MachineTerm::constant(4)),
+                                        Box::new(OldMachineTerm::constant(4)),
                                         Box::new(old.clone()),
                                     ),
                                     4,
@@ -167,11 +170,11 @@ fn same_block_offset_rewrite_work(
                     true,
                 ),
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(old),
-                        right: Box::new(MachineTerm::constant(4)),
+                        right: Box::new(OldMachineTerm::constant(4)),
                     },
                     true,
                 ),
@@ -179,11 +182,11 @@ fn same_block_offset_rewrite_work(
         })
         .collect::<Vec<_>>();
     let bound = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(k),
-            right: Box::new(MachineTerm::constant(4)),
+            right: Box::new(OldMachineTerm::constant(4)),
         },
         true,
     );
@@ -206,7 +209,7 @@ fn same_block_offset_rewrite_work(
     assert_eq!(lowered, bound);
     let entry = state.clone().with_local(
         "k",
-        ProgramValue::UInt64(MachineTerm::Variable(Variable(8_179_098))),
+        ProgramValue::UInt64(OldMachineTerm::Variable(Variable(8_179_098))),
     );
     if from_cursor {
         let local_native_output_213 = state.locals().get_native("cursor");
@@ -221,7 +224,7 @@ fn same_block_offset_rewrite_work(
         let mut shifted_value = base_value.clone();
         shifted_value.replace_pointer(shifted.clone());
         let relation = Proposition::condition_is(
-            ConditionTerm::pointer_equal(cursor_value.clone(), shifted_value),
+            OldConditionTerm::pointer_equal(cursor_value.clone(), shifted_value),
             true,
         );
         let relation_surface = fixture.theorem_definitions()[0].requires[1]
@@ -263,7 +266,7 @@ fn same_block_offset_rewrite_work(
         0,
         &facts,
         Proposition::condition_is(
-            ConditionTerm::address_equal(if from_cursor { cursor } else { shifted }, base),
+            OldConditionTerm::address_equal(if from_cursor { cursor } else { shifted }, base),
             true,
         ),
         ParameterBinding::default(),
@@ -319,10 +322,10 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let truth = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let other = Proposition::Equal(
-        Term::Bitvector32(MachineTerm::constant(7).into()),
-        Term::Bitvector32(MachineTerm::constant(7).into()),
+        Term::Bitvector32(OldMachineTerm::constant(7).into()),
+        Term::Bitvector32(OldMachineTerm::constant(7).into()),
     );
     let goal = Proposition::And(Box::new(truth.clone()), Box::new(other.clone()));
     let samples = [16, 32, 64, 128].map(|size| {
@@ -416,9 +419,9 @@ fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
         right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::uint64_less_than(
-            MachineTerm::Variable(crate::kernel::Variable(1_000_000)),
-            MachineTerm::uint64_constant(22208),
+        OldConditionTerm::uint64_less_than(
+            OldMachineTerm::Variable(crate::kernel::Variable(1_000_000)),
+            OldMachineTerm::uint64_constant(22208),
         ),
         true,
     );
@@ -428,9 +431,9 @@ fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
         let mut facts = (0..size)
             .map(|index| {
                 Proposition::condition_is(
-                    ConditionTerm::uint64_less_than(
-                        MachineTerm::Variable(crate::kernel::Variable(1_000_000)),
-                        MachineTerm::uint64_constant(22209 + u64::from(index)),
+                    OldConditionTerm::uint64_less_than(
+                        OldMachineTerm::Variable(crate::kernel::Variable(1_000_000)),
+                        OldMachineTerm::uint64_constant(22209 + u64::from(index)),
                     ),
                     true,
                 )
@@ -538,11 +541,11 @@ fn choose_body_indexing_scales_with_selected_body_size() {
             (0..size)
                 .map(|index| {
                     Proposition::condition_is(
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(MachineTerm::Variable(chosen_variable)),
-                            right: Box::new(MachineTerm::constant(index)),
+                            left: Box::new(OldMachineTerm::Variable(chosen_variable)),
+                            right: Box::new(OldMachineTerm::constant(index)),
                         },
                         true,
                     )
@@ -907,19 +910,21 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         ))),
     );
     let arguments = vec![
-        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(60_002)))),
+        ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
+            60_002,
+        )))),
         ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
     ];
     let function_environment = ExecutionEnvironment::new();
@@ -983,7 +988,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         for path in paths {
             assert!(matches!(path.outcome(),
                 FunctionOutcome::Return { value, .. }
-                    if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
+                    if matches!(value.native().as_ref(), ProgramValue::Int32(OldMachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
         }
         let execution = joined.execution().expect("joined execution should remain");
         (
@@ -1037,11 +1042,11 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
         let x = IntegerTerm::var(Variable(9_103_000 + 2 * size as u64));
         let y = IntegerTerm::var(Variable(9_103_001 + 2 * size as u64));
         let equality = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(x.clone().into(), y.clone().into()),
+            OldConditionTerm::IntegerEqual(x.clone().into(), y.clone().into()),
             true,
         );
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::multiply(x.clone(), x.clone()).into(),
                 y.clone().into(),
             ),
@@ -1125,11 +1130,11 @@ fn state_premise_raising_does_no_per_state_work() {
     let parameter_binding = ParameterBinding::new(parameters.parameters(), &[]);
     let equals_zero = |variable| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::Variable(variable)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         )
@@ -1145,7 +1150,9 @@ fn state_premise_raising_does_no_per_state_work() {
                 },
                 ExecutionState::new().with_local(
                     "x",
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(8_179_000 + index as u64))),
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(
+                        8_179_000 + index as u64,
+                    ))),
                 ),
             );
         }
@@ -1196,15 +1203,17 @@ fn state_premise_raising_does_no_per_state_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let x = MachineTerm::Variable(Variable(9_920_000));
-    let y = MachineTerm::Variable(Variable(9_920_001));
-    let bound = MachineTerm::uint64_constant(22208);
+    let x = OldMachineTerm::Variable(Variable(9_920_000));
+    let y = OldMachineTerm::Variable(Variable(9_920_001));
+    let bound = OldMachineTerm::uint64_constant(22208);
     let equality = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(x.clone()),
@@ -1213,7 +1222,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         true,
     );
     let known = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: Box::new(y.clone()),
@@ -1222,7 +1231,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         true,
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: Box::new(x.clone()),
@@ -1247,11 +1256,11 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         let mut facts = vec![equality.clone(), known.clone()];
         for i in 0..ambient {
             facts.push(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(y.clone()),
-                    right: Box::new(MachineTerm::Variable(Variable(9_921_000 + i))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(9_921_000 + i))),
                 },
                 true,
             ));
@@ -1306,28 +1315,28 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
 #[test]
 fn loop_entry_wide_span_guard_retains_its_own_source_and_scales() {
     let parsed = syntax::parse_function("void span(const uint8* buf, uint64 len) { }").unwrap();
-    let pointer = Address::symbolic(Variable(812_000));
-    let original = MachineTerm::Variable(Variable(812_001));
+    let pointer = OldAddress::symbolic(Variable(812_000));
+    let original = OldMachineTerm::Variable(Variable(812_001));
     let remaining =
-        MachineTerm::uint64_subtract(original.clone(), MachineTerm::uint64_constant(16));
+        OldMachineTerm::uint64_subtract(original.clone(), OldMachineTerm::uint64_constant(16));
     // The source retains `16 + len`, including when len stores `original - 16`.
     // Algebraic cancellation is a comparison rule, not the source's term.
-    let span = MachineTerm::logical_machine_binary(
+    let span = OldMachineTerm::logical_machine_binary(
         crate::kernel::MachineIntegerType::UInt64,
         crate::kernel::MachineBinaryOp::Add,
-        MachineTerm::uint64_constant(16),
+        OldMachineTerm::uint64_constant(16),
         remaining.clone(),
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(span, MachineTerm::uint64_constant(i64::MAX as u64)),
+        OldConditionTerm::uint64_less_equal(span, OldMachineTerm::uint64_constant(i64::MAX as u64)),
         true,
     );
     let obligation = crate::kernel::ProofObligation::new(goal.clone());
     let base = ProgramExpression::Variable("buf".into());
-    let start = ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+    let start = ProgramExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)));
     let end = ProgramExpression::Add(
         Box::new(ProgramExpression::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(16),
+            OldMachineTerm::uint64_constant(16),
         ))),
         Box::new(ProgramExpression::Variable("len".into())),
     );
@@ -1405,13 +1414,13 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let entry_len = MachineTerm::Variable(Variable(813_000));
+    let entry_len = OldMachineTerm::Variable(Variable(813_000));
     let current_len =
-        MachineTerm::uint64_subtract(entry_len.clone(), MachineTerm::uint64_constant(16));
-    let limit = MachineTerm::uint64_constant(22208);
+        OldMachineTerm::uint64_subtract(entry_len.clone(), OldMachineTerm::uint64_constant(16));
+    let limit = OldMachineTerm::uint64_constant(22208);
     let bound = |length| {
         Proposition::condition_is(
-            ConditionTerm::uint64_less_equal(length, limit.clone()),
+            OldConditionTerm::uint64_less_equal(length, limit.clone()),
             true,
         )
     };
@@ -1508,20 +1517,20 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let load = MachineTerm::read_named(
+            let load = OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "rewrite_reads".into(),
-                    offset: AddressOffset::Constant(index as i64 * 4),
+                    offset: OldAddressOffset::Constant(index as i64 * 4),
                 }),
                 crate::kernel::LoadKind::Int32,
             );
             let (variable, registered) = crate::kernel::load_variable_for_term(&load).unwrap();
             let fact = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
                     right: Box::new(registered),
                 },
                 true,
@@ -1530,7 +1539,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 &fact
             ));
             facts.push(fact);
-            reads.push(MachineTerm::Variable(variable));
+            reads.push(OldMachineTerm::Variable(variable));
         }
         let state = ExecutionState::new()
             .with_memory(memory.memory().clone())
@@ -1554,15 +1563,15 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         let sum = reads
             .iter()
             .cloned()
-            .fold(MachineTerm::constant(0), |sum, read| {
+            .fold(OldMachineTerm::constant(0), |sum, read| {
                 binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(sum),
-                right: Box::new(MachineTerm::constant(7)),
+                right: Box::new(OldMachineTerm::constant(7)),
             },
             true,
         );
@@ -1603,7 +1612,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         );
         assert!(facts.iter().all(|fact| root.facts().contains(fact)));
         let alias = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(reads[0].clone()),
@@ -1651,17 +1660,17 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let before = MachineTerm::Variable(Variable(8_179_500));
-    let now = MachineTerm::Variable(Variable(8_179_501));
+    let before = OldMachineTerm::Variable(Variable(8_179_500));
+    let now = OldMachineTerm::Variable(Variable(8_179_501));
     let entry = ExecutionState::new().with_local("value", ProgramValue::Int32(before.clone()));
     let state = ExecutionState::new().with_local("value", ProgramValue::Int32(now.clone()));
     let equal_zero = |value| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         )
@@ -1690,7 +1699,7 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
             "current scalar premise",
             0,
             &facts,
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&entry, &state, None, &retained_states),
             Some(&anchor),
@@ -1747,9 +1756,9 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let pointer = Address {
+    let pointer = OldAddress {
         base: crate::kernel::AddressBase::Concrete("mixed-premise".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let entry = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block("mixed-premise", 4))
@@ -1759,7 +1768,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
         )
         .with_local(
             "now",
-            ProgramValue::UInt32(MachineTerm::Variable(Variable(8_179_510))),
+            ProgramValue::UInt32(OldMachineTerm::Variable(Variable(8_179_510))),
         );
     let state = entry
         .clone()
@@ -1767,11 +1776,11 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
             entry
                 .memory()
                 .clone()
-                .store(pointer, ProgramValue::UInt32(MachineTerm::constant(5))),
+                .store(pointer, ProgramValue::UInt32(OldMachineTerm::constant(5))),
         )
         .with_local(
             "now",
-            ProgramValue::UInt32(MachineTerm::Variable(Variable(8_179_511))),
+            ProgramValue::UInt32(OldMachineTerm::Variable(Variable(8_179_511))),
         );
     let fixture = crate::surface::parse("theorem mixed(p: uint32*, now: uint32) { requires now == old(p[0]) % 7u32; ensures true; }").unwrap();
     let surface = fixture.theorem_definitions()[0].requires[0]
@@ -1807,7 +1816,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
             "mixed entry/current premise",
             0,
             &facts,
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&entry, &state, None, &retained_states),
             Some(&anchor),
@@ -1841,6 +1850,8 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -1860,29 +1871,31 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: "rewrite_reads".into(),
-                offset: AddressOffset::Constant(index as i64 * 4),
+                offset: OldAddressOffset::Constant(index as i64 * 4),
             };
             let stored = binary_node!(
                 UInt32,
                 Remainder,
-                Box::new(MachineTerm::Variable(Variable(8_179_600 + index as u64,))),
-                Box::new(MachineTerm::constant(7)),
+                Box::new(OldMachineTerm::Variable(
+                    Variable(8_179_600 + index as u64,)
+                )),
+                Box::new(OldMachineTerm::constant(7)),
             );
             memory = memory.store(pointer.clone(), ProgramValue::UInt32(stored.clone()));
-            let load = MachineTerm::read_named(
+            let load = OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             );
             // The `int32` read of a `uint32` store is σ of the stored value.
             facts.push(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(load.clone()),
-                    right: Box::new(MachineTerm::sign_cast32(
+                    right: Box::new(OldMachineTerm::sign_cast32(
                         MachineIntegerType::UInt32,
                         MachineIntegerType::Int32,
                         stored,
@@ -1893,19 +1906,19 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             reads.push(load);
         }
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = facts[0].condition_native()
+        )) = facts[0].old_condition()
         else {
             unreachable!()
         };
         assert!(crate::kernel::is_store_fact(
-            &ConditionTerm::Compare {
+            &OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: left.clone(),
@@ -1914,7 +1927,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             true
         ));
         assert!(!crate::kernel::is_store_fact(
-            &ConditionTerm::Compare {
+            &OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: left.clone(),
@@ -1923,7 +1936,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             false
         ));
         assert!(!crate::kernel::is_store_fact(
-            &ConditionTerm::Compare {
+            &OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: left.clone(),
@@ -1931,20 +1944,20 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                     Int32,
                     Add,
                     right.clone(),
-                    Box::new(MachineTerm::constant(1))
+                    Box::new(OldMachineTerm::constant(1))
                 ))
             },
             true
         ));
-        let MachineTerm::MemoryLoad(memory_for_control, pointer_for_control, _) = left.as_ref()
+        let OldMachineTerm::MemoryLoad(memory_for_control, pointer_for_control, _) = left.as_ref()
         else {
             unreachable!()
         };
         assert!(!crate::kernel::is_store_fact(
-            &ConditionTerm::Compare {
+            &OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(OldMachineTerm::MemoryLoad(
                     memory_for_control.clone(),
                     pointer_for_control.clone(),
                     crate::kernel::LoadKind::Bits64
@@ -1975,15 +1988,15 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         let sum = reads
             .iter()
             .cloned()
-            .fold(MachineTerm::constant(0), |sum, read| {
+            .fold(OldMachineTerm::constant(0), |sum, read| {
                 binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(sum),
-                right: Box::new(MachineTerm::constant(7)),
+                right: Box::new(OldMachineTerm::constant(7)),
             },
             true,
         );
@@ -2045,14 +2058,14 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         );
         // An explicitly retained store equality remains a source rewrite.
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: _,
                 right: stored,
             },
             true,
-        )) = facts[0].condition_native()
+        )) = facts[0].old_condition()
         else {
             unreachable!()
         };
@@ -2089,7 +2102,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             "a retained store source must remain usable"
         );
         let alias = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(reads[0].clone()),
@@ -2151,7 +2164,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
     let mut costs = Vec::new();
     for size in [8usize, 16, 32, 64] {
         let words = (0..=size)
-            .map(|index| MachineTerm::Variable(Variable(8_987_000 + index as u64)))
+            .map(|index| OldMachineTerm::Variable(Variable(8_987_000 + index as u64)))
             .collect::<Vec<_>>();
         let terms = words
             .iter()
@@ -2166,7 +2179,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         let facts = (1..=size)
             .map(|index| {
                 let fact = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(words[0].clone()),
@@ -2187,7 +2200,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         );
         let goal = Proposition::condition_is(
             if native {
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(words[0].clone()),
@@ -2195,11 +2208,11 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
                         Int32,
                         Add,
                         Box::new(words[base].clone()),
-                        Box::new(MachineTerm::constant(1)),
+                        Box::new(OldMachineTerm::constant(1)),
                     )),
                 }
             } else {
-                ConditionTerm::IntegerEqual(terms[0].clone().into(), right.into())
+                OldConditionTerm::IntegerEqual(terms[0].clone().into(), right.into())
             },
             true,
         );
@@ -2241,7 +2254,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
 
         let mut contradictory = facts.clone();
         contradictory.push(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         ));
         let contradictory_context = PureTheoremContext {
@@ -2349,7 +2362,7 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let truth = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let surface_truth = SyntaxProposition::Comparison {
         left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
@@ -2394,19 +2407,21 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let retained_states = RecordedStates::new();
     let surfaces = SurfacePropositionMap::default();
-    let term = MachineTerm::Variable(Variable(8_199_901));
+    let term = OldMachineTerm::Variable(Variable(8_199_901));
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(term.clone()),
-            right: Box::new(MachineTerm::constant(1)),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
         true,
     );
@@ -2470,6 +2485,8 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn fixed_state_goal_opening_ignores_load_equality_buckets() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -2479,15 +2496,15 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
     let surfaces = SurfacePropositionMap::default();
     let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
     let read = |index| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
-            Box::new(crate::kernel::Address::symbolic(Variable(index))),
+            Box::new(crate::kernel::OldAddress::symbolic(Variable(index))),
             crate::kernel::LoadKind::Int32,
         )
     };
     let equal = |left, right| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -2497,7 +2514,7 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
         )
     };
     let selected = read(8_185_000);
-    let goal = equal(selected.clone(), MachineTerm::constant(7));
+    let goal = equal(selected.clone(), OldMachineTerm::constant(7));
 
     for related in [false, true] {
         for exact in [false, true] {
@@ -2512,7 +2529,7 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
                     };
                     facts = facts.with_kernel_checked_fact(equal(
                         endpoint,
-                        MachineTerm::Variable(Variable(8_187_000 + index)),
+                        OldMachineTerm::Variable(Variable(8_187_000 + index)),
                     ));
                 }
                 if exact {
@@ -2548,21 +2565,23 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let variable = MachineTerm::Variable(Variable(8_180_000));
+    let variable = OldMachineTerm::Variable(Variable(8_180_000));
     let state = ExecutionState::new().with_local("x", ProgramValue::Int32(variable.clone()));
     let retained_states = RecordedStates::new();
     let surfaces = SurfacePropositionMap::default();
-    let bound = |variable: MachineTerm, limit| {
+    let bound = |variable: OldMachineTerm, limit| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(variable),
-                right: Box::new(MachineTerm::constant(limit)),
+                right: Box::new(OldMachineTerm::constant(limit)),
             },
             true,
         )
@@ -2582,7 +2601,7 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
                         if related {
                             variable.clone()
                         } else {
-                            MachineTerm::Variable(Variable(9_000_000 + u64::from(index)))
+                            OldMachineTerm::Variable(Variable(9_000_000 + u64::from(index)))
                         },
                         100 + index,
                     )
@@ -2635,6 +2654,8 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn fixed_state_application_proves_premises_and_replays_explicitly() {
     let file = crate::surface::parse(
         "theorem nonnegative(n: int32) { requires n >= 0; ensures n >= 0 by close(); }",
@@ -2646,7 +2667,7 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
     let definitions = SpecDefinitions::new(&predicates, &functions);
     let theorem_definitions = proof_theorem_definitions(&file).unwrap();
     let theorems = TheoremEnvironment::new(&theorem_definitions);
-    let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
+    let value = ProgramValue::Int32(OldMachineTerm::Variable(Variable(8_900_000)));
     let state = ExecutionState::new().with_local("x", value.clone());
     let arguments = vec![ProgramExpression::Value(value)];
     let binding = ParameterBinding::new(parsed.parameters(), &arguments);
@@ -2778,7 +2799,8 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         let theorems = TheoremEnvironment::new(file.theorem_definitions());
         // Distinct operands keep each size cold even when interner keys
         // retain an earlier operand until their bounded cleanup reaches it.
-        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000 + size as u64)));
+        let value =
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(8_900_000 + size as u64)));
         let state = ExecutionState::new().with_local("x", value.clone());
         let arguments = vec![ProgramExpression::Value(value)];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
@@ -2843,11 +2865,11 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let a = MachineTerm::Variable(Variable(8_179_900));
-    let b = MachineTerm::Variable(Variable(8_179_901));
-    let result = MachineTerm::Variable(Variable(8_179_902));
-    let conditional = MachineTerm::If {
-        condition: Box::new(ConditionTerm::unsigned_less_equal(a.clone(), b.clone())),
+    let a = OldMachineTerm::Variable(Variable(8_179_900));
+    let b = OldMachineTerm::Variable(Variable(8_179_901));
+    let result = OldMachineTerm::Variable(Variable(8_179_902));
+    let conditional = OldMachineTerm::If {
+        condition: Box::new(OldConditionTerm::unsigned_less_equal(a.clone(), b.clone())),
         then_term: Box::new(a.clone()),
         else_term: Box::new(b.clone()),
     };
@@ -2856,7 +2878,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
             crate::kernel::SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, word),
         ))
     };
-    let condition = ConditionTerm::IntegerEqual(observe(result.clone()), observe(conditional));
+    let condition = OldConditionTerm::IntegerEqual(observe(result.clone()), observe(conditional));
     let fact = Proposition::condition_is(condition.clone(), true);
     let state = ExecutionState::new()
         .with_local("a", ProgramValue::UInt32(a))
@@ -2885,7 +2907,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
             "retained conditional spelling",
             0,
             &facts,
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
             ParameterBinding::default(),
             FixedStateFrame::new(&entry, &state, None, &retained_states),
             Some(&anchor),
@@ -2941,7 +2963,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
 fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
     let binding = |variable| {
         SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
-            Address::symbolic(Variable(variable)),
+            OldAddress::symbolic(Variable(variable)),
             ProgramType::Int32Pointer,
         )))
     };
@@ -3040,21 +3062,29 @@ fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn local_predicate_unfold_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(false, true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn local_predicate_unfold_miss_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(false, false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn local_quantified_unfold_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(true, true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn local_quantified_unfold_miss_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(true, false);
 }

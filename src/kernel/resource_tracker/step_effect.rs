@@ -297,7 +297,7 @@ pub(in crate::kernel) fn separation_check(
 /// verdict from the same premises.
 fn cell_effect(
     step: &MemoryDerivation,
-    pointer: &Address,
+    pointer: &OldAddress,
     extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -395,9 +395,9 @@ fn cell_effect(
             // its others, as for `HeapFreed` below. Only distinct *blocks*
             // decide without the size.
             if extended_dag_bridging_active()
-                && pointer.blocks_proven_distinct(&Address {
+                && pointer.blocks_proven_distinct(&OldAddress {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 })
             {
                 hop(MemoryDagHopJustification::LocalLifetimeEndedOfOtherBlock)
@@ -418,9 +418,9 @@ fn cell_effect(
                     write_membership,
                     load_membership,
                 }) = typed_store_separated_ranges_evidence(
-                    &Address {
+                    &OldAddress {
                         base: block.clone(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     },
                     size,
                     pointer,
@@ -429,9 +429,9 @@ fn cell_effect(
                 )
                 .or_else(|| {
                     owned_composition_store_separated_evidence(
-                        &Address {
+                        &OldAddress {
                             base: block.clone(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         },
                         size,
                         pointer,
@@ -548,7 +548,7 @@ fn cell_effect(
                     assumptions,
                 )?;
                 let last_pointer =
-                    pointer.offset_by_elements(MachineTerm::constant(bytes / width - 1), width);
+                    pointer.offset_by_elements(OldMachineTerm::constant(bytes / width - 1), width);
                 let last = super::cell_source::PointerInRangeEvidence::for_pointer(
                     &last_pointer,
                     range,
@@ -612,7 +612,7 @@ fn cell_effect(
                     assumptions,
                 )?;
                 let last_pointer =
-                    pointer.offset_by_elements(MachineTerm::constant(bytes / width - 1), width);
+                    pointer.offset_by_elements(OldMachineTerm::constant(bytes / width - 1), width);
                 let last = super::cell_source::PointerInRangeEvidence::for_pointer(
                     &last_pointer,
                     &range,
@@ -648,9 +648,9 @@ fn cell_effect(
 /// the same question asked of each store it stands for.
 fn store_cell_effect(
     step: &MemoryDerivation,
-    write: &Address,
+    write: &OldAddress,
     write_bytes: u32,
-    pointer: &Address,
+    pointer: &OldAddress,
     extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -737,20 +737,20 @@ fn store_cell_effect(
     {
         let condition = pointer_offsets_with_common_base_distinctness_condition(write, pointer)
             .expect("a successful common-base check has a cancellation condition");
-        let unequal_constants = condition == ConditionTerm::Constant(false);
+        let unequal_constants = condition == OldConditionTerm::Constant(false);
         if unequal_constants {
             hop(MemoryDagHopJustification::StoreCommonBaseUnequalConstants { condition })
         } else if assumptions.exact_condition_value(&condition) == Some(false) {
             hop(MemoryDagHopJustification::StoreCommonBaseExactInequality { condition })
-        } else if let ConditionTerm::Compare {
+        } else if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         } = &condition
             && let Some(path) = assumptions.exact_signed_order_source_path(
-                MachineOperandView::Legacy(left),
-                MachineOperandView::Legacy(right),
+                MachineOperandView::Old(left),
+                MachineOperandView::Old(right),
                 true,
             )
         {
@@ -759,15 +759,15 @@ fn store_cell_effect(
                 path,
                 reversed: false,
             })
-        } else if let ConditionTerm::Compare {
+        } else if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         } = &condition
             && let Some(path) = assumptions.exact_signed_order_source_path(
-                MachineOperandView::Legacy(right),
-                MachineOperandView::Legacy(left),
+                MachineOperandView::Old(right),
+                MachineOperandView::Old(left),
                 true,
             )
         {
@@ -844,8 +844,8 @@ fn store_cell_effect(
 /// different, weaker fact — a store can reach a read without starting where
 /// it starts.
 pub(in crate::kernel) fn write_is_at_read_address(
-    write: &Address,
-    pointer: &Address,
+    write: &OldAddress,
+    pointer: &OldAddress,
     assumptions: &PureFactContext,
 ) -> bool {
     write == pointer
@@ -860,7 +860,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
                 assumptions,
             )
         || write.base == pointer.base
-            && assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
+            && assumptions.exact_condition_value(&OldConditionTerm::address_offset_equal(
                 write.offset.clone(),
                 pointer.offset.clone(),
             )) == Some(true)
@@ -871,7 +871,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
 pub(in crate::kernel) enum SeededCellEffect {
     /// One of its stores writes the cell: the store's pointer, and the value
     /// the walk reads.
-    Written(Address, ProgramValue),
+    Written(OldAddress, ProgramValue),
     /// Every store it stands for is separate from the cell, in the order a
     /// walk meets them.
     Separate(Vec<MemoryDagHopJustification>),
@@ -884,7 +884,7 @@ pub(in crate::kernel) enum SeededCellEffect {
 /// separate.
 pub(in crate::kernel) fn seeded_cell_effect(
     step: &MemoryDerivation,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -955,7 +955,7 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &MemoryDerivation) -> 
 fn seeded_cell_effect_store_by_store(
     step: &MemoryDerivation,
     run: &crate::kernel::primitives::CellRun,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -1319,9 +1319,9 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
             }
         }
         MemoryDerivation::LocalLifetimeEnded { block, .. } => {
-            let retired = Address {
+            let retired = OldAddress {
                 base: block.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             if ranges
                 .iter()

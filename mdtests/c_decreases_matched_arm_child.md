@@ -26,6 +26,7 @@ int32 tree_depth_ok(struct node* root) {
 ```
 
 ```click
+import click::separation;
 verifying "c_decreases_matched_arm_child.c";
 
 spec enum HeapTree {
@@ -67,14 +68,23 @@ int32 tree_depth_ok(struct node* root) {
         HeapTree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             branch { true => { step(); close(); } false => {} }
+            // Preserve the int32 cell itself, excluding struct padding.
+            have separate(l, memory((&root->value)[0..1])) by close();
+            mark before_left;
             step(tree_depth_ok, { t: l });
+            have contains(at(before_left, l), statement(1).call(tree_depth_ok, 0).footprint) by close();
+            apply(separation::contains_refl(memory((&root->value)[0..1])));
+            apply(separation::separate_restrict(at(before_left, l), memory((&root->value)[0..1]), statement(1).call(tree_depth_ok, 0).footprint, memory((&root->value)[0..1])));
+            have root->value == at(before_left, root->value) by {
+                preserve(memory((&root->value)[0..1]), statement(1).call(tree_depth_ok, 0));
+            }
             branch {
                 true => {
                     step();
                     let t = fold(tree_at(root), { model: old(t.model), left: l, right: r }) {
                         requires root->value == value by {
                             rewrite(at(function.entry, value), at(function.entry, root->value));
-                            normalize() using {};
+                            close();
                         }
                     }
                     close();
@@ -88,7 +98,7 @@ int32 tree_depth_ok(struct node* root) {
             let t = fold(tree_at(root), { model: old(t.model), left: l, right: r }) {
                 requires root->value == value by {
                     rewrite(at(function.entry, value), at(function.entry, root->value));
-                    normalize() using {};
+                    close();
                 }
             }
             close();

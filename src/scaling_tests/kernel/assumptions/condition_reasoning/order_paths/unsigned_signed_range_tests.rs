@@ -9,17 +9,17 @@ fn signed_range_admission_ignores_unrelated_facts() {
         let mut parent = PureFactContext::new();
         for id in 0..size {
             parent = parent.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(740_000 + id)),
-                    MachineTerm::constant(7),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(740_000 + id)),
+                    OldMachineTerm::constant(7),
                 ),
                 true,
             );
         }
-        let x = MachineTerm::Variable(Variable(750_000));
-        let query = ConditionTerm::unsigned_less_equal(x.clone(), MachineTerm::constant(256));
+        let x = OldMachineTerm::Variable(Variable(750_000));
+        let query = OldConditionTerm::unsigned_less_equal(x.clone(), OldMachineTerm::constant(256));
         let expected = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(MachineTerm::constant(0), signed_uint32_term(x)),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), signed_uint32_term(x)),
             true,
         );
         let (child, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -36,6 +36,8 @@ fn signed_range_admission_ignores_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.5s in the parallel gate"]
 fn signed_range_decision_retains_shared_operands_without_history_or_exports() {
     for hit in [false, true] {
         let mut samples = Vec::new();
@@ -53,22 +55,22 @@ fn signed_range_decision_retains_shared_operands_without_history_or_exports() {
                     [root.clone(), root],
                 );
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(770_000 + id)),
-                        MachineTerm::constant(7),
+                    OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(770_000 + id)),
+                        OldMachineTerm::constant(7),
                     ),
                     true,
                 );
             }
             let source = MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt32);
             let signed = source.checking_cast_operand(MachineIntegerType::Int32);
-            let zero = MachineTerm::constant(0);
-            let maximum = MachineTerm::constant(256);
+            let zero = OldMachineTerm::constant(0);
+            let maximum = OldMachineTerm::constant(256);
             facts = facts.assume_condition(
                 condition_for_operand_views(
                     MachineIntegerType::Int32,
                     CompareRelation::LessEqual,
-                    [MachineOperandView::Legacy(&zero), signed.operand_view()],
+                    [MachineOperandView::Old(&zero), signed.operand_view()],
                 ),
                 true,
             );
@@ -77,7 +79,7 @@ fn signed_range_decision_retains_shared_operands_without_history_or_exports() {
                     condition_for_operand_views(
                         MachineIntegerType::Int32,
                         CompareRelation::LessEqual,
-                        [signed.operand_view(), MachineOperandView::Legacy(&maximum)],
+                        [signed.operand_view(), MachineOperandView::Old(&maximum)],
                     ),
                     true,
                 );
@@ -85,7 +87,7 @@ fn signed_range_decision_retains_shared_operands_without_history_or_exports() {
             let query = condition_for_operand_views(
                 MachineIntegerType::UInt32,
                 CompareRelation::LessEqual,
-                [source.operand_view(), MachineOperandView::Legacy(&maximum)],
+                [source.operand_view(), MachineOperandView::Old(&maximum)],
             );
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

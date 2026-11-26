@@ -407,7 +407,7 @@ pub(super) fn shared_value_reading(
                 continue;
             }
             if let KernelTermNode::MachineLiteral(value) = term.node()
-                && ty.constant_from_term(&value.legacy_term()).is_none()
+                && ty.constant_from_term(&value.old_term()).is_none()
             {
                 break None;
             }
@@ -423,7 +423,7 @@ pub(super) fn shared_value_reading(
 #[derive(Clone, Copy)]
 pub(crate) enum MachineOperandView<'a> {
     Shared(&'a KernelTerm),
-    Legacy(&'a MachineTerm),
+    Old(&'a OldMachineTerm),
 }
 
 impl SharedMachineIntegerTerm {
@@ -433,7 +433,7 @@ impl SharedMachineIntegerTerm {
         let Some(root) = self.shared_operand() else {
             return Self::intern(
                 destination,
-                MachineTerm::machine_integer_cast(self.ty(), destination, self.value().clone()),
+                OldMachineTerm::machine_integer_cast(self.ty(), destination, self.value().clone()),
             );
         };
         Self::from_shared(
@@ -472,7 +472,7 @@ impl SharedMachineIntegerTerm {
         } else {
             Self::intern(
                 destination,
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: Box::new(self.value().clone()),
                     from: self.ty(),
@@ -491,10 +491,10 @@ impl SharedMachineIntegerTerm {
             }
             MachineIntegerOperand::Shared { term, .. } => term
                 .machine_conversion_leaf()
-                .map(MachineOperandView::Legacy)
+                .map(MachineOperandView::Old)
                 .unwrap_or(MachineOperandView::Shared(term)),
             MachineIntegerOperand::Legacy(value)
-            | MachineIntegerOperand::ExactLegacy { value, .. } => MachineOperandView::Legacy(value),
+            | MachineIntegerOperand::ExactLegacy { value, .. } => MachineOperandView::Old(value),
         }
     }
 }
@@ -514,7 +514,7 @@ impl<'a> MachineOperandView<'a> {
     pub(crate) fn match_scrutinee(self) -> Option<std::borrow::Cow<'a, AlgebraicTerm>> {
         use std::borrow::Cow;
         match self {
-            Self::Legacy(MachineTerm::AlgebraicMatch { scrutinee, .. }) => {
+            Self::Old(OldMachineTerm::AlgebraicMatch { scrutinee, .. }) => {
                 Some(Cow::Borrowed(scrutinee))
             }
             Self::Shared(root) => {
@@ -537,7 +537,7 @@ impl<'a> MachineOperandView<'a> {
     pub(crate) fn matched(self) -> Option<MachineMatchView<'a>> {
         use std::borrow::Cow;
         match self {
-            Self::Legacy(MachineTerm::AlgebraicMatch { scrutinee, arms }) => {
+            Self::Old(OldMachineTerm::AlgebraicMatch { scrutinee, arms }) => {
                 Some(MachineMatchView {
                     scrutinee: Cow::Borrowed(scrutinee),
                     arms: arms
@@ -545,7 +545,7 @@ impl<'a> MachineOperandView<'a> {
                         .map(|arm| MachineMatchArmView {
                             variant: &arm.variant,
                             bindings: Cow::Borrowed(&arm.bindings),
-                            body: Self::Legacy(&arm.body),
+                            body: Self::Old(&arm.body),
                         })
                         .collect(),
                 })
@@ -591,7 +591,7 @@ impl<'a> MachineOperandView<'a> {
                 )),
                 _ => None,
             },
-            Self::Legacy(MachineTerm::RangeFold {
+            Self::Old(OldMachineTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -607,7 +607,7 @@ impl<'a> MachineOperandView<'a> {
                     initial.as_ref(),
                     body.as_ref(),
                 ]
-                .map(Self::Legacy),
+                .map(Self::Old),
             )),
             _ => None,
         }
@@ -623,28 +623,28 @@ impl<'a> MachineOperandView<'a> {
                 )),
                 _ => self
                     .retained_native_input()
-                    .and_then(|leaf| Self::Legacy(leaf).conditional_view()),
+                    .and_then(|leaf| Self::Old(leaf).conditional_view()),
             },
-            Self::Legacy(MachineTerm::If {
+            Self::Old(OldMachineTerm::If {
                 condition,
                 then_term,
                 else_term,
             }) => Some((
                 BooleanOperandView::Native(condition),
-                [Self::Legacy(then_term), Self::Legacy(else_term)],
+                [Self::Old(then_term), Self::Old(else_term)],
             )),
             _ => None,
         }
     }
 
     /// Explicit native guard boundary for consumers not yet migrated.
-    pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, ConditionTerm>, [Self; 2])> {
+    pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, OldConditionTerm>, [Self; 2])> {
         self.conditional_view()
             .map(|(guard, arms)| (guard.native(), arms))
     }
 
     /// Borrow an already-native operand embedded in a shared root.
-    fn retained_native_input(self) -> Option<&'a MachineTerm> {
+    fn retained_native_input(self) -> Option<&'a OldMachineTerm> {
         let Self::Shared(root) = self else {
             return None;
         };
@@ -658,11 +658,11 @@ impl<'a> MachineOperandView<'a> {
             return Some(*destination);
         }
         let value = match self {
-            Self::Legacy(value) => value,
+            Self::Old(value) => value,
             Self::Shared(_) => self.retained_native_input()?,
         };
         match value {
-            MachineTerm::IntegerToMachine { destination, .. } => Some(*destination),
+            OldMachineTerm::IntegerToMachine { destination, .. } => Some(*destination),
             _ => None,
         }
     }
@@ -684,14 +684,14 @@ impl<'a> MachineOperandView<'a> {
                     (*destination, literal)
                 }
                 _ => {
-                    return Self::Legacy(self.retained_native_input()?)
+                    return Self::Old(self.retained_native_input()?)
                         .checked_literal_integer_conversion();
                 }
             },
-            Self::Legacy(MachineTerm::IntegerToMachine { value, destination }) => {
+            Self::Old(OldMachineTerm::IntegerToMachine { value, destination }) => {
                 (*destination, value.as_const()?)
             }
-            Self::Legacy(_) => return None,
+            Self::Old(_) => return None,
         };
         Some((
             destination,
@@ -706,32 +706,34 @@ impl<'a> MachineOperandView<'a> {
                 KernelTermNode::MemoryLoad { kind, .. } => Some(*kind),
                 KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_) => {
-                    Self::Legacy(self.retained_native_input()?).read_kind()
+                    Self::Old(self.retained_native_input()?).read_kind()
                 }
                 _ => None,
             },
-            Self::Legacy(MachineTerm::MemoryLoad(_, _, kind)) => Some(*kind),
-            Self::Legacy(_) => None,
+            Self::Old(OldMachineTerm::MemoryLoad(_, _, kind)) => Some(*kind),
+            Self::Old(_) => None,
         }
     }
 
     /// Native compatibility view of a selected read. Shared addresses are adapted
     /// once at the read leaf; surrounding arithmetic is never exported.
-    pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Address, LoadKind)> {
+    pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a OldAddress, LoadKind)> {
         let (point, address, kind) = self.read_point()?;
         Some((point.shared_memory(), address, kind))
     }
 
-    pub(in crate::kernel) fn read_point(self) -> Option<(&'a ProgramPoint, &'a Address, LoadKind)> {
+    pub(in crate::kernel) fn read_point(
+        self,
+    ) -> Option<(&'a ProgramPoint, &'a OldAddress, LoadKind)> {
         if let Some(value) = self.retained_native_input() {
-            return Self::Legacy(value).read_point();
+            return Self::Old(value).read_point();
         }
         match self {
-            Self::Shared(term) => Self::Legacy(term.machine_read_leaf()?).read_point(),
-            Self::Legacy(MachineTerm::MemoryLoad(point, address, kind)) => {
+            Self::Shared(term) => Self::Old(term.machine_read_leaf()?).read_point(),
+            Self::Old(OldMachineTerm::MemoryLoad(point, address, kind)) => {
                 Some((point, address, *kind))
             }
-            Self::Legacy(_) => None,
+            Self::Old(_) => None,
         }
     }
 
@@ -752,7 +754,7 @@ impl<'a> MachineOperandView<'a> {
 
     pub(crate) fn try_retain(self, ty: MachineIntegerType) -> Option<SharedMachineIntegerTerm> {
         match self {
-            Self::Legacy(value) => Some(SharedMachineIntegerTerm::intern(ty, value.clone())),
+            Self::Old(value) => Some(SharedMachineIntegerTerm::intern(ty, value.clone())),
             Self::Shared(term) => {
                 SharedMachineIntegerTerm::from_shared(ty, term.with_machine_observation_type(ty))
             }
@@ -772,7 +774,7 @@ impl<'a> MachineOperandView<'a> {
             {
                 return LoadKind::of_type(ty.program_type()) == Some(kind);
             }
-            if let Self::Legacy(value) = self {
+            if let Self::Old(value) = self {
                 return ty.accepts_cast_operand(value);
             }
             if let Some(value) = self.retained_native_input() {
@@ -809,7 +811,7 @@ impl<'a> MachineOperandView<'a> {
         Self,
     )> {
         if let Some(value) = self.retained_native_input() {
-            return Self::Legacy(value).cast();
+            return Self::Old(value).cast();
         }
 
         match self {
@@ -822,17 +824,17 @@ impl<'a> MachineOperandView<'a> {
                 } => Some((*encoding, *source, *destination, Self::Shared(operand))),
                 _ => None,
             },
-            Self::Legacy(term) => {
+            Self::Old(term) => {
                 let (op, operand) = term.as_unary()?;
                 let (encoding, source, destination) = MachineCastSpelling::of_unary(op)?;
-                Some((encoding, source, destination, Self::Legacy(operand)))
+                Some((encoding, source, destination, Self::Old(operand)))
             }
         }
     }
 
     pub(crate) fn variable(self) -> Option<&'a Variable> {
         if let Some(value) = self.retained_native_input() {
-            return Self::Legacy(value).variable();
+            return Self::Old(value).variable();
         }
 
         match self {
@@ -840,14 +842,14 @@ impl<'a> MachineOperandView<'a> {
                 KernelTermNode::Variable(variable) => Some(variable),
                 _ => None,
             },
-            Self::Legacy(MachineTerm::Variable(variable)) => Some(variable),
-            Self::Legacy(_) => None,
+            Self::Old(OldMachineTerm::Variable(variable)) => Some(variable),
+            Self::Old(_) => None,
         }
     }
 
     pub(crate) fn binary(self) -> Option<(MachineIntegerType, MachineBinaryOp, [Self; 2])> {
         if let Some(value) = self.retained_native_input() {
-            return Self::Legacy(value).binary();
+            return Self::Old(value).binary();
         }
 
         match self {
@@ -863,19 +865,19 @@ impl<'a> MachineOperandView<'a> {
                 )),
                 _ => None,
             },
-            Self::Legacy(MachineTerm::Binary {
+            Self::Old(OldMachineTerm::Binary {
                 format,
                 op,
                 left,
                 right,
-            }) => Some((*format, *op, [Self::Legacy(left), Self::Legacy(right)])),
-            Self::Legacy(_) => None,
+            }) => Some((*format, *op, [Self::Old(left), Self::Old(right)])),
+            Self::Old(_) => None,
         }
     }
 
     pub(crate) fn unary(self) -> Option<(MachineIntegerType, MachineUnaryOp, Self)> {
         if let Some(value) = self.retained_native_input() {
-            return Self::Legacy(value).unary();
+            return Self::Old(value).unary();
         }
 
         match self {
@@ -887,11 +889,11 @@ impl<'a> MachineOperandView<'a> {
                 } => Some((*format, *operator, Self::Shared(operand))),
                 _ => None,
             },
-            Self::Legacy(MachineTerm::Unary {
+            Self::Old(OldMachineTerm::Unary {
                 format,
                 op,
                 operand,
-            }) => Some((*format, *op, Self::Legacy(operand))),
+            }) => Some((*format, *op, Self::Old(operand))),
             _ => None,
         }
     }
@@ -903,9 +905,9 @@ impl<'a> MachineOperandView<'a> {
         else {
             return None;
         };
-        if right.literal() == Some(MachineTerm::constant(value)) {
+        if right.literal() == Some(OldMachineTerm::constant(value)) {
             Some(left)
-        } else if left.literal() == Some(MachineTerm::constant(value)) {
+        } else if left.literal() == Some(OldMachineTerm::constant(value)) {
             Some(right)
         } else {
             None
@@ -940,48 +942,45 @@ impl<'a> MachineOperandView<'a> {
     }
 
     /// Literal payload only, without descending through an operation.
-    pub(crate) fn literal(self) -> Option<MachineTerm> {
+    pub(crate) fn literal(self) -> Option<OldMachineTerm> {
         if let Some(value) = self.retained_native_input() {
-            return Self::Legacy(value).literal();
+            return Self::Old(value).literal();
         }
 
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MachineLiteral(value) => {
                     crate::instrumentation::record_deterministic_work(1);
-                    Some(value.legacy_term())
+                    Some(value.old_term())
                 }
                 _ => None,
             },
-            Self::Legacy(value) if is_machine_constant(value) => Some(value.clone()),
+            Self::Old(value) if is_machine_constant(value) => Some(value.clone()),
             _ => None,
         }
     }
 
     pub(crate) fn word32_constant(self) -> Option<u32> {
         match self {
-            Self::Legacy(value) => value.as_const(),
-            Self::Shared(term) => term.machine_constant_reading()?.legacy_term().as_const(),
+            Self::Old(value) => value.as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.old_term().as_const(),
         }
     }
 
     pub(crate) fn uint64_constant(self) -> Option<u64> {
         match self {
-            Self::Legacy(value) => value.uint64_as_const(),
+            Self::Old(value) => value.uint64_as_const(),
             Self::Shared(term) => term
                 .machine_constant_reading()?
-                .legacy_term()
+                .old_term()
                 .uint64_as_const(),
         }
     }
 
     pub(crate) fn int64_constant(self) -> Option<i64> {
         match self {
-            Self::Legacy(value) => value.int64_as_const(),
-            Self::Shared(term) => term
-                .machine_constant_reading()?
-                .legacy_term()
-                .int64_as_const(),
+            Self::Old(value) => value.int64_as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.old_term().int64_as_const(),
         }
     }
 
@@ -1004,7 +1003,7 @@ impl<'a> MachineOperandView<'a> {
         if let Some((MachineCastSpelling::UInt32From64, _, _, operand)) = self.cast()
             && let Some((MachineIntegerType::UInt64, MachineBinaryOp::ShiftRight, [_, count])) =
                 operand.binary()
-            && let Some(MachineTerm::Constant { bits, .. }) = count.literal()
+            && let Some(OldMachineTerm::Constant { bits, .. }) = count.literal()
             && bits < 64
         {
             return (u64::MAX >> bits as u32).min(u32::MAX as u64) as u32;
@@ -1037,11 +1036,11 @@ impl<'a> MachineOperandView<'a> {
         if let Self::Shared(root) = self
             && let Some(value) = root.machine_conversion_leaf()
         {
-            return Self::Legacy(value).root_width();
+            return Self::Old(value).root_width();
         }
 
         match self {
-            Self::Legacy(value) => crate::kernel::root_width(value),
+            Self::Old(value) => crate::kernel::root_width(value),
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MachineBinary { format, .. }
                 | KernelTermNode::MachineUnary { format, .. } => {
@@ -1081,7 +1080,7 @@ impl<'a> MachineOperandView<'a> {
         if let Self::Shared(term) = self
             && let Some(value) = term.machine_conversion_leaf()
         {
-            return Self::Legacy(value).observe(ty);
+            return Self::Old(value).observe(ty);
         }
         if let Some(literal) = self.literal() {
             return IntegerTerm::from_machine(ty, literal);
@@ -1105,9 +1104,7 @@ impl<'a> MachineOperandView<'a> {
                 };
                 if let KernelTermNode::MachineLiteral(value) = read.node() {
                     return Some(IntegerTerm::constant(
-                        read_ty
-                            .constant_from_term(&value.legacy_term())?
-                            .to_integer(),
+                        read_ty.constant_from_term(&value.old_term())?.to_integer(),
                     ));
                 }
                 let observed_ty = match term.node() {
@@ -1130,25 +1127,25 @@ impl<'a> MachineOperandView<'a> {
                     )?,
                 ))
             }
-            Self::Legacy(value) => IntegerTerm::from_machine(ty, value.clone()),
+            Self::Old(value) => IntegerTerm::from_machine(ty, value.clone()),
         }
     }
 
     /// Select one read for the existing read-over-write adapter. Shared reads
     /// lend their retained native leaf; compatibility variables cost O(1).
     /// Explicit shared operators are never recursively resolved here.
-    pub(crate) fn read_source(self) -> Option<std::borrow::Cow<'a, MachineTerm>> {
+    pub(crate) fn read_source(self) -> Option<std::borrow::Cow<'a, OldMachineTerm>> {
         if let Self::Shared(root) = self
             && let Some(value) = root.machine_conversion_leaf()
         {
-            return Self::Legacy(value).read_source();
+            return Self::Old(value).read_source();
         }
 
         match self {
-            Self::Legacy(value) => Some(std::borrow::Cow::Borrowed(value)),
+            Self::Old(value) => Some(std::borrow::Cow::Borrowed(value)),
             Self::Shared(term) => match term.node() {
                 KernelTermNode::Variable(variable) => {
-                    Some(std::borrow::Cow::Owned(MachineTerm::Variable(*variable)))
+                    Some(std::borrow::Cow::Owned(OldMachineTerm::Variable(*variable)))
                 }
                 KernelTermNode::MemoryLoad { .. } => Some(std::borrow::Cow::Borrowed(
                     term.machine_read_leaf().expect("read leaf"),
@@ -1167,11 +1164,11 @@ mod tests {
     fn checking_casts_preserve_native_composition_without_exporting() {
         use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp};
         let _session = crate::kernel::VerificationSession::enter();
-        let value = MachineTerm::Binary {
+        let value = OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(Variable(990301))),
-            right: Box::new(MachineTerm::Variable(Variable(990302))),
+            left: Box::new(OldMachineTerm::Variable(Variable(990301))),
+            right: Box::new(OldMachineTerm::Variable(Variable(990302))),
         };
         for original in [
             MachineIntegerType::Int16,
@@ -1191,9 +1188,9 @@ mod tests {
                     ) {
                         value.clone()
                     } else {
-                        MachineTerm::Variable(Variable(990303))
+                        OldMachineTerm::Variable(Variable(990303))
                     };
-                    let value = MachineTerm::Cast {
+                    let value = OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         from: original,
                         to: source,
@@ -1208,7 +1205,7 @@ mod tests {
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
                     assert_eq!(
                         *result.value(),
-                        MachineTerm::machine_integer_cast(source, destination, value)
+                        OldMachineTerm::machine_integer_cast(source, destination, value)
                     );
                 }
             }
@@ -1230,9 +1227,9 @@ mod tests {
                 )
                 .unwrap()
             };
-            let check = |boxed: MachineTerm| {
+            let check = |boxed: OldMachineTerm| {
                 let shared = KernelTermImport::default().machine(ty, &boxed);
-                let cached = shared.machine_constant_reading().map(|v| v.legacy_term());
+                let cached = shared.machine_constant_reading().map(|v| v.old_term());
                 assert_eq!(
                     cached.as_ref().and_then(|v| v.as_const()),
                     boxed.as_const(),
@@ -1262,7 +1259,7 @@ mod tests {
                 i64::MIN,
                 i64::MAX,
             ] {
-                check(MachineTerm::Unary {
+                check(OldMachineTerm::Unary {
                     format: ty,
                     op: MachineUnaryOp::BitwiseNot,
                     operand: Box::new(literal(a)),
@@ -1272,20 +1269,20 @@ mod tests {
                         Add, Subtract, Multiply, Divide, Remainder, ShiftLeft, ShiftRight,
                         BitwiseAnd, BitwiseOr, BitwiseXor,
                     ] {
-                        let inner = MachineTerm::Binary {
+                        let inner = OldMachineTerm::Binary {
                             format: ty,
                             op,
                             left: Box::new(literal(a)),
                             right: Box::new(literal(b)),
                         };
                         check(inner.clone());
-                        check(MachineTerm::Binary {
+                        check(OldMachineTerm::Binary {
                             format: ty,
                             op: ShiftRight,
                             left: Box::new(literal(a)),
                             right: Box::new(inner.clone()),
                         });
-                        check(MachineTerm::Binary {
+                        check(OldMachineTerm::Binary {
                             format: ty,
                             op: Add,
                             left: Box::new(inner),
@@ -1315,13 +1312,13 @@ mod tests {
                 MachineBinaryOp::Remainder,
                 MachineBinaryOp::ShiftRight,
             ] {
-                let left = MachineTerm::Variable(Variable(956100));
+                let left = OldMachineTerm::Variable(Variable(956100));
                 let right = ty
                     .constant_term(
                         MachineIntegerConstant::from_integer(ty.format(), &2.into()).unwrap(),
                     )
                     .unwrap();
-                let boxed = MachineTerm::Binary {
+                let boxed = OldMachineTerm::Binary {
                     format: ty,
                     op,
                     left: Box::new(left.clone()),
@@ -1369,11 +1366,11 @@ mod tests {
     fn operand_view_observation_preserves_format_admission() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt32;
-        let boxed = MachineTerm::Binary {
+        let boxed = OldMachineTerm::Binary {
             format: ty,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(Variable(956101))),
-            right: Box::new(MachineTerm::uint32_constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(956101))),
+            right: Box::new(OldMachineTerm::uint32_constant(0)),
         };
         let shared = KernelTermImport::default().machine(ty, &boxed);
         for observed_ty in [
@@ -1415,12 +1412,12 @@ mod cast_tests {
     fn a_sign_cast_of_a_sign_cast_is_observed_through_both() {
         use MachineIntegerType::{Int32, UInt32};
         let _session = crate::kernel::VerificationSession::enter();
-        let a = MachineTerm::Variable(Variable(985006));
+        let a = OldMachineTerm::Variable(Variable(985006));
         for (outer, inner) in [(Int32, UInt32), (UInt32, Int32)] {
-            let twice = MachineTerm::sign_cast32(
+            let twice = OldMachineTerm::sign_cast32(
                 inner,
                 outer,
-                MachineTerm::sign_cast32(outer, inner, a.clone()),
+                OldMachineTerm::sign_cast32(outer, inner, a.clone()),
             );
             assert!(twice.sign_cast32_operand().is_some(), "kept as written");
             let observed = IntegerTerm::from_machine(outer, twice.clone())
@@ -1441,7 +1438,7 @@ mod cast_tests {
                     Int32,
                     MachineBinaryOp::Add,
                     &twice,
-                    &MachineTerm::constant(0),
+                    &OldMachineTerm::constant(0),
                 );
             }
         }
@@ -1517,7 +1514,7 @@ mod cast_tests {
             assert!(!machine.has_boxed_operand());
             let explicit = encoding
                 .unary(source, destination)
-                .build_raw(MachineTerm::Variable(Variable(985005)));
+                .build_raw(OldMachineTerm::Variable(Variable(985005)));
             assert_eq!(explicit.int64_width_interval(), expected);
         }
     }
@@ -1571,8 +1568,8 @@ mod cast_tests {
         let _session = crate::kernel::VerificationSession::enter();
         for source in FORMATS {
             for destination in FORMATS {
-                let base = MachineTerm::Variable(Variable(985001));
-                let inner = MachineTerm::Cast {
+                let base = OldMachineTerm::Variable(Variable(985001));
+                let inner = OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: destination,
                     to: source,
@@ -1591,7 +1588,7 @@ mod cast_tests {
                         )
                         .unwrap(),
                 ] {
-                    let boxed = MachineTerm::Cast {
+                    let boxed = OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         from: source,
                         to: destination,
@@ -1638,7 +1635,7 @@ mod cast_tests {
                 }
             }
         }
-        let base = MachineTerm::Variable(Variable(985002));
+        let base = OldMachineTerm::Variable(Variable(985002));
         for op in [
             BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64From32),
             BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32),

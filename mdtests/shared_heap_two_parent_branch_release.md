@@ -197,7 +197,7 @@ void parent_detach(struct parent* p) {
                 mark before_clear;
                 step();
                 have separate(statement(2).footprint, memory(kid->refs)) by {
-                    normalize() using { at(before_clear, separate(memory(kid->refs), memory(p->kid))); };
+                    close() using { at(before_clear, separate(memory(kid->refs), memory(p->kid))); };
                 }
                 have kid->refs == at(before_clear, kid->refs) by { preserve(memory(kid->refs), statement(2)); }
                 have to_integer(old(p->kid)->refs) == to_integer(old(p->kid->refs)) - 1 by {

@@ -250,60 +250,6 @@ fn display_function_names(text: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(output)
 }
 
-/// The function the importer places where a reference to `derived` becomes
-/// a reference to its polymorphic base `base`: it makes the base class's
-/// object, whose state the sidecar declares, from the derived class's memory.
-pub(crate) fn object_pack_name(derived: &str, base: &str) -> String {
-    format!("{derived}__click_pack__{base}")
-}
-
-/// The function the importer places after such a call, returning the
-/// derived class's memory.
-pub(crate) fn object_unpack_name(derived: &str, base: &str) -> String {
-    format!("{derived}__click_unpack__{base}")
-}
-
-/// The pack placed where a reference to `derived` becomes a `const`
-/// reference to `base`: the caller keeps viewing the derived class's
-/// memory, which the callee cannot change, while the callee holds the
-/// object made from it.
-pub(crate) fn object_const_pack_name(derived: &str, base: &str) -> String {
-    format!("{derived}__click_pack_const__{base}")
-}
-
-/// The resource a `const` pack produces beside the object, which holds the
-/// derived class's memory lent, viewed, until the `const` unpack consumes
-/// it: while the callee holds the object, nothing can change the memory or
-/// hand it over again.
-pub(crate) fn object_lend_name(derived: &str, base: &str) -> String {
-    format!("{derived}__click_lent__{base}")
-}
-
-/// The function placed after such a call, which only gives up the object.
-pub(crate) fn object_const_unpack_name(derived: &str, base: &str) -> String {
-    format!("{derived}__click_unpack_const__{base}")
-}
-
-/// The function a call through a reference to `class` names for its method
-/// `method` when another class derives from `class`: it runs whichever
-/// override the object's class selects. Without a sidecar contract of its
-/// own, its contract is the method's.
-pub(crate) fn object_dispatch_name(class: &str, method: &str) -> String {
-    format!("{class}__click_dispatch__{}", path_name(&[method]))
-}
-
-/// Whether `name` is one of those functions.
-pub(crate) fn is_object_coercion(name: &str) -> bool {
-    [
-        "__click_pack__",
-        "__click_unpack__",
-        "__click_pack_const__",
-        "__click_unpack_const__",
-    ]
-    .iter()
-    .any(|marker| name.contains(marker))
-}
-
 #[cfg(test)]
 mod path_tests {
     use super::*;

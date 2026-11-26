@@ -6,7 +6,7 @@ fn quantifier_capture_selection_visits_only_the_explicit_proposition() {
     for count in [16usize, 64, 256] {
         let mut proposition = SyntaxProposition::Comparison {
             left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-                crate::kernel::MachineTerm::Variable(Variable::produced(
+                crate::kernel::OldMachineTerm::Variable(Variable::produced(
                     crate::kernel::Producer::ProofQuantifier,
                     0,
                 )),

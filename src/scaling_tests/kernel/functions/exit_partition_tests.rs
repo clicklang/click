@@ -8,7 +8,7 @@ fn constructed_exit_and_observation_do_not_revisit_the_ambient_partition() {
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut facts = PureFactContext::new();
-            let pointer = Address::symbolic(Variable(8_918_100));
+            let pointer = OldAddress::symbolic(Variable(8_918_100));
             if axis == "private" {
                 crate::kernel::set_never_address_taken_locals(
                     (0..count)
@@ -30,9 +30,9 @@ fn constructed_exit_and_observation_do_not_revisit_the_ambient_partition() {
             for index in 0..count {
                 if axis == "aliases" {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             pointer.clone(),
-                            Address::symbolic(Variable(8_918_200 + u64::from(index))),
+                            OldAddress::symbolic(Variable(8_918_200 + u64::from(index))),
                         ),
                         true,
                     );
@@ -50,7 +50,10 @@ fn constructed_exit_and_observation_do_not_revisit_the_ambient_partition() {
                             SymbolicMemory::local_pointer(format!("exit_hidden_{index}")),
                             0,
                         ),
-                        _ => (Address::symbolic(Variable(8_918_300 + u64::from(index))), 0),
+                        _ => (
+                            OldAddress::symbolic(Variable(8_918_300 + u64::from(index))),
+                            0,
+                        ),
                     };
                     ResourceFact::own_memory(MemoryRange::new_with_element_width(
                         base,
