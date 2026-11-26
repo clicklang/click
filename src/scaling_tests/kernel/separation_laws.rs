@@ -187,7 +187,12 @@ fn viewable_restrict_does_not_walk_compositions_or_enumerate_memory() {
             4,
         ));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_viewable_restrict(&memory, Default::default(), parent, Resource::Parameter(Variable(0)));
+            prove_viewable_restrict(
+                &memory,
+                Default::default(),
+                parent,
+                Resource::Parameter(Variable(0)),
+            );
             prove_viewable_restrict(&memory, Default::default(), range.clone(), range);
         });
         work

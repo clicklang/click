@@ -18,8 +18,10 @@ fn viewability_preservation_checks_only_the_selected_transition_and_facts() {
                 // Grow the same range's history and unrelated facts together.
                 ambient.push(range.loadable_fact(&memory, Default::default()));
                 let other = OldAddress::symbolic(Variable(8_531_000 + i));
-                ambient
-                    .push(MemoryRange::new(other, 0u32.into(), 1u32.into()).loadable_fact(&memory, Default::default()));
+                ambient.push(
+                    MemoryRange::new(other, 0u32.into(), 1u32.into())
+                        .loadable_fact(&memory, Default::default()),
+                );
                 memory = memory.store(pointer.clone(), crate::kernel::int32(i as u32));
             }
             let before = ExecutionState::new().with_memory(memory);
