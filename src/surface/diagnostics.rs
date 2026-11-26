@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OffsetTree as _, OffsetView};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -741,11 +742,14 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
     };
     let OldAddress {
         base: AddressBase::Function(target),
-        offset: OldAddressOffset::Constant(0),
+        offset,
     } = pointer.address()
     else {
         return None;
     };
+    if !matches!(offset.view(), OffsetView::Constant(0)) {
+        return None;
+    }
     Some((contract, target))
 }
 
@@ -2663,22 +2667,25 @@ fn struct_byte_bounds(
 /// A pointer offset as a byte count: `i * 4 + 8` for `Int32Scaled(i, 4) +
 /// 8`. Display only; a 64-bit scaled index is not narrowed.
 fn pointer_offset_bytes(offset: &OldAddressOffset) -> Option<OldMachineTerm> {
-    match offset {
-        OldAddressOffset::Constant(bytes) => {
-            Some(OldMachineTerm::constant(i32::try_from(*bytes).ok()? as u32))
+    match offset.view() {
+        OffsetView::Constant(bytes) => {
+            Some(OldMachineTerm::constant(i32::try_from(bytes).ok()? as u32))
         }
-        OldAddressOffset::Int32Scaled { value, byte_width } => Some(match byte_width {
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => Some(match byte_width {
             1 => value.structural_value().clone(),
             width => super::lowering::bitvector32_multiply(
                 value.structural_value().clone(),
-                OldMachineTerm::constant(i32::try_from(*width).ok()? as u32),
+                OldMachineTerm::constant(i32::try_from(width).ok()? as u32),
             ),
         }),
-        OldAddressOffset::Add(left, right) => Some(bitvector32_add(
+        OffsetView::Add(left, right) => Some(bitvector32_add(
             pointer_offset_bytes(left)?,
             pointer_offset_bytes(right)?,
         )),
-        OldAddressOffset::Int64Scaled { .. } | OldAddressOffset::Variable(_) => None,
+        OffsetView::Int64Scaled { .. } | OffsetView::Variable(_) => None,
     }
 }
 
@@ -2903,7 +2910,7 @@ pub(super) fn describe_memory_range(
     // A range over a named object starts at the object itself (`g[0..4]`),
     // not at a pointer to it.
     let base = match named_object_block(&range.base().base, parameter_binding) {
-        Some(name) if range.base().offset == OldAddressOffset::Constant(0) => name,
+        Some(name) if matches!(range.base().offset.view(), OffsetView::Constant(0)) => name,
         _ => {
             let cell = describe_pointer(range.base(), parameter_binding);
             // One element at an address spelled as a member or a byte offset
@@ -2948,23 +2955,24 @@ fn describe_indexed_base_range(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let width = i64::from(range.element_width());
-    let OldAddressOffset::Add(rest, last) = &range.base().offset else {
+    let OffsetView::Add(rest, last) = range.base().offset.view() else {
         return None;
     };
-    let index = match last.as_ref() {
-        OldAddressOffset::Int64Scaled {
-            value, byte_width, ..
+    let index = match last.view() {
+        OffsetView::Int64Scaled {
+            index, byte_width, ..
         }
-        | OldAddressOffset::Int32Scaled { value, byte_width }
-            if *byte_width == width =>
+        | OffsetView::Int32Scaled { index, byte_width }
+            if byte_width == width =>
         {
-            value.structural_value()
+            index
         }
         _ => return None,
     };
+    let index = index.structural_value();
     let root = OldAddress {
         base: range.base().base.clone(),
-        offset: rest.as_ref().clone(),
+        offset: rest.clone(),
     };
     let base = describe_pointer(&root, parameter_binding);
     if base.contains("the pointer value at this program point") || base.contains('…') {
@@ -4648,8 +4656,8 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
 ) -> Option<String> {
     // A read of exactly one scalar field of a struct-typed global or local
     // is that field, `g.b`.
-    if let OldAddressOffset::Constant(offset) = &pointer.offset
-        && let Ok(offset) = u32::try_from(*offset)
+    if let OffsetView::Constant(offset) = pointer.offset.view()
+        && let Ok(offset) = u32::try_from(offset)
         && let Some(field) =
             object_fields::object_field_surface(&pointer.base, offset, kind.byte_width())
     {
@@ -5123,8 +5131,8 @@ fn describe_source_cell_of_width(
         return Some(best);
     }
     let declared = describe_memory_block(&pointer.base, parameter_binding)?;
-    if let (Some(width), OldAddressOffset::Constant(offset)) = (width, &pointer.offset)
-        && let Ok(offset) = u32::try_from(*offset)
+    if let (Some(width), OffsetView::Constant(offset)) = (width, pointer.offset.view())
+        && let Ok(offset) = u32::try_from(offset)
         && let Some(field) = object_fields::object_field_surface(&pointer.base, offset, width)
     {
         return Some(SourceCell {
@@ -5134,26 +5142,26 @@ fn describe_source_cell_of_width(
             index_term: None,
         });
     }
-    match &pointer.offset {
+    match pointer.offset.view() {
         // A local's block holds one declared object, and the name the reader
         // wrote for it *is* the address: `q`, not `q[0]`, which would read as a
         // store through `q` rather than to it. A local array's element zero
         // loses its index this way, which costs an index-inequality repair the
         // reader could not have used anyway -- the array is one object, so the
         // two spellings name the same storage either way.
-        OldAddressOffset::Constant(0) if pointer.base.is_local_block() => Some(SourceCell {
+        OffsetView::Constant(0) if pointer.base.is_local_block() => Some(SourceCell {
             object: declared,
             index: CellIndex::Whole,
             element_bytes: None,
             index_term: None,
         }),
-        OldAddressOffset::Constant(0) => Some(SourceCell {
+        OffsetView::Constant(0) => Some(SourceCell {
             object: declared,
             index: CellIndex::Named("0".to_string()),
             element_bytes: None,
             index_term: None,
         }),
-        OldAddressOffset::Constant(_) => Some(SourceCell {
+        OffsetView::Constant(_) => Some(SourceCell {
             object: format!("{declared}+{}", describe_pointer_offset(&pointer.offset)),
             index: CellIndex::Whole,
             element_bytes: None,
@@ -5207,7 +5215,7 @@ fn describe_source_range(
             return Some(describe_memory_range(range, parameter_binding));
         }
     }
-    if range.base().offset != OldAddressOffset::Constant(0)
+    if !matches!(range.base().offset.view(), OffsetView::Constant(0))
         || !bitvector_is_source_spelled(range.bound_terms().0, parameter_binding)
         || !bitvector_is_source_spelled(range.bound_terms().1, parameter_binding)
     {
@@ -5397,7 +5405,7 @@ pub(in crate::surface) fn describe_pointer(
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::StaticObject { .. }
     ) {
-        return if pointer.offset == OldAddressOffset::Constant(0) {
+        return if matches!(pointer.offset.view(), OffsetView::Constant(0)) {
             pointer.base.to_string()
         } else {
             format!(
@@ -5408,7 +5416,7 @@ pub(in crate::surface) fn describe_pointer(
         };
     }
     if let AddressBase::StringLiteral { identity, .. } = &pointer.base {
-        return if pointer.offset == OldAddressOffset::Constant(0) {
+        return if matches!(pointer.offset.view(), OffsetView::Constant(0)) {
             identity.to_string()
         } else {
             format!(
@@ -5418,7 +5426,7 @@ pub(in crate::surface) fn describe_pointer(
         };
     }
     if let Some((name, _)) = super::proof_diagnostics::render::c_library_pointer_name(pointer) {
-        return if pointer.offset == OldAddressOffset::Constant(0) {
+        return if matches!(pointer.offset.view(), OffsetView::Constant(0)) {
             name
         } else {
             format!(
@@ -5434,7 +5442,7 @@ pub(in crate::surface) fn describe_pointer(
     // deterministic.
     // A pointer a load read is the place it was read from.
     if let Some(read) = pointer.as_loaded_value()
-        && read.displacement == OldAddressOffset::Constant(0)
+        && matches!(read.displacement.view(), OffsetView::Constant(0))
     {
         let place = describe_load_at(&read.defining_address, parameter_binding);
         if is_place_spelling(&place) {
@@ -5536,12 +5544,14 @@ pub(in crate::surface) fn describe_pointer(
         // parameter points into) is spelled by the name the source gave it,
         // never by the block's internal spelling (`local:frame:3:x@0`).
         AddressBase::Concrete(name)
-            if name == "null" && pointer.offset == OldAddressOffset::Constant(0) =>
+            if name == "null" && matches!(pointer.offset.view(), OffsetView::Constant(0)) =>
         {
             "NULL".to_string()
         }
         block => match named_object_block(block, parameter_binding) {
-            Some(name) if pointer.offset == OldAddressOffset::Constant(0) => format!("&{name}"),
+            Some(name) if matches!(pointer.offset.view(), OffsetView::Constant(0)) => {
+                format!("&{name}")
+            }
             Some(name) => format!(
                 "(char *)&{name} + {}",
                 describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
@@ -5568,12 +5578,16 @@ fn describe_parameter_struct_field_pointer(
         .or_else(|| parameter.struct_layout())?;
     // The value a load of the field read, or its storage-relative encoding.
     let (loaded_at, byte_width) = match pointer.as_loaded_value() {
-        Some(read) if read.displacement == OldAddressOffset::Constant(0) => {
+        Some(read) if matches!(read.displacement.view(), OffsetView::Constant(0)) => {
             (read.defining_address, None)
         }
         Some(_) => return None,
         None => {
-            let OldAddressOffset::Int32Scaled { value, byte_width } = &pointer.offset else {
+            let OffsetView::Int32Scaled {
+                index: value,
+                byte_width,
+            } = pointer.offset.view()
+            else {
                 return None;
             };
             let loaded_at = match value.structural_value() {
@@ -5586,7 +5600,7 @@ fn describe_parameter_struct_field_pointer(
             if pointer.base != base.base {
                 return None;
             }
-            (loaded_at, Some(*byte_width))
+            (loaded_at, Some(byte_width))
         }
     };
     layout.fields().iter().find_map(|(name, field)| {
@@ -5661,25 +5675,24 @@ fn describe_struct_member_from(
         return None;
     }
     let mut constant = 0i64;
-    let mut element: Option<&OldMachineTerm> = None;
+    let mut element = None;
     let rest = pointer.offset_from_base(base)?;
     let mut pending = vec![&rest];
     while let Some(term) = pending.pop() {
-        match term {
-            OldAddressOffset::Add(left, right) => {
+        match term.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            OldAddressOffset::Constant(bytes) => constant = constant.checked_add(*bytes)?,
-            OldAddressOffset::Int32Scaled { value, byte_width }
-            | OldAddressOffset::Int64Scaled {
-                value, byte_width, ..
-            } if *byte_width == size && element.is_none() => {
-                element = Some(value.structural_value())
-            }
+            OffsetView::Constant(bytes) => constant = constant.checked_add(bytes)?,
+            OffsetView::Int32Scaled { index, byte_width }
+            | OffsetView::Int64Scaled {
+                index, byte_width, ..
+            } if byte_width == size && element.is_none() => element = Some(index),
             _ => return None,
         }
     }
+    let element = element.as_ref().map(|index| index.structural_value());
     // A constant past the first struct selects a later element.
     let (whole, inside) = (constant.div_euclid(size), constant.rem_euclid(size));
     let selected = match (element, whole) {
@@ -5826,17 +5839,17 @@ fn scaled_index_signedness(pointer: &OldAddress, base: &OldAddress) -> Option<bo
     if pointer.base != base.base {
         return None;
     }
-    let extra = if base.offset == OldAddressOffset::Constant(0) {
+    let extra = if matches!(base.offset.view(), OffsetView::Constant(0)) {
         &pointer.offset
     } else {
-        match &pointer.offset {
-            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
-            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
+        match pointer.offset.view() {
+            OffsetView::Add(left, right) if left == &base.offset => right,
+            OffsetView::Add(left, right) if right == &base.offset => left,
             _ => return None,
         }
     };
-    match extra {
-        OldAddressOffset::Int64Scaled { unsigned, .. } => Some(*unsigned),
+    match extra.view() {
+        OffsetView::Int64Scaled { unsigned, .. } => Some(unsigned),
         _ => None,
     }
 }
@@ -5888,15 +5901,15 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
         return Some(OldMachineTerm::constant(0));
     }
 
-    if base.offset == OldAddressOffset::Constant(0) {
+    if matches!(base.offset.view(), OffsetView::Constant(0)) {
         return diagnostic_element_index_from_pointer_offset(&pointer.offset, byte_width);
     }
 
-    match &pointer.offset {
-        OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+    match pointer.offset.view() {
+        OffsetView::Add(left, right) if left == &base.offset => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
-        OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+        OffsetView::Add(left, right) if right == &base.offset => {
             diagnostic_element_index_from_pointer_offset(left, byte_width)
         }
         _ => {
@@ -5924,25 +5937,25 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
     offset: &OldAddressOffset,
     byte_width: i64,
 ) -> Option<OldMachineTerm> {
-    match offset {
-        OldAddressOffset::Constant(offset) if offset % byte_width == 0 => {
+    match offset.view() {
+        OffsetView::Constant(offset) if offset % byte_width == 0 => {
             let index = offset / byte_width;
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
                 .then_some(OldMachineTerm::constant((index as i32) as u32))
         }
-        OldAddressOffset::Int32Scaled {
-            value,
+        OffsetView::Int32Scaled {
+            index: value,
             byte_width: actual_width,
-        } if *actual_width == byte_width => Some(value.structural_value().clone()),
+        } if actual_width == byte_width => Some(value.structural_value().clone()),
         // An index widened to 64 bits before scaling (a `uint32` index, or
         // an `int32` one on a wide address) is still the index the source
         // wrote. The widening decides the address, not the element's name.
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width: actual_width,
             ..
-        } if *actual_width == byte_width => Some(match value.structural_value() {
+        } if actual_width == byte_width => Some(match value.structural_value() {
             // These widenings keep the value, so the element is named by
             // the narrow index, as a signed 32-bit index names it.
             cast_term!(Int64From32, narrow)
@@ -5950,13 +5963,13 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
             | cast_term!(Int64FromUInt32, narrow) => narrow.as_ref().clone(),
             wide => wide.clone(),
         }),
-        OldAddressOffset::Add(left, right) if left.as_ref() == &OldAddressOffset::Constant(0) => {
+        OffsetView::Add(left, right) if matches!(left.view(), OffsetView::Constant(0)) => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
-        OldAddressOffset::Add(left, right) if right.as_ref() == &OldAddressOffset::Constant(0) => {
+        OffsetView::Add(left, right) if matches!(right.view(), OffsetView::Constant(0)) => {
             diagnostic_element_index_from_pointer_offset(left, byte_width)
         }
-        OldAddressOffset::Add(left, right) => Some(bitvector32_add(
+        OffsetView::Add(left, right) => Some(bitvector32_add(
             diagnostic_element_index_from_pointer_offset(left, byte_width)?,
             diagnostic_element_index_from_pointer_offset(right, byte_width)?,
         )),
@@ -6755,7 +6768,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
     let base = describe_pointer(
         &OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         },
         parameter_binding,
     );
@@ -6924,16 +6937,16 @@ fn loaded_pointer_split(address: &OldAddress) -> Option<(OldAddress, OldMachineT
     let mut summands = Vec::new();
     let mut pending = vec![&address.offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            summand => summands.push(summand),
+            _ => summands.push(offset),
         }
     }
-    let loaded = |summand: &OldAddressOffset| match summand {
-        OldAddressOffset::Int32Scaled { value, .. } => match value.structural_value() {
+    let loaded = |summand: &OldAddressOffset| match summand.view() {
+        OffsetView::Int32Scaled { index: value, .. } => match value.structural_value() {
             OldMachineTerm::Variable(variable)
                 if crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_some() =>
@@ -7027,10 +7040,12 @@ fn describe_loaded_pointer_range(
     range.int32_bounds()?;
     // One element at a wide index past a loaded pointer: `s->data[s->len]`.
     if let Some(read) = range.base().as_loaded_value()
-        && let OldAddressOffset::Int64Scaled {
-            value, byte_width, ..
-        } = &read.displacement
-        && *byte_width == i64::from(range.element_width())
+        && let OffsetView::Int64Scaled {
+            index: value,
+            byte_width,
+            ..
+        } = read.displacement.view()
+        && byte_width == i64::from(range.element_width())
         && range.constant_start() == Some(0)
         && range.constant_end() == Some(1)
         && pointee_struct_at(&read.defining_address, parameter_binding).is_none()
@@ -8745,30 +8760,31 @@ fn describe_pointer_offset_with_context(
     offset: &OldAddressOffset,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    match offset {
-        OldAddressOffset::Add(left, right) => format!(
+    match offset.view() {
+        OffsetView::Add(left, right) => format!(
             "({} + {})",
             describe_pointer_offset_with_context(left, parameter_binding),
             describe_pointer_offset_with_context(right, parameter_binding)
         ),
-        OldAddressOffset::Int32Scaled { value, byte_width } => format!(
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => format!(
             "{} * {byte_width}",
             describe_bitvector_with_context(value.structural_value(), parameter_binding)
         ),
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width,
             unsigned,
         } => {
-            let signedness = if *unsigned { "uint64" } else { "int64" };
+            let signedness = if unsigned { "uint64" } else { "int64" };
             format!(
                 "{signedness}({}) * {byte_width}",
                 describe_bitvector_with_context(value.structural_value(), parameter_binding)
             )
         }
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
-            describe_pointer_offset(offset)
-        }
+        OffsetView::Constant(_) | OffsetView::Variable(_) => describe_pointer_offset(offset),
     }
 }
 
@@ -8799,8 +8815,8 @@ fn describe_storage_write_outside_footprint(
         crate::kernel::StorageWriteOutsideFootprint::Write { pointer, bytes } => {
             // A store that fills exactly one scalar field of a struct-typed
             // global names that field (`shared.first`), not its address.
-            if let OldAddressOffset::Constant(offset) = &pointer.offset
-                && let Ok(offset) = u32::try_from(*offset)
+            if let OffsetView::Constant(offset) = pointer.offset.view()
+                && let Ok(offset) = u32::try_from(offset)
                 && let Some(field) =
                     object_fields::object_field_surface(&pointer.base, offset, *bytes)
             {
@@ -8819,26 +8835,29 @@ fn describe_storage_write_outside_footprint(
 }
 
 pub(super) fn describe_pointer_offset(offset: &OldAddressOffset) -> String {
-    match offset {
-        OldAddressOffset::Constant(value) => value.to_string(),
-        OldAddressOffset::Variable(variable) => lowering_only_variable("off", variable.0),
-        OldAddressOffset::Add(left, right) => format!(
+    match offset.view() {
+        OffsetView::Constant(value) => value.to_string(),
+        OffsetView::Variable(variable) => lowering_only_variable("off", variable.0),
+        OffsetView::Add(left, right) => format!(
             "({} + {})",
             describe_pointer_offset(left),
             describe_pointer_offset(right)
         ),
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => {
             format!(
                 "{} * {byte_width}",
                 describe_bitvector(value.structural_value())
             )
         }
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width,
             unsigned,
         } => {
-            let signedness = if *unsigned { "uint64" } else { "int64" };
+            let signedness = if unsigned { "uint64" } else { "int64" };
             format!(
                 "{signedness}({}) * {byte_width}",
                 describe_bitvector(value.structural_value())
