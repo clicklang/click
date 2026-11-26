@@ -257,7 +257,7 @@ impl adler2::Adler32 {
      have bytes[2] == old(bytes[2]) by close() using {};
      have to_integer(self.a) == to_integer(((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))) % 65521u32) by {
       rewrite(to_integer(self.a), to_integer((at(output_a, a) % 65521u32)));
-      rewrite((at(output_a, a) % 65521u32), ((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))) % 65521u32); normalize();
+      rewrite((at(output_a, a) % 65521u32), ((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))) % 65521u32); close();
      }
      have to_integer(((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))) % 65521u32) == old(adler_spec_a(bytes, 3, 1)) by close();
      have to_integer(self.a) == old(adler_spec_a(bytes, 3, 1)) by {
@@ -265,7 +265,7 @@ impl adler2::Adler32 {
      }
      have to_integer(self.b) == to_integer(((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32) by {
       rewrite(to_integer(self.b), to_integer((at(output_b, b) % 65521u32)));
-      rewrite((at(output_b, b) % 65521u32), ((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32); normalize();
+      rewrite((at(output_b, b) % 65521u32), ((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32); close();
      }
      have to_integer(((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32) == old(adler_spec_b(bytes, 3, 1, 0)) by close();
      have to_integer(self.b) == old(adler_spec_b(bytes, 3, 1, 0)) by {
