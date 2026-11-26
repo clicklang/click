@@ -4532,7 +4532,7 @@ theorem append_tally(lo: int32, hi: int32) {
     requires lo < hi;
     ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {
         unfold(tally(lo, hi));
-        normalize();
+        close();
     }
 }
 "#;
@@ -4561,7 +4561,7 @@ theorem fold_case(end: int32) {
     requires end <= 0;
     ensures tally(end) == 0 by {
         unfold(tally(end));
-        normalize();
+        close();
     }
 }
 "#,
@@ -4628,7 +4628,7 @@ theorem fold_case(end: int32) {
     requires end <= 0;
     ensures tally(end) == 0 by {
         unfold(tally(end));
-        normalize();
+        close();
     }
 }
 "#;
@@ -4638,7 +4638,7 @@ theorem fold_case(end: int32) {
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&invalid, &[]))
         .expect_err("unfold cannot retain the empty law without its range guard");
     let nested = source.replace(
-        "unfold(tally(end));\n        normalize();",
+        "unfold(tally(end));\n        close();",
         "have tally(end) == 0 by { unfold(tally(end)); close(); }\n        close();",
     );
     assert_ne!(nested, source);
@@ -4679,11 +4679,11 @@ theorem fold_case(end: int32) {
         all {
             tally(end) == 0 => {
                 unfold(tally(end));
-                normalize();
+                close();
             }
             0 <= tally(end) => {
                 unfold(tally(end));
-                normalize();
+                close();
             }
         }
     }
