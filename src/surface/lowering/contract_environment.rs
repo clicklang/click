@@ -5,6 +5,7 @@
 //! kernel's, through the elaborated spec form.
 
 use super::*;
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::diagnostics::describe_program_point_ref;
 
@@ -291,13 +292,15 @@ pub(in crate::surface) fn add_pointer_offset(
     left: OldAddressOffset,
     right: OldAddressOffset,
 ) -> OldAddressOffset {
-    match (&left, &right) {
-        (OldAddressOffset::Constant(left), OldAddressOffset::Constant(right)) => {
-            OldAddressOffset::Constant(left + right)
-        }
-        (OldAddressOffset::Constant(0), _) => right,
-        (_, OldAddressOffset::Constant(0)) => left,
-        _ => OldAddressOffset::Add(Box::new(left), Box::new(right)),
+    let constant = |offset: &OldAddressOffset| match offset.view() {
+        OffsetView::Constant(value) => Some(value),
+        _ => None,
+    };
+    match (constant(&left), constant(&right)) {
+        (Some(left), Some(right)) => OldAddressOffset::constant(left + right),
+        (Some(0), _) => right,
+        (_, Some(0)) => left,
+        _ => OldAddressOffset::raw_add(left, right),
     }
 }
 
@@ -307,7 +310,7 @@ pub(in crate::surface) fn scale_int32_offset(
 ) -> OldAddressOffset {
     match value {
         bits32_constant!(value) => {
-            OldAddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            OldAddressOffset::constant((constant_u32(value) as i32 as i64) * byte_width)
         }
         value => OldAddressOffset::scaled_int32_node(value, byte_width),
     }

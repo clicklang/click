@@ -2594,7 +2594,7 @@ impl MemoryRange {
             (
                 OldAddress {
                     base: self.base.base.clone(),
-                    offset: rest.cloned().unwrap_or(OldAddressOffset::Constant(0)),
+                    offset: rest.cloned().unwrap_or(OldAddressOffset::constant(0)),
                 },
                 layout,
                 field,
@@ -3011,19 +3011,17 @@ impl MemoryRange {
         let is_variable = |term: &crate::kernel::SharedMachineIntegerTerm| {
             term.operand_view().variable() == Some(&variable)
         };
-        let (base_offset, scaled) = match &pointer.offset {
-            OldAddressOffset::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
-            scaled => (OldAddressOffset::Constant(0), scaled),
+        let (base_offset, scaled) = match pointer.offset.view() {
+            OffsetView::Add(base, scaled) => (base.clone(), scaled),
+            _ => (OldAddressOffset::constant(0), &pointer.offset),
         };
-        let kind = match scaled {
-            OldAddressOffset::Int32Scaled { value, .. } if is_variable(value) => {
-                RangeIndexKind::Int32
-            }
-            OldAddressOffset::Int64Scaled {
-                value,
+        let kind = match scaled.view() {
+            OffsetView::Int32Scaled { index, .. } if is_variable(&index) => RangeIndexKind::Int32,
+            OffsetView::Int64Scaled {
+                index,
                 unsigned: true,
                 ..
-            } if is_variable(value) => RangeIndexKind::UInt64,
+            } if is_variable(&index) => RangeIndexKind::UInt64,
             _ => return None,
         };
         let base = OldAddress {
@@ -3232,7 +3230,7 @@ impl MemoryRange {
         Self::new_with_element_width(
             OldAddress {
                 base: super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
-                offset: super::OldAddressOffset::Constant(0),
+                offset: super::OldAddressOffset::constant(0),
             },
             OldMachineTerm::constant(0),
             // Endpoints are `int32` values: this is the largest span whose

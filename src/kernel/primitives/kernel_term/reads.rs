@@ -83,7 +83,7 @@ impl KernelTerm {
         // Later arithmetic and ordinary pointer values belong to their own
         // producer slices. Do not clone or hash a growing displacement merely
         // to ask whether it is an undisplaced read atom.
-        if !matches!(value.address().offset, OldAddressOffset::Constant(0))
+        if !matches!(value.address().offset.view(), OffsetView::Constant(0))
             || !matches!(
                 value.address().base,
                 AddressBase::Load(_) | AddressBase::FunctionSymbolic(_)
@@ -191,14 +191,13 @@ fn exact_address(address: &OldAddress) -> bool {
     let mut pending = vec![&address.offset];
     while let Some(offset) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
-        match offset {
-            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
-            OldAddressOffset::Add(a, b) => pending.extend([b.as_ref(), a.as_ref()]),
-            OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. } => {
+        match offset.view() {
+            OffsetView::Constant(_) | OffsetView::Variable(_) => {}
+            OffsetView::Add(a, b) => pending.extend([b, a]),
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
                 // The child identity already includes every read state.
                 // Never export or walk its retained expression prefix here.
-                if value.shared_operand().is_none() {
+                if index.shared_operand().is_none() {
                     return false;
                 }
             }

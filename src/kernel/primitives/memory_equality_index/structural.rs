@@ -23,9 +23,9 @@ fn shape(pointer: &OldAddress) -> Key {
 fn origin(pointer: &OldAddress) -> Option<Key> {
     // Literal bases need no normalization traversal (including during large
     // certified input publications).
-    let offset = match &pointer.offset {
-        OldAddressOffset::Constant(_) => AffineOffset::constant(0),
-        offset => AffineOffset::of(offset)?,
+    let offset = match pointer.offset.view() {
+        OffsetView::Constant(_) => AffineOffset::constant(0),
+        _ => AffineOffset::of(&pointer.offset)?,
     };
     Some((pointer.base.clone(), offset.origin_fingerprint()))
 }
@@ -63,7 +63,7 @@ impl StructuralMemory {
         // These are subterms of the explicit access, not alternate spellings
         // of it. They cover precisely the bases the structural read judgment
         // can recognize in an addition, including either operand.
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             add_shape(left);
             add_shape(right);
         }
@@ -90,20 +90,19 @@ fn remove_owned_key(
 // ordering of affine vectors.
 fn plain_origin(mut offset: &OldAddressOffset) -> bool {
     loop {
-        match offset {
-            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => return true,
-            OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. } => {
-                let value = value.operand_view();
+        match offset.view() {
+            OffsetView::Constant(_) | OffsetView::Variable(_) => return true,
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                let value = index.operand_view();
                 return value.variable().is_some()
                     || value.literal().is_some_and(|literal| {
                         matches!(literal, bits32_constant!(_) | int64_constant!(_))
                     });
             }
-            OldAddressOffset::Add(left, right) => {
-                offset = if matches!(left.as_ref(), OldAddressOffset::Constant(_)) {
+            OffsetView::Add(left, right) => {
+                offset = if matches!(left.view(), OffsetView::Constant(_)) {
                     right
-                } else if matches!(right.as_ref(), OldAddressOffset::Constant(_)) {
+                } else if matches!(right.view(), OffsetView::Constant(_)) {
                     left
                 } else {
                     return false;

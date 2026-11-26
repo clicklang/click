@@ -17,6 +17,7 @@ use crate::kernel::{
     Sort, SpecCaptureRefusal, SymbolicMemory, Term, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{OffsetTree as _, OffsetView};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -323,7 +324,8 @@ impl MemoryStateLabels {
             names
                 .iter()
                 .filter(|(base, _)| {
-                    base.base == pointer.base && base.offset == OldAddressOffset::Constant(0)
+                    base.base == pointer.base
+                        && matches!(base.offset.view(), OffsetView::Constant(0))
                 })
                 .map(|(_, name)| name.as_str())
                 .min_by(|left, right| left.len().cmp(&right.len()).then(left.cmp(right)))
@@ -2574,13 +2576,13 @@ impl Renderer<'_> {
             self.truncated = true;
             return;
         }
-        match o {
-            OldAddressOffset::Constant(v) => self.fmt(format_args!("{v}")),
-            OldAddressOffset::Variable(v) => {
-                let name = self.variable_name(*v, "offset");
+        match o.view() {
+            OffsetView::Constant(v) => self.fmt(format_args!("{v}")),
+            OffsetView::Variable(v) => {
+                let name = self.variable_name(v, "offset");
                 self.push(&name);
             }
-            OldAddressOffset::Add(a, b) => {
+            OffsetView::Add(a, b) => {
                 self.depth += 1;
                 self.push("(");
                 self.offset(a, 0);
@@ -2589,18 +2591,18 @@ impl Renderer<'_> {
                 self.push(")");
                 self.depth -= 1;
             }
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
+            OffsetView::Int32Scaled { index, byte_width } => {
                 self.push("int32(");
-                self.bitvector(value.structural_value());
+                self.bitvector(index.structural_value());
                 self.fmt(format_args!(")*{byte_width} bytes"));
             }
-            OldAddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned,
             } => {
-                self.push(if *unsigned { "uint64(" } else { "int64(" });
-                self.bitvector(value.structural_value());
+                self.push(if unsigned { "uint64(" } else { "int64(" });
+                self.bitvector(index.structural_value());
                 self.fmt(format_args!(")*{byte_width} bytes"));
             }
         }

@@ -19,6 +19,7 @@ use crate::kernel::binary_term;
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{
     bits32_constant, constant_u32, int64_constant, native_constant, uint64_constant,
 };
@@ -4895,15 +4896,15 @@ fn guided_byte_read_index(
     pointer: &OldAddress,
 ) -> Option<OldMachineTerm> {
     crate::instrumentation::record_deterministic_work(1);
-    let (base_offset, index_offset) = match &pattern.offset {
-        OldAddressOffset::Add(base, index) => ((**base).clone(), index.as_ref()),
-        index => (OldAddressOffset::Constant(0), index),
+    let (base_offset, index_offset) = match pattern.offset.view() {
+        OffsetView::Add(base, index) => (base.clone(), index),
+        _ => (OldAddressOffset::constant(0), &pattern.offset),
     };
-    let OldAddressOffset::Int64Scaled {
-        value,
+    let OffsetView::Int64Scaled {
+        index: value,
         byte_width: 1,
         unsigned: true,
-    } = index_offset
+    } = index_offset.view()
     else {
         return None;
     };
@@ -7997,7 +7998,7 @@ pub fn contract_refinement_context(
     if pointer.program_type() != target.function_pointer_type()
         || pointer.program_type() != source.function_pointer_type()
         || !matches!(pointer.address().base, AddressBase::FunctionSymbolic(_))
-        || pointer.address().offset != OldAddressOffset::Constant(0)
+        || !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
     {
         return None;
     }
@@ -8217,7 +8218,7 @@ pub(crate) fn prove_executed_contract_refinement(
     };
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.address().offset != OldAddressOffset::Constant(0)
+        || !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
     {
         return None;
     }
@@ -8399,7 +8400,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     }
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.address().offset != OldAddressOffset::Constant(0)
+        || !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
     {
         return None;
     }

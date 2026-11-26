@@ -13,6 +13,7 @@ use crate::kernel::proof::arithmetic_special::{
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{FloatClassification, FloatCondition, OldConditionTerm, Proposition};
+use crate::kernel::{OffsetTree as _, OffsetView};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -490,57 +491,48 @@ fn bounded_address_equal(
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return false;
         }
-        match (left, right) {
-            (
-                crate::kernel::OldAddressOffset::Constant(a),
-                crate::kernel::OldAddressOffset::Constant(b),
-            ) => {
+        match (left.view(), right.view()) {
+            (OffsetView::Constant(a), OffsetView::Constant(b)) => {
                 if a != b {
                     return false;
                 }
             }
-            (
-                crate::kernel::OldAddressOffset::Variable(a),
-                crate::kernel::OldAddressOffset::Variable(b),
-            ) => {
+            (OffsetView::Variable(a), OffsetView::Variable(b)) => {
                 if a != b {
                     return false;
                 }
             }
-            (
-                crate::kernel::OldAddressOffset::Add(a, b),
-                crate::kernel::OldAddressOffset::Add(c, d),
-            ) => {
+            (OffsetView::Add(a, b), OffsetView::Add(c, d)) => {
                 pending.push((a, c));
                 pending.push((b, d));
             }
             (
-                crate::kernel::OldAddressOffset::Int32Scaled {
-                    value: a,
+                OffsetView::Int32Scaled {
+                    index: a,
                     byte_width: aw,
                 },
-                crate::kernel::OldAddressOffset::Int32Scaled {
-                    value: b,
+                OffsetView::Int32Scaled {
+                    index: b,
                     byte_width: bw,
                 },
             ) => {
-                if aw != bw || !bounded_index_equal(a, b) {
+                if aw != bw || !bounded_index_equal(&a, &b) {
                     return false;
                 }
             }
             (
-                crate::kernel::OldAddressOffset::Int64Scaled {
-                    value: a,
+                OffsetView::Int64Scaled {
+                    index: a,
                     byte_width: aw,
                     ..
                 },
-                crate::kernel::OldAddressOffset::Int64Scaled {
-                    value: b,
+                OffsetView::Int64Scaled {
+                    index: b,
                     byte_width: bw,
                     ..
                 },
             ) => {
-                if aw != bw || !bounded_index_equal(a, b) {
+                if aw != bw || !bounded_index_equal(&a, &b) {
                     return false;
                 }
             }
@@ -767,14 +759,13 @@ fn bounded_offset_work(root: &crate::kernel::OldAddressOffset) -> bool {
         if count > 256 || crate::instrumentation::deadline_exceeded_with_work(1) {
             return false;
         }
-        match offset {
-            crate::kernel::OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            crate::kernel::OldAddressOffset::Int32Scaled { value, .. }
-            | crate::kernel::OldAddressOffset::Int64Scaled { value, .. }
-                if !bounded_index_work(value) =>
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. }
+                if !bounded_index_work(&index) =>
             {
                 return false;
             }

@@ -20,6 +20,7 @@ use super::{
     OldMachineTerm, ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory,
     intern_memory, intern_memory_ref,
 };
+use crate::kernel::{OffsetTree, OffsetView};
 
 /// The identity of one point an execution path reached.
 ///
@@ -1011,19 +1012,19 @@ fn read_bucket(block: &AddressBase) -> Option<&AddressBase> {
 /// The bounded address shape only. No arithmetic or alias fact is consulted.
 /// Symbolic offsets share a bucket only while they use the same origin.
 fn read_displacement(offset: &OldAddressOffset) -> Option<(Option<&OldAddressOffset>, i64)> {
-    match offset {
-        OldAddressOffset::Constant(start) => Some((None, *start)),
-        OldAddressOffset::Add(origin, delta)
+    match offset.view() {
+        OffsetView::Constant(start) => Some((None, start)),
+        OffsetView::Add(origin, delta)
             if origin.is_shallow()
-                && let OldAddressOffset::Constant(delta) = delta.as_ref() =>
+                && let OffsetView::Constant(delta) = delta.view() =>
         {
-            Some((Some(origin), *delta))
+            Some((Some(origin), delta))
         }
-        OldAddressOffset::Add(delta, origin)
+        OffsetView::Add(delta, origin)
             if origin.is_shallow()
-                && let OldAddressOffset::Constant(delta) = delta.as_ref() =>
+                && let OffsetView::Constant(delta) = delta.view() =>
         {
-            Some((Some(origin), *delta))
+            Some((Some(origin), delta))
         }
         _ if offset.is_shallow() => Some((Some(offset), 0)),
         _ => None,
@@ -1037,7 +1038,7 @@ fn read_origin(
     if anchor.is_some() || external_storage(&pointer.base) {
         Some((
             pointer.base.clone(),
-            anchor.cloned().unwrap_or(OldAddressOffset::Constant(0)),
+            anchor.cloned().unwrap_or(OldAddressOffset::constant(0)),
         ))
     } else {
         None
@@ -2236,7 +2237,7 @@ impl ProgramPoint {
     }
 
     pub(in crate::kernel) fn supports_local_call_output(pointer: &OldAddress) -> bool {
-        indexed_local(&pointer.base) && pointer.offset == OldAddressOffset::Constant(0)
+        indexed_local(&pointer.base) && matches!(pointer.offset.view(), OffsetView::Constant(0))
     }
 
     pub(in crate::kernel) fn call_output_integer_version(
@@ -2267,7 +2268,7 @@ impl ProgramPoint {
         use crate::kernel::effective_type::CAccessClass;
 
         let memory = self.memory();
-        if pointer.offset != OldAddressOffset::Constant(0)
+        if !matches!(pointer.offset.view(), OffsetView::Constant(0))
             || memory.block_size(&pointer.base)?.as_const()? != bytes
             || !matches!(
                 memory.declared_class(pointer),
@@ -2294,7 +2295,7 @@ impl ProgramPoint {
     pub(crate) fn supports_indexed_version(pointer: &OldAddress) -> bool {
         read_bucket(&pointer.base).is_some()
             || (pointer.base.is_static_storage_block()
-                && pointer.offset == OldAddressOffset::Constant(0))
+                && matches!(pointer.offset.view(), OffsetView::Constant(0)))
     }
 
     /// A direct integer cell's version, if this path has a recorded direct write
@@ -2316,7 +2317,7 @@ impl ProgramPoint {
     ) -> Option<Self> {
         let indexed_algebraic = matches!(value_type, ProgramType::Parameter(ty)
             if indexed_local(&pointer.base)
-                && matches!(pointer.offset, OldAddressOffset::Constant(_))
+                && matches!(pointer.offset.view(), OffsetView::Constant(_))
                 && !ty.has_abstract_size());
         if let Some(category) = super::PointerLoadCategory::of_type(value_type) {
             return self.indexed_pointer_version(pointer, Some(category));
@@ -2356,7 +2357,9 @@ impl ProgramPoint {
         pointer: &OldAddress,
         parameter: super::TypeParameterName,
     ) -> Option<Self> {
-        if !indexed_local(&pointer.base) || pointer.offset != OldAddressOffset::Constant(0) {
+        if !indexed_local(&pointer.base)
+            || !matches!(pointer.offset.view(), OffsetView::Constant(0))
+        {
             return None;
         }
         self.indexed_version(pointer, super::ABSTRACT_VALUE_WIDTH, |store| {
@@ -2415,7 +2418,7 @@ impl ProgramPoint {
         bytes: u32,
         matches_source: impl FnOnce(&MemoryDerivation) -> bool,
     ) -> Option<Self> {
-        if pointer.offset != OldAddressOffset::Constant(0)
+        if !matches!(pointer.offset.view(), OffsetView::Constant(0))
             || self.memory().block_size(&pointer.base)?.as_const()? != bytes
         {
             return None;
