@@ -799,8 +799,8 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
         ("requires 0 <= n;", ""),
         ("n * (n + 1) <= 30830256;", "n * (n + 1) <= 30830255;"),
         (
-            "truncating_quotient(n * (n + 1), divisor) <= 15415128;",
-            "truncating_quotient(n * (n + 1), divisor) <= 15415127;",
+            "ensures truncating_quotient(n * (n + 1), divisor) <= 15415128 by",
+            "ensures truncating_quotient(n * (n + 1), divisor) <= 15415127 by",
         ),
         (
             "ensures adler_lane_b_ceiling(5553) > 4294967295",
@@ -955,7 +955,12 @@ fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
         ("requires remaining <= total;", ""),
         ("requires 0 <= remaining;", ""),
         ("requires 4 <= remaining;", ""),
-        ("requires defined(remaining - 4);", ""),
+        // Nonnegative int32 values already permit subtracting four. Check
+        // that the successor advances the vector count by exactly one.
+        (
+            "ensures adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1 by",
+            "ensures adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 2 by",
+        ),
         ("requires 0 <= consumed;", ""),
         ("requires 0 <= increment;", ""),
         ("+ 4 * increment", "+ 8 * increment"),
