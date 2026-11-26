@@ -1272,6 +1272,10 @@ const NIGHTLY: &[&str] = &[
     "widened_unsigned_sum_bounds.md",                        // 1.6s
     "widened_unsigned_sum_bounds_fail.md",                   // 0.6s
     "wrapping_arithmetic_written_as_integer_arithmetic_is_refused.md", // 0.5s
+    // 3.8s focused (2026-11-26). Passes in the corpus but fails when run alone:
+    // `rotate_left` tactic 33's `step()` misses precondition clause 5 of
+    // `AugmentRotate`.
+    "augment_rotate_callback.md",
 ];
 
 /// The hidden prerequisite ratchet (`docs/internals/testing.md`): count the
