@@ -4292,21 +4292,18 @@ int32 arena_pipeline(
                     close();
                 }
                 have k < at(w2, arena->capacity) by {
-                    normalize() using {
-                        k < arena->capacity;
-                        arena->capacity == at(w2, arena->capacity);
-                    };
+                    rewrite(at(w2, arena->capacity), arena->capacity);
+                    close();
                 }
                 have at(w2, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) { 0 <= j and j < at(w2, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w2, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                normalize() using {
-                    second->arena->occupied[k] == at(w2, second->arena->occupied[k]);
-                    at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]);
-                    at(w2, arena->occupied[k]) == 0;
-                    second->arena == arena;
-                };
+                rewrite(arena, second->arena);
+                rewrite(second->arena->occupied[k], at(w2, second->arena->occupied[k]));
+                rewrite(at(w2, second->arena->occupied[k]), at(w2, arena->occupied[k]));
+                rewrite(at(w2, arena->occupied[k]), 0);
+                close();
             }
         }
     }
