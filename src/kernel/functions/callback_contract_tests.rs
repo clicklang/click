@@ -204,6 +204,7 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
         });
         selected_call_binder_application(
             "touch",
+            None,
             function.contract_interface(),
             &state,
             &environment,
