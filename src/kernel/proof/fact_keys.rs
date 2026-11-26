@@ -10,8 +10,8 @@ use crate::kernel::LoadKind;
 use crate::kernel::MachineUnaryOp;
 use crate::kernel::unary_term;
 use crate::kernel::{
-    AddressBase, BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp, ComparisonOperator,
-    FloatClassification, FloatCondition, MemoryRange, OldAddress, OldAddressOffset,
+    AddressBase, AddressOffset, BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp,
+    ComparisonOperator, FloatClassification, FloatCondition, MemoryRange, OldAddress,
     OldConditionTerm, OldMachineTerm, Proposition, Variable,
 };
 use crate::kernel::{
@@ -182,7 +182,7 @@ pub(crate) enum MemoryErasedAddressOffsetNode {
         byte_width: i64,
         unsigned: bool,
     },
-    Exact(OldAddressOffset),
+    Exact(AddressOffset),
 }
 
 impl MemoryErasedPropositionKey {
@@ -633,7 +633,7 @@ fn memory_erased_address_key(pointer: &OldAddress) -> MemoryErasedAddressKey {
     }
 }
 
-fn memory_erased_address_offset_key(offset: &OldAddressOffset) -> MemoryErasedAddressOffsetKey {
+fn memory_erased_address_offset_key(offset: &AddressOffset) -> MemoryErasedAddressOffsetKey {
     Canonical::new(match offset.view() {
         OffsetView::Add(left, right) => MemoryErasedAddressOffsetNode::Add(
             memory_erased_address_offset_key(left),
@@ -2227,7 +2227,7 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
 }
 
 fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaAddressOffsetKey> {
@@ -3317,7 +3317,7 @@ mod proposition_identity_tests {
                 memory: memory.clone(),
                 pointer: OldAddress {
                     base: "local:defined-array".into(),
-                    offset: OldAddressOffset::scale_int32(
+                    offset: AddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(variable)),
                         1,
                     ),
@@ -3332,11 +3332,11 @@ mod proposition_identity_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let array = OldAddress {
             base: "local:defined-array".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let other = OldAddress {
             base: "local:defined-other".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = SymbolicMemory::new()
             .with_uninitialized_block(array.base.clone(), 4)
@@ -3402,7 +3402,7 @@ mod proposition_identity_tests {
         let ty = crate::kernel::AlgebraicType::parameter("Fuel".into());
         let pointer = OldAddress {
             base: "alpha-array".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = SymbolicMemory::new().with_block("alpha-array", 8);
         let after = before.clone().store(
@@ -3636,7 +3636,7 @@ mod proposition_identity_tests {
     fn alpha_identity_keeps_memory_versions_distinct() {
         let pointer = OldAddress {
             base: "identity-version".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let left_memory = SymbolicMemory::new().with_block("identity-version", 8);
         let right_memory = left_memory.clone().store(
@@ -3669,7 +3669,7 @@ mod proposition_identity_tests {
     fn alpha_identity_matches_registered_and_spelled_load_at_one_version() {
         let pointer = OldAddress {
             base: "identity-registered-load".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let memory = SymbolicMemory::new().with_block("identity-registered-load", 8);
         let shared_memory = crate::kernel::intern_memory_ref(&memory);
@@ -4619,7 +4619,9 @@ mod memory_state_alpha_tests {
                 crate::kernel::ProgramPoint::at(memory),
                 Box::new(OldAddress {
                     base: "retained_state-alpha".into(),
-                    offset: OldAddressOffset::Variable(item),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Variable(item),
+                    ),
                 }),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -4684,7 +4686,7 @@ mod memory_state_alpha_tests {
     fn state_alpha_fold_loads_require_exact_state_identity() {
         let pointer = OldAddress {
             base: "retained_state-alpha".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
@@ -4736,7 +4738,9 @@ mod memory_state_alpha_tests {
                     crate::kernel::ProgramPoint::at(&memory),
                     Box::new(OldAddress {
                         base: "retained_state-alpha".into(),
-                        offset: OldAddressOffset::Variable(unknown_load),
+                        offset: crate::kernel::AddressOffset::from(
+                            crate::kernel::OldAddressOffset::Variable(unknown_load),
+                        ),
                     }),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -4750,7 +4754,7 @@ mod memory_state_alpha_tests {
     fn state_alpha_registered_loads_keep_their_state_identity() {
         let pointer = OldAddress {
             base: "retained_state-alpha".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
@@ -4820,7 +4824,7 @@ mod memory_state_alpha_tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 16));
         let field = |offset: i64| OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: crate::kernel::OldAddressOffset::Constant(offset).into(),
         };
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4839,7 +4843,7 @@ mod memory_state_alpha_tests {
         let every_element_is_one = |base: Variable, binder: Variable| {
             let element = OldAddress {
                 base: AddressBase::Symbolic(base),
-                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
             };
             let element_load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
@@ -4881,7 +4885,7 @@ mod memory_state_alpha_tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 64));
         let first_pointer = OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let first_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4892,7 +4896,7 @@ mod memory_state_alpha_tests {
         );
         let nested_pointer = OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Variable(first_load),
+            offset: crate::kernel::OldAddressOffset::Variable(first_load).into(),
         };
         let nested_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4992,7 +4996,7 @@ mod memory_state_alpha_tests {
     fn state_alpha_fold_comparison_uses_exact_state_identity() {
         let pointer = OldAddress {
             base: "retained_state-alpha".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
@@ -5034,7 +5038,7 @@ mod memory_state_alpha_tests {
     fn state_alpha_nested_folds_canonicalize_load_pointers() {
         let pointer = OldAddress {
             base: "retained_state-alpha".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
@@ -5082,7 +5086,7 @@ mod memory_state_alpha_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 4096));
         let mut pointer = OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -5094,7 +5098,9 @@ mod memory_state_alpha_tests {
         for _ in 0..depth {
             pointer = OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::Variable(load),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Variable(load),
+                ),
             };
             load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
@@ -5113,7 +5119,7 @@ mod memory_state_alpha_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 4096));
         let mut pointer = OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -5125,10 +5131,11 @@ mod memory_state_alpha_tests {
         for _ in 0..depth {
             pointer = OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::Variable(load)),
-                    Box::new(OldAddressOffset::Variable(load)),
-                ),
+                offset: crate::kernel::OldAddressOffset::Add(
+                    Box::new(crate::kernel::OldAddressOffset::Variable(load)),
+                    Box::new(crate::kernel::OldAddressOffset::Variable(load)),
+                )
+                .into(),
             };
             load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
@@ -5218,7 +5225,9 @@ mod memory_state_alpha_tests {
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(OldAddress {
                             base: block.into(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: crate::kernel::AddressOffset::from(
+                                crate::kernel::OldAddressOffset::Constant(0),
+                            ),
                         }),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -5253,7 +5262,9 @@ mod memory_state_alpha_tests {
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(OldAddress {
                             base: block.into(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: crate::kernel::AddressOffset::from(
+                                crate::kernel::OldAddressOffset::Constant(0),
+                            ),
                         }),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -5412,15 +5423,21 @@ mod offset_condition_tests {
         for width in [1, 8] {
             for unsigned in [false, true] {
                 let source = OldConditionTerm::AddressOffsetEqual(
-                    Box::new(OldAddressOffset::Add(
-                        Box::new(OldAddressOffset::Constant(0)),
-                        Box::new(OldAddressOffset::scaled_int64_node(
-                            OldMachineTerm::Variable(Variable(998600)),
-                            width,
-                            unsigned,
-                        )),
+                    Box::new(crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Add(
+                            Box::new(crate::kernel::OldAddressOffset::Constant(0)),
+                            Box::new(crate::kernel::OldAddressOffset::from(
+                                AddressOffset::scaled_int64_node(
+                                    OldMachineTerm::Variable(Variable(998600)),
+                                    width,
+                                    unsigned,
+                                ),
+                            )),
+                        ),
                     )),
-                    Box::new(OldAddressOffset::Constant(0)),
+                    Box::new(crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(0),
+                    )),
                 );
                 let root = crate::kernel::KernelTermImport::default().condition(&source);
                 let expected = memory_erased_condition_key(&source);
@@ -5450,7 +5467,7 @@ mod raw_pointer_condition_tests {
             let source = OldConditionTerm::AddressEqual(
                 Box::new(OldAddress {
                     base: block,
-                    offset: OldAddressOffset::scaled_int64_node(
+                    offset: AddressOffset::scaled_int64_node(
                         OldMachineTerm::Variable(Variable(998611)),
                         8,
                         true,

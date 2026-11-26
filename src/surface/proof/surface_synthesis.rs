@@ -1121,7 +1121,7 @@ fn bitvector_term_exceeds_depth_limit(root: &OldMachineTerm) -> bool {
 
 /// Whether an address offset that is one scaled index has a path below the
 /// index, entered at `depth`, that reaches the depth limit.
-fn scaled_index_exceeds_depth_limit(offset: &OldAddressOffset, depth: usize) -> bool {
+fn scaled_index_exceeds_depth_limit(offset: &AddressOffset, depth: usize) -> bool {
     match offset.view() {
         OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
             bitvector_term_exceeds_depth_limit_from(index.structural_value(), depth)
@@ -2257,7 +2257,7 @@ fn is_one_element_byte_count(bytes: &OldMachineTerm) -> bool {
     matches!(bytes, bits32_constant!(1)) || is_reduced_one_element_byte_count(bytes)
 }
 
-fn int32_scaled_value(offset: &OldAddressOffset, width: i64) -> Option<OldMachineTerm> {
+fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<OldMachineTerm> {
     match offset.view() {
         OffsetView::Int32Scaled { index, byte_width } if byte_width == width => {
             Some(index.structural_value().clone())
@@ -4194,7 +4194,7 @@ fn raise_pointer_comparison(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
-    use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
+    use crate::kernel::KernelTermNode as Node;
     let (left, right) = match term.node() {
         Node::PointerEqual(pair) => {
             let [left, right] = pair.arguments();
@@ -4245,13 +4245,13 @@ fn raise_pointer_comparison(
         }
         Node::AddressOffsetEqual { arguments } => (
             synthesize_surface_pointer_offset(
-                &KernelAddressOffset::export(&arguments[0]).ok()?,
+                &AddressOffset::try_from_shared(arguments[0].clone()).ok()?,
                 parameter_binding,
                 state,
                 bound_variables,
             )?,
             synthesize_surface_pointer_offset(
-                &KernelAddressOffset::export(&arguments[1]).ok()?,
+                &AddressOffset::try_from_shared(arguments[1].clone()).ok()?,
                 parameter_binding,
                 state,
                 bound_variables,
@@ -5524,7 +5524,7 @@ fn parameter_names_its_argument(
 }
 
 pub(super) fn synthesize_surface_pointer_offset(
-    term: &OldAddressOffset,
+    term: &AddressOffset,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -5553,7 +5553,7 @@ pub(super) fn synthesize_surface_pointer_offset(
     }
     match term.view() {
         OffsetView::Add(left, right) => {
-            let indexed_pointer = |base: &OldAddressOffset, byte_offset: &OldAddressOffset| {
+            let indexed_pointer = |base: &AddressOffset, byte_offset: &AddressOffset| {
                 let OffsetView::Constant(byte_offset) = byte_offset.view() else {
                     return None;
                 };
@@ -5576,35 +5576,33 @@ pub(super) fn synthesize_surface_pointer_offset(
                     ))),
                 )))
             };
-            let dynamically_indexed_pointer =
-                |base: &OldAddressOffset, index: &OldAddressOffset| {
-                    let OffsetView::Int32Scaled {
-                        index,
-                        byte_width: 4,
-                    } = index.view()
-                    else {
-                        return None;
-                    };
-                    let base = contract_expression_to_program_expression(
-                        &synthesize_surface_pointer_offset(
-                            base,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )?,
-                    )?;
-                    let index =
-                        contract_expression_to_program_expression(&synthesize_surface_bitvector(
-                            index.structural_value(),
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )?)?;
-                    Some(SyntaxTerm::ProgramExpression(ProgramExpression::Add(
-                        Box::new(base),
-                        Box::new(index),
-                    )))
+            let dynamically_indexed_pointer = |base: &AddressOffset, index: &AddressOffset| {
+                let OffsetView::Int32Scaled {
+                    index,
+                    byte_width: 4,
+                } = index.view()
+                else {
+                    return None;
                 };
+                let base =
+                    contract_expression_to_program_expression(&synthesize_surface_pointer_offset(
+                        base,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?)?;
+                let index =
+                    contract_expression_to_program_expression(&synthesize_surface_bitvector(
+                        index.structural_value(),
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?)?;
+                Some(SyntaxTerm::ProgramExpression(ProgramExpression::Add(
+                    Box::new(base),
+                    Box::new(index),
+                )))
+            };
             indexed_pointer(left, right)
                 .or_else(|| indexed_pointer(right, left))
                 .or_else(|| dynamically_indexed_pointer(left, right))
@@ -5630,7 +5628,7 @@ pub(super) fn synthesize_surface_pointer_offset(
 /// allocation offsets, not the memory-load syntax that produced them; this
 /// reverse lookup recovers stable source syntax at each recorded state.
 fn synthesize_parameter_field_pointer_value(
-    term: &OldAddressOffset,
+    term: &AddressOffset,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
@@ -5654,12 +5652,10 @@ fn synthesize_parameter_field_pointer_value(
                 ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
                 // Struct pointer fields are represented in contract memory
                 // by their pointer-width scalar offset.
-                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
-                    OldAddressOffset::scale_int32(
-                        value,
-                        i64::from(value_type.pointee_type()?.byte_width()),
-                    )
-                }
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => AddressOffset::scale_int32(
+                    value,
+                    i64::from(value_type.pointee_type()?.byte_width()),
+                ),
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
@@ -5704,12 +5700,10 @@ fn synthesize_parameter_field_pointer_value(
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded_offset = match state.memory().load(&field_pointer) {
                 ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
-                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
-                    OldAddressOffset::scale_int32(
-                        value,
-                        i64::from(value_type.pointee_type()?.byte_width()),
-                    )
-                }
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => AddressOffset::scale_int32(
+                    value,
+                    i64::from(value_type.pointee_type()?.byte_width()),
+                ),
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
@@ -7289,8 +7283,8 @@ fn synthesize_parameter_field_indexed_int32_load(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
     let _frame = SurfaceSynthesisFrame::enter("indexed-field")?;
-    let pointer_field_and_index = |base: &OldAddressOffset,
-                                   index: Option<&OldAddressOffset>|
+    let pointer_field_and_index = |base: &AddressOffset,
+                                   index: Option<&AddressOffset>|
      -> Option<(SyntaxTerm, SyntaxTerm)> {
         let OffsetView::Int32Scaled {
             index: value,
@@ -7509,11 +7503,9 @@ fn synthesize_local_aggregate_field(
                     } else {
                         OldAddress {
                             base: slot.base.clone(),
-                            offset: crate::kernel::OldAddressOffset::add(
+                            offset: crate::kernel::AddressOffset::add(
                                 slot.offset.clone(),
-                                crate::kernel::OldAddressOffset::constant(i64::from(
-                                    element_offset,
-                                )),
+                                crate::kernel::AddressOffset::constant(i64::from(element_offset)),
                             ),
                         }
                     };
@@ -7906,7 +7898,7 @@ fn call_result_pointer_expression(
     // width. An exact lookup suffices for a call that introduced this base.
     let base = OldAddress {
         base: pointer.base.clone(),
-        offset: OldAddressOffset::constant(0),
+        offset: AddressOffset::constant(0),
     };
     let (region, width) = SYNTHESIS_RECORDED_POINTS.with(|points| {
         let points = points.borrow();
@@ -8108,7 +8100,7 @@ fn synthesis_element_index(
     // Legacy-only offsets already have a native source reader. Retain that
     // result without importing temporary arithmetic. Any shared child selects
     // the shared path, so this compatibility read cannot export a shared DAG.
-    let native = |offset: &OldAddressOffset| {
+    let native = |offset: &AddressOffset| {
         !offset.any_scaled_operand(|index| index.shared_operand().is_some())
     };
     if native(&pointer.offset)
@@ -8326,7 +8318,7 @@ fn synthesize_surface_pointer(
         && let Ok(bytes) = u32::try_from(bytes)
         && let Some(name) = state.locals().name_for_slot(&OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         })
         && (state.locals().aggregate_layout(name).is_some()
             || state.locals().scalar_object_type(name).is_some())
@@ -8387,7 +8379,7 @@ fn synthesize_surface_pointer(
         {
             let base = OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             };
             return Some(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(synthesize_surface_pointer(
@@ -8812,7 +8804,7 @@ fn synthesize_surface_pointer_expression_routes(
         }
         let origin = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         let width = value_type.pointee_type()?.byte_width();
         let index = synthesis_element_index(pointer, &origin, width)?;
@@ -8844,7 +8836,7 @@ fn synthesize_surface_pointer_expression_routes(
         }
         let origin = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         // Element arithmetic at the declaration's pointee width.
         if let Some(width) = spelled_type
@@ -8895,7 +8887,7 @@ fn synthesize_surface_pointer_expression_routes(
         // displacement is in bytes, so reproduce it with a byte pointer.
         let origin = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         let cell = pointer_read_address_in_state(&origin, state)?;
         let cell = synthesize_surface_pointer_expression(
@@ -9002,7 +8994,7 @@ fn synthesize_surface_pointer_expression_routes(
             let bytes = u32::try_from(bytes).ok().filter(|bytes| *bytes != 0)?;
             let origin = OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             };
             let base = synthesize_surface_pointer_expression(
                 &origin,
@@ -9045,7 +9037,7 @@ fn synthesize_copied_parameter_pointer(
         let points = points.as_ref()?;
         let object = OldAddress {
             base: read.defining_address.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         let name =
             crate::kernel::BindingName::from(object.base.prepared_argument_binding()?.clone());

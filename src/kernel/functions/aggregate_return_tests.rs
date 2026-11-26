@@ -1142,7 +1142,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
     let destination = OldAddress {
         base: "local:variable-container".into(),
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(offset_variable), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(offset_variable), 4).into(),
     };
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
         &raw,
@@ -1590,7 +1590,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     ] {
         let pointer = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let source = OldPointer::new(pointer, ProgramType::UInt8Pointer);
         let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));

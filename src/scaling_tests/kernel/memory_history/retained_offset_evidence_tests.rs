@@ -22,7 +22,11 @@ fn typed_offset_evidence_refuses_cold_arithmetic_without_exports() {
         let facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
-            address_offset_equality_evidence(&left, &right, &facts)
+            address_offset_equality_evidence(
+                &crate::kernel::AddressOffset::from(&left),
+                &crate::kernel::AddressOffset::from(&right),
+                &facts,
+            )
         });
         assert!(answer.is_none());
         assert_eq!(KernelTermExport::machine_export_count(), exports);

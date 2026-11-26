@@ -151,12 +151,12 @@ impl MutexLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{OldAddressOffset, OldMachineTerm, Variable};
+    use crate::kernel::{AddressOffset, OldMachineTerm, Variable};
 
     fn mutex(index: usize) -> OldAddress {
         OldAddress {
             base: format!("loop-mutex-{index}").into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         }
     }
     fn initialized(address: &OldAddress) -> MutexContext {
@@ -350,7 +350,7 @@ mod loop_rule_tests {
     use crate::kernel::functions::{loop_instance_guard, rewrite_resource_instance};
     use crate::kernel::loops::{loop_binder_state_components_match_at_back_edge, loop_binders};
     use crate::kernel::{
-        ComparisonOperator, CompositeResourceDefinition, OldAddressOffset, ProgramExpression,
+        AddressOffset, ComparisonOperator, CompositeResourceDefinition, ProgramExpression,
         ProgramType, ProgramValue, ResourceAccessMode, ResourceFamily, ResourceFieldSchema,
         ResourceFieldType, ResourceInstance, ResourceQuantity, ResourceSpec, ResourceStateSource,
         ResourceTerm, ResourceTransferRole, SpecExpression, SpecProposition, Variable, int32,
@@ -359,7 +359,7 @@ mod loop_rule_tests {
     fn address() -> OldAddress {
         OldAddress {
             base: "loop-rule-mutex".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         }
     }
     fn schema() -> ResourceFieldSchema {

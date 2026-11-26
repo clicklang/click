@@ -659,7 +659,9 @@ mod tests {
             let source = OldAddress::symbolic(Variable(910_000 + case));
             let target = OldAddress {
                 base: AddressBase::Heap(920_000 + case),
-                offset: OldAddressOffset::Constant(4),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(4),
+                ),
             };
             let identity = crate::kernel::intern_memory(
                 SymbolicMemory::new().with_block(format!("rewrite-origin-{case}"), 16),
@@ -726,7 +728,7 @@ mod tests {
         let source = OldAddress::symbolic(Variable(930_000));
         let target = OldAddress {
             base: AddressBase::Heap(930_001),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block(AddressBase::Heap(930_001), 16),
@@ -750,7 +752,9 @@ mod tests {
                 crate::kernel::ProgramPoint::at(&memory),
                 OldAddress {
                     base: AddressBase::Symbolic(variable),
-                    offset: OldAddressOffset::Constant(8),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(8),
+                    ),
                 },
                 crate::kernel::LoadKind::Int32,
             )
@@ -791,20 +795,22 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = OldAddress {
             base: AddressBase::Symbolic(Variable(91)),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let target = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(92)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(92)), 4),
         };
         let field_load = |base: &OldAddress, displacement| {
             crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 OldAddress {
                     base: base.base.clone(),
-                    offset: OldAddressOffset::add(
+                    offset: AddressOffset::add(
                         base.offset.clone(),
-                        OldAddressOffset::Constant(displacement),
+                        crate::kernel::AddressOffset::from(
+                            crate::kernel::OldAddressOffset::Constant(displacement),
+                        ),
                     ),
                 },
                 crate::kernel::LoadKind::Int32,
@@ -870,8 +876,8 @@ mod tests {
 
     #[test]
     fn rewrite_uses_pointer_offset_equalities_inside_pointer_goals() {
-        let left = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
-        let right = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
+        let left = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
+        let right = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
         let equality = Proposition::condition_is(
             OldConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
@@ -882,7 +888,7 @@ mod tests {
         };
         let null = OldAddress {
             base: "null".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let goal = Proposition::condition_is(
             OldConditionTerm::address_equal(pointer(left), null.clone()),
@@ -917,11 +923,11 @@ mod tests {
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let data_offset = OldAddressOffset::scale_int32(data.clone(), 4);
-        let alias_offset = OldAddressOffset::scale_int32(alias.clone(), 4);
-        let indexed_offset = OldAddressOffset::add(
+        let data_offset = AddressOffset::scale_int32(data.clone(), 4);
+        let alias_offset = AddressOffset::scale_int32(alias.clone(), 4);
+        let indexed_offset = AddressOffset::add(
             data_offset.clone(),
-            OldAddressOffset::scale_int32(index.clone(), 4),
+            AddressOffset::scale_int32(index.clone(), 4),
         );
         let goal = Proposition::condition_is(
             OldConditionTerm::Compare {
@@ -963,7 +969,7 @@ mod tests {
         let fixed = Resource::Memory(MemoryRange::new(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(65)), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(65)), 4),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(4),
@@ -972,7 +978,7 @@ mod tests {
             Resource::Memory(MemoryRange::new(
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::scale_int32(base, 4),
+                    offset: AddressOffset::scale_int32(base, 4),
                 },
                 OldMachineTerm::constant(0),
                 end,
@@ -993,8 +999,8 @@ mod tests {
         );
         let base_equality = Proposition::condition_is(
             OldConditionTerm::AddressOffsetEqual(
-                Box::new(OldAddressOffset::scale_int32(source.clone(), 4)),
-                Box::new(OldAddressOffset::scale_int32(target.clone(), 4)),
+                Box::new(AddressOffset::scale_int32(source.clone(), 4)),
+                Box::new(AddressOffset::scale_int32(target.clone(), 4)),
             ),
             true,
         );
@@ -1011,7 +1017,7 @@ mod tests {
                 right: Box::new(match range(source, target_len) {
                     Resource::Memory(range) => Resource::Memory(range.with_base(OldAddress {
                         base: AddressBase::ExternalArgument,
-                        offset: OldAddressOffset::scale_int32(target, 4),
+                        offset: AddressOffset::scale_int32(target, 4),
                     })),
                     _ => unreachable!(),
                 }),
@@ -1025,7 +1031,7 @@ mod tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("rewrite-cell", 4));
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let load = crate::kernel::OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
@@ -1064,7 +1070,9 @@ mod tests {
                 crate::kernel::ProgramPoint::at(&memory),
                 OldAddress {
                     base: "fold".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(0),
+                    ),
                 },
                 crate::kernel::LoadKind::Int32,
             ),
@@ -1169,7 +1177,7 @@ mod tests {
     fn integer_observation_rewrite_does_not_cross_memory_states() {
         let pointer = OldAddress {
             base: AddressBase::Concrete("rewrite-cell".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let first_memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("rewrite-cell", 4).store(

@@ -16,7 +16,7 @@ use crate::persistent::{PersistentMap, PersistentSet};
 
 use super::cell_version_intervals::CellVersionIntervals;
 use super::{
-    AddressBase, LoadKind, MemoryDerivation, MemoryRange, OldAddress, OldAddressOffset,
+    AddressBase, AddressOffset, LoadKind, MemoryDerivation, MemoryRange, OldAddress,
     OldMachineTerm, ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory,
     intern_memory, intern_memory_ref,
 };
@@ -235,7 +235,7 @@ struct PointReadObject {
     /// A whole-object removal can discard an arbitrarily large map. A later
     /// write creates a new lineage so the join need not diff those maps.
     generation: ProgramPointId,
-    origin: Option<(AddressBase, OldAddressOffset)>,
+    origin: Option<(AddressBase, AddressOffset)>,
     cells: PointReadCells,
 }
 
@@ -320,7 +320,7 @@ struct ExternalEntryWrites {
     /// The view the first step after entry started from.
     entry_view: SharedMemory,
     /// The one origin all writes since entry used; none before the first.
-    origin: Option<(AddressBase, OldAddressOffset)>,
+    origin: Option<(AddressBase, AddressOffset)>,
     written: PersistentSet<i64>,
     /// The point whose effect last changed `written` or `origin`, or the
     /// entry. Two arms with one generation hold one record.
@@ -1011,7 +1011,7 @@ fn read_bucket(block: &AddressBase) -> Option<&AddressBase> {
 
 /// The bounded address shape only. No arithmetic or alias fact is consulted.
 /// Symbolic offsets share a bucket only while they use the same origin.
-fn read_displacement(offset: &OldAddressOffset) -> Option<(Option<&OldAddressOffset>, i64)> {
+fn read_displacement(offset: &AddressOffset) -> Option<(Option<&AddressOffset>, i64)> {
     match offset.view() {
         OffsetView::Constant(start) => Some((None, start)),
         OffsetView::Add(origin, delta)
@@ -1033,12 +1033,12 @@ fn read_displacement(offset: &OldAddressOffset) -> Option<(Option<&OldAddressOff
 
 fn read_origin(
     pointer: &OldAddress,
-    anchor: Option<&OldAddressOffset>,
-) -> Option<(AddressBase, OldAddressOffset)> {
+    anchor: Option<&AddressOffset>,
+) -> Option<(AddressBase, AddressOffset)> {
     if anchor.is_some() || external_storage(&pointer.base) {
         Some((
             pointer.base.clone(),
-            anchor.cloned().unwrap_or(OldAddressOffset::constant(0)),
+            anchor.cloned().unwrap_or(AddressOffset::constant(0)),
         ))
     } else {
         None
@@ -2503,7 +2503,7 @@ mod tests {
         let block: AddressBase = "local:slot".into();
         let slot = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         SymbolicMemory::new()
             .with_block(block, 4)
@@ -2513,7 +2513,7 @@ mod tests {
     fn slot() -> OldAddress {
         OldAddress {
             base: "local:slot".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }
     }
 
@@ -2687,7 +2687,7 @@ mod tests {
         let block = AddressBase::ExternalArgument;
         let cell = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let effect = entry.clone().with_memory(
             entry
@@ -2712,7 +2712,7 @@ mod tests {
         let other_entry = ExecutionState::new().begin_function_entry_memory();
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let select = |state: &ExecutionState| {
             state
@@ -2768,7 +2768,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let pointer_slot = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let pointer = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
@@ -2805,7 +2805,7 @@ mod tests {
         let point = entry.program_point();
         let slot = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let pointer = OldPointer::from_point_read(
             point.clone().for_legacy_read(),
@@ -2826,7 +2826,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let caller_cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let loaded = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
@@ -2875,7 +2875,7 @@ mod tests {
         let second = stored(&declared, 2);
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4).into(),
         };
         let join = |left: &ExecutionState, right: &ExecutionState| {
             let mut joined = left.clone();
@@ -3072,7 +3072,7 @@ mod tests {
         let slot = slot();
         let other = OldAddress {
             base: "local:other".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
@@ -3439,7 +3439,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let entry = ExecutionState::new().begin_function_entry_memory();
         let selected = entry

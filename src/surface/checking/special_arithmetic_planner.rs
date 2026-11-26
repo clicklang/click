@@ -751,7 +751,7 @@ fn charge_proposition(proposition: &Proposition) -> bool {
     }
 }
 
-fn bounded_offset_work(root: &crate::kernel::OldAddressOffset) -> bool {
+fn bounded_offset_work(root: &crate::kernel::AddressOffset) -> bool {
     let mut pending = vec![root];
     let mut count = 0usize;
     while let Some(offset) = pending.pop() {

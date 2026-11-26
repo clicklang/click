@@ -1891,7 +1891,7 @@ mod resource_frame_substitution_tests {
         let variable = Variable(71_900);
         let address = OldAddress {
             base: AddressBase::Symbolic(variable),
-            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 1),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 1),
         };
         let live = ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(123),
@@ -1935,14 +1935,17 @@ mod resource_frame_substitution_tests {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Add(
                 Box::new(OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::scaled_int32_node(
-                        OldMachineTerm::Variable(Variable(100_000)),
-                        4,
+                    Box::new(crate::kernel::OldAddressOffset::from(
+                        AddressOffset::scaled_int32_node(
+                            OldMachineTerm::Variable(Variable(100_000)),
+                            4,
+                        ),
                     )),
                     Box::new(OldAddressOffset::Constant(8)),
                 )),
                 Box::new(OldAddressOffset::Constant(4)),
-            ),
+            )
+            .into(),
         };
         let retained_state = crate::kernel::intern_memory(
             base.store(metadata, ProgramValue::Int32(OldMachineTerm::constant(7))),
@@ -2012,7 +2015,7 @@ mod resource_frame_substitution_tests {
         let range = MemoryRange::new(
             OldAddress {
                 base: AddressBase::Concrete("substitution:range".into()),
-                offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
+                offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
             },
             OldMachineTerm::Variable(from),
             binary_node!(
@@ -2059,12 +2062,12 @@ mod resource_frame_substitution_tests {
         let from = Variable(71_002);
         let replacement = OldAddress {
             base: AddressBase::Concrete("substitution:replacement".into()),
-            offset: OldAddressOffset::Constant(2),
+            offset: OldAddressOffset::Constant(2).into(),
         };
         let range = MemoryRange::new(
             OldAddress {
                 base: AddressBase::Symbolic(from),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
@@ -2098,7 +2101,7 @@ mod resource_frame_substitution_tests {
         let derived_segment = MemorySegment::new(
             ProgramExpression::Value(ProgramValue::pointer(OldAddress {
                 base: AddressBase::Symbolic(from),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             })),
             ProgramExpression::Value(int32(0)),
             ProgramExpression::Value(int32(1)),
@@ -3636,7 +3639,7 @@ fn collect_condition_bound_variables(
 }
 
 fn collect_pointer_offset_bound_variables(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
 ) {
     offset.for_each_scaled_operand(|value| {
@@ -5439,7 +5442,7 @@ mod machine_integer_substitution_tests {
             )
         };
         let before = OldAddress {
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(index), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(index), 4),
             ..base.clone()
         };
         let after = base.offset_by_bytes(28);
@@ -5531,9 +5534,10 @@ fn map_common_substitution_offsets(
         if crate::kernel::memory_history::pointer_index_syntax_equal(&index, &mapped) {
             return Ok(original.clone());
         }
-        Ok(O::import(
-            &crate::kernel::memory_history::rebuild_scaled_pointer_index(mapped, width, wide),
-        ))
+        Ok(
+            crate::kernel::memory_history::rebuild_scaled_pointer_index(mapped, width, wide)
+                .into_shared(),
+        )
     })
 }
 
@@ -5696,10 +5700,7 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
         );
     }
     if let crate::kernel::KernelTermNode::AddressEqual { arguments } = condition.node() {
-        use crate::kernel::{
-            KernelAddressOffset as O, SharedAddress as A, SharedAddressBase,
-            SharedAddressOffset as S,
-        };
+        use crate::kernel::{SharedAddress as A, SharedAddressBase, SharedAddressOffset as S};
         let mut mapped = Vec::with_capacity(2);
         for address in arguments {
             let block = address.node().base.native_atom();
@@ -5726,7 +5727,7 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
                 Some(replacement) => A::new(
                     SharedAddressBase::import(&replacement.base),
                     S::add(
-                        O::import(&replacement.offset),
+                        replacement.offset.shared().clone(),
                         address.node().offset.clone(),
                     ),
                 ),
@@ -6246,10 +6247,10 @@ pub(crate) fn substitute_bitvector_variable(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     from: Variable,
     to: &OldMachineTerm,
-) -> OldAddressOffset {
+) -> AddressOffset {
     substitute_bitvector_variable_in_pointer_offset_cow(offset, from, to).into_owned()
 }
 
@@ -6258,10 +6259,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
 /// key, which in turn mints a different state for a binder rename that did
 /// not occur anywhere in that cell.
 fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
-    offset: &'a OldAddressOffset,
+    offset: &'a AddressOffset,
     from: Variable,
     to: &OldMachineTerm,
-) -> std::borrow::Cow<'a, OldAddressOffset> {
+) -> std::borrow::Cow<'a, AddressOffset> {
     use std::borrow::Cow;
     match offset.view() {
         OffsetView::Constant(_) | OffsetView::Variable(_) => Cow::Borrowed(offset),
@@ -6271,7 +6272,7 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             if matches!((&left, &right), (Cow::Borrowed(_), Cow::Borrowed(_))) {
                 Cow::Borrowed(offset)
             } else {
-                Cow::Owned(OldAddressOffset::add(left.into_owned(), right.into_owned()))
+                Cow::Owned(AddressOffset::add(left.into_owned(), right.into_owned()))
             }
         }
         OffsetView::Int32Scaled { index, byte_width } => {
@@ -6293,7 +6294,7 @@ fn substitute_in_scaled_pointer_index(
     unsigned: Option<bool>,
     from: Variable,
     to: &OldMachineTerm,
-) -> Option<OldAddressOffset> {
+) -> Option<AddressOffset> {
     let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
         value,
         |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
@@ -6348,10 +6349,7 @@ fn substitute_bitvector_variable_in_stored_offset(
             let value = SharedAddressOffset::exact_index(&index);
             Ok(
                 substitute_in_scaled_pointer_index(&value, byte_width, unsigned, from, to)
-                    .map_or_else(
-                        || original.clone(),
-                        |offset| KernelAddressOffset::import(&offset),
-                    ),
+                    .map_or_else(|| original.clone(), AddressOffset::into_shared),
             )
         })
         .expect("offset substitution is infallible");
@@ -7119,7 +7117,7 @@ fn substitute_pointer_variable_in_pointer(
         let identity = to.object_identity();
         return OldAddress {
             base: identity.base,
-            offset: OldAddressOffset::add(identity.offset, pointer.offset.clone()),
+            offset: AddressOffset::add(identity.offset, pointer.offset.clone()),
         };
     }
     let replaces_block = matches!(
@@ -7131,7 +7129,7 @@ fn substitute_pointer_variable_in_pointer(
     if replaces_block {
         OldAddress {
             base: to.base.clone(),
-            offset: OldAddressOffset::add(to.offset.clone(), offset),
+            offset: AddressOffset::add(to.offset.clone(), offset),
         }
     } else {
         pointer.clone()
@@ -7549,7 +7547,7 @@ fn substitute_pointer_variable_in_block(
             substitute_pointer_variable_in_pointer(
                 &OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 },
                 from,
                 to,
@@ -8531,15 +8529,15 @@ mod machine_integer_pointer_substitution_tests {
         let binder = Variable(610);
         let source = OldAddress {
             base: AddressBase::Symbolic(binder),
-            offset: OldAddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8).into(),
         };
         let replacement = OldAddress {
             base: AddressBase::Symbolic(Variable(611)),
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4).into(),
         };
         let expected = OldAddress {
             base: replacement.base.clone(),
-            offset: OldAddressOffset::Constant(12),
+            offset: OldAddressOffset::Constant(12).into(),
         };
         let bits = OldMachineTerm::IntegerAddress(
             Box::new(source),
@@ -8994,7 +8992,7 @@ mod integer_mixed_quantifier_tests {
             &memory,
             &OldAddress {
                 base: AddressBase::Concrete("integer-witness-capture".into()),
-                offset: OldAddressOffset::scaled_int32_node(
+                offset: AddressOffset::scaled_int32_node(
                     OldMachineTerm::IntegerToMachine {
                         value: IntegerTerm::var(free_index).into(),
                         destination: MachineIntegerType::Int32,
@@ -9047,7 +9045,7 @@ mod integer_mixed_quantifier_tests {
                 .expect("replacement load must retain its defining pointer");
         assert_eq!(rewritten_memory, memory);
         assert!(matches!(
-            rewritten_pointer.offset,
+            crate::kernel::OldAddressOffset::from(&rewritten_pointer.offset),
             OldAddressOffset::Int32Scaled { value, .. }
                 if matches!(value.structural_value(), OldMachineTerm::IntegerToMachine { value, .. }
                     if matches!(value.as_ref(), IntegerTerm::Variable(variable)
@@ -9674,13 +9672,13 @@ mod integer_range_fold_substitution_tests {
         let renamed = Variable(70_191);
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
         };
         let source =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("unrelated", 4).store(
                 OldAddress {
                     base: AddressBase::Concrete("unrelated".into()),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));
@@ -9732,7 +9730,7 @@ mod integer_range_fold_substitution_tests {
             let binder = Variable(70_156 + u64::from(bytes));
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
             };
             let original = crate::kernel::eval::scalar_read_for_exact_cell(
                 &memory,
@@ -9756,7 +9754,7 @@ mod integer_range_fold_substitution_tests {
                 renamed_pointer,
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::scale_int32(
+                    offset: AddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
                         4
                     )
@@ -9771,7 +9769,7 @@ mod integer_range_fold_substitution_tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
         let pointer = OldAddress {
             base: AddressBase::Concrete("array".into()),
-            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(item), 4),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(item), 4),
         };
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -9817,11 +9815,11 @@ mod integer_range_fold_substitution_tests {
             base: AddressBase::Concrete("array".into()),
             offset: OldAddressOffset::Add(
                 Box::new(OldAddressOffset::Constant(4)),
-                Box::new(OldAddressOffset::scaled_int32_node(
-                    OldMachineTerm::Variable(item),
-                    4,
+                Box::new(crate::kernel::OldAddressOffset::from(
+                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(item), 4),
                 )),
-            ),
+            )
+            .into(),
         };
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -10481,7 +10479,7 @@ fn contract_offset_freshness_includes_retained_fold_binders() {
     let end = Variable(999985);
     let accumulator = Variable(999986);
     let item = Variable(999987);
-    let offset = OldAddressOffset::scaled_int32_node(
+    let offset = AddressOffset::scaled_int32_node(
         OldMachineTerm::RangeFold {
             start: Box::new(OldMachineTerm::constant(0)),
             end: Box::new(OldMachineTerm::Variable(end)),
@@ -10506,15 +10504,20 @@ fn variable_substitution_keeps_contract_displacements_retained() {
     let from = Variable(999989);
     let to = OldMachineTerm::constant(17);
     let input = OldAddressOffset::Add(
-        Box::new(OldAddressOffset::scaled_int32_node(
-            OldMachineTerm::Variable(from),
-            4,
+        Box::new(crate::kernel::OldAddressOffset::from(
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
         )),
         Box::new(OldAddressOffset::Constant(16)),
     );
-    let stored = crate::kernel::StoredPointerOffset::from_written(&input);
+    let stored = crate::kernel::StoredPointerOffset::from_written(
+        &crate::kernel::AddressOffset::from(&input),
+    );
     let output = substitute_bitvector_variable_in_stored_offset(&stored, from, &to);
-    let expected = substitute_bitvector_variable_in_pointer_offset(&input, from, &to);
+    let expected = substitute_bitvector_variable_in_pointer_offset(
+        &crate::kernel::AddressOffset::from(&input),
+        from,
+        &to,
+    );
     assert_eq!(output, crate::kernel::StoredPointerOffset::from(expected));
     assert!(!stored.has_cached_native_offset());
     assert!(!output.has_cached_native_offset());

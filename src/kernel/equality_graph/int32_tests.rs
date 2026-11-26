@@ -79,7 +79,7 @@ fn unsigned_congruence_keeps_load_states_and_widths_distinct() {
     let before = intern_memory(SymbolicMemory::new().with_block("unsigned", 4));
     let pointer = OldAddress {
         base: "unsigned".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let after = intern_memory(before.memory().clone().store(
         pointer.clone(),
@@ -174,7 +174,7 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_state() {
     let before = intern_memory(SymbolicMemory::new().with_block("int32", 16));
     let pointer = |index| OldAddress {
         base: "int32".into(),
-        offset: OldAddressOffset::scale_int32(index, 4),
+        offset: OldAddressOffset::scale_int32(index, 4).into(),
     };
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -206,7 +206,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
     let _session = VerificationSession::enter();
     let pointer = OldAddress {
         base: "resolved-int32".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let (a, b) = (var(31), var(32));
     let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
@@ -277,7 +277,7 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
     let _session = VerificationSession::enter();
     let pointer = |offset| OldAddress {
         base: "two-resolved-int32".into(),
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset).into(),
     };
     let (a, b) = (var(41), var(42));
     let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
@@ -345,7 +345,7 @@ fn direct_composite_int32_argument_uses_graph_with_state_scope() {
     let before = intern_memory(SymbolicMemory::new().with_block("resource-value", 8));
     let pointer = |index| OldAddress {
         base: "resource-value".into(),
-        offset: OldAddressOffset::scale_int32(index, 4),
+        offset: OldAddressOffset::scale_int32(index, 4).into(),
     };
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -391,7 +391,7 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
     let before = intern_memory(SymbolicMemory::new().with_block("instance-value", 8));
     let pointer = |index| OldAddress {
         base: "instance-value".into(),
-        offset: OldAddressOffset::scale_int32(index, 4),
+        offset: OldAddressOffset::scale_int32(index, 4).into(),
     };
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -450,7 +450,7 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
     let before = intern_memory(SymbolicMemory::new().with_block("certified-int32", 8));
     let pointer = |index| OldAddress {
         base: "certified-int32".into(),
-        offset: OldAddressOffset::scale_int32(index, 4),
+        offset: OldAddressOffset::scale_int32(index, 4).into(),
     };
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -491,7 +491,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_state() {
     let before = intern_memory(SymbolicMemory::new().with_block("int32", 16));
     let pointer = |index| OldAddress {
         base: "int32".into(),
-        offset: OldAddressOffset::scale_int32(index, 4),
+        offset: OldAddressOffset::scale_int32(index, 4).into(),
     };
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(load_variable_for_cell_with_origin(
@@ -528,16 +528,16 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&a, &b);
     assert!(!graph.are_offsets_equal(
-        &OldAddressOffset::Variable(Variable(1)),
-        &OldAddressOffset::Variable(Variable(2)),
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::Variable(Variable(1))),
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::Variable(Variable(2))),
     ));
     assert!(!graph.are_equal(
         &OldAddress::symbolic(Variable(1)),
         &OldAddress::symbolic(Variable(2))
     ));
     assert!(graph.are_offsets_equal(
-        &OldAddressOffset::scale_int32(a.clone(), 4),
-        &OldAddressOffset::scale_int32(b.clone(), 4),
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::scale_int32(a.clone(), 4)),
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::scale_int32(b.clone(), 4)),
     ));
     let plus_one = |value| {
         binary_node!(
@@ -559,8 +559,8 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
     assert!(graph.are_int32_equal(&minus_one(a.clone()), &minus_one(b.clone())));
     assert!(!graph.are_int32_equal(&plus_one(a), &minus_one(b)));
     graph.add_offset_equality(
-        &OldAddressOffset::Variable(Variable(3)),
-        &OldAddressOffset::Variable(Variable(4)),
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::Variable(Variable(3))),
+        &crate::kernel::AddressOffset::from(&OldAddressOffset::Variable(Variable(4))),
     );
     assert!(!graph.are_int32_equal(&var(3), &var(4)));
     assert!(!graph.are_int32_equal(&OldMachineTerm::constant(0), &OldMachineTerm::constant(1)));
@@ -576,7 +576,7 @@ fn int32_restriction_and_contradiction_preserve_support() {
         OldAddress::symbolic(Variable(20)),
         OldAddress::symbolic(Variable(21)),
     );
-    let xy = OldConditionTerm::address_offset_equal(offset(30), offset(31));
+    let xy = OldConditionTerm::address_offset_equal(offset(30).into(), offset(31).into());
     let context = PureFactContext::new()
         .assume_condition(ab.clone(), true)
         .assume_condition(bc.clone(), true)
@@ -622,16 +622,14 @@ fn int32_load_identity_keeps_states_separate() {
     assert!(context.equality_graph.are_int32_equal(&load(&before), &a));
     assert!(!context.equality_graph.are_int32_equal(&load(&after), &a));
     let scale = |value| OldAddressOffset::scale_int32(value, 4);
-    assert!(
-        context
-            .equality_graph
-            .are_offsets_equal(&scale(load(&before)), &scale(a.clone()))
-    );
-    assert!(
-        !context
-            .equality_graph
-            .are_offsets_equal(&scale(load(&after)), &scale(a.clone()))
-    );
+    assert!(context.equality_graph.are_offsets_equal(
+        &crate::kernel::AddressOffset::from(&scale(load(&before))),
+        &crate::kernel::AddressOffset::from(&scale(a.clone()))
+    ));
+    assert!(!context.equality_graph.are_offsets_equal(
+        &crate::kernel::AddressOffset::from(&scale(load(&after))),
+        &crate::kernel::AddressOffset::from(&scale(a.clone()))
+    ));
     let sum = |value| binary_node!(Int32, Add, Box::new(value), Box::new(var(42)));
     assert!(
         context
@@ -650,8 +648,8 @@ fn offset_premises_support_scalar_graph_edges() {
     let (a, b, c) = (var(70), var(71), var(72));
     let offset_eq = |left: OldMachineTerm, right: OldMachineTerm| {
         OldConditionTerm::address_offset_equal(
-            OldAddressOffset::scale_int32(left, 4),
-            OldAddressOffset::scale_int32(right, 4),
+            OldAddressOffset::scale_int32(left, 4).into(),
+            OldAddressOffset::scale_int32(right, 4).into(),
         )
     };
     let scaled = offset_eq(a.clone(), b.clone());
@@ -669,8 +667,8 @@ fn offset_premises_support_scalar_graph_edges() {
     for width in [0, 1, 8] {
         context = context.assume_condition(
             OldConditionTerm::address_offset_equal(
-                OldAddressOffset::scaled_int32_node(a.clone(), width),
-                OldAddressOffset::scaled_int32_node(b.clone(), width),
+                OldAddressOffset::scaled_int32_node(a.clone(), width).into(),
+                OldAddressOffset::scaled_int32_node(b.clone(), width).into(),
             ),
             true,
         );
@@ -691,22 +689,19 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
     let _session = VerificationSession::enter();
     let offset = |i: u64| OldAddressOffset::Variable(Variable(995_000 + i));
     let input = OldConditionTerm::AddressOffsetEqual(
-        Box::new(OldAddressOffset::Add(
-            Box::new(offset(0)),
-            Box::new(offset(1)),
-        )),
-        Box::new(offset(2)),
+        Box::new(OldAddressOffset::Add(Box::new(offset(0)), Box::new(offset(1))).into()),
+        Box::new(offset(2).into()),
     );
     let facts = PureFactContext::new().assume_condition(input.clone(), true);
     assert!(
         facts
             .equality_graph
-            .offset_has_source_dependencies(&offset(1))
+            .offset_has_source_dependencies(&crate::kernel::AddressOffset::from(&offset(1)))
     );
     assert!(
         !facts
             .equality_graph
-            .offset_has_source_dependencies(&offset(3))
+            .offset_has_source_dependencies(&crate::kernel::AddressOffset::from(&offset(3)))
     );
 }
 
@@ -717,7 +712,7 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
         OldPointer::new(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::scale_int32(var(id), 4),
+                offset: OldAddressOffset::scale_int32(var(id), 4).into(),
             },
             ProgramType::Int32Pointer,
         )
@@ -766,14 +761,18 @@ fn recorded_shared_index_members_keep_source_order_without_exporting() {
     let left = shared(&x);
     let right = shared(&y);
     let equality = OldConditionTerm::AddressOffsetEqual(
-        Box::new(OldAddressOffset::Int32Scaled {
-            value: left.clone(),
-            byte_width: 4,
-        }),
-        Box::new(OldAddressOffset::Int32Scaled {
-            value: right.clone(),
-            byte_width: 4,
-        }),
+        Box::new(crate::kernel::AddressOffset::from(
+            OldAddressOffset::Int32Scaled {
+                value: left.clone(),
+                byte_width: 4,
+            },
+        )),
+        Box::new(crate::kernel::AddressOffset::from(
+            OldAddressOffset::Int32Scaled {
+                value: right.clone(),
+                byte_width: 4,
+            },
+        )),
     );
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(equality.clone(), true);

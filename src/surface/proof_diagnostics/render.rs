@@ -11,8 +11,8 @@ use crate::kernel::ResourceFact;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, ExecutionState,
-    ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldAddress, OldAddressOffset,
+    AddressOffset, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
+    ExecutionState, ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldAddress,
     OldConditionTerm, OldMachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource,
     Sort, SpecCaptureRefusal, SymbolicMemory, Term, Variable,
 };
@@ -2571,7 +2571,7 @@ impl Renderer<'_> {
         self.bitvector(right);
         self.push(")");
     }
-    fn offset(&mut self, o: &OldAddressOffset, _depth: usize) {
+    fn offset(&mut self, o: &AddressOffset, _depth: usize) {
         if self.depth >= MAX_DEPTH || self.truncated {
             self.truncated = true;
             return;
@@ -3090,19 +3090,17 @@ mod tests {
 
     #[test]
     fn retained_contract_offset_diagnostic_preserves_shape_and_width() {
-        use crate::kernel::{OldAddressOffset, OldMachineTerm, Term};
+        use crate::kernel::{AddressOffset, OldMachineTerm, Term};
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::scaled_int64_node(
-                OldMachineTerm::uint64_constant(3),
-                8,
-                true,
+        let offset = crate::kernel::OldAddressOffset::Add(
+            Box::new(crate::kernel::OldAddressOffset::from(
+                AddressOffset::scaled_int64_node(OldMachineTerm::uint64_constant(3), 8, true),
             )),
-            Box::new(OldAddressOffset::Constant(-2)),
+            Box::new(crate::kernel::OldAddressOffset::Constant(-2)),
         );
         let claim = Proposition::Equal(
             Term::PointerOffset(offset.into()),
-            Term::PointerOffset(OldAddressOffset::Constant(22).into()),
+            Term::PointerOffset(crate::kernel::OldAddressOffset::Constant(22).into()),
         );
         let source = surface::source(&claim, &mut MemoryStateLabels::ambient());
         assert!(source.contains(" * 8 + -2"), "{source}");
@@ -3200,7 +3198,9 @@ mod tests {
         ] {
             let pointer = OldAddress {
                 base: format!("local:{local}").into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             };
             let memory = SymbolicMemory::new()
                 .with_block(format!("local:{local}"), 4)
@@ -3332,7 +3332,9 @@ mod tests {
             memory,
             base: OldAddress {
                 base: crate::kernel::AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
@@ -3520,7 +3522,7 @@ mod resource_detail_tests {
     fn typed_resource_arguments_keep_publication_payload_values() {
         let flag = OldAddress {
             base: "ready".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let publication = |value| {
             ResourceFact::own(Resource::Publication(PublicationRight::new(
@@ -3547,11 +3549,11 @@ mod resource_detail_tests {
     fn typed_iterated_resources_keep_guards_elements_and_taken_indices() {
         let base = OldAddress {
             base: "elements".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let guard = OldAddress {
             base: "flags".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let iterated = IteratedMemory::new(
             "selected",

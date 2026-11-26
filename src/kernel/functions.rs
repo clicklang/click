@@ -3209,11 +3209,11 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     // positive width, so saturating the end loses no candidate.
     let start = OldAddress {
         base: source_block.clone(),
-        offset: OldAddressOffset::constant(source_offset),
+        offset: AddressOffset::constant(source_offset),
     };
     let end = OldAddress {
         base: source_block,
-        offset: OldAddressOffset::constant(source_offset.saturating_add(bytes)),
+        offset: AddressOffset::constant(source_offset.saturating_add(bytes)),
     };
     crate::instrumentation::record_deterministic_work(1);
     let mut moves = Vec::new();
@@ -3239,7 +3239,7 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
         moves.push((
             OldAddress {
                 base: destination_block.clone(),
-                offset: OldAddressOffset::constant(destination_cell_offset),
+                offset: AddressOffset::constant(destination_cell_offset),
             },
             value.clone(),
         ));
@@ -5555,7 +5555,7 @@ fn refresh_call_written_locals(
             }
             let slot = OldAddress {
                 base: block,
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             };
             crate::kernel::eval::refresh_scalar_local_from_memory(state, &slot, assumptions);
         }
@@ -10892,7 +10892,7 @@ fn initial_static_resources(
             let range = MemoryRange::new_with_element_width(
                 OldAddress {
                     base: identity.clone(),
-                    offset: OldAddressOffset::constant(i64::from(start)),
+                    offset: AddressOffset::constant(i64::from(start)),
                 },
                 OldMachineTerm::constant(0),
                 OldMachineTerm::constant((end - start) / width),
@@ -11773,7 +11773,7 @@ fn string_literal_fact_value(
                 // array's bytes after their stores do.
                 let cell = OldAddress {
                     base: pointer.base.clone(),
-                    offset: OldAddressOffset::constant(offset),
+                    offset: AddressOffset::constant(offset),
                 };
                 return match memory.load(&cell) {
                     ExpressionOutcome::Value(value)
@@ -17968,9 +17968,9 @@ fn view_range_concretely_loadable(memory: &SymbolicMemory, range: &MemoryRange) 
     (start..end).all(|index| {
         let pointer = OldAddress {
             base: range.base().base.clone(),
-            offset: OldAddressOffset::add(
+            offset: AddressOffset::add(
                 range.base().offset.clone(),
-                OldAddressOffset::scale_int32(OldMachineTerm::constant(index), i64::from(width)),
+                AddressOffset::scale_int32(OldMachineTerm::constant(index), i64::from(width)),
             ),
         };
         memory.is_loadable_concretely(&pointer, width)
@@ -21722,7 +21722,7 @@ pub(in crate::kernel) fn function_exit_memory(
                 && (!caller_state.memory.has_block(&pointer.address().base)
                     || callee_state.locals.is_proof_input_slot(&OldAddress {
                         base: pointer.address().base.clone(),
-                        offset: OldAddressOffset::constant(0),
+                        offset: AddressOffset::constant(0),
                     })) =>
         {
             let block = &pointer.address().base;
@@ -23155,7 +23155,7 @@ pub(super) fn function_outcome_from_body(
                     &MemoryRange::new_with_element_width(
                         OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::constant(0),
+                            offset: AddressOffset::constant(0),
                         },
                         0.into(),
                         bytes,
@@ -23238,7 +23238,7 @@ pub(super) fn function_outcome_from_body(
                     &MemoryRange::new_with_element_width(
                         OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::constant(0),
+                            offset: AddressOffset::constant(0),
                         },
                         0.into(),
                         bytes,

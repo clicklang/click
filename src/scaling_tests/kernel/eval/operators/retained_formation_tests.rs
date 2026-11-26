@@ -31,8 +31,11 @@ fn growing_coordinate_guards_retain_shared_indices_without_exports() {
                         }
                     };
                     let mut guards = vec![];
-                    let result =
-                        exact_pointer_offset_i64_with_guards(&offset, &mut guards).unwrap();
+                    let result = exact_pointer_offset_i64_with_guards(
+                        &crate::kernel::AddressOffset::from(&offset),
+                        &mut guards,
+                    )
+                    .unwrap();
                     assert!(result.shared_operand().is_some());
                     assert!(!guards.is_empty());
                 }

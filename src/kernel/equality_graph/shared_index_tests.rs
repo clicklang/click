@@ -114,12 +114,27 @@ fn scaled_offset_keys_and_congruence_retain_shared_operands() {
         let exports = KernelTermExport::machine_export_count();
         let mut graph = EqualityGraph::default();
         assert_ne!(AffineOffset::of(&left), AffineOffset::of(&right));
-        assert!(!graph.are_offsets_equal(&left, &right));
+        assert!(!graph.are_offsets_equal(
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&right)
+        ));
         let sibling = graph.clone();
-        graph.add_offset_equality(&left, &right);
-        assert!(graph.are_offsets_equal(&left, &right));
-        assert!(!sibling.are_offsets_equal(&left, &right));
-        assert!(!graph.are_offsets_equal(&left, &different));
+        graph.add_offset_equality(
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&right),
+        );
+        assert!(graph.are_offsets_equal(
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&right)
+        ));
+        assert!(!sibling.are_offsets_equal(
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&right)
+        ));
+        assert!(!graph.are_offsets_equal(
+            &crate::kernel::AddressOffset::from(&left),
+            &crate::kernel::AddressOffset::from(&different)
+        ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

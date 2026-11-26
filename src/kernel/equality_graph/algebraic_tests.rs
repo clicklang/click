@@ -213,7 +213,7 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     );
     let pointer = |name: &str| OldAddress {
         base: name.into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let node = |p: OldAddress| {
         constructor(
@@ -317,7 +317,7 @@ fn scalar_read_conflicts_require_the_same_state() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = OldAddress {
         base: "cell".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let before = SymbolicMemory::new().with_block("cell", 4).store(
         p.clone(),

@@ -4487,8 +4487,8 @@ fn registered_load_pointer(term: &OldMachineTerm) -> Option<OldAddress> {
 }
 
 fn pointer_array_index_pair(
-    source: &OldAddressOffset,
-    target: &OldAddressOffset,
+    source: &AddressOffset,
+    target: &AddressOffset,
 ) -> Option<(OldMachineTerm, OldMachineTerm)> {
     let source = pointer_offset_addends(source)?;
     let target = pointer_offset_addends(target)?;
@@ -4507,7 +4507,7 @@ fn pointer_array_index_pair(
     Some((source_index, target_index))
 }
 
-fn pointer_offset_addends(offset: &OldAddressOffset) -> Option<Vec<OldAddressOffset>> {
+fn pointer_offset_addends(offset: &AddressOffset) -> Option<Vec<AddressOffset>> {
     match offset.view() {
         OffsetView::Constant(0) => Some(Vec::new()),
         OffsetView::Add(left, right) => {
@@ -4519,7 +4519,7 @@ fn pointer_offset_addends(offset: &OldAddressOffset) -> Option<Vec<OldAddressOff
     }
 }
 
-fn pointer_int32_scaled_value(offset: &OldAddressOffset) -> Option<OldMachineTerm> {
+fn pointer_int32_scaled_value(offset: &AddressOffset) -> Option<OldMachineTerm> {
     let OffsetView::Int32Scaled { index, byte_width } = offset.view() else {
         return None;
     };

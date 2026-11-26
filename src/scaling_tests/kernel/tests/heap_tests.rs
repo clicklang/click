@@ -9,7 +9,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let memory = SymbolicMemory::new();
     let pointer = OldAddress {
         base: AddressBase::Heap(941_000),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let alias = OldAddress::symbolic(Variable(941_001));
     let validity = Proposition::MemoryReadDefined {
@@ -31,7 +31,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
                 memory: memory.clone(),
                 pointer: OldAddress {
                     base: AddressBase::Heap(942_000 + index),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 value_type: ProgramType::Int32,
             });
@@ -59,7 +59,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
     let memory = SymbolicMemory::new();
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let validity = Proposition::MemoryReadDefined {
         at: None,
@@ -76,7 +76,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
                 memory: memory.clone(),
                 pointer: OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Constant(index * 4),
+                    offset: OldAddressOffset::Constant(index * 4).into(),
                 },
                 value_type: ProgramType::Int32,
             });
@@ -99,7 +99,8 @@ fn read_validity_lookup_ignores_unrelated_cells() {
 fn unknown_read_validity_does_not_resolve_unrelated_cells() {
     let target = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(770)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(770)), 4)
+            .into(),
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
@@ -108,7 +109,7 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
             memory = memory.store(
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Constant(index * 4),
+                    offset: OldAddressOffset::Constant(index * 4).into(),
                 },
                 int32(index as u32),
             );
@@ -129,7 +130,7 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
 fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
     let address = OldAddress {
         base: AddressBase::Heap(9100),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
@@ -145,14 +146,14 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             memory = memory.store(
                 OldAddress {
                     base: AddressBase::Heap(9200 + index),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 int32(1),
             );
         }
         let request = OldAddress {
             base: AddressBase::Symbolic(Variable(9300)),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let pending =
             memory.with_pending_heap_allocation(request.clone(), AllocationSize::int32(4), false);
@@ -161,7 +162,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         let pending = pending.store(
             OldAddress {
                 base: "local:result".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             ProgramValue::pointer(request.clone()),
         );
@@ -226,7 +227,7 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
                 OldAddress {
                     base: AddressBase::Heap(948_100 + index),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 16,
             ));
@@ -418,7 +419,7 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
                 OldAddress {
                     base: AddressBase::Heap(949_100 + index),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 16,
             ));
@@ -549,7 +550,7 @@ fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
         let bases = (0..count)
             .map(|index| OldAddress {
                 base: AddressBase::Heap(949_000 + index),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             })
             .collect::<Vec<_>>();
         for base in &bases {
@@ -594,7 +595,7 @@ fn sequential_free_pointer_frames_stay_near_linear() {
         let bases = (0..count)
             .map(|index| OldAddress {
                 base: AddressBase::Heap(952_000 + index),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             })
             .collect::<Vec<_>>();
         for base in &bases {
@@ -653,7 +654,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: "global:validity-anchor".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let query = OldAddress::symbolic(Variable(960_000));
         let mut memory = SymbolicMemory::new()
@@ -669,7 +670,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
             memory = memory.store(
                 OldAddress {
                     base: AddressBase::Heap(970_000 + index),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 int32(9),
             );

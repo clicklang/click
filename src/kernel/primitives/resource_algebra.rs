@@ -65,7 +65,7 @@ fn composition_query_guard_refuses_reentry_and_keeps_the_outer_query() {
         MemoryRange::new(
             OldAddress {
                 base: "buffer".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(index as u32),
             OldMachineTerm::constant(index as u32 + 1),
@@ -221,7 +221,7 @@ pub(in crate::kernel) fn memory_base_root(base: &OldAddress) -> MemoryBaseRoot {
 }
 
 /// The offset half of [`memory_base_root`].
-pub(in crate::kernel) fn offset_root_atom(offset: &OldAddressOffset) -> Option<OldAddressOffset> {
+pub(in crate::kernel) fn offset_root_atom(offset: &AddressOffset) -> Option<AddressOffset> {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset.view() {
@@ -235,7 +235,7 @@ pub(in crate::kernel) fn offset_root_atom(offset: &OldAddressOffset) -> Option<O
                 if index.operand_view().word32_constant().is_some() {
                     continue;
                 }
-                return Some(OldAddressOffset::int32_scaled(
+                return Some(AddressOffset::int32_scaled(
                     crate::kernel::proof::equality_rewrite::canonical_pointer_index(&index)?,
                     byte_width,
                 ));
@@ -245,7 +245,7 @@ pub(in crate::kernel) fn offset_root_atom(offset: &OldAddressOffset) -> Option<O
                 byte_width,
                 unsigned,
             } => {
-                return Some(OldAddressOffset::int64_scaled(
+                return Some(AddressOffset::int64_scaled(
                     crate::kernel::proof::equality_rewrite::canonical_pointer_index(&index)?,
                     byte_width,
                     unsigned,
@@ -298,7 +298,7 @@ fn extend_related_memory_base_roots(
     let (value, scale, rescale): (
         SharedMachineIntegerTerm,
         IndexScale,
-        &dyn Fn(SharedMachineIntegerTerm) -> OldAddressOffset,
+        &dyn Fn(SharedMachineIntegerTerm) -> AddressOffset,
     ) = match atom.view() {
         OffsetView::Int32Scaled { index, byte_width } => {
             (index, (false, byte_width, false), &move |member| {
@@ -404,10 +404,10 @@ pub(in crate::kernel) fn constant_memory_coordinates(
     let (start, end) = (start?, end?);
     let original = range.base();
     let (offset, displacement) = match original.offset.view() {
-        OffsetView::Constant(n) => (OldAddressOffset::constant(0), i128::from(n)),
+        OffsetView::Constant(n) => (AddressOffset::constant(0), i128::from(n)),
         OffsetView::Add(left, right) => match (left.view(), right.view()) {
             (OffsetView::Constant(a), OffsetView::Constant(b)) => {
-                (OldAddressOffset::constant(0), i128::from(a) + i128::from(b))
+                (AddressOffset::constant(0), i128::from(a) + i128::from(b))
             }
             (_, OffsetView::Constant(n)) => (left.clone(), i128::from(n)),
             (OffsetView::Constant(n), _) => (right.clone(), i128::from(n)),
@@ -1533,7 +1533,7 @@ fn memory_footprint_for_fact(fact: &ResourceFact) -> ResourceMemoryFootprint {
 /// children are not exposed by this routine: those projections become an
 /// unknown footprint instead of escaping invalidation.
 fn collect_memory_load_ranges(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     ranges: &mut Vec<MemoryRange>,
     uncertain: &mut bool,
     source_memory_state: &mut Option<MemoryStateIdentity>,
@@ -1550,7 +1550,7 @@ const MAX_MEMORY_LOAD_FOOTPRINT_DEPTH: usize = 64;
 
 enum MemoryLoadFootprintWork<'a> {
     Shared(&'a KernelTerm, usize),
-    Offset(&'a OldAddressOffset, usize),
+    Offset(&'a AddressOffset, usize),
     /// A scaled index, held by value because an offset view owns it.
     Index(SharedMachineIntegerTerm, usize),
     Term(&'a OldMachineTerm, usize),
@@ -4302,10 +4302,7 @@ impl ResourceContext {
             crate::instrumentation::record_deterministic_work(1);
             let point = OldAddress {
                 base: start.base.clone(),
-                offset: OldAddressOffset::add(
-                    start.offset.clone(),
-                    OldAddressOffset::constant(cursor),
-                ),
+                offset: AddressOffset::add(start.offset.clone(), AddressOffset::constant(cursor)),
             };
             let selected = self.write_access(&point, 1, assumptions)?;
             let owner = self.fact(selected.entry());
@@ -4472,10 +4469,7 @@ impl ResourceContext {
         while cursor < end {
             let pointer = OldAddress {
                 base: start.base.clone(),
-                offset: OldAddressOffset::add(
-                    start.offset.clone(),
-                    OldAddressOffset::constant(cursor),
-                ),
+                offset: AddressOffset::add(start.offset.clone(), AddressOffset::constant(cursor)),
             };
             let entries = self.write_access(&pointer, 1, assumptions)?;
             let entry = entries.entry();
@@ -5603,13 +5597,13 @@ impl ResourceContext {
             }
             let next = match base.offset.view() {
                 OffsetView::Add(left, _) => left.clone(),
-                OffsetView::Constant(value) if value != 0 => OldAddressOffset::constant(0),
+                OffsetView::Constant(value) if value != 0 => AddressOffset::constant(0),
                 // A loaded pointer's displacement is all of its offset: the
                 // read itself, at displacement zero, is the object's base.
                 OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. }
                     if matches!(base.base, AddressBase::Load(_)) =>
                 {
-                    OldAddressOffset::constant(0)
+                    AddressOffset::constant(0)
                 }
                 _ => return None,
             };
@@ -7980,7 +7974,7 @@ impl ResourceContext {
             crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)?;
         let object = OldAddress {
             base: pointer.base.clone(),
-            offset: rest.cloned().unwrap_or(OldAddressOffset::constant(0)),
+            offset: rest.cloned().unwrap_or(AddressOffset::constant(0)),
         };
         let entries = if write {
             self.write_access(&object, 0, assumptions)
@@ -10976,7 +10970,7 @@ mod zero_quantity_graph_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("zero-quantity", 8));
         let pointer = |index| OldAddress {
             base: "zero-quantity".into(),
-            offset: OldAddressOffset::scale_int32(index, 4),
+            offset: AddressOffset::scale_int32(index, 4),
         };
         let load = |memory: &SharedMemory, index| {
             OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -11975,8 +11969,8 @@ fn pointer_bases_equal_with_load_bridging(
 }
 
 fn pointer_offsets_equal_with_load_bridging(
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
@@ -12489,13 +12483,13 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     if available.constant_start() != Some(0) {
         return false;
     }
-    fn split_constant(offset: &OldAddressOffset) -> Option<(OldAddressOffset, i64)> {
+    fn split_constant(offset: &AddressOffset) -> Option<(AddressOffset, i64)> {
         match offset.view() {
-            OffsetView::Constant(value) => Some((OldAddressOffset::constant(0), value)),
+            OffsetView::Constant(value) => Some((AddressOffset::constant(0), value)),
             OffsetView::Add(left, right) => {
                 let (left, a) = split_constant(left)?;
                 let (right, b) = split_constant(right)?;
-                Some((OldAddressOffset::add(left, right), a.checked_add(b)?))
+                Some((AddressOffset::add(left, right), a.checked_add(b)?))
             }
             _ => Some((offset.clone(), 0)),
         }
@@ -14659,7 +14653,7 @@ mod support_removal_tests {
         let authority = ResourceFact::own_memory(MemoryRange::new(
             OldAddress {
                 base: "frame".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(4),
@@ -14791,7 +14785,7 @@ mod support_removal_tests {
         let range = MemoryRange::new(
             OldAddress {
                 base: "boundary".into(),
-                offset: OldAddressOffset::Constant(1),
+                offset: OldAddressOffset::Constant(1).into(),
             },
             OldMachineTerm::constant((i32::MAX - 1) as u32),
             OldMachineTerm::constant(i32::MAX as u32),
@@ -14803,11 +14797,11 @@ mod support_removal_tests {
     fn memory_load_footprints_use_checked_state_widths() {
         let short_pointer = OldAddress {
             base: "typed-loads".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let wide_pointer = OldAddress {
             base: "typed-loads".into(),
-            offset: OldAddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8).into(),
         };
         let memory = SymbolicMemory::new()
             .with_block("typed-loads", 24)
@@ -14829,7 +14823,7 @@ mod support_removal_tests {
         let fact = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "result".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             short_load,
             wide_load,
@@ -14853,7 +14847,7 @@ mod support_removal_tests {
     fn memory_load_footprints_reject_mixed_source_states() {
         let pointer = OldAddress {
             base: "mixed-loads".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let first = SymbolicMemory::new()
             .with_block("mixed-loads", 8)
@@ -14872,7 +14866,7 @@ mod support_removal_tests {
         let fact = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "mixed-result".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             first_load,
             second_load,
@@ -14887,7 +14881,7 @@ mod support_removal_tests {
     fn memory_load_footprint_depth_is_bounded_conservatively() {
         let pointer = OldAddress {
             base: "deep-load".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let memory = SymbolicMemory::new()
             .with_block("deep-load", 8)
@@ -14909,7 +14903,7 @@ mod support_removal_tests {
         let fact = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "deep-result".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(0),
             nested,
@@ -15080,9 +15074,9 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
     // A displacement of 2^32 elements must never wrap back into element zero.
     let distant = OldAddress {
         base: base.base.clone(),
-        offset: OldAddressOffset::add(
+        offset: AddressOffset::add(
             base.offset.clone(),
-            OldAddressOffset::Constant((1i64 << 32) * 16 + 8),
+            OldAddressOffset::Constant((1i64 << 32) * 16 + 8).into(),
         ),
     };
     assert!(!memory_range_covers(
@@ -15099,7 +15093,7 @@ fn exact_principal_input_view_ignores_covering_views() {
     let assumptions = PureFactContext::new();
     let pointer = OldAddress {
         base: "local:input-view".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let required =
         ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
@@ -15128,7 +15122,7 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
     let assumptions = PureFactContext::new();
     let pointer = OldAddress {
         base: "local:selected-view".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let required = ResourceFact::view_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
     for size in [0, 16, 64, 256] {
@@ -15137,7 +15131,7 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
             owned = owned.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 OldAddress {
                     base: format!("local:unrelated-view-owner-{index}").into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 0u32.into(),
                 1u32.into(),
@@ -15182,7 +15176,7 @@ mod related_pointer_root_tests {
     fn external(index: u64) -> OldAddress {
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scaled_int32_node(
+            offset: AddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(986_400 + index)),
                 4,
             ),
@@ -15285,7 +15279,7 @@ mod shared_wide_bound_tests {
         let _session = VerificationSession::enter();
         let base = OldAddress {
             base: "shared_wide_bound".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let length = OldMachineTerm::Variable(Variable(1018501));
         let low = OldMachineTerm::uint32_from_64(length.clone());
@@ -15325,7 +15319,7 @@ mod shared_wide_bound_tests {
 
         let pointer = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::scale_int64(length, 1, true),
+            offset: AddressOffset::scale_int64(length, 1, true),
         };
         let exports = KernelTermExport::machine_export_count();
         assert!(pointer_formation_in_range(
@@ -15340,7 +15334,7 @@ mod shared_wide_bound_tests {
         let _session = VerificationSession::enter();
         let base = OldAddress {
             base: "wide_bound_outputs".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let big = 1u64 << 40;
         let range = |start, end| {

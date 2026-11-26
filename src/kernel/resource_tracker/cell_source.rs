@@ -711,7 +711,7 @@ impl MemoryDagHopJustification {
                         };
                         retired = OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::constant(0),
+                            offset: AddressOffset::constant(0),
                         };
                         (&retired, AccessExtent::Bytes(size))
                     }
@@ -770,7 +770,7 @@ impl MemoryDagHopJustification {
                 MemoryDerivation::LocalLifetimeEnded { block, .. }
                     if pointer.blocks_proven_distinct(&OldAddress {
                         base: block.clone(),
-                        offset: OldAddressOffset::constant(0),
+                        offset: AddressOffset::constant(0),
                     })
             ),
             Self::HeapFreeOfDistinctBlock => matches!(
@@ -2112,11 +2112,11 @@ mod separated_range_frame_tests {
             binary_node!(Int32, Add, Box::new(loaded_start.clone()), Box::new(index));
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let data = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scaled_int32_node(word(9_941_005), 4),
+            offset: AddressOffset::scaled_int32_node(word(9_941_005), 4),
         };
         let backing = MemoryRange::new(data.clone(), start.clone(), end.clone());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 4u32.into());
@@ -2206,7 +2206,7 @@ mod separated_range_frame_tests {
     fn separated_read_start_does_not_frame_an_overlapping_wide_read() {
         let field = OldAddress {
             base: "separated-frame".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let backing = MemoryRange::new(field.offset_by_bytes(8), 0u32.into(), 1u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
@@ -2245,7 +2245,7 @@ mod unsigned_index_membership_tests {
     fn byte_at(base: &OldAddress, index: Variable) -> OldAddress {
         OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(index), 1, true),
+            offset: AddressOffset::scaled_int64_node(OldMachineTerm::Variable(index), 1, true),
         }
     }
 
@@ -2328,9 +2328,14 @@ mod unsigned_index_membership_tests {
         let shifted = OldAddress {
             base: base.base.clone(),
             offset: OldAddressOffset::Add(
-                Box::new(shifted_base.offset.clone()),
-                Box::new(byte_at(&base, k).offset),
-            ),
+                Box::new(crate::kernel::OldAddressOffset::from(
+                    shifted_base.offset.clone(),
+                )),
+                Box::new(crate::kernel::OldAddressOffset::from(
+                    byte_at(&base, k).offset,
+                )),
+            )
+            .into(),
         };
         assert!(PointerInRangeEvidence::for_pointer(&shifted, &range, &context).is_none());
     }
@@ -2343,14 +2348,14 @@ mod unsigned_index_membership_tests {
         let context = PureFactContext::new().assume_condition(below(k, 4), true);
         let signed = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(k), 1, false),
+            offset: AddressOffset::scaled_int64_node(OldMachineTerm::Variable(k), 1, false),
         };
         assert!(unsigned_index_in_range(&signed, &range).is_none());
         // Four-byte elements of a one-byte range: the scale is not the
         // range's element width.
         let wide = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(k), 4, true),
+            offset: AddressOffset::scaled_int64_node(OldMachineTerm::Variable(k), 4, true),
         };
         assert!(unsigned_index_in_range(&wide, &range).is_none());
         assert!(PointerInRangeEvidence::for_pointer(&wide, &range, &context).is_none());
@@ -2419,7 +2424,7 @@ mod cache_independence_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let address = OldAddress {
                 base: "bounded-cache-independence".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let before = crate::kernel::intern_memory(
                 SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),

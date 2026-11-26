@@ -6,7 +6,7 @@ use crate::kernel::{AddressBase, OldAddress, OldAddressOffset};
 fn holding_a_scope_mints_a_distinct_ledger_identity() {
     let base = OldAddress {
         base: AddressBase::Concrete("global:g".to_string()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let fact = ResourceFact::own_memory(MemoryRange::new(
         base,

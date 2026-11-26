@@ -848,7 +848,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
             let memory = SymbolicMemory::new();
             let data = OldAddress {
                 base: "quantified-data".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let fact_index = Variable(94_500);
             let target_index = Variable(94_501);
@@ -892,7 +892,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                 let unrelated_index = Variable(95_000 + index as u64 * 2);
                 let unrelated = OldAddress {
                     base: format!("quantified-unrelated-{index}").into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 };
                 assumptions = assumptions.assume_proposition(forall_int32(
                     unrelated_index,
@@ -1006,7 +1006,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
             for index in 0..size {
                 let cell = OldAddress {
                     base: format!("arg-memory-{index}").into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 };
                 let load = OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
@@ -1365,8 +1365,10 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
             OldAddressOffset::Add(
                 Box::new(OldAddressOffset::scale_int32(i.clone(), 1)),
                 Box::new(OldAddressOffset::Constant(4)),
-            ),
-            OldAddressOffset::scale_int32(OldMachineTerm::add(i, OldMachineTerm::constant(4)), 1),
+            )
+            .into(),
+            OldAddressOffset::scale_int32(OldMachineTerm::add(i, OldMachineTerm::constant(4)), 1)
+                .into(),
         ),
         true,
     );
@@ -1498,7 +1500,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
     let memory = SymbolicMemory::new();
     let root = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let target = root.offset_by_bytes(1);
     let mut expected = None;
@@ -1558,7 +1560,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
     let memory = SymbolicMemory::new();
     let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let requested = OldMachineTerm::Variable(Variable(973_103));
     let mut expected = None;
@@ -1617,7 +1619,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
     let memory = SymbolicMemory::new();
     let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let mut expected = None;
     for count in [16, 64, 256] {
@@ -1627,7 +1629,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
                 memory: memory.clone(),
                 base: OldAddress {
                     base: base.base.clone(),
-                    offset: OldAddressOffset::Constant(4 * (index + 1)),
+                    offset: OldAddressOffset::Constant(4 * (index + 1)).into(),
                 },
                 bytes: crate::kernel::StoredMachineTerm::new(
                     crate::kernel::MachineIntegerType::UInt64,
@@ -1766,7 +1768,7 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
     let memory = SymbolicMemory::new();
     let base = OldAddress {
         base: "retention_data".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let held = Proposition::MemoryLoadable {
         memory: memory.clone(),

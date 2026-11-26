@@ -256,11 +256,11 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     let base_memory = SymbolicMemory::new();
     let first = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let second = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4).into(),
     };
     let first_value = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
@@ -1100,11 +1100,21 @@ fn execute_step_expands_call_assign_fact_from_internal_state() {
 fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let owner = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4),
+        offset: crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(41)),
+                4,
+            ),
+        ),
     };
     let data = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4),
+        offset: crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(42)),
+                4,
+            ),
+        ),
     };
     let read =
         OldAddress::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
@@ -1163,7 +1173,12 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
 fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let passed = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(43)), 4),
+        offset: crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(43)),
+                4,
+            ),
+        ),
     };
     let current = OldAddress::symbolic(Variable(44));
     let proposition = Proposition::condition_is(
@@ -1201,20 +1216,31 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
-    let owner_offset =
-        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
-    let data_offset =
-        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
+    let owner_offset = crate::kernel::OldAddressOffset::scaled_int32_node(
+        OldMachineTerm::Variable(Variable(41)),
+        4,
+    );
+    let data_offset = crate::kernel::OldAddressOffset::scaled_int32_node(
+        OldMachineTerm::Variable(Variable(42)),
+        4,
+    );
     let index = OldMachineTerm::Variable(Variable(43));
     let proposition = Proposition::condition_is(
         OldConditionTerm::AddressOffsetEqual(
-            Box::new(OldAddressOffset::Add(
-                Box::new(data_offset.clone()),
-                Box::new(OldAddressOffset::scaled_int32_node(index.clone(), 4)),
+            Box::new(crate::kernel::AddressOffset::from(
+                crate::kernel::OldAddressOffset::Add(
+                    Box::new(data_offset.clone()),
+                    Box::new(crate::kernel::OldAddressOffset::scaled_int32_node(
+                        index.clone(),
+                        4,
+                    )),
+                ),
             )),
-            Box::new(OldAddressOffset::Add(
-                Box::new(owner_offset.clone()),
-                Box::new(OldAddressOffset::Constant(4)),
+            Box::new(crate::kernel::AddressOffset::from(
+                crate::kernel::OldAddressOffset::Add(
+                    Box::new(owner_offset.clone()),
+                    Box::new(crate::kernel::OldAddressOffset::Constant(4)),
+                ),
             )),
         ),
         true,
@@ -1239,11 +1265,11 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     let arguments = [
         ProgramExpression::Value(ProgramValue::pointer(OldAddress {
             base: "arg-memory".into(),
-            offset: owner_offset,
+            offset: owner_offset.into(),
         })),
         ProgramExpression::Value(ProgramValue::pointer(OldAddress {
             base: "arg-memory".into(),
-            offset: data_offset,
+            offset: data_offset.into(),
         })),
         ProgramExpression::Value(ProgramValue::Int32(index)),
     ];

@@ -914,7 +914,7 @@ fn rewrite_through_loaded_address_base(
                 site.as_ref(),
                 OldAddress {
                     base: address.base,
-                    offset: OldAddressOffset::add(address.offset, displacement),
+                    offset: AddressOffset::add(address.offset, displacement),
                 },
                 kind,
             )
@@ -923,7 +923,7 @@ fn rewrite_through_loaded_address_base(
     }
     result.map(|base| OldAddress {
         base: base.base,
-        offset: OldAddressOffset::add(base.offset, pointer.offset.clone()),
+        offset: AddressOffset::add(base.offset, pointer.offset.clone()),
     })
 }
 
@@ -956,8 +956,8 @@ fn pointer_congruence_rewrite(
 
 fn pointer_offset_congruence_rewrite(
     goal: &Proposition,
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
 ) -> Option<Proposition> {
     let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_offset_exact(left, right);
     rewrite.enable_registered_load_resolution();
@@ -1039,12 +1039,12 @@ fn rewrite_term(
     to: &OldMachineTerm,
 ) -> OldMachineTerm {
     fn rewrite_offset(
-        offset: &OldAddressOffset,
+        offset: &AddressOffset,
         from: &OldMachineTerm,
         to: &OldMachineTerm,
-    ) -> OldAddressOffset {
+    ) -> AddressOffset {
         match offset.view() {
-            OffsetView::Add(left, right) => OldAddressOffset::add(
+            OffsetView::Add(left, right) => AddressOffset::add(
                 rewrite_offset(left, from, to),
                 rewrite_offset(right, from, to),
             ),
@@ -1629,10 +1629,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
         && let Some((left, right)) = condition.old_form().pointer_offset_sides()
     {
         fn rewrite_offset(
-            offset: &OldAddressOffset,
-            left: &OldAddressOffset,
-            right: &OldAddressOffset,
-        ) -> OldAddressOffset {
+            offset: &AddressOffset,
+            left: &AddressOffset,
+            right: &AddressOffset,
+        ) -> AddressOffset {
             if offset == left
                 // Load variables and load terms of one atom are
                 // the same occurrence.
@@ -1641,7 +1641,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 return right.clone();
             }
             match offset.view() {
-                OffsetView::Add(first, second) => OldAddressOffset::add(
+                OffsetView::Add(first, second) => AddressOffset::add(
                     rewrite_offset(first, left, right),
                     rewrite_offset(second, left, right),
                 ),
@@ -1695,8 +1695,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         fn rewrite_term_offset(
             term: &OldMachineTerm,
-            left: &OldAddressOffset,
-            right: &OldAddressOffset,
+            left: &AddressOffset,
+            right: &AddressOffset,
         ) -> OldMachineTerm {
             let rewrite_pointer = |pointer: &OldAddress| OldAddress {
                 base: pointer.base.clone(),
@@ -1751,8 +1751,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         fn rewrite_resource_offset(
             resource: &Resource,
-            left: &OldAddressOffset,
-            right: &OldAddressOffset,
+            left: &AddressOffset,
+            right: &AddressOffset,
         ) -> Resource {
             match resource {
                 Resource::Star(pair) => Resource::star(
@@ -1982,9 +1982,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // Match one structural suffix; do not search the ambient pointer
         // equalities or change the memory state of a load.
         fn offset_after_base(
-            address: &OldAddressOffset,
-            base: &OldAddressOffset,
-        ) -> Option<OldAddressOffset> {
+            address: &AddressOffset,
+            base: &AddressOffset,
+        ) -> Option<AddressOffset> {
             if matches!(base.view(), OffsetView::Constant(0)) {
                 return Some(address.clone());
             }
@@ -1992,9 +1992,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             // Add node. A deeply nested address costs one walk plus one
             // construction of the matched displacement.
             struct OffsetNode<'a> {
-                offset: &'a OldAddressOffset,
+                offset: &'a AddressOffset,
                 parent: Option<usize>,
-                sibling: Option<&'a OldAddressOffset>,
+                sibling: Option<&'a AddressOffset>,
             }
             let mut nodes = vec![OffsetNode {
                 offset: address,
@@ -2005,11 +2005,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
             while let Some(index) = pending.pop() {
                 let offset = nodes[index].offset;
                 let difference = if offset == base {
-                    Some(OldAddressOffset::constant(0))
+                    Some(AddressOffset::constant(0))
                 } else if let (OffsetView::Constant(address), OffsetView::Constant(base)) =
                     (offset.view(), base.view())
                 {
-                    address.checked_sub(base).map(OldAddressOffset::constant)
+                    address.checked_sub(base).map(AddressOffset::constant)
                 } else {
                     None
                 };
@@ -2041,11 +2041,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             None
         }
-        fn add_pointer_offsets(
-            left: OldAddressOffset,
-            right: OldAddressOffset,
-        ) -> Option<OldAddressOffset> {
-            fn constant(offset: &OldAddressOffset) -> Option<i64> {
+        fn add_pointer_offsets(left: AddressOffset, right: AddressOffset) -> Option<AddressOffset> {
+            fn constant(offset: &AddressOffset) -> Option<i64> {
                 match offset.view() {
                     OffsetView::Constant(value) => Some(value),
                     _ => None,
@@ -2055,7 +2052,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 (Some(0), _) => return Some(right),
                 (_, Some(0)) => return Some(left),
                 (Some(left), Some(right)) => {
-                    return left.checked_add(right).map(OldAddressOffset::constant);
+                    return left.checked_add(right).map(AddressOffset::constant);
                 }
                 (None, Some(right)) => {
                     let trailing = match left.view() {
@@ -2070,13 +2067,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         return Some(if combined == 0 {
                             base
                         } else {
-                            OldAddressOffset::raw_add(base, OldAddressOffset::constant(combined))
+                            AddressOffset::raw_add(base, AddressOffset::constant(combined))
                         });
                     }
                 }
                 _ => {}
             }
-            Some(OldAddressOffset::raw_add(left, right))
+            Some(AddressOffset::raw_add(left, right))
         }
         let rewrite_pointer_directly = |pointer: &OldAddress| {
             if pointer == left.as_ref() {
@@ -2340,12 +2337,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     };
     fn rewrite_offset_term(
-        offset: &OldAddressOffset,
+        offset: &AddressOffset,
         from: &OldMachineTerm,
         to: &OldMachineTerm,
-    ) -> OldAddressOffset {
+    ) -> AddressOffset {
         match offset.view() {
-            OffsetView::Add(left, right) => OldAddressOffset::add(
+            OffsetView::Add(left, right) => AddressOffset::add(
                 rewrite_offset_term(left, from, to),
                 rewrite_offset_term(right, from, to),
             ),
@@ -2785,12 +2782,14 @@ mod tests {
                         value: index.clone(),
                         byte_width: 4,
                     }
+                    .into()
                 } else {
                     OldAddressOffset::Int64Scaled {
                         value: index.clone(),
                         byte_width: 4,
                         unsigned: ty == MachineIntegerType::UInt64,
                     }
+                    .into()
                 },
             };
             let goal = Proposition::condition_is(
@@ -2832,10 +2831,7 @@ mod tests {
             let index = OldMachineTerm::Variable(Variable(73_001));
             let base = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::scale_int32(
-                    OldMachineTerm::Variable(Variable(73_002)),
-                    4,
-                ),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(73_002)), 4),
             };
             let address = base.offset_by_int32_elements(index.clone());
             crate::kernel::eval::record_load_access_width(memory.memory(), &address, bytes);
@@ -3842,7 +3838,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: "integer-rewrite-retained_state".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let before = SymbolicMemory::new().with_block("integer-rewrite-retained_state", 8);
         let after = before.clone().store(
@@ -4035,7 +4031,7 @@ mod tests {
         for wide in [false, true] {
             let pointer = OldAddress {
                 base: "compound-rewrite".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let before = SymbolicMemory::new().with_block("compound-rewrite", 16);
             let after = before.clone().with_block("local:compound-unrelated", 4);
@@ -4113,7 +4109,7 @@ mod tests {
                 mask(load(
                     &after,
                     OldAddress {
-                        offset: OldAddressOffset::Constant(8),
+                        offset: OldAddressOffset::Constant(8).into(),
                         ..pointer.clone()
                     },
                     kind,
@@ -4232,7 +4228,7 @@ mod tests {
     fn checked_rewrite_presentation_keeps_the_read_identity() {
         let pointer = OldAddress {
             base: "rewrite-presentation".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         // The load is an `int32` one. A stored value answers only for a read
         // of its own width, and a load whose width nobody recorded is taken
@@ -4384,7 +4380,7 @@ mod wide_range_reader_tests {
     fn wide_resource_bounds_survive_offset_and_scalar_rewriting() {
         let _session = crate::kernel::VerificationSession::enter();
         let offset =
-            OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(984_700)), 4);
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(984_700)), 4);
         let base = OldAddress {
             base: crate::kernel::AddressBase::Symbolic(Variable(984_701)),
             offset: offset.clone(),
@@ -4402,7 +4398,9 @@ mod wide_range_reader_tests {
         let equality = Proposition::condition_is(
             OldConditionTerm::AddressOffsetEqual(
                 Box::new(offset),
-                Box::new(OldAddressOffset::Constant(0)),
+                Box::new(crate::kernel::AddressOffset::from(
+                    OldAddressOffset::Constant(0),
+                )),
             ),
             true,
         );

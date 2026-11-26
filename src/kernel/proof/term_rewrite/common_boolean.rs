@@ -144,10 +144,7 @@ impl TermRewrite<'_> {
         &mut self,
         source: &crate::kernel::SharedAddress,
     ) -> Option<crate::kernel::SharedAddress> {
-        use crate::kernel::{
-            KernelAddressOffset as O, SharedAddress as A, SharedAddressBase,
-            SharedAddressOffset as S,
-        };
+        use crate::kernel::{SharedAddress as A, SharedAddressBase, SharedAddressOffset as S};
         debug_assert!(!self.resolve_registered_loads && self.conditions.is_none());
         let offset = self.rewrite_retained_offset(&source.node().offset).ok()?;
         let block = source.node().base.native_atom();
@@ -166,14 +163,14 @@ impl TermRewrite<'_> {
             self.changed = true;
             A::new(
                 SharedAddressBase::import(&replacement.base),
-                S::add(O::import(&replacement.offset), offset),
+                S::add(replacement.offset.shared().clone(), offset),
             )
         } else {
             // Only the opaque block atom crosses its existing native rewrite
             // boundary. The original shared displacement is handled above.
             let atom = self.pointer(&OldAddress {
                 base: block.clone(),
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             });
             A::new(SharedAddressBase::import(&atom.base), offset)
         };
@@ -226,7 +223,7 @@ impl TermRewrite<'_> {
         let p = source.node();
         let base = A::import(&OldAddress {
             base: p.address.node().base.native_atom().clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         });
         let selected = |address: &A| matches!(address.node().base.native_atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
@@ -275,10 +272,11 @@ impl TermRewrite<'_> {
                         O::Int32Scaled { value, byte_width } => {
                             let index = S::exact_index(&value);
                             if let Some(written) = index.retained_written_operand() {
-                                return Ok(O::import(&OldAddressOffset::scale_int32(
+                                return Ok(AddressOffset::scale_int32(
                                     crate::kernel::eval::canonical_term(written),
                                     byte_width,
-                                )));
+                                )
+                                .into_shared());
                             }
                             O::Int32Scaled { value, byte_width }
                         }
@@ -289,11 +287,12 @@ impl TermRewrite<'_> {
                         } => {
                             let index = S::exact_index(&value);
                             if let Some(written) = index.retained_written_operand() {
-                                return Ok(O::import(&OldAddressOffset::scale_int64(
+                                return Ok(AddressOffset::scale_int64(
                                     crate::kernel::eval::canonical_term(written),
                                     byte_width,
                                     unsigned,
-                                )));
+                                )
+                                .into_shared());
                             }
                             O::Int64Scaled {
                                 value,

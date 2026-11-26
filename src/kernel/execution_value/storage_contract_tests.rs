@@ -468,7 +468,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         values.push(OldPointer::new(
             OldAddress {
                 base: other.base.clone(),
-                offset,
+                offset: offset.into(),
             },
             ProgramType::Int32Pointer,
         ));

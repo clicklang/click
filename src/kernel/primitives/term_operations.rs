@@ -2484,46 +2484,7 @@ impl OldMachineTerm {
 }
 
 impl OldAddressOffset {
-    /// This offset as `sum(sext(index) * stride) + constant`, when every
-    /// leaf is a constant or a scaled `int32` index: the scaled leaves and
-    /// the constant. The sum is exact, with no wrap, so it describes the
-    /// offset's integer value.
-    pub(in crate::kernel) fn int32_scaled_linear_form(
-        &self,
-    ) -> Option<(Vec<(&SharedMachineIntegerTerm, i64)>, i64)> {
-        // Each leaf's magnitude stays below `2^31 * 2^24`, so a sum of at
-        // most this many of them, and their constant, fits in an `i64`.
-        const MAX_LEAVES: usize = 64;
-        const MAX_STRIDE: i64 = 1 << 24;
-        const MAX_CONSTANT: i64 = 1 << 48;
-        let mut scaled = Vec::new();
-        let mut constant = 0i64;
-        let mut pending = vec![self];
-        let mut leaves = 0usize;
-        while let Some(term) = pending.pop() {
-            leaves += 1;
-            if leaves > MAX_LEAVES {
-                return None;
-            }
-            match term {
-                Self::Add(left, right) => {
-                    pending.push(right);
-                    pending.push(left);
-                }
-                Self::Constant(value) if value.unsigned_abs() < MAX_CONSTANT as u64 => {
-                    constant += value;
-                }
-                Self::Int32Scaled { value, byte_width }
-                    if byte_width.unsigned_abs() <= MAX_STRIDE as u64 =>
-                {
-                    scaled.push((value, *byte_width));
-                }
-                _ => return None,
-            }
-        }
-        Some((scaled, constant))
-    }
-
+    #[cfg(test)]
     pub(in crate::kernel) fn as_const(&self) -> Option<i64> {
         match self {
             Self::Constant(value) => Some(*value),
@@ -2548,6 +2509,7 @@ impl OldAddressOffset {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn add(left: Self, right: Self) -> Self {
         if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {
             return Self::Constant(left + right);
@@ -3070,7 +3032,7 @@ impl OldConditionTerm {
     /// wrap of its own. A shared pointer base may precede them; other
     /// nested sums are refused.
     pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<OldConditionTerm> {
-        fn scalar(offset: &OldAddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
+        fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset.view() {
                 OffsetView::Int64Scaled {
                     index,
@@ -3155,7 +3117,7 @@ impl OldConditionTerm {
     /// scaled scalar or a representable constant. A shared pointer base may
     /// precede them; other nested sums and full-width indices are refused.
     pub(crate) fn pointer_offset_association_guard(&self) -> Option<[SharedMachineIntegerTerm; 2]> {
-        fn scalar(offset: &OldAddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
+        fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset.view() {
                 OffsetView::Int32Scaled { index, byte_width } if byte_width == width => Some(index),
                 OffsetView::Constant(value) if value % width == 0 => {
@@ -3838,8 +3800,8 @@ impl OldConditionTerm {
     }
 
     pub(in crate::kernel) fn address_offset_equal(
-        left: OldAddressOffset,
-        right: OldAddressOffset,
+        left: AddressOffset,
+        right: AddressOffset,
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
@@ -3851,9 +3813,7 @@ impl OldConditionTerm {
     /// The numeric consequence of an established true pointer equality.
     /// Unlike `pointer_offset_sides`, this does not describe an equivalent
     /// proposition: equal addresses alone cannot prove full-value equality.
-    pub(crate) fn true_pointer_offset_sides(
-        &self,
-    ) -> Option<(&OldAddressOffset, &OldAddressOffset)> {
+    pub(crate) fn true_pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
         match self {
             Self::PointerEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
             _ => self.pointer_offset_sides(),
@@ -3862,7 +3822,7 @@ impl OldConditionTerm {
 
     /// A common-base comparison's offset view, retaining the original
     /// condition as the supporting premise in callers' indexes.
-    pub(crate) fn pointer_offset_sides(&self) -> Option<(&OldAddressOffset, &OldAddressOffset)> {
+    pub(crate) fn pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
@@ -3965,7 +3925,7 @@ fn machine_constant_value(
     }
 }
 
-fn pointer_offsets_differ_by_residue(left: &OldAddressOffset, right: &OldAddressOffset) -> bool {
+fn pointer_offsets_differ_by_residue(left: &AddressOffset, right: &AddressOffset) -> bool {
     let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
         left.int32_scaled_linear_form(),
         right.int32_scaled_linear_form(),
@@ -4923,7 +4883,7 @@ impl OldAddress {
     /// arithmetic appends displacement terms; remove those displacements when
     /// deciding whether the originating object base may be null.
     pub(in crate::kernel) fn object_base(&self) -> Self {
-        fn external_base(offset: &OldAddressOffset) -> &OldAddressOffset {
+        fn external_base(offset: &AddressOffset) -> &AddressOffset {
             match offset.view() {
                 OffsetView::Add(base, _) => external_base(base),
                 _ => offset,
@@ -4935,7 +4895,7 @@ impl OldAddress {
             offset: if self.base == AddressBase::ExternalArgument {
                 external_base(&self.offset).clone()
             } else {
-                OldAddressOffset::constant(0)
+                AddressOffset::constant(0)
             },
         }
     }
@@ -4962,7 +4922,7 @@ impl OldAddress {
             if let Some(variable) = variable {
                 return Self {
                     base: AddressBase::ExternalObject(variable),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 };
             }
             return Self {
@@ -4973,14 +4933,14 @@ impl OldAddress {
 
         Self {
             base: self.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
 
     pub(crate) fn null() -> Self {
         Self {
             base: "null".into(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -5004,14 +4964,14 @@ impl OldAddress {
                 "$integer-address".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(bits))],
             )),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
 
     pub(crate) fn symbolic(variable: Variable) -> Self {
         Self {
             base: AddressBase::Symbolic(variable),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -5022,7 +4982,7 @@ impl OldAddress {
     pub(crate) fn verifier_temporary(identity: Variable) -> Self {
         Self {
             base: AddressBase::Temporary(identity.0),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -5225,14 +5185,14 @@ impl OldAddress {
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
         Self {
             base: AddressBase::FunctionSymbolic(variable),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
 
     pub(crate) fn function(name: impl Into<String>) -> Self {
         Self {
             base: AddressBase::Function(name.into()),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }
     }
     pub(in crate::kernel) fn has_symbolic_block(&self) -> bool {
@@ -5255,9 +5215,9 @@ impl OldAddress {
     pub(crate) fn offset_by_bytes(&self, bytes: u32) -> Self {
         Self {
             base: self.base.clone(),
-            offset: OldAddressOffset::add(
+            offset: AddressOffset::add(
                 self.offset.clone(),
-                OldAddressOffset::constant(i64::from(bytes)),
+                AddressOffset::constant(i64::from(bytes)),
             ),
         }
     }
@@ -5269,9 +5229,9 @@ impl OldAddress {
             super::LayoutOffset::Bytes(bytes) => self.offset_by_bytes(bytes),
             super::LayoutOffset::Field(..) => Self {
                 base: self.base.clone(),
-                offset: OldAddressOffset::add(
+                offset: AddressOffset::add(
                     self.offset.clone(),
-                    OldAddressOffset::scaled_int64_node(offset.term(), 1, true),
+                    AddressOffset::scaled_int64_node(offset.term(), 1, true),
                 ),
             },
         }
@@ -5283,14 +5243,12 @@ impl OldAddress {
         byte_width: u32,
     ) -> Self {
         let displacement = match elements.operand_view().word32_constant() {
-            Some(value) => {
-                OldAddressOffset::constant(i64::from(value as i32) * i64::from(byte_width))
-            }
-            None => OldAddressOffset::int32_scaled(elements, i64::from(byte_width)),
+            Some(value) => AddressOffset::constant(i64::from(value as i32) * i64::from(byte_width)),
+            None => AddressOffset::int32_scaled(elements, i64::from(byte_width)),
         };
         Self {
             base: self.base.clone(),
-            offset: OldAddressOffset::add(self.offset.clone(), displacement),
+            offset: AddressOffset::add(self.offset.clone(), displacement),
         }
     }
 
@@ -5301,9 +5259,9 @@ impl OldAddress {
     ) -> Self {
         Self {
             base: self.base.clone(),
-            offset: OldAddressOffset::add(
+            offset: AddressOffset::add(
                 self.offset.clone(),
-                OldAddressOffset::scale_int32(elements, i64::from(byte_width)),
+                AddressOffset::scale_int32(elements, i64::from(byte_width)),
             ),
         }
     }
@@ -5317,12 +5275,12 @@ impl OldAddress {
     ) -> Self {
         Self {
             base: self.base.clone(),
-            offset: OldAddressOffset::add(
+            offset: AddressOffset::add(
                 self.offset.clone(),
                 if wide {
-                    OldAddressOffset::scale_int64(elements, i64::from(byte_width), unsigned)
+                    AddressOffset::scale_int64(elements, i64::from(byte_width), unsigned)
                 } else {
-                    OldAddressOffset::scale_int32(elements, i64::from(byte_width))
+                    AddressOffset::scale_int32(elements, i64::from(byte_width))
                 },
             ),
         }
@@ -5331,7 +5289,7 @@ impl OldAddress {
     /// This pointer's offset less `base`'s, exactly, when both name one block
     /// and every non-constant summand of `base` occurs in this offset; see
     /// [`offset_less_base`].
-    pub(crate) fn offset_from_base(&self, base: &Self) -> Option<OldAddressOffset> {
+    pub(crate) fn offset_from_base(&self, base: &Self) -> Option<AddressOffset> {
         if self.base != base.base {
             return None;
         }
@@ -5524,7 +5482,7 @@ impl OldAddress {
 /// constant is `index - c`, the form [`OldMachineTerm::subtract`] gives
 /// `(b + i) - (b + c)`, rather than the residue `index + (2^32 - c)`.
 fn native_element_index_of_difference(
-    difference: &OldAddressOffset,
+    difference: &AddressOffset,
     byte_width: u32,
 ) -> Option<OldMachineTerm> {
     if let OffsetView::Add(symbolic, constant) = difference.view()
@@ -5532,7 +5490,7 @@ fn native_element_index_of_difference(
         && bytes < 0
     {
         let elements = crate::kernel::reasoning::element_index_from_offset(
-            &OldAddressOffset::constant(-bytes),
+            &AddressOffset::constant(-bytes),
             byte_width,
         )?;
         return Some(OldMachineTerm::subtract(
@@ -5544,7 +5502,7 @@ fn native_element_index_of_difference(
 }
 
 fn element_index_of_difference(
-    difference: &OldAddressOffset,
+    difference: &AddressOffset,
     byte_width: u32,
 ) -> Option<SharedMachineIntegerTerm> {
     if let OffsetView::Add(symbolic, constant) = difference.view()
@@ -5552,7 +5510,7 @@ fn element_index_of_difference(
         && bytes < 0
     {
         let elements = crate::kernel::reasoning::shared_element_index_from_offset(
-            &OldAddressOffset::constant(-bytes),
+            &AddressOffset::constant(-bytes),
             byte_width,
         )?;
         return Some(crate::kernel::assumptions::index_binary(
@@ -5575,11 +5533,8 @@ fn element_index_of_difference(
 /// syntactically among those of `offset`, each occurrence matched once, or
 /// there is no answer and the caller keeps its own. The walk is over the two
 /// terms and nothing else.
-fn offset_less_base(
-    offset: &OldAddressOffset,
-    base: &OldAddressOffset,
-) -> Option<OldAddressOffset> {
-    fn summands(term: &OldAddressOffset) -> Option<(Vec<&OldAddressOffset>, i64)> {
+fn offset_less_base(offset: &AddressOffset, base: &AddressOffset) -> Option<AddressOffset> {
+    fn summands(term: &AddressOffset) -> Option<(Vec<&AddressOffset>, i64)> {
         let mut symbolic = Vec::new();
         let mut constant = 0i64;
         let mut pending = vec![term];
@@ -5610,11 +5565,11 @@ fn offset_less_base(
     let difference = rest
         .into_iter()
         .cloned()
-        .reduce(OldAddressOffset::add)
-        .unwrap_or(OldAddressOffset::constant(0));
-    Some(OldAddressOffset::add(
+        .reduce(AddressOffset::add)
+        .unwrap_or(AddressOffset::constant(0));
+    Some(AddressOffset::add(
         difference,
-        OldAddressOffset::constant(constant),
+        AddressOffset::constant(constant),
     ))
 }
 

@@ -18,7 +18,7 @@
 //! or a single symbolic one. Every operation touches the entries of the one
 //! block it names, positioned in O(log n).
 
-use super::{AddressBase, HashedOrdMap, OldAddress, OldAddressOffset, ProgramValue};
+use super::{AddressBase, AddressOffset, HashedOrdMap, OldAddress, ProgramValue};
 use crate::kernel::OffsetTree;
 use crate::kernel::effective_type::CAccessClass;
 
@@ -44,7 +44,7 @@ struct HeapEffectiveType {
 fn constant_start(block: &AddressBase, offset: i64) -> OldAddress {
     OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::constant(offset),
+        offset: AddressOffset::constant(offset),
     }
 }
 
@@ -228,7 +228,7 @@ mod tests {
     fn symbolic(variable: u64) -> OldAddress {
         OldAddress {
             base: AddressBase::Heap(7),
-            offset: OldAddressOffset::scale_int32(
+            offset: AddressOffset::scale_int32(
                 super::super::OldMachineTerm::Variable(super::super::Variable(variable)),
                 4,
             ),

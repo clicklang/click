@@ -11,7 +11,8 @@ fn parameter_pointer(variable: u64) -> OldPointer {
             offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(variable)),
                 4,
-            ),
+            )
+            .into(),
         },
         ProgramType::Int32Pointer,
     )

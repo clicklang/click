@@ -2594,7 +2594,7 @@ impl MemoryRange {
             (
                 OldAddress {
                     base: self.base.base.clone(),
-                    offset: rest.cloned().unwrap_or(OldAddressOffset::constant(0)),
+                    offset: rest.cloned().unwrap_or(AddressOffset::constant(0)),
                 },
                 layout,
                 field,
@@ -3013,7 +3013,7 @@ impl MemoryRange {
         };
         let (base_offset, scaled) = match pointer.offset.view() {
             OffsetView::Add(base, scaled) => (base.clone(), scaled),
-            _ => (OldAddressOffset::constant(0), &pointer.offset),
+            _ => (AddressOffset::constant(0), &pointer.offset),
         };
         let kind = match scaled.view() {
             OffsetView::Int32Scaled { index, .. } if is_variable(&index) => RangeIndexKind::Int32,
@@ -3230,7 +3230,7 @@ impl MemoryRange {
         Self::new_with_element_width(
             OldAddress {
                 base: super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
-                offset: super::OldAddressOffset::constant(0),
+                offset: super::AddressOffset::constant(0),
             },
             OldMachineTerm::constant(0),
             // Endpoints are `int32` values: this is the largest span whose
@@ -4586,7 +4586,7 @@ mod guarded_quantified_cell_tests {
     fn parameter() -> OldAddress {
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(7)), 1),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(7)), 1),
         }
     }
 
@@ -4657,7 +4657,7 @@ mod guarded_quantified_cell_tests {
         // A base that moves with the binder is not one fixed range.
         let moving = wide_cell(&OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(index()), 1),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(index()), 1),
         });
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),

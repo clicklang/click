@@ -561,7 +561,7 @@ mod tests {
         let read = |block: &str| {
             let pointer = OldAddress {
                 base: block.into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,

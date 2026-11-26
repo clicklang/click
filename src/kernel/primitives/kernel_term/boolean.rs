@@ -279,10 +279,7 @@ impl<'a> BooleanOperandView<'a> {
         let OldConditionTerm::AddressOffsetEqual(a, b) = self.native_leaf()? else {
             return None;
         };
-        Some([
-            KernelAddressOffset::import(a),
-            KernelAddressOffset::import(b),
-        ])
+        Some([a.shared().clone(), b.shared().clone()])
     }
 
     pub(crate) fn constant(self) -> Option<bool> {
@@ -582,10 +579,7 @@ impl KernelTermImport {
                 arguments: [SharedAddress::import(a), SharedAddress::import(b)],
             },
             Old::AddressOffsetEqual(a, b) => Node::AddressOffsetEqual {
-                arguments: [
-                    KernelAddressOffset::import(a),
-                    KernelAddressOffset::import(b),
-                ],
+                arguments: [a.shared().clone(), b.shared().clone()],
             },
             Old::Constant(value) => Node::BoolLiteral(*value),
             Old::Variable(variable) => Node::Variable(*variable),
@@ -672,8 +666,8 @@ impl KernelTermExport {
                 Old::AddressEqual(Box::new(a.export()?), Box::new(b.export()?))
             }
             Node::AddressOffsetEqual { arguments: [a, b] } => Old::AddressOffsetEqual(
-                Box::new(KernelAddressOffset::export(a)?),
-                Box::new(KernelAddressOffset::export(b)?),
+                Box::new(AddressOffset::try_from_shared(a.clone())?),
+                Box::new(AddressOffset::try_from_shared(b.clone())?),
             ),
             Node::BoolLiteral(value) => Old::Constant(*value),
             Node::Variable(variable) => Old::Variable(*variable),

@@ -562,12 +562,14 @@ mod producer_tests {
         };
         let before = KernelTermExport::machine_export_count();
         let result = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer_offset(
-            &offset,
+            &crate::kernel::AddressOffset::from(&offset),
             free,
             &replacement,
         );
         assert_eq!(KernelTermExport::machine_export_count(), before);
-        let OldAddressOffset::Int32Scaled { value, .. } = result else {
+        let OldAddressOffset::Int32Scaled { value, .. } =
+            crate::kernel::OldAddressOffset::from(result)
+        else {
             panic!("fold index")
         };
         let actual = KernelTermExport::machine(value.shared_operand().unwrap()).unwrap();

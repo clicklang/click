@@ -6,7 +6,7 @@ fn view(index: usize, end: u32) -> CheckedResourceFact {
         fact: ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: format!("local:borrow-{index}").into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             0.into(),
             end.into(),

@@ -27,7 +27,8 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                             ),
                         ),
                         byte_width: 4,
-                    },
+                    }
+                    .into(),
                 };
                 let initial = SharedAddress::import(&native);
                 let mut offset = initial.node().offset.clone();

@@ -320,7 +320,7 @@ fn an_allocation_claim_pending_result_and_an_older_call_are_not_fresh_returns() 
     let pending_events = creator.pending_creation(pending.base.clone());
     let predicted = OldAddress {
         base: AddressBase::Heap(8_930_010),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     assert!(
         FreshAllocationReturn::from_created_owner(

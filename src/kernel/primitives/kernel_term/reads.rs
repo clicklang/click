@@ -353,7 +353,7 @@ mod tests {
             let payload = call.payload_id();
             let address = OldAddress {
                 base: AddressBase::PureFunctionApplication(call),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let root = KernelTerm::scalar_read_descriptor(
                 MachineIntegerType::Int32,
@@ -499,7 +499,7 @@ mod tests {
                 ProgramPoint::at(&outer),
                 OldAddress {
                     base: AddressBase::Symbolic(Variable(993141)),
-                    offset: OldAddressOffset::scaled_int32_node(
+                    offset: AddressOffset::scaled_int32_node(
                         OldMachineTerm::read_named(
                             ProgramPoint::at(&inner),
                             Box::new(p.clone()),
@@ -551,7 +551,7 @@ mod tests {
                 LoadKind::Int32,
             )
         };
-        let offset = OldAddressOffset::scaled_int32_node(read(ProgramPoint::at(&first)), 4);
+        let offset = AddressOffset::scaled_int32_node(read(ProgramPoint::at(&first)), 4);
         assert_eq!(offset.map_scaled_operands(Clone::clone), offset);
         assert_ne!(
             offset.map_scaled_operands(|value| SharedMachineIntegerTerm::index(
@@ -568,7 +568,7 @@ mod tests {
                     ProgramPoint::at(&outer),
                     OldAddress {
                         base: AddressBase::Symbolic(Variable(993151)),
-                        offset: OldAddressOffset::scaled_int32_node(
+                        offset: AddressOffset::scaled_int32_node(
                             OldMachineTerm::read_named(
                                 inner,
                                 Box::new(OldAddress::symbolic(Variable(993150))),
@@ -613,12 +613,13 @@ mod tests {
             );
             assert_eq!(index, descriptor);
             let offset = if wide {
-                OldAddressOffset::scaled_int64_node(index, 4, true)
+                AddressOffset::scaled_int64_node(index, 4, true)
             } else {
-                OldAddressOffset::scaled_int32_node(index, 4)
+                AddressOffset::scaled_int32_node(index, 4)
             };
             let (OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. }) = &offset
+            | OldAddressOffset::Int64Scaled { value, .. }) =
+                crate::kernel::OldAddressOffset::from(&offset)
             else {
                 unreachable!()
             };
@@ -629,9 +630,9 @@ mod tests {
             crate::kernel::eval::clear_load_variable_registry();
             assert_eq!(value.structural_value(), &descriptor);
             let restored = if wide {
-                OldAddressOffset::scaled_int64_node(value.structural_value().clone(), 4, true)
+                AddressOffset::scaled_int64_node(value.structural_value().clone(), 4, true)
             } else {
-                OldAddressOffset::scaled_int32_node(value.structural_value().clone(), 4)
+                AddressOffset::scaled_int32_node(value.structural_value().clone(), 4)
             };
             assert_eq!(offset, restored);
         }
@@ -648,7 +649,7 @@ mod tests {
         let index = crate::kernel::eval::canonical_form_of_load(memory.clone(), p, LoadKind::Int32);
         let address = OldAddress {
             base: AddressBase::Symbolic(Variable(993163)),
-            offset: OldAddressOffset::scaled_int32_node(index, 4),
+            offset: AddressOffset::scaled_int32_node(index, 4),
         };
         let outer =
             crate::kernel::eval::canonical_form_of_load(memory, address.clone(), LoadKind::Int32);
@@ -673,7 +674,7 @@ mod tests {
         let mut retained = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
-            let index = OldAddressOffset::scaled_int64_node(
+            let index = AddressOffset::scaled_int64_node(
                 OldMachineTerm::IntegerAddress(
                     Box::new(OldAddress::symbolic(Variable(993161))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
@@ -681,7 +682,9 @@ mod tests {
                 1,
                 true,
             );
-            let OldAddressOffset::Int64Scaled { value, .. } = &index else {
+            let OldAddressOffset::Int64Scaled { value, .. } =
+                crate::kernel::OldAddressOffset::from(&index)
+            else {
                 unreachable!()
             };
             assert!(value.shared_operand().is_none());
@@ -699,7 +702,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let address = OldAddress {
             base: AddressBase::Symbolic(Variable(993130)),
-            offset: OldAddressOffset::scaled_int32_node(
+            offset: AddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerAddress(
                     Box::new(OldAddress::symbolic(Variable(993131))),
                     crate::kernel::AddressObjectClass::NONE,

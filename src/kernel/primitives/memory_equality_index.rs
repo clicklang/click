@@ -33,7 +33,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &OldAddress) -
     if matches!(pointer.base, AddressBase::Load(_)) {
         let read = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         if let Some(stored) =
             crate::kernel::memory_history::checked_pointer_read_stored_value(&read, assumptions)
@@ -272,7 +272,7 @@ impl MemoryAddresses {
         // indexed miss, even when they contribute no address row.
         let Some(base) = graph.canonical_pointer(&OldAddress {
             base: range.base().base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }) else {
             self.incomplete = true;
             return;
@@ -964,7 +964,7 @@ impl ObjectEvidenceSources {
                 keys.insert(base.clone());
                 let next = match base.offset.view() {
                     OffsetView::Add(left, _) => left.clone(),
-                    OffsetView::Constant(value) if value != 0 => OldAddressOffset::constant(0),
+                    OffsetView::Constant(value) if value != 0 => AddressOffset::constant(0),
                     _ => break,
                 };
                 base.offset = next;
@@ -1405,7 +1405,7 @@ impl MemoryFactEntries {
                         // neighbour starts, spelled as that neighbour is.
                         Some(OldAddress {
                             base: root.base,
-                            offset: OldAddressOffset::add(
+                            offset: AddressOffset::add(
                                 root.offset,
                                 crate::kernel::memory_history::rebuild_scaled_pointer_index(
                                     end,
@@ -1541,7 +1541,7 @@ impl MemoryQuery<'_> {
                 }
                 graph.address_class(&OldAddress {
                     base: pointer.base.clone(),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 });
             }
             Self::Footprint(range) => {
@@ -2641,7 +2641,7 @@ impl ResourceContext {
         }
         let root = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         let class = index.graph.address_class(&root)?;
         index.symbolic.sole_base(class, owned)
@@ -2718,7 +2718,7 @@ impl ResourceContext {
                         (right.clone(), bytes)
                     }
                 }
-                OffsetView::Constant(bytes) if bytes != 0 => (OldAddressOffset::constant(0), bytes),
+                OffsetView::Constant(bytes) if bytes != 0 => (AddressOffset::constant(0), bytes),
                 _ => return None,
             };
             base.offset = prefix;
@@ -3095,9 +3095,9 @@ mod tests {
         let owner = OldAddress::symbolic(Variable(989_810));
         let query = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::add(
-                OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_811)), 4),
-                OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_812)), 4),
+            offset: AddressOffset::add(
+                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_811)), 4),
+                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_812)), 4),
             ),
         };
         let equality = Proposition::condition_is(
@@ -3119,7 +3119,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_100)), 1),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_100)), 1),
         };
         let narrow = base.offset_by_elements(OldMachineTerm::Variable(Variable(989_101)), 1);
         let index = OldMachineTerm::Variable(Variable(989_102));
@@ -3195,7 +3195,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }
         .offset_by_elements(OldMachineTerm::Variable(Variable(983_710)), 1);
         let whole = OldMachineTerm::Variable(Variable(983_711));
@@ -3290,21 +3290,21 @@ mod tests {
         let model = OldAddress::symbolic(Variable(4065536));
         let old_read = OldAddress {
             base: parent.base.clone(),
-            offset: OldAddressOffset::scale_int32(
+            offset: AddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(1542185793994)),
                 4,
             ),
         };
         let cursor = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(
+            offset: AddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(2035320285104)),
                 4,
             ),
         };
         let parameter = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
         };
         let facts = PureFactContext::new()
             .assume_condition(
@@ -3368,21 +3368,21 @@ mod tests {
         let model = OldAddress::symbolic(Variable(4065536));
         let old_read = OldAddress {
             base: parent.base.clone(),
-            offset: OldAddressOffset::scale_int32(
+            offset: AddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(1542185793994)),
                 4,
             ),
         };
         let cursor = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(
+            offset: AddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(2035320285104)),
                 4,
             ),
         };
         let parameter = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
         };
         let facts = PureFactContext::new()
             .assume_condition(OldConditionTerm::address_equal(parameter, parent), true)
@@ -3453,7 +3453,7 @@ mod tests {
         // A shorter nearest predecessor must not hide the longer view.
         let interior = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4).into(),
         };
         assert!(mixed.permits_memory_read(&interior, 4, &facts));
         let restored = mixed.clone().without_exact_representation(&short).unwrap();
@@ -3472,7 +3472,7 @@ mod tests {
             .unchecked_with_fact(view(&base, 4, 12));
         let at = |offset| OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset).into(),
         };
         assert!(resources.concrete_read_entries(&at(6), 6, &facts).is_some());
         assert!(resources.permits_memory_read(&at(6), 6, &facts));
@@ -3498,7 +3498,7 @@ mod tests {
         let sibling = resources.clone();
         let displaced = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8).into(),
         };
         let facts = empty
             .clone()
@@ -3575,7 +3575,7 @@ mod tests {
         let middle = OldAddress::symbolic(Variable(851_022));
         let displaced = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8).into(),
         };
         let facts = empty
             .assume_condition(
@@ -3585,7 +3585,7 @@ mod tests {
             .assume_condition(OldConditionTerm::address_equal(middle, alias.clone()), true);
         let interior = OldAddress {
             base: alias.base,
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4).into(),
         };
         assert!(
             resources

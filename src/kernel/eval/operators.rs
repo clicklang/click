@@ -1987,8 +1987,8 @@ fn pointer_element_indices(
 fn pointer_difference_offsets<'a>(
     left: &'a OldAddress,
     right: &'a OldAddress,
-) -> Option<(Vec<&'a OldAddressOffset>, Vec<&'a OldAddressOffset>)> {
-    fn offset_spine(mut offset: &OldAddressOffset) -> Vec<&OldAddressOffset> {
+) -> Option<(Vec<&'a AddressOffset>, Vec<&'a AddressOffset>)> {
+    fn offset_spine(mut offset: &AddressOffset) -> Vec<&AddressOffset> {
         let mut spine = Vec::new();
         while let OffsetView::Add(base, displacement) = offset.view() {
             spine.push(displacement);
@@ -2043,7 +2043,7 @@ fn apply_pointer_difference(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let mut guards = Vec::new();
-    let mut index = |offsets: Vec<&OldAddressOffset>| -> Option<SharedMachineIntegerTerm> {
+    let mut index = |offsets: Vec<&AddressOffset>| -> Option<SharedMachineIntegerTerm> {
         // Pointer formation folds consecutive constant advances. Check an
         // unsigned element index plus that advance in its original type:
         // n + k fits ptrdiff_t iff n <= PTRDIFF_MAX - k for k >= 0.
@@ -3271,7 +3271,7 @@ fn pointer_index_from_offset(pointer: &OldAddress, byte_width: u32) -> Option<Ol
 }
 
 fn pointer_index_from_offset_term(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     byte_width: u32,
 ) -> Option<OldMachineTerm> {
     if byte_width == 1 {
@@ -3291,7 +3291,7 @@ fn pointer_index_from_concrete_offset(offset: i64, byte_width: u32) -> Option<Ol
         .then_some(OldMachineTerm::constant((index as i32) as u32))
 }
 
-fn pointer_arithmetic_index(offset: &OldAddressOffset, byte_width: u32) -> Option<OldMachineTerm> {
+fn pointer_arithmetic_index(offset: &AddressOffset, byte_width: u32) -> Option<OldMachineTerm> {
     let OffsetView::Add(left, right) = offset.view() else {
         return None;
     };
@@ -3306,7 +3306,7 @@ fn pointer_arithmetic_index(offset: &OldAddressOffset, byte_width: u32) -> Optio
     Some(OldMachineTerm::add(left, right))
 }
 
-fn pointer_offset_contains_int64_scaled(offset: &OldAddressOffset) -> bool {
+fn pointer_offset_contains_int64_scaled(offset: &AddressOffset) -> bool {
     match offset.view() {
         OffsetView::Int64Scaled { .. } => true,
         OffsetView::Add(left, right) => {
@@ -3411,14 +3411,14 @@ fn exact_offset_operation(
 }
 
 fn exact_pointer_offset_i64_with_guards(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
     exact_pointer_index_i64_with_guards(offset, None, guards)
 }
 
 fn exact_pointer_index_i64_with_guards(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     element_width: Option<u32>,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
@@ -3726,7 +3726,7 @@ fn address_base_bounds(
 /// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
 /// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
 fn wide_element_block_bounds(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
@@ -3771,7 +3771,7 @@ fn wide_element_block_bounds(
 /// `0 <= offset <= bytes` over the exact 64-bit byte offset. An offset with
 /// no exact reading has no checked normal path.
 fn wide_block_bounds_of_32_bit_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     size: &AllocationSize,
 ) -> Option<Vec<PointerFormationGuard>> {
     if let OffsetView::Int32Scaled {
@@ -3849,7 +3849,7 @@ fn wide_block_bounds_of_32_bit_offset(
 /// spelling `0 <= i * stride + field <= bytes` says the same thing in terms
 /// a linear order check cannot read.
 fn strided_block_bounds(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     block_size: &OldMachineTerm,
 ) -> Option<Vec<PointerFormationGuard>> {
     let (index, stride, field) = match offset.view() {
@@ -6280,7 +6280,7 @@ fn apply_pointer_adjacency_guard(
 /// The pointer's displacement from its object's base: its offset for a block
 /// based at offset zero, and the summands after the parameter's opaque base
 /// for argument memory. `None` when the offset does not spell the base.
-fn pointer_object_displacement(pointer: &OldAddress) -> Option<OldAddressOffset> {
+fn pointer_object_displacement(pointer: &OldAddress) -> Option<AddressOffset> {
     pointer.offset_from_base(&pointer.object_base())
 }
 

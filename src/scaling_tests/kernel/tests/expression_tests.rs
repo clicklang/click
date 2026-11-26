@@ -51,7 +51,8 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(variable)),
             4,
-        ),
+        )
+        .into(),
     };
     let target = external(31_070);
     let loadable = |base| Proposition::MemoryLoadable {

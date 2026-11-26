@@ -14,15 +14,15 @@ use std::fmt;
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    AddressBase, AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,
-    CheckedFunctionProposition, ComparisonOperator as KernelComparisonOperator,
-    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionEnvironment,
-    ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome, FunctionContract,
-    FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
-    FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
-    FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
-    LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MemoryRange, MemorySegment,
-    OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramExpression,
+    AddressBase, AddressOffset, AlgebraicValue, BitvectorEqualityDerivationStep,
+    CheckedFunctionExecution, CheckedFunctionProposition,
+    ComparisonOperator as KernelComparisonOperator, CompositeResourceDefinition, ConditionOutcome,
+    ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState,
+    ExpressionOutcome, FunctionContract, FunctionContractClaim, FunctionContractClaimKey,
+    FunctionContractClaimTarget, FunctionContractExecutionMode, FunctionExecutionCandidates,
+    FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck,
+    LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MemoryRange,
+    MemorySegment, OldAddress, OldConditionTerm, OldMachineTerm, ProgramExpression,
     ProgramFunction, ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
     PropositionDerivation, PureFactContext, Resource,
     ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
@@ -5371,7 +5371,7 @@ impl RecordedStates {
         pointer: &crate::kernel::OldAddress,
         name_base: impl FnOnce(&crate::kernel::OldAddress) -> Option<SyntaxTerm>,
     ) -> Option<SyntaxTerm> {
-        use crate::kernel::{OffsetTree, OffsetView, OldAddress, OldAddressOffset};
+        use crate::kernel::{AddressOffset, OffsetTree, OffsetView, OldAddress};
         let OffsetView::Constant(bytes) = pointer.offset.view() else {
             return None;
         };
@@ -5381,7 +5381,7 @@ impl RecordedStates {
         }
         let base = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         Some(SyntaxTerm::CUnary {
             operand: Box::new(name_base(&base)?),

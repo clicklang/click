@@ -1426,12 +1426,12 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
             binding: LocalBindingId::new(function.clone(), false, index, None),
             instance: LocalStorageInstance::Implicit,
         },
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let selected = local(0);
     let incoming = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let alias = OldAddress::symbolic(Variable(1));
     let resource = |pointer| {
@@ -1575,7 +1575,10 @@ fn pointer_index_projection_looks_up_only_its_full_width_bound() {
     let wide = OldAddressOffset::scaled_int64_node(index.clone(), 4, true);
     let at_parameter =
         |offset| OldAddressOffset::add(OldAddressOffset::Variable(Variable(970_021)), offset);
-    let compare = OldConditionTerm::address_offset_equal(at_parameter(narrow), at_parameter(wide));
+    let compare = OldConditionTerm::address_offset_equal(
+        at_parameter(narrow).into(),
+        at_parameter(wide).into(),
+    );
     let wide = pointer_projection_source(&compare).unwrap();
     let goal = Proposition::condition_is(compare, true);
     let exact = Proposition::condition_is(

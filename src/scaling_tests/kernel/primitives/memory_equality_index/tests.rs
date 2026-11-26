@@ -17,7 +17,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let before = SymbolicMemory::new();
         let read = |context: &PureFactContext, memory: &SymbolicMemory, address: &OldAddress| {
@@ -69,7 +69,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         resources.synchronize_memory_equalities(&context);
         let local = OldAddress {
             base: AddressBase::Concrete("local:frame-counter".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let after = before
             .clone()
@@ -138,7 +138,8 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_200)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_200)), 1)
+                .into(),
         };
         let prefix = OldMachineTerm::Variable(Variable(989_201));
         let local = OldMachineTerm::Variable(Variable(989_202));
@@ -299,7 +300,8 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         let _session = crate::kernel::VerificationSession::enter();
         let bytes = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(988_400)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(988_400)), 1)
+                .into(),
         };
         let cursor = OldAddress::symbolic(Variable(988_402));
         let remaining = OldMachineTerm::Variable(Variable(988_403));
@@ -930,7 +932,8 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
         let query = OldAddress::loaded_value(&memory, &field);
         let held = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_980_001)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_980_001)), 4)
+                .into(),
         };
         let mut facts = PureFactContext::new();
         for index in 0..count {

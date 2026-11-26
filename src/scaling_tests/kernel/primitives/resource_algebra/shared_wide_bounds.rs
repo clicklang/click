@@ -6,7 +6,7 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
         let ty = MachineIntegerType::UInt64;
         let base = OldAddress {
             base: "wide_bound_scaling".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let mut root =
             KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018502));
@@ -22,7 +22,8 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: true,
-                },
+                }
+                .into(),
             },
             OldMachineTerm::uint64_constant(0),
             OldMachineTerm::uint64_constant(1),
@@ -72,7 +73,8 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
                     byte_width: 8,
                     unsigned: true,
                 }),
-            ),
+            )
+            .into(),
         };
         let fact = |start, end| {
             ResourceFact::own_memory(MemoryRange::new_wide(

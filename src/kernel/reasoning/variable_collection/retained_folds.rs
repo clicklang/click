@@ -691,7 +691,7 @@ mod tests {
         let unrelated = Variable(999944);
         let address = OldAddress {
             base: AddressBase::Symbolic(base),
-            offset: OldAddressOffset::Variable(coordinate),
+            offset: OldAddressOffset::Variable(coordinate).into(),
         };
         let memory = intern_memory(
             SymbolicMemory::new()
@@ -743,12 +743,12 @@ mod tests {
         let pointer = OldAddress {
             base: AddressBase::Symbolic(base),
             offset: OldAddressOffset::Add(
-                Box::new(OldAddressOffset::scaled_int32_node(
-                    OldMachineTerm::Variable(index),
-                    4,
+                Box::new(crate::kernel::OldAddressOffset::from(
+                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(index), 4),
                 )),
                 Box::new(OldAddressOffset::Variable(connection)),
-            ),
+            )
+            .into(),
         };
         let memory = intern_memory(
             SymbolicMemory::new()
@@ -901,10 +901,7 @@ mod tests {
         );
         let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(999812)),
-            offset: OldAddressOffset::scaled_int32_node(
-                OldMachineTerm::Variable(Variable(999813)),
-                4,
-            ),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999813)), 4),
         };
         for format in [
             crate::kernel::KernelFloatType::Float32,
@@ -1215,7 +1212,7 @@ mod tests {
                 )),
                 pointer: Box::new(OldAddress {
                     base: AddressBase::Symbolic(Variable(999742)),
-                    offset: OldAddressOffset::scaled_int32_node(
+                    offset: AddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(999743)),
                         4,
                     ),
@@ -1336,7 +1333,7 @@ mod tests {
                 )),
                 OldAddress {
                     base: AddressBase::Symbolic(Variable(970_031)),
-                    offset: OldAddressOffset::scaled_int32_node(
+                    offset: AddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(970_032)),
                         4,
                     ),
@@ -1368,17 +1365,22 @@ mod tests {
                 )),
             ),
             OldConditionTerm::AddressOffsetEqual(
-                Box::new(OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::Variable(Variable(970_005))),
-                    Box::new(OldAddressOffset::scaled_int32_node(
-                        OldMachineTerm::IntegerToMachine {
-                            value: IntegerTerm::Variable(Variable(970_006)).into(),
-                            destination: MachineIntegerType::Int32,
-                        },
-                        4,
-                    )),
-                )),
-                Box::new(OldAddressOffset::scaled_int64_node(
+                Box::new(
+                    OldAddressOffset::Add(
+                        Box::new(OldAddressOffset::Variable(Variable(970_005))),
+                        Box::new(crate::kernel::OldAddressOffset::from(
+                            AddressOffset::scaled_int32_node(
+                                OldMachineTerm::IntegerToMachine {
+                                    value: IntegerTerm::Variable(Variable(970_006)).into(),
+                                    destination: MachineIntegerType::Int32,
+                                },
+                                4,
+                            ),
+                        )),
+                    )
+                    .into(),
+                ),
+                Box::new(AddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable(970_007)),
                     8,
                     true,
@@ -1392,14 +1394,14 @@ mod tests {
                             IntegerTerm::Variable(Variable(970_008)).into(),
                         )],
                     )),
-                    offset: OldAddressOffset::scaled_int32_node(
+                    offset: AddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(970_009)),
                         4,
                     ),
                 }),
                 Box::new(OldAddress {
                     base: AddressBase::ExternalObject(Variable(970_010)),
-                    offset: OldAddressOffset::scaled_int64_node(
+                    offset: AddressOffset::scaled_int64_node(
                         OldMachineTerm::Variable(Variable(970_011)),
                         8,
                         false,

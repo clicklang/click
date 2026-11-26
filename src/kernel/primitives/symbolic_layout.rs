@@ -419,8 +419,8 @@ impl SymbolicLayoutName {
     /// `rest + offsetof(L, f)`: the offset before it, if any, the layout,
     /// and the field.
     pub(crate) fn field_displacement(
-        offset: &super::OldAddressOffset,
-    ) -> Option<(Option<&super::OldAddressOffset>, Self, u32)> {
+        offset: &super::AddressOffset,
+    ) -> Option<(Option<&super::AddressOffset>, Self, u32)> {
         let (rest, last) = match offset.view() {
             OffsetView::Add(rest, last) => (Some(rest), last),
             _ => (None, offset),
@@ -443,14 +443,14 @@ impl SymbolicLayoutName {
     /// `rest` (offset 0 when there is none): `rest` itself is 0, and
     /// `rest + c` or, from a constant start, the constant `c` is `c`.
     pub(crate) fn constant_displacement(
-        rest: Option<&super::OldAddressOffset>,
-        offset: &super::OldAddressOffset,
+        rest: Option<&super::AddressOffset>,
+        offset: &super::AddressOffset,
     ) -> Option<u32> {
         let zero;
         let start = match rest {
             Some(rest) => rest,
             None => {
-                zero = super::OldAddressOffset::constant(0);
+                zero = super::AddressOffset::constant(0);
                 &zero
             }
         };

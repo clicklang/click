@@ -374,16 +374,23 @@ struct PointerOffsetStorage {
 }
 
 enum PointerOffsetValue {
-    Native(OldAddressOffset),
+    Native(AddressOffset),
     Shared {
         root: SharedAddressOffset,
-        native: OnceLock<OldAddressOffset>,
+        native: OnceLock<AddressOffset>,
     },
 }
 
+#[cfg(test)]
 impl From<OldAddressOffset> for StoredPointerOffset {
     fn from(written: OldAddressOffset) -> Self {
-        Self::from_input(KernelAddressOffset::try_import(&written), || written)
+        AddressOffset::from(written).into()
+    }
+}
+
+impl From<AddressOffset> for StoredPointerOffset {
+    fn from(written: AddressOffset) -> Self {
+        Self::from_input(Ok(written.shared().clone()), || written)
     }
 }
 
@@ -404,13 +411,13 @@ impl StoredPointerOffset {
         matches!(&self.0.value, PointerOffsetValue::Shared { native, .. } if native.get().is_some())
     }
 
-    pub(in crate::kernel) fn from_written(written: &OldAddressOffset) -> Self {
-        Self::from_input(KernelAddressOffset::try_import(written), || written.clone())
+    pub(in crate::kernel) fn from_written(written: &AddressOffset) -> Self {
+        Self::from_input(Ok(written.shared().clone()), || written.clone())
     }
 
     fn from_input(
         root: Result<SharedAddressOffset, &'static str>,
-        native: impl FnOnce() -> OldAddressOffset,
+        native: impl FnOnce() -> AddressOffset,
     ) -> Self {
         match root {
             Ok(root) => Self::from_rewritten_root(root),
@@ -425,12 +432,12 @@ impl StoredPointerOffset {
         }
     }
 
-    pub(crate) fn old_form(&self) -> &OldAddressOffset {
+    pub(crate) fn old_form(&self) -> &AddressOffset {
         match &self.0.value {
             PointerOffsetValue::Native(written) => written,
-            PointerOffsetValue::Shared { root, native } => {
-                native.get_or_init(|| KernelAddressOffset::export(root).expect("stored offset"))
-            }
+            PointerOffsetValue::Shared { root, native } => native.get_or_init(|| {
+                AddressOffset::try_from_shared(root.clone()).expect("stored offset")
+            }),
         }
     }
 
@@ -678,14 +685,13 @@ mod protocol_value_tests {
     #[test]
     fn retained_contract_offset_preserves_written_identity_after_input_drops() {
         let _session = crate::kernel::VerificationSession::enter();
-        let first =
-            OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998981)), 4);
-        let second = OldAddressOffset::scaled_int64_node(
-            OldMachineTerm::Variable(Variable(998982)),
-            8,
-            true,
+        let first = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998981)), 4);
+        let second =
+            AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998982)), 8, true);
+        let input = OldAddressOffset::Add(
+            Box::new(crate::kernel::OldAddressOffset::from(first)),
+            Box::new(crate::kernel::OldAddressOffset::from(second)),
         );
-        let input = OldAddressOffset::Add(Box::new(first), Box::new(second));
         let expected_debug = format!("{input:?}");
         let stored = StoredPointerOffset::from(input);
         assert!(stored.root().is_some());
@@ -696,7 +702,9 @@ mod protocol_value_tests {
         let same = StoredPointerOffset::from(stored.old_form().clone());
         let distinct = StoredPointerOffset::from(OldAddressOffset::Add(
             Box::new(OldAddressOffset::Constant(0)),
-            Box::new(stored.old_form().clone()),
+            Box::new(crate::kernel::OldAddressOffset::from(
+                stored.old_form().clone(),
+            )),
         ));
         assert_eq!(stored, same);
         assert_ne!(stored, distinct);
@@ -721,7 +729,8 @@ mod protocol_value_tests {
             value: index.clone(),
             byte_width: 4,
         };
-        let stored = StoredPointerOffset::from_written(&source);
+        let stored =
+            StoredPointerOffset::from_written(&crate::kernel::AddressOffset::from(&source));
         let root = stored.root().expect("typed displacement");
         let first = KernelAddressOffset::index_key(root.node().index().unwrap()).unwrap();
         assert!(std::ptr::eq(
@@ -736,8 +745,10 @@ mod protocol_value_tests {
         assert_ne!(stored.root(), equal.root());
         assert_eq!(stored, equal);
         assert_eq!(stored.cmp(&equal), std::cmp::Ordering::Equal);
-        assert_eq!(hash(&stored), hash(&source));
-        assert_eq!(hash(&equal), hash(&source));
+        // A leaf key hashes as the written offset it stores.
+        let written = crate::kernel::AddressOffset::from(&source);
+        assert_eq!(hash(&stored), hash(&written));
+        assert_eq!(hash(&equal), hash(&written));
         assert!(!stored.has_cached_native_offset());
         assert!(!equal.has_cached_native_offset());
         assert_eq!(stored.old_form(), &source);
@@ -1310,31 +1321,25 @@ mod term_payload_contract_tests {
             }
             let value = ProgramValue::pointer(OldAddress {
                 base: AddressBase::Symbolic(Variable(991729)),
-                offset,
+                offset: offset.into(),
             });
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };
-            let OldAddressOffset::Add(left, right) = &pointer.address().offset else {
+            let OffsetView::Add(left, right) = pointer.address().offset.view() else {
                 unreachable!()
             };
-            let allocations = [
-                std::ptr::from_ref(left.as_ref()),
-                std::ptr::from_ref(right.as_ref()),
-            ];
+            let allocations = [std::ptr::from_ref(left), std::ptr::from_ref(right)];
             let value = ProgramValue::from(StoredProgramValue::from(value));
             let ProgramValue::Pointer(pointer) = value else {
                 unreachable!()
             };
             let address = pointer.into_pointer();
-            let OldAddressOffset::Add(left, right) = &address.offset else {
+            let OffsetView::Add(left, right) = address.offset.view() else {
                 unreachable!()
             };
             assert_eq!(
-                [
-                    std::ptr::from_ref(left.as_ref()),
-                    std::ptr::from_ref(right.as_ref())
-                ],
+                [std::ptr::from_ref(left), std::ptr::from_ref(right)],
                 allocations
             );
         }

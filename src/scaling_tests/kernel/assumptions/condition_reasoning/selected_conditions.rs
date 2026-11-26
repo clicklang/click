@@ -133,8 +133,12 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
             };
             let offset = |left, right| {
                 OldConditionTerm::AddressOffsetEqual(
-                    Box::new(OldAddressOffset::Variable(Variable(left))),
-                    Box::new(OldAddressOffset::Variable(Variable(right))),
+                    Box::new(crate::kernel::AddressOffset::from(
+                        OldAddressOffset::Variable(Variable(left)),
+                    )),
+                    Box::new(crate::kernel::AddressOffset::from(
+                        OldAddressOffset::Variable(Variable(right)),
+                    )),
                 )
             };
             let mut context = PureFactContext::new();

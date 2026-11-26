@@ -1376,7 +1376,7 @@ fn execute_program_aggregate_step_paths(
     let layout = &result_layout.layout;
     let pointer = OldAddress {
         base: AddressBase::Temporary(budget.allocate_kernel_variable()?.0),
-        offset: OldAddressOffset::constant(0),
+        offset: AddressOffset::constant(0),
     };
     register_block_alignment(&pointer.base, layout.alignment_bytes());
     // The temporary's allocation, the copy into it, and its freezing are
@@ -3035,7 +3035,7 @@ fn execute_program_realloc_result_paths(
                         copied_cells: copied_cells
                             .into_iter()
                             .map(|(offset, value)| {
-                                (OldAddressOffset::constant(i64::from(offset)), value)
+                                (AddressOffset::constant(i64::from(offset)), value)
                             })
                             .collect(),
                         initialized_prefix,
@@ -3681,7 +3681,7 @@ fn execute_program_return_expression_paths(
                         };
                         OldAddress {
                             base: AddressBase::Heap(variable.0),
-                            offset: OldAddressOffset::constant(0),
+                            offset: AddressOffset::constant(0),
                         }
                     } else {
                         OldAddress::null()
@@ -6872,7 +6872,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
 ) {
     let slot = OldAddress {
         base: pointer.base.clone(),
-        offset: OldAddressOffset::constant(0),
+        offset: AddressOffset::constant(0),
     };
     let Some(name) = state.locals.name_for_slot(&slot).cloned() else {
         return;
@@ -7049,7 +7049,7 @@ pub(in crate::kernel) fn rebase_resolved_allocation(
             {
                 OldAddress {
                     base: resolved.base.clone(),
-                    offset: OldAddressOffset::add(resolved.offset.clone(), address.offset.clone()),
+                    offset: AddressOffset::add(resolved.offset.clone(), address.offset.clone()),
                 }
             } else {
                 address.clone()

@@ -80,9 +80,18 @@ fn scaled_offset_admission_and_queries_keep_cold_dags_shared() {
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut graph = EqualityGraph::default();
-                assert!(!graph.are_offsets_equal(&offset, &named));
-                graph.add_offset_equality(&offset, &named);
-                assert!(graph.are_offsets_equal(&offset, &named));
+                assert!(!graph.are_offsets_equal(
+                    &crate::kernel::AddressOffset::from(&offset),
+                    &crate::kernel::AddressOffset::from(&named)
+                ));
+                graph.add_offset_equality(
+                    &crate::kernel::AddressOffset::from(&offset),
+                    &crate::kernel::AddressOffset::from(&named),
+                );
+                assert!(graph.are_offsets_equal(
+                    &crate::kernel::AddressOffset::from(&offset),
+                    &crate::kernel::AddressOffset::from(&named)
+                ));
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             samples.push(work);

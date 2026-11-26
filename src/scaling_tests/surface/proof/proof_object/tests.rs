@@ -106,9 +106,11 @@ fn same_block_offset_rewrite_work(
     let theorems = TheoremEnvironment::new(&[]);
     let base = OldAddress {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scaled_int32_node(
-            OldMachineTerm::Variable(Variable(8_179_100)),
-            4,
+        offset: crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(8_179_100)),
+                4,
+            ),
         ),
     };
     let remaining = OldMachineTerm::Variable(Variable(8_179_101));
@@ -123,9 +125,9 @@ fn same_block_offset_rewrite_work(
     );
     let shifted = OldAddress {
         base: base.base.clone(),
-        offset: OldAddressOffset::Add(
-            Box::new(base.offset.clone()),
-            Box::new(OldAddressOffset::scaled_int32_node(
+        offset: crate::kernel::OldAddressOffset::Add(
+            Box::new(crate::kernel::OldAddressOffset::from(base.offset.clone())),
+            Box::new(crate::kernel::OldAddressOffset::scaled_int32_node(
                 binary_node!(
                     Int32,
                     Subtract,
@@ -134,7 +136,8 @@ fn same_block_offset_rewrite_work(
                 ),
                 4,
             )),
-        ),
+        )
+        .into(),
     };
     let cursor = OldAddress::symbolic(Variable(8_179_099));
     let state = ExecutionState::new()
@@ -152,17 +155,21 @@ fn same_block_offset_rewrite_work(
                     OldConditionTerm::address_equal(
                         OldAddress {
                             base: base.base.clone(),
-                            offset: OldAddressOffset::Add(
-                                Box::new(base.offset.clone()),
-                                Box::new(OldAddressOffset::scaled_int32_node(
-                                    binary_node!(
-                                        Int32,
-                                        Subtract,
-                                        Box::new(OldMachineTerm::constant(4)),
-                                        Box::new(old.clone()),
-                                    ),
-                                    4,
-                                )),
+                            offset: crate::kernel::AddressOffset::from(
+                                crate::kernel::OldAddressOffset::Add(
+                                    Box::new(crate::kernel::OldAddressOffset::from(
+                                        base.offset.clone(),
+                                    )),
+                                    Box::new(crate::kernel::OldAddressOffset::scaled_int32_node(
+                                        binary_node!(
+                                            Int32,
+                                            Subtract,
+                                            Box::new(OldMachineTerm::constant(4)),
+                                            Box::new(old.clone()),
+                                        ),
+                                        4,
+                                    )),
+                                ),
                             ),
                         },
                         base.clone(),
@@ -1521,7 +1528,9 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(OldAddress {
                     base: "rewrite_reads".into(),
-                    offset: OldAddressOffset::Constant(index as i64 * 4),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(index as i64 * 4),
+                    ),
                 }),
                 crate::kernel::LoadKind::Int32,
             );
@@ -1758,7 +1767,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
     let theorems = TheoremEnvironment::new(&[]);
     let pointer = OldAddress {
         base: crate::kernel::AddressBase::Concrete("mixed-premise".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let entry = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block("mixed-premise", 4))

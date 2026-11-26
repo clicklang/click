@@ -17,12 +17,13 @@ fn retained_index(ty: MachineIntegerType, id: u64) -> SharedMachineIntegerTerm {
     let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [atom, zero]);
     MachineOperandView::Shared(&root).retain(ty)
 }
-fn wide(value: SharedMachineIntegerTerm, byte_width: i64) -> OldAddressOffset {
+fn wide(value: SharedMachineIntegerTerm, byte_width: i64) -> AddressOffset {
     OldAddressOffset::Int64Scaled {
         value,
         byte_width,
         unsigned: true,
     }
+    .into()
 }
 fn equality(
     value: &SharedMachineIntegerTerm,
@@ -63,10 +64,17 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
     );
     for (a, b) in [
         (&right, &OldAddressOffset::Constant(0)),
-        (&OldAddressOffset::Constant(0), &right),
+        (
+            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(0)),
+            &crate::kernel::OldAddressOffset::from(&right),
+        ),
     ] {
         assert_eq!(
-            wide_element_offsets_proven_distinct(a, b, &context),
+            wide_element_offsets_proven_distinct(
+                a,
+                &crate::kernel::AddressOffset::from(b),
+                &context
+            ),
             Some(true)
         );
     }
@@ -79,7 +87,11 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
         Some(false)
     );
     assert_eq!(
-        wide_element_offsets_proven_distinct(&right, &OldAddressOffset::Constant(1), &context),
+        wide_element_offsets_proven_distinct(
+            &right,
+            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(1)),
+            &context
+        ),
         None
     );
     assert_eq!(
@@ -102,7 +114,8 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
         offset: OldAddressOffset::Int32Scaled {
             value: value.clone(),
             byte_width: width,
-        },
+        }
+        .into(),
     };
     let address = pointer(4);
     let native_source = OldConditionTerm::equal(

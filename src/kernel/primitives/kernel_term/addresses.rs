@@ -1,6 +1,6 @@
 //! Raw addresses retain block identity and shared displacement. Exact producer
 //! identity is distinct from the logical pointer equality used by checking.
-use super::offsets::{KernelAddressOffset, SharedAddressOffset};
+use super::offsets::SharedAddressOffset;
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -234,13 +234,13 @@ impl SharedAddress {
     pub(crate) fn import(pointer: &OldAddress) -> Self {
         Self::new(
             SharedAddressBase::import(&pointer.base),
-            KernelAddressOffset::import(&pointer.offset),
+            pointer.offset.shared().clone(),
         )
     }
     pub(crate) fn import_produced(pointer: &OldAddress) -> Self {
         Self::new(
             SharedAddressBase::import_with_upkeep(&pointer.base, true),
-            KernelAddressOffset::import(&pointer.offset),
+            pointer.offset.shared().clone(),
         )
     }
     pub(crate) fn syntax_equal(&self, other: &Self) -> bool {
@@ -252,7 +252,7 @@ impl SharedAddress {
     pub(crate) fn export(&self) -> Result<OldAddress, &'static str> {
         Ok(OldAddress {
             base: self.node().base.native_atom().clone(),
-            offset: KernelAddressOffset::export(&self.node().offset)?,
+            offset: AddressOffset::try_from_shared(self.node().offset.clone())?,
         })
     }
 
@@ -297,7 +297,8 @@ mod tests {
                 offset: OldAddressOffset::Add(
                     Box::new(OldAddressOffset::Constant(0)),
                     Box::new(OldAddressOffset::Variable(Variable(998007))),
-                ),
+                )
+                .into(),
             };
             let shared = SharedAddress::import(&source);
             assert_eq!(shared.export().unwrap(), source);
@@ -317,7 +318,7 @@ mod tests {
         let address = |call| {
             SharedAddress::import(&OldAddress {
                 base: AddressBase::PureFunctionApplication(call),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             })
         };
         let left = address(a.clone());

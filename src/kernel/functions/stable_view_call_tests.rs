@@ -5,7 +5,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn pointer() -> OldAddress {
     OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     }
 }
 
@@ -309,7 +309,7 @@ fn candidate_reader_escrows_owner_until_return() {
         &ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
@@ -591,7 +591,7 @@ fn adapter_reader(
 fn adapter_caller(pointer: &OldAddress) -> ExecutionState {
     let second = OldAddress {
         base: pointer.base.clone(),
-        offset: OldAddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4).into(),
     };
     ExecutionState::new()
         .with_memory(
@@ -1212,7 +1212,8 @@ fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry
     let (function, environment) = conditional_owner("candidate_guarded_symbolic_free");
     let symbolic = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_101)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_101)), 4)
+            .into(),
     };
     let paths = execute_program_function_call_paths(
         &ExecutionState::new(),
@@ -1799,7 +1800,7 @@ fn recover_with_a_carried_view_of_another_block(
     let pointer = pointer();
     let other = OldAddress {
         base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let function = reader("candidate_carried_view", false);
     let owned_caller = caller_with_owned_end(&pointer, 3, 12);
@@ -1856,7 +1857,7 @@ fn candidate_accepts_a_carried_view_of_read_only_storage() {
     let carried = ResourceFact::view_memory(MemoryRange::new(
         OldAddress {
             base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(2),
@@ -1873,7 +1874,7 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
     let carried = ResourceFact::view_memory(MemoryRange::new(
         OldAddress {
             base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(2),
@@ -1892,7 +1893,7 @@ fn symbolic_bounded_range(
     MemoryRange::new_with_element_width(
         OldAddress {
             base: AddressBase::Concrete("candidate:separation".to_string()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         start,
         end,
@@ -2144,7 +2145,7 @@ fn lend_summary_test_range(
 fn candidate_rejects_symbolic_same_base_overlapping_effect() {
     let pointer = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: OldAddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)).into(),
     };
     let function = reader_with_mutable_range("candidate_symbolic_overlap_effect", 0, 1);
     let paths = execute_program_function_call_paths(
@@ -2173,11 +2174,11 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
 fn candidate_rejects_unproved_mutable_effect_separation() {
     let viewed = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: OldAddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)).into(),
     };
     let mutated = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: OldAddressOffset::Variable(Variable(701)),
+        offset: OldAddressOffset::Variable(Variable(701)).into(),
     };
     let input = MemorySegment::new(
         crate::kernel::program_expression::variable("p"),
@@ -2278,11 +2279,11 @@ fn viewer_and_writer(name: &str) -> ProgramFunction {
 fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
     let viewed = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: OldAddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)).into(),
     };
     let mutated = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: OldAddressOffset::Variable(Variable(701)),
+        offset: OldAddressOffset::Variable(Variable(701)).into(),
     };
     let owned_range = |pointer: &OldAddress| {
         ResourceFact::own(Resource::Memory(MemoryRange::new(
@@ -3015,7 +3016,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
         } else if case == "other_local" {
             OldAddress {
                 base: "local:other".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             }
         } else {
             local.clone()
@@ -3095,7 +3096,7 @@ fn local_storage_absence_summary_tracks_persistent_resource_edits() {
     let unrelated = ResourceFact::own_memory(MemoryRange::new(
         OldAddress {
             base: "local:other".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         0u32.into(),
         1u32.into(),

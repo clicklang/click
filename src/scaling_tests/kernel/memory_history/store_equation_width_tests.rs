@@ -7,7 +7,7 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
     let cell = |index: u64| OldAddress {
         base: "array".into(),
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4).into(),
     };
     let mut memory = SymbolicMemory::new().with_block("array", 1 << 20);
     for index in 0..unrelated as u64 {

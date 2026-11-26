@@ -1974,7 +1974,7 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
     .expect("struct pointer parameter should parse");
     let pool = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let proposition = Proposition::Predicate {
         name: "valid_pool".to_string(),
@@ -2011,7 +2011,7 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
         syntax::parse_function("void lock(int32* m) {}").expect("parameter should parse");
     let mutex = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let synthesize = |name: String, arguments: Vec<Term>| {
         synthesize_surface_proposition(
@@ -2073,7 +2073,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     .expect("struct parameter layout should parse");
     let owner = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let proposition = Proposition::condition_is(
         OldConditionTerm::Compare {
@@ -2117,7 +2117,9 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     );
     let first_data_cell = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::scaled_int32_node(data_pointer, 4),
+        offset: crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::scaled_int32_node(data_pointer, 4),
+        ),
     };
     let proposition = Proposition::condition_is(
         OldConditionTerm::Compare {
@@ -4509,7 +4511,7 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     let parameters = functions[0].parameters();
     let base = OldAddress {
         base: AddressBase::Concrete("range_base".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
         OldPointer::new(base.clone(), ProgramType::Int32Pointer),

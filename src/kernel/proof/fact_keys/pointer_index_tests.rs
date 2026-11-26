@@ -11,33 +11,39 @@ fn retained(ty: MachineIntegerType, term: &OldMachineTerm) -> SharedMachineInteg
     )
     .unwrap()
 }
-fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> OldAddressOffset {
+fn offset(
+    value: SharedMachineIntegerTerm,
+    width: i64,
+    unsigned: bool,
+) -> crate::kernel::OldAddressOffset {
     if matches!(
         value.ty(),
         MachineIntegerType::Int32 | MachineIntegerType::UInt32
     ) {
-        OldAddressOffset::Int32Scaled {
+        crate::kernel::OldAddressOffset::Int32Scaled {
             value,
             byte_width: width,
         }
     } else {
-        OldAddressOffset::Int64Scaled {
+        crate::kernel::OldAddressOffset::Int64Scaled {
             value,
             byte_width: width,
             unsigned,
         }
     }
 }
-fn fact(offset: OldAddressOffset) -> Proposition {
+fn fact(offset: crate::kernel::OldAddressOffset) -> Proposition {
     Proposition::condition_is(
         OldConditionTerm::AddressOffsetEqual(
-            Box::new(offset),
-            Box::new(OldAddressOffset::Constant(0)),
+            Box::new(offset.into()),
+            Box::new(crate::kernel::AddressOffset::from(
+                crate::kernel::OldAddressOffset::Constant(0),
+            )),
         ),
         true,
     )
 }
-fn quantified(variable: Variable, offset: OldAddressOffset) -> Proposition {
+fn quantified(variable: Variable, offset: crate::kernel::OldAddressOffset) -> Proposition {
     crate::kernel::quantifiers::test_forall(
         crate::kernel::BinderName::written("index"),
         variable,
@@ -116,10 +122,8 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
                 let actual_alpha =
                     alpha_machine_key::<true>(value.operand_view(), &mut bindings(), &mut 0);
                 assert_eq!(expected_alpha, actual_alpha, "{term:?}");
-                let key = memory_erased_address_offset_key(&offset(
-                    value.clone(),
-                    4,
-                    ty == MachineIntegerType::UInt64,
+                let key = memory_erased_address_offset_key(&crate::kernel::AddressOffset::from(
+                    &offset(value.clone(), 4, ty == MachineIntegerType::UInt64),
                 ));
                 let (MemoryErasedAddressOffsetNode::Int32Scaled { value: actual, .. }
                 | MemoryErasedAddressOffsetNode::Int64Scaled { value: actual, .. }) = key.node()

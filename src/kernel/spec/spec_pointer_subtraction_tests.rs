@@ -7,7 +7,8 @@ fn specification_subtraction_widens_coordinates_and_retains_pointer_provenance()
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(variable)),
             4,
-        ),
+        )
+        .into(),
     };
     let left = external(32_000);
     let right = external(32_001);

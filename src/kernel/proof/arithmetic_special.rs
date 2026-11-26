@@ -1,8 +1,8 @@
 //! Local arithmetic rules used by selected-input normalization, and internal
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
-    AddressBase, ComparisonOperator, FloatClassification, FloatCondition, FloatOperandView,
-    KernelFloatType, OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, OldPointer,
+    AddressBase, AddressOffset, ComparisonOperator, FloatClassification, FloatCondition,
+    FloatOperandView, KernelFloatType, OldAddress, OldConditionTerm, OldMachineTerm, OldPointer,
     Proposition, SignedDefinedWidth,
 };
 
@@ -63,7 +63,7 @@ fn pointer_payload(pointer: &OldAddress) -> Option<usize> {
     address_base_payload(&pointer.base)?.checked_add(pointer_offset_payload(&pointer.offset)?)
 }
 
-fn pointer_offset_payload(root: &OldAddressOffset) -> Option<usize> {
+fn pointer_offset_payload(root: &AddressOffset) -> Option<usize> {
     let mut pending = vec![root];
     let mut payload = 0usize;
     while let Some(offset) = pending.pop() {
@@ -201,7 +201,7 @@ fn bitvector_payload(root: &OldMachineTerm) -> Option<usize> {
     Some(payload)
 }
 
-fn charge_pointer_offset(offset: &OldAddressOffset) -> bool {
+fn charge_pointer_offset(offset: &AddressOffset) -> bool {
     pointer_offset_payload(offset).is_some_and(charge_payload)
 }
 
@@ -217,7 +217,7 @@ fn charge_bitvector(term: &OldMachineTerm) -> bool {
     bitvector_payload(term).is_some_and(charge_payload)
 }
 
-fn charge_map_insert(offset: &OldAddressOffset, map_len: usize) -> bool {
+fn charge_map_insert(offset: &AddressOffset, map_len: usize) -> bool {
     let comparisons = (usize::BITS - map_len.max(1).leading_zeros()) as usize;
     pointer_offset_payload(offset).is_some_and(|payload| {
         !crate::instrumentation::deadline_exceeded_with_work(
@@ -339,7 +339,7 @@ fn pointer_index_equal(
     true
 }
 
-fn address_offset_equal(left: &OldAddressOffset, right: &OldAddressOffset) -> bool {
+fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left.view(), right.view()) {
@@ -904,8 +904,8 @@ impl SpecialArithmeticNode {}
 fn pointer_sides(
     proposition: &Proposition,
 ) -> Option<(
-    &OldAddressOffset,
-    &OldAddressOffset,
+    &AddressOffset,
+    &AddressOffset,
     Option<(&AddressBase, &AddressBase)>,
 )> {
     match proposition {
@@ -1103,8 +1103,8 @@ enum OffsetPart<'a> {
 
 /// Count `sign` once more for `atom`, charging the map insertion.
 fn add_offset_atom(
-    terms: &mut BTreeMap<OldAddressOffset, i128>,
-    atom: OldAddressOffset,
+    terms: &mut BTreeMap<AddressOffset, i128>,
+    atom: AddressOffset,
     sign: i128,
 ) -> bool {
     if !charge_map_insert(&atom, terms.len()) {
@@ -1408,7 +1408,7 @@ fn pointer_translation(
         };
         xmin + ymin >= SIGNED_MIN && xmax + ymax <= SIGNED_MAX
     };
-    let mut terms = BTreeMap::<OldAddressOffset, i128>::new();
+    let mut terms = BTreeMap::<AddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [
         (left, 1i128),
@@ -1475,10 +1475,7 @@ fn pointer_translation(
                             parts.push(OffsetPart::Scaled(right, width));
                             continue;
                         }
-                        OldAddressOffset::int32_scaled(
-                            value.retain(MachineIntegerType::Int32),
-                            width,
-                        )
+                        AddressOffset::int32_scaled(value.retain(MachineIntegerType::Int32), width)
                     }
                     OffsetPart::Scaled64(value, width) => {
                         if let Some(bits) = value.uint64_constant() {
@@ -1500,7 +1497,7 @@ fn pointer_translation(
                             parts.push(OffsetPart::Scaled64(right, width));
                             continue;
                         }
-                        OldAddressOffset::int64_scaled(
+                        AddressOffset::int64_scaled(
                             value.retain(MachineIntegerType::Int64),
                             width,
                             true,
@@ -1516,11 +1513,11 @@ fn pointer_translation(
     constant == 0 && terms.values().all(|coefficient| *coefficient == 0)
 }
 
-fn offset_difference(goal: &OldAddressOffset, premise: &OldAddressOffset) -> Option<i128> {
+fn offset_difference(goal: &AddressOffset, premise: &AddressOffset) -> Option<i128> {
     if !charge_pointer_offset(goal) || !charge_pointer_offset(premise) {
         return None;
     }
-    let mut terms = BTreeMap::<OldAddressOffset, i128>::new();
+    let mut terms = BTreeMap::<AddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [(goal, 1i128), (premise, -1)] {
         let mut pending = vec![offset];
@@ -1665,7 +1662,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         if goal_alignment > intrinsic {
             return false;
         }
-        let Some(delta) = offset_difference(&goal_pointer.offset, &OldAddressOffset::constant(0))
+        let Some(delta) = offset_difference(&goal_pointer.offset, &AddressOffset::constant(0))
         else {
             return false;
         };
@@ -1678,10 +1675,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
 /// alignment.  Such an addend cannot change the pointer's residue.  The
 /// traversal is iterative because this helper runs on source-shaped pointer
 /// offsets and must not inherit their nesting depth.
-fn drop_aligned_scaled_addends(
-    offset: &OldAddressOffset,
-    alignment: u64,
-) -> Option<OldAddressOffset> {
+fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option<AddressOffset> {
     if !charge_pointer_offset(offset) {
         return None;
     }
@@ -1707,7 +1701,7 @@ fn drop_aligned_scaled_addends(
             .or_else(|| right.word32_constant())
             .map(|value| i64::from(value as i32))
     }
-    let divisible = |part: &OldAddressOffset| match part.view() {
+    let divisible = |part: &AddressOffset| match part.view() {
         OffsetView::Int32Scaled {
             index: value,
             byte_width,
@@ -1731,8 +1725,8 @@ fn drop_aligned_scaled_addends(
         parts
             .into_iter()
             .filter(|part| !divisible(part))
-            .reduce(OldAddressOffset::add)
-            .unwrap_or(OldAddressOffset::constant(0)),
+            .reduce(AddressOffset::add)
+            .unwrap_or(AddressOffset::constant(0)),
     )
 }
 
@@ -5041,10 +5035,12 @@ mod tests {
             let index = S::from_shared(MachineIntegerType::Int32, root.clone()).unwrap();
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Int32Scaled {
-                    value: index.clone(),
-                    byte_width: 4,
-                },
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Int32Scaled {
+                        value: index.clone(),
+                        byte_width: 4,
+                    },
+                ),
             };
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(
@@ -5284,15 +5280,19 @@ mod tests {
         assert!(!bitvector_equal(&constant(1.into()), &constant(2.into())));
     }
 
-    fn pointer(offset: OldAddressOffset) -> OldAddress {
+    fn pointer(offset: AddressOffset) -> OldAddress {
         OldAddress {
             base: AddressBase::ExternalArgument,
             offset,
         }
     }
 
-    fn add(left: OldAddressOffset, right: OldAddressOffset) -> OldAddressOffset {
-        OldAddressOffset::Add(Box::new(left), Box::new(right))
+    fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
+        crate::kernel::OldAddressOffset::Add(
+            Box::new(crate::kernel::OldAddressOffset::from(left)),
+            Box::new(crate::kernel::OldAddressOffset::from(right)),
+        )
+        .into()
     }
 
     fn tagged_tag_nodes(root: &Arc<TaggedTag<'_>>) -> usize {
@@ -5315,11 +5315,14 @@ mod tests {
     }
 
     fn deep_pointer(depth: usize) -> OldAddress {
-        let mut offset = OldAddressOffset::Constant(0);
+        let mut offset = crate::kernel::OldAddressOffset::Constant(0);
         for _ in 0..depth {
-            offset = add(offset, OldAddressOffset::Constant(1));
+            offset = crate::kernel::OldAddressOffset::from(add(
+                offset.into(),
+                crate::kernel::OldAddressOffset::Constant(1).into(),
+            ));
         }
-        pointer(offset)
+        pointer(offset.into())
     }
 
     fn measured_tagged_form(pointer_depth: usize, tag_depth: usize) -> (bool, usize, usize) {
@@ -5378,7 +5381,9 @@ mod tests {
     fn retained_masked_read_equation_checks_native_pointer_goal() {
         use crate::kernel::MachineOperandView;
         let _session = crate::kernel::VerificationSession::enter();
-        let next = pointer(OldAddressOffset::Constant(0));
+        let next = pointer(crate::kernel::AddressOffset::from(
+            crate::kernel::OldAddressOffset::Constant(0),
+        ));
         let address = OldMachineTerm::integer_address(next.clone());
         let raw = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(
@@ -5427,7 +5432,9 @@ mod tests {
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
             let address = OldMachineTerm::IntegerAddress(
-                Box::new(pointer(OldAddressOffset::Constant(0))),
+                Box::new(pointer(crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ))),
                 crate::kernel::AddressObjectClass::NONE,
             );
             let variable = OldMachineTerm::Variable(crate::kernel::Variable(294));

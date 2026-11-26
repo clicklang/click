@@ -388,7 +388,7 @@ fn member_description(block: AddressBase) -> ResourceDescription {
         vec![
             ProgramValue::pointer(OldAddress {
                 base: block,
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             })
             .into(),
         ]
@@ -404,7 +404,7 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
         vec![
             ProgramValue::pointer(OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(940_110)),
+                offset: OldAddressOffset::Variable(Variable(940_110)).into(),
             })
             .into(),
         ]
@@ -491,7 +491,7 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
         vec![
             ProgramValue::pointer(OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(940_111)),
+                offset: OldAddressOffset::Variable(Variable(940_111)).into(),
             })
             .into(),
         ]
@@ -1235,7 +1235,7 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
 fn two_authority_control_import_checks_each_custody_and_scope() {
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(940_112)),
+        offset: OldAddressOffset::Variable(Variable(940_112)).into(),
     };
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
@@ -1438,7 +1438,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     let mut wrong_args = member.arguments().to_vec();
     wrong_args[0] = ProgramValue::pointer(OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(912),
+        offset: OldAddressOffset::Constant(912).into(),
     })
     .into();
     let wrong = ResourceFact::own(Resource::Composite {
@@ -1473,7 +1473,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
 fn checked_control_import_observes_only_its_exact_entry_population() {
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(940_112)),
+        offset: OldAddressOffset::Variable(Variable(940_112)).into(),
     };
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
@@ -1784,7 +1784,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         vec![
             ProgramValue::pointer(OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(940_113)),
+                offset: OldAddressOffset::Variable(Variable(940_113)).into(),
             })
             .into(),
         ]
@@ -1940,7 +1940,7 @@ fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
         vec![
             ProgramValue::pointer(OldAddress {
                 base: block.clone(),
-                offset: OldAddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4).into(),
             })
             .into(),
         ]
@@ -2184,7 +2184,7 @@ fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
         vec![
             ProgramValue::pointer(OldAddress {
                 base: block.clone(),
-                offset: OldAddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4).into(),
             })
             .into(),
         ]
@@ -2542,7 +2542,8 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(9_850_100)),
             4,
-        ),
+        )
+        .into(),
     };
     let count_of = |pointer: OldPointer| SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -2691,7 +2692,7 @@ mod wildcard_scope_tests {
         let mut arguments = vec![
             ProgramValue::pointer(OldAddress {
                 base: block.clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             })
             .into(),
         ];
@@ -2711,7 +2712,7 @@ mod wildcard_scope_tests {
     fn opaque_scope(index: u32) -> (ResourceDescription, ResourceDescription) {
         let anchor = ProgramValue::pointer(OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(i64::from(index) * 4),
+            offset: OldAddressOffset::Constant(i64::from(index) * 4).into(),
         });
         let scope = ResourceDescription::new(
             "slot".into(),
@@ -3263,7 +3264,7 @@ mod wildcard_scope_tests {
         let mut arguments = description(&pool, &[0]).arguments().to_vec();
         let pointer = ProgramValue::pointer(OldAddress {
             base: AddressBase::Heap(950_005),
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4).into(),
         });
         arguments[1] = pointer.clone().into();
         let member = ResourceDescription::new(
@@ -3527,7 +3528,7 @@ fn local_named_wildcard_members_count_occurrences_not_field_values() {
     let block = AddressBase::Heap(940_502);
     let anchor = ProgramValue::pointer(OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
@@ -3677,7 +3678,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
             ProgramValue::typed_pointer(
                 OldAddress {
                     base: block,
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramType::Int32Pointer,
             )
@@ -3894,7 +3895,7 @@ fn check_named_authority_import(arity: Option<usize>) {
             AlgebraicValue::Program(ProgramValue::typed_pointer(
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Constant(4),
+                    offset: OldAddressOffset::Constant(4).into(),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -4125,7 +4126,7 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
 fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
     let anchor = ProgramValue::pointer(OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),

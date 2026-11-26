@@ -5,15 +5,15 @@ fn external_displacements_and_heap_indexes_use_only_their_selected_storage() {
     let _session = crate::kernel::VerificationSession::enter();
     let parameter = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(38_151)),
+        offset: OldAddressOffset::Variable(Variable(38_151)).into(),
     };
     let other_parameter = OldAddress {
-        offset: OldAddressOffset::Variable(Variable(38_152)),
+        offset: OldAddressOffset::Variable(Variable(38_152)).into(),
         ..parameter.clone()
     };
     let heap = OldAddress {
         base: AddressBase::Heap(38_153),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let start =
         ExecutionState::new().with_memory(SymbolicMemory::new().with_block(heap.base.clone(), 8));
@@ -230,7 +230,7 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
         let slot = slot();
         let target = OldAddress {
             base: "local:target".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
@@ -293,7 +293,7 @@ fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores
     let _session = crate::kernel::VerificationSession::enter();
     let cell = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(38_154)),
+        offset: OldAddressOffset::Variable(Variable(38_154)).into(),
     };
     let target = OldAddress::symbolic(Variable(38_155));
     let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
@@ -553,7 +553,7 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
     let entry = ExecutionState::new().begin_function_entry_memory();
     let cell = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4).into(),
     };
     let local = slot();
     let declared = entry
@@ -562,7 +562,7 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
     let accumulator = Variable(38_231);
     let item = Variable(38_232);
     let symbolic_cell = OldAddress {
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(item), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(item), 4).into(),
         ..cell.clone()
     };
     let read = |source: &ProgramPoint, address: &OldAddress| {
@@ -623,7 +623,7 @@ fn generic_entry_cells_and_compact_runs_keep_the_same_version_across_local_store
     let ty = ProgramType::Parameter(parameter);
     let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let cell = base.offset_by_bytes(ty.byte_width());
     let entry = ExecutionState::new().begin_function_entry_memory();
@@ -826,7 +826,7 @@ fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
     let _session = crate::kernel::VerificationSession::enter();
     let cell = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let entry = ExecutionState::new().begin_function_entry_memory();
     let store = |state: &ExecutionState, address: OldAddress, bits| {
@@ -865,7 +865,7 @@ fn an_unwritten_parameter_cell_keeps_its_entry_version_across_sibling_writes() {
         // A write from another parameter origin may alias the cell.
         let other_origin = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(38_901)),
+            offset: OldAddressOffset::Variable(Variable(38_901)).into(),
         };
         assert!(read(&store(&state, other_origin, 0), &cell).is_none());
         // A write through a pointer of unknown storage may too.

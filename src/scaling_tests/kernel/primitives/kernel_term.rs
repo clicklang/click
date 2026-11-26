@@ -460,7 +460,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(OldAddress {
                 base: AddressBase::Symbolic(Variable(993499)),
-                offset,
+                offset: offset.into(),
             }),
             LoadKind::Int32,
         );
@@ -544,7 +544,9 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
                     ProgramPoint::at(&memory),
                     Box::new(OldAddress {
                         base: AddressBase::Symbolic(Variable(996999)),
-                        offset: OldAddressOffset::scaled_int32_node(raw, 4),
+                        offset: crate::kernel::AddressOffset::from(
+                            OldAddressOffset::scaled_int32_node(raw, 4),
+                        ),
                     }),
                     LoadKind::Int32,
                 );
@@ -676,7 +678,8 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
                 value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, index)
                     .unwrap(),
                 byte_width: 4,
-            },
+            }
+            .into(),
         };
         let memory = intern_memory(SymbolicMemory::new());
         let retained = KernelTerm::scalar_read_descriptor(
@@ -1087,7 +1090,9 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
             );
             let pointer = crate::kernel::OldAddress {
                 base: block.into(),
-                offset: crate::kernel::OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             };
             KernelTermImport::default().machine(
                 format,

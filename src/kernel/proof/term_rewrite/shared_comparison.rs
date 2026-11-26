@@ -864,7 +864,7 @@ fn comparison_read_fixture(value: OldMachineTerm) -> (Variable, Variable) {
     let index = OldMachineTerm::Variable(Variable(992201));
     let pointer = |value| OldAddress {
         base: AddressBase::Concrete("opaque-comparison".into()),
-        offset: OldAddressOffset::scaled_int32_node(value, 4),
+        offset: AddressOffset::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new()

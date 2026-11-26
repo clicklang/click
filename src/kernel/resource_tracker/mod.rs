@@ -1701,7 +1701,7 @@ fn collect_shared_offset_reads(
     });
 }
 
-fn collect_offset_reads(offset: &OldAddressOffset, reads: &mut Vec<ResourceRead>) {
+fn collect_offset_reads(offset: &AddressOffset, reads: &mut Vec<ResourceRead>) {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset.view() {

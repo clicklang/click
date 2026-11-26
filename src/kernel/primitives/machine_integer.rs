@@ -882,14 +882,14 @@ mod tests {
     #[test]
     fn an_integer_read_is_its_load_and_kind_whatever_selection_built_it() {
         use crate::kernel::{
-            AddressBase, ExecutionState, LoadKind, OldAddress, OldAddressOffset, ProgramType,
+            AddressBase, AddressOffset, ExecutionState, LoadKind, OldAddress, ProgramType,
             ProgramValue, SymbolicMemory,
         };
         use std::hash::{Hash, Hasher};
         let _session = crate::kernel::VerificationSession::enter();
         let slot = OldAddress {
             base: AddressBase::Concrete("local:read-identity-slot".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
@@ -953,15 +953,15 @@ mod tests {
     #[test]
     fn an_algebraic_read_is_its_load_decoded_at_its_algebraic_type() {
         use crate::kernel::{
-            AccessExtent, AddressBase, AlgebraicTermNode, AlgebraicType, LoadKind, OldAddress,
-            OldAddressOffset, ProgramPoint, ProgramValue, SymbolicMemory, TypeParameterName,
+            AccessExtent, AddressBase, AddressOffset, AlgebraicTermNode, AlgebraicType, LoadKind,
+            OldAddress, ProgramPoint, ProgramValue, SymbolicMemory, TypeParameterName,
         };
         use std::cmp::Ordering;
         use std::hash::{Hash, Hasher};
         let _session = crate::kernel::VerificationSession::enter();
         let slot = OldAddress {
             base: AddressBase::Concrete("local:algebraic-read-slot".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let memory =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block(slot.base.clone(), 16));
@@ -1040,14 +1040,14 @@ mod tests {
     #[test]
     fn integer_reads_order_and_hash_the_same_whatever_was_interned_before() {
         use crate::kernel::{
-            AddressBase, LoadKind, OldAddress, OldAddressOffset, ProgramPoint, ProgramValue,
+            AddressBase, AddressOffset, LoadKind, OldAddress, ProgramPoint, ProgramValue,
             SymbolicMemory,
         };
         use std::hash::{Hash, Hasher};
         let block = AddressBase::Concrete("local:read-order-slot".into());
         let cell = |offset| OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: crate::kernel::OldAddressOffset::Constant(offset).into(),
         };
         let reads = || {
             let empty = SymbolicMemory::new().with_block(block.clone(), 8);

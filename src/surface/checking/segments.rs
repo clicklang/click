@@ -190,15 +190,15 @@ fn pointer_element_index_from_base_with_width(
 }
 
 fn pointer_offsets_equal_for_effect(
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     program_pointer_offsets_proven_equal_for_effect(left, right, assumptions)
 }
 
 fn element_index_from_pointer_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<OldMachineTerm> {
     if element_width == 0 {

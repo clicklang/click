@@ -184,7 +184,8 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                         offset: OldAddressOffset::scale_int32(
                             OldMachineTerm::Variable(Variable(id)),
                             1,
-                        ),
+                        )
+                        .into(),
                     },
                     ProgramType::UInt8Pointer,
                 )
@@ -210,7 +211,11 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             });
             let input = source.clone().with_address(OldAddress {
                 base: source.address().base.clone(),
-                offset: OldAddressOffset::add(source.address().offset.clone(), delta.clone()),
+                offset: OldAddressOffset::add(
+                    crate::kernel::OldAddressOffset::from(source.address().offset.clone()),
+                    delta.clone(),
+                )
+                .into(),
             });
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
@@ -224,9 +229,11 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             assert_eq!(result.address().base, target.address().base);
             assert_eq!(
                 crate::kernel::eval::canonical_offset_term(&result.address().offset),
-                crate::kernel::eval::canonical_offset_term(&OldAddressOffset::add(
-                    target.address().offset.clone(),
-                    delta
+                crate::kernel::eval::canonical_offset_term(&crate::kernel::AddressOffset::from(
+                    &OldAddressOffset::add(
+                        crate::kernel::OldAddressOffset::from(target.address().offset.clone()),
+                        delta
+                    )
                 ))
             );
             assert_eq!(result.provenance(), target.provenance());
@@ -346,7 +353,11 @@ fn exact_displacement_rewrite_visits_shared_subexpressions_once() {
         let source = StoredPointerOffset::from_rewritten_root(doubling_chain(&from));
         let expected = doubling_chain(&to);
         let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
-            TermRewrite::for_pointer_offset_exact(&from, &to).contract_offset(&source)
+            TermRewrite::for_pointer_offset_exact(
+                &crate::kernel::AddressOffset::from(&from),
+                &crate::kernel::AddressOffset::from(&to),
+            )
+            .contract_offset(&source)
         });
         assert_eq!(output.root(), Some(&expected));
         assert!(!source.has_cached_native_offset());

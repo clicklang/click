@@ -3,7 +3,7 @@ use super::*;
 fn address(offset: i64) -> OldAddress {
     OldAddress {
         base: "local:wide-storage".into(),
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset).into(),
     }
 }
 
@@ -196,7 +196,7 @@ fn wide_storage_symbolic_load_requires_full_span_and_local_initialization() {
     }
     let pointer = OldAddress {
         base: "local:wide-storage".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new().with_block("local:wide-storage", 16);
     let state = ExecutionState::new().with_memory(memory);
@@ -334,7 +334,7 @@ fn wide_storage_overlapping_store_invalidates_high_bytes_and_gap_skip() {
 fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
     let pointer = OldAddress {
         base: "wide-external".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     for bytes in [8, 16] {
         let range =

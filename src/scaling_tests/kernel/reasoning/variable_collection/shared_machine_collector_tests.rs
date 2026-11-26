@@ -175,30 +175,37 @@ fn pointer_index_collectors_keep_cold_dags_shared() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut variables = BTreeSet::new();
                 collect_pointer_offset_integer_variables(
-                    &offset,
+                    &crate::kernel::AddressOffset::from(&offset),
                     &mut variables,
                     &mut SeenTerms::default(),
                 );
                 assert!(variables.is_empty());
                 collect_pointer_offset_capture_variables(
-                    &offset,
+                    &crate::kernel::AddressOffset::from(&offset),
                     &mut variables,
                     &mut SeenTerms::default(),
                 );
                 assert_eq!(variables, BTreeSet::from([var]));
                 variables.clear();
-                collect_pointer_offset_bitvector_variables(&offset, &mut variables);
+                collect_pointer_offset_bitvector_variables(
+                    &crate::kernel::AddressOffset::from(&offset),
+                    &mut variables,
+                );
                 assert_eq!(variables, BTreeSet::from([var]));
                 let (mut integers, mut machines) = Default::default();
                 collect_pointer_offset_binder_variables(
-                    &offset,
+                    &crate::kernel::AddressOffset::from(&offset),
                     &mut integers,
                     &mut machines,
                     &mut SeenTerms::default(),
                 );
                 assert!(integers.is_empty() && machines.is_empty());
                 assert_eq!(
-                    collect_pointer_offset_scope_summary(&offset, &mut Default::default()).max,
+                    collect_pointer_offset_scope_summary(
+                        &crate::kernel::AddressOffset::from(&offset),
+                        &mut Default::default()
+                    )
+                    .max,
                     var.0
                 );
             });

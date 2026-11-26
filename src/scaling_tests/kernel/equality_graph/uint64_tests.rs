@@ -154,7 +154,7 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
         let _session = VerificationSession::enter();
         let stored_at = OldAddress {
             base: "cells".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let memory = intern_memory(SymbolicMemory::new().with_block("cells", 8).store(
             stored_at.clone(),
@@ -204,7 +204,7 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
             memory = memory.store(
                 OldAddress {
                     base: "other".into(),
-                    offset: OldAddressOffset::Constant(8 * i as i64),
+                    offset: OldAddressOffset::Constant(8 * i as i64).into(),
                 },
                 ProgramValue::UInt64(OldMachineTerm::uint64_constant(i)),
             );

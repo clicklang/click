@@ -77,7 +77,7 @@ impl<'a> Transport<'a> {
                     // reuses existing signed-extension/literal policy without
                     // materializing an address or numeric expression tree.
                     let leaf = transported_scaled_index(index, *byte_width, wide);
-                    KernelAddressOffset::import(&leaf)
+                    leaf.into_shared()
                 }
             };
             self.offsets.insert(offset.clone(), result);
@@ -93,7 +93,7 @@ impl<'a> Transport<'a> {
             let target = OldAddress::loaded_value(&after, load.cell());
             let before = OldAddress {
                 base: node.base.native_atom().clone(),
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             };
             // Both observations carry the same displacement. The selected
             // complete-word frame check is on their load identities, so it
@@ -115,7 +115,7 @@ impl<'a> Transport<'a> {
             // offset neither exports nor inspects the shared displacement.
             let atom = OldAddress {
                 base: node.base.native_atom().clone(),
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             };
             let result = transport_framed_atomic_pointer(&atom, self.after, self.assumptions)?;
             let block = SharedAddressBase::import(&result.base);
@@ -199,11 +199,11 @@ mod tests {
             ),
             OldAddress {
                 base: AddressBase::Concrete("local:transport-source".into()),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldAddress {
                 base: AddressBase::Concrete("local:transport-other".into()),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
         )
     }
@@ -231,15 +231,16 @@ mod tests {
                 },
             );
             let scaled = match wide {
-                None => OldAddressOffset::scaled_int32_node(load, 4),
-                Some(unsigned) => OldAddressOffset::scaled_int64_node(load, 8, unsigned),
+                None => AddressOffset::scaled_int32_node(load, 4),
+                Some(unsigned) => AddressOffset::scaled_int64_node(load, 8, unsigned),
             };
             let source = OldAddress {
                 base: AddressBase::Symbolic(Variable(1007000)),
                 offset: OldAddressOffset::Add(
-                    Box::new(scaled),
+                    Box::new(crate::kernel::OldAddressOffset::from(scaled)),
                     Box::new(OldAddressOffset::Constant(0)),
-                ),
+                )
+                .into(),
             };
             let shared = SharedAddress::import(&source);
             let expected = transport_framed_atomic_pointer(
@@ -273,7 +274,8 @@ mod tests {
             .unwrap();
             assert_eq!(historical, expected);
             let (OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. }) = &historical.offset
+            | OldAddressOffset::Int64Scaled { value, .. }) =
+                crate::kernel::OldAddressOffset::from(&historical.offset)
             else {
                 panic!("retained read index")
             };
@@ -288,15 +290,20 @@ mod tests {
         let cases = [
             OldAddressOffset::Add(
                 Box::new(OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::scaled_int32_node(
-                        OldMachineTerm::Variable(Variable(1007020)),
-                        4,
+                    Box::new(crate::kernel::OldAddressOffset::from(
+                        AddressOffset::scaled_int32_node(
+                            OldMachineTerm::Variable(Variable(1007020)),
+                            4,
+                        ),
                     )),
                     Box::new(OldAddressOffset::Constant(2)),
                 )),
                 Box::new(OldAddressOffset::Constant(3)),
             ),
-            OldAddressOffset::scaled_int32_node(OldMachineTerm::constant(u32::MAX), -4),
+            crate::kernel::OldAddressOffset::from(AddressOffset::scaled_int32_node(
+                OldMachineTerm::constant(u32::MAX),
+                -4,
+            )),
             OldAddressOffset::Int64Scaled {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::UInt64,
@@ -305,12 +312,16 @@ mod tests {
                 byte_width: 8,
                 unsigned: true,
             },
-            OldAddressOffset::scaled_int64_node(OldMachineTerm::uint64_constant(u64::MAX), 8, true),
+            crate::kernel::OldAddressOffset::from(AddressOffset::scaled_int64_node(
+                OldMachineTerm::uint64_constant(u64::MAX),
+                8,
+                true,
+            )),
         ];
         for offset in cases {
             let source = OldAddress {
                 base: AddressBase::Concrete("local:transport-shape".into()),
-                offset,
+                offset: offset.into(),
             };
             let shared = SharedAddress::import(&source);
             let expected = transport_framed_atomic_pointer(
@@ -393,7 +404,7 @@ mod tests {
             let source = OldPointer::new(
                 OldAddress {
                     base: base.base.clone(),
-                    offset,
+                    offset: offset.into(),
                 },
                 ProgramType::VoidPointer,
             )

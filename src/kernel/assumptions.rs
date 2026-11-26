@@ -135,7 +135,7 @@ fn address_bases_equal_with_load_atoms(
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
                 let base = |block: &AddressBase| OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 };
                 let (Some(first), Some(second)) = (
                     super::equality_graph::logical_pointer_read_term(&base(left)),
@@ -150,8 +150,8 @@ fn address_bases_equal_with_load_atoms(
 }
 
 fn offsets_equal_with_load_atoms(
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
     match (left.view(), right.view()) {
@@ -786,7 +786,7 @@ fn condition_has_an_open_side(condition: &OldConditionTerm) -> bool {
             true
         }
     };
-    let open_offset = |offset: &OldAddressOffset| match offset.view() {
+    let open_offset = |offset: &AddressOffset| match offset.view() {
         OffsetView::Constant(_) | OffsetView::Variable(_) => false,
         OffsetView::Int32Scaled { index, .. } => open(index.operand_view()),
         _ => true,
@@ -811,7 +811,7 @@ fn condition_has_an_open_side(condition: &OldConditionTerm) -> bool {
     }
 }
 
-pub(in crate::kernel) fn memory_range_anchor(range: &MemoryRange) -> Option<OldAddressOffset> {
+pub(in crate::kernel) fn memory_range_anchor(range: &MemoryRange) -> Option<AddressOffset> {
     let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
         return None;
     };
@@ -1691,8 +1691,8 @@ fn condition_decision_cycle_guard_allows_promotion_but_blocks_reentry() {
 /// innermost term. Deterministic and assumption-free; never equates loads
 /// across an unresolved havoc.
 pub(in crate::kernel) fn pointer_offsets_equal_after_exact_materialization(
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
 ) -> bool {
     if left == right {
         return true;
@@ -1827,7 +1827,7 @@ mod exact_materialization_tests {
     fn load_chain(length: usize, tail: u32) -> OldMachineTerm {
         let pointer = OldAddress {
             base: "exact-load-chain".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         (0..length).fold(OldMachineTerm::constant(tail), |value, _| {
             let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
@@ -1839,7 +1839,7 @@ mod exact_materialization_tests {
         })
     }
 
-    fn index(value: OldMachineTerm, shared: bool) -> OldAddressOffset {
+    fn index(value: OldMachineTerm, shared: bool) -> AddressOffset {
         let format = MachineIntegerType::Int32;
         let value = if shared {
             let root = crate::kernel::KernelTerm::retained_machine_operand(
@@ -1854,6 +1854,7 @@ mod exact_materialization_tests {
             value,
             byte_width: 4,
         }
+        .into()
     }
 
     #[test]
@@ -1869,7 +1870,7 @@ mod exact_materialization_tests {
         };
         let pointer = OldAddress {
             base: "exact-kind-control".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let unsigned = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(
@@ -1914,11 +1915,11 @@ mod exact_materialization_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "retained-retained_state".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let other = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(32),
+            offset: OldAddressOffset::Constant(32).into(),
         };
         let before = SymbolicMemory::new().with_block("retained-retained_state", 64);
         let load = |memory| {
@@ -2041,11 +2042,16 @@ fn hash_memory_blind_pointer<H: std::hash::Hasher>(pointer: &OldAddress, hasher:
     hash_memory_blind_pointer_offset(&pointer.offset, hasher);
 }
 
-fn hash_memory_blind_pointer_offset<H: std::hash::Hasher>(
-    offset: &OldAddressOffset,
-    hasher: &mut H,
-) {
-    std::hash::Hash::hash(&std::mem::discriminant(offset), hasher);
+fn hash_memory_blind_pointer_offset<H: std::hash::Hasher>(offset: &AddressOffset, hasher: &mut H) {
+    // The native offset enum's discriminant, as `mem::discriminant` hashed it.
+    let discriminant: isize = match offset.view() {
+        OffsetView::Constant(_) => 0,
+        OffsetView::Variable(_) => 1,
+        OffsetView::Add(..) => 2,
+        OffsetView::Int32Scaled { .. } => 3,
+        OffsetView::Int64Scaled { .. } => 4,
+    };
+    std::hash::Hash::hash(&discriminant, hasher);
     match offset.view() {
         OffsetView::Constant(value) => std::hash::Hash::hash(&value, hasher),
         OffsetView::Variable(variable) => std::hash::Hash::hash(&variable, hasher),
@@ -2458,7 +2464,7 @@ fn collect_condition_memory_load_keys(
 }
 
 fn collect_pointer_offset_memory_load_keys(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     keys: &mut BTreeSet<(AddressBase, u64)>,
 ) {
     offset.for_each_scaled_operand(|value| {
@@ -2817,7 +2823,7 @@ fn collect_condition_memory_loads(
 }
 
 fn collect_pointer_offset_memory_loads(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     current_memory: &SymbolicMemory,
     loads: &mut Vec<(OldAddress, u32)>,
     seen_integers: &mut BTreeSet<u64>,
@@ -4678,8 +4684,8 @@ impl PureFactContext {
     /// the root, so the answer costs the equalities naming it.
     pub(in crate::kernel) fn offsets_with_an_alias_at_root(
         &self,
-        root: &Option<OldAddressOffset>,
-    ) -> Vec<OldAddressOffset> {
+        root: &Option<AddressOffset>,
+    ) -> Vec<AddressOffset> {
         self.equality_graph.offsets_with_an_alias_at_root(root)
     }
 
@@ -4767,7 +4773,7 @@ impl PureFactContext {
                 return Some((
                     OldAddress {
                         base: pointer.base.clone(),
-                        offset: OldAddressOffset::constant(0),
+                        offset: AddressOffset::constant(0),
                     },
                     bytes.checked_add(extra)?,
                 ));
@@ -4793,9 +4799,9 @@ impl PureFactContext {
         if self.equality_graph.are_equal(&origin, &base_origin) {
             return Some(OldAddress {
                 base: base.base.clone(),
-                offset: OldAddressOffset::add(
+                offset: AddressOffset::add(
                     base.offset.clone(),
-                    OldAddressOffset::constant(displacement.checked_sub(base_displacement)?),
+                    AddressOffset::constant(displacement.checked_sub(base_displacement)?),
                 ),
             });
         }
@@ -4838,9 +4844,9 @@ impl PureFactContext {
     }
 
     pub(super) fn separated_anchor_key(
-        left: OldAddressOffset,
-        right: OldAddressOffset,
-    ) -> (OldAddressOffset, OldAddressOffset) {
+        left: AddressOffset,
+        right: AddressOffset,
+    ) -> (AddressOffset, AddressOffset) {
         if left <= right {
             (left, right)
         } else {
@@ -6253,7 +6259,7 @@ impl PureFactContext {
         // visited by the caller. Only a planner can append other spellings.
         let mut anchors = vec![OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         }];
         let mut offsets = vec![&base.offset];
         while let Some(offset) = offsets.pop() {
@@ -6275,7 +6281,7 @@ impl PureFactContext {
         {
             anchors.push(OldAddress {
                 base: coordinate.representative.clone(),
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             });
             anchors.push(OldAddress {
                 base: coordinate.representative,
@@ -6285,7 +6291,7 @@ impl PureFactContext {
         let storage = self.equality_graph.storage_address(base);
         anchors.push(OldAddress {
             base: storage.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         });
         anchors.push(storage);
         if let Some(permission) = permission {
@@ -9822,8 +9828,8 @@ pub(in crate::kernel) fn pointer_in_memory_range_shallow_with_facts(
 }
 
 fn pointer_offsets_match_by_shallow_fact_graph(
-    left: &OldAddressOffset,
-    right: &OldAddressOffset,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
@@ -10051,7 +10057,7 @@ pub(in crate::kernel) fn exact_sixty_four_bit_constant_view(
 /// Exact constants for the two offset forms admitted by wide constant
 /// congruence. Scaling must fit the offset's signed 64-bit representation.
 pub(in crate::kernel) fn exact_wide_scaled_offset_constant(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> Option<i64> {
     match offset.view() {
@@ -11674,7 +11680,7 @@ mod dynamic_current_load_tests {
     fn pointer() -> OldAddress {
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }
     }
 
@@ -13294,7 +13300,7 @@ mod execution_variable_ceiling_tests {
     fn word(offset: i64) -> OldAddress {
         OldAddress {
             base: AddressBase::Concrete("a".into()),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset).into(),
         }
     }
 
@@ -13667,7 +13673,7 @@ impl OrderFactsByLower {
 /// proven-equal addresses may match whatever their pointers and states,
 /// and a sum's operands are taken in either order. Unequal offsets may
 /// share one too; the shape only narrows the facts to check.
-pub(in crate::kernel) fn offset_state_shape(offset: &OldAddressOffset) -> u64 {
+pub(in crate::kernel) fn offset_state_shape(offset: &AddressOffset) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     match offset.view() {
@@ -13971,7 +13977,7 @@ mod shared_load_atom_comparison_tests {
             let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 16));
             let pointer = OldAddress {
                 base: block.into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -14181,11 +14187,11 @@ mod shared_load_atom_comparison_tests {
         let after = before.clone().with_block("call-havoc:1", 0);
         let loaded = OldAddress {
             base: "shared-frame".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let elsewhere = OldAddress {
             base: "elsewhere".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let effect = Proposition::MemoryEffectSummary {
             before: before.clone(),
@@ -14451,7 +14457,7 @@ mod shared_read_memory_collection_tests {
         let memory = SymbolicMemory::new().with_block("read-width", 8);
         let pointer = OldAddress {
             base: AddressBase::Concrete("read-width".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
@@ -14538,12 +14544,13 @@ mod pointer_index_walk_tests {
     use super::*;
     use crate::kernel::{KernelTermExport, KernelTermImport, VerificationSession};
 
-    fn offset(machine: SharedMachineIntegerTerm) -> OldAddressOffset {
+    fn offset(machine: SharedMachineIntegerTerm) -> AddressOffset {
         if machine.ty().format().bits() == 32 {
             OldAddressOffset::Int32Scaled {
                 value: machine,
                 byte_width: 4,
             }
+            .into()
         } else {
             let unsigned = machine.ty() == MachineIntegerType::UInt64;
             OldAddressOffset::Int64Scaled {
@@ -14551,6 +14558,7 @@ mod pointer_index_walk_tests {
                 byte_width: 8,
                 unsigned,
             }
+            .into()
         }
     }
 
@@ -14565,7 +14573,7 @@ mod pointer_index_walk_tests {
             let memory = SymbolicMemory::new().with_block("r7-read", 8);
             let address = OldAddress {
                 base: AddressBase::Concrete("r7-read".into()),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let old = intern_memory(memory.clone());
             let changed = memory.clone().store(
@@ -14592,7 +14600,8 @@ mod pointer_index_walk_tests {
                 let shared = offset(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
                 let legacy = offset(SharedMachineIntegerTerm::intern(ty, native.clone()));
                 let before = KernelTermExport::machine_export_count();
-                let shared_view = match &shared {
+                let shared_old = crate::kernel::OldAddressOffset::from(&shared);
+                let shared_view = match &shared_old {
                     OldAddressOffset::Int32Scaled { value, .. }
                     | OldAddressOffset::Int64Scaled { value, .. } => value.operand_view(),
                     _ => unreachable!(),

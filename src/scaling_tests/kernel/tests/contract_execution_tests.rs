@@ -254,7 +254,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
         for index in 0..count {
             let pointer = OldAddress {
                 base: format!("global:unrelated:{index}").into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             memory = memory
                 .with_block(pointer.base.clone(), 4)

@@ -5894,7 +5894,9 @@ void child_release(struct child* obj) {
                 memory: earlier.memory().clone(),
                 pointer: OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Constant(0),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(0),
+                    ),
                 },
                 value_type: ProgramType::Int32,
             };
@@ -5912,7 +5914,7 @@ void child_release(struct child* obj) {
     fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let memory = SymbolicMemory::new();
         let index = Variable(2_000_000);
@@ -5949,13 +5951,15 @@ void child_release(struct child* obj) {
                         memory: memory.clone(),
                         pointer: OldAddress {
                             base: AddressBase::ExternalArgument,
-                            offset: OldAddressOffset::Int32Scaled {
-                                value: crate::kernel::SharedMachineIntegerTerm::index(
-                                    crate::kernel::MachineIntegerType::Int32,
-                                    *index_term(),
-                                ),
-                                byte_width: 4,
-                            },
+                            offset: crate::kernel::AddressOffset::from(
+                                crate::kernel::OldAddressOffset::Int32Scaled {
+                                    value: crate::kernel::SharedMachineIntegerTerm::index(
+                                        crate::kernel::MachineIntegerType::Int32,
+                                        *index_term(),
+                                    ),
+                                    byte_width: 4,
+                                },
+                            ),
                         },
                         value_type: crate::kernel::ProgramType::Int32,
                     }),
@@ -6027,7 +6031,7 @@ void child_release(struct child* obj) {
     fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let memory = SymbolicMemory::new().store(
             pointer.clone(),
@@ -6324,7 +6328,7 @@ mod guarded_unmatched_materialization_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let state = ExecutionState::new().begin_function_entry_memory();
         check_composite_cell_naming(pointer, state, true);
@@ -6716,7 +6720,7 @@ mod guarded_unmatched_materialization_tests {
         .unwrap();
         let slot = OldAddress {
             base: "local:slot".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 4));
@@ -6781,7 +6785,9 @@ resource cell(p: int32*) {
             (
                 crate::kernel::OldAddress {
                     base: "object".into(),
-                    offset: crate::kernel::OldAddressOffset::Constant(0),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Constant(0),
+                    ),
                 },
                 true,
             ),
@@ -7014,7 +7020,7 @@ mod declared_scalar_field_observation_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let ty = ProgramType::Int32Pointer;
         let stored = ExecutionState::new().with_memory(SymbolicMemory::new().store(
@@ -7049,7 +7055,7 @@ mod declared_scalar_field_observation_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let state = ExecutionState::new().begin_function_entry_memory();
         let source = state.program_point();

@@ -312,7 +312,7 @@ mod tests {
     fn borrow_fact() -> ExecutionPureFact {
         let pointer = OldAddress {
             base: "birth".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let before = ExecutionState::new().with_local(
             "parent",
@@ -361,7 +361,7 @@ mod tests {
     fn source_reference_birth_requires_the_completed_parent_pointer_and_type() {
         let pointer = OldAddress {
             base: "birth".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let before = ExecutionState::new().with_local(
             "parent",
@@ -411,7 +411,7 @@ mod tests {
     fn read_fact() -> ExecutionPureFact {
         let pointer = OldAddress {
             base: "source-read".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let memory = SymbolicMemory::new()
             .with_block(pointer.base.clone(), 4)

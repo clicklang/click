@@ -6,7 +6,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let pointer = ProgramValue::typed_pointer(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             ProgramType::Int32Pointer,
         );
@@ -35,7 +35,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                 vec![
                     ProgramValue::pointer(OldAddress {
                         base: AddressBase::ExternalArgument,
-                        offset: OldAddressOffset::Variable(Variable(950_000 + index as u64)),
+                        offset: OldAddressOffset::Variable(Variable(950_000 + index as u64)).into(),
                     })
                     .into(),
                 ]
@@ -203,7 +203,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
 fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
     let pointer = OldAddress {
         base: "payload".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new().with_block("payload", 4);
     let assumptions = PureFactContext::new();

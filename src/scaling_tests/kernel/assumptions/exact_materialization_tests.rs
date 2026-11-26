@@ -58,8 +58,8 @@ fn retained_materialization_equality_keeps_growing_indices_shared() {
                     byte_width: 4,
                 };
                 assert!(!pointer_offsets_equal_after_exact_materialization(
-                    &offset(a.clone()),
-                    &offset(b.clone())
+                    &crate::kernel::AddressOffset::from(&offset(a.clone())),
+                    &crate::kernel::AddressOffset::from(&offset(b.clone()))
                 ));
                 // Different observation types retain the same native syntax;
                 // exact correspondence must not be just DAG identity.

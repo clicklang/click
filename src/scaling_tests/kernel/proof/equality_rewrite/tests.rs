@@ -682,7 +682,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
         OldConditionTerm::address_equal(
             OldAddress {
                 base: source.base.clone(),
-                offset: OldAddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4).into(),
             },
             target.clone(),
         ),
@@ -971,18 +971,20 @@ fn pointer_read_chain_rewrite_work(
     let _session = VerificationSession::enter();
     let from = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_950)), 8),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_950)), 8)
+            .into(),
     };
     let to = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_951)), 8),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_951)), 8)
+            .into(),
     };
     let mut memory = SymbolicMemory::new();
     for index in 0..cells {
         memory = memory.store(
             OldAddress {
                 base: AddressBase::Temporary(999_000 + index),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             ProgramValue::Int32(7u32.into()),
         );
@@ -1270,7 +1272,8 @@ fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
             offset: OldAddressOffset::Int32Scaled {
                 value: index.clone(),
                 byte_width: 4,
-            },
+            }
+            .into(),
         };
         let goal = Proposition::condition_is(
             OldConditionTerm::address_equal(

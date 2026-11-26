@@ -2770,7 +2770,7 @@ fn integer_carrier_in_pointer(pointer: &OldAddress, variable: Variable) -> bool 
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
-fn integer_carrier_in_pointer_offset(offset: &OldAddressOffset, variable: Variable) -> bool {
+fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable) -> bool {
     match offset.view() {
         OffsetView::Constant(_) => false,
         OffsetView::Variable(load) => {
@@ -2822,7 +2822,7 @@ fn integer_carrier_in_offset_index(operand: MachineOperandView<'_>, variable: Va
 /// Keep this query conservative for those selected pointer leaves: retaining
 /// the accumulator quantifier is sound, while expanding the registry here
 /// would duplicate the checked carrier collector and reopen its DAG.
-fn pointer_offset_contains_registered_load(offset: &OldAddressOffset) -> bool {
+fn pointer_offset_contains_registered_load(offset: &AddressOffset) -> bool {
     match offset.view() {
         OffsetView::Constant(_) => false,
         OffsetView::Variable(variable) => crate::kernel::is_load_variable(&variable),
@@ -5964,19 +5964,19 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 }
 
 /// An element index scaled to bytes, folded when the index is a constant.
-fn canonical_scaled_offset(value: OldMachineTerm, byte_width: i64) -> OldAddressOffset {
+fn canonical_scaled_offset(value: OldMachineTerm, byte_width: i64) -> AddressOffset {
     match value {
         bits32_constant!(value) => {
-            OldAddressOffset::constant((constant_u32(value) as i32 as i64) * byte_width)
+            AddressOffset::constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => OldAddressOffset::scaled_int32_node(value, byte_width),
+        value => AddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
 /// `left + right` on offsets with constants folded and zero addends dropped.
-fn canonical_offset_sum(left: OldAddressOffset, right: OldAddressOffset) -> OldAddressOffset {
+fn canonical_offset_sum(left: AddressOffset, right: AddressOffset) -> AddressOffset {
     if let (OffsetView::Constant(left), OffsetView::Constant(right)) = (left.view(), right.view()) {
-        return OldAddressOffset::constant(left + right);
+        return AddressOffset::constant(left + right);
     }
     if matches!(left.view(), OffsetView::Constant(0)) {
         return right;
@@ -5984,7 +5984,7 @@ fn canonical_offset_sum(left: OldAddressOffset, right: OldAddressOffset) -> OldA
     if matches!(right.view(), OffsetView::Constant(0)) {
         return left;
     }
-    OldAddressOffset::raw_add(left, right)
+    AddressOffset::raw_add(left, right)
 }
 
 fn lower_spec_disjunction_at_state_in(
@@ -8634,7 +8634,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                         base: AddressBase::PureFunctionApplication(
                             application.as_ref().unwrap().clone(),
                         ),
-                        offset: OldAddressOffset::constant(0),
+                        offset: AddressOffset::constant(0),
                     }
                 },
                 result_type,

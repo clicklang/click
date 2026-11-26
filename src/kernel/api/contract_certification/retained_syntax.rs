@@ -1218,8 +1218,7 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            LoadKind, OldAddress, OldAddressOffset, OldPointer, ProgramType, SymbolicMemory,
-            Variable,
+            AddressOffset, LoadKind, OldAddress, OldPointer, ProgramType, SymbolicMemory, Variable,
         };
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
@@ -1243,7 +1242,8 @@ mod tests {
                             ),
                         ),
                         byte_width: 4,
-                    },
+                    }
+                    .into(),
                 },
                 ProgramType::Int32Pointer,
             )

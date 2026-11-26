@@ -57,7 +57,7 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
     for count in [16, 64, 256] {
         let pointer = OldAddress {
             base: "wide-cached-scaling".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let bits = OldMachineTerm::uint64_constant(0x1_0000_0001);
         let mut memory = SymbolicMemory::new().with_block("wide-cached-scaling", (count + 1) * 8);

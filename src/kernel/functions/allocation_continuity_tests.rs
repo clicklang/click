@@ -26,11 +26,11 @@ fn int32_continuity(
 fn continuity_refuses_allocation_sizes_of_different_formats() {
     let base = OldAddress {
         base: AddressBase::Heap(930_200),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let other = OldAddress {
         base: AddressBase::Heap(930_201),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let count = OldMachineTerm::Variable(Variable(930_202));
     let wide = AllocationSize::new(
@@ -115,7 +115,7 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
     )]);
     let heap = |id| OldAddress {
         base: AddressBase::Heap(id),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let consumed = heap(934_000);
     let slot = heap(934_001);
@@ -157,7 +157,7 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
 fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     let base = OldAddress {
         base: AddressBase::Heap(930_100),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let bytes = OldMachineTerm::constant(16);
     let input = ResourceContext::new()
@@ -235,7 +235,8 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
 fn external_pointer(variable: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(variable)), 4)
+            .into(),
     }
 }
 
@@ -328,12 +329,12 @@ fn continuity_requires_both_the_allocation_base_and_size() {
         int32_continuity(
             &OldAddress {
                 base: AddressBase::Heap(930_002),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             &OldMachineTerm::constant(4),
             &OldAddress {
                 base: AddressBase::Heap(930_003),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             &OldMachineTerm::constant(4),
             &assumptions,
@@ -360,7 +361,7 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
     let before = crate::kernel::intern_memory(SymbolicMemory::new().with_block("alloc-size", 8));
     let pointer = |index| OldAddress {
         base: "alloc-size".into(),
-        offset: OldAddressOffset::scale_int32(index, 4),
+        offset: OldAddressOffset::scale_int32(index, 4).into(),
     };
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -422,7 +423,7 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
 fn allocation_companion_call(unrelated: u64) -> (OldAddress, ExecutionState, ExecutionState) {
     let base = OldAddress {
         base: AddressBase::Heap(984_000),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))

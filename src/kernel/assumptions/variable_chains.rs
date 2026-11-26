@@ -256,8 +256,8 @@ impl PureFactContext {
 /// cells spelling that same base participate in the indexed path; `None`
 /// stands for a bare index, whose base is the constant zero.
 pub(in crate::kernel) fn array_index(
-    offset: &OldAddressOffset,
-) -> Option<(Option<&OldAddressOffset>, Variable, i64)> {
+    offset: &AddressOffset,
+) -> Option<(Option<&AddressOffset>, Variable, i64)> {
     let (base, index) = match offset.view() {
         OffsetView::Add(base, index) => (Some(base), index),
         _ => (None, offset),
@@ -387,7 +387,7 @@ mod memory_tests {
         }
         let pointer = |variable, stride| OldAddress {
             base: AddressBase::from("ordered"),
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(variable), stride),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(variable), stride),
         };
         let mut memory = SymbolicMemory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {

@@ -397,7 +397,7 @@ fn cell_effect(
             if extended_dag_bridging_active()
                 && pointer.blocks_proven_distinct(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 })
             {
                 hop(MemoryDagHopJustification::LocalLifetimeEndedOfOtherBlock)
@@ -420,7 +420,7 @@ fn cell_effect(
                 }) = typed_store_separated_ranges_evidence(
                     &OldAddress {
                         base: block.clone(),
-                        offset: OldAddressOffset::constant(0),
+                        offset: AddressOffset::constant(0),
                     },
                     size,
                     pointer,
@@ -431,7 +431,7 @@ fn cell_effect(
                     owned_composition_store_separated_evidence(
                         &OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::constant(0),
+                            offset: AddressOffset::constant(0),
                         },
                         size,
                         pointer,
@@ -1321,7 +1321,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
         MemoryDerivation::LocalLifetimeEnded { block, .. } => {
             let retired = OldAddress {
                 base: block.clone(),
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             };
             if ranges
                 .iter()

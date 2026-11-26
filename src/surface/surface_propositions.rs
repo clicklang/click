@@ -73,7 +73,7 @@ pub(in crate::surface) struct SurfacePropositionStorage {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct StoreReadKey {
     point: crate::kernel::ProgramPoint,
-    offset: crate::kernel::OldAddressOffset,
+    offset: crate::kernel::AddressOffset,
 }
 
 impl StoreReadKey {
@@ -1348,14 +1348,12 @@ mod store_source_tests {
 
     #[test]
     fn store_source_lookup_requires_the_exact_equation() {
-        use crate::kernel::{
-            AddressBase, LoadKind, OldAddressOffset, ProgramPoint, SymbolicMemory,
-        };
+        use crate::kernel::{AddressBase, AddressOffset, LoadKind, ProgramPoint, SymbolicMemory};
 
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(1)),
+            offset: crate::kernel::OldAddressOffset::Variable(Variable(1)).into(),
         };
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -1377,7 +1375,7 @@ mod store_source_tests {
         let mut map = SurfacePropositionMap::default();
         let other = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(2)),
+            offset: crate::kernel::OldAddressOffset::Variable(Variable(2)).into(),
         };
         assert!(!map.record_store_source(&stored, &source, &other));
         assert!(map.record_store_source(&stored, &source, &address));
@@ -1389,14 +1387,14 @@ mod store_source_tests {
     #[test]
     fn store_sources_keep_distinct_points_with_equal_memory() {
         use crate::kernel::{
-            AddressBase, ExecutionState, LoadKind, OldAddressOffset, ProgramType, ProgramValue,
+            AddressBase, AddressOffset, ExecutionState, LoadKind, ProgramType, ProgramValue,
             VerificationSession,
         };
 
         let _session = VerificationSession::enter();
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let write = || {
             let state = ExecutionState::new().begin_function_entry_memory();

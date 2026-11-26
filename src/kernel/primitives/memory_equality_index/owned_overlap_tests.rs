@@ -158,7 +158,7 @@ fn pooled_literal_ownership_keeps_the_existing_memory_algebra_policy() {
             identity: StringLiteralId::new(identity, 0),
             bytes: b"ok\0".to_vec(),
         },
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let left = literal("overlap:left");
     let right = literal("overlap:right");
@@ -185,7 +185,7 @@ fn cold_ownership_uses_produced_intervals_without_preparing_a_graph() {
     let facts = PureFactContext::new();
     let p = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(8_760_010)),
+        offset: OldAddressOffset::Variable(Variable(8_760_010)).into(),
     };
     let long = owner(p.clone(), 0, 100);
     // A nested old interval must not hide the long interval from a query.
@@ -273,7 +273,7 @@ fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
     let held = owner(at(90), 0, 4);
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(8_918_000)),
+        offset: OldAddressOffset::Variable(Variable(8_918_000)).into(),
     };
     let query = owner(pointer.clone(), 0, 4);
     let facts = PureFactContext::new();
@@ -305,7 +305,7 @@ fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
 fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
     let local = |name: &str| OldAddress {
         base: AddressBase::Concrete(format!("local:{name}")),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let facts = PureFactContext::new();
     let context = ResourceContext::new()
@@ -370,7 +370,7 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
         owner(
             OldAddress {
                 base: "local:hidden_a".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             0,
             4,
@@ -378,7 +378,7 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
         owner(
             OldAddress {
                 base: "local:hidden_b".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             0,
             4,
@@ -395,7 +395,7 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
             at(100),
             OldAddress {
                 base: "local:hidden_a".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
         ),
         true,

@@ -1362,9 +1362,7 @@ mod tests {
         });
     }
 
-    use crate::kernel::{
-        AddressBase, OldAddress, OldAddressOffset, OldMachineTerm, SymbolicMemory,
-    };
+    use crate::kernel::{AddressBase, AddressOffset, OldAddress, OldMachineTerm, SymbolicMemory};
 
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
@@ -1604,7 +1602,9 @@ mod tests {
             memory,
             base: OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0),
+                offset: crate::kernel::AddressOffset::from(
+                    crate::kernel::OldAddressOffset::Constant(0),
+                ),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
@@ -1773,7 +1773,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let variable =
             crate::kernel::load_variable_for_term(&crate::kernel::OldMachineTerm::read_named(

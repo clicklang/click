@@ -104,7 +104,7 @@ fn quantified_loadable_alpha_query_ignores_unrelated_state_size() {
         source_memory = source_memory.store(
             OldAddress {
                 base: "quantified-viewable-work-0".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             // A value the binder does not name, as the alpha query compares
             // the retained state exactly.
@@ -443,7 +443,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
             let memory = base.clone().store(
                 OldAddress {
                     base: "same-bucket-facts".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 // Distinct states without contradictory literal
                 // premises: each read may consistently equal zero.
@@ -456,7 +456,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
                 ProgramPoint::at(memory),
                 Box::new(OldAddress {
                     base: "same-bucket-facts".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 }),
                 crate::kernel::LoadKind::Int32,
             )

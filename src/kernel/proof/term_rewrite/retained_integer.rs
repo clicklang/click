@@ -708,7 +708,7 @@ mod tests {
         let from = Variable(991970);
         let address = OldAddress {
             base: AddressBase::Symbolic(Variable(991971)),
-            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
         };
         let memory = intern_memory(SymbolicMemory::new());
         let read = OldMachineTerm::read_named(

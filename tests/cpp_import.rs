@@ -6681,7 +6681,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
 
     let pointer = OldAddress {
         base: "cpp-reference".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let resources =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(

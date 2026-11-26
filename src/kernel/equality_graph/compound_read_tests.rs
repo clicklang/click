@@ -34,7 +34,7 @@ fn compound_read_queries_require_explicit_equations() {
     for format in [M::Int32, M::UInt64] {
         let slot = OldAddress {
             base: "compound-slot".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let value = stored(format, number(format, 7));
         let memory = intern_memory(SymbolicMemory::new().store(slot.clone(), value.clone()));

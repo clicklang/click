@@ -7,7 +7,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "opaque-frame".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let base = SymbolicMemory::new();
         let raw = OldAddress::symbolic(Variable(995_080));

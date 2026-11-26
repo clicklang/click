@@ -2666,7 +2666,7 @@ fn struct_byte_bounds(
 
 /// A pointer offset as a byte count: `i * 4 + 8` for `Int32Scaled(i, 4) +
 /// 8`. Display only; a 64-bit scaled index is not narrowed.
-fn pointer_offset_bytes(offset: &OldAddressOffset) -> Option<OldMachineTerm> {
+fn pointer_offset_bytes(offset: &AddressOffset) -> Option<OldMachineTerm> {
     match offset.view() {
         OffsetView::Constant(bytes) => {
             Some(OldMachineTerm::constant(i32::try_from(bytes).ok()? as u32))
@@ -5934,7 +5934,7 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
 }
 
 pub(super) fn diagnostic_element_index_from_pointer_offset(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     byte_width: i64,
 ) -> Option<OldMachineTerm> {
     match offset.view() {
@@ -6768,7 +6768,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
     let base = describe_pointer(
         &OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         },
         parameter_binding,
     );
@@ -6945,7 +6945,7 @@ fn loaded_pointer_split(address: &OldAddress) -> Option<(OldAddress, OldMachineT
             _ => summands.push(offset),
         }
     }
-    let loaded = |summand: &OldAddressOffset| match summand.view() {
+    let loaded = |summand: &AddressOffset| match summand.view() {
         OffsetView::Int32Scaled { index: value, .. } => match value.structural_value() {
             OldMachineTerm::Variable(variable)
                 if crate::kernel::is_load_variable(variable)
@@ -8761,7 +8761,7 @@ pub(super) fn describe_binary_bitvector_with_context(
 /// [`describe_pointer_offset`] with each scaled index spelled in the
 /// caller's names where it has them (`j * 4` rather than `… * 4`).
 fn describe_pointer_offset_with_context(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match offset.view() {
@@ -8838,7 +8838,7 @@ fn describe_storage_write_outside_footprint(
     }
 }
 
-pub(super) fn describe_pointer_offset(offset: &OldAddressOffset) -> String {
+pub(super) fn describe_pointer_offset(offset: &AddressOffset) -> String {
     match offset.view() {
         OffsetView::Constant(value) => value.to_string(),
         OffsetView::Variable(variable) => lowering_only_variable("off", variable.0),

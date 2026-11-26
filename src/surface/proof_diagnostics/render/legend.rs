@@ -90,7 +90,7 @@ impl MemoryStateLabels {
         }
     }
 
-    fn legend_offset(&mut self, offset: &OldAddressOffset, depth: usize) -> String {
+    fn legend_offset(&mut self, offset: &AddressOffset, depth: usize) -> String {
         if depth == 0 {
             return "<offset depth limit>".into();
         }
@@ -228,7 +228,7 @@ impl MemoryStateLabels {
         }
         let base = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         let base_name = if let Some(name) = self.pointer_sources.get(&base) {
             name.clone()
@@ -462,21 +462,21 @@ impl MemoryStateLabels {
             MemoryDerivation::BlockDeclared { block, .. } => {
                 let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 });
                 format!("declare block at {address}")
             }
             MemoryDerivation::LocalLifetimeEnded { block, .. } => {
                 let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 });
                 format!("end local lifetime at {address}")
             }
             MemoryDerivation::HeapAllocated { block, bytes, .. } => {
                 let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::constant(0),
+                    offset: AddressOffset::constant(0),
                 });
                 let bytes = self.legend_bits(bytes);
                 format!("allocate {bytes} bytes at {address}")
@@ -611,7 +611,7 @@ mod tests {
             base: AddressBase::PureFunctionApplication(
                 crate::kernel::SharedPureApplication::intern(name.into(), arguments),
             ),
-            offset: OldAddressOffset::Constant(bytes),
+            offset: crate::kernel::OldAddressOffset::Constant(bytes).into(),
         }
     }
 
@@ -620,35 +620,55 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scaled_int32_node(
+            offset: AddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(986_420)),
                 1,
             ),
         };
         let index = OldMachineTerm::Variable(Variable(986_421));
         for (offset, expected) in [
-            (OldAddressOffset::Constant(16), "16 bytes"),
-            (OldAddressOffset::Variable(Variable(986_421)), "(d) bytes"),
+            (crate::kernel::OldAddressOffset::Constant(16), "16 bytes"),
             (
-                OldAddressOffset::scaled_int32_node(index.clone(), 4),
+                crate::kernel::OldAddressOffset::Variable(Variable(986_421)),
+                "(d) bytes",
+            ),
+            (
+                crate::kernel::OldAddressOffset::from(AddressOffset::scaled_int32_node(
+                    index.clone(),
+                    4,
+                )),
                 "int32(d) * 4 bytes",
             ),
             (
-                OldAddressOffset::scaled_int64_node(index.clone(), 8, false),
+                crate::kernel::OldAddressOffset::from(AddressOffset::scaled_int64_node(
+                    index.clone(),
+                    8,
+                    false,
+                )),
                 "int64(d) * 8 bytes",
             ),
             (
-                OldAddressOffset::scaled_int64_node(index, 1, true),
+                crate::kernel::OldAddressOffset::from(AddressOffset::scaled_int64_node(
+                    index, 1, true,
+                )),
                 "uint64(d) * 1 bytes",
             ),
         ] {
             for (left, right) in [
                 (base.offset.clone(), offset.clone()),
-                (offset.clone(), base.offset.clone()),
+                (
+                    offset.clone().into(),
+                    crate::kernel::OldAddressOffset::from(base.offset.clone()),
+                ),
             ] {
                 let pointer = OldAddress {
                     base: base.base.clone(),
-                    offset: OldAddressOffset::Add(Box::new(left), Box::new(right)),
+                    offset: crate::kernel::AddressOffset::from(
+                        crate::kernel::OldAddressOffset::Add(
+                            Box::new(crate::kernel::OldAddressOffset::from(left)),
+                            Box::new(right),
+                        ),
+                    ),
                 };
                 let mut labels = MemoryStateLabels::default();
                 labels.immutable_pointer_name(&base, "b");
@@ -668,18 +688,19 @@ mod tests {
     fn pointer_legend_keeps_recorded_names_separate_from_current_values() {
         let before = OldAddress {
             base: AddressBase::Symbolic(Variable(986_422)),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let current = OldAddress {
             base: before.base.clone(),
-            offset: OldAddressOffset::Constant(4),
+            offset: crate::kernel::OldAddressOffset::Constant(4).into(),
         };
         let shifted = OldAddress {
             base: before.base.clone(),
-            offset: OldAddressOffset::Add(
-                Box::new(OldAddressOffset::Constant(0)),
-                Box::new(OldAddressOffset::Variable(Variable(986_423))),
-            ),
+            offset: crate::kernel::OldAddressOffset::Add(
+                Box::new(crate::kernel::OldAddressOffset::Constant(0)),
+                Box::new(crate::kernel::OldAddressOffset::Variable(Variable(986_423))),
+            )
+            .into(),
         };
         let mut labels = MemoryStateLabels::default();
         labels.immutable_pointer_name(&current, "v");
@@ -730,7 +751,7 @@ mod tests {
     fn pure_pointer_legend_preserves_argument_states_and_nested_pointer_labels() {
         let base = OldAddress {
             base: "local:p".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let before = SymbolicMemory::new();
         let after = before
@@ -772,7 +793,7 @@ mod tests {
     fn equal_content_reconstruction_has_a_definition_not_a_self_reference() {
         let pointer = OldAddress {
             base: "local:unchanged".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
         };
         let memory = SymbolicMemory::new()
             .with_uninitialized_object(pointer.clone(), 4)
@@ -793,7 +814,9 @@ mod tests {
                 .store(
                     OldAddress {
                         base: "local:origin-test".into(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: crate::kernel::AddressOffset::from(
+                            crate::kernel::OldAddressOffset::Constant(0),
+                        ),
                     },
                     ProgramValue::Int32(OldMachineTerm::constant(9)),
                 )
@@ -826,7 +849,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let base = OldAddress::symbolic(Variable(986_401));
         let mut loaded = OldAddress::loaded_value(&memory, &base);
-        loaded.offset = OldAddressOffset::Constant(16);
+        loaded.offset = crate::kernel::OldAddressOffset::Constant(16).into();
         let mut labels = MemoryStateLabels::default();
         labels.immutable_pointer_name(&base, "zid");
         assert_eq!(labels.pointer_value_name(&loaded), "value#1");

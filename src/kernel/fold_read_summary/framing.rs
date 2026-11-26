@@ -460,42 +460,42 @@ enum OffsetAtom {
 }
 
 impl LinearOffset {
-    fn of(offset: &OldAddressOffset) -> Self {
+    fn of(offset: &AddressOffset) -> Self {
         let mut linear = Self::default();
         let mut pending = vec![(offset, 1i128)];
         while let Some((offset, sign)) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            match offset {
-                OldAddressOffset::Constant(value) => linear.constant += sign * i128::from(*value),
-                OldAddressOffset::Variable(variable) => {
-                    linear.add_atom(OffsetAtom::Variable(*variable), sign)
+            match offset.view() {
+                OffsetView::Constant(value) => linear.constant += sign * i128::from(value),
+                OffsetView::Variable(variable) => {
+                    linear.add_atom(OffsetAtom::Variable(variable), sign)
                 }
-                OldAddressOffset::Add(left, right) => {
+                OffsetView::Add(left, right) => {
                     pending.push((left, sign));
                     pending.push((right, sign));
                 }
-                OldAddressOffset::Int32Scaled { value, byte_width } => {
-                    match value.operand_view().word32_constant() {
+                OffsetView::Int32Scaled { index, byte_width } => {
+                    match index.operand_view().word32_constant() {
                         Some(value) => {
                             linear.constant +=
-                                sign * i128::from(value as i32) * i128::from(*byte_width)
+                                sign * i128::from(value as i32) * i128::from(byte_width)
                         }
                         None => linear.add_atom(
-                            OffsetAtom::Int32(value.clone()),
-                            sign * i128::from(*byte_width),
+                            OffsetAtom::Int32(index.clone()),
+                            sign * i128::from(byte_width),
                         ),
                     }
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned,
                 } => linear.add_atom(
                     OffsetAtom::Int64 {
-                        value: value.clone(),
-                        unsigned: *unsigned,
+                        value: index,
+                        unsigned,
                     },
-                    sign * i128::from(*byte_width),
+                    sign * i128::from(byte_width),
                 ),
             }
         }

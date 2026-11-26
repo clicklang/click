@@ -11,7 +11,7 @@ use crate::kernel::{
 fn cell(index: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::Concrete("local:load-cells".into()),
-        offset: OldAddressOffset::Constant(8 * index as i64),
+        offset: crate::kernel::OldAddressOffset::Constant(8 * index as i64).into(),
     }
 }
 
@@ -103,7 +103,7 @@ fn one_load_per_cell_regardless_of_exactness_or_type() {
     ];
     let slot = OldAddress {
         base: AddressBase::Concrete("local:load-slot".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     let mut samples = Vec::new();
     for reads in [4usize, 64, 512] {

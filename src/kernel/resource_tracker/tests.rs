@@ -12,7 +12,7 @@ fn block(name: &str) -> AddressBase {
 fn at(block: AddressBase, offset: i64) -> OldAddress {
     OldAddress {
         base: block,
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset).into(),
     }
 }
 
@@ -434,7 +434,7 @@ fn a_release_of_another_object_keeps_one_version() {
     let heap = AddressBase::Heap(1);
     let fresh = OldAddress {
         base: heap.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let live = entry_memory()
         .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
@@ -470,7 +470,7 @@ fn a_release_of_another_object_keeps_one_version() {
 fn a_release_is_based_on_the_memory_it_started_from() {
     let fresh = OldAddress {
         base: AddressBase::Heap(1),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let live = entry_memory()
         .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
@@ -498,7 +498,7 @@ fn a_release_is_based_on_the_memory_it_started_from() {
 fn a_release_inside_the_argument_object_stops_a_block_fact() {
     let inside = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let live = entry_memory()
         .with_heap_allocation_claim(inside.clone(), AllocationSize::int32(16))
@@ -565,7 +565,7 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
     let requested = entry.clone().with_pending_heap_allocation(
         OldAddress {
             base: AddressBase::Symbolic(Variable(1_000)),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         AllocationSize::int32(16),
         false,
@@ -1070,7 +1070,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let index = OldMachineTerm::Variable(Variable(0));
     let written = OldAddress {
         base: block("global:g"),
-        offset: OldAddressOffset::scaled_int32_node(index.clone(), 4),
+        offset: OldAddressOffset::scaled_int32_node(index.clone(), 4).into(),
     };
     let three = ProgramValue::Int32(OldMachineTerm::constant(3));
     let no_facts = PureFactContext::new();
@@ -1269,7 +1269,7 @@ fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
     let cell = at(block("global:g"), 0);
     let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(981021)),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let before = entry_memory();
     let left = intern_memory(before.clone().store(at(block("local:f:i"), 0), one()));
@@ -1610,11 +1610,11 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
         )
     };
     let source = OldConditionTerm::AddressOffsetEqual(
-        Box::new(OldAddressOffset::Add(
-            Box::new(offset("global:g")),
-            Box::new(offset("global:h")),
-        )),
-        Box::new(offset("local:f:i")),
+        Box::new(
+            OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")))
+                .into(),
+        ),
+        Box::new(offset("local:f:i").into()),
     );
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();
@@ -1640,9 +1640,10 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
         )
     };
     let mut left = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
-    left.offset = OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
+    left.offset =
+        OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h"))).into();
     let mut right = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
-    right.offset = offset("local:f:i");
+    right.offset = offset("local:f:i").into();
     let source = OldConditionTerm::AddressEqual(Box::new(left), Box::new(right));
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();
@@ -1668,9 +1669,10 @@ fn complete_pointer_conditions_keep_read_order() {
         )
     };
     let mut left = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
-    left.offset = OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
+    left.offset =
+        OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h"))).into();
     let mut right = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
-    right.offset = offset("local:f:i");
+    right.offset = offset("local:f:i").into();
     let source = OldConditionTerm::PointerEqual(
         Box::new(OldPointer::new(left, ProgramType::Int32Pointer)),
         Box::new(OldPointer::new(right, ProgramType::Int32Pointer)),
@@ -1697,7 +1699,8 @@ fn boolean_reads_report_only_the_one_byte_cell() {
                 LoadKind::Int32,
             ),
             4,
-        ),
+        )
+        .into(),
     };
     crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 1);
     let source = OldConditionTerm::boolean_cell_read(

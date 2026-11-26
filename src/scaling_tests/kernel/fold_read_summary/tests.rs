@@ -184,7 +184,7 @@ fn retained_offset_summary_does_not_expand_index_dags() {
         };
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let linear = LinearOffset::of(&offset);
+            let linear = LinearOffset::of(&crate::kernel::AddressOffset::from(&offset));
             assert_eq!(linear.as_scaled_index(4), Some((index, 0)));
             assert_eq!(
                 linear

@@ -33,7 +33,7 @@ fn framed_index_transport_visits_shared_nodes_without_tree_exports() {
             let exports = KernelTermExport::machine_export_count();
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 transport_framed_atomic_pointer_offset(
-                    &offset,
+                    &crate::kernel::AddressOffset::from(&offset),
                     &crate::kernel::ProgramPoint::of_memory(&after),
                     None,
                 )
@@ -41,7 +41,8 @@ fn framed_index_transport_visits_shared_nodes_without_tree_exports() {
             });
             assert_eq!(exports, KernelTermExport::machine_export_count());
             let (OldAddressOffset::Int32Scaled { value: result, .. }
-            | OldAddressOffset::Int64Scaled { value: result, .. }) = result
+            | OldAddressOffset::Int64Scaled { value: result, .. }) =
+                crate::kernel::OldAddressOffset::from(result)
             else {
                 panic!("retained scaled index")
             };
@@ -98,11 +99,15 @@ fn exact_index_normalization_visits_shared_nodes_without_tree_exports() {
             let facts = PureFactContext::new();
             let exports = KernelTermExport::machine_export_count();
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                normalize_exact_memory_loads_in_pointer_offset(&offset, &facts)
+                normalize_exact_memory_loads_in_pointer_offset(
+                    &crate::kernel::AddressOffset::from(&offset),
+                    &facts,
+                )
             });
             assert_eq!(exports, KernelTermExport::machine_export_count());
             let (OldAddressOffset::Int32Scaled { value: result, .. }
-            | OldAddressOffset::Int64Scaled { value: result, .. }) = result
+            | OldAddressOffset::Int64Scaled { value: result, .. }) =
+                crate::kernel::OldAddressOffset::from(result)
             else {
                 panic!("retained scaled index")
             };
@@ -167,10 +172,15 @@ fn exact_index_normalization_rewrites_shared_read_dags_without_exports() {
         let facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            normalize_exact_memory_loads_in_pointer_offset(&offset, &facts)
+            normalize_exact_memory_loads_in_pointer_offset(
+                &crate::kernel::AddressOffset::from(&offset),
+                &facts,
+            )
         });
         assert_eq!(exports, KernelTermExport::machine_export_count());
-        let OldAddressOffset::Int32Scaled { value, .. } = result else {
+        let OldAddressOffset::Int32Scaled { value, .. } =
+            crate::kernel::OldAddressOffset::from(result)
+        else {
             panic!("retained index")
         };
         assert_eq!(value.shared_operand(), Some(&expected));

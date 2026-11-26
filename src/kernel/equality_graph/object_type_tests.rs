@@ -98,7 +98,7 @@ fn object_type_evidence_follows_early_and_late_pointer_merges() {
             &context,
             &OldAddress {
                 base: r.base.clone(),
-                offset: OldAddressOffset::Constant(4)
+                offset: OldAddressOffset::Constant(4).into()
             }
         ));
         let other = CAccessClass::Struct(CStructClass::opaque("other"));

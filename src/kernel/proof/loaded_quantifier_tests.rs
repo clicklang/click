@@ -40,17 +40,18 @@ fn loaded_fact_of_format(
         Box::new(OldAddress {
             base: "loaded-quantifier".into(),
             offset: match format {
-                MachineIntegerType::Int32 => {
-                    OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4)
-                }
+                MachineIntegerType::Int32 => crate::kernel::AddressOffset::from(
+                    OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4),
+                ),
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
                     OldAddressOffset::scaled_int64_node(
                         OldMachineTerm::Variable(binder),
                         4,
                         format == MachineIntegerType::UInt64,
                     )
+                    .into()
                 }
-                MachineIntegerType::UInt32 => OldAddressOffset::Constant(0),
+                MachineIntegerType::UInt32 => OldAddressOffset::Constant(0).into(),
                 _ => unreachable!(),
             },
         }),
@@ -87,7 +88,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
     let changed_memory = intern_memory(memory.as_ref().clone().store(
         OldAddress {
             base: "loaded-quantifier".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         },
         ProgramValue::Int32(OldMachineTerm::constant(7)),
     ));
@@ -133,6 +134,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
                     OldMachineTerm::Variable(Variable(920_003)),
                     4,
                 )
+                .into()
             }
             _ => {}
         }
@@ -160,7 +162,7 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
             .store(
                 OldAddress {
                     base: "loaded-quantifier".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramValue::Int32(OldMachineTerm::Variable(Variable(920_001))),
             ),
@@ -187,7 +189,7 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
                     .store(
                         OldAddress {
                             base: "loaded-quantifier".into(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0).into(),
                         },
                         ProgramValue::Int32(OldMachineTerm::Variable(a)),
                     ),
@@ -234,7 +236,7 @@ fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_v
                 .store(
                     OldAddress {
                         base: "loaded-quantifier".into(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0).into(),
                     },
                     ProgramValue::Int32(OldMachineTerm::Variable(stored)),
                 ),

@@ -557,7 +557,7 @@ impl PureFactContext {
         // A cursor commonly advances from an exact parent offset, or from
         // offset zero in its symbolic block. Query only those structural
         // anchors; do not enumerate the other views in the block.
-        let mut offsets = vec![base.offset.clone(), OldAddressOffset::constant(0)];
+        let mut offsets = vec![base.offset.clone(), AddressOffset::constant(0)];
         if let OffsetView::Add(left, right) = base.offset.view() {
             offsets.push(left.clone());
             offsets.push(right.clone());
@@ -1162,7 +1162,7 @@ impl PureFactContext {
         Some((
             OldAddress {
                 base: block,
-                offset: OldAddressOffset::constant(0),
+                offset: AddressOffset::constant(0),
             },
             extent.size(),
         ))
@@ -1746,7 +1746,7 @@ impl PureFactContext {
         };
         let base = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         self.proves_loadable_cell_from_region(&base, bytes, pointer, byte_width)
     }
@@ -1856,7 +1856,7 @@ impl PureFactContext {
                 _ => summands.push(term),
             }
         }
-        let scaled = |term: &OldAddressOffset| match term.view() {
+        let scaled = |term: &AddressOffset| match term.view() {
             OffsetView::Int32Scaled { index, byte_width } => {
                 u32::try_from(byte_width).ok().map(|stride| (index, stride))
             }
@@ -1903,11 +1903,11 @@ impl PureFactContext {
             .enumerate()
             .filter(|(other, _)| *other != position)
             .map(|(_, term)| (*term).clone())
-            .reduce(OldAddressOffset::add)
-            .unwrap_or(OldAddressOffset::constant(0));
+            .reduce(AddressOffset::add)
+            .unwrap_or(AddressOffset::constant(0));
         let element = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
         let within = OldAddress {
             base: base.base.clone(),
@@ -2611,7 +2611,7 @@ impl PureFactContext {
             return false;
         };
         let pointer = &pointer;
-        let offset_matches = |left: &OldAddressOffset, right: &OldAddressOffset| {
+        let offset_matches = |left: &AddressOffset, right: &AddressOffset| {
             pointer_offsets_match_by_shallow_fact_graph(left, right, self)
         };
         // The exact split, not `element_index_from_offset`: this rule ends in a
@@ -2675,7 +2675,7 @@ impl PureFactContext {
             return false;
         };
         let pointer = &pointer;
-        let offset_matches = |left: &OldAddressOffset, right: &OldAddressOffset| {
+        let offset_matches = |left: &AddressOffset, right: &AddressOffset| {
             pointer_offsets_match_by_shallow_fact_graph(left, right, self)
         };
         let index = pointer
@@ -3115,7 +3115,7 @@ impl PureFactContext {
             return Some(index);
         }
 
-        let offsets_equal = |left: &OldAddressOffset, right: &OldAddressOffset| {
+        let offsets_equal = |left: &AddressOffset, right: &AddressOffset| {
             self.decide(&OldConditionTerm::address_offset_equal(
                 left.clone(),
                 right.clone(),
@@ -3187,7 +3187,7 @@ impl PureFactContext {
         if matches!(base.offset.view(), OffsetView::Constant(0)) {
             return shared_element_index_from_offset_with_facts(&pointer.offset, byte_width, self);
         }
-        let offsets_match_for_resolution = |left: &OldAddressOffset, right: &OldAddressOffset| {
+        let offsets_match_for_resolution = |left: &AddressOffset, right: &AddressOffset| {
             left == right
                 || crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
                     left, right, self,
@@ -4216,7 +4216,7 @@ impl PureFactContext {
         }
         // Constant byte intervals can cross element-width boundaries. Compare
         // the complete child span, not merely its first addressed element.
-        fn constant_delta(offset: &OldAddressOffset, base: &OldAddressOffset) -> Option<i64> {
+        fn constant_delta(offset: &AddressOffset, base: &AddressOffset) -> Option<i64> {
             if offset == base {
                 return Some(0);
             }
@@ -4566,7 +4566,7 @@ impl PureFactContext {
             && let OffsetView::Add(first, second) = delta.view()
         {
             let width = i64::from(element_width);
-            let whole_elements = |offset: &OldAddressOffset| match offset.view() {
+            let whole_elements = |offset: &AddressOffset| match offset.view() {
                 OffsetView::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
                     Some((bytes / width) as u64)
                 }
@@ -4577,7 +4577,7 @@ impl PureFactContext {
                 } if byte_width == width => index.operand_view().uint64_constant(),
                 _ => None,
             };
-            let symbolic_index = |offset: &OldAddressOffset| match offset.view() {
+            let symbolic_index = |offset: &AddressOffset| match offset.view() {
                 OffsetView::Int64Scaled {
                     index,
                     byte_width,
@@ -5443,8 +5443,8 @@ impl PureFactContext {
     /// the offsets themselves or of two equally scaled indices.
     fn pointer_offsets_equal_from_facts(
         &self,
-        left: &OldAddressOffset,
-        right: &OldAddressOffset,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         if left == right {
             return true;
@@ -5965,7 +5965,7 @@ pub(in crate::kernel) fn parameter_alias_bucket(pointer: &OldAddress) -> OldAddr
     if pointer.base != crate::kernel::AddressBase::ExternalArgument {
         return OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         };
     }
     while let OffsetView::Add(left, right) = stem.view() {
@@ -6052,7 +6052,7 @@ pub(in crate::kernel) fn owned_instances_naming_access_base<'a>(
 /// the pointer itself and each left operand down its offset's additive spine.
 ///
 /// Pointer arithmetic and member access both build `Add(base, displacement)`
-/// (`OldAddressOffset::add`), so `p->f` is `Add(p, f)`, `p[i]` is
+/// (`AddressOffset::add`), so `p->f` is `Add(p, f)`, `p[i]` is
 /// `Add(p, i·w)`, and `p->a[i]` is `Add(Add(p, a), i·w)`: the spine walks back
 /// through every one of them. A range stated over a base spelled some other
 /// way is simply not found here; the caller then asks its full ladder, so a
@@ -6076,7 +6076,7 @@ pub(in crate::kernel) fn additive_base_spellings(pointer: &OldAddress) -> Vec<Ol
     {
         spellings.push(OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::constant(0),
+            offset: AddressOffset::constant(0),
         });
     }
     spellings
@@ -6092,7 +6092,7 @@ mod seeded_interval_adjacency_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: "wide-run-adjacency".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let source = crate::kernel::intern_memory(SymbolicMemory::new());
         let run = CellRun::new(
@@ -6107,7 +6107,7 @@ mod seeded_interval_adjacency_tests {
         std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
         let wrong = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(-0x8000_0000),
+            offset: OldAddressOffset::Constant(-0x8000_0000).into(),
         };
         let memory = memory.store(wrong, crate::kernel::uint8(7));
         let context = PureFactContext::new();
@@ -6207,7 +6207,7 @@ mod shallow_composition_separation_tests {
     fn at(block: &str) -> OldAddress {
         OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }
     }
 
@@ -6244,7 +6244,7 @@ mod shallow_composition_separation_tests {
     fn symbolic(variable: u64) -> OldAddress {
         OldAddress {
             base: AddressBase::Symbolic(crate::kernel::Variable(variable)),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         }
     }
 
@@ -6671,7 +6671,7 @@ mod shared_range_index_tests {
         let index = retained_index();
         let base = OldAddress {
             base: "retained_strided_fields".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let pointer = base
             .offset_by_shared_elements(index.clone(), 16)
@@ -6721,7 +6721,7 @@ mod shared_range_index_tests {
         let index = retained_index();
         let base = OldAddress {
             base: "shared_range".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let pointer = base.offset_by_shared_elements(index.clone(), 4);
         let zero = OldMachineTerm::constant(0);
@@ -6765,7 +6765,7 @@ mod shared_range_index_tests {
             OldMachineTerm::add(start.clone(), OldMachineTerm::Variable(Variable(1018322)));
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1018323)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1018323)), 4),
         };
         let pointer = base.offset_by_int32_elements(absolute.clone());
         let range = MemoryRange::new(base.clone(), start.clone(), end.clone());

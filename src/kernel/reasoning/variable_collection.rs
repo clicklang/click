@@ -2753,7 +2753,7 @@ fn collect_pointer_integer_variables(
 }
 
 fn collect_pointer_offset_integer_variables(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
@@ -3858,7 +3858,7 @@ fn collect_condition_capture_variables(
 }
 
 fn collect_pointer_offset_capture_variables(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
@@ -4860,7 +4860,7 @@ fn collect_pointer_scope_summary(
 }
 
 fn collect_pointer_offset_scope_summary(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     if checked_collection_checkpoint() {
@@ -5688,7 +5688,7 @@ fn collect_condition_binder_variables(
 }
 
 fn collect_pointer_offset_binder_variables(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -6014,7 +6014,7 @@ fn collect_binder_variables_in_algebraic_value(
 }
 
 pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
-    offset: &OldAddressOffset,
+    offset: &AddressOffset,
     variables: &mut BTreeSet<Variable>,
 ) {
     match offset.view() {
@@ -7320,7 +7320,7 @@ mod shared_read_walker_tests {
                     IntegerTerm::Variable(Variable(994120)).into(),
                 )],
             )),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let native = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
@@ -7345,10 +7345,7 @@ mod shared_read_walker_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(994100)),
-            offset: OldAddressOffset::scaled_int32_node(
-                OldMachineTerm::Variable(Variable(994101)),
-                4,
-            ),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(994101)), 4),
         };
         let raw = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),

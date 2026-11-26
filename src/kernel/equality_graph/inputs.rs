@@ -12,7 +12,7 @@ pub(super) enum Input {
     Pointer(OldPointer, OldPointer),
     PointerReadValue(OldAddress, OldAddress),
     Address(OldAddress, OldAddress),
-    Offset(OldAddressOffset, OldAddressOffset),
+    Offset(AddressOffset, AddressOffset),
     Int32(OldMachineTerm, OldMachineTerm),
     Int32Operands(
         crate::kernel::SharedMachineIntegerTerm,
@@ -233,7 +233,7 @@ fn is_scalar_read(term: &OldMachineTerm) -> bool {
     }
 }
 
-fn is_read_offset(offset: &OldAddressOffset) -> bool {
+fn is_read_offset(offset: &AddressOffset) -> bool {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset.view() {
@@ -487,14 +487,14 @@ mod read_trace_tests {
             LoadKind::Int32,
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
-        let read = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 4);
+        let read = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 4);
         let target = OldAddressOffset::Constant(8);
         let checkpoint = graph.read_equality_checkpoint();
-        graph.add_offset_equality(&read, &target);
+        graph.add_offset_equality(&read, &crate::kernel::AddressOffset::from(&target));
         assert_eq!(
             graph.read_equalities_since(&checkpoint).equalities,
             vec![Proposition::condition_is(
-                OldConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
+                OldConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target.into())),
                 true
             )]
         );

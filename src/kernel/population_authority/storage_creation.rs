@@ -6,7 +6,7 @@
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{
-    AddressBase, AlgebraicValue, CompositeResourceDefinition, ExecutionState, OldAddressOffset,
+    AddressBase, AddressOffset, AlgebraicValue, CompositeResourceDefinition, ExecutionState,
     OldMachineTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
     ResourceReference,
 };
@@ -2037,7 +2037,7 @@ impl CreationEvents {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.address().clone();
                 if let Some(offset) = address.offset.as_const() {
-                    address.offset = OldAddressOffset::constant(offset);
+                    address.offset = AddressOffset::constant(offset);
                 }
                 AlgebraicValue::Program(ProgramValue::pointer(address))
             }

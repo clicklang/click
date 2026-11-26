@@ -72,7 +72,7 @@ fn restricted_facts_keep_ambient_memory_reservations() {
     for size in [32, 128, 512] {
         let pointer = |index| OldAddress {
             base: AddressBase::ExternalObject(Variable(9_100_000 + index)),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(

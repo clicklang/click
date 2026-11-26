@@ -428,7 +428,7 @@ fn stored_byte_order_uses_only_the_exact_cells() {
     let _session = VerificationSession::enter();
     let block = |name: &str| OldAddress {
         base: AddressBase::Concrete(name.into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let left = block("byte-order-left");
     let right = block("byte-order-right");
@@ -514,11 +514,11 @@ fn cached_read_definedness_checks_only_the_selected_typed_cell() {
     let _session = VerificationSession::enter();
     let selected = OldAddress {
         base: AddressBase::Concrete("local:definedness-read".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let unrelated = OldAddress {
         base: AddressBase::Concrete("local:other-definedness-read".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let int32 = |value| ProgramValue::Int32(OldMachineTerm::constant(value));
     let before = SymbolicMemory::new()
@@ -586,7 +586,7 @@ fn declared_word_definedness_requires_its_complete_initialized_representation() 
     let _session = VerificationSession::enter();
     let pointer = OldAddress {
         base: AddressBase::Concrete("local:initialized-word".into()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let memory = SymbolicMemory::new().with_declared_scalar_block(
         pointer.base.clone(),
@@ -620,11 +620,11 @@ fn computation_refusal_is_independent_of_memory_history() {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: AddressBase::Concrete("computation-read".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let other = OldAddress {
             base: AddressBase::Concrete("computation-write".into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new()
