@@ -15,7 +15,7 @@ impl adler2::Adler32 {
     } by {
      // The computation states the int32 specification at the constant
      // length; the bridge equates it with the uint64 one.
-     have to_integer(3) == to_integer(3u64) by normalize();
+     have to_integer(3) == to_integer(3u64) by close();
      apply(adler_spec_a_bridge(bytes, 3, 3u64, 1));
      apply(adler_spec_b_bridge(bytes, 3, 3u64, 1, 0));
     }
