@@ -46,7 +46,7 @@ fn initialize_program_function_globals_with(
                     state.memory.clone().store(
                         OldAddress {
                             base: slot.base.clone(),
-                            offset: OldAddressOffset::Constant(offset as i64),
+                            offset: OldAddressOffset::constant(offset as i64),
                         },
                         literal.element_value(byte),
                     ),

@@ -348,7 +348,11 @@ impl ChildArgumentTrace {
 pub(super) fn pointer_definition(pointer: &OldAddress) -> Option<OldMachineTerm> {
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
-        (read.displacement == crate::kernel::OldAddressOffset::Constant(0)).then(|| {
+        matches!(
+            crate::kernel::OffsetTree::view(&read.displacement),
+            crate::kernel::OffsetView::Constant(0)
+        )
+        .then(|| {
             crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::viewing(&read.defining_memory, &read.point),
                 read.defining_address,

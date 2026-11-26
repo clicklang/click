@@ -978,7 +978,7 @@ fn write_program_lvalue_paths_for_initialization(
             let pointer = authorized_range
                 .as_ref()
                 .filter(|_| {
-                    !matches!(pointer.offset, OldAddressOffset::Add(_, _))
+                    !matches!(pointer.offset.view(), OffsetView::Add(..))
                         && !matches!(pointer.base, AddressBase::Load(_))
                 })
                 .and_then(|range| {
@@ -3035,7 +3035,7 @@ fn execute_program_realloc_result_paths(
                         copied_cells: copied_cells
                             .into_iter()
                             .map(|(offset, value)| {
-                                (OldAddressOffset::Constant(i64::from(offset)), value)
+                                (OldAddressOffset::constant(i64::from(offset)), value)
                             })
                             .collect(),
                         initialized_prefix,
@@ -3681,7 +3681,7 @@ fn execute_program_return_expression_paths(
                         };
                         OldAddress {
                             base: AddressBase::Heap(variable.0),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         }
                     } else {
                         OldAddress::null()
@@ -6872,7 +6872,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
 ) {
     let slot = OldAddress {
         base: pointer.base.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     let Some(name) = state.locals.name_for_slot(&slot).cloned() else {
         return;
@@ -7044,7 +7044,9 @@ pub(in crate::kernel) fn rebase_resolved_allocation(
         .map_pointers(|address| {
             if address == base {
                 resolved.clone()
-            } else if address.base == base.base && base.offset == OldAddressOffset::Constant(0) {
+            } else if address.base == base.base
+                && matches!(base.offset.view(), OffsetView::Constant(0))
+            {
                 OldAddress {
                     base: resolved.base.clone(),
                     offset: OldAddressOffset::add(resolved.offset.clone(), address.offset.clone()),

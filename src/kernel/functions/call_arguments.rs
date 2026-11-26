@@ -505,7 +505,7 @@ pub(super) fn symbolic_contract_result(
         return ProgramValue::typed_pointer(
             OldAddress {
                 base: AddressBase::Heap(variable.0),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             interface.return_type(),
         )

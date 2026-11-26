@@ -1704,14 +1704,13 @@ fn collect_shared_offset_reads(
 fn collect_offset_reads(offset: &OldAddressOffset, reads: &mut Vec<ResourceRead>) {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. } => {
-                collect_operand_reads(value.operand_view(), reads)
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                collect_operand_reads(index.operand_view(), reads)
             }
             _ => {}
         }

@@ -11,6 +11,7 @@ mod rust_literals;
 mod rust_reference_authority;
 mod rust_type_resources;
 use super::names;
+use crate::kernel::OffsetTree;
 use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
 mod rust_trait_objects;
@@ -16924,7 +16925,7 @@ impl Parser {
                 ProgramValue::typed_pointer(
                     crate::kernel::OldAddress {
                         base: crate::kernel::AddressBase::StaticObject { binding: id },
-                        offset: crate::kernel::OldAddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 ),
@@ -17168,7 +17169,7 @@ impl Parser {
                             binding: id,
                             instance,
                         },
-                        offset: crate::kernel::OldAddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -17330,7 +17331,7 @@ impl Parser {
                 ProgramValue::typed_pointer(
                     crate::kernel::OldAddress {
                         base: block,
-                        offset: crate::kernel::OldAddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 ),

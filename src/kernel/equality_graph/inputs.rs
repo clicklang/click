@@ -236,13 +236,13 @@ fn is_scalar_read(term: &OldMachineTerm) -> bool {
 fn is_read_offset(offset: &OldAddressOffset) -> bool {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. }
+            OffsetView::Int32Scaled { index: value, .. }
+            | OffsetView::Int64Scaled { index: value, .. }
                 if value.operand_view().read().is_some()
                     || value.operand_view().variable().is_some_and(|v| {
                         crate::kernel::registered_load_term_for_variable(v).is_some()

@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::planning::solve::plan_context_free_closer;
 
@@ -4507,9 +4508,9 @@ fn pointer_array_index_pair(
 }
 
 fn pointer_offset_addends(offset: &OldAddressOffset) -> Option<Vec<OldAddressOffset>> {
-    match offset {
-        OldAddressOffset::Constant(0) => Some(Vec::new()),
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(0) => Some(Vec::new()),
+        OffsetView::Add(left, right) => {
             let mut addends = pointer_offset_addends(left)?;
             addends.extend(pointer_offset_addends(right)?);
             Some(addends)
@@ -4519,10 +4520,10 @@ fn pointer_offset_addends(offset: &OldAddressOffset) -> Option<Vec<OldAddressOff
 }
 
 fn pointer_int32_scaled_value(offset: &OldAddressOffset) -> Option<OldMachineTerm> {
-    let OldAddressOffset::Int32Scaled { value, byte_width } = offset else {
+    let OffsetView::Int32Scaled { index, byte_width } = offset.view() else {
         return None;
     };
-    (*byte_width == 4).then(|| value.structural_value().clone())
+    (byte_width == 4).then(|| index.structural_value().clone())
 }
 
 pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(

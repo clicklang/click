@@ -1094,22 +1094,22 @@ fn materialized_load_is_unchanged(
         ProgramValue::Pointer(pointer_value) => match pointer_value.address() {
             OldAddress {
                 base: AddressBase::FunctionSymbolic(variable),
-                offset: OldAddressOffset::Constant(0),
-            } if matches!(
-                pointer_value.program_type(),
-                ProgramType::FunctionPointer(_)
-            ) =>
+                offset,
+            } if matches!(offset.view(), OffsetView::Constant(0))
+                && matches!(
+                    pointer_value.program_type(),
+                    ProgramType::FunctionPointer(_)
+                ) =>
             {
                 load_of(&OldMachineTerm::Variable(*variable))
             }
-            OldAddress {
-                offset: OldAddressOffset::Int32Scaled { value: bits, .. },
-                ..
-            } => bits
-                .operand_view()
-                .read_source()
-                .and_then(|leaf| load_of(&leaf)),
-            _ => return false,
+            OldAddress { offset, .. } => match offset.view() {
+                OffsetView::Int32Scaled { index: bits, .. } => bits
+                    .operand_view()
+                    .read_source()
+                    .and_then(|leaf| load_of(&leaf)),
+                _ => return false,
+            },
         },
         _ => return false,
     };

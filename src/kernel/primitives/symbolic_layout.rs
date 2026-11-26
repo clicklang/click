@@ -11,7 +11,7 @@
 //! accesses at one base through two fields of one layout, each reaching no
 //! further than its field, are apart. No pairwise fact is stated.
 
-use super::{OldMachineTerm, TypeParameterName};
+use super::{OffsetTree, OffsetView, OldMachineTerm, TypeParameterName};
 use std::sync::{Arc, Mutex};
 
 /// The bytes an access reaches: a fixed count from its address, or, for a
@@ -421,15 +421,15 @@ impl SymbolicLayoutName {
     pub(crate) fn field_displacement(
         offset: &super::OldAddressOffset,
     ) -> Option<(Option<&super::OldAddressOffset>, Self, u32)> {
-        let (rest, last) = match offset {
-            super::OldAddressOffset::Add(rest, last) => (Some(&**rest), &**last),
-            other => (None, other),
+        let (rest, last) = match offset.view() {
+            OffsetView::Add(rest, last) => (Some(rest), last),
+            _ => (None, offset),
         };
-        let super::OldAddressOffset::Int64Scaled {
-            value,
+        let OffsetView::Int64Scaled {
+            index: value,
             byte_width: 1,
             ..
-        } = last
+        } = last.view()
         else {
             return None;
         };
@@ -446,15 +446,21 @@ impl SymbolicLayoutName {
         rest: Option<&super::OldAddressOffset>,
         offset: &super::OldAddressOffset,
     ) -> Option<u32> {
-        use super::OldAddressOffset::{Add, Constant};
-        let start = rest.unwrap_or(&Constant(0));
+        let zero;
+        let start = match rest {
+            Some(rest) => rest,
+            None => {
+                zero = super::OldAddressOffset::constant(0);
+                &zero
+            }
+        };
         if offset == start {
             return Some(0);
         }
-        let displacement = match (start, offset) {
-            (Constant(start), Constant(at)) => at.checked_sub(*start)?,
-            (_, Add(left, right)) if left.as_ref() == start => match right.as_ref() {
-                Constant(at) => *at,
+        let displacement = match (start.view(), offset.view()) {
+            (OffsetView::Constant(start), OffsetView::Constant(at)) => at.checked_sub(start)?,
+            (_, OffsetView::Add(left, right)) if left == start => match right.view() {
+                OffsetView::Constant(at) => at,
                 _ => return None,
             },
             _ => return None,

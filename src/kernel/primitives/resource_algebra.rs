@@ -296,28 +296,26 @@ fn extend_related_memory_base_roots(
         return;
     };
     let (value, scale, rescale): (
-        &SharedMachineIntegerTerm,
+        SharedMachineIntegerTerm,
         IndexScale,
         &dyn Fn(SharedMachineIntegerTerm) -> OldAddressOffset,
-    ) = match &atom {
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
-            (value, (false, *byte_width, false), &|member| {
+    ) = match atom.view() {
+        OffsetView::Int32Scaled { index, byte_width } => {
+            (index, (false, byte_width, false), &move |member| {
                 crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                    member,
-                    *byte_width,
-                    None,
+                    member, byte_width, None,
                 )
             })
         }
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index,
             byte_width,
             unsigned,
-        } => (value, (true, *byte_width, *unsigned), &|member| {
+        } => (index, (true, byte_width, unsigned), &move |member| {
             crate::kernel::memory_history::rebuild_scaled_pointer_index(
                 member,
-                *byte_width,
-                Some(*unsigned),
+                byte_width,
+                Some(unsigned),
             )
         }),
         _ => return,

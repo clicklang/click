@@ -12,7 +12,9 @@ pub(in crate::surface::proof) fn variable(expression: &SyntaxTerm) -> Option<Var
     match expression {
         SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) => {
             match (&pointer.address().base, &pointer.address().offset) {
-                (crate::kernel::AddressBase::Symbolic(variable), OldAddressOffset::Constant(0)) => {
+                (crate::kernel::AddressBase::Symbolic(variable), offset)
+                    if matches!(offset.view(), OffsetView::Constant(0)) =>
+                {
                     Some(*variable)
                 }
                 _ => None,

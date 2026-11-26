@@ -10,6 +10,7 @@ use crate::kernel::{
     OldMachineTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
     ResourceReference,
 };
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
@@ -1817,7 +1818,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if pointer.address().offset != OldAddressOffset::Constant(0)
+        if !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
             || &pointer.address().base != block
             || self.governing_authority(description).is_none()
         {
@@ -2036,7 +2037,7 @@ impl CreationEvents {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.address().clone();
                 if let Some(offset) = address.offset.as_const() {
-                    address.offset = OldAddressOffset::Constant(offset);
+                    address.offset = OldAddressOffset::constant(offset);
                 }
                 AlgebraicValue::Program(ProgramValue::pointer(address))
             }
@@ -3577,7 +3578,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if &pointer.address().base != block
-            || pointer.address().offset != OldAddressOffset::Constant(0)
+            || !matches!(pointer.address().offset.view(), OffsetView::Constant(0))
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);

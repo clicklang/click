@@ -13,6 +13,7 @@ use crate::kernel::proof::{
     PropositionKnownContext, PropositionObligation as KernelPropositionObligation,
     PropositionSplitError, PureFactStore, SplitId,
 };
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::persistent::PersistentMap;
 
 #[cfg(test)]
@@ -1500,10 +1501,11 @@ impl Proof<'_> {
                 }
                 ProgramValue::Pointer(pointer) => {
                     match (&pointer.address().base, &pointer.address().offset) {
-                        (
-                            crate::kernel::AddressBase::Symbolic(variable),
-                            OldAddressOffset::Constant(0),
-                        ) => Some(*variable),
+                        (crate::kernel::AddressBase::Symbolic(variable), offset)
+                            if matches!(offset.view(), OffsetView::Constant(0)) =>
+                        {
+                            Some(*variable)
+                        }
                         _ => None,
                     }
                 }
@@ -1577,14 +1579,13 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             },
             _ => None,
         },
-        ProgramValue::Pointer(pointer) => match &pointer.address().offset {
-            OldAddressOffset::Variable(variable) => Some(*variable),
+        ProgramValue::Pointer(pointer) => match pointer.address().offset.view() {
+            OffsetView::Variable(variable) => Some(variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
-            OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. } => {
-                value.operand_view().variable().copied()
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                index.operand_view().variable().copied()
             }
             _ => None,
         },

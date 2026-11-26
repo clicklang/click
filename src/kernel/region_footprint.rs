@@ -172,7 +172,7 @@ impl RegionFootprint {
                     members.push_back(Resource::Memory(contents.allocation_size().byte_range(
                         OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         },
                     )));
                 }

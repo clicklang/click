@@ -11068,11 +11068,11 @@ fn symbolic_copied_run_reads_keep_the_original_source_address_and_point() {
     let entry = ExecutionState::new().begin_function_entry_memory();
     let source_base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(16),
+        offset: OldAddressOffset::constant(16),
     };
     let destination = OldAddress {
         base: "copied-run-destination".into(),
-        offset: OldAddressOffset::Constant(4),
+        offset: OldAddressOffset::constant(4),
     };
     let value_type = ProgramType::Int32;
     let stride = value_type.byte_width();

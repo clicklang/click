@@ -56,6 +56,7 @@
 use super::{
     AddressBase, HashedOrdMap, HashedOrdSet, OldAddress, OldAddressOffset, ProgramType, Variable,
 };
+use crate::kernel::OffsetTree;
 use std::hash::Hash;
 use std::ops::Bound;
 
@@ -86,7 +87,7 @@ impl BlockKeyed for OldAddress {
         // orders below every offset term.
         OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::constant(i64::MIN),
         }
     }
 }

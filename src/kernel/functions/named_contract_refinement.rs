@@ -397,7 +397,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
         pointer: OldPointer::new(
             OldAddress {
                 base: AddressBase::Function(function_name.to_string()),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             pointer_type,
         ),

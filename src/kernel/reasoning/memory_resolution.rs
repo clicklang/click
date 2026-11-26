@@ -5640,7 +5640,7 @@ fn external_load_projection_retains_aliases_across_cell_updates() {
     ]
     .map(|block| OldAddress {
         base: block,
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     });
     let mut memory = SymbolicMemory::new();
     for pointer in &pointers {

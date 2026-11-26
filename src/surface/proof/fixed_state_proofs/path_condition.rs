@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, binary_node, binary_term};
+use crate::kernel::{OffsetTree, OffsetView};
 
 /// Erases every embedded memory state from a comparison proposition so
 /// two forms of the same comparison at different states compare
@@ -47,17 +48,15 @@ fn memory_erased_comparison(proposition: &Proposition) -> Option<Proposition> {
         }
     }
     fn erase_offset(offset: &OldAddressOffset) -> OldAddressOffset {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
-                OldAddressOffset::Add(Box::new(erase_offset(left)), Box::new(erase_offset(right)))
+        match offset.view() {
+            OffsetView::Add(left, right) => {
+                OldAddressOffset::raw_add(erase_offset(left), erase_offset(right))
             }
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
-                OldAddressOffset::scaled_int32_node(
-                    erase_term(value.structural_value()),
-                    *byte_width,
-                )
-            }
-            other => other.clone(),
+            OffsetView::Int32Scaled { index, byte_width } => OldAddressOffset::scaled_int32_node(
+                erase_term(index.structural_value()),
+                byte_width,
+            ),
+            _ => offset.clone(),
         }
     }
     let Proposition::ConditionIs(condition, value) = proposition else {

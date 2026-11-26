@@ -19,6 +19,7 @@
 //! block it names, positioned in O(log n).
 
 use super::{AddressBase, HashedOrdMap, OldAddress, OldAddressOffset, ProgramValue};
+use crate::kernel::OffsetTree;
 use crate::kernel::effective_type::CAccessClass;
 
 /// The widest scalar a store writes, which bounds how far before a store an
@@ -43,7 +44,7 @@ struct HeapEffectiveType {
 fn constant_start(block: &AddressBase, offset: i64) -> OldAddress {
     OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::constant(offset),
     }
 }
 
