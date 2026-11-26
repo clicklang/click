@@ -2270,6 +2270,9 @@ fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
 }
 
+const FEE_EVALUATION_CONVERSIONS: &str =
+    include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateConversions.click");
+
 fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
     let (div, caller) = match mode {
         "Down" => (
@@ -2288,7 +2291,7 @@ fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhas
     };
     let (imports, div) = fixture_imports_and_body(div);
     let source = format!(
-        "{imports}\n{}\n{div}\n{caller}",
+        "{imports}\n{FEE_EVALUATION_CONVERSIONS}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2396,7 +2399,7 @@ fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase)
         include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
     };
     let source = format!(
-        "{imports}\n{}\n{div}\n{caller}",
+        "{imports}\n{FEE_EVALUATION_CONVERSIONS}\n{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
@@ -2553,7 +2556,7 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitUp.click")
     });
     format!(
-        "{imports}\n{}\n{div}\n{fragment}",
+        "{imports}\n{FEE_EVALUATION_CONVERSIONS}\n{}\n{div}\n{fragment}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     )
 }

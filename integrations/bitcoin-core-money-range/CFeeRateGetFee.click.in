@@ -33,7 +33,17 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
         }
     }
     have not (this->m_feerate.base.size == 0);
-    have this->m_feerate.base.size > 0 by { close() using { this->m_feerate.base.size >= 0; not (this->m_feerate.base.size == 0); } }
+    have this->m_feerate.base.size > 0 by {
+        if this->m_feerate.base.size > 0 {
+            close();
+        } else {
+            have this->m_feerate.base.size == 0 by {
+                apply(integer::int32_less_equal_and_not_less_than_implies_equal(0, this->m_feerate.base.size));
+                close();
+            }
+            contradiction(this->m_feerate.base.size == 0);
+        }
+    }
     have -9223372036854775808 <= to_integer(this->m_feerate.base.fee);
     have to_integer(this->m_feerate.base.fee) <= 9223372036854775807;
     have -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);
@@ -41,21 +51,21 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     step_until(call(1).entry);
     let { result: rounded } = step(FeeFrac::EvaluateFeeUp, { });
     if rounded == 0i64 {
-        have to_integer(rounded) == 0 by { rewrite(rounded, 0i64); normalize(); }
-        have to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0 by { rewrite(to_integer(rounded), 0); normalize(); }
+        have to_integer(rounded) == 0 by { rewrite(rounded, 0i64); close(); }
+        have to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0 by { rewrite(to_integer(rounded), 0); close(); }
         have (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) == -to_integer(this->m_feerate.base.size) by { rewrite(to_integer(rounded), 0); close() using {}; }
-        have to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0 by { close() using {
-            to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= to_integer(rounded) * to_integer(this->m_feerate.base.size);
-            to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0;
-        } }
-        have -to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by { close() using {
-            (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);
-            (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size) == -to_integer(this->m_feerate.base.size);
-        } }
+        have to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0 by {
+            rewrite(0, to_integer(rounded) * to_integer(this->m_feerate.base.size));
+            close();
+        }
+        have -to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by {
+            rewrite(-to_integer(this->m_feerate.base.size), (to_integer(rounded) + -1) * to_integer(this->m_feerate.base.size));
+            close();
+        }
         if virtual_bytes != 0 {
             if this->m_feerate.base.fee < 0i64 {
                 step_until(function.exit);
-                have result == -1i64 by { normalize(); }
+                have result == -1i64 by { close(); }
                 have this->m_feerate.base.size != 0 implies
                     ((to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= to_integer(result) * to_integer(this->m_feerate.base.size)
                       and (to_integer(result) + -1) * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes))
