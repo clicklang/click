@@ -5210,13 +5210,17 @@ fn a_cpp_class_function_is_its_object_field() {
         .find(|definition| definition.name() == "Shape__object")
         .expect("the class's object is declared");
     assert!(object.is_sealed());
-    let names = file
-        .function_blocks()
-        .iter()
-        .map(|block| block.signature().name().to_string())
-        .collect::<Vec<_>>();
-    for name in ["Square__click_pack__Shape", "Square__click_unpack__Shape"] {
-        assert!(names.iter().any(|found| found == name), "{name}: {names:?}");
+    use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+    let conversion = CppObjectConversion::new("Square", "Shape");
+    for kind in CppBindingKind::ALL {
+        let binding = CppBindingContract {
+            conversion: conversion.clone(),
+            kind,
+        };
+        assert!(
+            file.cpp_bindings.written.contains_key(&binding),
+            "{binding}"
+        );
     }
     for (from, to, expected) in [
         (

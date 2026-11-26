@@ -169,7 +169,7 @@ impl ProgramStatement {
                 arguments: arguments.clone(),
                 callee: callee.clone(),
                 dispatch: *dispatch,
-                cpp_binding: *cpp_binding,
+                cpp_binding: cpp_binding.clone(),
             },
             Self::CallResult {
                 aggregate_layout,

@@ -63,6 +63,11 @@ int peek(const Boxed& boxed) {
     owns state: cell(boxed.slot);
     ensures result == state.value;
     ensures state.value == old(state.value);
+} by {
+    step_until(call(read, 0).argument(0).binding.entry);
+    let { object_resource(): packed } = step(call(read, 0).argument(0).binding, { state: state });
+    step_until(call(read, 0).argument(0).binding.release.entry);
+    let { state: state } = step(call(read, 0).argument(0).binding.release, { object_resource(): packed });
 }
 ```
 

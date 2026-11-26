@@ -593,9 +593,10 @@ fn verify_click_file_theorems_with_environment(
         &click_function_definitions,
         &combined_algebraic_type_definitions(file)?,
     );
-    let function_source_registry = Arc::new(FunctionSourceRegistry::from_function_blocks(
-        &combined_external_function_blocks(file)?,
-    )?);
+    let function_source_registry = Arc::new(
+        FunctionSourceRegistry::from_function_blocks(&combined_external_function_blocks(file)?)?
+            .with_cpp_bindings(&file.cpp_bindings.written),
+    );
     verify_theorem_definitions(
         TheoremEnvironment::with_standard_library(&[])?.with_discovery_library(file)?,
         file.theorem_definitions(),
@@ -715,6 +716,7 @@ fn verify_click_file_theorem_context(
         &parsed_sources,
         &external_and_user_function_blocks,
         &file.cpp_virtual_interfaces,
+        &file.cpp_bindings,
         file.contract_definitions(),
         spec_definitions,
         &resource_environment,
@@ -738,9 +740,10 @@ fn verify_click_file_theorem_context(
         TheoremEnvironment::with_standard_library(file.theorem_definitions())?
             .with_discovery_library(&file)?;
     if theorem.executes.is_some() {
-        let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
-            &external_and_user_function_blocks,
-        )?);
+        let registry = std::sync::Arc::new(
+            FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
+                .with_cpp_bindings(&file.cpp_bindings.written),
+        );
         let dependencies = TheoremEnvironment::with_standard_library(
             file.theorem_definitions()
                 .iter()
@@ -1054,11 +1057,17 @@ fn erase_read_positions(file: &mut ClickFile) {
     for theorem in &mut file.theorem_definitions {
         theorem.body = Default::default();
     }
-    for function in file.function_blocks.iter_mut().chain(
-        file.tactic_definitions
-            .iter_mut()
-            .map(TacticDefinition::function_block_mut),
-    ) {
+    for function in file
+        .function_blocks
+        .iter_mut()
+        .chain(file.cpp_virtual_interfaces.values_mut())
+        .chain(file.cpp_bindings.written.values_mut())
+        .chain(
+            file.tactic_definitions
+                .iter_mut()
+                .map(TacticDefinition::function_block_mut),
+        )
+    {
         function.body = Default::default();
     }
 }
@@ -2150,7 +2159,8 @@ fn verify_program_in_context(
     let termination_kernel_names = executing_function_names(&parsed_sources, &file)?;
     let function_source_registry = Arc::new(
         FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
-            .with_execution_names(&termination_kernel_names),
+            .with_execution_names(&termination_kernel_names)
+            .with_cpp_bindings(&file.cpp_bindings.written),
     );
     let (termination_plans, requested_termination) = program_function_termination_plans(
         &file,
@@ -2264,6 +2274,7 @@ fn verify_program_in_context(
             &parsed_sources,
             &external_and_user_function_blocks,
             &file.cpp_virtual_interfaces,
+            &file.cpp_bindings,
             file.contract_definitions(),
             spec_definitions,
             &resource_environment,
@@ -4793,6 +4804,7 @@ impl parser::ProgramLayouts {
         let mut tables = parser::ProgramLayouts {
             struct_layouts: execution.layouts.clone(),
             record_spellings: execution.record_spellings.clone(),
+            cpp_binding_conversions: std::sync::Arc::new(execution.cpp_binding_conversions.clone()),
             ..Default::default()
         };
         let source_names = execution
@@ -5391,6 +5403,7 @@ pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
     cpp_virtual_interfaces: &BTreeMap<String, FunctionBlock>,
+    cpp_bindings: &CppBindingContracts,
     contract_definitions: &[ContractDefinition],
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
@@ -5782,7 +5795,115 @@ pub(in crate::surface) fn build_function_environment(
             .with_function(function)
             .with_external_function_rule(rule);
     }
+    environment = install_cpp_binding_contracts(
+        environment,
+        cpp_bindings,
+        parsed_sources,
+        spec_definitions,
+        resource_environment,
+    )?;
     check_trait_method_implementations(&environment, parsed_sources, function_blocks)?;
+    Ok(environment)
+}
+
+/// Install one rule per typed binding contract. An unmodeled conversion
+/// still has a checked transition, but its interface transfers nothing.
+fn install_cpp_binding_contracts(
+    mut environment: ExecutionEnvironment,
+    bindings: &CppBindingContracts,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+    spec_definitions: SpecDefinitions<'_>,
+    resources: &ResourceEnvironment,
+) -> Result<ExecutionEnvironment, ClickError> {
+    use crate::kernel::{CppBindingContract, CppBindingKind};
+    use crate::languages::interface::{ImportedFunction, ImportedParameter};
+
+    let layouts = resources.struct_layouts();
+    let object_parameter = |derived: &str| {
+        let layout = layouts.get(derived).ok_or_else(|| {
+            ClickError::new(format!(
+                "C++ binding from `{derived}` has no checked layout"
+            ))
+        })?;
+        Ok::<_, ClickError>(
+            ImportedParameter::from_binding(
+                InterfaceType::Int32Pointer,
+                "object".to_string(),
+                Some(derived.to_owned()),
+            )
+            .with_pointee_struct_layout(derived.to_owned(), layout.clone())
+            .with_pointee_constant(true),
+        )
+    };
+    for (contract, block) in &bindings.written {
+        let declaration = if bindings.conversions.contains(&contract.conversion) {
+            ImportedFunction::external(
+                InterfaceType::Void,
+                contract.to_string(),
+                vec![object_parameter(&contract.conversion.derived)?],
+            )
+        } else {
+            external_c_function_with_layouts(block, layouts)
+        };
+        let declaration = with_linked_globals(declaration, parsed_sources);
+        let InitialClaimContext {
+            state, arguments, ..
+        } = initial_claim_context_with_caller_owner(
+            block,
+            &declaration,
+            resources,
+            spec_definitions,
+            &contract.to_string(),
+            None,
+        )?;
+        let function = annotated_function(
+            block,
+            &declaration,
+            &state,
+            &arguments,
+            spec_definitions,
+            resources,
+        )?;
+        let rule = crate::kernel::program_external_function_rule(function).ok_or_else(|| {
+            ClickError::new(format!(
+                "contract for {contract} cannot be applied opaquely"
+            ))
+        })?;
+        environment = environment.with_cpp_binding_rule(contract.clone(), rule);
+    }
+    for conversion in bindings.conversions.iter() {
+        let object = object_parameter(&conversion.derived)?;
+        for kind in CppBindingKind::ALL {
+            crate::instrumentation::record_deterministic_work(1);
+            let contract = CppBindingContract {
+                conversion: conversion.clone(),
+                kind,
+            };
+            if bindings.written.contains_key(&contract) {
+                continue;
+            }
+            let function = ImportedFunction::external(
+                InterfaceType::Void,
+                contract.to_string(),
+                vec![object.clone()],
+            )
+            .to_kernel_function()
+            .with_contract(
+                vec![],
+                vec![],
+                vec![],
+                vec![FunctionContractClaim::body_safety()],
+                true,
+            );
+            let rule =
+                crate::kernel::program_external_function_rule(function).ok_or_else(|| {
+                    ClickError::new(format!(
+                        "contract for {contract} cannot be applied opaquely"
+                    ))
+                })?;
+            environment = environment.with_cpp_binding_rule(contract, rule);
+        }
+    }
     Ok(environment)
 }
 
@@ -5947,8 +6068,8 @@ fn check_trait_method_implementations(
     Ok(())
 }
 
-/// The functions that turn a crate struct reference into a crate trait's
-/// object, or a C++ class reference into its base's, and back. Each returns
+/// The functions that turn a Rust struct reference into a trait object and back.
+/// Each returns
 /// at once: it only moves resources.
 fn object_coercion_names(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
@@ -5961,10 +6082,9 @@ fn object_coercion_names(
 }
 
 /// Whether `name` is a function an importer places where a reference
-/// becomes a Rust trait's or a C++ base class's object, or back.
+/// becomes a Rust trait object, or back.
 fn is_object_coercion(name: &str) -> bool {
     crate::languages::rust::names::is_object_coercion(name)
-        || crate::languages::cpp::names::is_object_coercion(name)
 }
 
 /// The functions that make instances of the program's capturing closures.

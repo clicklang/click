@@ -1055,7 +1055,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         } => ProgramStatement::Call {
             function_name: function_name.clone(),
             dispatch: *dispatch,
-            cpp_binding: *cpp_binding,
+            cpp_binding: cpp_binding.clone(),
             arguments: arguments
                 .iter()
                 .map(|argument| s.program_expression(argument))

@@ -1791,6 +1791,12 @@ fn statement_calls_visiting(
         return;
     }
     match statement {
+        // Reference bindings run a checked resource transition, which has no
+        // callee body and cannot diverge.
+        ProgramStatement::Call {
+            cpp_binding: Some(_),
+            ..
+        } => {}
         // A call through a function pointer reaches whatever the pointer
         // holds, which no function name says.
         ProgramStatement::Call {

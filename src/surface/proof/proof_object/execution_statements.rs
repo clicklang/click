@@ -896,12 +896,17 @@ impl<'a> Proof<'a> {
                     .predicates
                     .function_execution_name(callee)
             };
-            selected_environment = environment.with_selected_call_binders_and_types(
-                execution_callee,
-                arity,
-                bindings,
-                type_arguments,
-            );
+            let target = match frontier_call
+                .as_ref()
+                .and_then(|call| call.cpp_binding.as_ref())
+            {
+                Some(binding) => {
+                    crate::kernel::CallBinderTarget::CppBinding(binding.contract.clone())
+                }
+                None => crate::kernel::CallBinderTarget::Function(execution_callee.into()),
+            };
+            selected_environment =
+                environment.with_call_binder_target(target, arity, bindings, type_arguments);
             selected_context = context.with_loop_binding(
                 context.function_block,
                 context.function,
@@ -1277,9 +1282,15 @@ impl<'a> Proof<'a> {
                 function_name,
                 arguments,
                 dispatch,
+                cpp_binding,
                 ..
-            }
-            | ProgramStatement::CallResult {
+            } => Some(FrontierCall {
+                callee: function_name.clone(),
+                arguments: arguments.clone(),
+                dispatch: *dispatch,
+                cpp_binding: cpp_binding.clone(),
+            }),
+            ProgramStatement::CallResult {
                 function_name,
                 arguments,
                 dispatch,
@@ -1288,6 +1299,7 @@ impl<'a> Proof<'a> {
                 callee: function_name.clone(),
                 arguments: arguments.clone(),
                 dispatch: *dispatch,
+                cpp_binding: None,
             }),
             ProgramStatement::CallConstruct {
                 function_name,
@@ -1297,6 +1309,7 @@ impl<'a> Proof<'a> {
                 callee: function_name.clone(),
                 arguments: arguments.clone(),
                 dispatch: crate::kernel::CallDispatch::Direct,
+                cpp_binding: None,
             }),
             _ => None,
         });
@@ -1318,7 +1331,10 @@ impl<'a> Proof<'a> {
                 || crate::languages::c::formatted_output::function_format(callee)
                     .is_some_and(|(function, _)| function.source_name() == written)
         };
-        let Some(call) = call.filter(|call| names_written(&call.callee)) else {
+        let Some(call) = call.filter(|call| match &call.cpp_binding {
+            Some(_) => transport.source_binding.is_some(),
+            None => transport.source_binding.is_none() && names_written(&call.callee),
+        }) else {
             return Err(self.step_error(format!(
                 "`{transport}` requires a call to `{written}` at the current frontier"
             )));
@@ -2190,6 +2206,7 @@ pub fn without_implicit_solve<R>(operation: impl FnOnce() -> R) -> R {
 struct FrontierCall {
     callee: String,
     dispatch: crate::kernel::CallDispatch,
+    cpp_binding: Option<Arc<crate::kernel::CppBindingOperation>>,
     arguments: Vec<ProgramExpression>,
 }
 

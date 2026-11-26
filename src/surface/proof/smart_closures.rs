@@ -4403,7 +4403,10 @@ fn source_backed_call_requirement_surface(
     }
 
     let source_registry = context.function_source_registry();
-    let ordinary_source = source_registry.ordinary_function(site.callee.as_ref());
+    let ordinary_source = match &site.cpp_binding {
+        Some(binding) => source_registry.cpp_binding(binding),
+        None => source_registry.ordinary_function(site.callee.as_ref()),
+    };
     if let ProofStep::UserTactic(application) = step {
         if application.callee() != site.callee
             || application.arguments().len() != site.source_arguments.len()
@@ -4432,6 +4435,15 @@ fn source_backed_call_requirement_surface(
             statement = body;
         }
         let (callee, arguments) = match statement {
+            ProgramStatement::Call {
+                cpp_binding: Some(binding),
+                arguments,
+                ..
+            } if site.cpp_binding.as_ref() == Some(&binding.contract) => (&site.callee, arguments),
+            ProgramStatement::Call {
+                cpp_binding: Some(_),
+                ..
+            } => return None,
             ProgramStatement::Call {
                 function_name,
                 arguments,
@@ -4556,9 +4568,14 @@ fn source_backed_call_requirement_surface(
                 requirement.proposition()?.clone(),
             )
         } else {
-            let function = context
-                .function_environment
-                .get_function(site.callee.as_ref())?;
+            let function = match &site.cpp_binding {
+                Some(binding) => context
+                    .function_environment
+                    .get_cpp_binding_function(binding),
+                None => context
+                    .function_environment
+                    .get_function(site.callee.as_ref()),
+            }?;
             let proposition = if let Some(index) = source.initialization_clause {
                 let segment = function
                     .resource_requires()
