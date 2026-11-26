@@ -77,7 +77,13 @@ fn virtual_interface_lookup_uses_one_method_key() {
                 vec![],
                 ProgramStatement::Skip,
             )
-            .with_contract(vec![], vec![], vec![], vec![FunctionContractClaim::body_safety()], true);
+            .with_contract(
+                vec![],
+                vec![],
+                vec![],
+                vec![FunctionContractClaim::body_safety()],
+                true,
+            );
             let rule = crate::kernel::program_external_function_rule(method).unwrap();
             environment = environment.with_cpp_virtual_rule(rule);
         }
@@ -90,7 +96,11 @@ fn virtual_interface_lookup_uses_one_method_key() {
         });
         assert_eq!(hit.unwrap().name(), name);
         assert!(miss.is_none());
-        assert!(environment.get_call_function(&name, CallDispatch::Direct).is_none());
+        assert!(
+            environment
+                .get_call_function(&name, CallDispatch::Direct)
+                .is_none()
+        );
         assert_eq!(work, 2, "{size}: virtual interface lookup work");
     }
 }
