@@ -817,6 +817,7 @@ fn append_library_module(file: &mut ClickFile, module: ClickFile) {
     file.function_blocks.extend(module.function_blocks);
     file.cpp_virtual_interfaces
         .extend(module.cpp_virtual_interfaces);
+    file.override_contracts.extend(module.override_contracts);
     file.binding_contracts
         .written
         .extend(module.binding_contracts.written);
@@ -1139,7 +1140,11 @@ fn expand_declared_resource_clauses_with_rules(
             .transpose()?;
     }
 
-    for contract in &mut file.contract_definitions {
+    for contract in file
+        .contract_definitions
+        .iter_mut()
+        .chain(file.override_contracts.values_mut())
+    {
         resource_definitions.begin_declaration();
         if let Some(parameters) = &mut contract.proof_parameters {
             for parameter in parameters {

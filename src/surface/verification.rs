@@ -715,9 +715,7 @@ fn verify_click_file_theorem_context(
     let mut function_environment = build_function_environment(
         &parsed_sources,
         &external_and_user_function_blocks,
-        &file.cpp_virtual_interfaces,
-        &file.binding_contracts,
-        file.contract_definitions(),
+        &file,
         spec_definitions,
         &resource_environment,
     )?
@@ -1064,6 +1062,11 @@ fn erase_read_positions(file: &mut ClickFile) {
         .function_blocks
         .iter_mut()
         .chain(file.cpp_virtual_interfaces.values_mut())
+        .chain(
+            file.override_contracts
+                .values_mut()
+                .map(|contract| &mut contract.function_block),
+        )
         .chain(file.binding_contracts.written.values_mut())
         .chain(
             file.tactic_definitions
@@ -1479,6 +1482,7 @@ pub fn c_incremental_selection(
         || current_file.resource_definitions() != baseline_file.resource_definitions()
         || current_file.theorem_definitions() != baseline_file.theorem_definitions()
         || current_file.contract_definitions() != baseline_file.contract_definitions()
+        || current_file.override_contracts != baseline_file.override_contracts
         || current_file.algebraic_type_definitions() != baseline_file.algebraic_type_definitions();
     if shared_environment_changed {
         return Ok(IncrementalSelection {
@@ -2276,9 +2280,7 @@ fn verify_program_in_context(
         let built_function_environment = build_function_environment(
             &parsed_sources,
             &external_and_user_function_blocks,
-            &file.cpp_virtual_interfaces,
-            &file.binding_contracts,
-            file.contract_definitions(),
+            &file,
             spec_definitions,
             &resource_environment,
         )?;
@@ -5410,14 +5412,14 @@ fn generic_instance_example(name: &str) -> String {
 pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
-    cpp_virtual_interfaces: &BTreeMap<String, FunctionBlock>,
-    binding_contracts: &ReferenceBindingContracts,
-    contract_definitions: &[ContractDefinition],
+    file: &ClickFile,
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
 ) -> Result<ExecutionEnvironment, ClickError> {
     let mut environment = ExecutionEnvironment::new();
-    for definition in contract_definitions {
+    let lower_contract = |definition: &ContractDefinition,
+                          kind: &str|
+     -> Result<FunctionContract, ClickError> {
         let function_block = definition.function_block();
         let parsed_function = with_linked_globals(
             external_c_function_with_layouts(function_block, resource_environment.struct_layouts()),
@@ -5430,15 +5432,12 @@ pub(in crate::surface) fn build_function_environment(
             &parsed_function,
             resource_environment,
             spec_definitions,
-            &format!("{}.named contract", definition.name()),
+            &format!("{}.{kind}", definition.name()),
             None,
         )
         .map_err(|error| {
             error
-                .with_context(format!(
-                    "could not prepare named contract `{}`",
-                    definition.name()
-                ))
+                .with_context(format!("could not prepare {kind} `{}`", definition.name()))
                 .at_declaration(definition.name())
         })?;
         let function = annotated_function(
@@ -5451,10 +5450,7 @@ pub(in crate::surface) fn build_function_environment(
         )
         .map_err(|error| {
             error
-                .with_context(format!(
-                    "could not lower named contract `{}`",
-                    definition.name()
-                ))
+                .with_context(format!("could not lower {kind} `{}`", definition.name()))
                 .at_declaration(definition.name())
         })?;
         let contract = FunctionContract::new(definition.name(), function)
@@ -5464,10 +5460,7 @@ pub(in crate::surface) fn build_function_environment(
             .ok_or_else(|| {
                 crate::surface::lowering::opaque_contract_refusal(
                     definition.name(),
-                    format!(
-                        "named contract `{}` cannot be applied opaquely",
-                        definition.name()
-                    ),
+                    format!("{kind} `{}` cannot be applied opaquely", definition.name()),
                 )
             })?;
         let proof_parameters = definition
@@ -5482,9 +5475,22 @@ pub(in crate::surface) fn build_function_environment(
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        Ok(contract.with_proof_parameters(proof_parameters))
+    };
+    for definition in file.contract_definitions() {
         environment =
-            environment.with_function_contract(contract.with_proof_parameters(proof_parameters));
+            environment.with_function_contract(lower_contract(definition, "named contract")?);
     }
+    let override_contracts = file
+        .override_contracts
+        .iter()
+        .map(|(method, definition)| {
+            Ok((
+                method.clone(),
+                lower_contract(definition, "implementation interface")?,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, ClickError>>()?;
     // A generic trait's interface, `trait p::Scale<T>`, holds for every
     // type: it is lowered once with its type parameters abstract, so a
     // clause that does not mean something at every type is refused here,
@@ -5700,7 +5706,7 @@ pub(in crate::surface) fn build_function_environment(
         .filter(|function| function.is_external())
         .map(|block| (block, crate::kernel::CallDispatch::Direct))
         .chain(
-            cpp_virtual_interfaces
+            file.cpp_virtual_interfaces
                 .values()
                 .map(|block| (block, crate::kernel::CallDispatch::CppVirtual)),
         )
@@ -5781,12 +5787,17 @@ pub(in crate::surface) fn build_function_environment(
     }
     environment = install_reference_binding_contracts(
         environment,
-        binding_contracts,
+        &file.binding_contracts,
         parsed_sources,
         spec_definitions,
         resource_environment,
     )?;
-    check_trait_method_implementations(&environment, parsed_sources, function_blocks)?;
+    check_trait_method_implementations(
+        &environment,
+        parsed_sources,
+        function_blocks,
+        &override_contracts,
+    )?;
     Ok(environment)
 }
 
@@ -5926,14 +5937,25 @@ fn install_reference_binding_contracts(
     Ok(environment)
 }
 
-/// Checks that each crate trait method implementation's contract refines the
-/// trait's interface for that method, which a call through the trait
-/// assumes of whichever implementation it reaches. An interface the sidecar
-/// does not declare has no contract, so no call through it verifies.
+fn override_contract_for_method<'a>(
+    contracts: &'a BTreeMap<OverrideImplementation, FunctionContract>,
+    method: &str,
+) -> Option<&'a FunctionContract> {
+    crate::instrumentation::record_deterministic_work(1);
+    contracts.get(method)
+}
+
+#[cfg(test)]
+mod override_contract_scaling_tests {
+    include!("../scaling_tests/surface/verification/override_contracts.rs");
+}
+
+/// Checks that each Rust implementation or C++ override refines its interface.
 fn check_trait_method_implementations(
     environment: &ExecutionEnvironment,
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
+    override_contracts: &BTreeMap<OverrideImplementation, FunctionContract>,
 ) -> Result<(), ClickError> {
     for (_, function) in parsed_sources.values() {
         let Some(interface) = function.trait_interface() else {
@@ -5974,14 +5996,14 @@ fn check_trait_method_implementations(
         // through a reference to a class another derives from is checked
         // against the object class's interface, never the method's own
         // contract.
-        let iface = crate::surface::parser::implementation_interface_contract(function.name());
-        let on_memory = environment.get_function_contract(&iface).is_some();
-        let mut contracts = Vec::new();
-        if on_memory {
-            contracts.push(Some(iface.as_str()));
-        } else {
-            contracts.push(verified_interface.is_none().then_some(interface));
-        }
+        let refinement_interface = match (
+            override_contract_for_method(override_contracts, function.name()),
+            verified_interface,
+        ) {
+            (Some(contract), _) => crate::kernel::OverrideInterface::OnImplementation(contract),
+            (None, Some(interface)) => crate::kernel::OverrideInterface::Verified(interface),
+            (None, None) => crate::kernel::OverrideInterface::Named(interface),
+        };
         // An implementation without its own contract is never verified, so
         // no interface may stand for it.
         if !function_blocks
@@ -6006,28 +6028,16 @@ fn check_trait_method_implementations(
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;
         };
-        let mut refusal = None;
-        for contract in contracts {
-            let interface = match (contract, verified_interface) {
-                (None, Some(interface)) => crate::kernel::OverrideInterface::Verified(interface),
-                (contract, _) => {
-                    crate::kernel::OverrideInterface::Named(contract.unwrap_or(interface))
-                }
-            };
-            refusal = crate::kernel::program_override_refinement_failure(
-                environment,
-                interface,
-                implementation,
-            )
-            .map_err(|error| {
-                ClickError::new(format!("could not check override refinement: {error}"))
-                    .with_kind(ClickErrorKind::Internal)
-                    .at_declaration(function.name())
-            })?;
-            if refusal.is_some() {
-                break;
-            }
-        }
+        let refusal = crate::kernel::program_override_refinement_failure(
+            environment,
+            refinement_interface,
+            implementation,
+        )
+        .map_err(|error| {
+            ClickError::new(format!("could not check override refinement: {error}"))
+                .with_kind(ClickErrorKind::Internal)
+                .at_declaration(function.name())
+        })?;
         if let Some(refusal) = refusal {
             let (name, interface) = if rust {
                 (

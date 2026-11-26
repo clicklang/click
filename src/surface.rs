@@ -819,6 +819,16 @@ struct ReferenceBindingContracts {
     written: BTreeMap<crate::kernel::ReferenceBindingContract, FunctionBlock>,
 }
 
+/// The resolved implementation whose model translates an inherited interface.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct OverrideImplementation(String);
+
+impl std::borrow::Borrow<str> for OverrideImplementation {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
     /// Physical struct strides retained for generic theorem instantiation.
@@ -845,6 +855,7 @@ pub struct ClickFile {
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
     cpp_virtual_interfaces: BTreeMap<String, FunctionBlock>,
+    override_contracts: BTreeMap<OverrideImplementation, ContractDefinition>,
     binding_contracts: ReferenceBindingContracts,
     termination_proof: Option<Vec<ProofTactic>>,
     termination_span: Option<(crate::source::SourcePosition, crate::source::SourcePosition)>,

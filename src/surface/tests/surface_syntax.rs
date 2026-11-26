@@ -5174,12 +5174,9 @@ fn a_rust_trait_function_is_its_object_field() {
             .any(|label| label == "<shapes::Square as shapes::Shape>::area.interface_ensures_0"),
         "{labels:?}"
     );
-    let iface = parser::implementation_interface_contract(area.signature().name());
-    assert!(
-        file.contract_definitions()
-            .iter()
-            .any(|contract| contract.name() == iface)
-    );
+    assert!(file.contract_definitions().is_empty());
+    let interface = &file.override_contracts[area.signature().name()];
+    assert_eq!(interface.name(), area.signature().name());
     let missing = source.replace("function size(self) -> i32 { self.side }", "");
     let error = parse(&missing).expect_err("an implementation must define the function");
     assert!(
@@ -5200,6 +5197,7 @@ fn a_cpp_class_function_is_its_object_field() {
         extern int Shape::area(int scale) const { ensures result == size(this) + scale; } \
         int total(const Shape& shape, int scale) { ensures result == size(shape) + scale; } \
         class Square : Shape { function size(this) -> int32 { this->side } } \
+        int Square::area(int scale) const { } \
         extern int Shape::object() const { ensures result == size(this); } \
         extern void lend(int* p) { owns held: Shape::object(p); }";
     use crate::languages::interface::{InterfaceType, RecordLayout};
@@ -5231,6 +5229,10 @@ fn a_cpp_class_function_is_its_object_field() {
         .find(|definition| definition.name() == "Shape::object")
         .expect("the class's object is declared");
     assert!(object.is_sealed());
+    assert!(file.contract_definitions().is_empty());
+    let method = crate::languages::cpp::names::path_name(&["Square", "area"]);
+    assert_eq!(file.override_contracts[method.as_str()].name(), method);
+
     let lend = file
         .function_blocks()
         .iter()

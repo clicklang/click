@@ -259,7 +259,11 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .collect::<BTreeSet<_>>();
 
     let mut function_specs = BTreeSet::new();
-    for definition in file.contract_definitions() {
+    for definition in file
+        .contract_definitions()
+        .iter()
+        .chain(file.override_contracts.values())
+    {
         crate::surface::enter_ambient_declaration(definition.name());
         refuse_a_borrow_spelled_as_two_transfers(definition.function_block())?;
         let variables =
@@ -317,6 +321,11 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             file.cpp_virtual_interfaces
                 .values()
                 .chain(file.binding_contracts.written.values())
+                .chain(
+                    file.override_contracts
+                        .values()
+                        .map(ContractDefinition::function_block),
+                )
                 .map(|block| (block, true)),
         );
     for (function, internal_interface) in function_blocks {

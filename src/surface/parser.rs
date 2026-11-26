@@ -16,7 +16,6 @@ use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
 mod rust_trait_objects;
 mod spec_arithmetic;
-pub(crate) use rust_trait_objects::implementation_interface_contract;
 pub(in crate::surface) use spec_arithmetic::has_arithmetic_spine;
 pub(in crate::surface) use spec_arithmetic::mixed_narrow_arithmetic_message;
 pub(super) use spec_arithmetic::written_integer_parameters;
@@ -842,6 +841,7 @@ pub(super) enum Token {
     SharedObjectView,
     /// Frontend-only marker for a C++ method’s virtual interface.
     CppVirtualInterface,
+    OverrideContract,
     ReferenceBindingContract(std::sync::Arc<crate::kernel::ReferenceBindingContract>),
     Ident(String),
     Number(u32),
@@ -951,6 +951,7 @@ impl Token {
             | Self::ByteString(_) => "",
             Self::SharedObjectView => "shared object view",
             Self::CppVirtualInterface => "virtual method interface",
+            Self::OverrideContract => "implementation interface",
             Self::ReferenceBindingContract(_) => "reference binding contract",
             Self::LBrace => "{",
             Self::RBrace => "}",
@@ -1330,6 +1331,7 @@ struct Parser {
     /// Set while a `contract` block's embedded function block is parsed: its
     /// signature names an interface, not a callable C function.
     in_contract_definition: bool,
+    in_override_contract: bool,
     /// Set while a function contract's `owns`, `consumes`, or `produces`
     /// clause is parsed: the only places `uninitialized(p[a..b])` is accepted.
     uninitialized_memory_allowed: bool,
@@ -2381,6 +2383,7 @@ impl Parser {
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
+            in_override_contract: false,
             uninitialized_memory_allowed: false,
             contract_value_parameters: Vec::new(),
             closure_captures: BTreeMap::new(),
@@ -2746,6 +2749,7 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut cpp_virtual_interfaces = BTreeMap::new();
+        let mut override_contracts = BTreeMap::new();
         let mut binding_contracts = ReferenceBindingContracts {
             conversions: self.cpp_binding_conversions.clone(),
             rust_conversions: self.rust_binding_conversions.clone(),
@@ -2883,6 +2887,26 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(true)?);
             } else if self.peek_ident() == Some("resource") {
                 resource_definitions.push(self.parse_resource_definition(false)?);
+            } else if self.peek() == Some(&Token::OverrideContract) {
+                self.position += 1;
+                self.in_override_contract = true;
+                let definition = if self.verifies_cpp() && self.peek_ident() == Some("template") {
+                    self.parse_cpp_template_contract()
+                } else {
+                    self.parse_contract_definition()
+                };
+                self.in_override_contract = false;
+                let definition = definition?;
+                let method = OverrideImplementation(definition.name().to_owned());
+                if override_contracts
+                    .insert(method.clone(), definition)
+                    .is_some()
+                {
+                    return Err(self.error(format!(
+                        "duplicate implementation interface for `{}`",
+                        crate::languages::display_source_names(&method.0),
+                    )));
+                }
             } else if self.peek() == Some(&Token::CppVirtualInterface) {
                 self.position += 1;
                 let interface = self.parse_function_block(true)?;
@@ -3187,6 +3211,7 @@ impl Parser {
             contract_definitions,
             function_blocks,
             cpp_virtual_interfaces,
+            override_contracts,
             binding_contracts,
             tactic_definitions,
             termination_proof,
@@ -3358,10 +3383,12 @@ impl Parser {
             .into_iter()
             .map(|parameter| parameter.name)
             .collect::<Vec<_>>();
-        self.contract_value_parameter_names.insert(
-            function_block.signature().name().to_string(),
-            value_parameters.clone(),
-        );
+        if !self.in_override_contract {
+            self.contract_value_parameter_names.insert(
+                function_block.signature().name().to_string(),
+                value_parameters.clone(),
+            );
+        }
         if function_block.decreases().is_some()
             || function_block.grouped_proof().is_some()
             || !function_block.constructs().is_empty()
@@ -3374,9 +3401,6 @@ impl Parser {
                 "named contracts cannot carry proofs, `decreases`, or `constructs` clauses",
             ));
         }
-        self.contract_resource_binders
-            .entry(function_block.signature().name().to_string())
-            .or_default();
         // A named `owns` or `consumes` clause declares one of the contract's
         // resource handles. In declaration order they are the contract's
         // proof parameters, which an application binds by name. Named produced
@@ -3405,9 +3429,14 @@ impl Parser {
                     }),
             )
             .collect::<Vec<_>>();
-        let bindings = proof_parameters.clone();
-        self.contract_proof_bindings
-            .insert(function_block.signature().name().to_string(), bindings);
+        if !self.in_override_contract {
+            let name = function_block.signature().name().to_string();
+            self.contract_resource_binders
+                .entry(name.clone())
+                .or_default();
+            self.contract_proof_bindings
+                .insert(name, proof_parameters.clone());
+        }
         Ok(ContractDefinition {
             proof_parameters: (!proof_parameters.is_empty()).then_some(proof_parameters),
             value_parameters,
@@ -5531,17 +5560,19 @@ impl Parser {
                 crate::languages::display_source_names(signature.name())
             )));
         }
-        let table_name = signature
-            .c_source
-            .as_ref()
-            .and_then(|path| {
-                let (_, name) = signature.name().rsplit_once("::")?;
-                self.qualified_functions
-                    .get(&(path.clone(), name.to_string()))
-            })
-            .map(String::as_str)
-            .unwrap_or_else(|| signature.name())
-            .to_string();
+        let table_name = (!self.in_override_contract).then(|| {
+            signature
+                .c_source
+                .as_ref()
+                .and_then(|path| {
+                    let (_, name) = signature.name().rsplit_once("::")?;
+                    self.qualified_functions
+                        .get(&(path.clone(), name.to_string()))
+                })
+                .map(String::as_str)
+                .unwrap_or_else(|| signature.name())
+                .to_string()
+        });
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
         }
@@ -5549,9 +5580,9 @@ impl Parser {
         // proof, as a reference parameter does. The signature wins a shared
         // spelling: a parameter of that name that is not a reference keeps
         // its own reading.
-        for name in self
-            .local_struct_pointers_by_function
-            .get(&table_name)
+        for name in table_name
+            .as_ref()
+            .and_then(|name| self.local_struct_pointers_by_function.get(name))
             .into_iter()
             .flat_map(|locals| &locals.references)
         {
@@ -5569,16 +5600,16 @@ impl Parser {
         self.expect(Token::LBrace)?;
         // A Rust function's loops each advance an iterator its proof names
         // `iter` there and `loop(i).iter` elsewhere.
-        let loop_iterators = self
-            .local_struct_pointers_by_function
-            .get(&table_name)
+        let loop_iterators = table_name
+            .as_ref()
+            .and_then(|name| self.local_struct_pointers_by_function.get(name))
             .map(|locals| locals.loop_iterators.clone())
             .unwrap_or_default();
         let previous_slice_locals = std::mem::replace(
             &mut self.rust_slice_locals,
-            self.local_bindings
-                .rust_slice_locals
-                .get(&table_name)
+            table_name
+                .as_ref()
+                .and_then(|name| self.local_bindings.rust_slice_locals.get(name))
                 .cloned()
                 .unwrap_or_default(),
         );
@@ -5618,9 +5649,9 @@ impl Parser {
         let mut exceptional_positions = Vec::new();
         // A local of struct-pointer type is a memory base in this function's
         // proof just as a parameter is. The signature wins a shared spelling.
-        for (name, struct_name) in self
-            .local_struct_pointers_by_function
-            .get(&table_name)
+        for (name, struct_name) in table_name
+            .as_ref()
+            .and_then(|name| self.local_struct_pointers_by_function.get(name))
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -5641,15 +5672,19 @@ impl Parser {
         );
         let previous_c_object_names = std::mem::replace(
             &mut self.names.program_object_names,
-            self.program_object_names_by_function
-                .get(&table_name)
+            table_name
+                .as_ref()
+                .and_then(|name| self.program_object_names_by_function.get(name))
                 .cloned(),
         );
         let previous_reference_binding_function =
-            self.reference_binding_function.replace(table_name.clone());
+            std::mem::replace(&mut self.reference_binding_function, table_name.clone());
         let previous_c_library_names = std::mem::replace(
             &mut self.c_library_names,
-            self.c_library_names_by_function.get(&table_name).cloned(),
+            table_name
+                .as_ref()
+                .and_then(|name| self.c_library_names_by_function.get(name))
+                .cloned(),
         );
         // A pointer or reference to a value of an abstract type refers to
         // its whole object (`abstract_pointer_params`).
@@ -5683,18 +5718,18 @@ impl Parser {
         );
         let previous_parameter_struct_casts =
             std::mem::take(&mut self.names.parameter_struct_casts);
-        let aggregate_objects = self
-            .aggregate_objects_by_function
-            .get(&table_name)
+        let aggregate_objects = table_name
+            .as_ref()
+            .and_then(|name| self.aggregate_objects_by_function.get(name))
             .cloned()
             .unwrap_or_default();
         let previous_aggregate_objects =
             std::mem::replace(&mut self.names.aggregate_objects, aggregate_objects);
         // A parameter shadowing a file-scope array hides it inside this
         // function, for indexing shapes and element widths alike.
-        let global_array_shapes = self
-            .global_array_shapes_by_function
-            .get(&table_name)
+        let global_array_shapes = table_name
+            .as_ref()
+            .and_then(|name| self.global_array_shapes_by_function.get(name))
             .cloned()
             .unwrap_or_default()
             .into_iter()
@@ -5703,8 +5738,9 @@ impl Parser {
         let previous_global_array_shapes =
             std::mem::replace(&mut self.names.global_array_shapes, global_array_shapes);
         let mut visible_struct_array_params = struct_array_params;
-        if let Some(aggregate_array_objects) =
-            self.aggregate_array_objects_by_function.get(&table_name)
+        if let Some(aggregate_array_objects) = table_name
+            .as_ref()
+            .and_then(|name| self.aggregate_array_objects_by_function.get(name))
         {
             visible_struct_array_params.extend(
                 aggregate_array_objects
@@ -5728,9 +5764,9 @@ impl Parser {
             .replace(signature.return_type());
         let previous_aggregate_result =
             std::mem::replace(&mut self.current_aggregate_result, aggregate_result);
-        let local_pointers = self
-            .local_struct_pointers_by_function
-            .get(&table_name)
+        let local_pointers = table_name
+            .as_ref()
+            .and_then(|name| self.local_struct_pointers_by_function.get(name))
             .into_iter()
             .flat_map(|locals| &locals.pointers)
             .filter(|name| {
@@ -6356,9 +6392,9 @@ impl Parser {
                 )));
             }
         }
-        let program_object_names = self
-            .program_object_names_by_function
-            .get(&table_name)
+        let program_object_names = table_name
+            .as_ref()
+            .and_then(|name| self.program_object_names_by_function.get(name))
             .cloned()
             .unwrap_or_else(|| {
                 std::sync::Arc::new(
@@ -6461,9 +6497,9 @@ impl Parser {
             .collect();
         // A local of struct-pointer type is printed as a parameter is. The
         // signature wins a shared spelling.
-        for (name, struct_name) in self
-            .local_struct_pointers_by_function
-            .get(&table_name)
+        for (name, struct_name) in table_name
+            .as_ref()
+            .and_then(|name| self.local_struct_pointers_by_function.get(name))
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -6479,7 +6515,10 @@ impl Parser {
                 );
             }
         }
-        if let Some(places) = self.local_bindings.field_places.get(&table_name) {
+        if let Some(places) = table_name
+            .as_ref()
+            .and_then(|name| self.local_bindings.field_places.get(name))
+        {
             parameter_field_places.extend(
                 places
                     .iter()
@@ -6488,9 +6527,9 @@ impl Parser {
         }
         let pointee_field_places =
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
-        let recursion_peers = self
-            .recursion_peers_by_function
-            .get(&table_name)
+        let recursion_peers = table_name
+            .as_ref()
+            .and_then(|name| self.recursion_peers_by_function.get(name))
             .cloned()
             .unwrap_or_default();
         // A named contract's value parameters follow its C parameters, so its
@@ -6513,7 +6552,11 @@ impl Parser {
             count
         };
         // A closure's captures lead its signature, as they lead its function.
-        if !external && let Some(captures) = self.closure_captures.get(&table_name) {
+        if !external
+            && let Some(captures) = table_name
+                .as_ref()
+                .and_then(|name| self.closure_captures.get(name))
+        {
             let mut parameters = captures.clone();
             parameters.append(&mut signature.parameters);
             signature.parameters = parameters;
@@ -9198,6 +9241,9 @@ impl Parser {
         parameter_names: &[String],
         kind: CalleeResourceBinderKind,
     ) {
+        if self.in_override_contract {
+            return;
+        }
         let ResourceClause::Named { binding, resource } = resource else {
             return;
         };

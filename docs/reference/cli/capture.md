@@ -1959,8 +1959,8 @@ new and `old(size(this))` as at entry
 definitions (`mdtests/cpp_class_const_method_keeps_fields.md`,
 `mdtests/cpp_class_const_method_keeps_fields_rejects_overclaim.md`). An override of a `Shape` method
 inherits that method's clauses read the same way, labeled
-`Square::area.interface_ensures_0`. Its refinement is checked against the
-`contract` named for it with `_iface` that states them on that memory.
+`Square::area.interface_ensures_0`. Click checks refinement against the
+interface translated to `Square::area`'s concrete memory.
 
 A call that binds a `Square` to a `Shape&` transfers its memory to the abstract
 object before the call and restores the memory afterward. The binding reads
@@ -2000,9 +2000,8 @@ the import has, `Holder<int>`, holds it at its type arguments,
 `Holder<int>::object`. A pure virtual method can be declared with
 `template<class T>` in the interface file. Each instance uses the contract
 at its types. `Wrap<T>`'s overrides are verified once, with `T`
-abstract, against the interface read through its definitions, the
-`contract` named for each with `_iface` stated once for every type too; an
-override that does not keep it is refused there
+abstract, against the inherited interface translated through their
+definitions. An override that does not keep it is refused there
 (`mdtests/cpp_class_template_object_state_rejects_overclaim.md`). Each
 instance of `Wrap` the import has, such as `Wrap<int>`, uses the definitions
 at its types. A generic block names its template at
@@ -2092,8 +2091,9 @@ int BigSquare::area(int scale) const {
 ```
 
 Each of its overrides keeps the object class's interface read with its own
-definitions, labeled `BigSquare::area.interface_ensures_0`, and refines only
-the `contract` named for it with `_iface`, not the method it overrides
+definitions, labeled `BigSquare::area.interface_ensures_0`. Click checks
+refinement against the object class's interface translated through those
+definitions
 (`mdtests/cpp_class_subclass_override_rejects_overclaim.md`). A reference to
 a class another `class` block derives from, `const Square& square`, may
 refer to an object of the derived class, so it holds the object class's

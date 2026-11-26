@@ -482,6 +482,7 @@ fn merge_modules(
         contract_definitions: Vec::new(),
         function_blocks: Vec::new(),
         cpp_virtual_interfaces: BTreeMap::new(),
+        override_contracts: BTreeMap::new(),
         binding_contracts: ReferenceBindingContracts {
             conversions: locals
                 .get(entry)
@@ -586,6 +587,18 @@ fn merge_modules(
             {
                 return Err(ClickError::new(format!(
                     "conflicting contracts for {contract}"
+                )));
+            }
+        }
+        for (implementation, contract) in &local.override_contracts {
+            if merged
+                .override_contracts
+                .insert(implementation.clone(), contract.clone())
+                .is_some()
+            {
+                return Err(ClickError::new(format!(
+                    "conflicting implementation interfaces for `{}`",
+                    crate::languages::display_source_names(&implementation.0),
                 )));
             }
         }

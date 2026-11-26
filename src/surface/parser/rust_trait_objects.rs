@@ -12,9 +12,8 @@
 //!   `size(x)` reads its field `size`.
 //! - An implementation's method is verified on the object's memory: it owns
 //!   `*self`, `size(self)` is the implementation's definition, and it inherits
-//!   the interface's clauses read the same way. Its `requires` must follow
-//!   from the interface's so read, which the `contract fn` named for it with
-//!   `_iface` states, and which verification checks.
+//!   the interface's clauses read the same way. The refinement check compares
+//!   its `requires` with the inherited clauses on that memory.
 //! - An implementation whose state is not in its struct's fields names the
 //!   resource holding it, `resource state: boxed(self.item);`, and defines
 //!   the functions from its fields, `{ state.value }`: each method owns it
@@ -100,12 +99,6 @@ pub(super) fn object_resource(parameter: Option<&str>, position: &SourcePosition
 
 pub(super) fn object_resource_spelling(parameter: Option<&str>) -> String {
     format!("{OBJECT_RESOURCE}({})", parameter.unwrap_or_default())
-}
-
-/// The `contract fn` that states an implementation's interface on its own
-/// object's memory, which the implementation must refine.
-pub(crate) fn implementation_interface_contract(implementation: &str) -> String {
-    format!("{implementation}_iface")
 }
 
 /// Rewrites the trait object state of a Rust sidecar, and returns the crate
@@ -1305,9 +1298,10 @@ fn rewrite_implementation(
         let mut contract = at(
             &position,
             vec![
+                Token::OverrideContract,
                 ident("contract"),
                 ident("fn"),
-                ident(&implementation_interface_contract(&implementation)),
+                ident(&implementation),
             ],
         );
         // A generic implementation's interface is stated once for every

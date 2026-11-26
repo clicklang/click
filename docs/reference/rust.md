@@ -900,8 +900,8 @@ fields, `function size(self) -> i32 { self.side }`; an `impl` that omits
 one is refused. Its methods are stated on the struct's own memory, `owns
 *self` for `&self` and `&mut self`, with `size(self)` read as the definition in its own
 clauses and in the interface's it inherits, and its proof is an ordinary
-method proof. Its refinement is checked against the interface read on that
-memory, an implementation's `contract fn` `..._iface`.
+method proof. Click checks refinement against the inherited interface on
+that memory, using the implementation method's identity.
 
 Where a struct reference becomes the object, at a call that instantiates a
 bound type parameter with the struct or coerces it to `&dyn Trait`, the

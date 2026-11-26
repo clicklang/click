@@ -421,7 +421,11 @@ pub(in crate::surface) fn check_resource_field_schemas(
             );
         }
     }
-    for contract in &mut file.contract_definitions {
+    for contract in file
+        .contract_definitions
+        .iter_mut()
+        .chain(file.override_contracts.values_mut())
+    {
         for parameter in contract.proof_parameters.iter_mut().flatten() {
             let ResourceClause::Named { binding, resource } = parameter else {
                 unreachable!()
@@ -447,6 +451,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
         .chain(
             file.contract_definitions
                 .iter_mut()
+                .chain(file.override_contracts.values_mut())
                 .map(|contract| &mut contract.function_block),
         )
         .chain(
