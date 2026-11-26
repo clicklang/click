@@ -66,6 +66,7 @@ pub struct ImportedFunction {
     /// once for every type; the instance's contract is its contract at the
     /// declaration's types.
     pub(super) generic_instance: Option<String>,
+    pub(crate) rust_destructor: Option<super::rust::names::RustDestructor>,
     /// Whether a C++ call uses this method’s virtual interface.
     pub(super) cpp_virtual: bool,
     /// A C++ function's calls of methods on a receiver that may be an object
@@ -714,6 +715,7 @@ impl ImportedFunction {
             closure_captures: 0,
             trait_interface: None,
             generic_instance: None,
+            rust_destructor: None,
             cpp_virtual: false,
             receiver_calls: Vec::new(),
             program_entry_state: None,

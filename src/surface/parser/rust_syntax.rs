@@ -163,7 +163,16 @@ impl Parser {
                         self.position += 1;
                     }
                 }
+                if self.rust_impl_destruct && name != "drop_glue" {
+                    return Err(
+                        self.error("an `impl Destruct` block declares `fn drop_glue(&mut self)`")
+                    );
+                }
                 match (&self.rust_impl_trait, &self.rust_impl_method_suffix) {
+                    (None, _) if self.rust_impl_destruct => {
+                        crate::languages::rust::names::RustDestructor { record: impl_type }
+                            .contract_name()
+                    }
                     (Some(trait_name), _) => crate::languages::rust::names::trait_method_name(
                         &impl_type, trait_name, &name,
                     ),
@@ -356,12 +365,14 @@ impl Parser {
         };
         let suffix = self.parse_rust_trait_argument()?;
         let mut inherent = true;
+        let mut destruct = false;
         // A crate trait is named by its path, as a crate type is; the
         // standard library's traits by their own names.
         let mut impl_trait = None;
         let mut for_instance = None;
         if self.peek_ident() == Some("for") {
             self.position += 1;
+            destruct = impl_path == ["Destruct"];
             if suffix.is_none() && impl_path.len() > 1 {
                 impl_trait = Some(trait_instance_name(&impl_path, &instance));
             }
@@ -439,6 +450,7 @@ impl Parser {
         });
         let previous = self.rust_impl_type.replace(impl_type);
         let previous_trait = std::mem::replace(&mut self.rust_impl_trait, impl_trait);
+        let previous_destruct = std::mem::replace(&mut self.rust_impl_destruct, destruct);
         let previous_suffix = std::mem::replace(&mut self.rust_impl_method_suffix, suffix);
         let previous_module = std::mem::replace(&mut self.rust_impl_module, impl_module);
         let mut result = Ok(());
@@ -474,6 +486,7 @@ impl Parser {
         }
         self.rust_impl_type = previous;
         self.rust_impl_trait = previous_trait;
+        self.rust_impl_destruct = previous_destruct;
         self.rust_impl_method_suffix = previous_suffix;
         self.rust_impl_module = previous_module;
         result?;

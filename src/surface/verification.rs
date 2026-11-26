@@ -4898,6 +4898,9 @@ impl parser::ProgramLayouts {
                 }
             }
             if let Some(generic) = function.generic_instance() {
+                if let Some(target) = &function.rust_destructor {
+                    tables.rust_destructor_instances.push(target.clone());
+                }
                 tables.rust_generic_instances.push((
                     function.source_name().to_string(),
                     source_names

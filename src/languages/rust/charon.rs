@@ -37,6 +37,7 @@ mod traits;
 mod user_iterators;
 mod vec_methods;
 
+use super::names::RustDestructor;
 use super::profile;
 use super::schema::{
     self as out, Expression as E, MirCallee, MirLocalId, MirStatement as S, MirTerminator as T,
@@ -461,9 +462,10 @@ impl Adapter<'_> {
                 name
             }
         };
-        self.generic_instances
-            .borrow_mut()
-            .insert(name.clone(), (id, types.to_vec()));
+        self.generic_instances.borrow_mut().insert(
+            GenericInstanceTarget::Named(name.clone()),
+            (id, types.to_vec()),
+        );
         Ok(name)
     }
 
@@ -656,6 +658,21 @@ fn byte_slice(ty: &a::Ty) -> bool {
     matches!(ty.kind(), a::TyKind::Slice(element, _) if matches!(element.kind(), a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Unsigned(a::UIntTy::U8)))))
 }
 
+#[derive(Eq, PartialEq, Ord, PartialOrd)]
+enum GenericInstanceTarget {
+    Named(String),
+    Destructor(RustDestructor),
+}
+
+impl GenericInstanceTarget {
+    fn contract_name(&self) -> String {
+        match self {
+            Self::Named(name) => name.clone(),
+            Self::Destructor(target) => target.contract_name(),
+        }
+    }
+}
+
 struct Adapter<'a> {
     crate_mode: bool,
     krate: &'a a::TranslatedCrate,
@@ -667,7 +684,7 @@ struct Adapter<'a> {
     /// The compiler's drop glue of each crate struct holding a box, imported
     /// as a function whose sidecar contract is `impl Destruct`'s
     /// `drop_glue`.
-    drop_glues: BTreeMap<a::TypeDeclId, a::FunDeclId>,
+    drop_glues: BTreeMap<a::TypeDeclId, (a::FunDeclId, RustDestructor)>,
     /// Each closure's `ClosureAsFn` function, by the closure's name.
     closure_shims: BTreeMap<a::FunDeclId, String>,
     /// The `Fn::call` methods of closures, imported as the closures, with
@@ -690,7 +707,8 @@ struct Adapter<'a> {
     trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
     /// Each instance of a generic function a call names, by its name: the
     /// generic function and the type each of its type parameters takes.
-    generic_instances: std::cell::RefCell<BTreeMap<String, (a::FunDeclId, Vec<Option<Type>>)>>,
+    generic_instances:
+        std::cell::RefCell<BTreeMap<GenericInstanceTarget, (a::FunDeclId, Vec<Option<Type>>)>>,
     /// Each crate trait instance's type arguments after `Self`, as they were
     /// when it was named.
     instance_types: std::cell::RefCell<BTreeMap<String, Vec<Type>>>,
@@ -1315,34 +1333,32 @@ impl Adapter<'_> {
                         && b.generics.types.first().is_some_and(|p| self.boxable(p)))
         }))
     }
-    /// The drop glue of the struct `ty`, a crate struct holding a box or an
-    /// instance of a generic one, if it has one: its name, `R_drop_glue` at
-    /// the struct's own name. An instance of a generic struct's glue at other
-    /// types than its own parameters is recorded so the import declares it,
-    /// with the generic glue's contract at those types.
-    fn drop_glue_of(&self, ty: &a::Ty) -> Result<Option<String>, String> {
+    /// Register the destructor of this concrete or abstract record instance
+    /// if its fields need compiler-provided destruction.
+    fn drop_glue_of(&self, ty: &a::Ty) -> Result<Option<RustDestructor>, String> {
         let a::TyKind::Adt(r) = ty.kind() else {
             return Ok(None);
         };
-        let Some(&glue) = self.drop_glues.get(&r.id) else {
+        let Some((glue, generic)) = self.drop_glues.get(&r.id) else {
             return Ok(None);
         };
-        let Type::Record { name } = self.ty(ty)? else {
+        let Type::Record { name: record } = self.ty(ty)? else {
             return Err(unsupported("drop glue of a non-record"));
         };
-        let name = format!("{name}_drop_glue");
-        if self.functions.get(&glue) != Some(&name) {
+        let target = RustDestructor { record };
+        if &target != generic {
             let types = r
                 .generics
                 .types
                 .iter()
                 .map(|argument| self.ty(argument).map(Some))
                 .collect::<Result<Vec<_>, _>>()?;
-            self.generic_instances
-                .borrow_mut()
-                .insert(name.clone(), (glue, types));
+            self.generic_instances.borrow_mut().insert(
+                GenericInstanceTarget::Destructor(target.clone()),
+                (*glue, types),
+            );
         }
-        Ok(Some(name))
+        Ok(Some(target))
     }
     /// Whether dropping a value of the crate struct `ty` runs code: its own
     /// `Drop`, or a field's drop, a box's or a struct's that runs code.
@@ -2533,12 +2549,12 @@ impl BodyAdapter<'_, '_> {
                     .adapter
                     .boxed_record(&place.ty)
                     .ok_or_else(|| unsupported("box of a non-record"))?;
-                let glue = match self.adapter.drop_glue_of(record)? {
-                    Some(glue) => Some(glue),
+                let drop_contents = match self.adapter.drop_glue_of(record)? {
+                    Some(_) => true,
                     None if self.adapter.record_has_drop_glue(record)? => {
                         return Err(unsupported("box of a record with a destructor"));
                     }
-                    None => None,
+                    None => false,
                 };
                 let a::PlaceKind::Local(local) = place.kind else {
                     return Err(unsupported("partial box drop"));
@@ -2548,7 +2564,7 @@ impl BodyAdapter<'_, '_> {
                 T::BoxFree {
                     local: self.local(local)?,
                     record: name,
-                    glue,
+                    drop_contents,
                     optional,
                     target: target.index(),
                 }
@@ -2653,7 +2669,7 @@ impl BodyAdapter<'_, '_> {
                     return Ok(T::BoxFree {
                         local: self.local(*local)?,
                         record: name,
-                        glue: None,
+                        drop_contents: false,
                         optional: false,
                         target: target.index(),
                     });
@@ -3226,8 +3242,9 @@ pub(super) fn decode_crate(
                         let Type::Record { name } = record? else {
                             return Err(unsupported("drop glue of a non-record"));
                         };
-                        adapter.drop_glues.insert(rec, id);
-                        adapter.functions.insert(id, format!("{name}_drop_glue"));
+                        let target = RustDestructor { record: name };
+                        adapter.functions.insert(id, target.contract_name());
+                        adapter.drop_glues.insert(rec, (id, target));
                         continue;
                     }
                     // A closure's `Fn::call` is the closure; its `FnMut` and
@@ -3440,8 +3457,13 @@ pub(super) fn decode_crate(
             destructor: adapter
                 .destructors
                 .get(id)
-                .or(adapter.drop_glues.get(id))
-                .map(|f| adapter.functions[f].clone()),
+                .map(|f| out::Destructor::Explicit(adapter.functions[f].clone()))
+                .or_else(|| {
+                    adapter
+                        .drop_glues
+                        .contains_key(id)
+                        .then_some(out::Destructor::Implicit)
+                }),
             symbolic: false,
         });
     }
@@ -3522,7 +3544,7 @@ pub(super) fn decode_crate(
         // Drop glue's parameter is unnamed; its sidecar contract, as a
         // `Drop` method's, names it `self`.
         let glue_body;
-        let body = if adapter.drop_glues.values().any(|glue| glue == id) {
+        let body = if adapter.drop_glues.values().any(|(glue, _)| glue == id) {
             glue_body = {
                 let mut body = body.clone();
                 if let Some(receiver) = body.locals.locals.get_mut(1) {
@@ -4082,8 +4104,9 @@ pub(super) fn decode_crate(
     // Each instance of a generic function a call names is declared at its
     // types, with the generic function's parameter names; its contract is
     // the generic function's, which is verified once for every type.
-    for (name, (id, types)) in adapter.generic_instances.borrow().iter() {
-        if used_names.contains(name) {
+    for (target, (id, types)) in adapter.generic_instances.borrow().iter() {
+        let name = target.contract_name();
+        if used_names.contains(&name) {
             return Err(unsupported("colliding proof function names"));
         }
         let generic_name = adapter
@@ -4108,7 +4131,7 @@ pub(super) fn decode_crate(
             .collect();
         let instance = out::Function {
             sites: Vec::new(),
-            name: name.clone(),
+            name,
             return_type: output,
             parameters,
             body: vec![],
@@ -4202,20 +4225,10 @@ pub(super) fn decode_crate(
                     offset: if symbolic { 0 } else { offset },
                 });
             }
-            // The instance's drop glue, when the struct holds a box.
-            let destructor = match adapter.drop_glues.get(&id) {
-                Some(&glue) => {
-                    let glue_name = format!("{name}_drop_glue");
-                    if adapter.functions.get(&glue) != Some(&glue_name) {
-                        adapter
-                            .generic_instances
-                            .borrow_mut()
-                            .insert(glue_name.clone(), (glue, instance));
-                    }
-                    Some(glue_name)
-                }
-                None => None,
-            };
+            let destructor = adapter
+                .drop_glues
+                .contains_key(&id)
+                .then_some(out::Destructor::Implicit);
             records.push(out::Record {
                 name,
                 size: if symbolic {

@@ -337,6 +337,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// its parameters' names as a head writes them: it has the generic
     /// function's contract at those types.
     pub(in crate::surface) rust_generic_instances: Vec<GenericInstance>,
+    /// Concrete types whose compiler-provided destructor uses a generic contract.
+    pub(in crate::surface) rust_destructor_instances:
+        Vec<crate::languages::rust::names::RustDestructor>,
     /// The C++ declarations that share a path, as overloads do, by the
     /// importer name of that path: a head there selects one by signature.
     pub(in crate::surface) cpp_overloads: BTreeMap<String, Vec<CppOverload>>,
@@ -1169,6 +1172,7 @@ struct Parser {
     /// The crate trait the `impl` block being read implements, as the
     /// importer names it: its methods are `<Type as Trait>::name`.
     rust_impl_trait: Option<String>,
+    rust_impl_destruct: bool,
     /// The crate trait whose `trait` block is being read: its methods are
     /// the interfaces `Trait::name`, external declarations of the methods
     /// a call through the trait reaches.
@@ -1966,7 +1970,8 @@ impl Parser {
         parser.cpp_overloads = layouts.cpp_overloads;
         // A generic function's instances are written out at their types.
         let mut function_instances = BTreeMap::<String, rust_generic_functions::Instances>::new();
-        let mut impl_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+        use rust_generic_functions::ImplKey;
+        let mut impl_instances = BTreeMap::<ImplKey, BTreeSet<Vec<String>>>::new();
         for (instance, generic, _, _, parameters, _) in &parser.rust_generic_instances {
             if let Some(arguments) =
                 crate::languages::rust::names::instance_type_arguments(instance, generic)
@@ -1978,24 +1983,20 @@ impl Parser {
             } else if let Some((record, arguments)) =
                 crate::languages::rust::names::impl_instance_arguments(instance, generic)
             {
-                impl_instances.entry(record).or_default().insert(arguments);
-            } else if let (Some(instance), Some(generic)) = (
-                instance.strip_suffix("_drop_glue"),
-                generic.strip_suffix("_drop_glue"),
-            ) {
-                // A generic struct's drop glue at an instance, `Node<u32>`'s
-                // of `Node<T>`'s, is written from its `impl<T> Destruct`
-                // block.
-                let (record, arguments) =
-                    crate::languages::rust::names::split_type_arguments(instance);
-                if crate::languages::rust::names::split_type_arguments(generic).0 == record
-                    && !arguments.is_empty()
-                {
-                    impl_instances
-                        .entry(rust_generic_functions::destruct_instances_key(&record))
-                        .or_default()
-                        .insert(arguments);
-                }
+                impl_instances
+                    .entry(ImplKey::Inherent(record))
+                    .or_default()
+                    .insert(arguments);
+            }
+        }
+        for target in layouts.rust_destructor_instances {
+            let (record, arguments) =
+                crate::languages::rust::names::split_type_arguments(&target.record);
+            if !arguments.is_empty() {
+                impl_instances
+                    .entry(ImplKey::Destruct(record))
+                    .or_default()
+                    .insert(arguments);
             }
         }
         // An instance is only ever written out: one the sidecar writes is
@@ -2311,6 +2312,7 @@ impl Parser {
             rust_impl_method_suffix: None,
             rust_impl_module: None,
             rust_impl_trait: None,
+            rust_impl_destruct: false,
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
             rust_abstract_type_parameters: BTreeSet::new(),

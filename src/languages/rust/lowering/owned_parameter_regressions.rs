@@ -107,7 +107,9 @@ fn rust_owned_parameters_check_metadata_and_consumption() {
             4 => owned_arguments.push(owned_arguments[0].clone()),
             6 => {
                 owned_arguments[0].moved = false;
-                export.records[0].destructor = Some("forbidden_copy".into());
+                export.records[0].destructor = Some(
+                    crate::languages::rust::schema::Destructor::Explicit("forbidden_copy".into()),
+                );
             }
             _ => unreachable!(),
         }

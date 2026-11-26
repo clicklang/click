@@ -218,6 +218,19 @@ pub(crate) fn is_rust_name(name: &str) -> bool {
     name.starts_with(PREFIX)
 }
 
+/// The compiler-provided destructor of a particular checked record type.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) struct RustDestructor {
+    pub record: String,
+}
+
+impl RustDestructor {
+    /// Adapt the typed target to the shared named-function and contract tables.
+    pub(crate) fn contract_name(&self) -> String {
+        format!("<{} as Destruct>::drop_glue", self.record)
+    }
+}
+
 /// The importer name of the item at a path, `quad::walk` or
 /// `adler2::algo::U32X4`: the prefix and each segment
 /// (`__rust_q_I4_quad_I4_walk`).
@@ -342,6 +355,16 @@ pub(crate) fn method_path_name(path: &[&str]) -> String {
 /// The path `name` stands for, `quad::walk`, when it is a whole importer
 /// name; `None` for any other name.
 pub fn rust_display_name(name: &str) -> Option<String> {
+    // Destructor targets use the shared registry's qualified contract label.
+    if let Some((record, "Destruct>::drop_glue")) = name
+        .strip_prefix('<')
+        .and_then(|name| name.split_once(" as "))
+    {
+        let target = RustDestructor {
+            record: type_display(record)?,
+        };
+        return Some(target.contract_name());
+    }
     let (path, rest) = decode(name)?;
     if rest.is_empty() {
         return Some(path);
