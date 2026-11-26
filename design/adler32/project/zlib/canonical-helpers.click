@@ -333,11 +333,10 @@ theorem zlib_packed_integer_seed(word: uint64, a: Integer, b: Integer) {
   have to_uint64(b) <= 65535u64;
   apply(integer::uint64_pack_uint16_to_integer(to_uint64(a), to_uint64(b)));
   have to_integer(word) == to_integer((to_uint64(a) | (to_uint64(b) << 16))) by {
-   close() using {
-    to_integer(word) == a + 65536 * b;
-    to_integer((to_uint64(a) | (to_uint64(b) << 16))) == to_integer(to_uint64(a)) + 65536 * to_integer(to_uint64(b));
-    to_integer(to_uint64(a)) == a; to_integer(to_uint64(b)) == b;
-   };
+   rewrite(to_integer((to_uint64(a) | (to_uint64(b) << 16))), to_integer(to_uint64(a)) + 65536 * to_integer(to_uint64(b)));
+   rewrite(to_integer(to_uint64(a)), a);
+   rewrite(to_integer(to_uint64(b)), b);
+   close();
   }
   have zlib_seed_a(word) <= 65520u64 by { rewrite(word, (to_uint64(a) | (to_uint64(b) << 16))); close(); }
   have zlib_seed_b(word) <= 65520u64 by { rewrite(word, (to_uint64(a) | (to_uint64(b) << 16))); close(); }
