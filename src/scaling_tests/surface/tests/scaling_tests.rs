@@ -674,16 +674,16 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
     // first use parses every library module into a process-wide `OnceLock`
     // on the calling thread. Do that here, on the test's ordinary stack, so
     // the small stack and the work samples measure only the nested bodies.
-    crate::surface::parse("theorem warm() { ensures 0 == 0 by { normalize(); } }")
+    crate::surface::parse("theorem warm() { ensures 0 == 0 by { close(); } }")
         .expect("the standard library parses");
     std::thread::Builder::new()
         .name("small-stack-proof-body-parser".into())
         .stack_size(7 * 256 * 1024)
         .spawn(|| {
             let samples = [2, 4, 8, 16].map(|depth| {
-                let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
+                let mut body = "have 0 == 0 by { close(); } close();".to_string();
                 for _ in 0..depth {
-                    body = format!("all {{ true => {{ {body} }} true => {{ normalize(); }} }}");
+                    body = format!("all {{ true => {{ {body} }} true => {{ close(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1205,7 +1205,7 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
         let unrelated = (0..size)
             .map(|index| {
                 format!(
-                    "                have 0 <= {index} by {{\n                    normalize();\n                }}\n"
+                    "                have 0 <= {index} by {{\n                    close() using {{}};\n                }}\n"
                 )
             })
             .collect::<String>();
@@ -1620,7 +1620,7 @@ fn grouped_claim_project(claim_count: usize) -> (String, String) {
     for _ in 0..claim_count {
         click_source.push_str("    ensures result == x;\n");
     }
-    click_source.push_str("} by {\n    step();\n    normalize();\n}\n");
+    click_source.push_str("} by {\n    step();\n    close();\n}\n");
     (c_source, click_source)
 }
 
@@ -10582,8 +10582,7 @@ fn explicit_claim_closers_have_near_linear_finishing_work() {
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = grouped_claim_project(size);
-            let click_source =
-                click_source.replace("    normalize();", &"    normalize();\n".repeat(size));
+            let click_source = click_source.replace("    close();", &"    close();\n".repeat(size));
             let (verified, sample) = scaling_sample(size, || {
                 verify_c_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
             });
