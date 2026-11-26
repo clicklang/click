@@ -4563,8 +4563,8 @@ fn memory_load_is_directly_unchanged(
                 Proposition::HeapAllocationFreed {
                     before: effect_before,
                     after: effect_after,
-                    allocation_base,
-                    bytes,
+                    blocks,
+                    mutable_ranges,
                     ..
                 } => {
                     effect_before == before
@@ -4574,12 +4574,19 @@ fn memory_load_is_directly_unchanged(
                             pointer,
                             assumptions,
                         )
-                        && heap_allocation_proven_separate_from_pointer(
-                            allocation_base,
-                            bytes,
-                            pointer,
-                            assumptions,
-                        )
+                        && blocks.iter().all(|(base, bytes)| {
+                            heap_allocation_proven_separate_from_pointer(
+                                base,
+                                bytes,
+                                pointer,
+                                assumptions,
+                            )
+                        })
+                        && (mutable_ranges.is_empty()
+                            || assumptions
+                                .ranges_directly_disjoint_from_pointer(mutable_ranges, pointer)
+                            || assumptions
+                                .ranges_proven_disjoint_from_pointer(mutable_ranges, pointer))
                 }
                 _ => false,
             };

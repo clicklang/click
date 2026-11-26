@@ -3393,8 +3393,8 @@ fn execute_program_heap_free_paths(
                 before_point: before_free_point,
                 after: memory,
                 after_point: next.memory_point(),
-                allocation_base: pointer.address().clone(),
-                bytes: bytes.clone(),
+                blocks: vec![(pointer.address().clone(), bytes.clone())],
+                mutable_ranges: Vec::new(),
             },
         ));
         if let Err(error) = next.retire_population_storage(&pointer.base) {

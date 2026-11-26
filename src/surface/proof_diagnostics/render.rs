@@ -1805,18 +1805,19 @@ impl Renderer<'_> {
             Proposition::HeapAllocationFreed {
                 before,
                 after,
-                allocation_base,
-                bytes,
+                blocks,
                 ..
             } => {
                 self.push("heap-freed(");
                 self.memory(before);
                 self.push(" -> ");
                 self.memory(after);
-                self.push(", base=");
-                self.pointer(allocation_base);
-                self.push(", bytes=");
-                self.bitvector(bytes.bytes());
+                for (base, bytes) in blocks {
+                    self.push(", base=");
+                    self.pointer(base);
+                    self.push(", bytes=");
+                    self.bitvector(bytes.bytes());
+                }
                 self.push(")");
             }
             Proposition::ProgramExpressionEvaluates {

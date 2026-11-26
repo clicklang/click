@@ -5415,8 +5415,8 @@ fn checked_interface_effect_facts_along(
                     before,
                     after,
                     after_point,
-                    allocation_base,
-                    bytes,
+                    blocks,
+                    mutable_ranges,
                     ..
                 } => {
                     if !chained && !interface_chain_memory_matches(&memory, before, assumptions) {
@@ -5426,8 +5426,8 @@ fn checked_interface_effect_facts_along(
                     }
                     memory = after.clone();
                     heap_frees[arm_index].push((
-                        allocation_base.clone(),
-                        bytes.clone(),
+                        blocks.clone(),
+                        mutable_ranges.clone(),
                         after.clone(),
                         after_point.clone(),
                     ));
@@ -5447,14 +5447,14 @@ fn checked_interface_effect_facts_along(
         if heap_frees[0] == heap_frees[1] && !heap_frees[0].is_empty() {
             let facts = heap_frees[0]
                 .iter()
-                .map(|(allocation_base, bytes, after, after_point)| {
+                .map(|(blocks, mutable_ranges, after, after_point)| {
                     ExecutionPureFact::certified(Proposition::HeapAllocationFreed {
                         before: split_state.memory().clone(),
                         before_point: split_state.memory_point(),
                         after: after.clone(),
                         after_point: after_point.clone(),
-                        allocation_base: allocation_base.clone(),
-                        bytes: bytes.clone(),
+                        blocks: blocks.clone(),
+                        mutable_ranges: mutable_ranges.clone(),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -5496,13 +5496,9 @@ fn conditional_heap_frees(
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
-            .filter_map(|fact| match fact.proposition() {
-                Proposition::HeapAllocationFreed {
-                    allocation_base,
-                    bytes,
-                    ..
-                } => Some((allocation_base.clone(), bytes.clone())),
-                _ => None,
+            .flat_map(|fact| match fact.proposition() {
+                Proposition::HeapAllocationFreed { blocks, .. } => blocks.clone(),
+                _ => Vec::new(),
             })
             .collect()
     })

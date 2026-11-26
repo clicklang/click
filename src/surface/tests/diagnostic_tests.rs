@@ -894,8 +894,11 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
             after_point: Default::default(),
             before,
             after,
-            allocation_base: pointer,
-            bytes: crate::kernel::AllocationSize::int32(OldMachineTerm::constant(4)),
+            blocks: vec![(
+                pointer,
+                crate::kernel::AllocationSize::int32(OldMachineTerm::constant(4)),
+            )],
+            mutable_ranges: Vec::new(),
         }),
     ];
 

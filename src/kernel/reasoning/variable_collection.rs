@@ -862,14 +862,19 @@ fn collect_proposition_bitvector_variables_one(
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);
-            collect_pointer_bitvector_variables(allocation_base, variables);
-            collect_bitvector_variables(bytes.bytes(), variables);
+            for (base, bytes) in blocks {
+                collect_pointer_bitvector_variables(base, variables);
+                collect_bitvector_variables(bytes.bytes(), variables);
+            }
+            for range in mutable_ranges {
+                collect_memory_range_bitvector_variables(range, variables);
+            }
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)

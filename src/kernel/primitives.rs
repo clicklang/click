@@ -15118,8 +15118,13 @@ pub enum KernelProposition {
         after_point: program_point::PathLink,
         mutable_ranges: Vec<MemoryRange>,
     },
-    /// A free of the block at `allocation_base` with size `bytes`, which
-    /// keeps its format, so a 64-bit block's free reinstates a 64-bit claim.
+    /// Frees of the heap blocks in `blocks`, each at its base with its size,
+    /// which keeps its format, so a 64-bit block's free reinstates a 64-bit
+    /// claim. Between `before` and `after` only these blocks and
+    /// `mutable_ranges` change: a `free` statement frees one block and
+    /// changes nothing else; a call's exit frees every block its allocation
+    /// effects retire, and its other effects (the claims it retires or
+    /// makes and the memory it produces) are its mutable ranges.
     HeapAllocationFreed {
         before: SymbolicMemory,
         /// The point `before` is the state at; not part of the fact's
@@ -15128,8 +15133,8 @@ pub enum KernelProposition {
         after: SymbolicMemory,
         /// The point `after` is the state at.
         after_point: program_point::PathLink,
-        allocation_base: Address,
-        bytes: AllocationSize,
+        blocks: Vec<(Address, AllocationSize)>,
+        mutable_ranges: Vec<MemoryRange>,
     },
     And(Box<KernelProposition>, Box<KernelProposition>),
     Or(Box<KernelProposition>, Box<KernelProposition>),
@@ -15407,14 +15412,14 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
             before.hash(state);
             after.hash(state);
-            allocation_base.hash(state);
-            bytes.hash(state);
+            blocks.hash(state);
+            mutable_ranges.hash(state);
         }
         Proposition::And(..)
         | Proposition::Or(..)
@@ -15718,8 +15723,8 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             before_point,
             after_point,
         } => Proposition::HeapAllocationFreed {
@@ -15727,8 +15732,8 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             after_point: after_point.clone(),
             before: before.clone(),
             after: after.clone(),
-            allocation_base: allocation_base.clone(),
-            bytes: bytes.clone(),
+            blocks: blocks.clone(),
+            mutable_ranges: mutable_ranges.clone(),
         },
         Proposition::And(..)
         | Proposition::Or(..)

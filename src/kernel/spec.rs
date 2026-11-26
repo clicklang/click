@@ -3089,12 +3089,18 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             })
         }
         Proposition::HeapAllocationFreed {
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
-            integer_carrier_in_bitvector(bytes.bytes(), variable)
-                || integer_carrier_in_pointer(allocation_base, variable)
+            blocks.iter().any(|(base, bytes)| {
+                integer_carrier_in_bitvector(bytes.bytes(), variable)
+                    || integer_carrier_in_pointer(base, variable)
+            }) || mutable_ranges.iter().any(|range| {
+                integer_carrier_in_bitvector(range.bound_terms().0, variable)
+                    || integer_carrier_in_bitvector(range.bound_terms().1, variable)
+                    || integer_carrier_in_pointer(&range.base, variable)
+            })
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)

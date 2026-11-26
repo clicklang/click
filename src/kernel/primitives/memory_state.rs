@@ -11134,14 +11134,14 @@ impl ExecutionState {
     }
 
     /// The point this state's memory is the state at, for a fact that
-    /// quotes it: where the state stands, unless it has staged steps, whose
-    /// memory no point holds yet.
+    /// quotes it: where the state stands. A state with staged steps stands
+    /// between points, and no fact quotes its memory.
     pub(crate) fn memory_point(&self) -> super::program_point::PathLink {
-        if self.memory.pending_steps.is_some() {
-            super::program_point::PathLink::not_yet_a_point()
-        } else {
-            self.point.clone()
-        }
+        assert!(
+            self.memory.pending_steps.is_none(),
+            "a fact quotes a state with staged steps before its atomic region completes"
+        );
+        self.point.clone()
     }
 
     /// The identity of the point this state stands at, without interning its

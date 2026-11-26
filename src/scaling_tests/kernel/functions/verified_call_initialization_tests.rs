@@ -21,7 +21,7 @@ fn aliased_byte_output_lookup_ignores_unrelated_memory_and_alias_history() {
                 false,
             );
             post_state.complete_staged_memory();
-            if let Ok(Ok((_, words))) = &produced {
+            if let Ok(Ok((_, words, _))) = &produced {
                 produced_word_equations(&post_state, words, &mut facts, &budget);
             }
             produced
