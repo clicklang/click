@@ -91,6 +91,19 @@ function sized_flip_result(chain: SizedFlipChain, sub: SizedTree) -> SizedTree
     }
 }
 
+theorem sized_flip_root_recolors_from_parent(node: struct rb_node*, parent: struct rb_node*,
+        expected_parent: struct rb_node*, shade: Color, count: int32, left: SizedTree, right: SizedTree) {
+    requires parent == expected_parent;
+    ensures sized_plug(SizedContext::Top, SizedTree::Node(node, expected_parent, Color::Black, count, left, right))
+        == sized_flip_result(SizedFlipChain::Root, SizedTree::Node(node, parent, shade, count, left, right)) by {
+        rewrite(parent, expected_parent);
+        unfold(sized_plug(SizedContext::Top, SizedTree::Node(node, expected_parent, Color::Black, count, left, right)));
+        unfold(sized_flip_result(SizedFlipChain::Root, SizedTree::Node(node, expected_parent, shade, count, left, right)));
+        unfold(sized_recolor(SizedTree::Node(node, expected_parent, shade, count, left, right), Color::Black));
+        close();
+    }
+}
+
 theorem sized_flip_depth_nonnegative(chain: SizedFlipChain) {
     ensures 0 <= sized_flip_depth(chain) by {
         let ih = induct(chain);

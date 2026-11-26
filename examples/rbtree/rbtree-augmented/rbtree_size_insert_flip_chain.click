@@ -927,11 +927,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(focus.model, SizedTree::Node(current, 0, Color::Black, count, lo, hi));
                                         rewrite(at(iteration,state.chain), SizedFlipChain::Root);
                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
-                                        unfold(sized_flip_result(SizedFlipChain::Root, SizedTree::Node(current, above, red, count, lo, hi)));
-                                        unfold(sized_recolor(SizedTree::Node(current, above, red, count, lo, hi), Color::Black));
-                                        unfold(sized_plug(SizedContext::Top, SizedTree::Node(current, 0, Color::Black, count, lo, hi)));
                                         have above == 0 by close();
-                                        rewrite(above, 0); normalize();
+                                        apply(sized_flip_root_recolors_from_parent(current, above, 0, red, count, lo, hi));
+                                        close();
                                     }
                                     have 0 == sized_context_parent(SizedContext::Top, 0) by {
                                         unfold(sized_context_parent(SizedContext::Top, 0)); close();
