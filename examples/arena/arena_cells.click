@@ -5027,9 +5027,8 @@ int32 arena_pipeline(
                             close();
                         }
                         have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
-                            normalize() using {
-                                at(f3, first->arena) == arena;
-                            };
+                            rewrite(at(f3, first->arena), arena);
+                            close();
                         }
                         have k < at(f3, arena->capacity) by {
                             close();
@@ -5044,12 +5043,11 @@ int32 arena_pipeline(
                             instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
                             close();
                         }
-                        normalize() using {
-                            first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
-                            at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
-                            at(f3, arena->occupied[k]) == 0;
-                            first->arena == arena;
-                        };
+                        rewrite(arena, first->arena);
+                        rewrite(first->arena->occupied[k], at(f3, first->arena->occupied[k]));
+                        rewrite(at(f3, first->arena->occupied[k]), at(f3, arena->occupied[k]));
+                        rewrite(at(f3, arena->occupied[k]), 0);
+                        close();
                     }
                 }
                 have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
@@ -5058,10 +5056,8 @@ int32 arena_pipeline(
                         have k < first->end;
                         have arena->occupied[k] == 0 by {
                             instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
-                            normalize() using {
-                                first->arena->occupied[k] == 0;
-                                first->arena == arena;
-                            };
+                            rewrite(arena, first->arena);
+                            close();
                         }
                         close();
                     }
@@ -5076,9 +5072,8 @@ int32 arena_pipeline(
                             close();
                         }
                         have at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]) by {
-                            normalize() using {
-                                at(f3, first->arena) == arena;
-                            };
+                            rewrite(at(f3, first->arena), arena);
+                            close();
                         }
                         have k < at(f3, arena->capacity) by {
                             close();
@@ -5093,12 +5088,11 @@ int32 arena_pipeline(
                             instantiate(forall (j: int32) { 0 <= j and j < at(f3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f3, arena->occupied[j]) == 0 }, k);
                             close();
                         }
-                        normalize() using {
-                            first->arena->occupied[k] == at(f3, first->arena->occupied[k]);
-                            at(f3, first->arena->occupied[k]) == at(f3, arena->occupied[k]);
-                            at(f3, arena->occupied[k]) == 0;
-                            first->arena == arena;
-                        };
+                        rewrite(arena, first->arena);
+                        rewrite(first->arena->occupied[k], at(f3, first->arena->occupied[k]));
+                        rewrite(at(f3, first->arena->occupied[k]), at(f3, arena->occupied[k]));
+                        rewrite(at(f3, arena->occupied[k]), 0);
+                        close();
                     }
                 }
                 if k < first->start {
