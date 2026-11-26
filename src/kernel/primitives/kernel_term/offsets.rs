@@ -138,6 +138,78 @@ impl PartialOrd for SharedAddressOffset {
         Some(self.cmp(other))
     }
 }
+/// One node of an offset tree, read the same way from either representation
+/// ([`OldAddressOffset`] or [`SharedAddressOffset`]). A reader written against
+/// [`OffsetTree::view`] works unchanged when an old offset is replaced by its
+/// shared handle: children are the same representation as the parent, and a
+/// scaled index is its retained machine index, which import keeps, so both
+/// representations of one offset give the same index.
+pub(crate) enum OffsetView<'a, T> {
+    Constant(i64),
+    Variable(Variable),
+    Add(&'a T, &'a T),
+    Int32Scaled {
+        index: SharedMachineIntegerTerm,
+        byte_width: i64,
+    },
+    Int64Scaled {
+        index: SharedMachineIntegerTerm,
+        byte_width: i64,
+        unsigned: bool,
+    },
+}
+
+/// An offset tree that can be read node by node through [`OffsetView`].
+pub(crate) trait OffsetTree: Sized {
+    fn view(&self) -> OffsetView<'_, Self>;
+}
+
+impl OffsetTree for OldAddressOffset {
+    fn view(&self) -> OffsetView<'_, Self> {
+        match self {
+            Self::Constant(value) => OffsetView::Constant(*value),
+            Self::Variable(variable) => OffsetView::Variable(*variable),
+            Self::Add(left, right) => OffsetView::Add(left, right),
+            Self::Int32Scaled { value, byte_width } => OffsetView::Int32Scaled {
+                index: value.clone(),
+                byte_width: *byte_width,
+            },
+            Self::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => OffsetView::Int64Scaled {
+                index: value.clone(),
+                byte_width: *byte_width,
+                unsigned: *unsigned,
+            },
+        }
+    }
+}
+
+impl OffsetTree for SharedAddressOffset {
+    fn view(&self) -> OffsetView<'_, Self> {
+        match self.node() {
+            KernelAddressOffset::Constant(value) => OffsetView::Constant(*value),
+            KernelAddressOffset::Variable(variable) => OffsetView::Variable(*variable),
+            KernelAddressOffset::Add([left, right]) => OffsetView::Add(left, right),
+            KernelAddressOffset::Int32Scaled { value, byte_width } => OffsetView::Int32Scaled {
+                index: Self::exact_index(value),
+                byte_width: *byte_width,
+            },
+            KernelAddressOffset::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => OffsetView::Int64Scaled {
+                index: Self::exact_index(value),
+                byte_width: *byte_width,
+                unsigned: *unsigned,
+            },
+        }
+    }
+}
+
 #[derive(Default)]
 struct OffsetInterner {
     nodes: HashMap<KernelAddressOffset, Weak<OffsetData>>,
