@@ -534,6 +534,28 @@ logs do not establish an exact CPU model or memory allocation, so the cloud
 resource values above must not be attributed to those runners. Their dates,
 checked-out revisions, and workflow links are recorded below.
 
+### Memory and disk in cloud sessions
+
+One rustc compiling Click takes about 7 GB. A cargo command that compiles the
+library and a test crate at once, such as `cargo test`, `cargo build --lib
+--tests`, or nextest selecting `--lib` with `--test mdtests`, runs two of them:
+on 2026-11-26 a default `cargo test --no-run` peaked at 15.5 GB of the 16 GB
+with two compiles of 7.6 and 6.0 GB. Without swap the kernel kills one of
+them. The `click` environment's setup script therefore adds 8 GB of
+compressed swap in RAM (zram), which absorbed that build's overflow in up to
+1.25 GB of compressed pages. Check that it is present with
+`cat /proc/swaps`; with it, keep the default build jobs and incremental
+compilation instead of `-j1` or `CARGO_INCREMENTAL=0`.
+
+Disk is a per-session allowance, often 40 GB or less, and `df` shows the
+remaining part of it. Cargo's incremental cache is most of `target/`: each
+build configuration keeps its own 3-5 GB, and each worktree has its own
+`target/`. One session's `target/` reached 20 GB from the gate's test build,
+a default `cargo check` and a default `cargo test` build. Delete a worktree's
+`target/` when its task ends, and on "No space left on device" delete
+`target/debug/incremental` of the configurations not in use; the next build
+of one of them is then a full Click build.
+
 ### Measurement evidence
 
 - **Codex cloud fresh setup:** measured on 2026-10-24 at `929f45018`, with
