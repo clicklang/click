@@ -242,12 +242,12 @@ theorem first_null() {
     ensures first(Nodes::Link(0, Nodes::Empty))
         == List<struct node*>::Cons(0, List<struct node*>::Nil) by {
             unfold(first(Nodes::Link(0, Nodes::Empty)));
-            normalize();
+            close();
         }
 }
 theorem singleton_null() {
     ensures singleton(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
-        by { unfold(singleton(0)); normalize(); }
+        by { unfold(singleton(0)); close(); }
 }
 theorem singleton_return_null() {
     ensures singleton_return(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
@@ -255,7 +255,7 @@ theorem singleton_return_null() {
 }
 theorem typed_membership(xs: List<struct node*>, target: struct node*) {
     ensures list::contains(xs, target) == list::contains(xs, target)
-        by { normalize(); }
+        by { close(); }
 }
 "#;
     verify_c_sources(source, &[("node.c", c)])
