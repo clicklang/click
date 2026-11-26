@@ -19,11 +19,16 @@ void copy(const struct callbacks* cb, struct callbacks* out) {
     mark write;
     have cb->call == (&table)->call by { close(); }
     step();
+    have separate(statement(0).footprint, memory(table.call)) by {
+        rewrite(&table, cb);
+        close() using { separate(memory(out->call), memory(cb->call)); };
+    }
+    have table.call == at(write, table.call) by {
+        preserve(memory(table.call), statement(0));
+    }
     have at(write, cb->call) == table.call by {
-        normalize() using {
-            at(write, cb->call) == at(write, table.call);
-            cb == &table;
-        };
+        rewrite(table.call, at(write, table.call));
+        close();
     }
     step();
     close();
