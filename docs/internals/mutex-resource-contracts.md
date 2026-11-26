@@ -340,7 +340,11 @@ state, and release accepts a restored replacement instance of that same type.
 Unlocking forgets the memory the released instance owns, so that a thread
 caches nothing about protected memory while it does not hold it. The
 footprint is derived at release, while the thread still owns the instance and
-its memory names the footprint exactly; a footprint the derivation cannot name
+its memory names the footprint exactly. Inside a contract call, a helper's
+release and a typed use's forgetting derive it at the call's entry, which the
+callee's effects leave the protected footprint unchanged at, and their memory
+is a step of the call's one effect point
+(`mdtests/a_helper_released_pointer_footprint_stale_read_is_rejected.md`); a footprint the derivation cannot name
 forgets every cell the thread does not keep owning. Acquisition then changes
 no memory: it mints the fresh instance, and its unfolding names the protected
 memory again. The protected resource may own named children, and its

@@ -4125,9 +4125,8 @@ pub(in crate::kernel) fn execute_statement_paths(
 /// An atomic region reaches at most one new point: each path's exit is its
 /// entry, or one point reached from the entry alone. A contract call reaches
 /// two, its effect point and then its exit (`call(f, j).effect`, a
-/// migration measure). Calls under a mutex protocol still make its stages
-/// at points of their own; a call executed through its body runs the
-/// callee's regions, which are checked as they run.
+/// migration measure); a call executed through its body runs the callee's
+/// regions, which are checked as they run.
 #[cfg(test)]
 fn assert_one_point_per_region(
     entry: Option<crate::kernel::program_point::ProgramPointId>,
@@ -4175,15 +4174,6 @@ fn assert_one_point_per_region(
             if let [effect] = link.predecessors()
                 && effect.is_call_effect()
             {
-                // A call under a mutex protocol still makes its stages at
-                // points of their own.
-                if exit.mutex_ledger.is_some()
-                    || exit.opaque_mutex_acquisitions.is_some()
-                    || exit.named_mutex_authorities.is_some()
-                    || exit.preserves_mutex_protocols
-                {
-                    continue;
-                }
                 // A callee's static storage is materialized when its entry is
                 // built, at one point before the call's effect.
                 assert!(
@@ -4194,7 +4184,7 @@ fn assert_one_point_per_region(
                 );
                 continue;
             }
-            // A call through the callee's body, or under a mutex protocol.
+            // A call through the callee's body.
             continue;
         }
         panic!(

@@ -11300,6 +11300,21 @@ impl ExecutionState {
         self.replace_memory(memory, false);
     }
 
+    /// This state, continuing `source`'s atomic region in progress: it
+    /// stands where `source` stands and takes its memory, staged steps
+    /// included, with [`Self::stage_memory`]'s resource invalidation.
+    pub(crate) fn with_staged_memory_of(mut self, source: &Self) -> Self {
+        self.point = source.point.clone();
+        self.stage_memory(source.memory.clone());
+        self
+    }
+
+    /// [`Self::stage_memory`] without its resource invalidation, for a step
+    /// that has already accounted for it, as [`Self::set_memory_directly`].
+    pub(crate) fn stage_memory_directly(&mut self, memory: SymbolicMemory) {
+        self.memory = memory;
+    }
+
     /// [`Self::stage_memory`] when `stage`, [`Self::set_memory`] otherwise.
     pub(crate) fn set_or_stage_memory(&mut self, memory: SymbolicMemory, stage: bool) {
         if stage {

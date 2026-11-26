@@ -460,6 +460,7 @@ pub(in crate::kernel) fn apply_call_effect(
     definitions: &std::sync::Arc<[crate::kernel::CompositeResourceDefinition]>,
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
+    site: super::ProtocolSite<'_>,
 ) -> Result<
     (
         ExecutionState,
@@ -509,6 +510,7 @@ pub(in crate::kernel) fn apply_call_effect(
                 payload,
                 budget,
                 Some(source),
+                site,
             )?;
         if payload.is_some_and(|identity| next.owned_resource_instance(identity).is_none()) {
             return Err("acquiring helper did not produce its state".into());
@@ -538,6 +540,7 @@ pub(in crate::kernel) fn apply_call_effect(
         }
         let (memory, fresh) = super::assumed_protocol::fresh_protected_payload(
             &next,
+            site.reads(&next),
             assumptions,
             description,
             definition,
@@ -548,11 +551,11 @@ pub(in crate::kernel) fn apply_call_effect(
         ranges = crate::kernel::functions::checked_owned_memory_ranges(
             &ResourceFact::own(Resource::Instance(fresh.clone())),
             std::slice::from_ref(definition.expect("checked protected definition")),
-            &next,
+            site.reads(&next),
             assumptions,
         )
         .ok_or("protected helper state has no checked memory footprint")?;
-        next.set_memory_directly(memory);
+        site.install(&mut next, memory);
         Some(fresh)
     } else {
         None
@@ -585,6 +588,7 @@ pub(in crate::kernel) fn apply_call_effect(
                 payload,
                 budget,
                 Some(source),
+                site,
             )?;
         return Ok((next, evidence, ranges));
     }
