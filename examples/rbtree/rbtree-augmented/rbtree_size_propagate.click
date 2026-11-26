@@ -65,19 +65,16 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             let { parent: parent_word } = unfold(links);
             step_until(loop(0).statement(1).entry);
             have address(&node->rb) == address(old(rb)) by {
-                normalize() using { rb == old(rb); };
+                rewrite(rb, old(rb));
+                close();
             }
             have node->rb.rb_left == 0 by {
-                normalize() using {
-                    address(&node->rb) == address(old(rb));
-                    old(rb)->rb_left == 0;
-                };
+                rewrite(node->rb.rb_left, old(rb)->rb_left);
+                close();
             }
             have node->rb.rb_right == 0 by {
-                normalize() using {
-                    address(&node->rb) == address(old(rb));
-                    old(rb)->rb_right == 0;
-                };
+                rewrite(node->rb.rb_right, old(rb)->rb_right);
+                close();
             }
             let left = fold(optional_size(0), { value: 0 });
             let right = fold(optional_size(0), { value: 0 });

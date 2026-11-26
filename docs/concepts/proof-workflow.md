@@ -86,10 +86,9 @@ A proof is at one point at a time. Once a script reaches function exit
 on its path, with `step_until(function.exit)` or inside one arm of a proof
 `if`, the tactics that follow act on that path. Its open goals are the
 contract's claims in contract order, resource claims included. `fold`,
-`apply`, and `have` transform the current path. A closer such as `close()`,
-`close()`, `normalize() using` or `close() using` acts on the first open
-goal, the last two from exactly their listed premises when the explicit closer
-is preferable to search, and the implicit tail closes every goal still open.
+`apply`, and `have` transform the current path. A closer such as `close()` or
+`close() using` acts on the first open goal. Use `close() using` to restrict
+the premises. The implicit tail closes every goal still open.
 A later fact or fold does not retroactively affect an earlier closing step.
 
 ## Tactics
@@ -213,9 +212,8 @@ expansion output.
   names for multiple witnesses. Use `have` first if the existential needs a proof.
 - `witness(expression);`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
-- `close();`: close a goal already present as the same semantic fact; it
-  does not normalize or transport a new fact.
-- `normalize();`: close a pure goal by context-free computation.
+- `close();` checks for the goal among the available facts and can use bounded
+  proof search. For a computation, first use any needed `unfold` or `rewrite`.
 - `rewrite(from, to);`: rewrite the current proposition once using an exact
   available equality; the [tactic reference](../reference/tactics/index.md)
   lists the supported integer, pointer, and native unsigned forms.
