@@ -3617,9 +3617,7 @@ mod tests {
         let pointer = ProgramValue::Pointer(OldPointer::new(
             OldAddress {
                 base: AddressBase::Concrete("global:cells".into()),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -3664,9 +3662,7 @@ mod tests {
             ProgramValue::Pointer(OldPointer::new(
                 OldAddress {
                     base: AddressBase::Concrete(format!("global:{name}")),
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Constant(0),
-                    ),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -3732,7 +3728,7 @@ mod tests {
     fn historical_loads_use_their_own_state_names_and_keep_their_read_type() {
         let pointer = OldAddress {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let base =
             ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
@@ -3783,7 +3779,7 @@ mod tests {
         let index = Variable(9);
         let heap = OldAddress {
             base: AddressBase::Heap(1),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before =
             ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 4));
@@ -3859,7 +3855,7 @@ mod resource_tests {
     fn resource_arguments_keep_the_same_read_states_as_proposition_operands() {
         let pointer = OldAddress {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = ExecutionState::new()
             .with_local(

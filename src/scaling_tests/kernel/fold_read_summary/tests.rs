@@ -178,13 +178,10 @@ fn retained_offset_summary_does_not_expand_index_dags() {
             );
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
-        let offset = OldAddressOffset::Int32Scaled {
-            value: index.clone(),
-            byte_width: 4,
-        };
+        let offset = AddressOffset::int32_scaled(index.clone(), 4);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let linear = LinearOffset::of(&crate::kernel::AddressOffset::from(&offset));
+            let linear = LinearOffset::of(&offset.clone());
             assert_eq!(linear.as_scaled_index(4), Some((index, 0)));
             assert_eq!(
                 linear

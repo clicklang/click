@@ -11,7 +11,6 @@
 //! [`Load::at`] is the only constructor, and [`Load::base`] the only builder
 //! of [`AddressBase::Load`]; `build_support/read_construction.rs` keeps it so.
 
-use crate::kernel::OffsetTree;
 use std::sync::Arc;
 
 use super::{AddressBase, AddressOffset, OldAddress, ProgramPoint};

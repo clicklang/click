@@ -27,19 +27,16 @@ fn offset_nodes_retain_shared_index_dags_with_constant_work() {
             let operand =
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int64, index.clone())
                     .unwrap();
-            let source = OldAddressOffset::Int64Scaled {
-                value: operand.clone(),
-                byte_width: 8,
-                unsigned: true,
-            };
+            let source = AddressOffset::int64_scaled(operand.clone(), 8, true);
             let exports = KernelTermExport::machine_export_count();
-            let ((root, native), work) = crate::instrumentation::measure_deterministic_work(|| {
-                let root = KernelAddressOffset::import(&source);
-                let native = KernelAddressOffset::export(&root).unwrap();
-                (root, native)
-            });
+            let ((root, written), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let root = SharedAddressOffset::int64_scaled(operand.clone(), 8, true);
+                    let written = AddressOffset::try_from_shared(root.clone()).unwrap();
+                    (root, written)
+                });
             assert_eq!(root.node().index(), Some(&index));
-            assert_eq!(native, source);
+            assert_eq!(written, source);
             assert!(
                 work <= 12,
                 "size={size}, unrelated={unrelated}, work={work}"
@@ -50,16 +47,18 @@ fn offset_nodes_retain_shared_index_dags_with_constant_work() {
 }
 
 #[test]
-fn offset_chain_import_and_explicit_output_have_linear_work() {
+fn offset_chain_construction_and_written_view_have_linear_work() {
     for size in [16, 64, 256] {
-        let mut source = OldAddressOffset::Variable(Variable(996001));
+        let mut source = AddressOffset::variable(Variable(996001));
         for _ in 0..size {
-            source =
-                OldAddressOffset::Add(Box::new(source), Box::new(OldAddressOffset::Constant(0)));
+            source = AddressOffset::raw_add(source, AddressOffset::constant(0));
         }
         let ((root, output), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let root = KernelAddressOffset::import(&source);
-            let output = KernelAddressOffset::export(&root).unwrap();
+            let mut root = SharedAddressOffset::variable(Variable(996001));
+            for _ in 0..size {
+                root = SharedAddressOffset::raw_add(root, SharedAddressOffset::constant(0));
+            }
+            let output = AddressOffset::try_from_shared(root.clone()).unwrap();
             (root, output)
         });
         assert_eq!(source, output);

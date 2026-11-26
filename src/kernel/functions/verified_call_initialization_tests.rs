@@ -3,7 +3,7 @@ use super::*;
 fn local_pointer() -> OldAddress {
     OldAddress {
         base: AddressBase::Concrete("local:caller:x".to_string()),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     }
 }
 

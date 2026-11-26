@@ -156,7 +156,7 @@ mod tests {
     fn mutex(index: usize) -> OldAddress {
         OldAddress {
             base: format!("loop-mutex-{index}").into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
     fn initialized(address: &OldAddress) -> MutexContext {
@@ -359,7 +359,7 @@ mod loop_rule_tests {
     fn address() -> OldAddress {
         OldAddress {
             base: "loop-rule-mutex".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
     fn schema() -> ResourceFieldSchema {

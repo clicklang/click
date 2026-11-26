@@ -43,7 +43,7 @@ fn emitted(fact: ResourceFact, facts: &PureFactContext) -> EvaluatedReturnResour
 pub(super) fn anchor(identity: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(identity)).into(),
+        offset: AddressOffset::variable(Variable(identity)),
     }
 }
 

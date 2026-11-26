@@ -889,7 +889,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = OldAddress {
             base: AddressBase::Concrete("local:read-identity-slot".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
@@ -961,7 +961,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = OldAddress {
             base: AddressBase::Concrete("local:algebraic-read-slot".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block(slot.base.clone(), 16));
@@ -1047,7 +1047,7 @@ mod tests {
         let block = AddressBase::Concrete("local:read-order-slot".into());
         let cell = |offset| OldAddress {
             base: block.clone(),
-            offset: crate::kernel::OldAddressOffset::Constant(offset).into(),
+            offset: AddressOffset::constant(offset),
         };
         let reads = || {
             let empty = SymbolicMemory::new().with_block(block.clone(), 8);

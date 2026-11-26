@@ -1020,7 +1020,7 @@ mod tests {
                         base: boundary.base.clone(),
                         offset: AddressOffset::add(
                             boundary.offset.clone(),
-                            OldAddressOffset::Constant(offset).into(),
+                            AddressOffset::constant(offset),
                         ),
                     },
                     1u32.into(),

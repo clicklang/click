@@ -215,16 +215,9 @@ fn retained_plain_origin_requires_an_exact_allowed_atom() {
         ),
     ] {
         let root = KernelTerm::retained_machine_operand(ty, V::Old(&term));
-        let offset = OldAddressOffset::Int32Scaled {
-            value: V::Shared(&root).retain(T::Int32),
-            byte_width: 4,
-        };
+        let offset = AddressOffset::int32_scaled(V::Shared(&root).retain(T::Int32), 4);
         let exports = KernelTermExport::machine_export_count();
-        assert_eq!(
-            plain_origin(&crate::kernel::AddressOffset::from(&offset)),
-            expected,
-            "{ty:?} {term:?}"
-        );
+        assert_eq!(plain_origin(&offset.clone()), expected, "{ty:?} {term:?}");
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

@@ -294,11 +294,10 @@ mod tests {
         for block in blocks {
             let source = OldAddress {
                 base: block,
-                offset: OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::Constant(0)),
-                    Box::new(OldAddressOffset::Variable(Variable(998007))),
-                )
-                .into(),
+                offset: AddressOffset::raw_add(
+                    AddressOffset::constant(0),
+                    AddressOffset::variable(Variable(998007)),
+                ),
             };
             let shared = SharedAddress::import(&source);
             assert_eq!(shared.export().unwrap(), source);
@@ -318,7 +317,7 @@ mod tests {
         let address = |call| {
             SharedAddress::import(&OldAddress {
                 base: AddressBase::PureFunctionApplication(call),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             })
         };
         let left = address(a.clone());

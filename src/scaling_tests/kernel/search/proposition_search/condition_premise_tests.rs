@@ -117,7 +117,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
                     ProgramPoint::at(&memory),
                     Box::new(OldAddress {
                         base: "other".into(),
-                        offset: OldAddressOffset::Constant(index as i64 * 4).into(),
+                        offset: AddressOffset::constant(index as i64 * 4),
                     }),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -155,7 +155,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
                 ProgramPoint::at(&memory),
                 Box::new(OldAddress {
                     base: "other".into(),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -264,7 +264,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
         // unrelated ranges remain candidates for the adjacency search.
         let pointer = |index| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(term(index), 4).into(),
+            offset: AddressOffset::scale_int32(term(index), 4),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
@@ -323,7 +323,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 ProgramPoint::at(&memory),
                 Box::new(OldAddress {
                     base: "buffer".into(),
-                    offset: OldAddressOffset::Constant(index * 4).into(),
+                    offset: AddressOffset::constant(index * 4),
                 }),
                 LoadKind::Int32,
             );

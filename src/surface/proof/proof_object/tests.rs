@@ -439,9 +439,7 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                     writes: vec![(
                         crate::kernel::OldAddress {
                             base: crate::kernel::AddressBase::ExternalArgument,
-                            offset: crate::kernel::AddressOffset::from(
-                                crate::kernel::OldAddressOffset::Constant(index as i64 * 4),
-                            ),
+                            offset: AddressOffset::constant(index as i64 * 4),
                         },
                         crate::kernel::AccessExtent::from(4),
                     )],
@@ -506,7 +504,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
 fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
     let pointer = OldAddress {
         base: "sum".into(),
-        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let loadable = crate::kernel::quantifiers::test_forall(
         Default::default(),
@@ -657,7 +655,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             let theorems = TheoremEnvironment::new(&[]);
             let pointer = OldAddress {
                 base: "atomic-extract-cell".into(),
-                offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let old_memory = SymbolicMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
@@ -1064,7 +1062,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
     let context = pure_identity_fixture();
     let pointer = OldAddress {
         base: "cell".into(),
-        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let memory = SymbolicMemory::new().with_block("cell", 4).store(
         pointer.clone(),
@@ -5256,7 +5254,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let base = ProgramValue::typed_pointer(
         OldAddress {
             base: AddressBase::Concrete(block.into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -11781,7 +11779,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     let function = parsed_function.to_kernel_function();
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -11946,7 +11944,7 @@ fn generated_load_source_event_fixture(
 ) -> crate::kernel::GeneratedLoadSourceEvent {
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: crate::kernel::OldAddressOffset::Constant(pointer_offset.into()).into(),
+        offset: AddressOffset::constant(pointer_offset.into()),
     };
     crate::kernel::GeneratedLoadSourceEvent::new(
         crate::kernel::LoadSourceId {
@@ -14468,16 +14466,11 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         load_type(function.body()).expect("callback field is a typed load");
     let argument = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::from(
-            crate::kernel::OldAddressOffset::scaled_int32_node(
-                OldMachineTerm::Variable(Variable(210_520)),
-                4,
-            ),
-        ),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(210_520)), 4),
     };
     let table = OldAddress {
         base: "global:callback-table".into(),
-        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let target = OldAddress::function("callback");
     let memory = SymbolicMemory::new().store(
@@ -15090,9 +15083,7 @@ fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
         Resource::Memory(MemoryRange::new(
             OldAddress {
                 base: name.into(),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),

@@ -64,7 +64,7 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: "resolved-int32-scale".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let memory = intern_memory(
@@ -101,7 +101,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
         let _session = VerificationSession::enter();
         let pointer = |offset| OldAddress {
             base: "two-resolved-int32-scale".into(),
-            offset: OldAddressOffset::Constant(offset).into(),
+            offset: AddressOffset::constant(offset),
         };
         let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let memory = intern_memory(
@@ -344,7 +344,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
             let _session = VerificationSession::enter();
             let address = OldAddress {
                 base: "selected".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let mut memory = SymbolicMemory::new().with_block("selected", 4);
             for i in 0..size {
@@ -399,8 +399,8 @@ fn offset_premise_shallow_decision_and_forks_scale() {
                 for i in 0..size {
                     parent = parent.clone().assume_condition(
                         OldConditionTerm::address_offset_equal(
-                            OldAddressOffset::scale_int32(var(i), 4).into(),
-                            OldAddressOffset::scale_int32(var(i + 1), 4).into(),
+                            AddressOffset::scale_int32(var(i), 4),
+                            AddressOffset::scale_int32(var(i + 1), 4),
                         ),
                         true,
                     );
@@ -530,7 +530,7 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
         let _session = VerificationSession::enter();
         let parameter = |i| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(var(i), 4).into(),
+            offset: AddressOffset::scale_int32(var(i), 4),
         };
         let write = parameter(990_000);
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
@@ -541,8 +541,8 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
         for i in 0..size {
             context = context.assume_condition(
                 OldConditionTerm::address_offset_equal(
-                    OldAddressOffset::scale_int32(var(i), 4).into(),
-                    OldAddressOffset::scale_int32(var(i + 10_000), 4).into(),
+                    AddressOffset::scale_int32(var(i), 4),
+                    AddressOffset::scale_int32(var(i + 10_000), 4),
                 ),
                 true,
             );
@@ -574,7 +574,7 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
             OldPointer::new(
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::scale_int32(var(id), 4).into(),
+                    offset: AddressOffset::scale_int32(var(id), 4),
                 },
                 ProgramType::Int32Pointer,
             )
@@ -604,7 +604,7 @@ fn constant_queries_ignore_other_state_candidates() {
             let _session = VerificationSession::enter();
             let pointer = OldAddress {
                 base: "constant-bridge-scale".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let query = var(880_000);
             let mut context = PureFactContext::new();
@@ -617,9 +617,7 @@ fn constant_queries_ignore_other_state_candidates() {
             for index in 0..2 * size {
                 let mut address = pointer.clone();
                 if !same_address && index >= size {
-                    address.offset = crate::kernel::AddressOffset::from(
-                        OldAddressOffset::Constant(4 * (index - size + 1) as i64),
-                    );
+                    address.offset = AddressOffset::constant(4 * (index - size + 1) as i64);
                 }
                 memory = memory.with_call_memory_havoc(
                     Variable(881_000 + index),
@@ -687,7 +685,7 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
         let _session = VerificationSession::enter();
         let write = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(var(990_000), 4).into(),
+            offset: AddressOffset::scale_int32(var(990_000), 4),
         };
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new(write.clone(), 0u32.into(), 1u32.into()),
@@ -719,9 +717,11 @@ fn unrelated_read_inputs_preserve_the_selected_parameter_partition() {
             .assume_condition(eq(&read, &var(990_000)), true);
         assert!(relevant.parameter_store_partition(&write, 4).is_none());
         assert!(context.parameter_store_partition(&write, 4).is_some());
-        assert!(context.equality_graph.offset_has_source_dependencies(
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::scale_int32(read, 4))
-        ));
+        assert!(
+            context
+                .equality_graph
+                .offset_has_source_dependencies(&AddressOffset::scale_int32(read, 4).clone())
+        );
     }
     eprintln!("read-fact count, shortcut available, query work: {samples:?}");
     assert!(samples.iter().all(|(_, found, _)| *found), "{samples:?}");

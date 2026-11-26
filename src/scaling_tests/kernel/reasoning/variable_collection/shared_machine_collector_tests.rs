@@ -160,52 +160,39 @@ fn pointer_index_collectors_keep_cold_dags_shared() {
             }
             let machine = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
             let offset = if ty == MachineIntegerType::Int32 {
-                OldAddressOffset::Int32Scaled {
-                    value: machine,
-                    byte_width: 4,
-                }
+                AddressOffset::int32_scaled(machine, 4)
             } else {
-                OldAddressOffset::Int64Scaled {
-                    value: machine,
-                    byte_width: 8,
-                    unsigned: ty == MachineIntegerType::UInt64,
-                }
+                AddressOffset::int64_scaled(machine, 8, ty == MachineIntegerType::UInt64)
             };
             let before = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut variables = BTreeSet::new();
                 collect_pointer_offset_integer_variables(
-                    &crate::kernel::AddressOffset::from(&offset),
+                    &offset.clone(),
                     &mut variables,
                     &mut SeenTerms::default(),
                 );
                 assert!(variables.is_empty());
                 collect_pointer_offset_capture_variables(
-                    &crate::kernel::AddressOffset::from(&offset),
+                    &offset.clone(),
                     &mut variables,
                     &mut SeenTerms::default(),
                 );
                 assert_eq!(variables, BTreeSet::from([var]));
                 variables.clear();
-                collect_pointer_offset_bitvector_variables(
-                    &crate::kernel::AddressOffset::from(&offset),
-                    &mut variables,
-                );
+                collect_pointer_offset_bitvector_variables(&offset.clone(), &mut variables);
                 assert_eq!(variables, BTreeSet::from([var]));
                 let (mut integers, mut machines) = Default::default();
                 collect_pointer_offset_binder_variables(
-                    &crate::kernel::AddressOffset::from(&offset),
+                    &offset.clone(),
                     &mut integers,
                     &mut machines,
                     &mut SeenTerms::default(),
                 );
                 assert!(integers.is_empty() && machines.is_empty());
                 assert_eq!(
-                    collect_pointer_offset_scope_summary(
-                        &crate::kernel::AddressOffset::from(&offset),
-                        &mut Default::default()
-                    )
-                    .max,
+                    collect_pointer_offset_scope_summary(&offset.clone(), &mut Default::default())
+                        .max,
                     var.0
                 );
             });

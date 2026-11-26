@@ -90,16 +90,9 @@ fn scaled_offset_keys_and_congruence_retain_shared_operands() {
                 .unwrap();
             let value = SharedMachineIntegerTerm::from_shared(container, root).unwrap();
             if ty == MachineIntegerType::Int32 {
-                OldAddressOffset::Int32Scaled {
-                    value,
-                    byte_width: stride,
-                }
+                AddressOffset::int32_scaled(value, stride)
             } else {
-                OldAddressOffset::Int64Scaled {
-                    value,
-                    byte_width: stride,
-                    unsigned: ty == MachineIntegerType::UInt64,
-                }
+                AddressOffset::int64_scaled(value, stride, ty == MachineIntegerType::UInt64)
             }
         };
         let expression = |variable| OldMachineTerm::Binary {
@@ -114,27 +107,12 @@ fn scaled_offset_keys_and_congruence_retain_shared_operands() {
         let exports = KernelTermExport::machine_export_count();
         let mut graph = EqualityGraph::default();
         assert_ne!(AffineOffset::of(&left), AffineOffset::of(&right));
-        assert!(!graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&left),
-            &crate::kernel::AddressOffset::from(&right)
-        ));
+        assert!(!graph.are_offsets_equal(&left.clone(), &right.clone()));
         let sibling = graph.clone();
-        graph.add_offset_equality(
-            &crate::kernel::AddressOffset::from(&left),
-            &crate::kernel::AddressOffset::from(&right),
-        );
-        assert!(graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&left),
-            &crate::kernel::AddressOffset::from(&right)
-        ));
-        assert!(!sibling.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&left),
-            &crate::kernel::AddressOffset::from(&right)
-        ));
-        assert!(!graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&left),
-            &crate::kernel::AddressOffset::from(&different)
-        ));
+        graph.add_offset_equality(&left.clone(), &right.clone());
+        assert!(graph.are_offsets_equal(&left.clone(), &right.clone()));
+        assert!(!sibling.are_offsets_equal(&left.clone(), &right.clone()));
+        assert!(!graph.are_offsets_equal(&left.clone(), &different.clone()));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

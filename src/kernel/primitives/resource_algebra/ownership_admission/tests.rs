@@ -336,7 +336,7 @@ fn automatic_storage_and_entry_arguments_keep_their_structural_partition() {
     let facts = PureFactContext::new();
     let pointer = |block| OldAddress {
         base: block,
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let argument = owner(pointer(AddressBase::ExternalArgument), 0, 4);
     let local = owner(pointer(AddressBase::Concrete("local:object".into())), 0, 4);

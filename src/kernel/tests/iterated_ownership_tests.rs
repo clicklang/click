@@ -24,7 +24,7 @@ const UNRELATED: u64 = 7_000_003;
 fn heap_base(identity: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::Heap(identity),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     }
 }
 
@@ -282,7 +282,7 @@ mod scaling_tests {
 fn indexed_slots_use_the_selected_clause_across_states() {
     let source = OldAddress {
         base: "iterated-pointer-slot".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let before = SymbolicMemory::new()
         .with_block("iterated-pointer-slot", 8)
@@ -290,15 +290,14 @@ fn indexed_slots_use_the_selected_clause_across_states() {
     let after = before.clone().store(cell(UNRELATED, 0), int32(1));
     let read = |memory: &SymbolicMemory, address: &OldAddress| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scaled_int32_node(
+        offset: AddressOffset::scaled_int32_node(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(address.clone()),
                 LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
             ),
             4,
-        )
-        .into(),
+        ),
     };
     let held_base = read(&before, &source);
     let current_base = read(&after, &source);

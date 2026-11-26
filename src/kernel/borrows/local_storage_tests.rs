@@ -1,12 +1,12 @@
 use super::*;
-use crate::kernel::{OldAddress, OldAddressOffset, SymbolicMemory};
+use crate::kernel::{AddressOffset, OldAddress, SymbolicMemory};
 
 fn view(index: usize, end: u32) -> CheckedResourceFact {
     CheckedResourceFact {
         fact: ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: format!("local:borrow-{index}").into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             0.into(),
             end.into(),

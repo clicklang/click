@@ -6332,7 +6332,7 @@ mod shared_wide_order_evidence_tests {
                     ProgramPoint::at(&memory),
                     Box::new(OldAddress {
                         base: "wide-order".into(),
-                        offset: OldAddressOffset::Constant(offset).into(),
+                        offset: AddressOffset::constant(offset),
                     }),
                     LoadKind::Bits64,
                 )

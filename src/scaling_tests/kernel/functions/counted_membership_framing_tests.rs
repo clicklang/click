@@ -8,7 +8,7 @@ use super::*;
 fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
     let pointer = OldAddress {
         base: "counter".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let assumptions = PureFactContext::new();
     let memory = SymbolicMemory::new().with_block("counter", 4);
@@ -153,11 +153,10 @@ fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
         let _session = VerificationSession::enter();
         let argument = |index| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(
+            offset: AddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(784_000 + index)),
                 4,
-            )
-            .into(),
+            ),
         };
         let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
             residual.unchecked_with_fact(ResourceFact::own_composite(
@@ -217,11 +216,10 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let _session = VerificationSession::enter();
         let object = |index: u64| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(
+            offset: AddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(783_000 + index)),
                 4,
-            )
-            .into(),
+            ),
         };
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
             resources.unchecked_with_fact(ResourceFact::own_composite(

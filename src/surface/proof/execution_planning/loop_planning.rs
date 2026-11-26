@@ -1,5 +1,4 @@
 use super::*;
-use crate::kernel::OffsetTree;
 use std::sync::Arc;
 
 /// The proof scope a loop's phase proofs are written in.

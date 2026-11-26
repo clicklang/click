@@ -471,12 +471,12 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
 fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() {
     let input = |name| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(name)), 4).into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(name)), 4),
     };
     let base = input(979_000);
     let model_base = OldAddress {
         base: AddressBase::Symbolic(Variable(979_001)),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let alias = OldConditionTerm::address_equal(base.clone(), model_base.clone());
     let assumptions = PureFactContext::new().assume_condition(alias.clone(), true);
@@ -670,13 +670,11 @@ fn stored_field_value_uses_indexed_base_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
     let left = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(105_001)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(105_001)), 4),
     };
     let right = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(105_002)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(105_002)), 4),
     };
     let write = left.offset_by_bytes(16);
     let read = right.offset_by_bytes(16);
@@ -736,7 +734,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4).into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let left = base(106_001);
     let right = base(106_002);
@@ -863,7 +861,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4).into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let write_base = base(160_001);
     let write_model = base(160_002);
@@ -1118,7 +1116,7 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
             ProgramPoint::at(&memory),
             Box::new(OldAddress {
                 base: "byte-gap-index".into(),
-                offset: OldAddressOffset::Constant(slot * 4).into(),
+                offset: AddressOffset::constant(slot * 4),
             }),
             crate::kernel::LoadKind::Int32,
         )
@@ -1128,7 +1126,7 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     let right_index = index(1);
     let at = |index: &OldMachineTerm| OldAddress {
         base: "byte-gap-data".into(),
-        offset: OldAddressOffset::scale_int32(index.clone(), 4).into(),
+        offset: AddressOffset::scale_int32(index.clone(), 4),
     };
     let left = at(&left_index);
     let right = at(&right_index);
@@ -1206,7 +1204,7 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
 fn indexed_byte_separation_ignores_unrelated_external_ranges() {
     let pointer = |id| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(id)).into(),
+        offset: AddressOffset::variable(Variable(id)),
     };
     let separate = |p, q| Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(p, 0, 2))),
@@ -1241,7 +1239,7 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = |id| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(id)).into(),
+        offset: AddressOffset::variable(Variable(id)),
     };
     let numeric_alias = |p: OldAddress, q: OldAddress| {
         Proposition::condition_is(
@@ -1288,7 +1286,7 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
         let context = PureFactContext::new();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let target = OldAddress::symbolic(Variable(995_600));
         let mut memory = SymbolicMemory::new().store(
@@ -1333,7 +1331,7 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
             let _session = crate::kernel::VerificationSession::enter();
             let address = |variable| OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(variable)).into(),
+                offset: AddressOffset::variable(Variable(variable)),
             };
             let word = address(98_750);
             let bytes = address(98_751);

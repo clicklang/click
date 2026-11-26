@@ -445,14 +445,14 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
                 [root.clone(), root],
             );
         }
-        let offset = OldAddressOffset::Int32Scaled {
-            value: S::from_shared(MachineIntegerType::Int32, root).unwrap(),
-            byte_width: 4,
-        };
+        let offset = AddressOffset::int32_scaled(
+            S::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            4,
+        );
         let mut reads = Vec::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            collect_offset_reads(&crate::kernel::AddressOffset::from(&offset), &mut reads)
+            collect_offset_reads(&offset.clone(), &mut reads)
         });
         assert_eq!(reads.len(), 1);
         assert_eq!(KernelTermExport::machine_export_count(), exports);

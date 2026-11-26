@@ -6214,7 +6214,7 @@ mod proof_case_evidence_tests {
     fn branch_memory_delta_uses_the_full_changed_cell_width() {
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let escrow = ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
@@ -6235,7 +6235,7 @@ mod proof_case_evidence_tests {
             .store(pointer.clone(), int32(0));
         let later_byte = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(1).into(),
+            offset: AddressOffset::constant(1),
         };
         let changed = base.clone().store(later_byte, int32(1));
         let mut requirements = BTreeSet::new();
@@ -6243,7 +6243,7 @@ mod proof_case_evidence_tests {
         let changed_range = MemoryRange::new_with_element_width(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(1).into(),
+                offset: AddressOffset::constant(1),
             },
             0u32.into(),
             4u32.into(),

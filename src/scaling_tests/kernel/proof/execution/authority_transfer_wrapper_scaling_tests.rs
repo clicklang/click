@@ -56,7 +56,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 OldAddress {
                     base: format!("block_{index}").into(),
-                    offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+                    offset: crate::kernel::AddressOffset::constant(0),
                 },
                 0.into(),
                 1.into(),
@@ -132,7 +132,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
         let unrelated_memory = ResourceFact::own_memory(MemoryRange::new(
             OldAddress {
                 base: "block_0".into(),
-                offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+                offset: crate::kernel::AddressOffset::constant(0),
             },
             0.into(),
             1.into(),

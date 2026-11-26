@@ -181,11 +181,10 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                 OldPointer::new(
                     OldAddress {
                         base: AddressBase::ExternalArgument,
-                        offset: OldAddressOffset::scale_int32(
+                        offset: AddressOffset::scale_int32(
                             OldMachineTerm::Variable(Variable(id)),
                             1,
-                        )
-                        .into(),
+                        ),
                     },
                     ProgramType::UInt8Pointer,
                 )
@@ -200,10 +199,10 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                 parameter(916_222)
             };
             let target = base.clone().with_address(base.address().offset_by_bytes(2));
-            let delta = (0..size).fold(OldAddressOffset::Constant(0), |offset, index| {
-                OldAddressOffset::add(
+            let delta = (0..size).fold(AddressOffset::constant(0), |offset, index| {
+                AddressOffset::add(
                     offset,
-                    OldAddressOffset::scale_int32(
+                    AddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(920_000 + index)),
                         1,
                     ),
@@ -211,11 +210,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             });
             let input = source.clone().with_address(OldAddress {
                 base: source.address().base.clone(),
-                offset: OldAddressOffset::add(
-                    crate::kernel::OldAddressOffset::from(source.address().offset.clone()),
-                    delta.clone(),
-                )
-                .into(),
+                offset: AddressOffset::add(source.address().offset.clone(), delta.clone()),
             });
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
@@ -229,12 +224,9 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             assert_eq!(result.address().base, target.address().base);
             assert_eq!(
                 crate::kernel::eval::canonical_offset_term(&result.address().offset),
-                crate::kernel::eval::canonical_offset_term(&crate::kernel::AddressOffset::from(
-                    &OldAddressOffset::add(
-                        crate::kernel::OldAddressOffset::from(target.address().offset.clone()),
-                        delta
-                    )
-                ))
+                crate::kernel::eval::canonical_offset_term(
+                    &(AddressOffset::add(target.address().offset.clone(), delta)).clone()
+                )
             );
             assert_eq!(result.provenance(), target.provenance());
             assert_eq!(result.bounds_owner(), target.bounds_owner());
@@ -339,10 +331,10 @@ fn integer_address_rewrite_ignores_unrelated_interned_applications() {
 fn exact_displacement_rewrite_visits_shared_subexpressions_once() {
     let _session = VerificationSession::enter();
     for depth in [4, 8, 12, 16] {
-        let from = OldAddressOffset::Variable(Variable(1008500 + depth as u64));
-        let to = OldAddressOffset::Constant(1);
-        let doubling_chain = |leaf: &OldAddressOffset| {
-            let mut root = KernelAddressOffset::import(leaf);
+        let from = AddressOffset::variable(Variable(1008500 + depth as u64));
+        let to = AddressOffset::constant(1);
+        let doubling_chain = |leaf: &AddressOffset| {
+            let mut root = leaf.shared().clone();
             for _ in 0..depth {
                 root = KernelAddressOffset::Add([root.clone(), root])
                     .into_shared()
@@ -353,13 +345,10 @@ fn exact_displacement_rewrite_visits_shared_subexpressions_once() {
         let source = StoredPointerOffset::from_rewritten_root(doubling_chain(&from));
         let expected = doubling_chain(&to);
         let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
-            TermRewrite::for_pointer_offset_exact(
-                &crate::kernel::AddressOffset::from(&from),
-                &crate::kernel::AddressOffset::from(&to),
-            )
-            .contract_offset(&source)
+            TermRewrite::for_pointer_offset_exact(&from.clone(), &to.clone())
+                .contract_offset(&source)
         });
-        assert_eq!(output.root(), Some(&expected));
+        assert_eq!(output.root(), &expected);
         assert!(!source.has_cached_native_offset());
         assert!(!output.has_cached_native_offset());
         assert!(work <= 20 * depth, "depth={depth}, work={work}");

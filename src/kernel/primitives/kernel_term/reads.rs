@@ -353,7 +353,7 @@ mod tests {
             let payload = call.payload_id();
             let address = OldAddress {
                 base: AddressBase::PureFunctionApplication(call),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let root = KernelTerm::scalar_read_descriptor(
                 MachineIntegerType::Int32,
@@ -617,9 +617,8 @@ mod tests {
             } else {
                 AddressOffset::scaled_int32_node(index, 4)
             };
-            let (OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. }) =
-                crate::kernel::OldAddressOffset::from(&offset)
+            let (crate::kernel::OffsetView::Int32Scaled { index: value, .. }
+            | crate::kernel::OffsetView::Int64Scaled { index: value, .. }) = offset.clone().view()
             else {
                 unreachable!()
             };
@@ -682,8 +681,7 @@ mod tests {
                 1,
                 true,
             );
-            let OldAddressOffset::Int64Scaled { value, .. } =
-                crate::kernel::OldAddressOffset::from(&index)
+            let crate::kernel::OffsetView::Int64Scaled { index: value, .. } = index.clone().view()
             else {
                 unreachable!()
             };

@@ -13,7 +13,7 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
                     (ProgramValue::Pointer(OldPointer::new(
                         OldAddress {
                             base: format!("ambient_{index}").into(),
-                            offset: OldAddressOffset::Constant(0).into(),
+                            offset: AddressOffset::constant(0),
                         },
                         ProgramType::Int32Pointer,
                     )))
@@ -47,7 +47,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
         let memory = SymbolicMemory::new();
         let pointer = |id| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4).into(),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
         };
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -114,7 +114,7 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: "adjacent".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let prefix = Proposition::MemoryLoadable {
             memory: SymbolicMemory::new(),

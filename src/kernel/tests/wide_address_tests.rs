@@ -141,7 +141,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         let ProgramValue::Pointer(last) = last else {
             unreachable!()
         };
-        assert_eq!(last.offset, OldAddressOffset::Constant(32));
+        assert_eq!(last.offset, AddressOffset::constant(32));
         assert_eq!(
             value(
                 &state,
@@ -173,7 +173,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         let ProgramValue::Pointer(past) = past else {
             unreachable!()
         };
-        assert_eq!(past.offset, OldAddressOffset::Constant(48));
+        assert_eq!(past.offset, AddressOffset::constant(48));
         let read_past = crate::kernel::program_expression::typed_load(
             ProgramExpression::Value(ProgramValue::Pointer(past)),
             ty,
@@ -233,7 +233,7 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
             unreachable!()
         };
         assert_eq!(slot.program_type(), pointer_ty.pointer_to().unwrap());
-        assert_eq!(slot.offset, OldAddressOffset::Constant(8));
+        assert_eq!(slot.offset, AddressOffset::constant(8));
         assert_eq!(
             value(
                 &state,
@@ -257,11 +257,11 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
 fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixteen() {
     let slot = OldAddress {
         base: "wide-slot-external".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let pointee = OldAddress {
         base: "wide-pointee-external".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_block(slot.base.clone(), 8)
@@ -323,7 +323,7 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
     for pointer_ty in [ProgramType::Int128Pointer, ProgramType::UInt128Pointer] {
         let slot = OldAddress {
             base: "wide-symbolic-slot".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         for bytes in [7, 8] {
             let state = ExecutionState::new()
@@ -425,7 +425,7 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
 fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
     let at = |offset| OldAddress {
         base: "local:wide-prefix".into(),
-        offset: OldAddressOffset::Constant(offset).into(),
+        offset: AddressOffset::constant(offset),
     };
     let mut memory = SymbolicMemory::new()
         .with_block("local:wide-prefix", 16)
@@ -448,7 +448,7 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
             .write_scalar_array_region(
                 &OldAddress {
                     base: "local:wide-target".into(),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramType::UInt8,
                 8,
@@ -558,7 +558,7 @@ fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
     let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("offsets", 16));
     let at = |offset| OldAddress {
         base: "offsets".into(),
-        offset: OldAddressOffset::Constant(offset).into(),
+        offset: AddressOffset::constant(offset),
     };
     for ty in [
         ProgramType::VoidPointer,

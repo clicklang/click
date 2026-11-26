@@ -4,7 +4,7 @@ use super::*;
 fn write_span_must_fit_inside_owned_byte_footprint() {
     let base = OldAddress {
         base: "global:owned".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let owned = MemoryRange::new_with_element_width(
         base.clone(),
@@ -38,7 +38,7 @@ fn write_span_must_fit_inside_owned_byte_footprint() {
 fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let base = OldAddress {
         base: "global:owned".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let j = OldMachineTerm::Variable(Variable(99_001));
     let n = OldMachineTerm::Variable(Variable(99_002));
@@ -106,7 +106,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
 fn memory_effect_write_collection_preserves_each_access_width() {
     let pointer = OldAddress {
         base: "global:owned".into(),
-        offset: OldAddressOffset::Constant(3).into(),
+        offset: AddressOffset::constant(3),
     };
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: SymbolicMemory::new(),

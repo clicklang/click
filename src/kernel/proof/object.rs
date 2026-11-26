@@ -3581,9 +3581,7 @@ mod tests {
                         memory,
                         base: OldAddress {
                             base: "alpha".into(),
-                            offset: crate::kernel::AddressOffset::from(
-                                crate::kernel::OldAddressOffset::Constant(0),
-                            ),
+                            offset: AddressOffset::constant(0),
                         },
                         bytes: (OldMachineTerm::Variable(variable)).into(),
                         wide: false,
@@ -3657,9 +3655,7 @@ mod tests {
         let changed = before.clone().store(
             OldAddress {
                 base: "alpha".into(),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
@@ -3693,9 +3689,7 @@ mod tests {
                 crate::kernel::OldPointer::new(
                     OldAddress {
                         base: "unallocated".into(),
-                        offset: crate::kernel::AddressOffset::from(
-                            crate::kernel::OldAddressOffset::Constant(0),
-                        ),
+                        offset: AddressOffset::constant(0),
                     },
                     ProgramType::Int32Pointer,
                 ),

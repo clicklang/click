@@ -2778,18 +2778,9 @@ mod tests {
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: if ty == MachineIntegerType::Int32 {
-                    OldAddressOffset::Int32Scaled {
-                        value: index.clone(),
-                        byte_width: 4,
-                    }
-                    .into()
+                    AddressOffset::int32_scaled(index.clone(), 4)
                 } else {
-                    OldAddressOffset::Int64Scaled {
-                        value: index.clone(),
-                        byte_width: 4,
-                        unsigned: ty == MachineIntegerType::UInt64,
-                    }
-                    .into()
+                    AddressOffset::int64_scaled(index.clone(), 4, ty == MachineIntegerType::UInt64)
                 },
             };
             let goal = Proposition::condition_is(
@@ -3838,7 +3829,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: "integer-rewrite-retained_state".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = SymbolicMemory::new().with_block("integer-rewrite-retained_state", 8);
         let after = before.clone().store(
@@ -4031,7 +4022,7 @@ mod tests {
         for wide in [false, true] {
             let pointer = OldAddress {
                 base: "compound-rewrite".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let before = SymbolicMemory::new().with_block("compound-rewrite", 16);
             let after = before.clone().with_block("local:compound-unrelated", 4);
@@ -4109,7 +4100,7 @@ mod tests {
                 mask(load(
                     &after,
                     OldAddress {
-                        offset: OldAddressOffset::Constant(8).into(),
+                        offset: AddressOffset::constant(8),
                         ..pointer.clone()
                     },
                     kind,
@@ -4146,7 +4137,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "compound-rewrite-work".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         crate::kernel::eval::declare_load_access_width(&pointer, 8);
         let before = SymbolicMemory::new().with_block("compound-rewrite-work", 8);
@@ -4228,7 +4219,7 @@ mod tests {
     fn checked_rewrite_presentation_keeps_the_read_identity() {
         let pointer = OldAddress {
             base: "rewrite-presentation".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         // The load is an `int32` one. A stored value answers only for a read
         // of its own width, and a load whose width nobody recorded is taken
@@ -4398,9 +4389,7 @@ mod wide_range_reader_tests {
         let equality = Proposition::condition_is(
             OldConditionTerm::AddressOffsetEqual(
                 Box::new(offset),
-                Box::new(crate::kernel::AddressOffset::from(
-                    OldAddressOffset::Constant(0),
-                )),
+                Box::new(AddressOffset::constant(0)),
             ),
             true,
         );

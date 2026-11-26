@@ -363,9 +363,7 @@ mod tests {
         let value = ProgramValue::typed_pointer(
             OldAddress {
                 base: "parameter-bytes".into(),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -382,9 +380,7 @@ mod tests {
         let reassigned = ProgramValue::typed_pointer(
             OldAddress {
                 base: "reassigned-bytes".into(),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             ProgramType::Int32Pointer,
         );

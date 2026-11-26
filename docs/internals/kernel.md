@@ -611,8 +611,10 @@ In `src/kernel/`:
   constants, variables, byte widths and interpretations, and each index by
   its numeric identity, so handles that differ only in an index annotation
   are one offset. Each node caches its syntax hash and keeps its index
-  carrier, so hashing is O(1) and index identities never drift. The native
-  tree `OldAddressOffset` remains for tests and explicit conversion.
+  carrier, so equality is O(1) and index identities never drift. Its hash
+  feeds the same stream the deleted native offset tree's derived hash fed,
+  so content hashes built from addresses keep their values. Tests build
+  offsets through the same constructors; there is no other offset type.
 - `OldConditionTerm`: proof-level truth-valued conditions: machine comparisons
   `Compare { format, relation, left, right }` and overflow tests
   `Overflows { format, op, left, right }` at every machine-integer format,

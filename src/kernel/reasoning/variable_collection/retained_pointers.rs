@@ -256,7 +256,7 @@ mod tests {
                         IntegerTerm::Variable(Variable(1001003)).into(),
                     )],
                 )),
-                offset: OldAddressOffset::Variable(Variable(1001004)).into(),
+                offset: AddressOffset::variable(Variable(1001004)),
             },
             OldAddress::loaded_value(&memory, &OldAddress::symbolic(Variable(1001005))),
         ];
@@ -360,7 +360,7 @@ mod tests {
         );
         let source = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(1001015)).into(),
+            offset: AddressOffset::variable(Variable(1001015)),
         };
         let shared = SharedAddress::import(&source);
         let before = COORDINATE_VARIABLES.with(|flag| flag.replace(true));

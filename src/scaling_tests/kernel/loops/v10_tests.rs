@@ -24,7 +24,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     ));
     let target = OldAddress {
         base: source.base.clone(),
-        offset: OldAddressOffset::Constant(2).into(),
+        offset: AddressOffset::constant(2),
     };
     let assumptions = PureFactContext::new()
         .assume_condition(OldConditionTerm::address_equal(alias.clone(), target), true);

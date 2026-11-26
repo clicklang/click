@@ -5479,7 +5479,7 @@ mod ranking_member_tests {
     fn int32_cell(name: &str) -> OldAddress {
         OldAddress {
             base: AddressBase::Concrete(name.to_string()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
 

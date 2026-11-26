@@ -1316,49 +1316,6 @@ impl std::fmt::Debug for OldMachineTerm {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum OldAddressOffset {
-    Constant(i64),
-    Variable(Variable),
-    Add(Box<OldAddressOffset>, Box<OldAddressOffset>),
-    Int32Scaled {
-        value: SharedMachineIntegerTerm,
-        byte_width: i64,
-    },
-    /// A pointer displacement formed from a signed or unsigned 64-bit
-    /// element index.  The term arena intentionally remains shared with the
-    /// existing 32-bit form, but its numeric interpretation must not be
-    /// truncated to `i32` while forming an address.
-    Int64Scaled {
-        value: SharedMachineIntegerTerm,
-        byte_width: i64,
-        unsigned: bool,
-    },
-}
-
-impl OldAddressOffset {
-    /// Preserve the written index node, including a zero scale; the smart
-    /// `scale_int32` constructor may separately fold literal displacements.
-    pub(crate) fn scaled_int32_node(value: OldMachineTerm, byte_width: i64) -> Self {
-        Self::Int32Scaled {
-            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, value),
-            byte_width,
-        }
-    }
-
-    pub(crate) fn scaled_int64_node(
-        value: OldMachineTerm,
-        byte_width: i64,
-        unsigned: bool,
-    ) -> Self {
-        Self::Int64Scaled {
-            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int64, value),
-            byte_width,
-            unsigned,
-        }
-    }
-}
-
 /// The operator of a machine binary term ([`OldMachineTerm::Binary`]).
 /// Signedness comes from the term's format: `Divide`, `Remainder` and
 /// `ShiftRight` are signed (arithmetic) at a signed format and unsigned
@@ -14833,11 +14790,11 @@ mod term_payload_view_tests {
     #[test]
     fn owned_program_value_extraction_moves_native_address_prefixes() {
         for size in [16, 64, 256] {
-            let mut offset = OldAddressOffset::Constant(0);
+            let mut offset = AddressOffset::constant(0);
             for index in 0..size {
-                offset = OldAddressOffset::Add(
-                    Box::new(offset),
-                    Box::new(OldAddressOffset::Variable(Variable(991300 + index))),
+                offset = AddressOffset::raw_add(
+                    offset,
+                    AddressOffset::variable(Variable(991300 + index)),
                 );
             }
             let value = ProgramValue::pointer(OldAddress {
@@ -14845,7 +14802,7 @@ mod term_payload_view_tests {
                     "owned_native_pointer_result".into(),
                     Vec::new(),
                 )),
-                offset: offset.into(),
+                offset: offset,
             });
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()

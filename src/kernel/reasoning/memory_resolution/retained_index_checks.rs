@@ -18,12 +18,7 @@ fn retained_index(ty: MachineIntegerType, id: u64) -> SharedMachineIntegerTerm {
     MachineOperandView::Shared(&root).retain(ty)
 }
 fn wide(value: SharedMachineIntegerTerm, byte_width: i64) -> AddressOffset {
-    OldAddressOffset::Int64Scaled {
-        value,
-        byte_width,
-        unsigned: true,
-    }
-    .into()
+    AddressOffset::int64_scaled(value, byte_width, true)
 }
 fn equality(
     value: &SharedMachineIntegerTerm,
@@ -63,18 +58,11 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
         Some(false)
     );
     for (a, b) in [
-        (&right, &OldAddressOffset::Constant(0)),
-        (
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(0)),
-            &crate::kernel::OldAddressOffset::from(&right),
-        ),
+        (&right, &AddressOffset::constant(0)),
+        (&AddressOffset::constant(0).clone(), &right.clone()),
     ] {
         assert_eq!(
-            wide_element_offsets_proven_distinct(
-                a,
-                &crate::kernel::AddressOffset::from(b),
-                &context
-            ),
+            wide_element_offsets_proven_distinct(a, &b, &context),
             Some(true)
         );
     }
@@ -87,11 +75,7 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
         Some(false)
     );
     assert_eq!(
-        wide_element_offsets_proven_distinct(
-            &right,
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(1)),
-            &context
-        ),
+        wide_element_offsets_proven_distinct(&right, &AddressOffset::constant(1).clone(), &context),
         None
     );
     assert_eq!(
@@ -111,11 +95,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let context = parent.clone().assume_proposition(fact.clone());
     let pointer = |width| OldAddress {
         base: "retained-exact-index".into(),
-        offset: OldAddressOffset::Int32Scaled {
-            value: value.clone(),
-            byte_width: width,
-        }
-        .into(),
+        offset: AddressOffset::int32_scaled(value.clone(), width),
     };
     let address = pointer(4);
     let native_source = OldConditionTerm::equal(
@@ -130,7 +110,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let exports = KernelTermExport::machine_export_count();
     assert_eq!(
         pointer_with_exact_index_constants(&address, &context).offset,
-        OldAddressOffset::Constant(28)
+        AddressOffset::constant(28)
     );
     assert_eq!(
         pointer_with_exact_index_constants(&address, &parent),
@@ -142,7 +122,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     );
     assert_eq!(
         pointer_with_exact_index_constants(&address, &native_context).offset,
-        OldAddressOffset::Constant(28)
+        AddressOffset::constant(28)
     );
     assert_eq!(
         pointer_with_exact_index_constants(&address, &false_context),

@@ -65,9 +65,9 @@ fn publication_in_one_branch_keeps_sibling_input_pairing() {
         let at = |id: u64| OldAddress {
             base: AddressBase::ExternalArgument,
             offset: if scaled {
-                OldAddressOffset::scale_int32(scalar(id), 4).into()
+                AddressOffset::scale_int32(scalar(id), 4)
             } else {
-                OldAddressOffset::Variable(Variable(859_100 + id)).into()
+                AddressOffset::variable(Variable(859_100 + id))
             },
         };
         let equality = |left: u64, right: u64| {
@@ -252,16 +252,16 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_states() {
 
 #[test]
 fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
-    let var = |id| OldAddressOffset::Variable(Variable(id));
-    let raw = OldAddressOffset::Add(Box::new(var(852_022)), Box::new(var(852_021)));
+    let var = |id| AddressOffset::variable(Variable(id));
+    let raw = AddressOffset::raw_add(var(852_022), var(852_021));
     let (owner, alias) = (
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: raw.clone().into(),
+            offset: raw.clone(),
         },
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: var(852_023).into(),
+            offset: var(852_023),
         },
     );
     let cell = |base| {
@@ -276,7 +276,7 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
     let empty = PureFactContext::new();
     resources.synchronize_memory_equalities(&empty);
     let facts = empty.clone().assume_condition(
-        OldConditionTerm::address_offset_equal(raw.into(), alias.offset.clone()),
+        OldConditionTerm::address_offset_equal(raw, alias.offset.clone()),
         true,
     );
     assert!(
@@ -327,10 +327,10 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
 fn exact_address_classes_survive_unraisable_affine_shifts() {
     let owner = OldAddress::symbolic(Variable(855_000));
     let alias = OldAddress::symbolic(Variable(855_001));
-    let x = OldAddressOffset::Variable(Variable(855_002));
+    let x = AddressOffset::variable(Variable(855_002));
     let displaced = OldAddress {
         base: alias.base.clone(),
-        offset: OldAddressOffset::Add(Box::new(x.clone()), Box::new(x)).into(),
+        offset: AddressOffset::raw_add(x.clone(), x),
     };
     let resources = ResourceContext::new().unchecked_with_fact(view(&owner, 0, 4));
     let empty = PureFactContext::new();
@@ -371,7 +371,7 @@ fn exact_address_classes_survive_unraisable_affine_shifts() {
 fn offset_equalities_update_already_indexed_cells() {
     let at = |variable| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(variable)).into(),
+        offset: AddressOffset::variable(Variable(variable)),
     };
     let (owner, alias) = (at(852_000), at(852_001));
     let empty = PureFactContext::new();
@@ -394,7 +394,7 @@ fn offset_equalities_update_already_indexed_cells() {
 fn whole_cell_hits_remain_indexed_beside_other_read_shapes() {
     let at = |id: u64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(857_000 + id)).into(),
+        offset: AddressOffset::variable(Variable(857_000 + id)),
     };
     let owner = at(0);
     let alias = at(1);
@@ -428,7 +428,7 @@ fn whole_cell_hits_remain_indexed_beside_other_read_shapes() {
 fn cell_footprints_follow_merges_removals_and_normalization() {
     let at = |id: u64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(858_000 + id)).into(),
+        offset: AddressOffset::variable(Variable(858_000 + id)),
     };
     let (owner, alias) = (at(0), at(1));
     let (short, long) = (view(&owner, 0, 4), view(&alias, 0, 8));
@@ -655,7 +655,7 @@ fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
 fn interval_completeness_is_local_and_follows_late_offset_dependencies() {
     let base = OldAddress::symbolic(Variable(895_020));
     let other = OldAddress::symbolic(Variable(895_021));
-    let offset = OldAddressOffset::Variable(Variable(895_022));
+    let offset = AddressOffset::variable(Variable(895_022));
     let initial = PureFactContext::new();
     let resources = ResourceContext::new_with_equalities(&initial)
         .unchecked_with_fact(view(&base, 0, 32))
@@ -665,7 +665,7 @@ fn interval_completeness_is_local_and_follows_late_offset_dependencies() {
     let _ = resources.concrete_read_entries(
         &OldAddress {
             base: base.base.clone(),
-            offset: offset.clone().into(),
+            offset: offset.clone(),
         },
         4,
         &initial,
@@ -674,7 +674,7 @@ fn interval_completeness_is_local_and_follows_late_offset_dependencies() {
         OldConditionTerm::address_equal(
             OldAddress {
                 base: base.base.clone(),
-                offset: offset.into(),
+                offset: offset,
             },
             base.offset_by_bytes(8),
         ),
@@ -959,11 +959,11 @@ fn fragment_coordinate_residues_do_not_establish_wide_pointer_adjacency() {
     let p = OldAddress::symbolic(Variable(979_000));
     let positive = OldAddress {
         base: p.base.clone(),
-        offset: OldAddressOffset::Constant(i64::from(i32::MAX)).into(),
+        offset: AddressOffset::constant(i64::from(i32::MAX)),
     };
     let negative = OldAddress {
         base: p.base,
-        offset: OldAddressOffset::Constant(i64::from(i32::MIN)).into(),
+        offset: AddressOffset::constant(i64::from(i32::MIN)),
     };
     let own = |base, end| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -1019,7 +1019,7 @@ fn storage_ownership_follows_transitive_address_equality() {
 fn object_evidence_uses_provenance_classes_and_live_nonempty_occurrences() {
     let external = |id: u64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(898_000 + id)).into(),
+        offset: AddressOffset::variable(Variable(898_000 + id)),
     };
     let source = external(0);
     let target = external(1);
@@ -1085,11 +1085,11 @@ fn typed_read_congruence_publishes_late_ownership_class_updates() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let p = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(998_001)).into(),
+        offset: AddressOffset::variable(Variable(998_001)),
     };
     let q = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(998_002)).into(),
+        offset: AddressOffset::variable(Variable(998_002)),
     };
     let x = OldAddress::loaded_value(&memory, &p);
     let y = OldAddress::loaded_value(&memory, &q);
@@ -1247,11 +1247,11 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
     };
     let cell = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let unrelated = OldAddress {
         base: AddressBase::Heap(989_800),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let first = crate::kernel::intern_memory(
         SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
@@ -1280,7 +1280,7 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
     let unrelated_view = view(
         &OldAddress {
             base: AddressBase::Heap(989_801),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         },
         0,
         8,

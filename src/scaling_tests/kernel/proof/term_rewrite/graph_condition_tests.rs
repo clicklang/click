@@ -10,10 +10,7 @@ fn graph_condition_reduction_scales_with_the_expression_not_ambient_facts() {
         let _session = VerificationSession::enter();
         let mut graph = graph();
         for i in 0..size as u64 {
-            graph.add_offset_equality(
-                &crate::kernel::AddressOffset::from(&offset(1000 + 2 * i)),
-                &crate::kernel::AddressOffset::from(&offset(1001 + 2 * i)),
-            );
+            graph.add_offset_equality(&offset(1000 + 2 * i).clone(), &offset(1001 + 2 * i).clone());
         }
         let empty = HashMap::new();
         let ((output, work), map_work) = crate::persistent::measure_persistent_work(|| {

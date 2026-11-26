@@ -98,7 +98,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     let decoded = OldAddress::from_integer_address(bits.clone());
     let shifted = OldAddress {
         base: decoded.base.clone(),
-        offset: OldAddressOffset::Constant(8).into(),
+        offset: AddressOffset::constant(8),
     };
     let sum = OldMachineTerm::uint64_add(bits.clone(), OldMachineTerm::uint64_constant(8));
     let graph = EqualityGraph::default();
@@ -108,7 +108,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     let memory = intern_memory(SymbolicMemory::new().with_block("coordinates", 32));
     let pointer = OldAddress {
         base: "coordinates".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let after = intern_memory(memory.memory().clone().store(
         pointer.clone(),
@@ -256,7 +256,7 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
     let memory = intern_memory(SymbolicMemory::new().with_block("cells", 32));
     let stored_at = OldAddress {
         base: "cells".into(),
-        offset: OldAddressOffset::Constant(8).into(),
+        offset: AddressOffset::constant(8),
     };
     let value = ProgramValue::UInt64(OldMachineTerm::uint64_constant(5));
     let after = intern_memory(
@@ -301,7 +301,7 @@ fn raw_wide_read_requires_its_explicit_store_equation() {
     let _session = VerificationSession::enter();
     let pointer = OldAddress {
         base: "wide".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let value = OldMachineTerm::uint64_constant(0xfedc_ba98_7654_3210);
     let stored = ProgramValue::UInt64(value.clone());

@@ -1230,8 +1230,8 @@ mod tests {
             OldPointer::new(
                 OldAddress {
                     base: "indexed".into(),
-                    offset: OldAddressOffset::Int32Scaled {
-                        value: SharedMachineIntegerTerm::index(
+                    offset: AddressOffset::int32_scaled(
+                        SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             OldMachineTerm::read_named(
                                 ProgramPoint::at(
@@ -1241,9 +1241,8 @@ mod tests {
                                 LoadKind::Int32,
                             ),
                         ),
-                        byte_width: 4,
-                    }
-                    .into(),
+                        4,
+                    ),
                 },
                 ProgramType::Int32Pointer,
             )

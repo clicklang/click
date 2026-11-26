@@ -6,7 +6,7 @@ use crate::kernel::functions::{
 fn heap_pointer(block: &str) -> OldAddress {
     OldAddress {
         base: AddressBase::from(block),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     }
 }
 
@@ -85,7 +85,7 @@ fn representation_copy_leaves_an_untyped_source_unestablished() {
 fn cell(block: &str, index: u32) -> OldAddress {
     OldAddress {
         base: AddressBase::from(block),
-        offset: OldAddressOffset::Constant(4 * i64::from(index)).into(),
+        offset: AddressOffset::constant(4 * i64::from(index)),
     }
 }
 

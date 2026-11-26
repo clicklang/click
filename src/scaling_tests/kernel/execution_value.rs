@@ -714,7 +714,7 @@ fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let natives = [CScalarClass::Int, CScalarClass::Char].map(|class| {
-            OldAddressOffset::scaled_int64_node(
+            AddressOffset::scaled_int64_node(
                 OldMachineTerm::IntegerAddress(
                     Box::new(OldAddress::symbolic(Variable(998765))),
                     crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
@@ -724,7 +724,7 @@ fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
             )
         });
         assert_eq!(natives[0], natives[1]);
-        let mut offsets = natives.each_ref().map(KernelAddressOffset::import);
+        let mut offsets = natives.each_ref().map(|native| native.shared().clone());
         assert_ne!(offsets[0], offsets[1]);
         for _ in 0..size {
             offsets = offsets.map(|offset| {

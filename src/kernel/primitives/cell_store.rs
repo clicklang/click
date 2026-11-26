@@ -3737,10 +3737,7 @@ mod tests {
     }
 
     fn constant(block: &AddressBase, offset: i64) -> OldAddress {
-        at(
-            block,
-            crate::kernel::OldAddressOffset::Constant(offset).into(),
-        )
+        at(block, AddressOffset::constant(offset))
     }
 
     fn run(base: OldAddress, element_width: u32, count: u32, source: &SharedMemory) -> CellRun {
@@ -3826,14 +3823,11 @@ mod tests {
     #[test]
     fn slots_are_spelled_as_loads_spell_their_addresses() {
         let block = AddressBase::Symbolic(Variable(9_310_101));
-        let stem = crate::kernel::OldAddressOffset::Variable(Variable(9_310_102));
+        let stem = AddressOffset::variable(Variable(9_310_102));
         let shifted = |shift: i64| {
             at(
                 &block,
-                AddressOffset::add(
-                    stem.clone().into(),
-                    crate::kernel::OldAddressOffset::Constant(shift).into(),
-                ),
+                AddressOffset::add(stem.clone(), AddressOffset::constant(shift)),
             )
         };
         let seeded = run(shifted(16), 4, 3, &source(1));
@@ -3858,8 +3852,8 @@ mod tests {
         );
         assert_eq!(store.len(), 3);
         let below = run(shifted(-4), 4, 3, &source(1));
-        assert_eq!(below.slot_pointer(1), at(&block, stem.clone().into()));
-        assert_eq!(below.slot_index(&at(&block, stem.clone().into())), Some(1));
+        assert_eq!(below.slot_pointer(1), at(&block, stem.clone()));
+        assert_eq!(below.slot_index(&at(&block, stem.clone())), Some(1));
     }
 
     // Exercise every mutation and lookup in the deterministic streams. Check
@@ -3872,9 +3866,7 @@ mod tests {
         let global = AddressBase::Concrete("cell-store-global".to_string());
         let other = AddressBase::Concrete("cell-store-other".to_string());
         let symbolic = AddressBase::Symbolic(Variable(9_310_001));
-        let anchor = AddressOffset::from(crate::kernel::OldAddressOffset::Variable(Variable(
-            9_310_002,
-        )));
+        let anchor = AddressOffset::variable(Variable(9_310_002));
         let symbolic_bases = [
             anchor.clone(),
             AddressOffset::add(anchor.clone(), AddressOffset::constant(8)),
@@ -3972,23 +3964,13 @@ mod tests {
                     }
                     8 => {
                         let modulus = 2 + stream.next(3) as i64;
-                        let keep = |pointer: &OldAddress, _: &ProgramValue| {
-                            pointer
-                                .offset
-                                .as_const()
-                                .is_none_or(|offset| offset % (4 * modulus) != 0)
-                        };
+                        let keep = |pointer: &OldAddress, _: &ProgramValue| !matches!(pointer.offset.view(), crate::kernel::OffsetView::Constant(offset) if offset % (4 * modulus) == 0);
                         store.retain(keep);
                         model.retain(|pointer, value| keep(pointer, value));
                     }
                     _ => {
                         let only = AliasCandidates::only_block(&global);
-                        let keep = |pointer: &OldAddress, _: &ProgramValue| {
-                            pointer
-                                .offset
-                                .as_const()
-                                .is_none_or(|offset| offset % 8 != 4)
-                        };
+                        let keep = |pointer: &OldAddress, _: &ProgramValue| !matches!(pointer.offset.view(), crate::kernel::OffsetView::Constant(offset) if offset % 8 == 4);
                         store.retain_candidates_outside_by(&only, &[], keep, |_| {
                             (SlotSet::PerSlot, RuleAnswer::Exact)
                         });
@@ -4399,11 +4381,7 @@ mod tests {
                 Box::new(|index| {
                     at(
                         &symbolic,
-                        crate::kernel::AddressOffset::from(
-                            crate::kernel::OldAddressOffset::Variable(Variable(
-                                9_340_000 + index as u64,
-                            )),
-                        ),
+                        AddressOffset::variable(Variable(9_340_000 + index as u64)),
                     )
                 }),
             ),

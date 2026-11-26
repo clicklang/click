@@ -3092,15 +3092,13 @@ mod tests {
     fn retained_contract_offset_diagnostic_preserves_shape_and_width() {
         use crate::kernel::{AddressOffset, OldMachineTerm, Term};
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = crate::kernel::OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(
-                AddressOffset::scaled_int64_node(OldMachineTerm::uint64_constant(3), 8, true),
-            )),
-            Box::new(crate::kernel::OldAddressOffset::Constant(-2)),
+        let offset = AddressOffset::raw_add(
+            AddressOffset::scaled_int64_node(OldMachineTerm::uint64_constant(3), 8, true),
+            AddressOffset::constant(-2),
         );
         let claim = Proposition::Equal(
             Term::PointerOffset(offset.into()),
-            Term::PointerOffset(crate::kernel::OldAddressOffset::Constant(22).into()),
+            Term::PointerOffset(AddressOffset::constant(22).into()),
         );
         let source = surface::source(&claim, &mut MemoryStateLabels::ambient());
         assert!(source.contains(" * 8 + -2"), "{source}");
@@ -3198,9 +3196,7 @@ mod tests {
         ] {
             let pointer = OldAddress {
                 base: format!("local:{local}").into(),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             };
             let memory = SymbolicMemory::new()
                 .with_block(format!("local:{local}"), 4)
@@ -3332,9 +3328,7 @@ mod tests {
             memory,
             base: OldAddress {
                 base: crate::kernel::AddressBase::ExternalArgument,
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
@@ -3522,7 +3516,7 @@ mod resource_detail_tests {
     fn typed_resource_arguments_keep_publication_payload_values() {
         let flag = OldAddress {
             base: "ready".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let publication = |value| {
             ResourceFact::own(Resource::Publication(PublicationRight::new(
@@ -3549,11 +3543,11 @@ mod resource_detail_tests {
     fn typed_iterated_resources_keep_guards_elements_and_taken_indices() {
         let base = OldAddress {
             base: "elements".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let guard = OldAddress {
             base: "flags".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let iterated = IteratedMemory::new(
             "selected",

@@ -6092,7 +6092,7 @@ mod seeded_interval_adjacency_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: "wide-run-adjacency".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let source = crate::kernel::intern_memory(SymbolicMemory::new());
         let run = CellRun::new(
@@ -6107,7 +6107,7 @@ mod seeded_interval_adjacency_tests {
         std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
         let wrong = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(-0x8000_0000).into(),
+            offset: AddressOffset::constant(-0x8000_0000),
         };
         let memory = memory.store(wrong, crate::kernel::uint8(7));
         let context = PureFactContext::new();
@@ -6207,7 +6207,7 @@ mod shallow_composition_separation_tests {
     fn at(block: &str) -> OldAddress {
         OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -6244,7 +6244,7 @@ mod shallow_composition_separation_tests {
     fn symbolic(variable: u64) -> OldAddress {
         OldAddress {
             base: AddressBase::Symbolic(crate::kernel::Variable(variable)),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -6671,7 +6671,7 @@ mod shared_range_index_tests {
         let index = retained_index();
         let base = OldAddress {
             base: "retained_strided_fields".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let pointer = base
             .offset_by_shared_elements(index.clone(), 16)
@@ -6721,7 +6721,7 @@ mod shared_range_index_tests {
         let index = retained_index();
         let base = OldAddress {
             base: "shared_range".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let pointer = base.offset_by_shared_elements(index.clone(), 4);
         let zero = OldMachineTerm::constant(0);

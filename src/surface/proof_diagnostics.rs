@@ -1041,9 +1041,7 @@ mod tests {
             memory,
             base: OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,

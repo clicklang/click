@@ -8,11 +8,10 @@ fn parameter_pointer(variable: u64) -> OldPointer {
     OldPointer::new(
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scaled_int32_node(
+            offset: AddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(variable)),
                 4,
-            )
-            .into(),
+            ),
         },
         ProgramType::Int32Pointer,
     )

@@ -1318,7 +1318,7 @@ mod tests {
         );
         let pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         // The named form has to be the same read as the spelled `MemoryLoad`
         // alternative below: its kind, and the width that term's naming
@@ -1374,7 +1374,7 @@ mod tests {
 
         let dynamic_pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::Concrete("heap:test".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -1426,7 +1426,7 @@ mod tests {
         let memory = crate::kernel::SymbolicMemory::new();
         let pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let range = Proposition::MemoryLoadable {
             memory: crate::kernel::SymbolicMemory::new(),

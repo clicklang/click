@@ -296,8 +296,7 @@ fn split_formation_fixture() -> (
     let p = OldPointer::new(
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4)
-                .into(),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4),
         },
         ProgramType::Int32Pointer,
     );

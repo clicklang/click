@@ -67,7 +67,7 @@ impl Drop for ResolutionQueryGuard {
 fn resolution_query_guard_refuses_reentry_and_keeps_the_outer_query() {
     let pointer = |index: u64| OldAddress {
         base: "cell".into(),
-        offset: OldAddressOffset::Constant(index as i64).into(),
+        offset: AddressOffset::constant(index as i64),
     };
     let first = ResolutionQuery::AddressEqual(pointer(0), pointer(1));
     let second = ResolutionQuery::PointerDistinct(pointer(0), pointer(1));
@@ -93,10 +93,10 @@ fn structural_slot_distinctness_does_not_depend_on_recursive_query_availability(
     let _session = crate::kernel::VerificationSession::enter();
     let slot = OldAddress {
         base: AddressBase::Symbolic(Variable(1000001)),
-        offset: OldAddressOffset::Constant(16).into(),
+        offset: AddressOffset::constant(16),
     };
     let read = OldAddress {
-        offset: OldAddressOffset::Constant(12).into(),
+        offset: AddressOffset::constant(12),
         ..slot.clone()
     };
     let _outer =
@@ -1780,28 +1780,20 @@ fn a_byte_product_offset_is_its_element_offset_only_where_it_does_not_wrap() {
 fn indexed_field_offsets_use_exact_displacements() {
     let index = OldMachineTerm::Variable(Variable(849));
     let offset = AddressOffset::add(
-        OldAddressOffset::Constant(4).into(),
+        AddressOffset::constant(4),
         AddressOffset::scale_int32(index.clone(), 4),
     );
     let assumptions = PureFactContext::new().assume_condition(
         OldConditionTerm::equal(index.clone(), OldMachineTerm::constant(1)),
         true,
     );
-    let concrete = OldAddressOffset::Constant(8);
+    let concrete = AddressOffset::constant(8);
     assert_eq!(
-        pointer_offsets_equal_for_memory_resolution(
-            &offset,
-            &crate::kernel::AddressOffset::from(&concrete),
-            &assumptions
-        ),
+        pointer_offsets_equal_for_memory_resolution(&offset, &concrete.clone(), &assumptions),
         Some(true)
     );
     assert_eq!(
-        pointer_offsets_equal_for_memory_resolution(
-            &crate::kernel::AddressOffset::from(&concrete),
-            &offset,
-            &assumptions
-        ),
+        pointer_offsets_equal_for_memory_resolution(&concrete.clone(), &offset, &assumptions),
         Some(true)
     );
     let boundary = PureFactContext::new().assume_condition(
@@ -1813,9 +1805,7 @@ fn indexed_field_offsets_use_exact_displacements() {
     assert_eq!(
         pointer_offsets_equal_for_memory_resolution(
             &offset,
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(
-                i64::from(i32::MIN) * 4
-            )),
+            &(AddressOffset::constant(i64::from(i32::MIN) * 4)).clone(),
             &boundary
         ),
         Some(false)
@@ -1823,9 +1813,7 @@ fn indexed_field_offsets_use_exact_displacements() {
     assert_eq!(
         pointer_offsets_equal_for_memory_resolution(
             &offset,
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(
-                (i64::from(i32::MAX) + 1) * 4
-            )),
+            &(AddressOffset::constant((i64::from(i32::MAX) + 1) * 4)).clone(),
             &boundary
         ),
         Some(true)
@@ -1842,21 +1830,13 @@ fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
         true,
     );
     for constant in [0, -4] {
-        let concrete = OldAddressOffset::Constant(constant);
+        let concrete = AddressOffset::constant(constant);
         assert_eq!(
-            pointer_offsets_equal_for_memory_resolution(
-                &scaled,
-                &crate::kernel::AddressOffset::from(&concrete),
-                &at_least_one
-            ),
+            pointer_offsets_equal_for_memory_resolution(&scaled, &concrete.clone(), &at_least_one),
             Some(false)
         );
         assert_eq!(
-            pointer_offsets_equal_for_memory_resolution(
-                &crate::kernel::AddressOffset::from(&concrete),
-                &scaled,
-                &at_least_one
-            ),
+            pointer_offsets_equal_for_memory_resolution(&concrete.clone(), &scaled, &at_least_one),
             Some(false)
         );
     }
@@ -1864,7 +1844,7 @@ fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
     assert_eq!(
         pointer_offsets_equal_for_memory_resolution(
             &scaled,
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(4)),
+            &AddressOffset::constant(4).clone(),
             &at_least_one
         ),
         None
@@ -1873,7 +1853,7 @@ fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
     assert_eq!(
         pointer_offsets_equal_for_memory_resolution(
             &scaled,
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(0)),
+            &AddressOffset::constant(0).clone(),
             &unbounded
         ),
         None
@@ -1886,12 +1866,12 @@ fn memory_resolution_uses_graph_offset_congruence_in_branch_scope() {
     let scalar = |id: u64| OldMachineTerm::Variable(Variable(91_000 + id));
     let offset = |id| {
         AddressOffset::add(
-            OldAddressOffset::Constant(4).into(),
+            AddressOffset::constant(4),
             AddressOffset::scale_int32(scalar(id), 4),
         )
     };
-    let named = OldAddressOffset::Variable(Variable(91_100));
-    let named_fact = OldConditionTerm::address_offset_equal(offset(2), named.clone().into());
+    let named = AddressOffset::variable(Variable(91_100));
+    let named_fact = OldConditionTerm::address_offset_equal(offset(2), named.clone());
     let scalar_fact = OldConditionTerm::equal(scalar(1), scalar(2));
     let parent = PureFactContext::new().assume_condition(named_fact.clone(), true);
     let branch = parent.clone().assume_condition(scalar_fact.clone(), true);
@@ -1901,51 +1881,35 @@ fn memory_resolution_uses_graph_offset_congruence_in_branch_scope() {
     };
 
     assert_eq!(
-        pointer_offsets_equal_for_memory_resolution(
-            &offset(1),
-            &crate::kernel::AddressOffset::from(&named),
-            &parent
-        ),
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named.clone(), &parent),
         None
     );
     assert!(!pointers_proven_equal_for_memory_resolution(
         &pointer(offset(1)),
-        &pointer(named.clone().into()),
+        &pointer(named.clone()),
         &parent,
     ));
     let _scope = branch.enter_id_scope();
     PureFactContext::reset_bitvector_equality_index_fact_visits();
     assert_eq!(
-        pointer_offsets_equal_for_memory_resolution(
-            &offset(1),
-            &crate::kernel::AddressOffset::from(&named),
-            &branch
-        ),
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named.clone(), &branch),
         Some(true)
     );
     assert!(pointers_proven_equal_for_memory_resolution(
         &pointer(offset(1)),
-        &pointer(named.clone().into()),
+        &pointer(named.clone()),
         &branch,
     ));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
 
     let restricted = branch.restricted_to_facts(&[], &[]);
     assert_ne!(
-        pointer_offsets_equal_for_memory_resolution(
-            &offset(1),
-            &crate::kernel::AddressOffset::from(&named),
-            &restricted
-        ),
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named.clone(), &restricted),
         Some(true)
     );
     let scalar_only = PureFactContext::new().assume_condition(scalar_fact, true);
     assert_ne!(
-        pointer_offsets_equal_for_memory_resolution(
-            &offset(1),
-            &crate::kernel::AddressOffset::from(&named),
-            &scalar_only
-        ),
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named.clone(), &scalar_only),
         Some(true)
     );
 }
@@ -1955,7 +1919,7 @@ fn memory_resolution_uses_graph_offset_congruence_in_branch_scope() {
 fn memory_resolution_uses_pointer_classes_across_blocks() {
     let pointer = |block: u64, offset| OldAddress {
         base: AddressBase::Symbolic(Variable(91_200 + block)),
-        offset: OldAddressOffset::Constant(offset).into(),
+        offset: AddressOffset::constant(offset),
     };
     let first = OldConditionTerm::address_equal(pointer(0, 0), pointer(1, 4));
     let second = OldConditionTerm::address_equal(pointer(1, 4), pointer(2, 8));
@@ -3574,7 +3538,7 @@ fn observable_heap_metadata_matches_for_load(
 fn unrelated_forgotten_states_do_not_prove_their_loads_equal() {
     let pointer = OldAddress {
         base: "unrelated-forgotten".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let shell = SymbolicMemory::new().with_block("unrelated-forgotten", 4);
     let left_source = crate::kernel::intern_memory_ref(&shell.clone().store(
@@ -3632,7 +3596,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
         };
     let symbolic = OldAddress {
         base: AddressBase::Symbolic(Variable(7_620_001)),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let bare = SymbolicMemory::new();
     let with_global = bare
@@ -3649,7 +3613,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
 
     let heap_pointer = OldAddress {
         base: AddressBase::Heap(7_620_002),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let heap_shell =
         SymbolicMemory::new().with_block_without_derivation(heap_pointer.base.clone(), 4);
@@ -3678,7 +3642,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
 
     let concrete = OldAddress {
         base: "unrelated-concrete".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let concrete_memory = SymbolicMemory::new().with_block("unrelated-concrete", 4);
     let mut with_unrelated_heap = concrete_memory.clone();
@@ -3689,7 +3653,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
         .insert(
             OldAddress {
                 base: AddressBase::Heap(7_620_003),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             AllocationSize::int32(4),
         );
@@ -3718,7 +3682,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
 
     let pending_base = OldAddress {
         base: AddressBase::Symbolic(Variable(7_620_004)),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let with_pending = concrete_memory.clone().with_pending_heap_allocation(
         pending_base,
@@ -5495,10 +5459,7 @@ fn offset_resolution_does_not_promote_wrapped_index_equality() {
     let j = OldMachineTerm::Variable(Variable(90_002));
     let k = OldMachineTerm::Variable(Variable(90_003));
     let scaled = |index: OldMachineTerm| AddressOffset::scale_int32(index, 4);
-    let sum = OldAddressOffset::Add(
-        Box::new(crate::kernel::OldAddressOffset::from(scaled(i.clone()))),
-        Box::new(crate::kernel::OldAddressOffset::from(scaled(j.clone()))),
-    );
+    let sum = AddressOffset::raw_add(scaled(i.clone()), scaled(j.clone()));
     let other = scaled(k.clone());
     let index_sum = OldMachineTerm::add(i.clone(), j.clone());
     let assumptions = PureFactContext::new()
@@ -5520,15 +5481,11 @@ fn offset_resolution_does_not_promote_wrapped_index_equality() {
         Some(true)
     );
     assert_ne!(
-        pointer_offsets_equal_for_memory_resolution(
-            &crate::kernel::AddressOffset::from(&sum),
-            &other,
-            &assumptions
-        ),
+        pointer_offsets_equal_for_memory_resolution(&sum.clone(), &other, &assumptions),
         Some(true)
     );
     assert_ne!(
-        assumptions.decide(&OldConditionTerm::address_offset_equal(sum.into(), other)),
+        assumptions.decide(&OldConditionTerm::address_offset_equal(sum, other)),
         Some(true)
     );
 }
@@ -5558,26 +5515,15 @@ fn offset_resolution_accepts_exact_index_equalities_at_each_width() {
         );
     for width in [1, 4, 8] {
         let scaled = |index: OldMachineTerm| AddressOffset::scale_int32(index, width);
-        let sum = OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(scaled(i.clone()))),
-            Box::new(crate::kernel::OldAddressOffset::from(scaled(j.clone()))),
-        );
+        let sum = AddressOffset::raw_add(scaled(i.clone()), scaled(j.clone()));
         let other = scaled(k.clone());
         assert_ne!(
-            pointer_offsets_equal_for_memory_resolution(
-                &crate::kernel::AddressOffset::from(&sum),
-                &other,
-                &symbolic
-            ),
+            pointer_offsets_equal_for_memory_resolution(&sum.clone(), &other, &symbolic),
             Some(true),
             "an index equality alone cannot prove the exact offset at width {width}"
         );
         assert_eq!(
-            pointer_offsets_equal_for_memory_resolution(
-                &crate::kernel::AddressOffset::from(&sum),
-                &other,
-                &exact
-            ),
+            pointer_offsets_equal_for_memory_resolution(&sum.clone(), &other, &exact),
             Some(true),
             "a proven nonwrapping sum should retain offset equality at width {width}"
         );
@@ -5653,16 +5599,16 @@ fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
     );
     assert_eq!(
         pointer_offsets_equal_for_memory_resolution(
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(4294967296)),
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(0)),
+            &AddressOffset::constant(4294967296).clone(),
+            &AddressOffset::constant(0).clone(),
             &truncated
         ),
         Some(false)
     );
     assert_eq!(
         pointer_offsets_equal_for_memory_resolution(
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(4294967295)),
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(-1)),
+            &AddressOffset::constant(4294967295).clone(),
+            &AddressOffset::constant(-1).clone(),
             &truncated
         ),
         Some(false)
@@ -5795,7 +5741,7 @@ mod retained_run_access_tests {
         let ty = MachineIntegerType::Int32;
         let base = OldAddress {
             base: "retained_index_constants".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         for bits in [0, 1, 0x8000_0000, u32::MAX] {
             let literal =
@@ -5806,11 +5752,10 @@ mod retained_run_access_tests {
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Subtract, [literal, zero]);
             let pointer = OldAddress {
                 base: base.base.clone(),
-                offset: OldAddressOffset::Int32Scaled {
-                    value: MachineOperandView::Shared(&root).retain(ty),
-                    byte_width: 4,
-                }
-                .into(),
+                offset: AddressOffset::int32_scaled(
+                    MachineOperandView::Shared(&root).retain(ty),
+                    4,
+                ),
             };
             let expected = i64::from(bits as i32) * 4;
             let exports = KernelTermExport::machine_export_count();
@@ -5834,7 +5779,7 @@ mod retained_run_access_tests {
             let index = MachineOperandView::Shared(&root).retain(ty);
             let base = OldAddress {
                 base: "retained_run_lookup".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let run = CellRun::new_with_mode(
                 base.clone(),
@@ -5848,18 +5793,9 @@ mod retained_run_access_tests {
             let pointer = OldAddress {
                 base: base.base.clone(),
                 offset: if ty == MachineIntegerType::Int32 {
-                    OldAddressOffset::Int32Scaled {
-                        value: index.clone(),
-                        byte_width: 4,
-                    }
-                    .into()
+                    AddressOffset::int32_scaled(index.clone(), 4)
                 } else {
-                    OldAddressOffset::Int64Scaled {
-                        value: index.clone(),
-                        byte_width: 4,
-                        unsigned: true,
-                    }
-                    .into()
+                    AddressOffset::int64_scaled(index.clone(), 4, true)
                 },
             };
             let literal = if ty == MachineIntegerType::Int32 {
@@ -5918,15 +5854,8 @@ mod retained_wide_offset_tests {
             index.operand_view(),
             MachineOperandView::Old(&OldMachineTerm::uint64_constant(1)),
         );
-        let scaled = |value| OldAddressOffset::Int64Scaled {
-            value,
-            byte_width: 8,
-            unsigned: true,
-        };
-        let stepped = OldAddressOffset::Add(
-            Box::new(scaled(index.clone())),
-            Box::new(OldAddressOffset::Constant(8)),
-        );
+        let scaled = |value| AddressOffset::int64_scaled(value, 8, true);
+        let stepped = AddressOffset::raw_add(scaled(index.clone()), AddressOffset::constant(8));
         let whole = scaled(advanced);
         let empty = PureFactContext::new();
         let bounded = empty.clone().assume_condition(
@@ -5940,21 +5869,13 @@ mod retained_wide_offset_tests {
         let exports = KernelTermExport::machine_export_count();
         for (left, right) in [(&stepped, &whole), (&whole, &stepped)] {
             assert_eq!(
-                pointer_offsets_equal_for_memory_resolution(
-                    &crate::kernel::AddressOffset::from(left),
-                    &crate::kernel::AddressOffset::from(right),
-                    &bounded
-                ),
+                pointer_offsets_equal_for_memory_resolution(&left, &right, &bounded),
                 Some(true)
             );
         }
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_ne!(
-            pointer_offsets_equal_for_memory_resolution(
-                &crate::kernel::AddressOffset::from(&stepped),
-                &crate::kernel::AddressOffset::from(&whole),
-                &empty
-            ),
+            pointer_offsets_equal_for_memory_resolution(&stepped.clone(), &whole.clone(), &empty),
             Some(true)
         );
         let wraps = empty.assume_condition(
@@ -5966,11 +5887,7 @@ mod retained_wide_offset_tests {
             true,
         );
         assert_ne!(
-            pointer_offsets_equal_for_memory_resolution(
-                &crate::kernel::AddressOffset::from(&stepped),
-                &crate::kernel::AddressOffset::from(&whole),
-                &wraps
-            ),
+            pointer_offsets_equal_for_memory_resolution(&stepped.clone(), &whole.clone(), &wraps),
             Some(true)
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -5982,11 +5899,7 @@ mod retained_wide_offset_tests {
         let ty = MachineIntegerType::UInt64;
         let root = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018702));
         let index = MachineOperandView::Shared(&root).retain(ty);
-        let scaled = OldAddressOffset::Int64Scaled {
-            value: index.clone(),
-            byte_width: 8,
-            unsigned: true,
-        };
+        let scaled = AddressOffset::int64_scaled(index.clone(), 8, true);
         let big = (1u64 << 40) + 2;
         let facts = PureFactContext::new().assume_condition(
             wide_index_comparison(
@@ -6004,15 +5917,11 @@ mod retained_wide_offset_tests {
             (17, false),
         ] {
             for (left, right) in [
-                (&scaled, &OldAddressOffset::Constant(offset)),
-                (&OldAddressOffset::Constant(offset), &scaled),
+                (&scaled, &AddressOffset::constant(offset)),
+                (&AddressOffset::constant(offset), &scaled),
             ] {
                 assert_eq!(
-                    pointer_offsets_equal_for_memory_resolution(
-                        &crate::kernel::AddressOffset::from(left),
-                        &crate::kernel::AddressOffset::from(right),
-                        &facts
-                    ),
+                    pointer_offsets_equal_for_memory_resolution(&left, &right, &facts),
                     Some(expected)
                 );
             }

@@ -8,7 +8,7 @@ fn function_pointer_read_query_does_not_scan_aliases_or_cells() {
             let _session = crate::kernel::VerificationSession::enter();
             let cell = |i| OldAddress {
                 base: "callbacks".into(),
-                offset: OldAddressOffset::Constant(i * 8).into(),
+                offset: AddressOffset::constant(i * 8),
             };
             let mut memory = SymbolicMemory::new();
             let mut facts = PureFactContext::new();

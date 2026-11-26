@@ -6,7 +6,7 @@ use crate::kernel::borrows::BorrowLedger;
 fn free_retires_a_cached_interior_alias() {
     let base = OldAddress {
         base: AddressBase::Heap(945_000),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let alias = OldAddress::symbolic(Variable(945_001));
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
@@ -71,12 +71,12 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
 fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
     let base = OldAddress {
         base: AddressBase::Heap(950_000),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let cell = OldAddress::symbolic(Variable(950_001));
     let value = OldAddress {
         base: AddressBase::Heap(950_002),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
@@ -634,7 +634,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
     assert!(success.memory().is_uninitialized_heap_address(
         &OldAddress {
             base: resized.base.clone(),
-            offset: OldAddressOffset::Constant(8).into(),
+            offset: AddressOffset::constant(8),
         },
         4,
         &PureFactContext::new(),
@@ -681,7 +681,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
 fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let existing = OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(OldAddress::null()))
@@ -803,7 +803,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
         &first_pointer,
         &OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         },
         &PureFactContext::new(),
     ));
@@ -922,7 +922,7 @@ mod a_free_reaches_every_element_of_its_block {
         let (freed, _) = freed_sixteen_byte_allocation();
         let elsewhere = OldAddress {
             base: AddressBase::Concrete("global:g".to_string()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         assert_eq!(
             effect_of_the_free(&freed, &elsewhere),
@@ -1004,7 +1004,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
 fn consuming_a_whole_range_drops_state_equivalent_prefix_residues() {
     let owner = OldAddress {
         base: "owner".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let held_start = OldMachineTerm::Variable(Variable(90_001));
     let required_start = OldMachineTerm::Variable(Variable(90_002));
@@ -1190,7 +1190,7 @@ fn separated_persistent_view_survives_free() {
     let state = successful_heap_allocation_state();
     let other = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let view = ResourceFact::view_memory(MemoryRange::new(
         other,
@@ -1222,13 +1222,11 @@ fn separated_persistent_view_survives_free() {
 fn free_of_external_allocation_forgets_cells_without_separation() {
     let allocation_base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(908_000)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(908_000)), 4),
     };
     let unrelated = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(908_001)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(908_001)), 4),
     };
     let memory = SymbolicMemory::new()
         .store(unrelated.clone(), int32(37))
@@ -1288,7 +1286,7 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
 fn interface_heap_join_retains_potential_live_allocation() {
     let allocation_base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let retained = ExecutionState::new().with_memory(
         SymbolicMemory::new()
@@ -1726,13 +1724,11 @@ fn free_null_needs_no_allocation_resources() {
 fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
     let base = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(909_000)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(909_000)), 4),
     };
     let tail = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(909_001)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(909_001)), 4),
     };
     let tail_resource = ResourceFact::own_composite(
         "allocated_list".to_string(),
@@ -1776,8 +1772,7 @@ fn nullable_owner_contract(
 ) -> (ExecutionState, ProgramFunction, Vec<ProgramExpression>) {
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_000)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_000)), 4),
     };
     let pointer_value = ProgramValue::pointer(pointer.clone());
     let pointer_expression =
@@ -1907,7 +1902,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
 
     let nonnull = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let nonnull_state = ExecutionState::new()
         .with_local("result", ProgramValue::Int32(0u32.into()))
@@ -2163,15 +2158,15 @@ fn unreturned_unresolved_malloc_result_cannot_cross_a_return() {
 fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
     let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(921_000)),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let base = OldAddress {
         base: AddressBase::Heap(921_001),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let fresh = OldAddress {
         base: AddressBase::Heap(921_002),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         OldConditionTerm::address_equal(alias.clone(), base.clone()),
@@ -2257,7 +2252,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     let base = pointer.address().clone();
     let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(922_100)),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         OldConditionTerm::address_equal(alias.clone(), base.clone()),
@@ -2311,11 +2306,11 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
 fn store_union_forgets_aliased_raw_cell() {
     let base = OldAddress {
         base: AddressBase::Heap(922_001),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(922_000)),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         OldConditionTerm::address_equal(alias.clone(), base.clone()),
@@ -2448,7 +2443,7 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
     let alias = OldAddress::symbolic(Variable(940_001));
     let unrelated = OldAddress {
         base: AddressBase::Heap(940_002),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let validity = Proposition::MemoryReadDefined {
         at: None,
@@ -2493,7 +2488,7 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
 fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     let base = OldAddress {
         base: AddressBase::Heap(943_000),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let alias = OldAddress::symbolic(Variable(943_001));
     let field = base.offset_by_bytes(4);
@@ -2526,7 +2521,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     let changed = memory.clone().store(
         OldAddress {
             base: AddressBase::Heap(943_002),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         },
         int32(5),
     );
@@ -2562,7 +2557,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
 fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
     let address = OldAddress {
         base: "local:uninitialized".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let memory = SymbolicMemory::new().with_block("local:uninitialized", 4);
     let name = canonical_form_of_load(
@@ -2615,7 +2610,7 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
         );
     let unplaced = OldAddress {
         base: base.base.clone(),
-        offset: OldAddressOffset::scale_int32(index, 4).into(),
+        offset: AddressOffset::scale_int32(index, 4),
     };
     let store = |memory: SymbolicMemory, pointer: OldAddress, value: u32| {
         memory

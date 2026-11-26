@@ -1179,7 +1179,7 @@ mod tests {
         };
         let pointer = OldAddress {
             base: "affine-fold-retained_state".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("affine-fold-retained_state", 8),

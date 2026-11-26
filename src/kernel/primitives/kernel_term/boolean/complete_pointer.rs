@@ -222,7 +222,7 @@ mod tests {
             OldAddress::from_integer_address(OldMachineTerm::Variable(Variable(999102))),
             OldAddress {
                 base: AddressBase::ExternalObject(Variable(999101)),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
         ] {
             let raw = OldPointer::new(pointer, ProgramType::Int32Pointer);
@@ -237,26 +237,18 @@ mod tests {
                 raw.clone()
                     .with_provenance(Arc::new(OldAddress::symbolic(Variable(999103)))),
             );
-            values.push(
-                raw.clone().with_address(OldAddress {
-                    base: raw.base.clone(),
-                    offset: OldAddressOffset::Add(
-                        Box::new(OldAddressOffset::Constant(0)),
-                        Box::new(crate::kernel::OldAddressOffset::from(
-                            AddressOffset::scaled_int32_node(
-                                OldMachineTerm::Variable(Variable(999102)),
-                                4,
-                            ),
-                        )),
-                    )
-                    .into(),
-                }),
-            );
+            values.push(raw.clone().with_address(OldAddress {
+                base: raw.base.clone(),
+                offset: AddressOffset::raw_add(
+                    AddressOffset::constant(0),
+                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999102)), 4),
+                ),
+            }));
         }
         values.push(OldPointer::new(
             OldAddress {
                 base: AddressBase::FunctionSymbolic(Variable(999101)),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ));
@@ -300,11 +292,10 @@ mod tests {
                 OldAddress::symbolic(Variable(999110)),
                 OldAddress {
                     base: AddressBase::Symbolic(Variable(999110)),
-                    offset: OldAddressOffset::Add(
-                        Box::new(OldAddressOffset::Constant(1)),
-                        Box::new(OldAddressOffset::Constant(2)),
-                    )
-                    .into(),
+                    offset: AddressOffset::raw_add(
+                        AddressOffset::constant(1),
+                        AddressOffset::constant(2),
+                    ),
                 },
             ] {
                 let source = OldConditionTerm::PointerEqual(

@@ -5035,12 +5035,7 @@ mod tests {
             let index = S::from_shared(MachineIntegerType::Int32, root.clone()).unwrap();
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Int32Scaled {
-                        value: index.clone(),
-                        byte_width: 4,
-                    },
-                ),
+                offset: AddressOffset::int32_scaled(index.clone(), 4),
             };
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(
@@ -5288,11 +5283,7 @@ mod tests {
     }
 
     fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
-        crate::kernel::OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(left)),
-            Box::new(crate::kernel::OldAddressOffset::from(right)),
-        )
-        .into()
+        AddressOffset::raw_add(left, right)
     }
 
     fn tagged_tag_nodes(root: &Arc<TaggedTag<'_>>) -> usize {
@@ -5315,14 +5306,11 @@ mod tests {
     }
 
     fn deep_pointer(depth: usize) -> OldAddress {
-        let mut offset = crate::kernel::OldAddressOffset::Constant(0);
+        let mut offset = AddressOffset::constant(0);
         for _ in 0..depth {
-            offset = crate::kernel::OldAddressOffset::from(add(
-                offset.into(),
-                crate::kernel::OldAddressOffset::Constant(1).into(),
-            ));
+            offset = add(offset, AddressOffset::constant(1));
         }
-        pointer(offset.into())
+        pointer(offset)
     }
 
     fn measured_tagged_form(pointer_depth: usize, tag_depth: usize) -> (bool, usize, usize) {
@@ -5381,9 +5369,7 @@ mod tests {
     fn retained_masked_read_equation_checks_native_pointer_goal() {
         use crate::kernel::MachineOperandView;
         let _session = crate::kernel::VerificationSession::enter();
-        let next = pointer(crate::kernel::AddressOffset::from(
-            crate::kernel::OldAddressOffset::Constant(0),
-        ));
+        let next = pointer(AddressOffset::constant(0));
         let address = OldMachineTerm::integer_address(next.clone());
         let raw = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(
@@ -5432,9 +5418,7 @@ mod tests {
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
             let address = OldMachineTerm::IntegerAddress(
-                Box::new(pointer(crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ))),
+                Box::new(pointer(AddressOffset::constant(0))),
                 crate::kernel::AddressObjectClass::NONE,
             );
             let variable = OldMachineTerm::Variable(crate::kernel::Variable(294));

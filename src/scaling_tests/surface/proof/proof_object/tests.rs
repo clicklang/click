@@ -106,12 +106,7 @@ fn same_block_offset_rewrite_work(
     let theorems = TheoremEnvironment::new(&[]);
     let base = OldAddress {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::from(
-            crate::kernel::OldAddressOffset::scaled_int32_node(
-                OldMachineTerm::Variable(Variable(8_179_100)),
-                4,
-            ),
-        ),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(8_179_100)), 4),
     };
     let remaining = OldMachineTerm::Variable(Variable(8_179_101));
     // `k as uint32 as int32`: σ of the low word, as written.
@@ -125,9 +120,9 @@ fn same_block_offset_rewrite_work(
     );
     let shifted = OldAddress {
         base: base.base.clone(),
-        offset: crate::kernel::OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(base.offset.clone())),
-            Box::new(crate::kernel::OldAddressOffset::scaled_int32_node(
+        offset: AddressOffset::raw_add(
+            base.offset.clone(),
+            AddressOffset::scaled_int32_node(
                 binary_node!(
                     Int32,
                     Subtract,
@@ -135,9 +130,8 @@ fn same_block_offset_rewrite_work(
                     Box::new(k.clone()),
                 ),
                 4,
-            )),
-        )
-        .into(),
+            ),
+        ),
     };
     let cursor = OldAddress::symbolic(Variable(8_179_099));
     let state = ExecutionState::new()
@@ -155,20 +149,16 @@ fn same_block_offset_rewrite_work(
                     OldConditionTerm::address_equal(
                         OldAddress {
                             base: base.base.clone(),
-                            offset: crate::kernel::AddressOffset::from(
-                                crate::kernel::OldAddressOffset::Add(
-                                    Box::new(crate::kernel::OldAddressOffset::from(
-                                        base.offset.clone(),
-                                    )),
-                                    Box::new(crate::kernel::OldAddressOffset::scaled_int32_node(
-                                        binary_node!(
-                                            Int32,
-                                            Subtract,
-                                            Box::new(OldMachineTerm::constant(4)),
-                                            Box::new(old.clone()),
-                                        ),
-                                        4,
-                                    )),
+                            offset: AddressOffset::raw_add(
+                                base.offset.clone(),
+                                AddressOffset::scaled_int32_node(
+                                    binary_node!(
+                                        Int32,
+                                        Subtract,
+                                        Box::new(OldMachineTerm::constant(4)),
+                                        Box::new(old.clone()),
+                                    ),
+                                    4,
                                 ),
                             ),
                         },
@@ -919,7 +909,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     let function = parsed_function.to_kernel_function();
     let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::constant(0),
+        offset: AddressOffset::constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -1528,9 +1518,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(OldAddress {
                     base: "rewrite_reads".into(),
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Constant(index as i64 * 4),
-                    ),
+                    offset: AddressOffset::constant(index as i64 * 4),
                 }),
                 crate::kernel::LoadKind::Int32,
             );
@@ -1767,7 +1755,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
     let theorems = TheoremEnvironment::new(&[]);
     let pointer = OldAddress {
         base: crate::kernel::AddressBase::Concrete("mixed-premise".into()),
-        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let entry = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block("mixed-premise", 4))
@@ -1882,7 +1870,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         for index in 0..size {
             let pointer = OldAddress {
                 base: "rewrite_reads".into(),
-                offset: crate::kernel::AddressOffset::constant(index as i64 * 4),
+                offset: AddressOffset::constant(index as i64 * 4),
             };
             let stored = binary_node!(
                 UInt32,

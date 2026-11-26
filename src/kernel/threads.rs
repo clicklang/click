@@ -1321,9 +1321,7 @@ mod ownership_partition_tests {
             ResourceFact::own_memory(super::super::MemoryRange::new(
                 OldAddress {
                     base: block,
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Constant(0),
-                    ),
+                    offset: AddressOffset::constant(0),
                 },
                 0u32.into(),
                 4u32.into(),

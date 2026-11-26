@@ -94,7 +94,7 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
         assert_eq!(answer, Some(true));
         let (answer, selected_slot) = graph_work(|| {
             let mut selected = graph.clone();
-            let offset = crate::kernel::OldAddressOffset::scaled_int64_node(
+            let offset = AddressOffset::scaled_int64_node(
                 OldMachineTerm::uint64_from_32(OldMachineTerm::Binary {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
@@ -105,15 +105,12 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
                 true,
             );
             selected.assume_condition(
-                &OldConditionTerm::address_offset_equal(
-                    offset.clone().into(),
-                    crate::kernel::OldAddressOffset::Constant(0).into(),
-                ),
+                &OldConditionTerm::address_offset_equal(offset.clone(), AddressOffset::constant(0)),
                 false,
             );
             selected.decide(&OldConditionTerm::address_offset_equal(
-                offset.into(),
-                crate::kernel::OldAddressOffset::Constant(8).into(),
+                offset,
+                AddressOffset::constant(8),
             ))
         });
         assert_eq!(answer, Some(true));

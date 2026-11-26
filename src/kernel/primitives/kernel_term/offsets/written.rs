@@ -7,7 +7,7 @@
 //! constants, variables, byte widths and interpretations, and each index by
 //! its numeric identity ([`SharedMachineIntegerTerm`]'s id). [`AddressOffset`]
 //! is that view of a handle. Its equality, hash and order are those of the
-//! native offset tree it replaces, and it reads its nodes through
+//! deleted native offset tree it replaced, and it reads its nodes through
 //! [`OffsetTree`], so readers do not depend on which representation they hold.
 //!
 //! Each handle keeps the index carrier it was built from (or, for a node
@@ -16,7 +16,7 @@
 //! syntax fingerprint and the folded constant are cached per node: equality
 //! is O(1) unless two distinct handles have one fingerprint, and comparing
 //! walks only the part two offsets do not share. `Hash` deliberately keeps
-//! the native tree's hash values (see its impl).
+//! the deleted native tree's hash values (see its impl).
 use super::*;
 use std::cmp::Ordering;
 
@@ -201,8 +201,14 @@ impl SharedAddressOffset {
 pub struct AddressOffset(SharedAddressOffset);
 
 impl AddressOffset {
+    /// A constant byte displacement ([`OffsetTree::constant`]), for callers
+    /// outside the crate, which cannot name the trait.
+    pub fn constant(value: i64) -> Self {
+        <Self as OffsetTree>::constant(value)
+    }
+
     /// The written view of a handle, or why one of its indices has no
-    /// explicit output, as `KernelAddressOffset::export` refuses it.
+    /// explicit output.
     pub(crate) fn try_from_shared(root: SharedAddressOffset) -> Result<Self, &'static str> {
         root.written_hash()?;
         Ok(Self(root))
@@ -232,43 +238,6 @@ impl AddressOffset {
 
     fn index(&self) -> &SharedMachineIntegerTerm {
         self.0.written_index().expect("written offset index")
-    }
-
-    /// The native offset tree with the same nodes and index carriers.
-    pub(crate) fn to_old(&self) -> OldAddressOffset {
-        enum Task<'a> {
-            Enter(&'a AddressOffset),
-            Add,
-        }
-        let mut pending = vec![Task::Enter(self)];
-        let mut values = Vec::new();
-        while let Some(task) = pending.pop() {
-            let value = match task {
-                Task::Enter(root) => match root.view() {
-                    OffsetView::Constant(value) => OldAddressOffset::constant(value),
-                    OffsetView::Variable(value) => OldAddressOffset::variable(value),
-                    OffsetView::Add(left, right) => {
-                        pending.extend([Task::Add, Task::Enter(right), Task::Enter(left)]);
-                        continue;
-                    }
-                    OffsetView::Int32Scaled { index, byte_width } => {
-                        OldAddressOffset::int32_scaled(index, byte_width)
-                    }
-                    OffsetView::Int64Scaled {
-                        index,
-                        byte_width,
-                        unsigned,
-                    } => OldAddressOffset::int64_scaled(index, byte_width, unsigned),
-                },
-                Task::Add => {
-                    let right = values.pop().expect("right offset");
-                    let left = values.pop().expect("left offset");
-                    OldAddressOffset::raw_add(left, right)
-                }
-            };
-            values.push(value);
-        }
-        values.pop().expect("offset root")
     }
 
     /// A small address index can carry arbitrarily deep *retained* operands.
@@ -304,15 +273,61 @@ impl AddressOffset {
         )
     }
 
-    /// The smart scaled index: [`OldAddressOffset::scale_int32`], which folds
-    /// a literal index into a constant displacement.
+    /// The smart scaled index, which folds a literal index into a constant
+    /// displacement.
     pub(crate) fn scale_int32(value: OldMachineTerm, byte_width: i64) -> Self {
-        OldAddressOffset::scale_int32(value, byte_width).into()
+        match value.as_const() {
+            Some(value) => Self::constant((value as i32 as i64) * byte_width),
+            None => Self::scaled_int32_node(value, byte_width),
+        }
     }
 
-    /// The smart 64-bit scaled index: [`OldAddressOffset::scale_int64`].
+    /// The smart 64-bit scaled index. Like [`Self::scale_int32`], it folds a
+    /// literal index, and it recovers a widened `int32` index's exact scale.
     pub(crate) fn scale_int64(value: OldMachineTerm, byte_width: i64, unsigned: bool) -> Self {
-        OldAddressOffset::scale_int64(value, byte_width, unsigned).into()
+        // A widened int32 index times a u32 stride fits in signed int64.
+        // Recover its exact pointer scale without interpreting a modular
+        // int32 product as an address displacement.
+        if !unsigned {
+            if let cast_term!(Int64From32, index) = &value
+                && u32::try_from(byte_width).is_ok()
+            {
+                return Self::scale_int32(index.as_ref().clone(), byte_width);
+            }
+            if let OldMachineTerm::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Multiply,
+                left,
+                right,
+            } = &value
+            {
+                for (index, stride) in [(left, right), (right, left)] {
+                    if let (cast_term!(Int64From32, index), int64_constant!(stride)) =
+                        (index.as_ref(), stride.as_ref())
+                        && let Ok(stride) = u32::try_from(constant_i64(*stride))
+                        && let Some(width) = i64::from(stride).checked_mul(byte_width)
+                        && u32::try_from(width).is_ok()
+                    {
+                        return Self::scale_int32(index.as_ref().clone(), width);
+                    }
+                }
+            }
+        }
+        let constant = if unsigned {
+            value.uint64_as_const().and_then(|value| {
+                i64::try_from(value)
+                    .ok()
+                    .and_then(|value| value.checked_mul(byte_width))
+            })
+        } else {
+            value
+                .int64_as_const()
+                .and_then(|value| value.checked_mul(byte_width))
+        };
+        match constant {
+            Some(value) => Self::constant(value),
+            None => Self::scaled_int64_node(value, byte_width, unsigned),
+        }
     }
 
     /// Maps scaled index values without changing the offset expression.
@@ -465,7 +480,8 @@ impl AddressOffset {
         self.0.written_constant()
     }
 
-    /// The folding sum, as [`OldAddressOffset::add`] folds it.
+    /// The folding sum: two constants fold, a zero addend drops, and a
+    /// trailing constant joins a sum's trailing constant.
     pub(crate) fn add(left: Self, right: Self) -> Self {
         if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {
             return Self::constant(left + right);
@@ -488,34 +504,6 @@ impl AddressOffset {
             return Self::add(base.clone(), Self::constant(trailing + right));
         }
         Self::raw_add(left, right)
-    }
-}
-
-impl From<OldAddressOffset> for AddressOffset {
-    fn from(offset: OldAddressOffset) -> Self {
-        Self::from(&offset)
-    }
-}
-
-impl From<&OldAddressOffset> for AddressOffset {
-    /// The same nodes and index carriers, built for free as the native tree
-    /// was.
-    fn from(offset: &OldAddressOffset) -> Self {
-        crate::instrumentation::without_charging(|| {
-            Self(KernelAddressOffset::import_charged(offset, false).expect("native offset types"))
-        })
-    }
-}
-
-impl From<AddressOffset> for OldAddressOffset {
-    fn from(offset: AddressOffset) -> Self {
-        offset.to_old()
-    }
-}
-
-impl From<&AddressOffset> for OldAddressOffset {
-    fn from(offset: &AddressOffset) -> Self {
-        offset.to_old()
     }
 }
 
@@ -579,19 +567,6 @@ impl PartialOrd for AddressOffset {
 impl Ord for AddressOffset {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.written_cmp(&other.0)
-    }
-}
-
-#[cfg(test)]
-impl PartialEq<OldAddressOffset> for AddressOffset {
-    fn eq(&self, other: &OldAddressOffset) -> bool {
-        self.to_old() == *other
-    }
-}
-#[cfg(test)]
-impl PartialEq<AddressOffset> for OldAddressOffset {
-    fn eq(&self, other: &AddressOffset) -> bool {
-        *self == other.to_old()
     }
 }
 

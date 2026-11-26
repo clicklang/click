@@ -8,7 +8,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn byte(offset: i64) -> OldAddress {
     OldAddress {
         base: AddressBase::from("global:bytes"),
-        offset: OldAddressOffset::Constant(offset).into(),
+        offset: AddressOffset::constant(offset),
     }
 }
 

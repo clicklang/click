@@ -40,7 +40,7 @@ fn typed_held_observation_does_not_search_a_growing_alias_class() {
         for index in 0..size {
             let alias = OldAddress {
                 base: AddressBase::Symbolic(Variable(810000 + index as u64)),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
                 OldConditionTerm::AddressEqual(Box::new(address(0)), Box::new(alias)),

@@ -556,20 +556,18 @@ mod producer_tests {
         let expected =
             crate::kernel::reasoning::substitute_bitvector_variable(&native, free, &replacement);
         let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-        let offset = OldAddressOffset::Int32Scaled {
-            value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
-            byte_width: 4,
-        };
+        let offset = AddressOffset::int32_scaled(
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            4,
+        );
         let before = KernelTermExport::machine_export_count();
         let result = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer_offset(
-            &crate::kernel::AddressOffset::from(&offset),
+            &offset.clone(),
             free,
             &replacement,
         );
         assert_eq!(KernelTermExport::machine_export_count(), before);
-        let OldAddressOffset::Int32Scaled { value, .. } =
-            crate::kernel::OldAddressOffset::from(result)
-        else {
+        let crate::kernel::OffsetView::Int32Scaled { index: value, .. } = result.view() else {
             panic!("fold index")
         };
         let actual = KernelTermExport::machine(value.shared_operand().unwrap()).unwrap();

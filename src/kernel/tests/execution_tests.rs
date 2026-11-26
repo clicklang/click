@@ -470,7 +470,7 @@ fn scalar_local_updates_share_memory_and_resource_state() {
 fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     let allocation = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(allocation.clone(), AllocationSize::int32(16))
@@ -491,7 +491,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
         &program_heap_free(ProgramExpression::Value(ProgramValue::pointer(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
         ))),
         &PureFactContext::new(),
@@ -569,7 +569,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
     let stable_x = int32(OldMachineTerm::Variable(Variable(7)));
     let pointer = OldAddress {
         base: "heap".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let state_zero = ExecutionState::new()
         .with_local("x", stable_x.clone())
@@ -615,11 +615,11 @@ fn join_state_forgets_changed_scalars_and_memory() {
 fn join_state_abstracts_changed_pointer_locals() {
     let left = OldAddress {
         base: "left".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let right = OldAddress {
         base: "right".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let abstract_left = abstract_execution_state_for_join(
         &ExecutionState::new().with_local("selected", ProgramValue::pointer(left)),
@@ -716,7 +716,7 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
     let symbolic = OldAddress::symbolic(Variable(21_000));
     let concrete = OldAddress {
         base: "heap".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
 
     assert_eq!(
@@ -729,11 +729,11 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
 fn concrete_address_base_names_cannot_create_symbolic_identity() {
     let misleading_name = OldAddress {
         base: "symbolic-pointer:21000".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let heap = OldAddress {
         base: "heap".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
 
     assert!(!misleading_name.has_symbolic_block());
@@ -925,7 +925,7 @@ fn execution_derivation_matches_only_equivalent_call_havoc() {
 fn function_call_threads_memory_but_discards_callee_locals() {
     let pointer = OldAddress {
         base: "block".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
@@ -1857,7 +1857,7 @@ fn unknown_call_assign_is_runtime_error() {
 fn unreadable_guard_operand_leaves_the_condition_undecided() {
     let pointer = OldAddress {
         base: "external".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let state = ExecutionState::new()
         .with_local("a", int32(OldMachineTerm::Variable(Variable(1))))
@@ -2115,7 +2115,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
 fn while_invariant_is_proof_obligation() {
     let pointer = OldAddress {
         base: "block".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let invariant = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
@@ -2328,7 +2328,7 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
 fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
     let pointer = OldAddress {
         base: "block".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let viewed = view_memory_fact(pointer, 0, 1);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());

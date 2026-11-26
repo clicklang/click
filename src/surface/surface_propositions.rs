@@ -1348,12 +1348,13 @@ mod store_source_tests {
 
     #[test]
     fn store_source_lookup_requires_the_exact_equation() {
+        use crate::kernel::OffsetTree;
         use crate::kernel::{AddressBase, AddressOffset, LoadKind, ProgramPoint, SymbolicMemory};
 
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Variable(Variable(1)).into(),
+            offset: AddressOffset::variable(Variable(1)),
         };
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -1375,7 +1376,7 @@ mod store_source_tests {
         let mut map = SurfacePropositionMap::default();
         let other = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Variable(Variable(2)).into(),
+            offset: AddressOffset::variable(Variable(2)),
         };
         assert!(!map.record_store_source(&stored, &source, &other));
         assert!(map.record_store_source(&stored, &source, &address));
@@ -1394,7 +1395,7 @@ mod store_source_tests {
         let _session = VerificationSession::enter();
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let write = || {
             let state = ExecutionState::new().begin_function_entry_memory();

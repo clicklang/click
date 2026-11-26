@@ -10,12 +10,11 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(128).into(),
+            offset: AddressOffset::constant(128),
         };
         let possible_write = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_301)), 4)
-                .into(),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_301)), 4),
         };
         let stored = OldAddress::symbolic(Variable(9_880_302));
         let mut memory = SymbolicMemory::new();
@@ -25,7 +24,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             memory = memory.with_block(block.clone(), 4).store(
                 OldAddress {
                     base: AddressBase::Concrete(block),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
@@ -57,8 +56,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         let wide_address = field.offset_by_bytes(32);
         let write_alias = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_303)), 4)
-                .into(),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_303)), 4),
         };
         context = context.assume_condition(
             OldConditionTerm::address_equal(write_alias.clone(), wide_address.clone()),
@@ -217,7 +215,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
             memory = memory.store(
                 OldAddress {
                     base: "local:read-common-history".into(),
-                    offset: OldAddressOffset::Constant(index as i64 * 4).into(),
+                    offset: AddressOffset::constant(index as i64 * 4),
                 },
                 ProgramValue::Int32(0u32.into()),
             );
@@ -235,11 +233,10 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
             producer.register_pointer_read_definition(
                 &OldAddress {
                     base: field.base.clone(),
-                    offset: OldAddressOffset::scale_int32(
+                    offset: AddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(9_930_000 + index)),
                         4,
-                    )
-                    .into(),
+                    ),
                 },
                 &left,
                 &field.offset_by_bytes(32 + index as u32 * 8),
@@ -288,7 +285,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "packed-scaling".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let mut memory = SymbolicMemory::new().with_block("packed-scaling", 32);
         let mut context = PureFactContext::new();
@@ -297,7 +294,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             memory = memory.with_block(name.clone(), 4).store(
                 OldAddress {
                     base: name.into(),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
@@ -474,7 +471,7 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "global:word-carrier".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let context = PureFactContext::new();
         let mut memory = SymbolicMemory::new();
@@ -482,7 +479,7 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
             memory = memory.store(
                 OldAddress {
                     base: format!("local:carrier-noise-{index}").into(),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramValue::Int32(7u32.into()),
             );

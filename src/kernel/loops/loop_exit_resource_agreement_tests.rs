@@ -4,7 +4,7 @@ fn range(block: &str) -> MemoryRange {
     MemoryRange::new_with_element_width(
         OldAddress {
             base: AddressBase::Concrete(block.to_string()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(1),

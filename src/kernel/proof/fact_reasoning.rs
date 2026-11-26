@@ -2491,7 +2491,7 @@ mod tests {
     fn quantified_memory_free_key_rejects_raw_and_registered_loads() {
         let pointer = OldAddress {
             base: "p".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = intern_memory(SymbolicMemory::new().with_block("p", 4));
         let after = intern_memory(before.as_ref().clone().store(
@@ -2540,19 +2540,16 @@ mod tests {
     fn quantified_registered_load_renames_binder_without_renaming_unrelated_state() {
         let nested_cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Add(
-                Box::new(OldAddressOffset::Add(
-                    Box::new(crate::kernel::OldAddressOffset::from(
-                        AddressOffset::scaled_int32_node(
-                            OldMachineTerm::Variable(Variable(100_000)),
-                            4,
-                        ),
-                    )),
-                    Box::new(OldAddressOffset::Constant(8)),
-                )),
-                Box::new(OldAddressOffset::Constant(4)),
-            )
-            .into(),
+            offset: AddressOffset::raw_add(
+                AddressOffset::raw_add(
+                    AddressOffset::scaled_int32_node(
+                        OldMachineTerm::Variable(Variable(100_000)),
+                        4,
+                    ),
+                    AddressOffset::constant(8),
+                ),
+                AddressOffset::constant(4),
+            ),
         };
         let memory = intern_memory(SymbolicMemory::new().store(
             nested_cell.clone(),
@@ -2604,7 +2601,7 @@ mod tests {
     fn quantified_binder_comparison_respects_occurrences_inside_states() {
         let pointer = OldAddress {
             base: "cell".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new().with_block("cell", 4).store(
             pointer.clone(),
@@ -2643,11 +2640,11 @@ mod tests {
     fn canonical_origin_transport_uses_explicit_memory_derivations() {
         let preserved = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let written = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(4).into(),
+            offset: AddressOffset::constant(4),
         };
         let before = SymbolicMemory::new();
         let after = before.clone().store(
@@ -2869,7 +2866,7 @@ mod tests {
         let before = intern_memory(SymbolicMemory::new().with_block("p", 4));
         let pointer = OldAddress {
             base: "p".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let after = intern_memory(before.memory().clone().store(
             pointer.clone(),
@@ -3026,13 +3023,10 @@ mod tests {
         };
         let owner_field = |bytes: i64| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(
-                    owner_base.offset.clone(),
-                )),
-                Box::new(OldAddressOffset::Constant(bytes)),
-            )
-            .into(),
+            offset: AddressOffset::raw_add(
+                owner_base.offset.clone(),
+                AddressOffset::constant(bytes),
+            ),
         };
         let phase_field = owner_field(4);
         let cell_field = owner_field(8);
@@ -3770,7 +3764,7 @@ mod integer_reflexivity_tests {
             let item = Variable(seed + 1);
             let pointer = OldAddress {
                 base: "listed-fold".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             }
             .offset_by_typed_elements(OldMachineTerm::Variable(item), 4, false, false);
             integer_fold(
@@ -3806,7 +3800,7 @@ mod integer_reflexivity_tests {
         let after = intern_memory(before.as_ref().clone().store(
             OldAddress {
                 base: "listed-fold".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             ProgramValue::Int32(OldMachineTerm::constant(1)),
         ));
@@ -4039,7 +4033,7 @@ mod integer_reflexivity_tests {
     fn normalize_using_alpha_reverse_keeps_state_identity_and_premise_scope() {
         let pointer = OldAddress {
             base: "normalize-fold-retained_state".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("normalize-fold-retained_state", 8),
@@ -4528,7 +4522,7 @@ mod annotated_address_condition_tests {
         let _session = VerificationSession::enter();
         let cell = OldAddress {
             base: "annotated-address-index".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = intern_memory(
             SymbolicMemory::new()
@@ -4568,7 +4562,7 @@ mod annotated_address_condition_tests {
                         ),
                         OldMachineTerm::integer_address(OldAddress {
                             base: "annotated-address-target".into(),
-                            offset: OldAddressOffset::Constant(0).into(),
+                            offset: AddressOffset::constant(0),
                         }),
                     ),
                     true,
@@ -4644,35 +4638,19 @@ mod index_sum_offset_tests {
     pub(super) fn address_goal(shared: u64, width: i64) -> Proposition {
         let mut common = AddressOffset::scaled_int32_node(index(990_000), 1);
         for addend in 0..shared {
-            common = OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(common)),
-                Box::new(crate::kernel::OldAddressOffset::from(scaled(
-                    991_000 + addend,
-                    1,
-                ))),
-            )
-            .into();
+            common = AddressOffset::raw_add(common, scaled(991_000 + addend, 1));
         }
         let pointer = |offset| OldAddress {
             base: AddressBase::ExternalArgument,
             offset,
         };
-        let summed = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(common.clone())),
-                Box::new(crate::kernel::OldAddressOffset::from(scaled(1, width))),
-            )),
-            Box::new(crate::kernel::OldAddressOffset::from(scaled(2, width))),
+        let summed = AddressOffset::raw_add(
+            AddressOffset::raw_add(common.clone(), scaled(1, width)),
+            scaled(2, width),
         );
-        let whole = OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(common)),
-            Box::new(crate::kernel::OldAddressOffset::from(scaled(3, width))),
-        );
+        let whole = AddressOffset::raw_add(common, scaled(3, width));
         Proposition::condition_is(
-            OldConditionTerm::AddressEqual(
-                Box::new(pointer(summed.into())),
-                Box::new(pointer(whole.into())),
-            ),
+            OldConditionTerm::AddressEqual(Box::new(pointer(summed)), Box::new(pointer(whole))),
             true,
         )
     }
@@ -4714,11 +4692,7 @@ mod index_sum_offset_tests {
             OldConditionTerm::AddressEqual(
                 Box::new(OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Add(
-                        Box::new(crate::kernel::OldAddressOffset::from(scaled(1, 4))),
-                        Box::new(crate::kernel::OldAddressOffset::from(scaled(2, 8))),
-                    )
-                    .into(),
+                    offset: AddressOffset::raw_add(scaled(1, 4), scaled(2, 8)),
                 }),
                 Box::new(OldAddress {
                     base: AddressBase::ExternalArgument,

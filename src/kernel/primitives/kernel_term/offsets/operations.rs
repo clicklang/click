@@ -308,27 +308,23 @@ mod tests {
 
     fn sources() -> Vec<AddressOffset> {
         let mut result = vec![
-            OldAddressOffset::Constant(0),
-            OldAddressOffset::Constant(1),
-            OldAddressOffset::Constant(i64::MAX),
-            OldAddressOffset::Variable(Variable(998001)),
+            AddressOffset::constant(0),
+            AddressOffset::constant(1),
+            AddressOffset::constant(i64::MAX),
+            AddressOffset::variable(Variable(998001)),
         ];
         for width in [0, -8, 4, 1 << 24, (1 << 24) + 1] {
             for bits in [
                 OldMachineTerm::constant(0),
                 OldMachineTerm::Variable(Variable(998002)),
             ] {
-                result.push(crate::kernel::OldAddressOffset::from(
-                    AddressOffset::scaled_int32_node(bits, width),
-                ));
+                result.push(AddressOffset::scaled_int32_node(bits, width));
             }
             for unsigned in [false, true] {
-                result.push(crate::kernel::OldAddressOffset::from(
-                    AddressOffset::scaled_int64_node(
-                        OldMachineTerm::Variable(Variable(998003)),
-                        width,
-                        unsigned,
-                    ),
+                result.push(AddressOffset::scaled_int64_node(
+                    OldMachineTerm::Variable(Variable(998003)),
+                    width,
+                    unsigned,
                 ));
             }
         }
@@ -336,15 +332,11 @@ mod tests {
             let mut offset =
                 AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998002)), 4);
             for _ in 0..n {
-                offset = OldAddressOffset::Add(
-                    Box::new(crate::kernel::OldAddressOffset::from(offset)),
-                    Box::new(OldAddressOffset::Constant(1)),
-                )
-                .into();
+                offset = AddressOffset::raw_add(offset, AddressOffset::constant(1));
             }
-            result.push(crate::kernel::OldAddressOffset::from(offset));
+            result.push(offset);
         }
-        result.into_iter().map(AddressOffset::from).collect()
+        result
     }
 
     #[test]
@@ -352,13 +344,10 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let values = sources();
         for a in &values {
-            let shared = KernelAddressOffset::import(&crate::kernel::OldAddressOffset::from(a));
+            let shared = a.shared().clone();
             assert_eq!(shared.as_const(), a.as_const());
             for b in &values {
-                let root = KernelTerm::address_offset_equal([
-                    shared.clone(),
-                    KernelAddressOffset::import(&crate::kernel::OldAddressOffset::from(b)),
-                ]);
+                let root = KernelTerm::address_offset_equal([shared.clone(), b.shared().clone()]);
                 let expected = OldConditionTerm::address_offset_equal(a.clone(), b.clone());
                 assert_eq!(
                     KernelTermExport::condition(&root).unwrap(),
@@ -374,16 +363,8 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for offset in sources() {
             let source = OldConditionTerm::AddressOffsetEqual(
-                Box::new(
-                    OldAddressOffset::Add(
-                        Box::new(OldAddressOffset::Constant(0)),
-                        Box::new(crate::kernel::OldAddressOffset::from(offset)),
-                    )
-                    .into(),
-                ),
-                Box::new(crate::kernel::AddressOffset::from(
-                    OldAddressOffset::Constant(5),
-                )),
+                Box::new(AddressOffset::raw_add(AddressOffset::constant(0), offset)),
+                Box::new(AddressOffset::constant(5)),
             );
             let root = KernelTermImport::default().condition(&source);
             assert!(matches!(
@@ -454,9 +435,7 @@ mod tests {
                 };
                 OldConditionTerm::AddressOffsetEqual(
                     Box::new(offset),
-                    Box::new(crate::kernel::AddressOffset::from(
-                        OldAddressOffset::Constant(0),
-                    )),
+                    Box::new(AddressOffset::constant(0)),
                 )
             };
             let a = condition(ProgramPoint::at(&memory_a));
@@ -512,9 +491,7 @@ mod identity_tests {
                     1,
                     true,
                 )),
-                Box::new(crate::kernel::AddressOffset::from(
-                    OldAddressOffset::Constant(0),
-                )),
+                Box::new(AddressOffset::constant(0)),
             )
         });
         let roots = sources

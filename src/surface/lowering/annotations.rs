@@ -10952,7 +10952,7 @@ mod integer_source_quantifier_tests {
         let unrelated_heap_variable = Variable(9_000_001);
         let heap_pointer = OldAddress {
             base: AddressBase::Heap(77),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block(heap_pointer.base.clone(), 4)

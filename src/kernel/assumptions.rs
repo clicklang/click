@@ -1827,7 +1827,7 @@ mod exact_materialization_tests {
     fn load_chain(length: usize, tail: u32) -> OldMachineTerm {
         let pointer = OldAddress {
             base: "exact-load-chain".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         (0..length).fold(OldMachineTerm::constant(tail), |value, _| {
             let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
@@ -1850,11 +1850,7 @@ mod exact_materialization_tests {
         } else {
             SharedMachineIntegerTerm::intern(format, value)
         };
-        OldAddressOffset::Int32Scaled {
-            value,
-            byte_width: 4,
-        }
-        .into()
+        AddressOffset::int32_scaled(value, 4)
     }
 
     #[test]
@@ -1870,7 +1866,7 @@ mod exact_materialization_tests {
         };
         let pointer = OldAddress {
             base: "exact-kind-control".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let unsigned = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(
@@ -1915,11 +1911,11 @@ mod exact_materialization_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "retained-retained_state".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let other = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(32).into(),
+            offset: AddressOffset::constant(32),
         };
         let before = SymbolicMemory::new().with_block("retained-retained_state", 64);
         let load = |memory| {
@@ -2681,21 +2677,8 @@ fn collect_term_memory_loads(
             collect_integer_memory_loads(term.old_form(), current_memory, loads, seen_integers)
         }
         Term::PointerOffset(offset) => {
-            if let Some(root) = offset.root() {
-                retained_folds::collect_offset_memory_loads(
-                    root,
-                    current_memory,
-                    loads,
-                    seen_integers,
-                )
-            } else {
-                collect_pointer_offset_memory_loads(
-                    offset.old_form(),
-                    current_memory,
-                    loads,
-                    seen_integers,
-                )
-            }
+            let root = offset.root();
+            retained_folds::collect_offset_memory_loads(root, current_memory, loads, seen_integers)
         }
         Term::ProgramValue(value) => {
             if let Some(root) = value.root()
@@ -11680,7 +11663,7 @@ mod dynamic_current_load_tests {
     fn pointer() -> OldAddress {
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -13300,7 +13283,7 @@ mod execution_variable_ceiling_tests {
     fn word(offset: i64) -> OldAddress {
         OldAddress {
             base: AddressBase::Concrete("a".into()),
-            offset: OldAddressOffset::Constant(offset).into(),
+            offset: AddressOffset::constant(offset),
         }
     }
 
@@ -13977,7 +13960,7 @@ mod shared_load_atom_comparison_tests {
             let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 16));
             let pointer = OldAddress {
                 base: block.into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -14187,11 +14170,11 @@ mod shared_load_atom_comparison_tests {
         let after = before.clone().with_block("call-havoc:1", 0);
         let loaded = OldAddress {
             base: "shared-frame".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let elsewhere = OldAddress {
             base: "elsewhere".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let effect = Proposition::MemoryEffectSummary {
             before: before.clone(),
@@ -14457,7 +14440,7 @@ mod shared_read_memory_collection_tests {
         let memory = SymbolicMemory::new().with_block("read-width", 8);
         let pointer = OldAddress {
             base: AddressBase::Concrete("read-width".into()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
@@ -14546,19 +14529,10 @@ mod pointer_index_walk_tests {
 
     fn offset(machine: SharedMachineIntegerTerm) -> AddressOffset {
         if machine.ty().format().bits() == 32 {
-            OldAddressOffset::Int32Scaled {
-                value: machine,
-                byte_width: 4,
-            }
-            .into()
+            AddressOffset::int32_scaled(machine, 4)
         } else {
             let unsigned = machine.ty() == MachineIntegerType::UInt64;
-            OldAddressOffset::Int64Scaled {
-                value: machine,
-                byte_width: 8,
-                unsigned,
-            }
-            .into()
+            AddressOffset::int64_scaled(machine, 8, unsigned)
         }
     }
 
@@ -14573,7 +14547,7 @@ mod pointer_index_walk_tests {
             let memory = SymbolicMemory::new().with_block("r7-read", 8);
             let address = OldAddress {
                 base: AddressBase::Concrete("r7-read".into()),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let old = intern_memory(memory.clone());
             let changed = memory.clone().store(
@@ -14600,12 +14574,13 @@ mod pointer_index_walk_tests {
                 let shared = offset(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
                 let legacy = offset(SharedMachineIntegerTerm::intern(ty, native.clone()));
                 let before = KernelTermExport::machine_export_count();
-                let shared_old = crate::kernel::OldAddressOffset::from(&shared);
-                let shared_view = match &shared_old {
-                    OldAddressOffset::Int32Scaled { value, .. }
-                    | OldAddressOffset::Int64Scaled { value, .. } => value.operand_view(),
+                let shared_old = shared.clone();
+                let shared_index = match shared_old.view() {
+                    OffsetView::Int32Scaled { index, .. }
+                    | OffsetView::Int64Scaled { index, .. } => index,
                     _ => unreachable!(),
                 };
+                let shared_view = shared_index.operand_view();
                 assert_eq!(
                     memory_blind_operand_fingerprint(shared_view),
                     memory_blind_operand_fingerprint(MachineOperandView::Old(&native)),

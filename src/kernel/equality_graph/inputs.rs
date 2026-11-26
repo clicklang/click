@@ -488,13 +488,13 @@ mod read_trace_tests {
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
         let read = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 4);
-        let target = OldAddressOffset::Constant(8);
+        let target = AddressOffset::constant(8);
         let checkpoint = graph.read_equality_checkpoint();
-        graph.add_offset_equality(&read, &crate::kernel::AddressOffset::from(&target));
+        graph.add_offset_equality(&read, &target.clone());
         assert_eq!(
             graph.read_equalities_since(&checkpoint).equalities,
             vec![Proposition::condition_is(
-                OldConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target.into())),
+                OldConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
                 true
             )]
         );

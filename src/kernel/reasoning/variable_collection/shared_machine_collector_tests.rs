@@ -259,22 +259,15 @@ fn machine_fold_endpoints_retain_mathematical_variables_in_conversions() {
 // observation: these edges must not implicitly Deref the shared operand.
 fn check_pointer_index_collectors(native: &OldMachineTerm, machine: &SharedMachineIntegerTerm) {
     let offset = if machine.ty() == MachineIntegerType::Int32 {
-        OldAddressOffset::Int32Scaled {
-            value: machine.clone(),
-            byte_width: 4,
-        }
+        AddressOffset::int32_scaled(machine.clone(), 4)
     } else {
-        OldAddressOffset::Int64Scaled {
-            value: machine.clone(),
-            byte_width: 8,
-            unsigned: true,
-        }
+        AddressOffset::int64_scaled(machine.clone(), 8, true)
     };
     let before = KernelTermExport::machine_export_count();
     let (mut expected, mut actual) = (BTreeSet::new(), BTreeSet::new());
     collect_bitvector_integer_variables(native, &mut expected);
     collect_pointer_offset_integer_variables(
-        &crate::kernel::AddressOffset::from(&offset),
+        &offset.clone(),
         &mut actual,
         &mut SeenTerms::default(),
     );
@@ -283,7 +276,7 @@ fn check_pointer_index_collectors(native: &OldMachineTerm, machine: &SharedMachi
     actual.clear();
     collect_bitvector_capture_variables_seen(native, &mut expected, &mut SeenTerms::default());
     collect_pointer_offset_capture_variables(
-        &crate::kernel::AddressOffset::from(&offset),
+        &offset.clone(),
         &mut actual,
         &mut SeenTerms::default(),
     );
@@ -291,10 +284,7 @@ fn check_pointer_index_collectors(native: &OldMachineTerm, machine: &SharedMachi
     expected.clear();
     actual.clear();
     collect_bitvector_variables(native, &mut expected);
-    collect_pointer_offset_bitvector_variables(
-        &crate::kernel::AddressOffset::from(&offset),
-        &mut actual,
-    );
+    collect_pointer_offset_bitvector_variables(&offset.clone(), &mut actual);
     assert_eq!(actual, expected);
     let (mut expected_i, mut expected_c, mut actual_i, mut actual_c) = Default::default();
     collect_bitvector_binder_variables_seen(
@@ -304,18 +294,14 @@ fn check_pointer_index_collectors(native: &OldMachineTerm, machine: &SharedMachi
         &mut SeenTerms::default(),
     );
     collect_pointer_offset_binder_variables(
-        &crate::kernel::AddressOffset::from(&offset),
+        &offset.clone(),
         &mut actual_i,
         &mut actual_c,
         &mut SeenTerms::default(),
     );
     assert_eq!((actual_i, actual_c), (expected_i, expected_c));
     assert_eq!(
-        collect_pointer_offset_scope_summary(
-            &crate::kernel::AddressOffset::from(&offset),
-            &mut Default::default()
-        )
-        .max,
+        collect_pointer_offset_scope_summary(&offset.clone(), &mut Default::default()).max,
         collect_bitvector_scope_summary(native, &mut Default::default()).max,
     );
     assert_eq!(KernelTermExport::machine_export_count(), before);

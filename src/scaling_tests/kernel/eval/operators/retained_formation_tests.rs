@@ -19,23 +19,13 @@ fn growing_coordinate_guards_retain_shared_indices_without_exports() {
                     );
                     let value = MachineOperandView::Shared(&index).retain(ty);
                     let offset = if ty == T::Int32 {
-                        OldAddressOffset::Int32Scaled {
-                            value,
-                            byte_width: 4,
-                        }
+                        AddressOffset::int32_scaled(value, 4)
                     } else {
-                        OldAddressOffset::Int64Scaled {
-                            value,
-                            byte_width: 4,
-                            unsigned: ty == T::UInt64,
-                        }
+                        AddressOffset::int64_scaled(value, 4, ty == T::UInt64)
                     };
                     let mut guards = vec![];
-                    let result = exact_pointer_offset_i64_with_guards(
-                        &crate::kernel::AddressOffset::from(&offset),
-                        &mut guards,
-                    )
-                    .unwrap();
+                    let result =
+                        exact_pointer_offset_i64_with_guards(&offset.clone(), &mut guards).unwrap();
                     assert!(result.shared_operand().is_some());
                     assert!(!guards.is_empty());
                 }

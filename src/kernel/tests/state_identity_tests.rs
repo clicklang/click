@@ -344,11 +344,11 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
 fn arms_beside_known_cells(known: u32) -> (SymbolicMemory, [ExecutionState; 2]) {
     let known_cell = |index: u32| OldAddress {
         base: "global:known".into(),
-        offset: OldAddressOffset::Constant(4 * i64::from(index)).into(),
+        offset: AddressOffset::constant(4 * i64::from(index)),
     };
     let written = OldAddress {
         base: "global:written".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let mut memory = SymbolicMemory::new()
         .with_block("global:known", 4 * known)
@@ -453,7 +453,7 @@ fn interface_join_history_uses_checked_arms_before_marker_union() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = OldAddress {
         base: "global:branch-value".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let base = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
     let then_state = ExecutionState::new().with_memory(
