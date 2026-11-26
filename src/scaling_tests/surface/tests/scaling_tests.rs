@@ -674,16 +674,16 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
     // first use parses every library module into a process-wide `OnceLock`
     // on the calling thread. Do that here, on the test's ordinary stack, so
     // the small stack and the work samples measure only the nested bodies.
-    crate::surface::parse("theorem warm() { ensures 0 == 0 by { normalize(); } }")
+    crate::surface::parse("theorem warm() { ensures 0 == 0 by { close(); } }")
         .expect("the standard library parses");
     std::thread::Builder::new()
         .name("small-stack-proof-body-parser".into())
         .stack_size(7 * 256 * 1024)
         .spawn(|| {
             let samples = [2, 4, 8, 16].map(|depth| {
-                let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
+                let mut body = "have 0 == 0 by { close(); } close();".to_string();
                 for _ in 0..depth {
-                    body = format!("all {{ true => {{ {body} }} true => {{ normalize(); }} }}");
+                    body = format!("all {{ true => {{ {body} }} true => {{ close(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

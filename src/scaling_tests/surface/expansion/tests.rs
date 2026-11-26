@@ -32,7 +32,7 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
         let source = format!(
             "{}\ntheorem t() {{ ensures true by {{ {} }} }}",
             "// αβ unrelated\n".repeat(size * 4),
-            "have true by { normalize(); } ".repeat(size)
+            "have true by { close(); } ".repeat(size)
         );
         let positions: Vec<_> = source
             .match_indices("have")
@@ -72,7 +72,7 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
     // A larger immutable container must not increase work per selected site.
     let query = |unrelated| {
         let source = format!(
-            "{}theorem t() {{ ensures true by {{ have true by {{ normalize(); }} }} }}",
+            "{}theorem t() {{ ensures true by {{ have true by {{ close(); }} }} }}",
             "// unrelated αβ\n".repeat(unrelated)
         );
         let index = ProofSourceIndex::new(&source).unwrap();
@@ -93,7 +93,7 @@ fn trace_source_index_skips_nested_subtrees_during_construction() {
     // Click supports proofs nested 32 deep, the outer `by` included.
     for depth in [7, 14, 28] {
         let source = format!(
-            "theorem t() {{ ensures true by {{ {}normalize();{} }} }}",
+            "theorem t() {{ ensures true by {{ {}close();{} }} }}",
             "have true by { ".repeat(depth),
             " }".repeat(depth)
         );
@@ -115,7 +115,7 @@ fn trace_source_index_indexes_many_case_arms() {
     for size in [16, 64, 256] {
         let source = format!(
             "theorem t() {{ ensures true by {{ cases {{ {} }} }} }}",
-            "true => { normalize(); } ".repeat(size)
+            "true => { close(); } ".repeat(size)
         );
         let index = ProofSourceIndex::new(&source).unwrap();
         let cases = position_at_offset(&source, source.find("cases").unwrap());
