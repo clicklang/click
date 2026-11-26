@@ -25,6 +25,15 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
 import click::integer;
 verifying "c_pointer_local_loop_invariant.c";
 
+theorem read_same_int32_cell(base: int32*, alias: int32*) {
+    requires base == alias;
+    requires viewable(memory(*base));
+    ensures *alias == *base by {
+        rewrite(alias, base);
+        close();
+    }
+}
+
 int32 last_element(int32 arr[], int32 n, int32 cap) {
     requires 0 <= n;
     requires n < cap;
@@ -60,12 +69,32 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
             }
         }
     }
+    have i == n by close();
+    have p == arr + n by {
+        rewrite(p, arr + i);
+        rewrite(i, n);
+        close();
+    }
+    mark before_return;
+    have viewable(arr[0..cap]) by {
+        observe(arr[0..cap]);
+    }
+    have contains(memory(arr[0..cap]), memory(arr[n])) by {
+        apply(click::separation::contains_element(arr, 0, cap, n));
+    }
+    have viewable(memory(arr[n])) by {
+        apply(click::separation::viewable_restrict(memory(arr[0..cap]), memory(arr[n])));
+    }
+    have *p == arr[n] by {
+        apply(read_same_int32_cell(arr + n, p));
+        close();
+    }
     step();
+    have result == at(before_return, *p) by close();
     have result == arr[n] by {
-        have at(loop(0).exit, i) == at(loop(0).exit, n);
-        rewrite(at(loop(0).exit, p), at(loop(0).exit, arr + i));
-        rewrite(at(loop(0).exit, i), at(loop(0).exit, n));
-        normalize();
+        rewrite(result, at(before_return, *p));
+        rewrite(at(before_return, *p), at(before_return, arr[n]));
+        close();
     }
     close();
 }
