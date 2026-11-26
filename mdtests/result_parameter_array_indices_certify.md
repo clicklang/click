@@ -17,6 +17,26 @@ int32 zero(int32 result, struct object* p) {
     ensures p->values[program::result + result][0] == 7;
     ensures p->values[result][0] == 3;
     ensures p->single[program::result] == 9;
+} by {
+    step();
+    have p->values[program::result][0] == 7 by {
+        rewrite(program::result, 1);
+        close();
+    }
+    have old(p)->values[program::result][0] == 7 by {
+        rewrite(program::result, 1);
+        close();
+    }
+    have p->values[program::result + result][0] == 7 by {
+        rewrite(program::result, 1);
+        close();
+    }
+    have p->values[result][0] == 3 by { close(); }
+    have p->single[program::result] == 9 by {
+        rewrite(program::result, 1);
+        close();
+    }
+    close();
 }
 ```
 ```expect

@@ -3,6 +3,16 @@ use click::surface::{
     c_smart_tactic_source_sites, c_tactic_source_position, verify_c_sources, verify_c_sources_at,
 };
 
+fn audit_all_sites(path: &Path) {
+    let arguments = parse_arguments([
+        "--time-limit".into(),
+        "120s".into(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+}
+
 #[test]
 fn theorem_replay_with_a_partial_expression_in_an_unselected_theorem() {
     let path =
@@ -1810,24 +1820,9 @@ fn a_field_selected_memory_endpoint_audits_every_site() {
 fn an_unfold_bound_scalar_field_audits_every_site() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/resource_unfold_binds_scalar_field.md");
-    let deadline = Instant::now() + Duration::from_secs(120);
     let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
     assert!(sites.len() >= 2, "{sites:?}");
-    let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-    for (index, site) in sites.iter().enumerate() {
-        if let Err(message) = audit_site(
-            site,
-            &mut worker,
-            &AuditLimits::default(),
-            index == 0,
-            deadline,
-        ) {
-            panic!(
-                "{}:{} should audit: {message}",
-                site.position.line, site.position.column
-            );
-        }
-    }
+    audit_all_sites(&path);
 }
 
 #[test]
@@ -2055,29 +2050,13 @@ fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
         ("mdtests/resource_witness_unfold_fold.md", 3),
-        ("mdtests/rb_parent_family.md", 15),
+        ("mdtests/rb_parent_family.md", 36),
         ("mdtests/population_count_states_its_transition.md", 2),
     ] {
         let path = root.join(relative);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
         assert_eq!(sites.len(), expected_sites, "{relative}");
-        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(120);
-        for (index, site) in sites.iter().enumerate() {
-            audit_site(
-                site,
-                &mut worker,
-                &AuditLimits::default(),
-                index == 0,
-                deadline,
-            )
-            .unwrap_or_else(|message| {
-                panic!(
-                    "{relative}:{}:{}: {message}",
-                    site.position.line, site.position.column
-                )
-            });
-        }
+        audit_all_sites(&path);
     }
 }
 
@@ -2161,18 +2140,7 @@ fn result_parameter_postconditions_audit_every_site() {
         let path = root.join(relative);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
         assert!(!sites.is_empty(), "{relative} must have tactic sites");
-        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(120);
-        for (index, site) in sites.iter().enumerate() {
-            audit_site(
-                site,
-                &mut worker,
-                &AuditLimits::default(),
-                index == 0,
-                deadline,
-            )
-            .unwrap_or_else(|message| panic!("{relative}: {message}"));
-        }
+        audit_all_sites(&path);
     }
 }
 

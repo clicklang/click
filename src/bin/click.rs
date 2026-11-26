@@ -492,11 +492,8 @@ uint64 spell(const uint8* b, uint64 n) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(
-            trace.contains("`known` requires the current goal as an available semantic fact"),
-            "{trace}"
-        );
-        assert!(trace.contains("\nrequired evidence: false\n"), "{trace}");
+        assert!(trace.contains("could not establish `false`"), "{trace}");
+        assert!(trace.contains("\ngoal: false\n"), "{trace}");
         assert!(trace.contains(" = b + uint64("), "{trace}");
         assert!(
             trace.contains(" = at(statement(2).statement(0).entry, v)"),
@@ -1847,7 +1844,7 @@ void parent(int32* p) {
         );
         let current = read_state(
             failed_check,
-            "required evidence: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
+            "goal: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
         );
         assert_ne!(saved, current, "{report}");
     }
@@ -1877,7 +1874,7 @@ theorem bad(p: int32*, q: int32*) {
         let ordinary = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         let ordinary_goal = ordinary
             .lines()
-            .find_map(|line| line.trim().strip_prefix("required evidence: "))
+            .find_map(|line| line.trim().strip_prefix("goal: "))
             .unwrap();
         let report = entry([
             "verify".to_string(),
@@ -1890,14 +1887,11 @@ theorem bad(p: int32*, q: int32*) {
         // trace keeps the typed checked goal.
         assert!(ordinary_goal.contains("tag("), "{ordinary}");
         assert!(!ordinary_goal.contains("state#"), "{ordinary}");
-        assert_eq!(report.matches("required evidence:").count(), 1, "{report}");
-        let checked = report
-            .lines()
-            .find(|line| line.contains("required evidence:"))
-            .unwrap();
+        assert_eq!(report.matches("goal:").count(), 1, "{report}");
+        let checked = report.lines().find(|line| line.contains("goal:")).unwrap();
         assert!(checked.contains("tag("), "{report}");
         assert!(checked.contains("array-ref<int32>(state#1,"), "{report}");
-        assert!(checked.contains("ptr<int32*>("), "{report}");
+        assert!(checked.contains("ptr<int32*>(q)"), "{report}");
         assert!(
             report.contains("state#1 = initial empty memory"),
             "{report}"
