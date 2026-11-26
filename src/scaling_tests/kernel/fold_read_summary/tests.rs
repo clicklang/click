@@ -28,7 +28,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
     // Number of applications: one conjunction of `size` framed equalities.
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         register_unmarked();
         let v = parameter_base(V);
         let before = SymbolicMemory::new();
@@ -69,7 +69,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
     // growing number of unrelated order facts.
     let mut works = Vec::new();
     for size in [16usize, 32, 64, 128] {
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         register_unmarked();
         let v = parameter_base(V);
         let before = SymbolicMemory::new();
@@ -97,7 +97,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
     // same, because no step enumerates the range.
     let mut lengths = Vec::new();
     for length in [10u32, 1_000, 1_000_000, 1_000_000_000] {
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         register_unmarked();
         let v = parameter_base(V);
         let before = SymbolicMemory::new();
@@ -125,7 +125,7 @@ fn repeated_framing_along_a_store_sequence_is_linear() {
     let mut stepwise = Vec::new();
     let mut whole = Vec::new();
     for size in [16usize, 32, 64, 128] {
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         register_unmarked();
         let v = parameter_base(V);
         let mut memories = vec![SymbolicMemory::new()];
@@ -168,7 +168,7 @@ fn retained_offset_summary_does_not_expand_index_dags() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
-        let _session = VerificationSession::enter();
+        let _session = enter_fold_read_test();
         let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), ITEM);
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(

@@ -794,9 +794,8 @@ type FunctionContractSummary = (
     Vec<crate::kernel::RankingComponent>,
 );
 
-/// Records each declared `Integer`-valued function's body with the kernel,
-/// once per verification, so the kernel can decide whether it admits a
-/// checked read summary (`docs/internals/fold-read-ranges.md`).
+/// Lower declarations for the integration test of kernel read summaries
+/// (`docs/internals/fold-read-ranges.md`).
 ///
 /// This registers program data only. The body is lowered by the same
 /// annotation lowering an `unfold` of the function uses, with the parameters
@@ -804,6 +803,7 @@ type FunctionContractSummary = (
 /// own whitelist and declines anything outside it. A generic declaration, a
 /// parameter that is not a C value, or a body this lowering refuses is simply
 /// not recorded, and framing then has nothing to say about that function.
+#[cfg(test)]
 pub(in crate::surface) fn register_kernel_fold_read_definitions(
     spec_definitions: SpecDefinitions<'_>,
     struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,

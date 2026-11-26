@@ -2253,7 +2253,6 @@ fn verify_program_in_context(
             spec_definitions,
             &file_scope_object_names(click_source, c_sources, selected_target)?,
         )?;
-        register_kernel_fold_read_definitions(spec_definitions, &resource_struct_layouts);
         // Frame evidence may look through composite definitions to decide
         // that a call's mutable ranges or a store's written cell cannot
         // touch a loaded pointer inside a composite's footprint. Definitions

@@ -21,7 +21,8 @@ module comment states the soundness argument in full.
 ## Status
 
 Kernel tests cover checked summaries and the fold frame rule.
-The verifier does not use that frame rule for source proofs.
+Summary registration and framing run only in those tests. Verification does
+not build or store summaries.
 The written proof in `mdtests/sweep_maintains_a_zero_unmarked_count.md` now uses
 pointwise separation and preservation followed by the existing `unmarked_frame`
 lemma. Its companion, `mdtests/sweep_prefix_survives_its_endpoint_store.md`,
@@ -45,7 +46,7 @@ value.
 
 1. **Definition checking** proves the support includes every read that can
    affect the result. `CheckedFoldReadSummary::check` walks the lowered body
-   against an explicit whitelist once per verification.
+   against an explicit whitelist.
 2. **Framing** proves the selected effects preserve those reads between the
    two states. `frame_fold_application_transport` decides each recorded
    step between them from its own write set and the querying context's exact
@@ -74,18 +75,15 @@ fold:
 Anything else declines the whole definition: another index (`v[k + 1]`,
 `v[v[k]]`), a nested fold, a recursive or opaque helper call, an address
 escape, or a read in an endpoint or the initial accumulator. A declined
-function verifies as before; only the framing improvement is unavailable.
+definition supplies no support for framing in the tests.
 An actual scalar argument that is itself a historical read keeps its own
 dependency and load identity; changed endpoints or base pointers are never
 equated by range framing.
 
-The summary handle is kernel-owned, immutable, and scoped to the
-verification: its fields are private, so the Surface registers a body
-(`register_kernel_fold_read_definitions` in
-`src/surface/lowering/annotations.rs`) but never states a summary. The same
-definition governs unfolding and framing. Expanded source writes the original
-application and ordinary proof steps, and a fresh verifier reconstructs the
-summary from the definition.
+The summary handle is immutable and its fields are private. The Surface
+integration test lowers a declaration to supply its body to the summary
+checker. Source proofs use pointwise preservation and induction, and
+expansion writes the ordinary steps of that proof.
 
 ## Framing and states
 
@@ -132,17 +130,14 @@ nested folds, and recursion each need separate evidence from real proofs.
 
 - Kernel tests in `src/kernel/fold_read_summary/tests.rs`: every unsupported
   read pattern, byte-width boundary overlap, aliasing, lifetime and call
-  edges, session poisoning, and deterministic scaling over body size,
+  edges, registry conflicts, and deterministic scaling over body size,
   application count, unrelated facts, interval length, and store sequences.
 - `fold_read_summaries_are_checked_from_the_lowered_declarations` in
-  `src/surface/tests.rs` and
-  `explicit_fold_read_transport_along_a_store_sequence_is_near_linear` in
-  `src/scaling_tests/surface/tests/scaling_tests.rs`.
+  `src/surface/tests.rs`.
 - The `mdtests/fold_read_transport_*.md` fixtures (positive and refused
   forms), `mdtests/sweep_maintains_a_zero_unmarked_count.md`,
   `mdtests/sweep_prefix_survives_its_endpoint_store.md`, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
-  which state a fact reading a cell the step may write and are refused by
-  both the whole-block version and the fold read frame.
+  which test that source proofs cannot reuse facts about cells a step may write.
 
 Work follows [Verification efficiency](verification-efficiency.md): summary
 checking is linear in the selected body, instantiation is proportional to its
