@@ -68,10 +68,17 @@ resource tree_at(p: struct node*) {
             owns right: tree_at(p->right);
             fact p != 0;
             fact p == identity;
+            fact defined(p->left);
+            fact defined(p->right);
             fact left.model == left_model;
             fact right.model == right_model;
         },
     }
+}
+
+resource saved_left_link(node: struct node*) {
+    owns node->left;
+    fact defined(node->left);
 }
 
 function shape_left(tree: Shape) -> Shape {
@@ -143,15 +150,65 @@ struct node* rotate_left(
     match r.model {
         Shape::Empty => { contradiction(r.model == Shape::Empty); },
         Shape::Node(pivot_node, middle_model, far_model) => {
-            let { left: m, right: z } = unfold(r);
+            have defined(node->left) by close();
             // Carry the untouched link reads across each store before folding.
+            step_until(statement(1).entry);
+            have separate(memory((&pivot)[0]), memory(node->left)) by close();
+            have separate(statement(0).region(0).footprint, memory(node->left)) by {
+                close() using { separate(memory((&pivot)[0]), memory(node->left)); };
+            }
+            have at(statement(0).region(0).exit, defined(node->left)) by {
+                preserve(memory(node->left), statement(0).region(0));
+            }
+            have separate(statement(0).region(1).footprint, memory(node->left)) by {
+                close() using { separate(memory((&pivot)[0]), memory(node->left)); };
+            }
+            have defined(node->left) by {
+                preserve(memory(node->left), statement(0).region(1));
+            }
+            have pivot == node->right by close();
+            fold(saved_left_link(node));
+            let { left: m, right: z } = unfold(r);
+            unfold(saved_left_link(node));
+            have defined(node->left) by close();
+            have defined(pivot->right) by {
+                rewrite(pivot, node->right);
+                close();
+            }
             step_until(statement(2).entry);
-            have defined(node->left) by { close(); }
+            have separate(memory((&middle)[0]), memory(node->left)) by close();
+            have separate(statement(1).region(0).footprint, memory(node->left)) by {
+                close() using { separate(memory((&middle)[0]), memory(node->left)); };
+            }
+            have at(statement(1).region(0).exit, defined(node->left)) by {
+                preserve(memory(node->left), statement(1).region(0));
+            }
+            have separate(statement(1).region(1).footprint, memory(node->left)) by {
+                close() using { separate(memory((&middle)[0]), memory(node->left)); };
+            }
+            have defined(node->left) by {
+                preserve(memory(node->left), statement(1).region(1));
+            }
+            have separate(memory((&middle)[0]), memory(pivot->right)) by close();
+            have separate(statement(1).region(0).footprint, memory(pivot->right)) by {
+                close() using { separate(memory((&middle)[0]), memory(pivot->right)); };
+            }
+            have at(statement(1).region(0).exit, defined(pivot->right)) by {
+                preserve(memory(pivot->right), statement(1).region(0));
+            }
+            have separate(statement(1).region(1).footprint, memory(pivot->right)) by {
+                close() using { separate(memory((&middle)[0]), memory(pivot->right)); };
+            }
+            have defined(pivot->right) by {
+                preserve(memory(pivot->right), statement(1).region(1));
+            }
             have separate(memory(node->left), memory(node->right)) by { close(); }
             have defined(pivot->right) by { close(); }
             have separate(memory(pivot->right), memory(node->right)) by { close(); }
             have node->left == old(node->left) by close();
             have pivot->right == old(node->right->right) by close();
+            have node->augmented == old(node->augmented) by close();
+            have separate(memory(node->augmented), memory(node->right)) by close();
             mark before_right;
             step_until(statement(3).entry);
             have separate(statement(2).footprint, memory(node->left)) by {
@@ -172,6 +229,17 @@ struct node* rotate_left(
             have separate(memory(node->right), memory(pivot->left)) by { close(); }
             have defined(pivot->right) by { close(); }
             have separate(memory(pivot->right), memory(pivot->left)) by { close(); }
+            have separate(statement(2).footprint, memory(node->augmented)) by {
+                close() using { at(before_right, separate(memory(node->augmented), memory(node->right))); };
+            }
+            have node->augmented == at(before_right, node->augmented) by {
+                close();
+            }
+            have node->augmented == old(node->augmented) by {
+                rewrite(node->augmented, at(before_right, node->augmented));
+                close();
+            }
+            have separate(memory(node->augmented), memory(pivot->left)) by close();
             mark before_left;
             step_until(statement(4).entry);
             have separate(statement(3).footprint, memory(node->left)) by {
@@ -209,6 +277,16 @@ struct node* rotate_left(
                 rewrite(at(before_left, pivot->right), at(before_right, pivot->right));
                 close();
             }
+            have separate(statement(3).footprint, memory(node->augmented)) by {
+                close() using { at(before_left, separate(memory(node->augmented), memory(pivot->left))); };
+            }
+            have node->augmented == at(before_left, node->augmented) by {
+                close();
+            }
+            have node->augmented == old(node->augmented) by {
+                rewrite(node->augmented, at(before_left, node->augmented));
+                close();
+            }
             let lower = fold(tree_at(node), {
                 model: Shape::Node(node, l.model, m.model),
                 left: l, right: m
@@ -225,6 +303,14 @@ struct node* rotate_left(
             have shape_right(old(r.model)) == far_model by {
                 rewrite(old(r.model), Shape::Node(pivot_node, middle_model, far_model));
                 unfold(shape_right(Shape::Node(pivot_node, middle_model, far_model)));
+                close();
+            }
+            have 0 <= node->augmented by {
+                rewrite(node->augmented, old(node->augmented));
+                close();
+            }
+            have node->augmented < 1000 by {
+                rewrite(node->augmented, old(node->augmented));
                 close();
             }
             step(AugmentRotate, { t: rotated });

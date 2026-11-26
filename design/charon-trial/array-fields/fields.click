@@ -38,25 +38,32 @@ fn write(state: &mut Lanes, index: usize, value: u32) {
         close();
     }
     step_until(statement(0).region(5).entry);
+    mark before_write;
+    have state.values[0] == old(state.values[0]) by close();
+    have state.values[2] == old(state.values[2]) by close();
+    have state.values[3] == old(state.values[3]) by close();
     step();
     have separate(statement(0).region(5).footprint, memory(*(((state as (void *)) as (uint32 *)) + 0u64))) by {
         close();
     }
-    have state.values[0] == old(state.values[0]) by {
+    have state.values[0] == at(before_write, state.values[0]) by {
         preserve(memory(*(((state as (void *)) as (uint32 *)) + 0u64)), statement(0).region(5));
     }
+    have state.values[0] == old(state.values[0]) by close();
     have separate(statement(0).region(5).footprint, memory(*(((state as (void *)) as (uint32 *)) + 2u64))) by {
         close();
     }
-    have state.values[2] == old(state.values[2]) by {
+    have state.values[2] == at(before_write, state.values[2]) by {
         preserve(memory(*(((state as (void *)) as (uint32 *)) + 2u64)), statement(0).region(5));
     }
+    have state.values[2] == old(state.values[2]) by close();
     have separate(statement(0).region(5).footprint, memory(*(((state as (void *)) as (uint32 *)) + 3u64))) by {
         close();
     }
-    have state.values[3] == old(state.values[3]) by {
+    have state.values[3] == at(before_write, state.values[3]) by {
         preserve(memory(*(((state as (void *)) as (uint32 *)) + 3u64)), statement(0).region(5));
     }
+    have state.values[3] == old(state.values[3]) by close();
     step_until(function.exit);
 }
 fn array_first(values: &[u32; 4]) -> u32 {
