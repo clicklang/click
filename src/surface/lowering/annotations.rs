@@ -238,6 +238,7 @@ mod declarations;
 mod elaborator;
 mod typing_environment;
 use declarations::Declarations;
+use elaborator::Elaborator;
 use typing_environment::TypingEnvironment;
 #[cfg(test)]
 mod tests;
@@ -7424,16 +7425,6 @@ impl AnnotationLowerer<'_> {
                 self.lower_click_function_call_to_spec(name, arguments, environment)
             }
         }
-    }
-
-    /// The C type of C name `name`, a parameter, local or `result`, unless a
-    /// spec binding shadows it.
-    fn program_name_type(
-        &self,
-        name: impl Into<crate::kernel::BindingName>,
-        typing: &TypingEnvironment<'_>,
-    ) -> Option<ProgramType> {
-        self.declarations().program_name_type(name, typing)
     }
 
     /// The enum or library value type named by a program binding or read.

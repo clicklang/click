@@ -246,9 +246,14 @@ kernel. It reads outer names through the `TypeScope` trait
 (`contract_expression_click_type`, the enum and pointer element types) on an
 `Elaborator` (`annotations/elaborator.rs`), which holds only declarations,
 specification definitions and recorded states. The lowerer delegates those
-queries to it. The elaboration entry points themselves still live on the
-lowerer, because generic instantiation and call pointer widths still reach
-into lowering.
+queries to it. Comparison elaboration (`elaborate_proposition`,
+`elaborate_comparison` and the native operand forms) also runs on the
+`Elaborator`, reading names through a `TypingEnvironment`. It still asks
+lowering four questions through the `LoweringQueries` trait: whether a generic
+call's result is algebraic at its instantiation, a pointer's element width,
+a call result's pointer element width, and whether an access through an
+untyped pointer is refused. Each moves to the `Elaborator` once declared
+types answer it.
 
 Still to do in stage 2: elaboration runs where lowering reaches a comparison,
 not as a pass before lowering; the raiser still returns Syntax and keeps its

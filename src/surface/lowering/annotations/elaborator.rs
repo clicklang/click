@@ -24,7 +24,7 @@ impl<'a> AnnotationLowerer<'a> {
 }
 
 impl Elaborator<'_> {
-    fn program_name_type(
+    pub(super) fn program_name_type(
         &self,
         name: impl Into<crate::kernel::BindingName>,
         typing: &TypingEnvironment<'_>,
@@ -32,7 +32,7 @@ impl Elaborator<'_> {
         self.declarations.program_name_type(name, typing)
     }
 
-    fn program_expression_array_element_type(
+    pub(super) fn program_expression_array_element_type(
         &self,
         expression: &ProgramExpression,
         typing: &TypingEnvironment<'_>,
