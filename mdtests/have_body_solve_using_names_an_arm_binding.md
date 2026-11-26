@@ -9,9 +9,8 @@ in `instantiate`, in `have`
 and in the `initialize` and `maintain` bodies of that loop
 ([`loop_phase_body_reads_arm_bindings.md`](loop_phase_body_reads_arm_bindings.md)).
 
-One site was missed: the premises of a `close() using { ... }` or a
-`normalize() using { ... }` written inside a `have` body that the smart planner
-discharges. The goal of that `have` was materialized against the enclosing
+One site was missed: the premises of `close() using { ... }` inside a
+`have` body that the smart planner discharges. The goal of that `have` was materialized against the enclosing
 proof's lexical bindings before planning, but the body's premises were lowered
 without them, so the arm's name was read as an unbound C variable and the
 premise was refused with `` `color` is not an algebraic binding in this
@@ -20,9 +19,9 @@ bindings the goal is materialized with. The written spellings stay what the
 certificate records and expansion prints, and `click audit` agrees with
 `click verify` at every site here.
 
-`peek` proves two `have`s in the arm, each citing the unfolded body fact that
-names the arm's colour: one closed by `close() using`, one by `normalize()
-using`. `spin` puts the same `have` inside the `maintain` body of a loop
+`peek` closes two `have` goals in the arm with `close() using`. Each premise
+cites a fact about the arm's colour from the unfolded resource.
+`spin` puts the same `have` inside the `maintain` body of a loop
 written in the arm, where the phase planner lowers it from a fresh root
 carrying the arm's scope.
 

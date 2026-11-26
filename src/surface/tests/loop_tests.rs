@@ -13,7 +13,7 @@ tactic stop() {
     unfold(dirty);
     let done = fold(ghost(0), { model: Walk::Done });
     have pending(done.model) == 0 by {
-        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); normalize();
+        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); close();
     }
 }
 void walk(int32 n) {
@@ -773,6 +773,14 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
     }
 }
 
+const SWAP_CELL_ALIAS_THEOREM: &str = r#"
+theorem read_same_swap_cell(base: int32*, alias: int32*) {
+    requires base == alias;
+    requires viewable(memory(*base));
+    ensures *alias == *base by { rewrite(alias, base); close(); }
+}
+"#;
+
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
@@ -792,7 +800,7 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
                 ensures p[0] <= p[2];
             } by {
                 step(); step(); step();
-                have p[$index] == old(p[$index + 1]) by { normalize(); }
+                have p[$index] == old(p[$index + 1]) by { close(); }
                 mark first_written;
                 step();
                 have to_integer($index) != to_integer($index + 1) by {
@@ -809,10 +817,25 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
                     rewrite(p[$index], at(first_written, p[$index]));
                     close();
                 }
-                have p[0] == old(p[1]) by {
-                    normalize() using { p[$index] == old(p[$index + 1]); j == 0; };
+                have p[$index] == p[0] by {
+                    have p + $index == p by { rewrite($index, 0); close(); }
+                    have viewable(p[0..3]) by { observe(p[0..3]); }
+                    apply(separation::contains_element(p, 0, 3, 0));
+                    apply(separation::viewable_restrict(memory(p[0..3]), memory(p[0])));
+                    apply(read_same_swap_cell(p, p + $index));
+                    close();
                 }
-                have p[2] == old(p[2]) by { normalize(); }
+                have old(p[$index + 1]) == old(p[1]) by {
+                    have old($index + 1) == 1 by { rewrite(old($index), 0); close(); }
+                    rewrite(old($index + 1), 1);
+                    close();
+                }
+                have p[0] == old(p[1]) by {
+                    rewrite(p[0], p[$index]);
+                    rewrite(old(p[1]), old(p[$index + 1]));
+                    close();
+                }
+                have p[2] == old(p[2]) by { close(); }
                 have p[0] <= p[2] by {
                     rewrite(p[0], old(p[1]));
                     rewrite(p[2], old(p[2]));
@@ -822,6 +845,7 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
             }
         "#
         .replace("$index", index);
+        let click = format!("{SWAP_CELL_ALIAS_THEOREM}\n{click}");
         let sources = [("swap.c", c.as_str())];
         let verified = verify_c_sources(&click, &sources)
             .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
@@ -875,16 +899,21 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
         have p[0] == at(statement(3).statement(0).statement(1).exit, p[0]) by {
             preserve(memory(p[0]), statement(3).statement(0).statement(2));
         }
-        have at(statement(3).statement(0).statement(1).exit, p[0]) == at(before_swap, p[1]) by {
-            normalize() using { at(before_swap, j) == 0; };
-        }
-        have p[0] == at(before_swap, p[1]) by {
-            rewrite(p[0], at(statement(3).statement(0).statement(1).exit, p[0]));
+        have at(statement(3).statement(0).statement(1).exit, p[j]) == at(before_swap, p[j + 1]);
+        have at(statement(3).statement(0).statement(1).exit, p[j]) == at(statement(3).statement(0).statement(1).exit, p[0]);
+        have at(before_swap, j + 1) == 1;
+        have at(before_swap, p[j + 1]) == at(before_swap, p[1]) by {
+            rewrite(at(before_swap, j + 1), 1);
             close();
         }
-        have p[1] == at(before_swap, p[0]) by {
-            normalize() using { at(before_swap, j) == 0; };
+        have p[0] == at(before_swap, p[1]);
+        have p[j + 1] == at(before_swap, p[j]);
+        have p[j + 1] == p[1] by { rewrite(j + 1, 1); close(); }
+        have at(before_swap, p[j]) == at(before_swap, p[0]) by {
+            rewrite(at(before_swap, j), 0);
+            close();
         }
+        have p[1] == at(before_swap, p[0]);
         have p[0] <= p[2] by {
             rewrite(p[0], at(before_swap, p[1]));
             rewrite(p[2], at(before_swap, p[2]));
@@ -896,13 +925,24 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
             close();
         }
     "#;
-    let entry_bounds = if include_entry_bounds {
-        entry_bounds
+    let cell_alias = r#"
+        have p + j == p by { rewrite(j, 0); close(); }
+        have viewable(p[0..3]) by { observe(p[0..3]); }
+        apply(click::separation::contains_element(p, 0, 3, 0));
+        apply(click::separation::viewable_restrict(memory(p[0..3]), memory(p[0])));
+        have p[j] == p[0] by {
+            apply(read_same_swap_cell(p, p + j));
+            close();
+        }
+    "#;
+    let (cell_alias, entry_bounds) = if include_entry_bounds {
+        (cell_alias, entry_bounds)
     } else {
-        ""
+        ("", "")
     };
     let click = format!(
-        r#"verifying "swap.c";
+        r#"{SWAP_CELL_ALIAS_THEOREM}
+        verifying "swap.c";
         int32 swap(int32 p[3]) {{
             requires p[0] <= p[2]; requires p[1] <= p[2];
             consumes p[0..3]; ensures result == 0;
@@ -920,7 +960,9 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
                     }}
                     mark before_swap;
                     if p[j + 1] < p[j] {{
-                        step(); step(); step(); step();
+                        step(); step();
+                        {cell_alias}
+                        step(); step();
                         {entry_bounds}
                         step();
                     }} else {{

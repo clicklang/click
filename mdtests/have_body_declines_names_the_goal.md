@@ -1,10 +1,8 @@
 # A failing `have` reports its written operation
 
-The checked driver runs this source body once. Its first `close()` cannot prove
-`n + 1 > 500`, so that operation reports the failure before the following
-`normalize()` runs. The diagnostic retains the source body position and the
-failing goal. A whole-script shape precheck must not hide this failure, and no
-generated-script driver may retry the source.
+The checked driver runs the source body once. Its first `close()` reports
+the failure to prove `n + 1 > 500` and identifies the operation's position in
+the body.
 
 ```c filename=have_body_declines_names_the_goal.c
 int spin(int n) {
