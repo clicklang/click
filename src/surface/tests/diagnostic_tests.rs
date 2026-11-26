@@ -3875,7 +3875,7 @@ fn known_have_trace_retains_its_written_source_occurrence() {
             focused.contains(&format!("tactic@3: {expected}")),
             "{focused}"
         );
-        assert!(focused.contains("adds: p[0] == 7"), "{focused}");
+        assert!(focused.contains("adds: int32 =(read<Bits32>"), "{focused}");
     });
 }
 
