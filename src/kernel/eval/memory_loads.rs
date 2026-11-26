@@ -4767,11 +4767,6 @@ fn select_scalar_reads_impl(term: &OldMachineTerm, retain_selected: bool) -> Old
             right_block: AddressBase,
         },
         RebuildOffsetAdd,
-        RebuildInt32Scaled(i64),
-        RebuildInt64Scaled {
-            byte_width: i64,
-            unsigned: bool,
-        },
     }
 
     let mut tasks = vec![Task::VisitTerm(term)];
@@ -4926,45 +4921,47 @@ fn select_scalar_reads_impl(term: &OldMachineTerm, retain_selected: bool) -> Old
                     tasks.push(Task::VisitTerm(left));
                 }
             },
-            Task::VisitOffset(offset) => match offset {
-                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
+            Task::VisitOffset(offset) => match offset.view() {
+                OffsetView::Constant(_) | OffsetView::Variable(_) => {
                     offset_results.push(offset.clone())
                 }
-                OldAddressOffset::Add(left, right) => {
+                OffsetView::Add(left, right) => {
                     tasks.push(Task::RebuildOffsetAdd);
                     tasks.push(Task::VisitOffset(right));
                     tasks.push(Task::VisitOffset(left));
                 }
-                OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. }
-                    if value.shared_operand().is_some() =>
+                OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. }
+                    if index.shared_operand().is_some() =>
                 {
                     // This child was constructed already. Reopening its read
                     // would change its identity and repeatedly walk its prefix.
                     offset_results.push(offset.clone());
                 }
-                OldAddressOffset::Int32Scaled { value, byte_width } => {
-                    tasks.push(Task::RebuildInt32Scaled(*byte_width));
-                    tasks.push(Task::VisitTerm(
-                        value
+                // The view owns the index, so its written operand is walked
+                // by a nested walk, at the point the operand's task would be
+                // popped. Nesting follows the source: a nested walk needs an
+                // address comparison written inside an index.
+                OffsetView::Int32Scaled { index, byte_width } => {
+                    let value = select_scalar_reads_impl(
+                        index
                             .retained_written_operand()
                             .expect("shared indices handled above"),
-                    ));
+                        retain_selected,
+                    );
+                    offset_results.push(OldAddressOffset::scale_int32(value, byte_width));
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned,
                 } => {
-                    tasks.push(Task::RebuildInt64Scaled {
-                        byte_width: *byte_width,
-                        unsigned: *unsigned,
-                    });
-                    tasks.push(Task::VisitTerm(
-                        value
+                    let value = select_scalar_reads_impl(
+                        index
                             .retained_written_operand()
                             .expect("shared indices handled above"),
-                    ));
+                        retain_selected,
+                    );
+                    offset_results.push(OldAddressOffset::scale_int64(value, byte_width, unsigned));
                 }
             },
             // Integer operators and conversions are rebuilt as bare nodes;
@@ -5073,17 +5070,6 @@ fn select_scalar_reads_impl(term: &OldMachineTerm, retain_selected: bool) -> Old
                 let right = offset_results.pop().expect("visited right pointer offset");
                 let left = offset_results.pop().expect("visited left pointer offset");
                 offset_results.push(OldAddressOffset::add(left, right));
-            }
-            Task::RebuildInt32Scaled(byte_width) => {
-                let value = term_results.pop().expect("visited scaled term");
-                offset_results.push(OldAddressOffset::scale_int32(value, byte_width));
-            }
-            Task::RebuildInt64Scaled {
-                byte_width,
-                unsigned,
-            } => {
-                let value = term_results.pop().expect("visited scaled term");
-                offset_results.push(OldAddressOffset::scale_int64(value, byte_width, unsigned));
             }
         }
     }

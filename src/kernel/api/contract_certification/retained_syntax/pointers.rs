@@ -1,8 +1,8 @@
 //! Borrow exact pointer payloads and written addresses during certification.
 use super::*;
 use crate::kernel::{
-    AddressBase, KernelAddressOffset, OldAddress, OldAddressOffset, OldPointer,
-    RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointer,
+    AddressBase, KernelAddressOffset, OffsetTree, OffsetView, OldAddress, OldAddressOffset,
+    OldPointer, RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 use std::borrow::Cow;
 
@@ -37,14 +37,27 @@ enum OffsetNode<'a> {
         unsigned: bool,
         byte_width: i64,
         ty: MachineIntegerType,
-        value: Operand<'a>,
+        value: ScaledIndex<'a>,
     },
+}
+/// A scaled offset's index: a native offset's view owns its retained index;
+/// a shared offset's index operand borrows from the offset.
+enum ScaledIndex<'a> {
+    Native(crate::kernel::SharedMachineIntegerTerm),
+    Shared(Operand<'a>),
+}
+impl ScaledIndex<'_> {
+    fn operand(&self) -> Operand<'_> {
+        match self {
+            Self::Native(index) => index.operand_view(),
+            Self::Shared(operand) => *operand,
+        }
+    }
 }
 impl<'a> Offset<'a> {
     fn node(self) -> Option<OffsetNode<'a>> {
         use KernelAddressOffset as K;
         use OffsetNode as V;
-        use OldAddressOffset as P;
         let shared_index = |value: &'a KernelTerm| {
             let KernelType::Program(ty) = value.ty() else {
                 return None;
@@ -60,26 +73,28 @@ impl<'a> Offset<'a> {
             Some((ty, operand))
         };
         Some(match self {
-            Self::Native(P::Constant(value)) => V::Constant(*value),
-            Self::Native(P::Variable(value)) => V::Variable(*value),
-            Self::Native(P::Add(a, b)) => V::Add([Self::Native(a), Self::Native(b)]),
-            Self::Native(P::Int32Scaled { value, byte_width }) => V::Scaled {
-                wide: false,
-                unsigned: false,
-                byte_width: *byte_width,
-                ty: value.ty(),
-                value: value.operand_view(),
-            },
-            Self::Native(P::Int64Scaled {
-                value,
-                byte_width,
-                unsigned,
-            }) => V::Scaled {
-                wide: true,
-                unsigned: *unsigned,
-                byte_width: *byte_width,
-                ty: value.ty(),
-                value: value.operand_view(),
+            Self::Native(offset) => match offset.view() {
+                OffsetView::Constant(value) => V::Constant(value),
+                OffsetView::Variable(value) => V::Variable(value),
+                OffsetView::Add(a, b) => V::Add([Self::Native(a), Self::Native(b)]),
+                OffsetView::Int32Scaled { index, byte_width } => V::Scaled {
+                    wide: false,
+                    unsigned: false,
+                    byte_width,
+                    ty: index.ty(),
+                    value: ScaledIndex::Native(index),
+                },
+                OffsetView::Int64Scaled {
+                    index,
+                    byte_width,
+                    unsigned,
+                } => V::Scaled {
+                    wide: true,
+                    unsigned,
+                    byte_width,
+                    ty: index.ty(),
+                    value: ScaledIndex::Native(index),
+                },
             },
             Self::Shared(value) => match value.node() {
                 K::Constant(value) => V::Constant(*value),
@@ -92,7 +107,7 @@ impl<'a> Offset<'a> {
                         unsigned: false,
                         byte_width: *byte_width,
                         ty,
-                        value,
+                        value: ScaledIndex::Shared(value),
                     }
                 }
                 K::Int64Scaled {
@@ -106,7 +121,7 @@ impl<'a> Offset<'a> {
                         unsigned: *unsigned,
                         byte_width: *byte_width,
                         ty,
-                        value,
+                        value: ScaledIndex::Shared(value),
                     }
                 }
             },
@@ -319,7 +334,7 @@ impl Comparison {
                         value: bv,
                     }),
                 ) if (aw, au, ab, at) == (bw, bu, bb, bt) => {
-                    if !self.machine(av, bv) {
+                    if !self.machine(av.operand(), bv.operand()) {
                         return false;
                     }
                 }

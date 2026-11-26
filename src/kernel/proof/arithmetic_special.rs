@@ -1094,11 +1094,28 @@ fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<OldMachineTer
     Some(bounds)
 }
 
+/// A part of one scaled index, borrowed from the index an offset view owns.
 enum OffsetPart<'a> {
-    Offset(&'a OldAddressOffset),
     Scaled(crate::kernel::MachineOperandView<'a>, i64),
     /// An unsigned 64-bit index scaled by an element width.
     Scaled64(crate::kernel::MachineOperandView<'a>, i64),
+}
+
+/// Count `sign` once more for `atom`, charging the map insertion.
+fn add_offset_atom(
+    terms: &mut BTreeMap<OldAddressOffset, i128>,
+    atom: OldAddressOffset,
+    sign: i128,
+) -> bool {
+    if !charge_map_insert(&atom, terms.len()) {
+        return false;
+    }
+    let entry = terms.entry(atom).or_default();
+    let Some(next) = entry.checked_add(sign) else {
+        return false;
+    };
+    *entry = next;
+    true
 }
 
 /// An Integer rule's result as the rule derives it: a native comparison
@@ -1399,85 +1416,101 @@ fn pointer_translation(
         (right, -1),
         (premise_right, 1),
     ] {
-        let mut pending = vec![OffsetPart::Offset(offset)];
-        while let Some(part) = pending.pop() {
-            let atom = match part {
-                OffsetPart::Offset(OldAddressOffset::Constant(value)) => {
-                    let Some(next) = constant.checked_add(sign * i128::from(*value)) else {
+        let mut pending = vec![offset];
+        while let Some(offset) = pending.pop() {
+            // A scaled index's parts are split by a nested walk over the
+            // index the view owns, run where its first part would have been
+            // popped, so parts are counted in the same order.
+            let parts = match offset.view() {
+                OffsetView::Constant(value) => {
+                    let Some(next) = constant.checked_add(sign * i128::from(value)) else {
                         return false;
                     };
                     constant = next;
                     continue;
                 }
-                OffsetPart::Offset(OldAddressOffset::Add(left, right)) => {
-                    pending.push(OffsetPart::Offset(left));
-                    pending.push(OffsetPart::Offset(right));
+                OffsetView::Add(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
                     continue;
                 }
-                OffsetPart::Offset(OldAddressOffset::Int32Scaled { value, byte_width }) => {
-                    pending.push(OffsetPart::Scaled(value.operand_view(), *byte_width));
-                    continue;
-                }
-                OffsetPart::Scaled(value, width) => {
-                    if let Some(int32_constant!(bits)) = value.literal() {
-                        let value = i128::from(constant_u32(bits) as i32) * i128::from(width);
-                        let Some(next) = constant.checked_add(sign * value) else {
-                            return false;
-                        };
-                        constant = next;
-                        continue;
-                    }
-                    if let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) =
-                        value.binary()
-                        && sum_is_defined(left, right)
-                    {
-                        pending.push(OffsetPart::Scaled(left, width));
-                        pending.push(OffsetPart::Scaled(right, width));
-                        continue;
-                    }
-                    OldAddressOffset::int32_scaled(value.retain(MachineIntegerType::Int32), width)
-                }
-                OffsetPart::Offset(OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int32Scaled { index, byte_width } => Some((index, byte_width, false)),
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned: true,
-                }) => {
-                    pending.push(OffsetPart::Scaled64(value.operand_view(), *byte_width));
-                    continue;
-                }
-                OffsetPart::Scaled64(value, width) => {
-                    if let Some(bits) = value.uint64_constant() {
-                        let value = i128::from(bits) * i128::from(width);
-                        let Some(next) = constant.checked_add(sign * value) else {
-                            return false;
-                        };
-                        constant = next;
-                        continue;
-                    }
-                    if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Add, [left, right])) =
-                        value.binary()
-                        && wide_sum_is_exact(left, right)
-                    {
-                        pending.push(OffsetPart::Scaled64(left, width));
-                        pending.push(OffsetPart::Scaled64(right, width));
-                        continue;
-                    }
-                    OldAddressOffset::int64_scaled(
-                        value.retain(MachineIntegerType::Int64),
-                        width,
-                        true,
-                    )
-                }
-                OffsetPart::Offset(value) => value.clone(),
+                } => Some((index, byte_width, true)),
+                OffsetView::Variable(_) | OffsetView::Int64Scaled { .. } => None,
             };
-            if !charge_map_insert(&atom, terms.len()) {
-                return false;
+            let Some((index, byte_width, wide)) = parts else {
+                if !add_offset_atom(&mut terms, offset.clone(), sign) {
+                    return false;
+                }
+                continue;
+            };
+            let mut parts = vec![if wide {
+                OffsetPart::Scaled64(index.operand_view(), byte_width)
+            } else {
+                OffsetPart::Scaled(index.operand_view(), byte_width)
+            }];
+            while let Some(part) = parts.pop() {
+                let atom = match part {
+                    OffsetPart::Scaled(value, width) => {
+                        if let Some(int32_constant!(bits)) = value.literal() {
+                            let value = i128::from(constant_u32(bits) as i32) * i128::from(width);
+                            let Some(next) = constant.checked_add(sign * value) else {
+                                return false;
+                            };
+                            constant = next;
+                            continue;
+                        }
+                        if let Some((
+                            MachineIntegerType::Int32,
+                            MachineBinaryOp::Add,
+                            [left, right],
+                        )) = value.binary()
+                            && sum_is_defined(left, right)
+                        {
+                            parts.push(OffsetPart::Scaled(left, width));
+                            parts.push(OffsetPart::Scaled(right, width));
+                            continue;
+                        }
+                        OldAddressOffset::int32_scaled(
+                            value.retain(MachineIntegerType::Int32),
+                            width,
+                        )
+                    }
+                    OffsetPart::Scaled64(value, width) => {
+                        if let Some(bits) = value.uint64_constant() {
+                            let value = i128::from(bits) * i128::from(width);
+                            let Some(next) = constant.checked_add(sign * value) else {
+                                return false;
+                            };
+                            constant = next;
+                            continue;
+                        }
+                        if let Some((
+                            MachineIntegerType::UInt64,
+                            MachineBinaryOp::Add,
+                            [left, right],
+                        )) = value.binary()
+                            && wide_sum_is_exact(left, right)
+                        {
+                            parts.push(OffsetPart::Scaled64(left, width));
+                            parts.push(OffsetPart::Scaled64(right, width));
+                            continue;
+                        }
+                        OldAddressOffset::int64_scaled(
+                            value.retain(MachineIntegerType::Int64),
+                            width,
+                            true,
+                        )
+                    }
+                };
+                if !add_offset_atom(&mut terms, atom, sign) {
+                    return false;
+                }
             }
-            let entry = terms.entry(atom).or_default();
-            let Some(next) = entry.checked_add(sign) else {
-                return false;
-            };
-            *entry = next;
         }
     }
     constant == 0 && terms.values().all(|coefficient| *coefficient == 0)

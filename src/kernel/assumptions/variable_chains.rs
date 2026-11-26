@@ -253,14 +253,14 @@ impl PureFactContext {
 }
 
 /// An exact symbolic array index. The base is returned separately so only
-/// cells spelling that same base participate in the indexed path.
+/// cells spelling that same base participate in the indexed path; `None`
+/// stands for a bare index, whose base is the constant zero.
 pub(in crate::kernel) fn array_index(
     offset: &OldAddressOffset,
-) -> Option<(&OldAddressOffset, Variable, i64)> {
-    static ZERO: OldAddressOffset = OldAddressOffset::Constant(0);
+) -> Option<(Option<&OldAddressOffset>, Variable, i64)> {
     let (base, index) = match offset.view() {
-        OffsetView::Add(base, index) => (base, index),
-        _ => (&ZERO, offset),
+        OffsetView::Add(base, index) => (Some(base), index),
+        _ => (None, offset),
     };
     let OffsetView::Int32Scaled {
         index: value,

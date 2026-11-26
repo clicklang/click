@@ -5944,18 +5944,18 @@ pub(in crate::kernel) enum OwnedStoreFootprint<'a> {
 
 type OwnedStoreMembers<'a> = Vec<(&'a ResourceContext, u64, &'a MemoryRange)>;
 
-pub(in crate::kernel) fn parameter_partition_variable(base: &OldAddress) -> Option<&Variable> {
+pub(in crate::kernel) fn parameter_partition_variable(base: &OldAddress) -> Option<Variable> {
     if base.base != crate::kernel::AddressBase::ExternalArgument {
         return None;
     }
-    let variable = match &base.offset {
-        OldAddressOffset::Variable(variable) => variable,
-        OldAddressOffset::Int32Scaled { value, byte_width } if *byte_width > 0 => {
-            value.operand_view().variable()?
+    let variable = match base.offset.view() {
+        OffsetView::Variable(variable) => variable,
+        OffsetView::Int32Scaled { index, byte_width } if byte_width > 0 => {
+            *index.operand_view().variable()?
         }
         _ => return None,
     };
-    crate::kernel::registered_load_for_variable(variable)
+    crate::kernel::registered_load_for_variable(&variable)
         .is_none()
         .then_some(variable)
 }

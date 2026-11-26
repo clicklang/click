@@ -2045,25 +2045,38 @@ fn rewrite_atomic_proposition_by_exact_equality(
             left: OldAddressOffset,
             right: OldAddressOffset,
         ) -> Option<OldAddressOffset> {
-            use OldAddressOffset::{Add, Constant};
-            match (left, right) {
-                (Constant(0), other) | (other, Constant(0)) => Some(other),
-                (Constant(left), Constant(right)) => left.checked_add(right).map(Constant),
-                (Add(base, trailing), Constant(right))
-                    if matches!(trailing.as_ref(), Constant(_)) =>
-                {
-                    let Constant(trailing) = *trailing else {
-                        unreachable!()
+            fn constant(offset: &OldAddressOffset) -> Option<i64> {
+                match offset.view() {
+                    OffsetView::Constant(value) => Some(value),
+                    _ => None,
+                }
+            }
+            match (constant(&left), constant(&right)) {
+                (Some(0), _) => return Some(right),
+                (_, Some(0)) => return Some(left),
+                (Some(left), Some(right)) => {
+                    return left.checked_add(right).map(OldAddressOffset::constant);
+                }
+                (None, Some(right)) => {
+                    let trailing = match left.view() {
+                        OffsetView::Add(_, trailing) => constant(trailing),
+                        _ => None,
                     };
-                    let combined = trailing.checked_add(right)?;
-                    if combined == 0 {
-                        Some(*base)
-                    } else {
-                        Some(Add(base, Box::new(Constant(combined))))
+                    if let Some(trailing) = trailing {
+                        let combined = trailing.checked_add(right)?;
+                        let Ok((base, _)) = left.into_add() else {
+                            unreachable!("a sum was matched above")
+                        };
+                        return Some(if combined == 0 {
+                            base
+                        } else {
+                            OldAddressOffset::raw_add(base, OldAddressOffset::constant(combined))
+                        });
                     }
                 }
-                (left, right) => Some(Add(Box::new(left), Box::new(right))),
+                _ => {}
             }
+            Some(OldAddressOffset::raw_add(left, right))
         }
         let rewrite_pointer_directly = |pointer: &OldAddress| {
             if pointer == left.as_ref() {

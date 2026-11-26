@@ -1856,6 +1856,8 @@ impl CellStore {
             return None;
         }
         let (base, variable, stride) = array_index(&pointer.offset)?;
+        let zero = OldAddressOffset::constant(0);
+        let base = base.unwrap_or(&zero);
         if base.as_const().is_none()
             && !crate::kernel::reasoning::store_gap::anchor_is_normal(base, assumptions)
         {
@@ -1902,7 +1904,10 @@ impl CellStore {
             crate::instrumentation::record_deterministic_work(1);
             let rank =
                 array_index(&key.offset).and_then(|(cell_base, cell_variable, cell_stride)| {
-                    if key.base != pointer.base || cell_base != base || cell_stride != stride {
+                    if key.base != pointer.base
+                        || cell_base.unwrap_or(&zero) != base
+                        || cell_stride != stride
+                    {
                         return None;
                     }
                     let cell_span = assumptions.signed_variable_chains.span(cell_variable)?;

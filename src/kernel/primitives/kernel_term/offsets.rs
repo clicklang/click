@@ -181,6 +181,10 @@ pub(crate) trait OffsetTree: Sized {
     /// A 64-bit index scaled by `byte_width`, read as unsigned when
     /// `unsigned` holds. Like [`OffsetTree::int32_scaled`], it never folds.
     fn int64_scaled(index: SharedMachineIntegerTerm, byte_width: i64, unsigned: bool) -> Self;
+    /// The two operands of a sum node, taken by value, or the offset itself
+    /// when it is not a sum. The old representation moves its boxed
+    /// operands out; the shared one clones its two child handles.
+    fn into_add(self) -> Result<(Self, Self), Self>;
 }
 
 impl OffsetTree for OldAddressOffset {
@@ -229,6 +233,13 @@ impl OffsetTree for OldAddressOffset {
             value: index,
             byte_width,
             unsigned,
+        }
+    }
+
+    fn into_add(self) -> Result<(Self, Self), Self> {
+        match self {
+            Self::Add(left, right) => Ok((*left, *right)),
+            other => Err(other),
         }
     }
 }
@@ -291,6 +302,13 @@ impl OffsetTree for SharedAddressOffset {
         }
         .into_shared()
         .expect("native offset types")
+    }
+
+    fn into_add(self) -> Result<(Self, Self), Self> {
+        match self.node() {
+            KernelAddressOffset::Add([left, right]) => Ok((left.clone(), right.clone())),
+            _ => Err(self),
+        }
     }
 }
 
@@ -826,6 +844,31 @@ mod tests {
                     "{left:?} + {right:?}"
                 );
             }
+        }
+    }
+
+    /// `into_add` yields a sum's two operands as written, in order, from
+    /// either representation, and returns any other node unchanged.
+    #[test]
+    fn into_add_splits_only_a_sum_node() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let import = KernelAddressOffset::import;
+        let variable = OldAddressOffset::variable(Variable(994301));
+        let zero = OldAddressOffset::constant(0);
+        let sum = OldAddressOffset::raw_add(variable.clone(), zero.clone());
+        assert_eq!(sum.clone().into_add(), Ok((variable.clone(), zero.clone())));
+        let (left, right) = import(&sum).into_add().unwrap();
+        assert_eq!((left, right), (import(&variable), import(&zero)));
+        let scaled = OldAddressOffset::int32_scaled(
+            SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                OldMachineTerm::constant(3),
+            ),
+            4,
+        );
+        for leaf in [variable, zero, scaled] {
+            assert_eq!(leaf.clone().into_add(), Err(leaf.clone()));
+            assert_eq!(import(&leaf).into_add(), Err(import(&leaf)));
         }
     }
 

@@ -1606,18 +1606,18 @@ impl TermClasses {
                     let left = values.pop().expect("left offset");
                     Node::Add(left, right)
                 }
-                Work::Term(term) => match term {
-                    OldAddressOffset::Constant(value) => Node::Constant(*value),
-                    OldAddressOffset::Variable(variable) => Node::Variable(*variable),
-                    OldAddressOffset::Add(left, right) => {
+                Work::Term(term) => match term.view() {
+                    OffsetView::Constant(value) => Node::Constant(value),
+                    OffsetView::Variable(variable) => Node::Variable(variable),
+                    OffsetView::Add(left, right) => {
                         pending.push(Work::Add);
                         pending.push(Work::Term(right));
                         pending.push(Work::Term(left));
                         continue;
                     }
-                    OldAddressOffset::Int32Scaled { value, byte_width } => {
+                    OffsetView::Int32Scaled { index, byte_width } => {
                         let node = Node::Int32Scaled(
-                            match value.operand_view() {
+                            match index.operand_view() {
                                 crate::kernel::MachineOperandView::Old(term) => {
                                     self.intern_int32(term)
                                 }
@@ -1627,30 +1627,30 @@ impl TermClasses {
                                         crate::kernel::CarrierWidth::Bits32,
                                     ),
                             },
-                            *byte_width,
+                            byte_width,
                         );
-                        if *byte_width == 1 {
+                        if byte_width == 1 {
                             let id = self.intern_node(node);
-                            byte_products.push((value, id));
+                            byte_products.push((index, id));
                             values.push(id);
                             continue;
                         }
                         node
                     }
-                    OldAddressOffset::Int64Scaled {
-                        value,
+                    OffsetView::Int64Scaled {
+                        index,
                         byte_width,
                         unsigned,
                     } => Node::Int64Scaled(
-                        match value.operand_view() {
+                        match index.operand_view() {
                             crate::kernel::MachineOperandView::Old(term) => {
                                 self.intern_uint64(term)
                             }
                             crate::kernel::MachineOperandView::Shared(root) => self
                                 .intern_shared_machine(root, crate::kernel::CarrierWidth::Bits64),
                         },
-                        *byte_width,
-                        *unsigned,
+                        byte_width,
+                        unsigned,
                     ),
                 },
             };
@@ -1658,7 +1658,7 @@ impl TermClasses {
             values.push(id);
         }
         for (value, id) in byte_products {
-            self.register_byte_product_node(value, id);
+            self.register_byte_product_node(&value, id);
         }
         values.pop().expect("offset term")
     }

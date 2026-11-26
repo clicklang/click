@@ -212,7 +212,7 @@ impl EqualityGraph {
                 .pointer_alias_endpoints_by_object
                 .contains_key(&bucket)
             || parameter_partition_variable(&bucket).is_some_and(|variable| {
-                self.exact_uint64_equalities(&OldMachineTerm::Variable(*variable))
+                self.exact_uint64_equalities(&OldMachineTerm::Variable(variable))
                     .next()
                     .is_some()
             })
@@ -256,9 +256,7 @@ impl EqualityGraph {
                 if self.admitted.bitvector64_equality_facts.contains_key(
                     &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
                         MachineIntegerType::UInt64,
-                        crate::kernel::MachineOperandView::Old(&OldMachineTerm::Variable(
-                            *variable,
-                        )),
+                        crate::kernel::MachineOperandView::Old(&OldMachineTerm::Variable(variable)),
                     ),
                 ) {
                     return None;

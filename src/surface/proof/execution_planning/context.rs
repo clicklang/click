@@ -2,6 +2,7 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::{MachineIntegerType, OverflowOperation};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 
@@ -885,189 +886,231 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         Shared(&'a crate::kernel::KernelTerm),
         PointerOffset(&'a OldAddressOffset),
     }
-    let mut work = vec![Work::Proposition(proposition, 0)];
-    let mut visited = 0;
-    let mut saw_static_load = false;
-    let mut saw_external_range = false;
-    while let Some(item) = work.pop() {
-        visited += 1;
-        crate::instrumentation::record_deterministic_work(1);
-        if visited > SOURCE_CAPABILITY_MAX_NODES {
-            return Err(ClickError::new(format!(
-                "source-backed requirement capability exceeded structural limit {SOURCE_CAPABILITY_MAX_NODES}"
-            )));
-        }
-        super::super::check_verification_deadline()?;
-        match item {
-            Work::Proposition(condition_source_0 @ Proposition::ConditionIs(_, true), _)
-                if let Some((
-                    OldConditionTerm::Overflows {
-                        format: MachineIntegerType::Int32,
-                        op: OverflowOperation::Add,
-                        left: _,
-                        right: _,
+    /// The walk's flags and its shared counters. A scaled index's operand
+    /// is walked by a nested walk over the same state, run where the
+    /// operand's item would have been popped, so it visits and counts as one
+    /// stack would.
+    struct Walk {
+        quantified_external_range: bool,
+        guarded_external_range: bool,
+        explicit_range: bool,
+        static_state: Option<crate::kernel::MemoryStateIdentity>,
+        visited: usize,
+        saw_static_load: bool,
+        saw_external_range: bool,
+    }
+    /// `Ok(false)` refuses the requirement; `Ok(true)` finishes the walk.
+    fn walk<'a>(mut work: Vec<Work<'a>>, state: &mut Walk) -> Result<bool, ClickError> {
+        let quantified_external_range = state.quantified_external_range;
+        let guarded_external_range = state.guarded_external_range;
+        let explicit_range = state.explicit_range;
+        let static_state = state.static_state;
+        while let Some(item) = work.pop() {
+            state.visited += 1;
+            crate::instrumentation::record_deterministic_work(1);
+            if state.visited > SOURCE_CAPABILITY_MAX_NODES {
+                return Err(ClickError::new(format!(
+                    "source-backed requirement capability exceeded structural limit {SOURCE_CAPABILITY_MAX_NODES}"
+                )));
+            }
+            super::super::check_verification_deadline()?;
+            match item {
+                Work::Proposition(condition_source_0 @ Proposition::ConditionIs(_, true), _)
+                    if let Some((
+                        OldConditionTerm::Overflows {
+                            format: MachineIntegerType::Int32,
+                            op: OverflowOperation::Add,
+                            left: _,
+                            right: _,
+                        },
+                        _,
+                    )) = condition_source_0.old_condition()
+                        && (quantified_external_range) =>
+                {
+                    return Ok(false);
+                }
+                Work::Proposition(Proposition::ConditionIs(condition, _), _) => {
+                    work.push(Work::Condition(condition.old_form()));
+                }
+                Work::Proposition(Proposition::And(left, right), depth)
+                | Work::Proposition(Proposition::Or(left, right), depth)
+                | Work::Proposition(Proposition::Implies(left, right), depth) => {
+                    work.push(Work::Proposition(right, depth));
+                    work.push(Work::Proposition(left, depth));
+                }
+                Work::Proposition(Proposition::Not(body), depth) => {
+                    work.push(Work::Proposition(body, depth));
+                }
+                Work::Proposition(Proposition::ForAll { body, .. }, depth)
+                | Work::Proposition(Proposition::Exists { body, .. }, depth) => {
+                    let maximum_depth = usize::from(guarded_external_range);
+                    if depth > maximum_depth {
+                        return Ok(false);
+                    }
+                    work.push(Work::Proposition(body, depth + 1));
+                }
+                Work::Proposition(Proposition::MemoryLoadable { base, bytes, .. }, _)
+                    if quantified_external_range
+                        && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
+                        && (is_one_byte_external_range(bytes.old_form()) || explicit_range) =>
+                {
+                    state.saw_external_range = true;
+                    work.push(Work::Bitvector(bytes.old_form()));
+                    work.push(Work::PointerOffset(&base.offset));
+                }
+                Work::Proposition(
+                    Proposition::MemoryReadDefined {
+                        pointer,
+                        value_type: ProgramType::UInt8,
+                        ..
                     },
                     _,
-                )) = condition_source_0.old_condition()
-                    && (quantified_external_range) =>
-            {
-                return Ok(false);
-            }
-            Work::Proposition(Proposition::ConditionIs(condition, _), _) => {
-                work.push(Work::Condition(condition.old_form()));
-            }
-            Work::Proposition(Proposition::And(left, right), depth)
-            | Work::Proposition(Proposition::Or(left, right), depth)
-            | Work::Proposition(Proposition::Implies(left, right), depth) => {
-                work.push(Work::Proposition(right, depth));
-                work.push(Work::Proposition(left, depth));
-            }
-            Work::Proposition(Proposition::Not(body), depth) => {
-                work.push(Work::Proposition(body, depth));
-            }
-            Work::Proposition(Proposition::ForAll { body, .. }, depth)
-            | Work::Proposition(Proposition::Exists { body, .. }, depth) => {
-                let maximum_depth = usize::from(guarded_external_range);
-                if depth > maximum_depth {
-                    return Ok(false);
-                }
-                work.push(Work::Proposition(body, depth + 1));
-            }
-            Work::Proposition(Proposition::MemoryLoadable { base, bytes, .. }, _)
-                if quantified_external_range
-                    && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
-                    && (is_one_byte_external_range(bytes.old_form()) || explicit_range) =>
-            {
-                saw_external_range = true;
-                work.push(Work::Bitvector(bytes.old_form()));
-                work.push(Work::PointerOffset(&base.offset));
-            }
-            Work::Proposition(
-                Proposition::MemoryReadDefined {
-                    pointer,
-                    value_type: ProgramType::UInt8,
-                    ..
-                },
-                _,
-            ) if explicit_range
-                && matches!(pointer.base, crate::kernel::AddressBase::ExternalArgument) =>
-            {
-                work.push(Work::PointerOffset(&pointer.offset));
-            }
-            Work::Proposition(_, _) => return Ok(false),
-            Work::Condition(crate::kernel::binary_bitvector_condition!(left, right)) => {
-                work.push(Work::Bitvector(right));
-                work.push(Work::Bitvector(left));
-            }
-            Work::Condition(OldConditionTerm::Constant(_)) => {}
-            Work::Condition(OldConditionTerm::Variable(variable))
-                if !crate::kernel::is_load_variable(variable) => {}
-            Work::Condition(_) => return Ok(false),
-            Work::Shared(root) => {
-                use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
-                if let Some(leaf) = root
-                    .machine_conversion_leaf()
-                    .or_else(|| root.machine_read_leaf())
+                ) if explicit_range
+                    && matches!(pointer.base, crate::kernel::AddressBase::ExternalArgument) =>
                 {
-                    work.push(Work::Bitvector(leaf));
-                } else {
-                    match root.node() {
-                        N::MachineBinary {
-                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                            arguments,
-                            ..
-                        } => {
-                            work.push(Work::Shared(&arguments[1]));
-                            work.push(Work::Shared(&arguments[0]));
+                    work.push(Work::PointerOffset(&pointer.offset));
+                }
+                Work::Proposition(_, _) => return Ok(false),
+                Work::Condition(crate::kernel::binary_bitvector_condition!(left, right)) => {
+                    work.push(Work::Bitvector(right));
+                    work.push(Work::Bitvector(left));
+                }
+                Work::Condition(OldConditionTerm::Constant(_)) => {}
+                Work::Condition(OldConditionTerm::Variable(variable))
+                    if !crate::kernel::is_load_variable(variable) => {}
+                Work::Condition(_) => return Ok(false),
+                Work::Shared(root) => {
+                    use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
+                    if let Some(leaf) = root
+                        .machine_conversion_leaf()
+                        .or_else(|| root.machine_read_leaf())
+                    {
+                        work.push(Work::Bitvector(leaf));
+                    } else {
+                        match root.node() {
+                            N::MachineBinary {
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                                arguments,
+                                ..
+                            } => {
+                                work.push(Work::Shared(&arguments[1]));
+                                work.push(Work::Shared(&arguments[0]));
+                            }
+                            N::MachineUnary {
+                                format: MachineIntegerType::Int32,
+                                operator: crate::kernel::MachineUnaryOp::BitwiseNot,
+                                operand,
+                            } => work.push(Work::Shared(operand)),
+                            N::Variable(variable) if !crate::kernel::is_load_variable(variable) => {
+                            }
+                            N::Variable(variable)
+                                if quantified_external_range
+                                    && crate::kernel::registered_load_for_variable(variable)
+                                        .is_some() => {}
+                            N::Variable(variable)
+                                if static_state.is_some_and(|retained_state| {
+                                    registered_static_load_matches_state(variable, retained_state)
+                                }) =>
+                            {
+                                state.saw_static_load = true
+                            }
+                            N::MachineLiteral(_)
+                                if matches!(
+                                    V::Shared(root).literal(),
+                                    Some(
+                                        bits32_constant!(_)
+                                            | int64_constant!(_)
+                                            | uint64_constant!(_)
+                                    )
+                                ) => {}
+                            _ => return Ok(false),
                         }
-                        N::MachineUnary {
-                            format: MachineIntegerType::Int32,
-                            operator: crate::kernel::MachineUnaryOp::BitwiseNot,
-                            operand,
-                        } => work.push(Work::Shared(operand)),
-                        N::Variable(variable) if !crate::kernel::is_load_variable(variable) => {}
-                        N::Variable(variable)
-                            if quantified_external_range
-                                && crate::kernel::registered_load_for_variable(variable)
-                                    .is_some() => {}
-                        N::Variable(variable)
-                            if static_state.is_some_and(|retained_state| {
-                                registered_static_load_matches_state(variable, retained_state)
-                            }) =>
-                        {
-                            saw_static_load = true
-                        }
-                        N::MachineLiteral(_)
-                            if matches!(
-                                V::Shared(root).literal(),
-                                Some(
-                                    bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
-                                )
-                            ) => {}
-                        _ => return Ok(false),
                     }
                 }
-            }
-            Work::Bitvector(bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)) => {}
-            Work::Bitvector(OldMachineTerm::MemoryLoad(..)) if quantified_external_range => {}
-            Work::Bitvector(term @ OldMachineTerm::MemoryLoad(_, _, _))
-                if static_state.is_some_and(|_| {
-                    registered_static_memory_load_matches_state(
-                        term,
-                        static_state.expect("static capability has a source state"),
-                    )
-                }) =>
-            {
-                saw_static_load = true;
-            }
-            Work::Bitvector(OldMachineTerm::Variable(variable))
-                if !crate::kernel::is_load_variable(variable) => {}
-            Work::Bitvector(OldMachineTerm::Variable(variable))
-                if quantified_external_range
-                    && crate::kernel::is_load_variable(variable)
-                    && crate::kernel::registered_load_for_variable(variable).is_some() => {}
-            Work::Bitvector(OldMachineTerm::Variable(variable))
-                if static_state.is_some_and(|_| {
-                    registered_static_load_matches_state(
-                        variable,
-                        static_state.expect("static capability has a source state"),
-                    )
-                }) =>
-            {
-                saw_static_load = true;
-            }
-            Work::Bitvector(crate::kernel::binary_bitvector32_term!(left, right)) => {
-                work.push(Work::Bitvector(right));
-                work.push(Work::Bitvector(left));
-            }
-            Work::Bitvector(unary_term!(Int32, BitwiseNot, body)) => {
-                work.push(Work::Bitvector(body));
-            }
-            Work::Bitvector(_) => return Ok(false),
-            Work::PointerOffset(OldAddressOffset::Constant(_)) => {}
-            Work::PointerOffset(OldAddressOffset::Variable(variable)) => {
-                if crate::kernel::is_load_variable(variable)
-                    && crate::kernel::registered_load_for_variable(variable).is_none()
+                Work::Bitvector(bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)) => {
+                }
+                Work::Bitvector(OldMachineTerm::MemoryLoad(..)) if quantified_external_range => {}
+                Work::Bitvector(term @ OldMachineTerm::MemoryLoad(_, _, _))
+                    if static_state.is_some_and(|_| {
+                        registered_static_memory_load_matches_state(
+                            term,
+                            static_state.expect("static capability has a source state"),
+                        )
+                    }) =>
                 {
-                    return Ok(false);
+                    state.saw_static_load = true;
                 }
-            }
-            Work::PointerOffset(OldAddressOffset::Add(left, right)) => {
-                work.push(Work::PointerOffset(right));
-                work.push(Work::PointerOffset(left));
-            }
-            Work::PointerOffset(OldAddressOffset::Int32Scaled { value, .. })
-            | Work::PointerOffset(OldAddressOffset::Int64Scaled { value, .. }) => {
-                if let Some(root) = value.shared_operand() {
-                    work.push(Work::Shared(root));
-                } else {
-                    work.push(Work::Bitvector(
-                        value.retained_written_operand().expect("native index"),
-                    ));
+                Work::Bitvector(OldMachineTerm::Variable(variable))
+                    if !crate::kernel::is_load_variable(variable) => {}
+                Work::Bitvector(OldMachineTerm::Variable(variable))
+                    if quantified_external_range
+                        && crate::kernel::is_load_variable(variable)
+                        && crate::kernel::registered_load_for_variable(variable).is_some() => {}
+                Work::Bitvector(OldMachineTerm::Variable(variable))
+                    if static_state.is_some_and(|_| {
+                        registered_static_load_matches_state(
+                            variable,
+                            static_state.expect("static capability has a source state"),
+                        )
+                    }) =>
+                {
+                    state.saw_static_load = true;
                 }
+                Work::Bitvector(crate::kernel::binary_bitvector32_term!(left, right)) => {
+                    work.push(Work::Bitvector(right));
+                    work.push(Work::Bitvector(left));
+                }
+                Work::Bitvector(unary_term!(Int32, BitwiseNot, body)) => {
+                    work.push(Work::Bitvector(body));
+                }
+                Work::Bitvector(_) => return Ok(false),
+                Work::PointerOffset(offset) => match offset.view() {
+                    OffsetView::Constant(_) => {}
+                    OffsetView::Variable(variable) => {
+                        if crate::kernel::is_load_variable(&variable)
+                            && crate::kernel::registered_load_for_variable(&variable).is_none()
+                        {
+                            return Ok(false);
+                        }
+                    }
+                    OffsetView::Add(left, right) => {
+                        work.push(Work::PointerOffset(right));
+                        work.push(Work::PointerOffset(left));
+                    }
+                    OffsetView::Int32Scaled { index, .. }
+                    | OffsetView::Int64Scaled { index, .. } => {
+                        let operand = match index.shared_operand() {
+                            Some(root) => Work::Shared(root),
+                            None => Work::Bitvector(
+                                index.retained_written_operand().expect("native index"),
+                            ),
+                        };
+                        if !walk(vec![operand], state)? {
+                            return Ok(false);
+                        }
+                    }
+                },
             }
         }
+        Ok(true)
     }
+    let mut state = Walk {
+        quantified_external_range,
+        guarded_external_range,
+        explicit_range,
+        static_state,
+        visited: 0,
+        saw_static_load: false,
+        saw_external_range: false,
+    };
+    if !walk(vec![Work::Proposition(proposition, 0)], &mut state)? {
+        return Ok(false);
+    }
+    let Walk {
+        saw_static_load,
+        saw_external_range,
+        ..
+    } = state;
     if quantified_external_range {
         return Ok(saw_external_range && !saw_static_load);
     }
