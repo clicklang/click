@@ -265,7 +265,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     if wide.is_none()
         && let Some(v) = view.word32_constant()
     {
-        return OldAddressOffset::Constant(i64::from(v as i32) * byte_width);
+        return OldAddressOffset::constant(i64::from(v as i32) * byte_width);
     }
     let constant = match wide {
         Some(true) => view.uint64_constant().and_then(|v| i64::try_from(v).ok()),
@@ -274,7 +274,7 @@ pub(in crate::kernel) fn transported_scaled_index(
     }
     .and_then(|v| v.checked_mul(byte_width));
     if let Some(constant) = constant {
-        return OldAddressOffset::Constant(constant);
+        return OldAddressOffset::constant(constant);
     }
     // The existing offset representation observes both signed and unsigned
     // wide indices through its Int64 carrier; `unsigned` carries the reading.
@@ -284,12 +284,8 @@ pub(in crate::kernel) fn transported_scaled_index(
         MachineIntegerType::Int32
     });
     match wide {
-        None => OldAddressOffset::Int32Scaled { value, byte_width },
-        Some(unsigned) => OldAddressOffset::Int64Scaled {
-            value,
-            byte_width,
-            unsigned,
-        },
+        None => OldAddressOffset::int32_scaled(value, byte_width),
+        Some(unsigned) => OldAddressOffset::int64_scaled(value, byte_width, unsigned),
     }
 }
 

@@ -224,32 +224,32 @@ pub(in crate::kernel) fn memory_base_root(base: &OldAddress) -> MemoryBaseRoot {
 pub(in crate::kernel) fn offset_root_atom(offset: &OldAddressOffset) -> Option<OldAddressOffset> {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            OldAddressOffset::Constant(_) => {}
-            OldAddressOffset::Variable(_) => return Some(offset.clone()),
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
-                if value.operand_view().word32_constant().is_some() {
+            OffsetView::Constant(_) => {}
+            OffsetView::Variable(_) => return Some(offset.clone()),
+            OffsetView::Int32Scaled { index, byte_width } => {
+                if index.operand_view().word32_constant().is_some() {
                     continue;
                 }
-                return Some(OldAddressOffset::Int32Scaled {
-                    value: crate::kernel::proof::equality_rewrite::canonical_pointer_index(value)?,
-                    byte_width: *byte_width,
-                });
+                return Some(OldAddressOffset::int32_scaled(
+                    crate::kernel::proof::equality_rewrite::canonical_pointer_index(&index)?,
+                    byte_width,
+                ));
             }
-            OldAddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned,
             } => {
-                return Some(OldAddressOffset::Int64Scaled {
-                    value: crate::kernel::proof::equality_rewrite::canonical_pointer_index(value)?,
-                    byte_width: *byte_width,
-                    unsigned: *unsigned,
-                });
+                return Some(OldAddressOffset::int64_scaled(
+                    crate::kernel::proof::equality_rewrite::canonical_pointer_index(&index)?,
+                    byte_width,
+                    unsigned,
+                ));
             }
         }
     }
@@ -352,14 +352,14 @@ fn memory_base_variable(base: &OldAddress) -> Option<Variable> {
     let mut variable = None;
     let mut pending = vec![&base.offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            OldAddressOffset::Constant(_) => {}
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Constant(_) => {}
+            OffsetView::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            OldAddressOffset::Int32Scaled { value, byte_width } if *byte_width > 0 => {
-                let candidate = value.operand_view().variable()?;
+            OffsetView::Int32Scaled { index, byte_width } if byte_width > 0 => {
+                let candidate = index.operand_view().variable()?;
                 if variable.is_some() || crate::kernel::is_load_variable(candidate) {
                     return None;
                 }
@@ -405,16 +405,14 @@ pub(in crate::kernel) fn constant_memory_coordinates(
     let (start, end) = constant_relative_byte_endpoints(range);
     let (start, end) = (start?, end?);
     let original = range.base();
-    let (offset, displacement) = match &original.offset {
-        OldAddressOffset::Constant(n) => (OldAddressOffset::Constant(0), i128::from(*n)),
-        OldAddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (OldAddressOffset::Constant(a), OldAddressOffset::Constant(b)) => (
-                OldAddressOffset::Constant(0),
-                i128::from(*a) + i128::from(*b),
-            ),
-            (rest, OldAddressOffset::Constant(n)) | (OldAddressOffset::Constant(n), rest) => {
-                (rest.clone(), i128::from(*n))
+    let (offset, displacement) = match original.offset.view() {
+        OffsetView::Constant(n) => (OldAddressOffset::constant(0), i128::from(n)),
+        OffsetView::Add(left, right) => match (left.view(), right.view()) {
+            (OffsetView::Constant(a), OffsetView::Constant(b)) => {
+                (OldAddressOffset::constant(0), i128::from(a) + i128::from(b))
             }
+            (_, OffsetView::Constant(n)) => (left.clone(), i128::from(n)),
+            (OffsetView::Constant(n), _) => (right.clone(), i128::from(n)),
             _ => (original.offset.clone(), 0),
         },
         _ => (original.offset.clone(), 0),
@@ -4277,7 +4275,7 @@ impl ResourceContext {
                 base: start.base.clone(),
                 offset: OldAddressOffset::add(
                     start.offset.clone(),
-                    OldAddressOffset::Constant(cursor),
+                    OldAddressOffset::constant(cursor),
                 ),
             };
             let selected = self.write_access(&point, 1, assumptions)?;
@@ -4447,7 +4445,7 @@ impl ResourceContext {
                 base: start.base.clone(),
                 offset: OldAddressOffset::add(
                     start.offset.clone(),
-                    OldAddressOffset::Constant(cursor),
+                    OldAddressOffset::constant(cursor),
                 ),
             };
             let entries = self.write_access(&pointer, 1, assumptions)?;
@@ -5574,18 +5572,19 @@ impl ResourceContext {
                     }
                 }
             }
-            base.offset = match &base.offset {
-                OldAddressOffset::Add(left, _) => (**left).clone(),
-                OldAddressOffset::Constant(value) if *value != 0 => OldAddressOffset::Constant(0),
+            let next = match base.offset.view() {
+                OffsetView::Add(left, _) => left.clone(),
+                OffsetView::Constant(value) if value != 0 => OldAddressOffset::constant(0),
                 // A loaded pointer's displacement is all of its offset: the
                 // read itself, at displacement zero, is the object's base.
-                OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. }
+                OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. }
                     if matches!(base.base, AddressBase::Load(_)) =>
                 {
-                    OldAddressOffset::Constant(0)
+                    OldAddressOffset::constant(0)
                 }
                 _ => return None,
             };
+            base.offset = next;
         }
     }
 
@@ -7952,7 +7951,7 @@ impl ResourceContext {
             crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)?;
         let object = OldAddress {
             base: pointer.base.clone(),
-            offset: rest.cloned().unwrap_or(OldAddressOffset::Constant(0)),
+            offset: rest.cloned().unwrap_or(OldAddressOffset::constant(0)),
         };
         let entries = if write {
             self.write_access(&object, 0, assumptions)
@@ -7964,11 +7963,12 @@ impl ResourceContext {
         // of it, holds the field.
         let by_member = || -> Option<&MemoryRange> {
             let stored = match &object.base {
-                AddressBase::Load(load) => {
-                    crate::kernel::eval::loaded_pointer_stored_address(load, None).and_then(
-                        |stored| (object.offset == OldAddressOffset::Constant(0)).then_some(stored),
-                    )
-                }
+                AddressBase::Load(load) => crate::kernel::eval::loaded_pointer_stored_address(
+                    load, None,
+                )
+                .and_then(|stored| {
+                    matches!(object.offset.view(), OffsetView::Constant(0)).then_some(stored)
+                }),
                 _ => None,
             };
             std::iter::once(object.clone())
@@ -11953,18 +11953,18 @@ fn pointer_offsets_equal_with_load_bridging(
     if left == right {
         return true;
     }
-    match (left, right) {
-        (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+    match (left.view(), right.view()) {
+        (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
             pointer_offsets_equal_with_load_bridging(left_a, right_a, assumptions)
                 && pointer_offsets_equal_with_load_bridging(left_b, right_b, assumptions)
         }
         (
-            OldAddressOffset::Int32Scaled {
-                value: left_value,
+            OffsetView::Int32Scaled {
+                index: left_value,
                 byte_width: left_width,
             },
-            OldAddressOffset::Int32Scaled {
-                value: right_value,
+            OffsetView::Int32Scaled {
+                index: right_value,
                 byte_width: right_width,
             },
         ) => {
@@ -12461,9 +12461,9 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
         return false;
     }
     fn split_constant(offset: &OldAddressOffset) -> Option<(OldAddressOffset, i64)> {
-        match offset {
-            OldAddressOffset::Constant(value) => Some((OldAddressOffset::Constant(0), *value)),
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Constant(value) => Some((OldAddressOffset::constant(0), value)),
+            OffsetView::Add(left, right) => {
                 let (left, a) = split_constant(left)?;
                 let (right, b) = split_constant(right)?;
                 Some((OldAddressOffset::add(left, right), a.checked_add(b)?))
@@ -13306,9 +13306,9 @@ fn native_wide_normalization_key(
     WideNormalizationEndpointKey,
     WideNormalizationEndpointKey,
 )> {
-    let shifted = matches!(&range.base().offset, OldAddressOffset::Add(_, last)
-        if matches!(last.as_ref(), OldAddressOffset::Int64Scaled { byte_width, unsigned: true, .. }
-            if *byte_width == i64::from(range.element_width())));
+    let shifted = matches!(range.base().offset.view(), OffsetView::Add(_, last)
+        if matches!(last.view(), OffsetView::Int64Scaled { byte_width, unsigned: true, .. }
+            if byte_width == i64::from(range.element_width())));
     if !shifted {
         if let Some((start, end)) = range.wide_bounds() {
             return Some((
@@ -13358,18 +13358,18 @@ pub(super) fn wide_normalization_form(
     SharedMachineIntegerTerm,
 )> {
     let width = i64::from(range.element_width());
-    let (root, index) = match &range.base().offset {
-        OldAddressOffset::Add(rest, last) => match last.as_ref() {
-            OldAddressOffset::Int64Scaled {
-                value,
+    let (root, index) = match range.base().offset.view() {
+        OffsetView::Add(rest, last) => match last.view() {
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned: true,
-            } if *byte_width == width => (
+            } if byte_width == width => (
                 OldAddress {
                     base: range.base().base.clone(),
-                    offset: rest.as_ref().clone(),
+                    offset: rest.clone(),
                 },
-                Some(value.clone()),
+                Some(index),
             ),
             _ => (range.base().clone(), None),
         },
