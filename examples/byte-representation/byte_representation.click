@@ -16,13 +16,17 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
     ensures result == -1 or restored[0] == p;
 } by {
     have to_integer(p[0] as uint32) == to_integer(p[0]) by {
-        normalize() using { 0 <= to_integer(p[0]); to_integer(p[0]) <= 1000; };
+        have 0 <= to_integer(p[0]) by close();
+        have to_integer(p[0]) <= 4294967295 by close();
+        close();
     }
     have to_integer(tag + p[0] as uint32) == to_integer(tag) + to_integer(p[0] as uint32);
     have 0 <= to_integer(tag + p[0] as uint32);
     have to_integer(tag + p[0] as uint32) <= 2000;
     have to_integer((tag + p[0] as uint32) as int32) == to_integer(tag + p[0] as uint32) by {
-        normalize() using { 0 <= to_integer(tag + p[0] as uint32); to_integer(tag + p[0] as uint32) <= 2000; };
+        have -2147483648 <= to_integer(tag + p[0] as uint32) by close();
+        have to_integer(tag + p[0] as uint32) <= 2147483647 by close();
+        close();
     }
     step();
     step();
