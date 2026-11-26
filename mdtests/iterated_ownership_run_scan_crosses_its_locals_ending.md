@@ -138,10 +138,19 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     close();
                 }
                 have to_integer(lo + run_length) == to_integer(i) by {
-                    rewrite(to_integer(run_length), to_integer(at(iteration, run_length) + 1));
-                    rewrite(to_integer(i), to_integer(at(iteration, i) + 1));
-                    rewrite(to_integer(at(iteration, i)), to_integer(lo + at(iteration, run_length)));
-                    normalize() using {};
+                    apply(click::integer::int32_add_to_integer(lo, run_length));
+                    apply(click::integer::int32_add_to_integer(at(iteration, run_length), 1));
+                    apply(click::integer::int32_add_to_integer(at(iteration, i), 1));
+                    apply(click::integer::int32_add_to_integer(lo, at(iteration, run_length)));
+                    close() using {
+                        to_integer(lo + run_length) == to_integer(lo) + to_integer(run_length);
+                        to_integer(run_length) == to_integer(at(iteration, run_length) + 1);
+                        to_integer(at(iteration, run_length) + 1) == to_integer(at(iteration, run_length)) + 1;
+                        to_integer(lo + at(iteration, run_length)) == to_integer(lo) + to_integer(at(iteration, run_length));
+                        to_integer(lo + at(iteration, run_length)) == to_integer(at(iteration, i));
+                        to_integer(at(iteration, i) + 1) == to_integer(at(iteration, i)) + 1;
+                        to_integer(i) == to_integer(at(iteration, i) + 1);
+                    };
                 }
                 have 0 <= run_length and run_length <= i by {
                     close();
