@@ -4,8 +4,8 @@ Like `search_terminates_by_unmarked_count.md`, this frames individual reads
 with explicit separation. The point-update application leaves its viewability
 premises implicit. A saved array argument supplies the pointer value, and
 `observe(at(iter, visited)[0..n])` establishes the theorem's viewability premise
-for that range in current memory. The regression also verifies the proof with
-that observation removed to exercise automatic discharge of the premise.
+for that range in current memory. The regression removes the observation and
+checks that the theorem application reports the missing viewability premise.
 
 ```c filename=preserve_apply_names_its_missing_viewable.c
 int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
