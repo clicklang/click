@@ -172,7 +172,12 @@ impl AnnotationLowerer<'_> {
                 "sequences support only `==` and `!=` comparisons",
             );
         }
-        comparison(ComparisonKind::Native)
+        Ok(SurfaceProposition::Comparison {
+            kind: ComparisonKind::Native,
+            left: native_surface_term(left.clone()),
+            operator,
+            right: native_surface_term(right.clone()),
+        })
     }
 
     /// Lower a Surface proposition. Connectives are lowered here, each over
@@ -252,6 +257,59 @@ impl AnnotationLowerer<'_> {
         Ok(lowered.pop().expect("lowered proposition has one root"))
     }
 
+    /// Lower a native Surface term. A native operation is lowered as
+    /// `lower_contract_expression_to_spec` lowers its Syntax form: the
+    /// operator's Spec node over its operands' lowerings. Nothing before
+    /// those arms applies to these operators: they are never pointer
+    /// arithmetic, never refused as untyped pointer access, and never a
+    /// region read. An `Untyped` term is lowered by that Syntax lowering.
+    fn lower_surface_native(
+        &mut self,
+        term: &SurfaceTerm,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        use ArithmeticOperator as Op;
+        match term {
+            SurfaceTerm::Untyped(syntax) => {
+                self.lower_contract_expression_to_spec(syntax, environment)
+            }
+            SurfaceTerm::BitwiseNot { operand } => Ok(SpecExpression::BitwiseNot(Box::new(
+                self.lower_surface_native(operand, environment)?,
+            ))),
+            SurfaceTerm::Binary {
+                op,
+                kind: ArithmeticKind::Native,
+                left,
+                right,
+            } => {
+                let left = Box::new(self.lower_surface_native(left, environment)?);
+                let right = Box::new(self.lower_surface_native(right, environment)?);
+                Ok(match op {
+                    Op::Multiply => SpecExpression::Multiply(left, right),
+                    Op::Divide => SpecExpression::Divide(left, right),
+                    Op::Remainder => SpecExpression::Remainder(left, right),
+                    Op::ShiftLeft => SpecExpression::ShiftLeft(left, right),
+                    Op::RustShiftLeft => SpecExpression::RustShiftLeft(left, right),
+                    Op::ShiftRight => SpecExpression::ShiftRight(left, right),
+                    Op::RustShiftRight => SpecExpression::RustShiftRight(left, right),
+                    Op::BitwiseAnd => SpecExpression::BitwiseAnd(left, right),
+                    Op::BitwiseOr => SpecExpression::BitwiseOr(left, right),
+                    Op::BitwiseXor => SpecExpression::BitwiseXor(left, right),
+                    Op::Add | Op::Subtract => {
+                        unreachable!("native + and - are not typed yet: they may be pointer steps")
+                    }
+                })
+            }
+            SurfaceTerm::Binary {
+                kind: ArithmeticKind::Integer,
+                ..
+            }
+            | SurfaceTerm::Negate { .. } => unreachable!(
+                "a native operand is never Integer arithmetic or a typed negation: {term:?}"
+            ),
+        }
+    }
+
     /// Lower an Integer Surface term. Integer arithmetic is lowered as
     /// `lower_contract_integer_to_spec` lowers it: one unit of integer work,
     /// then the operands, combined over Integer terms when both are terms.
@@ -266,6 +324,15 @@ impl AnnotationLowerer<'_> {
             SurfaceTerm::Untyped(syntax) => {
                 self.lower_contract_integer_to_spec(syntax, environment)
             }
+            SurfaceTerm::BitwiseNot { .. }
+            | SurfaceTerm::Negate {
+                kind: ArithmeticKind::Native,
+                ..
+            }
+            | SurfaceTerm::Binary {
+                kind: ArithmeticKind::Native,
+                ..
+            } => unreachable!("an Integer operand is never native arithmetic: {term:?}"),
             SurfaceTerm::Negate {
                 kind: ArithmeticKind::Integer,
                 operand,
@@ -295,6 +362,7 @@ impl AnnotationLowerer<'_> {
                     ArithmeticOperator::Add => IntegerOperation::Add,
                     ArithmeticOperator::Subtract => IntegerOperation::Subtract,
                     ArithmeticOperator::Multiply => IntegerOperation::Multiply,
+                    other => unreachable!("elaboration types only + - * as Integer: {other:?}"),
                 };
                 match (&left, &right) {
                     (SpecIntegerExpression::Term(_), SpecIntegerExpression::Term(_)) => {
@@ -326,6 +394,13 @@ impl AnnotationLowerer<'_> {
         right: &SurfaceTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
+        if kind == ComparisonKind::Native {
+            return Ok(SpecProposition::Comparison {
+                left: self.lower_surface_native(left, environment)?,
+                operator: c_comparison_operator(operator),
+                right: self.lower_surface_native(right, environment)?,
+            });
+        }
         if kind == ComparisonKind::Integer {
             return Ok(SpecProposition::IntegerComparison {
                 left: self.lower_surface_integer(left, environment)?,
@@ -353,11 +428,7 @@ impl AnnotationLowerer<'_> {
                 equal,
                 right: self.lower_contract_sequence_to_spec(right, environment)?,
             }),
-            ComparisonKind::Native => Ok(SpecProposition::Comparison {
-                left: self.lower_contract_expression_to_spec(left, environment)?,
-                operator: c_comparison_operator(operator),
-                right: self.lower_contract_expression_to_spec(right, environment)?,
-            }),
+            ComparisonKind::Native => unreachable!("lowered above"),
         }
     }
 }
@@ -383,6 +454,37 @@ fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
         SyntaxTerm::Negate(operand) => SurfaceTerm::Negate {
             kind: ArithmeticKind::Integer,
             operand: Box::new(integer_surface_term(*operand)),
+        },
+        term => SurfaceTerm::Untyped(term),
+    }
+}
+
+/// The native Surface form of an operand of a native comparison: its `*`,
+/// `/`, `%`, shifts and bitwise operators are native arithmetic, and every
+/// other construct stays `Untyped`. Native `+`, `-` and negation stay
+/// `Untyped` for now: `+` and `-` may be pointer steps, which lowering
+/// decides from the operands, and a negated literal is the literal.
+fn native_surface_term(term: SyntaxTerm) -> SurfaceTerm {
+    let binary = |op, left: Box<SyntaxTerm>, right: Box<SyntaxTerm>| SurfaceTerm::Binary {
+        op,
+        kind: ArithmeticKind::Native,
+        left: Box::new(native_surface_term(*left)),
+        right: Box::new(native_surface_term(*right)),
+    };
+    use ArithmeticOperator as Op;
+    match term {
+        SyntaxTerm::Multiply(left, right) => binary(Op::Multiply, left, right),
+        SyntaxTerm::Divide(left, right) => binary(Op::Divide, left, right),
+        SyntaxTerm::Remainder(left, right) => binary(Op::Remainder, left, right),
+        SyntaxTerm::ShiftLeft(left, right) => binary(Op::ShiftLeft, left, right),
+        SyntaxTerm::RustShiftLeft(left, right) => binary(Op::RustShiftLeft, left, right),
+        SyntaxTerm::ShiftRight(left, right) => binary(Op::ShiftRight, left, right),
+        SyntaxTerm::RustShiftRight(left, right) => binary(Op::RustShiftRight, left, right),
+        SyntaxTerm::BitwiseAnd(left, right) => binary(Op::BitwiseAnd, left, right),
+        SyntaxTerm::BitwiseOr(left, right) => binary(Op::BitwiseOr, left, right),
+        SyntaxTerm::BitwiseXor(left, right) => binary(Op::BitwiseXor, left, right),
+        SyntaxTerm::BitwiseNot(operand) => SurfaceTerm::BitwiseNot {
+            operand: Box::new(native_surface_term(*operand)),
         },
         term => SurfaceTerm::Untyped(term),
     }
