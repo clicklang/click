@@ -101,7 +101,6 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
             "trait_objects::through_dyn.ensures_0",
         ),
         (
-            Some("fn trait_objects::default_square("),
             "statement(1).call(0).receiver.binding",
             "statement(1).call(0).argument(0).binding",
             "does not perform a checked reference binding",
