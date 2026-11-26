@@ -39,6 +39,12 @@ struct Block {
 /// position.
 pub(super) type Instances = BTreeMap<Vec<String>, Vec<String>>;
 
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(super) enum ImplKey {
+    Inherent(String),
+    Destruct(String),
+}
+
 /// Writes out each instance of the sidecar's generic functions, by the
 /// function's importer name, at the type arguments the import declares,
 /// after the generic block. A Click library generic function
@@ -56,7 +62,7 @@ pub(super) fn expand_generic_functions(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
     instances: &BTreeMap<String, Instances>,
-    impl_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
+    impl_instances: &BTreeMap<ImplKey, BTreeSet<Vec<String>>>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<usize>), ClickError> {
     let mut written = BTreeSet::new();
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
@@ -260,7 +266,7 @@ struct ImplBlock {
 fn impl_block_at(
     source: &[Spanned],
     start: usize,
-) -> Result<Option<(String, ImplBlock)>, ClickError> {
+) -> Result<Option<(ImplKey, ImplBlock)>, ClickError> {
     let open = start + 1;
     if source.get(open).map(|(token, _)| token) != Some(&Token::LessThan) {
         return Ok(None);
@@ -345,14 +351,16 @@ fn impl_block_at(
             at = matching(source, at + 1).ok_or_else(unterminated)? + 1;
         }
     }
-    let mut name = crate::languages::rust::names::path_name(
+    let record = crate::languages::rust::names::path_name(
         &segments.iter().map(String::as_str).collect::<Vec<_>>(),
     );
-    if destruct {
-        name = destruct_instances_key(&name);
-    }
+    let key = if destruct {
+        ImplKey::Destruct(record)
+    } else {
+        ImplKey::Inherent(record)
+    };
     Ok(Some((
-        name,
+        key,
         ImplBlock {
             end: body_close + 1,
             path: (path_start, arguments_open),
@@ -361,12 +369,6 @@ fn impl_block_at(
             destruct,
         },
     )))
-}
-
-/// The key under which a generic struct's drop glue instances are written:
-/// its `impl<T> Destruct for path::Node<T>` block's, beside its own methods'.
-pub(super) fn destruct_instances_key(record: &str) -> String {
-    format!("{record}#Destruct")
 }
 
 /// The instance block of the generic struct `impl` block at `start` at

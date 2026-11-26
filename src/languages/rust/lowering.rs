@@ -850,6 +850,17 @@ pub(crate) fn lower_with_identity(
         .iter()
         .map(|r| (r.name.as_str(), r))
         .collect::<BTreeMap<_, _>>();
+    let destructors = export
+        .records
+        .iter()
+        .filter(|record| matches!(record.destructor, Some(super::schema::Destructor::Implicit)))
+        .map(|record| {
+            let target = super::names::RustDestructor {
+                record: record.name.clone(),
+            };
+            (target.contract_name(), target)
+        })
+        .collect::<BTreeMap<_, _>>();
     let function_index = export
         .functions
         .iter()
@@ -861,18 +872,18 @@ pub(crate) fn lower_with_identity(
         if !names.insert(f.name.clone()) {
             return Err("duplicate Rust function name".into());
         }
-        functions.push(
-            lower_function(
-                export,
-                identity,
-                f,
-                &fields,
-                &layouts,
-                &record_index,
-                &function_index,
-            )
-            .map_err(|error| located(&export.logical_source, f, error))?,
-        );
+        let mut function = lower_function(
+            export,
+            identity,
+            f,
+            &fields,
+            &layouts,
+            &record_index,
+            &function_index,
+        )
+        .map_err(|error| located(&export.logical_source, f, error))?;
+        function.rust_destructor = destructors.get(&f.name).cloned();
+        functions.push(function);
     }
     Ok((functions, layouts))
 }
@@ -882,7 +893,7 @@ fn located(source: &str, f: &Function, error: String) -> String {
     if error.starts_with(&format!("{source}:")) {
         return error;
     }
-    let name = super::names::rust_display_name(&f.name).unwrap_or_else(|| f.name.clone());
+    let name = super::names::display_rust_names(&f.name);
     format!("{source}:{} in {name}: {error}", f.span.line)
 }
 

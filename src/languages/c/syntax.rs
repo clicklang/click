@@ -9845,6 +9845,7 @@ impl Parser {
             closure_captures: 0,
             trait_interface: None,
             generic_instance: None,
+            rust_destructor: None,
             cpp_virtual: false,
             receiver_calls: Vec::new(),
             program_entry_state: None,

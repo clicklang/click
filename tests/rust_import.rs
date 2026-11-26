@@ -4495,6 +4495,21 @@ fn generic_stack_prepared() -> click::languages::rust::PreparedRustImport {
 #[ignore = "nightly: 6.2s in the parallel gate"]
 fn charon_generic_stack_verifies_once_for_every_type() {
     let prepared = generic_stack_prepared();
+    let function_labels: Vec<_> = prepared
+        .export()
+        .functions
+        .iter()
+        .map(|function| click::languages::rust::names::display_rust_names(&function.name))
+        .collect();
+    for label in [
+        "<generic_stack::Node<T> as Destruct>::drop_glue",
+        "<generic_stack::Stack<u32> as Destruct>::drop_glue",
+    ] {
+        assert!(
+            function_labels.iter().any(|name| name == label),
+            "{function_labels:?}"
+        );
+    }
     ProgramVerificationSession::new_program_prepared(GENERIC_STACK_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
 }

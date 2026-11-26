@@ -4,7 +4,8 @@
 //! of the lowering's own recording which values are live.
 use super::*;
 mod flow;
-use crate::languages::rust::schema::{MirBody, MirStatement as S, MirTerminator as T};
+use crate::languages::rust::names::RustDestructor;
+use crate::languages::rust::schema::{Destructor, MirBody, MirStatement as S, MirTerminator as T};
 
 /// A lowered statement and the source statement each of its regions comes
 /// from (`Function::sites`), in the order the source layout numbers its
@@ -508,7 +509,7 @@ pub(super) fn lower(
             T::BoxFree {
                 local,
                 record,
-                glue,
+                drop_contents,
                 optional,
                 ..
             } => {
@@ -524,12 +525,22 @@ pub(super) fn lower(
                     ),
                     vec![boxed.clone()],
                 );
-                let drop = match glue {
-                    Some(glue) => program_seq(
-                        program_call(glue, vec![observe_operand(boxed.clone())]),
+                let drop = if *drop_contents {
+                    let destructor = RustDestructor {
+                        record: record.clone(),
+                    }
+                    .contract_name();
+                    if !cx.functions.contains_key(destructor.as_str()) {
+                        return Err(
+                            "box contents' destructor missing from prepared Rust input".into()
+                        );
+                    }
+                    program_seq(
+                        program_call(destructor, vec![observe_operand(boxed.clone())]),
                         free,
-                    ),
-                    None => free,
+                    )
+                } else {
+                    free
                 };
                 if *optional {
                     // The free ends the capture on the non-null path.
@@ -554,18 +565,26 @@ pub(super) fn lower(
                 check(local, record)?;
                 let r = cx.records.get(record.as_str()).ok_or("unknown drop type")?;
 
-                match &r.destructor {
-                    Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
-                        dtor,
+                if let Some(destructor) = &r.destructor {
+                    let name = match destructor {
+                        Destructor::Implicit => RustDestructor {
+                            record: record.clone(),
+                        }
+                        .contract_name(),
+                        Destructor::Explicit(name) => name.clone(),
+                    };
+                    if !cx.functions.contains_key(name.as_str()) {
+                        return Err("destructor body missing from prepared Rust input".into());
+                    }
+                    program_call(
+                        name,
                         vec![crate::kernel::program_expression::cast(
                             crate::kernel::program_expression::variable(cx.binding(local)?),
                             ProgramType::Int32Pointer,
                         )],
-                    ),
-                    Some(_) => {
-                        return Err("destructor body missing from prepared Rust input".into());
-                    }
-                    None => program_skip(),
+                    )
+                } else {
+                    program_skip()
                 }
             }
             T::Call {

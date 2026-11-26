@@ -201,12 +201,19 @@ pub struct Record {
     pub size: u32,
     pub alignment: u32,
     pub fields: Vec<Field>,
-    pub destructor: Option<String>,
+    pub destructor: Option<Destructor>,
     /// An instance of a generic struct at an abstract type, `Cell<T>`: its
     /// size and its fields' offsets are terms the instance fixes, so `size`
     /// and each field's `offset` are 0 and unused.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub symbolic: bool,
+}
+/// Destruction of a record's fields, or a source-written `Drop::drop` method.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Destructor {
+    Implicit,
+    Explicit(String),
 }
 /// An enum whose fields are scalars: its values are values of the
 /// `spec enum` of the same name, which the import declares for the sidecar.
@@ -880,13 +887,13 @@ pub enum MirTerminator {
     Panic {
         message: String,
     },
-    /// The drop of the box `local`: run the record's drop `glue`, if it has
-    /// one, on a non-null box, then free its allocation.
+    /// Release a box allocation. A drop of its contents precedes the free
+    /// when the record needs destruction and has not been moved out.
     BoxFree {
         local: MirLocalId,
         record: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        glue: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        drop_contents: bool,
         /// Whether `local` is an `Option<Box<R>>`, null for `None`.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         optional: bool,
