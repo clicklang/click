@@ -71,10 +71,10 @@ void probe(struct node *p, struct root *root) {
   step();
   unfold(far_tree);
   have near == rid by { close(); }
-  have near->tag == rid->tag by { normalize() using { near == rid; }; }
+  have near->tag == rid->tag by { rewrite(rid, near); close(); }
   step();
-  have near->tag == rid->tag by { normalize() using { near == rid; }; }
-  have rid->tag == 0u64 by { normalize() using { near == rid; }; }
+  have near->tag == rid->tag by { rewrite(rid, near); close(); }
+  have rid->tag == 0u64 by { rewrite(rid, near); close(); }
   step_until(function.exit);
   close();
  } }

@@ -49,7 +49,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
    }
    have 0 <= 0 by { close(); }
    have 0 <= 4 by { close(); }
-   have to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer)) by { normalize(); }
+   have to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer)) by { close(); }
    have contains(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4])) by {
     apply(separation::contains_subrange(bytes + (4 * outer), 0, (4 * outer + 4) - (4 * outer), 0, 4));
    }
