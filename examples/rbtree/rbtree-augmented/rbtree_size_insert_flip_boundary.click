@@ -260,7 +260,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(focus.model, old(state.model));
                                         rewrite(old(state.model), SizedTree::Node(identity, ancestor, shade, value, left, right));
                                         unfold(sized_parent_is(SizedTree::Node(identity, ancestor, shade, value, left, right), sized_context_parent(path.model, 0)));
-                                        normalize() using { ancestor == sized_context_parent(old(state.context), 0); old(state.context) == ctx; ctx == SizedContext::Left(a, gp, color, cached, sibling, up); path.model == SizedContext::Left(a, gp, color, cached, sibling, up); };
+                                        rewrite(ancestor, sized_context_parent(old(state.context), 0));
+                                        rewrite(old(state.context), ctx);
+                                        rewrite(ctx, SizedContext::Left(a, gp, color, cached, sibling, up));
+                                        rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), path.model);
+                                        close();
                                     }
                                     have sized_plug(path.model, focus.model) == sized_flip_result(old(state.chain), old(state.model)) by {
                                         rewrite(old(state.chain), SizedFlipChain::Stop(ctx));
@@ -310,7 +314,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(focus.model, old(state.model));
                                         rewrite(old(state.model), SizedTree::Node(identity, ancestor, shade, value, left, right));
                                         unfold(sized_parent_is(SizedTree::Node(identity, ancestor, shade, value, left, right), sized_context_parent(path.model, 0)));
-                                        normalize() using { ancestor == sized_context_parent(old(state.context), 0); old(state.context) == ctx; ctx == SizedContext::Right(a, gp, color, cached, sibling, up); path.model == SizedContext::Right(a, gp, color, cached, sibling, up); };
+                                        rewrite(ancestor, sized_context_parent(old(state.context), 0));
+                                        rewrite(old(state.context), ctx);
+                                        rewrite(ctx, SizedContext::Right(a, gp, color, cached, sibling, up));
+                                        rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), path.model);
+                                        close();
                                     }
                                     have sized_plug(path.model, focus.model) == sized_flip_result(old(state.chain), old(state.model)) by {
                                         rewrite(old(state.chain), SizedFlipChain::Stop(ctx));
