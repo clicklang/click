@@ -212,7 +212,7 @@ theorem adler_prefix_b_step_one_u64(bytes: uint8[], n: uint64, a_seed: Integer, 
 function adler_chunk_bytes(count: uint64, size: uint64) -> uint64 { count * size }
 
 theorem adler_chunk_bytes_none(size: uint64) {
- ensures adler_chunk_bytes(0u64, size) == 0u64 by { unfold(adler_chunk_bytes(0u64, size)); normalize(); }
+ ensures adler_chunk_bytes(0u64, size) == 0u64 by { unfold(adler_chunk_bytes(0u64, size)); close(); }
 }
 theorem adler_chunk_bytes_exact_4(count: uint64, n: uint64) {
  requires count <= n / 4u64;
@@ -237,10 +237,10 @@ theorem adler_chunk_bytes_exact_22208(count: uint64, n: uint64) {
 theorem adler_quotient_4(n: uint64) {
  ensures to_integer(n / 4u64) * 4 == to_integer(n - n % 4u64) by {
   apply(integer::truncation_identity(to_integer(n), 4));
-  have to_integer(4u64) != 0 by { normalize(); }
+  have to_integer(4u64) != 0 by { close(); }
   apply(integer::uint64_remainder_to_integer(n, 4u64));
   apply(integer::uint64_divide_to_integer(n, 4u64));
-  have n % 4u64 <= n by normalize();
+  have n % 4u64 <= n by close();
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
   rewrite(to_integer(n - n % 4u64), to_integer(n) - to_integer(n % 4u64));
   rewrite(to_integer(n % 4u64), truncating_remainder(to_integer(n), to_integer(4u64)));
@@ -251,10 +251,10 @@ theorem adler_quotient_4(n: uint64) {
 theorem adler_quotient_22208(n: uint64) {
  ensures to_integer(n / 22208u64) * 22208 == to_integer(n - n % 22208u64) by {
   apply(integer::truncation_identity(to_integer(n), 22208));
-  have to_integer(22208u64) != 0 by { normalize(); }
+  have to_integer(22208u64) != 0 by { close(); }
   apply(integer::uint64_remainder_to_integer(n, 22208u64));
   apply(integer::uint64_divide_to_integer(n, 22208u64));
-  have n % 22208u64 <= n by normalize();
+  have n % 22208u64 <= n by close();
   have to_integer(n - (n % 22208u64)) == to_integer(n) - to_integer((n % 22208u64));
   rewrite(to_integer(n - n % 22208u64), to_integer(n) - to_integer(n % 22208u64));
   rewrite(to_integer(n % 22208u64), truncating_remainder(to_integer(n), to_integer(22208u64)));
@@ -264,7 +264,7 @@ theorem adler_quotient_22208(n: uint64) {
 }
 theorem adler_chunk_bytes_full_4(n: uint64) {
  ensures to_integer(adler_chunk_bytes(n / 4u64, 4u64)) == to_integer(n - n % 4u64) by {
-  have n / 4u64 <= n / 4u64 by normalize();
+  have n / 4u64 <= n / 4u64 by close();
   apply(adler_chunk_bytes_exact_4(n / 4u64, n));
   apply(adler_quotient_4(n));
   close() using { to_integer(adler_chunk_bytes(n / 4u64, 4u64)) == to_integer(n / 4u64) * 4; to_integer(n / 4u64) * 4 == to_integer(n - n % 4u64); };
@@ -274,7 +274,7 @@ theorem adler_chunk_bytes_whole_4(n: uint64) {
  requires n % 4u64 == 0u64;
  ensures adler_chunk_bytes(n / 4u64, 4u64) == n by {
   apply(adler_chunk_bytes_full_4(n));
-  have to_integer(n - n % 4u64) == to_integer(n) by { rewrite(n % 4u64, 0u64); normalize(); }
+  have to_integer(n - n % 4u64) == to_integer(n) by { rewrite(n % 4u64, 0u64); close(); }
   have to_integer(adler_chunk_bytes(n / 4u64, 4u64)) == to_integer(n) by close() using { to_integer(adler_chunk_bytes(n / 4u64, 4u64)) == to_integer(n - n % 4u64); to_integer(n - n % 4u64) == to_integer(n); };
   close();
  }
@@ -320,19 +320,19 @@ theorem adler_chunk_bytes_offset_whole_4(count: uint64, n: uint64) {
  requires n % 4u64 == 0u64;
  ensures adler_chunk_bytes(count, 4u64) <= n by {
   apply(adler_chunk_bytes_offset_4(count, n));
-  have to_integer(n - n % 4u64) == to_integer(n) by { rewrite(n % 4u64, 0u64); normalize(); }
+  have to_integer(n - n % 4u64) == to_integer(n) by { rewrite(n % 4u64, 0u64); close(); }
   close() using { to_integer(adler_chunk_bytes(count, 4u64)) <= to_integer(n - n % 4u64); to_integer(n - n % 4u64) == to_integer(n); };
  }
  ensures to_integer((n / 4u64 - count) * 4u64) == to_integer(n - adler_chunk_bytes(count, 4u64)) by {
   apply(adler_chunk_bytes_offset_4(count, n));
   rewrite(to_integer((n / 4u64 - count) * 4u64), to_integer((n - n % 4u64) - adler_chunk_bytes(count, 4u64)));
   rewrite(n % 4u64, 0u64);
-  normalize();
+  close();
  }
 }
 theorem adler_chunk_bytes_full_22208(n: uint64) {
  ensures to_integer(adler_chunk_bytes(n / 22208u64, 22208u64)) == to_integer(n - n % 22208u64) by {
-  have n / 22208u64 <= n / 22208u64 by normalize();
+  have n / 22208u64 <= n / 22208u64 by close();
   apply(adler_chunk_bytes_exact_22208(n / 22208u64, n));
   apply(adler_quotient_22208(n));
   close() using { to_integer(adler_chunk_bytes(n / 22208u64, 22208u64)) == to_integer(n / 22208u64) * 22208; to_integer(n / 22208u64) * 22208 == to_integer(n - n % 22208u64); };
@@ -342,7 +342,7 @@ theorem adler_chunk_bytes_whole_22208(n: uint64) {
  requires n % 22208u64 == 0u64;
  ensures adler_chunk_bytes(n / 22208u64, 22208u64) == n by {
   apply(adler_chunk_bytes_full_22208(n));
-  have to_integer(n - n % 22208u64) == to_integer(n) by { rewrite(n % 22208u64, 0u64); normalize(); }
+  have to_integer(n - n % 22208u64) == to_integer(n) by { rewrite(n % 22208u64, 0u64); close(); }
   have to_integer(adler_chunk_bytes(n / 22208u64, 22208u64)) == to_integer(n) by close() using { to_integer(adler_chunk_bytes(n / 22208u64, 22208u64)) == to_integer(n - n % 22208u64); to_integer(n - n % 22208u64) == to_integer(n); };
   close();
  }
@@ -388,14 +388,14 @@ theorem adler_chunk_bytes_offset_whole_22208(count: uint64, n: uint64) {
  requires n % 22208u64 == 0u64;
  ensures adler_chunk_bytes(count, 22208u64) <= n by {
   apply(adler_chunk_bytes_offset_22208(count, n));
-  have to_integer(n - n % 22208u64) == to_integer(n) by { rewrite(n % 22208u64, 0u64); normalize(); }
+  have to_integer(n - n % 22208u64) == to_integer(n) by { rewrite(n % 22208u64, 0u64); close(); }
   close() using { to_integer(adler_chunk_bytes(count, 22208u64)) <= to_integer(n - n % 22208u64); to_integer(n - n % 22208u64) == to_integer(n); };
  }
  ensures to_integer((n / 22208u64 - count) * 22208u64) == to_integer(n - adler_chunk_bytes(count, 22208u64)) by {
   apply(adler_chunk_bytes_offset_22208(count, n));
   rewrite(to_integer((n / 22208u64 - count) * 22208u64), to_integer((n - n % 22208u64) - adler_chunk_bytes(count, 22208u64)));
   rewrite(n % 22208u64, 0u64);
-  normalize();
+  close();
  }
 }
 
