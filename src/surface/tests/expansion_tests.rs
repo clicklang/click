@@ -7310,6 +7310,38 @@ fn cpp_local_record_call_requirement_expands_and_replays() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: imported C++ branch certificate"]
+fn cpp_templated_method_call_branch_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_templated_call_branch_expands.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let crate::cli::VerificationInput::PreparedProgram(import) = &inputs else {
+        panic!("expected a prepared C++ fixture");
+    };
+    let source = fixture.click_source.as_deref().unwrap();
+    let claim = "probe.contract";
+    let expanded = expand_claim_by_label(None, source, &inputs.program_inputs(), claim, None)
+        .unwrap_or_else(|error| panic!("{}", error.report()))
+        .source;
+    assert!(expanded.contains("call(1).result"), "{expanded}");
+    let project = crate::surface::ClickProject::new(
+        "proof.click",
+        [crate::surface::ClickModuleSource::new(
+            "proof.click",
+            &expanded,
+            [],
+        )],
+    );
+    crate::surface::without_proof_search_for_claim(claim, || {
+        crate::surface::verify_program_prepared_project(&project, import)
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7.0s in the parallel gate"]
 fn cpp_allocation_rewrites_expand_and_replay() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
