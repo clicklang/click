@@ -9,17 +9,14 @@ use super::typing_environment::NoOuterNames;
 use super::*;
 use crate::surface::typed_surface::{ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType};
 
-/// Lowering's answers when it knows nothing: no pointer widths, no generic
-/// call results, nothing refused. Right for any proposition without
+/// Lowering's answers when it knows nothing: no pointer widths and no
+/// generic call results. Right for any proposition without
 /// pointers or generic calls.
 struct NothingLowered;
 
 impl LoweringQueries for NothingLowered {
     fn generic_call_returns_algebraic(&mut self, _: &SyntaxTerm) -> bool {
         false
-    }
-    fn refuse_untyped_pointer_access(&mut self, _: &SyntaxTerm) -> Result<(), String> {
-        Ok(())
     }
     fn contract_pointer_element_width(&mut self, _: &SyntaxTerm) -> Option<u32> {
         None
@@ -262,4 +259,23 @@ fn connectives_elaborate_around_each_comparison_and_a_refused_one_stays_untyped(
         *right,
         SurfaceProposition::Not(Box::new(SurfaceProposition::Untyped(&refused)))
     );
+}
+
+#[test]
+fn a_step_through_an_untyped_pointer_parameter_stays_untyped_for_lowering_to_refuse() {
+    // Elaboration refuses `p - 1` for a `Pointer` `p` from its declared type
+    // alone: the step has no pointee type, so it stays `Untyped` and lowering
+    // reports the refusal where it reaches it.
+    let declared = Declared {
+        binders: vec![],
+        c_parameters: vec![("p", ProgramType::Pointer)],
+    };
+    let step = SyntaxTerm::Subtract(Box::new(c_variable("p")), Box::new(literal("1")));
+    let Ok(SurfaceProposition::Comparison { kind, left, .. }) =
+        declared.elaborate_comparison(step.clone(), ComparisonOperator::Equal, c_variable("p"))
+    else {
+        panic!("a pointer comparison elaborates to a comparison");
+    };
+    assert_eq!(kind, ComparisonKind::Native);
+    assert_eq!(left, SurfaceTerm::Untyped(step));
 }

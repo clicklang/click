@@ -299,11 +299,13 @@ specification definitions and recorded states. The lowerer delegates those
 queries to it. Comparison elaboration (`elaborate_proposition`,
 `elaborate_comparison` and the native operand forms) also runs on the
 `Elaborator`, reading names through a `TypingEnvironment`. It still asks
-lowering four questions through the `LoweringQueries` trait: whether a generic
-call's result is algebraic at its instantiation, a pointer's element width,
-a call result's pointer element width, and whether an access through an
-untyped pointer is refused. Each moves to the `Elaborator` once declared
-types answer it. `annotations/elaboration_tests.rs` elaborates comparisons
+lowering three questions through the `LoweringQueries` trait: whether a
+generic call's result is algebraic at its instantiation, a pointer's element
+width, and a call result's pointer element width. Each moves to the
+`Elaborator` once declared types answer it. The refusal of a step or access
+through an untyped pointer (`refuse_untyped_pointer_access`) already has: it
+reads the declared C types, the typing environment and the recorded region
+results. `annotations/elaboration_tests.rs` elaborates comparisons
 from declared types alone: Click binders declared in a `TypingEnvironment`
 over `NoOuterNames`, C parameters in the declarations, and a
 `LoweringQueries` that knows nothing, with no lowerer. The declarations

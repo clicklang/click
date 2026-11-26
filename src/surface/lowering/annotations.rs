@@ -10308,181 +10308,31 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    /// The element type a contract expression steps by when it is a pointer:
-    /// an array reference or a pointer-valued binding in scope, a pointer
-    /// fragment, or pointer arithmetic on one. `None` for a scalar.
-    /// Whether a contract cast's operand is a `void *`, by its Surface type or,
-    /// for a C name, by its declared type.
-    fn contract_operand_is_void_pointer(
-        &self,
-        operand: &SyntaxTerm,
-        environment: &SpecElaborationContext,
-    ) -> bool {
-        if matches!(
-            self.contract_expression_click_type(operand, &TypingEnvironment::of(environment)),
-            Some(ClickType::Program(InterfaceType::VoidPointer))
-        ) {
-            return true;
-        }
-        match operand {
-            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)) => {
-                self.c_variable_type(name.clone()) == Some(ProgramType::VoidPointer)
-            }
-            SyntaxTerm::ProgramBinding(name) => matches!(
-                environment.values.get(name),
-                Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))
-                    if pointer.program_type() == ProgramType::VoidPointer
-            ),
-            SyntaxTerm::Old(expression)
-            | SyntaxTerm::Exact(expression)
-            | SyntaxTerm::At { expression, .. } => {
-                self.contract_operand_is_void_pointer(expression, environment)
-            }
-            _ => false,
-        }
-    }
-
-    /// The spelling of `operand`'s type when it is a pointer that states no
-    /// pointee type ([`pointee_less_pointer_spelling`]): a cast to one, a
-    /// `load` of one, a byte offset of one, or a binding, parameter or call
-    /// of that type.
-    fn pointee_less_operand(
-        &self,
-        operand: &SyntaxTerm,
-        environment: &SpecElaborationContext,
-    ) -> Option<&'static str> {
-        let spelling = match operand {
-            SyntaxTerm::CUnary { operand, lowered } => self
-                .pointee_less_program_operand(lowered, environment)
-                .or_else(|| {
-                    matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
-                        .then(|| self.pointee_less_operand(operand, environment))
-                        .flatten()
-                }),
-            SyntaxTerm::ProgramExpression(lowered) => {
-                self.pointee_less_program_operand(lowered, environment)
-            }
-            SyntaxTerm::Old(inner)
-            | SyntaxTerm::Exact(inner)
-            | SyntaxTerm::At {
-                expression: inner, ..
-            } => self.pointee_less_operand(inner, environment),
-            // A call's recorded `void *` result.
-            SyntaxTerm::RegionResult(region) => {
-                match self.retained_states.and_then(|states| {
-                    states
-                        .region_result_value_at(region, environment.call_result_point.as_ref())
-                        .ok()
-                }) {
-                    Some(ProgramValue::Pointer(pointer)) => {
-                        pointee_less_pointer_spelling(pointer.program_type())
-                    }
-                    _ => None,
-                }
-            }
-            _ => match self
-                .contract_expression_click_type(operand, &TypingEnvironment::of(environment))
-            {
-                Some(ClickType::Program(operand_type)) => {
-                    pointee_less_pointer_spelling(operand_type.to_kernel_type())
-                }
-                _ => None,
-            },
-        };
-        spelling.or_else(|| {
-            self.contract_operand_is_void_pointer(operand, environment)
-                .then_some("void *")
-        })
-    }
-
-    /// [`Self::pointee_less_operand`] for a lowered C fragment.
     fn pointee_less_program_operand(
         &self,
         operand: &ProgramExpression,
         environment: &SpecElaborationContext,
     ) -> Option<&'static str> {
-        match operand {
-            ProgramExpression::Cast { target_type, .. } => {
-                pointee_less_pointer_spelling(*target_type)
-            }
-            ProgramExpression::TypedLoad { value_type, .. } => {
-                pointee_less_pointer_spelling(*value_type)
-            }
-            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
-                pointee_less_pointer_spelling(pointer.program_type())
-            }
-            ProgramExpression::PointerOffsetBytes { pointer, .. } => {
-                self.pointee_less_program_operand(pointer, environment)
-            }
-            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => self
-                .pointee_less_program_operand(left, environment)
-                .or_else(|| self.pointee_less_program_operand(right, environment)),
-            ProgramExpression::Variable(name @ crate::kernel::BindingName::Named(_)) => match self
-                .contract_expression_click_type(
-                    &SyntaxTerm::ProgramExpression(operand.clone()),
-                    &TypingEnvironment::of(environment),
-                ) {
-                Some(ClickType::Program(operand_type)) => {
-                    pointee_less_pointer_spelling(operand_type.to_kernel_type())
-                }
-                _ => None,
-            }
-            .or_else(|| {
-                self.c_variable_type(name.clone())
-                    .and_then(pointee_less_pointer_spelling)
-            }),
-            _ => None,
-        }
+        self.elaborator()
+            .pointee_less_program_operand(operand, &TypingEnvironment::of(environment))
     }
 
-    /// Refuses `*q` and `q[i]` when `q` is a `Pointer` or a `void *`, and
-    /// `q + k` and `q - k` when `q` is a `Pointer`: it has no pointee type to
-    /// read at or step by. A `void *` steps by one byte, as in C.
+    fn pointee_less_operand(
+        &self,
+        operand: &SyntaxTerm,
+        environment: &SpecElaborationContext,
+    ) -> Option<&'static str> {
+        self.elaborator()
+            .pointee_less_operand(operand, &TypingEnvironment::of(environment))
+    }
+
     fn refuse_untyped_pointer_access(
         &self,
         expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<(), String> {
-        let refused_program = |lowered: &ProgramExpression| match lowered {
-            ProgramExpression::Load(pointer) | ProgramExpression::Index(pointer, _) => {
-                self.pointee_less_program_operand(pointer, environment)
-            }
-            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => {
-                pointee_less_step_refusal(
-                    self.pointee_less_program_operand(left, environment),
-                    self.pointee_less_program_operand(right, environment),
-                    matches!(lowered, ProgramExpression::Subtract(..)),
-                )
-            }
-            _ => None,
-        };
-        let refused = match expression {
-            SyntaxTerm::CUnary { operand, lowered } => refused_program(lowered).or_else(|| {
-                matches!(
-                    lowered,
-                    ProgramExpression::Load(_) | ProgramExpression::Index(..)
-                )
-                .then(|| self.pointee_less_operand(operand, environment))
-                .flatten()
-            }),
-            SyntaxTerm::ProgramExpression(lowered) => refused_program(lowered),
-            SyntaxTerm::ArrayIndex { base, lowered, .. } => {
-                refused_program(lowered).or_else(|| self.pointee_less_operand(base, environment))
-            }
-            SyntaxTerm::Index(base, _) => self.pointee_less_operand(base, environment),
-            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
-                pointee_less_step_refusal(
-                    self.pointee_less_operand(left, environment),
-                    self.pointee_less_operand(right, environment),
-                    matches!(expression, SyntaxTerm::Subtract(..)),
-                )
-            }
-            _ => None,
-        };
-        match refused {
-            Some(spelling) => Err(pointee_less_access_message(spelling)),
-            None => Ok(()),
-        }
+        self.elaborator()
+            .refuse_untyped_pointer_access(expression, &TypingEnvironment::of(environment))
     }
 
     fn contract_pointer_element_type(
