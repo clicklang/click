@@ -144,14 +144,14 @@ fn preserve_checks_signed_and_unsigned_64_bit_reads() {
                 step() by {{ close(); }}
                 mark after;
                 have *kept == at(before, *kept) by {{
-                    have separate(statement(0).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                    have separate(statement(0).footprint, memory(*kept)) by {{ close() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
                     preserve(memory(*kept), statement(0));
                 }}
                 step() by {{ close(); }}
                 mark final;
                 have *kept == at(before, *kept) by {{
                     have *kept == at(after, *kept) by {{
-                        have separate(statement(1).footprint, memory(*kept)) by {{ normalize() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
+                        have separate(statement(1).footprint, memory(*kept)) by {{ close() using {{ at(before, separate(memory(dest[0..1]), memory(kept[0..1]))); }}; }}
                         preserve(memory(*kept), statement(1));
                     }}
                     rewrite(*kept, at(after, *kept));
@@ -736,7 +736,7 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q > 0 by"#,
     );
@@ -793,7 +793,7 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by"#,
     );
@@ -872,7 +872,7 @@ fn state_comparison_transport_handles_resource_fields_across_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by"#,
     );
@@ -949,10 +949,10 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == *r by"#,
     );
@@ -1038,10 +1038,10 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 and *r == 8 by"#,
     );
@@ -1195,7 +1195,7 @@ fn conjunction_projection_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have *q == 7 by"#,
     );
@@ -1283,10 +1283,10 @@ fn conjunction_selection_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 and *r == 8 by"#,
     );
@@ -1347,7 +1347,7 @@ fn implication_transport_handles_four_distinct_reads() {
         .replace("*q == 7 implies *r == 8", "*q < *r implies *s < *t");
     for read in ["s", "t"] {
         source = source.replace("    views *q;", &format!("    views *{read};\n    requires separate(memory(*p), memory(*{read}));\n    views *q;"))
-            .replace("    have *q < *r implies *s < *t by", &format!("    have separate(statement(0).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}\n    have *q < *r implies *s < *t by"));
+            .replace("    have *q < *r implies *s < *t by", &format!("    have separate(statement(0).footprint, memory(*{read})) by {{ close() using {{ separate(memory(*p), memory(*{read})); }}; }}\n    have *q < *r implies *s < *t by"));
     }
     let files = [(files[0].0.as_str(), c.as_str())];
     let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
@@ -1372,17 +1372,17 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
         let mut invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"))
             .replace("    requires *q == 7 implies *r == 8;", &format!("    requires {initial};\n    requires separate(memory(*q), memory(*r));\n    requires *q == 7 implies *r == 8;"));
         let block = format!(
-            "    have separate(statement(0).footprint, memory(*{read})) by {{\n        normalize() using {{ separate(memory(*p), memory(*{read})); }};\n    }}\n"
+            "    have separate(statement(0).footprint, memory(*{read})) by {{\n        close() using {{ separate(memory(*p), memory(*{read})); }};\n    }}\n"
         );
         invalid = invalid
             .replace(&block, "")
             .replace(
-                "normalize() using { separate(memory(*p), memory(*q)); };",
-                "normalize() using { separate(memory(*q), memory(*r)); };",
+                "close() using { separate(memory(*p), memory(*q)); };",
+                "close() using { separate(memory(*q), memory(*r)); };",
             )
             .replace(
-                "normalize() using { separate(memory(*p), memory(*r)); };",
-                "normalize() using { separate(memory(*q), memory(*r)); };",
+                "close() using { separate(memory(*p), memory(*r)); };",
+                "close() using { separate(memory(*q), memory(*r)); };",
             );
         assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
@@ -1409,10 +1409,10 @@ fn implication_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 implies *r == 8 by"#,
     );
@@ -1479,8 +1479,8 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
         let c = files[0].1.replace("*p = 0;", "*q = 7;");
         let invalid = source.replace(original, formula).replace("views *q;", "owns *q;")
             .replace(&format!("    requires {formula};"), &format!("    requires *q == 0 and *r == 7;\n    requires separate(memory(*q), memory(*r));\n    requires {formula};"))
-            .replace("    have separate(statement(0).footprint, memory(*q)) by {\n        normalize() using { separate(memory(*p), memory(*q)); };\n    }\n", "")
-            .replace("normalize() using { separate(memory(*p), memory(*r)); };", "normalize() using { separate(memory(*q), memory(*r)); };");
+            .replace("    have separate(statement(0).footprint, memory(*q)) by {\n        close() using { separate(memory(*p), memory(*q)); };\n    }\n", "")
+            .replace("close() using { separate(memory(*p), memory(*r)); };", "close() using { separate(memory(*q), memory(*r)); };");
         assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
     let files = files
@@ -1504,10 +1504,10 @@ fn compound_implication_transport_crosses_multiple_statements() {
         r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(1).footprint, memory(*r)) by {
-        normalize() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have (*q == 7 and *r > 0) implies"#,
     );
