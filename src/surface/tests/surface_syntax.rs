@@ -387,7 +387,7 @@ fn parser_rejects_excessive_parenthesis_depth_with_a_source_diagnostic() {
 fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
     let supported_not = "not ".repeat(32);
     let supported_source = format!(
-        "theorem shallow() {{ requires {supported_not}0 == 0; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem shallow() {{ requires {supported_not}0 == 0; ensures 0 == 0 by {{ close(); }} }}"
     );
     let supported = parse(&supported_source).expect("the supported unary boundary should validate");
     verify_click_theorems(&supported_source)
@@ -467,9 +467,9 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
             .contains("bracket nesting exceeds Click's supported depth")
     );
 
-    let mut proof_body = String::from("normalize();");
+    let mut proof_body = String::from("close();");
     for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
-        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
     }
     let proof_error = parser::parse_file_items(&format!(
         "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {proof_body} }} }}"
@@ -620,7 +620,7 @@ fn surface_depths_survive_consumption(
         quantifier_body = format!("forall (q{index}: Integer) {{ {quantifier_body} }}");
     }
     let quantifier_source = format!(
-        "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by {{ close(); }} }}"
     );
     verify_click_theorems(&quantifier_source)
         .expect("the supported quantifier boundary should verify");
@@ -658,9 +658,9 @@ fn surface_depths_survive_consumption(
     drop(sequence_file);
 
     let proof_goal = "0 == 0";
-    let mut proof_body = String::from("normalize();");
+    let mut proof_body = String::from("close();");
     for _ in 0..structural_depth - 2 {
-        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
     }
     let proof_source =
         format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}");
@@ -696,7 +696,7 @@ fn surface_depths_survive_consumption(
         format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
     });
     let conditional_source = format!(
-        "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by {{ close(); }} }}"
     );
     verify_click_theorems(&conditional_source)
         .expect("the supported conditional boundary should verify");
@@ -1235,7 +1235,7 @@ fn parses_and_prints_pure_function_unfold() {
             requires n <= 0;
             ensures clamp(n) == 0 by {
                 unfold(clamp(n));
-                normalize();
+                close();
             }
         }
     "#;
