@@ -6,6 +6,9 @@ child. Claiming `produces d: ctx_at(victim, root)` states that the splice left
 the root cell alone, and `Context::Top`'s own fact `root->rb_node == child`
 refuses it.
 
+The helper contract records the copied fields before updating the root slot.
+Its caller checks the attempted fold against the resulting root link.
+
 ```c filename=rbtree.h
 #ifndef RBTREE_H
 #define RBTREE_H
@@ -157,6 +160,41 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
     }
 }
 
+void rb_replace_node(struct rb_node* victim, struct rb_node* new,
+                     struct rb_root* root) {
+    requires victim->__rb_parent_color == 1u64;
+    requires victim->rb_left == 0;
+    requires victim->rb_right == 0;
+    requires root->rb_node == victim;
+    requires aligned(new, 8);
+    views victim->__rb_parent_color;
+    views victim->rb_left;
+    views victim->rb_right;
+    owns new->__rb_parent_color;
+    owns new->rb_left;
+    owns new->rb_right;
+    owns root->rb_node;
+    ensures root->rb_node == new;
+    ensures new->rb_left == 0;
+    ensures new->rb_right == 0;
+    ensures new->__rb_parent_color == 1u64;
+} by {
+    step_until(statement(2).entry);
+    have at(statement(1).region(1).exit, new->rb_left) == 0 by close();
+    have new->rb_right == 0 by close();
+    have new->rb_left == 0 by close();
+    have new->__rb_parent_color == 1u64 by close();
+    have separate(memory(root->rb_node), memory(new->__rb_parent_color)) by close();
+    have separate(memory(root->rb_node), memory(new->rb_left)) by close();
+    have separate(memory(root->rb_node), memory(new->rb_right)) by close();
+    mark copied;
+    step_until(function.exit);
+    have new->rb_left == at(copied, new->rb_left) by close();
+    have new->rb_right == at(copied, new->rb_right) by close();
+    have new->__rb_parent_color == at(copied, new->__rb_parent_color) by close();
+    close();
+}
+
 void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
                        struct rb_node* parent, struct rb_root* root) {
     consumes c: ctx_at(victim, root);
@@ -183,8 +221,18 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
     unfold(r);
     have color_bit(Color::Black) == 1 by {
         unfold(color_bit(Color::Black));
-        normalize();
+        close();
     }
+    have (victim->__rb_parent_color & 1u64) == (color_bit(Color::Black) as uint64) by close();
+    have (color_bit(Color::Black) as uint64) == 1u64 by {
+        rewrite(color_bit(Color::Black), 1);
+        close();
+    }
+    have (victim->__rb_parent_color & 1u64) == 1u64 by {
+        rewrite((victim->__rb_parent_color & 1u64), (color_bit(Color::Black) as uint64));
+        close();
+    }
+    have victim->__rb_parent_color == 1u64 by close();
     step_until(function.exit);
     let l2 = fold(rb_at(new_node->rb_left), { model: RbTree::Empty });
     let r2 = fold(rb_at(new_node->rb_right), { model: RbTree::Empty });
@@ -198,7 +246,7 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
         unfold(rb_substitute(
             RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty),
             new_node));
-        normalize();
+        close();
     }
     close();
 }
@@ -206,5 +254,5 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields
+fail: fact 2 of 2 of arm `Top` is not established
 ```
