@@ -278,12 +278,12 @@ mod memory_condition_match_tests {
             true
         ));
         let offsets = OldConditionTerm::address_offset_equal(
-            OldAddressOffset::Variable(Variable(960_006)).into(),
-            OldAddressOffset::Variable(Variable(960_007)).into(),
+            AddressOffset::variable(Variable(960_006)),
+            AddressOffset::variable(Variable(960_007)),
         );
         let reversed = OldConditionTerm::address_offset_equal(
-            OldAddressOffset::Variable(Variable(960_007)).into(),
-            OldAddressOffset::Variable(Variable(960_006)).into(),
+            AddressOffset::variable(Variable(960_007)),
+            AddressOffset::variable(Variable(960_006)),
         );
         assert!(
             PureFactContext::new()

@@ -2788,9 +2788,7 @@ fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable)
 
 fn integer_carrier_in_stored_offset(offset: &StoredPointerOffset, variable: Variable) -> bool {
     use crate::kernel::{KernelAddressOffset, SharedAddressOffset};
-    let Some(root) = offset.root() else {
-        return integer_carrier_in_pointer_offset(offset.old_form(), variable);
-    };
+    let root = offset.root();
     !root.visit_root_while(|node| {
         let carries_integer = match node {
             KernelAddressOffset::Variable(load) => {

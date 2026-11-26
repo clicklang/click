@@ -14,7 +14,7 @@ fn construction_recording_cost_is_independent_of_state_size() {
             memory = memory.store(
                 OldAddress {
                     base: "local:scale".into(),
-                    offset: OldAddressOffset::Constant(i * 4).into(),
+                    offset: AddressOffset::constant(i * 4),
                 },
                 ProgramValue::Int32((i as u32).into()),
             );

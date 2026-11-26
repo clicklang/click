@@ -2,12 +2,12 @@ use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::equality_graph::EqualityGraph;
 
-fn offset(id: u64) -> OldAddressOffset {
-    OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4)
+fn offset(id: u64) -> AddressOffset {
+    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4)
 }
 
 fn guard() -> OldConditionTerm {
-    OldConditionTerm::address_offset_equal(offset(51).into(), offset(52).into())
+    OldConditionTerm::address_offset_equal(offset(51), offset(52))
 }
 
 fn choice() -> OldMachineTerm {
@@ -20,10 +20,7 @@ fn choice() -> OldMachineTerm {
 
 fn graph() -> EqualityGraph {
     let mut graph = EqualityGraph::default();
-    graph.add_offset_equality(
-        &crate::kernel::AddressOffset::from(&offset(51)),
-        &crate::kernel::AddressOffset::from(&offset(52)),
-    );
+    graph.add_offset_equality(&offset(51).clone(), &offset(52).clone());
     graph
 }
 
@@ -32,10 +29,7 @@ fn graph_condition_reduction_keeps_unknown_equalities_and_branches_isolated() {
     let empty = HashMap::new();
     let parent = EqualityGraph::default();
     let mut branch = parent.clone();
-    branch.add_offset_equality(
-        &crate::kernel::AddressOffset::from(&offset(51)),
-        &crate::kernel::AddressOffset::from(&offset(52)),
-    );
+    branch.add_offset_equality(&offset(51).clone(), &offset(52).clone());
     assert_eq!(
         TermRewrite::for_conditions_with_graph(&empty, &branch).bits(&choice()),
         OldMachineTerm::constant(7)

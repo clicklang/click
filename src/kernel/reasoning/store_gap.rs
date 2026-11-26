@@ -266,7 +266,7 @@ mod tests {
     fn anchors() -> Vec<AddressOffset> {
         vec![
             AddressOffset::scale_int32(variable(900), 4),
-            crate::kernel::OldAddressOffset::Variable(Variable(901)).into(),
+            AddressOffset::variable(Variable(901)),
             AddressOffset::add(
                 AddressOffset::scale_int32(variable(900), 4),
                 AddressOffset::scale_int32(variable(902), 1),
@@ -491,12 +491,8 @@ mod tests {
     #[test]
     fn constant_gap_skipping_keeps_the_byte_level_drops() {
         let anchor = AddressOffset::scale_int32(variable(900), 4);
-        let shifted = |shift: i64| {
-            AddressOffset::add(
-                anchor.clone(),
-                crate::kernel::OldAddressOffset::Constant(shift).into(),
-            )
-        };
+        let shifted =
+            |shift: i64| AddressOffset::add(anchor.clone(), AddressOffset::constant(shift));
         let int32 = |value: u32| ProgramValue::Int32(OldMachineTerm::constant(value));
         let int64 = |value: i64| ProgramValue::Int64(OldMachineTerm::int64_constant(value));
         // Far cells on both sides, which every later store skips.
@@ -596,55 +592,39 @@ mod tests {
         let scaled = AddressOffset::scale_int32(variable(900), 4);
         let unnormal = [
             // A zero the smart constructor would drop.
-            crate::kernel::OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::Add(
-                    Box::new(crate::kernel::OldAddressOffset::Constant(0)),
-                    Box::new(crate::kernel::OldAddressOffset::from(scaled.clone())),
-                )),
-                Box::new(crate::kernel::OldAddressOffset::Constant(8)),
+            AddressOffset::raw_add(
+                AddressOffset::raw_add(AddressOffset::constant(0), scaled.clone()),
+                AddressOffset::constant(8),
             ),
             // A trailing constant the smart constructor would fold.
-            crate::kernel::OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::Add(
-                    Box::new(crate::kernel::OldAddressOffset::from(scaled.clone())),
-                    Box::new(crate::kernel::OldAddressOffset::Constant(4)),
-                )),
-                Box::new(crate::kernel::OldAddressOffset::Constant(8)),
+            AddressOffset::raw_add(
+                AddressOffset::raw_add(scaled.clone(), AddressOffset::constant(4)),
+                AddressOffset::constant(8),
             ),
             // A load, which normalization may rewrite.
-            crate::kernel::OldAddressOffset::from(AddressOffset::add(
+            AddressOffset::add(
                 AddressOffset::scale_int32(
                     OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(
                             &(crate::kernel::intern_memory(SymbolicMemory::new())),
                         ),
-                        Box::new(at(&crate::kernel::AddressOffset::from(
-                            &crate::kernel::OldAddressOffset::Constant(0),
-                        ))),
+                        Box::new(at(&AddressOffset::constant(0).clone())),
                         crate::kernel::LoadKind::Int32,
                     ),
                     4,
                 ),
-                crate::kernel::OldAddressOffset::Constant(8).into(),
-            )),
+                AddressOffset::constant(8),
+            ),
         ];
         for offset in unnormal {
             assert!(
-                store_gap_kept_ranges(
-                    &at(&crate::kernel::AddressOffset::from(&offset)),
-                    4,
-                    &context
-                )
-                .is_empty(),
+                store_gap_kept_ranges(&at(&offset.clone()), 4, &context).is_empty(),
                 "a store at {offset:?} should skip nothing"
             );
         }
         assert!(
             !store_gap_kept_ranges(
-                &at(&AddressOffset::add(
-                    scaled,
-                    crate::kernel::OldAddressOffset::Constant(8).into()
-                )),
+                &at(&AddressOffset::add(scaled, AddressOffset::constant(8))),
                 4,
                 &context
             )

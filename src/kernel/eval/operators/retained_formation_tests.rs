@@ -53,23 +53,13 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
         ] {
             for stride in [-4, 0, 1, 4] {
                 let offset = if ty == T::Int32 {
-                    OldAddressOffset::Int32Scaled {
-                        value: retained(ty, &value),
-                        byte_width: stride,
-                    }
+                    AddressOffset::int32_scaled(retained(ty, &value), stride)
                 } else {
-                    OldAddressOffset::Int64Scaled {
-                        value: retained(ty, &value),
-                        byte_width: stride,
-                        unsigned: ty == T::UInt64,
-                    }
+                    AddressOffset::int64_scaled(retained(ty, &value), stride, ty == T::UInt64)
                 };
                 let mut guards = vec![];
                 let exports = KernelTermExport::machine_export_count();
-                let actual = exact_pointer_offset_i64_with_guards(
-                    &crate::kernel::AddressOffset::from(&offset),
-                    &mut guards,
-                );
+                let actual = exact_pointer_offset_i64_with_guards(&offset.clone(), &mut guards);
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
                 if ty == T::UInt64 && stride < 0 {
                     assert!(actual.is_none());
@@ -103,7 +93,7 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
     }
     assert!(
         exact_pointer_offset_i64_with_guards(
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Variable(Variable(993101))),
+            &(AddressOffset::variable(Variable(993101))).clone(),
             &mut vec![],
         )
         .is_none()
@@ -121,19 +111,13 @@ fn exact_coordinate_guards_keep_full_width_and_overflow_refusals() {
         (1 << 63, 1, false),
         (i64::MAX as u64, 2, false),
     ] {
-        let offset = OldAddressOffset::Int64Scaled {
-            value: retained(T::UInt64, &OldMachineTerm::uint64_constant(value)),
-            byte_width: stride,
-            unsigned: true,
-        };
-        let mut guards = vec![];
-        assert!(
-            exact_pointer_offset_i64_with_guards(
-                &crate::kernel::AddressOffset::from(&offset),
-                &mut guards
-            )
-            .is_some()
+        let offset = AddressOffset::int64_scaled(
+            retained(T::UInt64, &OldMachineTerm::uint64_constant(value)),
+            stride,
+            true,
         );
+        let mut guards = vec![];
+        assert!(exact_pointer_offset_i64_with_guards(&offset.clone(), &mut guards).is_some());
         assert_eq!(
             guards
                 .iter()
@@ -147,16 +131,12 @@ fn exact_coordinate_guards_keep_full_width_and_overflow_refusals() {
         );
     }
     for (left, right, accepted) in [(i64::MAX, 1, false), (i64::MIN, -1, false), (17, 4, true)] {
-        let offset = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::Constant(left)),
-            Box::new(OldAddressOffset::Constant(right)),
+        let offset = AddressOffset::raw_add(
+            AddressOffset::constant(left),
+            AddressOffset::constant(right),
         );
         let mut guards = vec![];
-        let _ = exact_pointer_offset_i64_with_guards(
-            &crate::kernel::AddressOffset::from(&offset),
-            &mut guards,
-        )
-        .unwrap();
+        let _ = exact_pointer_offset_i64_with_guards(&offset.clone(), &mut guards).unwrap();
         assert_eq!(
             guards
                 .iter()
@@ -178,19 +158,14 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
     for ty in [T::Int64, T::UInt64] {
         let base = OldAddress {
             base: AddressBase::Concrete("retained-formation".into()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let state = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(base.base.clone(), 64));
         let variable = OldMachineTerm::Variable(Variable(993200));
         let pointer = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Int64Scaled {
-                value: retained(ty, &variable),
-                byte_width: 4,
-                unsigned: ty == T::UInt64,
-            }
-            .into(),
+            offset: AddressOffset::int64_scaled(retained(ty, &variable), 4, ty == T::UInt64),
         };
         let root = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
@@ -232,7 +207,7 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = OldAddress {
         base: AddressBase::Concrete("coordinate-retained_state".into()),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let before = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 8)
@@ -252,17 +227,10 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         );
-        let offset = OldAddressOffset::Int64Scaled {
-            value: retained(MachineIntegerType::Int64, &read),
-            byte_width: 4,
-            unsigned: false,
-        };
+        let offset =
+            AddressOffset::int64_scaled(retained(MachineIntegerType::Int64, &read), 4, false);
         let exports = KernelTermExport::machine_export_count();
-        let result = exact_pointer_offset_i64_with_guards(
-            &crate::kernel::AddressOffset::from(&offset),
-            &mut vec![],
-        )
-        .unwrap();
+        let result = exact_pointer_offset_i64_with_guards(&offset.clone(), &mut vec![]).unwrap();
         let (_, _, [operand, _]) = result.operand_view().binary().unwrap();
         assert_eq!(operand.read().unwrap().0, &memory);
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -280,14 +248,9 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
         AllocationSizeKind::UInt64,
     );
     let index = OldMachineTerm::Variable(Variable(993400));
-    let offset = OldAddressOffset::Int32Scaled {
-        value: retained(ty, &index),
-        byte_width: 4,
-    };
+    let offset = AddressOffset::int32_scaled(retained(ty, &index), 4);
     let exports = KernelTermExport::machine_export_count();
-    let guards =
-        wide_block_bounds_of_32_bit_offset(&crate::kernel::AddressOffset::from(&offset), &size)
-            .unwrap();
+    let guards = wide_block_bounds_of_32_bit_offset(&offset.clone(), &size).unwrap();
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     for n in [-1, 0, 16, 17] {
         let context = PureFactContext::new().assume_condition(
@@ -303,7 +266,7 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
     }
     assert!(
         wide_block_bounds_of_32_bit_offset(
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Variable(Variable(993401))),
+            &(AddressOffset::variable(Variable(993401))).clone(),
             &size,
         )
         .is_none()

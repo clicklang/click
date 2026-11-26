@@ -1602,9 +1602,7 @@ mod tests {
             memory,
             base: OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
@@ -1773,7 +1771,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let variable =
             crate::kernel::load_variable_for_term(&crate::kernel::OldMachineTerm::read_named(

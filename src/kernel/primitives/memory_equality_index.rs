@@ -3195,7 +3195,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
         .offset_by_elements(OldMachineTerm::Variable(Variable(983_710)), 1);
         let whole = OldMachineTerm::Variable(Variable(983_711));
@@ -3453,7 +3453,7 @@ mod tests {
         // A shorter nearest predecessor must not hide the longer view.
         let interior = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(4).into(),
+            offset: AddressOffset::constant(4),
         };
         assert!(mixed.permits_memory_read(&interior, 4, &facts));
         let restored = mixed.clone().without_exact_representation(&short).unwrap();
@@ -3472,7 +3472,7 @@ mod tests {
             .unchecked_with_fact(view(&base, 4, 12));
         let at = |offset| OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(offset).into(),
+            offset: AddressOffset::constant(offset),
         };
         assert!(resources.concrete_read_entries(&at(6), 6, &facts).is_some());
         assert!(resources.permits_memory_read(&at(6), 6, &facts));
@@ -3498,7 +3498,7 @@ mod tests {
         let sibling = resources.clone();
         let displaced = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(8).into(),
+            offset: AddressOffset::constant(8),
         };
         let facts = empty
             .clone()
@@ -3575,7 +3575,7 @@ mod tests {
         let middle = OldAddress::symbolic(Variable(851_022));
         let displaced = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(8).into(),
+            offset: AddressOffset::constant(8),
         };
         let facts = empty
             .assume_condition(
@@ -3585,7 +3585,7 @@ mod tests {
             .assume_condition(OldConditionTerm::address_equal(middle, alias.clone()), true);
         let interior = OldAddress {
             base: alias.base,
-            offset: OldAddressOffset::Constant(4).into(),
+            offset: AddressOffset::constant(4),
         };
         assert!(
             resources

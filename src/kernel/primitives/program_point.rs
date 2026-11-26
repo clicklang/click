@@ -2503,7 +2503,7 @@ mod tests {
         let block: AddressBase = "local:slot".into();
         let slot = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         SymbolicMemory::new()
             .with_block(block, 4)
@@ -2513,7 +2513,7 @@ mod tests {
     fn slot() -> OldAddress {
         OldAddress {
             base: "local:slot".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -2687,7 +2687,7 @@ mod tests {
         let block = AddressBase::ExternalArgument;
         let cell = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let effect = entry.clone().with_memory(
             entry
@@ -2712,7 +2712,7 @@ mod tests {
         let other_entry = ExecutionState::new().begin_function_entry_memory();
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let select = |state: &ExecutionState| {
             state
@@ -2768,7 +2768,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let pointer_slot = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let pointer = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
@@ -2805,7 +2805,7 @@ mod tests {
         let point = entry.program_point();
         let slot = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let pointer = OldPointer::from_point_read(
             point.clone().for_legacy_read(),
@@ -2826,7 +2826,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let caller_cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let loaded = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
@@ -2875,7 +2875,7 @@ mod tests {
         let second = stored(&declared, 2);
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(4).into(),
+            offset: AddressOffset::constant(4),
         };
         let join = |left: &ExecutionState, right: &ExecutionState| {
             let mut joined = left.clone();
@@ -3072,7 +3072,7 @@ mod tests {
         let slot = slot();
         let other = OldAddress {
             base: "local:other".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
@@ -3439,7 +3439,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let entry = ExecutionState::new().begin_function_entry_memory();
         let selected = entry

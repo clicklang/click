@@ -17,8 +17,8 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
             let make = |memory| {
                 let native = OldAddress {
                     base: AddressBase::Concrete("shared-check-array".into()),
-                    offset: OldAddressOffset::Int32Scaled {
-                        value: SharedMachineIntegerTerm::index(
+                    offset: AddressOffset::int32_scaled(
+                        SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             OldMachineTerm::read_named(
                                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
@@ -26,9 +26,8 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                                 LoadKind::Int32,
                             ),
                         ),
-                        byte_width: 4,
-                    }
-                    .into(),
+                        4,
+                    ),
                 };
                 let initial = SharedAddress::import(&native);
                 let mut offset = initial.node().offset.clone();

@@ -7517,7 +7517,7 @@ mod exact_load_normalization_tests {
     fn load_chain(length: usize, tail: u32) -> OldMachineTerm {
         let pointer = OldAddress {
             base: "normalization-load-chain".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         (0..length).fold(OldMachineTerm::constant(tail), |value, _| {
             let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
@@ -7551,7 +7551,7 @@ mod exact_load_normalization_tests {
         use crate::kernel::LoadKind;
         let pointer = OldAddress {
             base: "kind-checked-cell".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let load = |memory: &SymbolicMemory, kind| {
             crate::kernel::OldMachineTerm::read_named(
@@ -7631,17 +7631,11 @@ mod exact_load_normalization_tests {
 
         let offset = (0..80).fold(
             AddressOffset::scaled_int32_node(load_chain(80, 7), 4),
-            |offset, _| {
-                OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::Constant(0)),
-                    Box::new(crate::kernel::OldAddressOffset::from(offset)),
-                )
-                .into()
-            },
+            |offset, _| AddressOffset::raw_add(AddressOffset::constant(0), offset),
         );
         assert_eq!(
             normalize_exact_memory_loads_in_pointer_offset(&offset, &PureFactContext::new()),
-            OldAddressOffset::Constant(28)
+            AddressOffset::constant(28)
         );
     }
 }
@@ -7651,7 +7645,7 @@ mod exact_load_normalization_tests {
 fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
     let pointer = OldAddress {
         base: "effect-offset".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let memory = SymbolicMemory::new().store(
         pointer.clone(),
@@ -7667,34 +7661,34 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
     );
     assert!(program_pointer_offsets_proven_equal_for_effect(
         &loaded,
-        &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(28)),
+        &AddressOffset::constant(28).clone(),
         &PureFactContext::new(),
     ));
     assert!(!program_pointer_offsets_proven_equal_for_effect(
         &loaded,
-        &crate::kernel::AddressOffset::from(&OldAddressOffset::Constant(32)),
+        &AddressOffset::constant(32).clone(),
         &PureFactContext::new(),
     ));
 
-    let left = OldAddressOffset::Variable(Variable(901));
-    let right = OldAddressOffset::Variable(Variable(902));
+    let left = AddressOffset::variable(Variable(901));
+    let right = AddressOffset::variable(Variable(902));
     let facts = PureFactContext::new().assume_condition(
-        OldConditionTerm::address_offset_equal(left.clone().into(), right.clone().into()),
+        OldConditionTerm::address_offset_equal(left.clone(), right.clone()),
         true,
     );
     assert!(program_pointer_offsets_proven_equal_for_effect(
-        &crate::kernel::AddressOffset::from(&left),
-        &crate::kernel::AddressOffset::from(&right),
+        &left.clone(),
+        &right.clone(),
         &facts
     ));
     assert!(!program_pointer_offsets_proven_equal_for_effect(
-        &crate::kernel::AddressOffset::from(&left),
-        &crate::kernel::AddressOffset::from(&right),
+        &left.clone(),
+        &right.clone(),
         &PureFactContext::new()
     ));
     assert!(!program_pointer_offsets_proven_equal_for_effect(
-        &crate::kernel::AddressOffset::from(&left),
-        &crate::kernel::AddressOffset::from(&OldAddressOffset::Variable(Variable(903))),
+        &left.clone(),
+        &(AddressOffset::variable(Variable(903))).clone(),
         &facts,
     ));
 }
@@ -7704,11 +7698,11 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
 fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
     // Surface planning; only this test reaches it from inside the kernel.
 
-    let left = OldAddressOffset::Variable(Variable(911));
-    let right = OldAddressOffset::Variable(Variable(912));
+    let left = AddressOffset::variable(Variable(911));
+    let right = AddressOffset::variable(Variable(912));
     let facts = PureFactContext::new().assume_condition(OldConditionTerm::Constant(false), true);
     let goal = Proposition::condition_is(
-        OldConditionTerm::address_offset_equal(left.clone().into(), right.clone().into()),
+        OldConditionTerm::address_offset_equal(left.clone(), right.clone()),
         true,
     );
     assert!(
@@ -7716,8 +7710,8 @@ fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
         "the old general fallback could close this query"
     );
     assert!(!program_pointer_offsets_proven_equal_for_effect(
-        &crate::kernel::AddressOffset::from(&left),
-        &crate::kernel::AddressOffset::from(&right),
+        &left.clone(),
+        &right.clone(),
         &facts
     ));
 }
@@ -7725,11 +7719,11 @@ fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
 #[cfg(test)]
 #[test]
 fn effect_pointer_equality_stops_at_the_verification_deadline() {
-    let offset = OldAddressOffset::Constant(0);
+    let offset = AddressOffset::constant(0);
     crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
         assert!(!program_pointer_offsets_proven_equal_for_effect(
-            &crate::kernel::AddressOffset::from(&offset),
-            &crate::kernel::AddressOffset::from(&offset),
+            &offset.clone(),
+            &offset.clone(),
             &PureFactContext::new(),
         ));
     });
@@ -7744,7 +7738,7 @@ fn cell_lookup_guard_refuses_reentry_and_keeps_the_outer_lookup() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = OldAddress {
         base: "cell".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let outer = CellLookupGuard::enter(&memory, &pointer).expect("the first lookup registers");
     assert!(!memory_dag_cell_lookup_depth_is_zero());
@@ -8030,7 +8024,7 @@ mod opaque_pointer_frame_tests {
         for value in [&a, &b] {
             let definition = value.as_loaded_value().expect("a typed pointer read");
             assert_eq!(definition.defining_address, field);
-            assert_eq!(definition.displacement, OldAddressOffset::Constant(0));
+            assert_eq!(definition.displacement, AddressOffset::constant(0));
         }
         let context = PureFactContext::new();
         assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
@@ -8189,12 +8183,12 @@ mod opaque_pointer_frame_tests {
     fn setup() -> (OldAddress, OldAddress, OldAddress, Proposition, Proposition) {
         let field = OldAddress {
             base: AddressBase::Concrete("local:opaque-frame".into()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let write = OldAddress::symbolic(Variable(9_880_001));
         let argument = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(128).into(),
+            offset: AddressOffset::constant(128),
         };
         let alias = Proposition::condition_is(
             OldConditionTerm::address_equal(write.clone(), argument.clone()),
@@ -8248,7 +8242,7 @@ mod opaque_pointer_frame_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(128).into(),
+            offset: AddressOffset::constant(128),
         };
         let possible_write = OldAddress {
             base: AddressBase::ExternalArgument,
@@ -8447,7 +8441,7 @@ mod opaque_pointer_frame_tests {
                 .store(
                     OldAddress {
                         base: AddressBase::Concrete("local:wide-unrelated".into()),
-                        offset: OldAddressOffset::Constant(0).into(),
+                        offset: AddressOffset::constant(0),
                     },
                     ProgramValue::Int32(OldMachineTerm::constant(1)),
                 )
@@ -8570,7 +8564,7 @@ mod opaque_pointer_frame_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(128).into(),
+            offset: AddressOffset::constant(128),
         };
         let parent = OldAddress::symbolic(Variable(9_880_501));
         let alias = OldAddress::symbolic(Variable(9_880_502));
@@ -8640,7 +8634,7 @@ mod canonical_numeric_run_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let index_cell = OldAddress {
             base: "canonical-index".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let source = intern_memory(
             SymbolicMemory::new()
@@ -8740,7 +8734,7 @@ mod borrow_partition_tests {
         MemoryRange::new(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(id)).into(),
+                offset: AddressOffset::variable(Variable(id)),
             },
             0u32.into(),
             1u32.into(),
@@ -8877,7 +8871,7 @@ mod reversed_history_queries {
     fn changed_history(size: usize) -> (SharedMemory, SharedMemory, OldAddress) {
         let pointer = OldAddress {
             base: format!("reversed-history-{size}").into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block(format!("reversed-history-{size}"), (size as u32 + 2) * 4)
@@ -8975,7 +8969,7 @@ mod direct_unchanged_scaling_tests {
     fn cell(block: &str) -> OldAddress {
         OldAddress {
             base: AddressBase::from(block),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         }
     }
 
@@ -9274,11 +9268,10 @@ mod retained_offset_evidence_tests {
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int32, value)
             .unwrap();
-        OldAddressOffset::Int32Scaled {
-            value: MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32),
-            byte_width: width,
-        }
-        .into()
+        AddressOffset::int32_scaled(
+            MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32),
+            width,
+        )
     }
 
     #[test]
@@ -9329,7 +9322,7 @@ mod retained_offset_evidence_tests {
         let _session = VerificationSession::enter();
         let read = OldAddress {
             base: "retained-offset-source".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         crate::kernel::eval::declare_load_access_width(&read, 4);
         let base = SymbolicMemory::new().with_block("retained-offset-source", 16);
@@ -9491,22 +9484,17 @@ mod common_boolean_transport_tests {
                 Box::new(OldAddress::null()),
             ),
             OldConditionTerm::AddressOffsetEqual(
-                Box::new(
-                    OldAddressOffset::Add(
-                        Box::new(OldAddressOffset::Constant(0)),
-                        Box::new(crate::kernel::OldAddressOffset::from(
-                            AddressOffset::scaled_int32_node(
-                                crate::kernel::OldMachineTerm::read_named(
-                                    ProgramPoint::at(&memory),
-                                    address.clone(),
-                                    LoadKind::Int32,
-                                ),
-                                4,
-                            ),
-                        )),
-                    )
-                    .into(),
-                ),
+                Box::new(AddressOffset::raw_add(
+                    AddressOffset::constant(0),
+                    AddressOffset::scaled_int32_node(
+                        crate::kernel::OldMachineTerm::read_named(
+                            ProgramPoint::at(&memory),
+                            address.clone(),
+                            LoadKind::Int32,
+                        ),
+                        4,
+                    ),
+                )),
                 Box::new(AddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable(972_002)),
                     8,

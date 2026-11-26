@@ -899,28 +899,25 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
             }
         }
         Term::PointerOffset(offset) => {
-            if let Some(root) = offset.root() {
-                root.visit_root_in_order(false, |node| match node {
-                    crate::kernel::KernelAddressOffset::Variable(variable)
-                        if collecting_connection_variables()
-                            || COORDINATE_VARIABLES.with(std::cell::Cell::get) =>
-                    {
-                        variables.insert(*variable);
+            let root = offset.root();
+            root.visit_root_in_order(false, |node| match node {
+                crate::kernel::KernelAddressOffset::Variable(variable)
+                    if collecting_connection_variables()
+                        || COORDINATE_VARIABLES.with(std::cell::Cell::get) =>
+                {
+                    variables.insert(*variable);
+                }
+                node => {
+                    if let Some(index) = node.index() {
+                        visit_machine_operand_carrier_leaves(
+                            MachineOperandView::Shared(index),
+                            |leaf| {
+                                collect_operand_bitvector_variables(leaf, variables);
+                            },
+                        );
                     }
-                    node => {
-                        if let Some(index) = node.index() {
-                            visit_machine_operand_carrier_leaves(
-                                MachineOperandView::Shared(index),
-                                |leaf| {
-                                    collect_operand_bitvector_variables(leaf, variables);
-                                },
-                            );
-                        }
-                    }
-                });
-            } else {
-                collect_pointer_offset_bitvector_variables(offset.old_form(), variables);
-            }
+                }
+            });
         }
         Term::ProgramValue(value) => {
             collect_program_value_bitvector_variables(value.old_form(), variables);
@@ -7320,7 +7317,7 @@ mod shared_read_walker_tests {
                     IntegerTerm::Variable(Variable(994120)).into(),
                 )],
             )),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let native = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),

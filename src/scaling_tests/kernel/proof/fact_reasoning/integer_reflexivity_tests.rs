@@ -44,7 +44,7 @@ fn listed_loaded_fold_matching_tracks_explicit_premises_not_memory_history() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "listed-fold".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let mut memory = SymbolicMemory::new().with_block("listed-fold", size * 4);
         for index in 0..size {

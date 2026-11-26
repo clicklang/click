@@ -65,33 +65,17 @@ fn scaled_offset_admission_and_queries_keep_cold_dags_shared() {
             };
             let value = V::Shared(&root).retain(container);
             let offset = if ty == MachineIntegerType::Int32 {
-                OldAddressOffset::Int32Scaled {
-                    value,
-                    byte_width: 4,
-                }
+                AddressOffset::int32_scaled(value, 4)
             } else {
-                OldAddressOffset::Int64Scaled {
-                    value,
-                    byte_width: 4,
-                    unsigned: ty == MachineIntegerType::UInt64,
-                }
+                AddressOffset::int64_scaled(value, 4, ty == MachineIntegerType::UInt64)
             };
-            let named = OldAddressOffset::Variable(Variable(991431));
+            let named = AddressOffset::variable(Variable(991431));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut graph = EqualityGraph::default();
-                assert!(!graph.are_offsets_equal(
-                    &crate::kernel::AddressOffset::from(&offset),
-                    &crate::kernel::AddressOffset::from(&named)
-                ));
-                graph.add_offset_equality(
-                    &crate::kernel::AddressOffset::from(&offset),
-                    &crate::kernel::AddressOffset::from(&named),
-                );
-                assert!(graph.are_offsets_equal(
-                    &crate::kernel::AddressOffset::from(&offset),
-                    &crate::kernel::AddressOffset::from(&named)
-                ));
+                assert!(!graph.are_offsets_equal(&offset.clone(), &named.clone()));
+                graph.add_offset_equality(&offset.clone(), &named.clone());
+                assert!(graph.are_offsets_equal(&offset.clone(), &named.clone()));
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             samples.push(work);

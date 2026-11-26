@@ -37,7 +37,7 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
     for size in [8u32, 32, 128, 512] {
         let array = OldAddress {
             base: "local:defined-array".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let mut memory = SymbolicMemory::new().with_uninitialized_block(array.base.clone(), 4);
         for index in 0..size {
@@ -49,9 +49,7 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
             memory = memory.store(
                 OldAddress {
                     base: format!("local:defined-unrelated-{index}").into(),
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Constant(0),
-                    ),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramValue::Int32(index.into()),
             );

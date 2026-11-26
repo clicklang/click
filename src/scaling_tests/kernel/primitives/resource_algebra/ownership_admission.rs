@@ -65,7 +65,7 @@ fn first_ownership_queries_use_produced_indexes_and_direct_symbolic_bounds() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let p = OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Variable(Variable(8_795_000)).into(),
+                    offset: AddressOffset::variable(Variable(8_795_000)),
                 };
                 let endpoint = OldMachineTerm::Variable(Variable(8_795_001));
                 let mut facts = PureFactContext::new();
@@ -232,7 +232,7 @@ fn symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow() 
             let base = if axis == "views after removal" {
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Variable(Variable(8_798_100)).into(),
+                    offset: AddressOffset::variable(Variable(8_798_100)),
                 }
             } else {
                 OldAddress::symbolic(Variable(8_798_100))
@@ -277,9 +277,7 @@ fn symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow() 
                         } else {
                             OldAddress {
                                 base: base.base.clone(),
-                                offset: crate::kernel::AddressOffset::from(
-                                    OldAddressOffset::Variable(Variable(8_799_000 + index)),
-                                ),
+                                offset: AddressOffset::variable(Variable(8_799_000 + index)),
                             }
                         };
                         facts = facts.assume_condition(
@@ -298,7 +296,7 @@ fn symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow() 
                 let old = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     OldAddress {
                         base: AddressBase::ExternalArgument,
-                        offset: OldAddressOffset::Variable(Variable(8_798_103)).into(),
+                        offset: AddressOffset::variable(Variable(8_798_103)),
                     },
                     0u32.into(),
                     1u32.into(),
@@ -312,9 +310,7 @@ fn symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow() 
                         MemoryRange::new_with_element_width(
                             OldAddress {
                                 base: AddressBase::ExternalArgument,
-                                offset: crate::kernel::AddressOffset::from(
-                                    OldAddressOffset::Variable(Variable(8_798_200 + view)),
-                                ),
+                                offset: AddressOffset::variable(Variable(8_798_200 + view)),
                             },
                             0u32.into(),
                             1u32.into(),
@@ -404,7 +400,7 @@ fn entry_argument_and_automatic_storage_boundaries_do_not_visit_owner_blocks() {
                 ResourceFact::own_memory(MemoryRange::new(
                     OldAddress {
                         base: block,
-                        offset: OldAddressOffset::Constant(offset).into(),
+                        offset: AddressOffset::constant(offset),
                     },
                     0u32.into(),
                     4u32.into(),
@@ -541,7 +537,7 @@ fn cold_automatic_return_boundaries_do_not_visit_other_allocations() {
             let _session = crate::kernel::VerificationSession::enter();
             let local = |index| OldAddress {
                 base: AddressBase::Concrete(format!("local:bounded_return_{index}")),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let owner = |base, start: u32, end: u32| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(

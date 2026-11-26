@@ -53,7 +53,7 @@ fn pointee_const_return_function_address_cannot_convert_to_mutable_callback() {
         ProgramValue::typed_pointer(
             OldAddress {
                 base: AddressBase::Function("text".to_string()),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ),

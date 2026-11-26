@@ -37,11 +37,11 @@ mod tests {
             OldAddress::symbolic(Variable(999001)),
             OldAddress {
                 base: AddressBase::FunctionSymbolic(Variable(999001)),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             OldAddress {
                 base: AddressBase::ExternalObject(Variable(999001)),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             OldAddress::loaded_value(
@@ -56,23 +56,17 @@ mod tests {
                         OldMachineTerm::Variable(Variable(999002)),
                     ))],
                 )),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
         ];
         let base = values.clone();
         for pointer in base {
             values.push(OldAddress {
                 base: pointer.base,
-                offset: OldAddressOffset::Add(
-                    Box::new(OldAddressOffset::Constant(0)),
-                    Box::new(crate::kernel::OldAddressOffset::from(
-                        AddressOffset::scaled_int32_node(
-                            OldMachineTerm::Variable(Variable(999002)),
-                            4,
-                        ),
-                    )),
-                )
-                .into(),
+                offset: AddressOffset::raw_add(
+                    AddressOffset::constant(0),
+                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999002)), 4),
+                ),
             });
         }
         values
@@ -108,11 +102,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let target = OldAddress {
             base: AddressBase::Symbolic(Variable(999010)),
-            offset: OldAddressOffset::Add(
-                Box::new(OldAddressOffset::Constant(1)),
-                Box::new(OldAddressOffset::Constant(2)),
-            )
-            .into(),
+            offset: AddressOffset::raw_add(AddressOffset::constant(1), AddressOffset::constant(2)),
         };
         for pointer in pointers() {
             let source =
@@ -184,7 +174,7 @@ mod tests {
             let source = OldConditionTerm::AddressEqual(
                 Box::new(OldAddress {
                     base: block,
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 }),
                 Box::new(OldAddress::null()),
             );

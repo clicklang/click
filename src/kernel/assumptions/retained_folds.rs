@@ -290,30 +290,21 @@ mod tests {
         let point = ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
         let word = OldAddress::symbolic(Variable(999967));
         let wide = OldAddress::symbolic(Variable(999968));
-        let offset = OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(
-                AddressOffset::scaled_int32_node(
-                    OldMachineTerm::read_named(
-                        point.clone(),
-                        Box::new(word.clone()),
-                        LoadKind::Int32,
-                    ),
-                    4,
-                ),
-            )),
-            Box::new(crate::kernel::OldAddressOffset::from(
-                AddressOffset::scaled_int64_node(
-                    OldMachineTerm::read_named(point, Box::new(wide.clone()), LoadKind::Bits64),
-                    8,
-                    true,
-                ),
-            )),
+        let offset = AddressOffset::raw_add(
+            AddressOffset::scaled_int32_node(
+                OldMachineTerm::read_named(point.clone(), Box::new(word.clone()), LoadKind::Int32),
+                4,
+            ),
+            AddressOffset::scaled_int64_node(
+                OldMachineTerm::read_named(point, Box::new(wide.clone()), LoadKind::Bits64),
+                8,
+                true,
+            ),
         );
         let stored = crate::kernel::StoredPointerOffset::from(offset.clone());
-        assert!(stored.root().is_some());
         let mut native = Vec::new();
         collect_pointer_offset_memory_loads(
-            &crate::kernel::AddressOffset::from(&offset),
+            &offset.clone(),
             &memory,
             &mut native,
             &mut BTreeSet::new(),

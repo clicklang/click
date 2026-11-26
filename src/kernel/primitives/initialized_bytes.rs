@@ -22,7 +22,6 @@
 //! to position plus the entries it merges or visits), never unrelated blocks.
 
 use super::{AddressBase, AddressOffset, AliasCandidates, HashedOrdMap, OldAddress, ProgramValue};
-use crate::kernel::OffsetTree;
 
 /// See the module comment.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]

@@ -1179,7 +1179,7 @@ mod tests {
         let _reads = typed_reads::ReadScope::enter();
         let address = |name: &str| OldAddress {
             base: AddressBase::Concrete(name.into()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let slot = address("local:unsigned");
         let other = address("local:signed");

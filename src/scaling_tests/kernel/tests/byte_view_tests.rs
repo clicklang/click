@@ -21,7 +21,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
             memory = memory.with_block(format!("global:other{index}"), 4).store(
                 OldAddress {
                     base: format!("global:other{index}").into(),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramValue::UInt32(index.into()),
             );
@@ -66,7 +66,7 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
             memory = memory.store(
                 OldAddress {
                     base: AddressBase::from(format!("global:unrelated{index}").as_str()),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramValue::UInt32(index.into()),
             );
@@ -117,7 +117,7 @@ fn containing_cell_lookup_keeps_compact_runs_compact() {
     let value = ProgramValue::UInt64(OldMachineTerm::uint64_constant(0x0102_0304_0506_0708));
     let absent = OldAddress {
         base: AddressBase::from("global:other"),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let samples = [4, 16, 64, 256].map(|count| {
         let memory = SymbolicMemory::new()

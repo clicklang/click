@@ -2112,7 +2112,7 @@ mod separated_range_frame_tests {
             binary_node!(Int32, Add, Box::new(loaded_start.clone()), Box::new(index));
         let field = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let data = OldAddress {
             base: AddressBase::ExternalArgument,
@@ -2206,7 +2206,7 @@ mod separated_range_frame_tests {
     fn separated_read_start_does_not_frame_an_overlapping_wide_read() {
         let field = OldAddress {
             base: "separated-frame".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let backing = MemoryRange::new(field.offset_by_bytes(8), 0u32.into(), 1u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
@@ -2327,15 +2327,7 @@ mod unsigned_index_membership_tests {
         let shifted_base = base.offset_by_bytes(8);
         let shifted = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(
-                    shifted_base.offset.clone(),
-                )),
-                Box::new(crate::kernel::OldAddressOffset::from(
-                    byte_at(&base, k).offset,
-                )),
-            )
-            .into(),
+            offset: AddressOffset::raw_add(shifted_base.offset.clone(), byte_at(&base, k).offset),
         };
         assert!(PointerInRangeEvidence::for_pointer(&shifted, &range, &context).is_none());
     }
@@ -2424,7 +2416,7 @@ mod cache_independence_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let address = OldAddress {
                 base: "bounded-cache-independence".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let before = crate::kernel::intern_memory(
                 SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),

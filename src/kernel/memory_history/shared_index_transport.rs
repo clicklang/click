@@ -330,9 +330,8 @@ mod tests {
             let wide = (format != MachineIntegerType::Int32)
                 .then_some(format == MachineIntegerType::UInt64);
             let offset = transported_scaled_index(framed, 4, wide);
-            let (OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. }) =
-                crate::kernel::OldAddressOffset::from(offset)
+            let (crate::kernel::OffsetView::Int32Scaled { index: value, .. }
+            | crate::kernel::OffsetView::Int64Scaled { index: value, .. }) = offset.view()
             else {
                 panic!("retained scaled call");
             };
@@ -382,45 +381,32 @@ mod tests {
         }
         for width in [1, 4, -1] {
             let offset = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
-                OldAddressOffset::Int32Scaled {
-                    value: value.clone(),
-                    byte_width: width,
-                }
+                AddressOffset::int32_scaled(value.clone(), width)
             } else {
-                OldAddressOffset::Int64Scaled {
-                    value: value.clone(),
-                    byte_width: width,
-                    unsigned: ty == MachineIntegerType::UInt64,
-                }
+                AddressOffset::int64_scaled(value.clone(), width, ty == MachineIntegerType::UInt64)
             };
-            let native = match &offset {
-                OldAddressOffset::Int32Scaled { .. } => match expected.as_const() {
-                    Some(bits) => OldAddressOffset::Constant(i64::from(bits as i32) * width),
-                    None => OldAddressOffset::Int32Scaled {
-                        value: retained(ty, &expected),
-                        byte_width: width,
-                    },
+            let native = match offset.view() {
+                OffsetView::Int32Scaled { .. } => match expected.as_const() {
+                    Some(bits) => AddressOffset::constant(i64::from(bits as i32) * width),
+                    None => AddressOffset::int32_scaled(retained(ty, &expected), width),
                 },
-                _ => crate::kernel::OldAddressOffset::from(AddressOffset::scale_int64(
+                _ => AddressOffset::scale_int64(
                     expected.clone(),
                     width,
                     ty == MachineIntegerType::UInt64,
-                )),
+                ),
             };
             let exports = KernelTermExport::machine_export_count();
-            let actual = normalize_exact_memory_loads_in_pointer_offset(
-                &crate::kernel::AddressOffset::from(&offset),
-                facts,
-            );
+            let actual = normalize_exact_memory_loads_in_pointer_offset(&offset.clone(), facts);
             assert_eq!(exports, KernelTermExport::machine_export_count());
-            match (crate::kernel::OldAddressOffset::from(actual), native) {
+            match (actual.view(), native.view()) {
                 (
-                    OldAddressOffset::Int32Scaled {
-                        value: a,
+                    OffsetView::Int32Scaled {
+                        index: a,
                         byte_width: aw,
                     },
-                    OldAddressOffset::Int32Scaled {
-                        value: b,
+                    OffsetView::Int32Scaled {
+                        index: b,
                         byte_width: bw,
                     },
                 ) => {
@@ -431,13 +417,13 @@ mod tests {
                     );
                 }
                 (
-                    OldAddressOffset::Int64Scaled {
-                        value: a,
+                    OffsetView::Int64Scaled {
+                        index: a,
                         byte_width: aw,
                         unsigned: au,
                     },
-                    OldAddressOffset::Int64Scaled {
-                        value: b,
+                    OffsetView::Int64Scaled {
+                        index: b,
                         byte_width: bw,
                         unsigned: bu,
                     },
@@ -448,7 +434,7 @@ mod tests {
                         retained(b.ty(), b.structural_value()).structural_value()
                     );
                 }
-                (a, b) => assert_eq!(a, b),
+                _ => assert_eq!(actual, native),
             }
         }
     }
@@ -497,17 +483,14 @@ mod tests {
                     None => AddressOffset::scale_int32(expected.clone(), width),
                     Some(unsigned) => AddressOffset::scale_int64(expected.clone(), width, unsigned),
                 };
-                match (
-                    &crate::kernel::OldAddressOffset::from(&offset),
-                    &crate::kernel::OldAddressOffset::from(&expected_offset),
-                ) {
+                match (offset.view(), expected_offset.view()) {
                     (
-                        OldAddressOffset::Int32Scaled {
-                            value: a,
+                        OffsetView::Int32Scaled {
+                            index: a,
                             byte_width: aw,
                         },
-                        OldAddressOffset::Int32Scaled {
-                            value: b,
+                        OffsetView::Int32Scaled {
+                            index: b,
                             byte_width: bw,
                         },
                     ) => {
@@ -516,13 +499,13 @@ mod tests {
                         assert_eq!(a.structural_value(), b.structural_value(), "{term:?}");
                     }
                     (
-                        OldAddressOffset::Int64Scaled {
-                            value: a,
+                        OffsetView::Int64Scaled {
+                            index: a,
                             byte_width: aw,
                             unsigned: au,
                         },
-                        OldAddressOffset::Int64Scaled {
-                            value: b,
+                        OffsetView::Int64Scaled {
+                            index: b,
                             byte_width: bw,
                             unsigned: bu,
                         },
@@ -628,7 +611,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: "transport-index".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block("transport-index", 16)
@@ -679,7 +662,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = OldAddress {
             base: "registered-index".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let before = SymbolicMemory::new().with_block("registered-index", 16);
         let load = OldMachineTerm::read_named(

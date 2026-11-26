@@ -53,13 +53,15 @@ fn retained_materialization_equality_keeps_growing_indices_shared() {
                     MachineBinaryOp::Add,
                     [b.clone(), b.clone()],
                 );
-                let offset = |root| OldAddressOffset::Int32Scaled {
-                    value: SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
-                    byte_width: 4,
+                let offset = |root| {
+                    AddressOffset::int32_scaled(
+                        SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
+                        4,
+                    )
                 };
                 assert!(!pointer_offsets_equal_after_exact_materialization(
-                    &crate::kernel::AddressOffset::from(&offset(a.clone())),
-                    &crate::kernel::AddressOffset::from(&offset(b.clone()))
+                    &(offset(a.clone())).clone(),
+                    &(offset(b.clone())).clone()
                 ));
                 // Different observation types retain the same native syntax;
                 // exact correspondence must not be just DAG identity.

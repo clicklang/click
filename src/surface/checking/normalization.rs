@@ -659,9 +659,7 @@ mod tests {
             let source = OldAddress::symbolic(Variable(910_000 + case));
             let target = OldAddress {
                 base: AddressBase::Heap(920_000 + case),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(4),
-                ),
+                offset: AddressOffset::constant(4),
             };
             let identity = crate::kernel::intern_memory(
                 SymbolicMemory::new().with_block(format!("rewrite-origin-{case}"), 16),
@@ -728,7 +726,7 @@ mod tests {
         let source = OldAddress::symbolic(Variable(930_000));
         let target = OldAddress {
             base: AddressBase::Heap(930_001),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block(AddressBase::Heap(930_001), 16),
@@ -752,9 +750,7 @@ mod tests {
                 crate::kernel::ProgramPoint::at(&memory),
                 OldAddress {
                     base: AddressBase::Symbolic(variable),
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Constant(8),
-                    ),
+                    offset: AddressOffset::constant(8),
                 },
                 crate::kernel::LoadKind::Int32,
             )
@@ -795,7 +791,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = OldAddress {
             base: AddressBase::Symbolic(Variable(91)),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let target = OldAddress {
             base: AddressBase::ExternalArgument,
@@ -808,9 +804,7 @@ mod tests {
                     base: base.base.clone(),
                     offset: AddressOffset::add(
                         base.offset.clone(),
-                        crate::kernel::AddressOffset::from(
-                            crate::kernel::OldAddressOffset::Constant(displacement),
-                        ),
+                        AddressOffset::constant(displacement),
                     ),
                 },
                 crate::kernel::LoadKind::Int32,
@@ -888,7 +882,7 @@ mod tests {
         };
         let null = OldAddress {
             base: "null".into(),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let goal = Proposition::condition_is(
             OldConditionTerm::address_equal(pointer(left), null.clone()),
@@ -1031,7 +1025,7 @@ mod tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("rewrite-cell", 4));
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let load = crate::kernel::OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
@@ -1070,9 +1064,7 @@ mod tests {
                 crate::kernel::ProgramPoint::at(&memory),
                 OldAddress {
                     base: "fold".into(),
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Constant(0),
-                    ),
+                    offset: AddressOffset::constant(0),
                 },
                 crate::kernel::LoadKind::Int32,
             ),
@@ -1177,7 +1169,7 @@ mod tests {
     fn integer_observation_rewrite_does_not_cross_memory_states() {
         let pointer = OldAddress {
             base: AddressBase::Concrete("rewrite-cell".into()),
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let first_memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("rewrite-cell", 4).store(

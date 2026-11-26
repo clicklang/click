@@ -5417,7 +5417,7 @@ pub(crate) mod load_variable_fact_census {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("cell", 4));
         let pointer = OldAddress {
             base: AddressBase::Concrete("cell".into()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let variable = load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
         let native = Proposition::condition_is(
@@ -6405,11 +6405,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = OldAddress {
             base: "version-point-pointer-cell".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let other = OldAddress {
             base: "version-point-other".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block("version-point-pointer-cell", 8)
@@ -6451,11 +6451,11 @@ mod tests {
             let _session = crate::kernel::VerificationSession::enter();
             let cell = OldAddress {
                 base: "shared-selection-cell".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let other = OldAddress {
                 base: "shared-selection-other".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let memory = SymbolicMemory::new()
                 .with_block("shared-selection-cell", 8)
@@ -6537,11 +6537,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "read-api-target".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let other = OldAddress {
             base: "read-api-other".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block("read-api-target", 4)
@@ -6843,7 +6843,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let ty = ProgramType::Int32Pointer;
         let state = ExecutionState::new()
@@ -6889,7 +6889,7 @@ mod tests {
         let entry = state.program_point();
         let cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let ty = ProgramType::Int32Pointer;
         let version = entry
@@ -6922,7 +6922,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new();
         let first = ProgramPoint::starting_at(&memory).for_exact_read();
@@ -6942,7 +6942,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "read-api-written".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block("read-api-written", 4)
@@ -7146,7 +7146,7 @@ mod tests {
             let _session = crate::kernel::VerificationSession::enter();
             let address = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let value = ProgramValue::typed_pointer(stored.clone(), ty);
             let memory = SymbolicMemory::new().store(address.clone(), value.clone());
@@ -7265,7 +7265,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let context = PureFactContext::new()
             .allow_symbolic_contract_loads()
@@ -7310,7 +7310,7 @@ mod tests {
         let memory = SymbolicMemory::new();
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(8).into(),
+            offset: AddressOffset::constant(8),
         };
         let paths = evaluate_memory_load_paths(
             &memory,
@@ -7342,14 +7342,14 @@ mod tests {
         // decodes from the value, not from a context-admitted producer.
         let defining_address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(8).into(),
+            offset: AddressOffset::constant(8),
         };
         let definition = pointer
             .address()
             .as_loaded_value()
             .expect("a program pointer read names its read");
         assert_eq!(definition.defining_address, defining_address);
-        assert_eq!(definition.displacement, OldAddressOffset::Constant(0));
+        assert_eq!(definition.displacement, AddressOffset::constant(0));
         assert!(
             crate::kernel::equality_graph::logical_pointer_read_term(pointer.address()).is_some()
         );
@@ -7671,7 +7671,7 @@ mod tests {
         let later: AddressBase = "local:later_object".into();
         let cell = OldAddress {
             base: storage.clone(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block(storage.clone(), 16)
@@ -7721,7 +7721,7 @@ mod tests {
             for offset in [0, 8] {
                 let cell = OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(offset).into(),
+                    offset: AddressOffset::constant(offset),
                 };
                 // Another allocation live at the read, which the value may
                 // point into as well as anything else that existed then.
@@ -7806,7 +7806,7 @@ mod tests {
                 assert!(matches!(cached.address().base, AddressBase::Load(_)));
                 let target = OldAddress {
                     base: AddressBase::Heap(8702),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 };
                 let stored = memory.store(
                     cell.clone(),
@@ -7840,16 +7840,10 @@ mod tests {
     fn logical_scalar_read_preserves_cached_offset_spelling() {
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(
-                    AddressOffset::scaled_int32_node(
-                        OldMachineTerm::Variable(Variable(944_021)),
-                        4,
-                    ),
-                )),
-                Box::new(OldAddressOffset::Constant(16)),
-            )
-            .into(),
+            offset: AddressOffset::raw_add(
+                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(944_021)), 4),
+                AddressOffset::constant(16),
+            ),
         };
         let expected = ProgramValue::Int32(OldMachineTerm::constant(7));
         let memory = SymbolicMemory::new().store(pointer.clone(), expected.clone());
@@ -7873,11 +7867,11 @@ mod tests {
         for (offset, call_havoc) in [(0, false), (8, false), (0, true), (8, true)] {
             let cell = OldAddress {
                 base: "local:pointer-holder".into(),
-                offset: OldAddressOffset::Constant(offset).into(),
+                offset: AddressOffset::constant(offset),
             };
             let target = OldAddress {
                 base: "local:other-object".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             let value_type = ProgramType::Int32Pointer;
             let before = SymbolicMemory::new()
@@ -7967,12 +7961,12 @@ mod tests {
         let index = OldMachineTerm::Variable(Variable(839));
         let base = OldAddress {
             base: "local:indexed".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let pointer = OldAddress {
             base: base.base.clone(),
             offset: AddressOffset::add(
-                OldAddressOffset::Constant(4).into(),
+                AddressOffset::constant(4),
                 AddressOffset::scale_int32(index.clone(), 4),
             ),
         };
@@ -8029,11 +8023,11 @@ mod tests {
     fn alias_cache_keys_answers_by_assumption_context() {
         let left = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(810)).into(),
+            offset: AddressOffset::variable(Variable(810)),
         };
         let right = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(811)).into(),
+            offset: AddressOffset::variable(Variable(811)),
         };
         let mut cache = MemoryLoadAliasCache::default();
         let empty = PureFactContext::new();
@@ -8160,7 +8154,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(12).into(),
+            offset: AddressOffset::constant(12),
         };
         let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -8307,7 +8301,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(12).into(),
+            offset: AddressOffset::constant(12),
         };
         let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -8341,7 +8335,7 @@ mod tests {
     fn transported_equal_equation_from_a_new_epoch_drops_producer_source_events() {
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(20).into(),
+            offset: AddressOffset::constant(20),
         };
         let first_memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let first_load = crate::kernel::OldMachineTerm::read_named(
@@ -8419,7 +8413,7 @@ mod tests {
                     memory = memory.store(
                         OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::Constant(i64::from(index) * 4),
+                            offset: AddressOffset::constant(i64::from(index) * 4),
                         },
                         int32(index),
                     );
@@ -8606,7 +8600,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(95_010)).into(),
+            offset: AddressOffset::variable(Variable(95_010)),
         };
         let memory = SymbolicMemory::new()
             .with_constant_run(owner.clone(), ProgramType::Int32, 8, int32(7))
@@ -8620,7 +8614,7 @@ mod tests {
         };
         let alias = OldAddress {
             base: owner.base.clone(),
-            offset: OldAddressOffset::Variable(Variable(95_012)).into(),
+            offset: AddressOffset::variable(Variable(95_012)),
         };
         let context = PureFactContext::new()
             .allow_symbolic_contract_loads()
@@ -8926,7 +8920,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "global:defined-complete-pointer".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let stored = ProgramValue::typed_pointer(
             OldAddress::symbolic(Variable(210_290)),
@@ -8987,7 +8981,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "global:symbolic-complete-pointer".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let target = OldAddress::symbolic(Variable(210_190));
         let class = crate::kernel::effective_type::CAccessClass::Scalar(
@@ -9067,7 +9061,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "global:scoped-word".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let target = OldAddress::symbolic(Variable(210_199));
         let pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
@@ -9119,7 +9113,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "global:symbolic-word".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let target = OldAddress::symbolic(Variable(210_192));
         let pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
@@ -9251,11 +9245,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "global:cached-pointer-a".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let other = OldAddress {
             base: "global:cached-pointer-b".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let address = OldAddress::symbolic(Variable(210_172));
         let stored = OldPointer::new(address.clone(), ProgramType::Int32Pointer).with_bounds(Some(
@@ -9317,7 +9311,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = OldAddress {
             base: "global:prefix-pointer".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .materialize_symbolic_cell(field.clone(), ProgramType::Int32)
@@ -9363,7 +9357,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let table = OldAddress {
             base: "global:callback-table".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let argument = OldAddress {
             base: AddressBase::ExternalArgument,
@@ -9759,11 +9753,11 @@ mod tests {
         let second = base.symbolic_pointer_load(None, &field_b, ProgramType::Int32Pointer);
         let slot_a = OldAddress {
             base: "local:raw-a".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let slot_b = OldAddress {
             base: "local:raw-b".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = base
             .store(slot_a.clone(), first)
@@ -10129,7 +10123,7 @@ mod tests {
         let original = read(&before, &PureFactContext::new());
         let base = OldAddress {
             base: AddressBase::Heap(92_312),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let bounded = OldPointer::new(base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
             SubobjectBounds {
@@ -10741,11 +10735,11 @@ mod pointer_comparison_tests {
         let _session = VerificationSession::enter();
         let slot = OldAddress {
             base: AddressBase::Heap(989_003),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let target = OldAddress {
             base: AddressBase::Heap(989_004),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = intern_memory(
             SymbolicMemory::new()
@@ -10782,11 +10776,11 @@ mod pointer_read_value_definition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let unrelated = OldAddress {
             base: AddressBase::Heap(985_003),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let first = crate::kernel::intern_memory(
             SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
@@ -10822,12 +10816,12 @@ mod pointer_read_value_definition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let source = crate::kernel::intern_memory(SymbolicMemory::new().store(
             OldAddress {
                 base: AddressBase::Heap(985_001),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             ProgramValue::UInt32(1u32.into()),
         ));
@@ -11146,7 +11140,7 @@ mod float_memory_handoff_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let address = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let first = ExecutionState::new().begin_function_entry_memory();
         let second = first.clone().begin_function_entry_memory();
@@ -11210,7 +11204,7 @@ mod float_memory_handoff_tests {
         let point = source.program_point();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let value_type = format.program_type();

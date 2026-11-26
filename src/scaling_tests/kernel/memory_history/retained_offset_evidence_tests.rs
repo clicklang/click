@@ -14,19 +14,14 @@ fn typed_offset_evidence_refuses_cold_arithmetic_without_exports() {
             right =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [right.clone(), right]);
         }
-        let offset = |root: &KernelTerm| OldAddressOffset::Int32Scaled {
-            value: MachineOperandView::Shared(root).retain(ty),
-            byte_width: 4,
+        let offset = |root: &KernelTerm| {
+            AddressOffset::int32_scaled(MachineOperandView::Shared(root).retain(ty), 4)
         };
         let (left, right) = (offset(&left), offset(&right));
         let facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
-            address_offset_equality_evidence(
-                &crate::kernel::AddressOffset::from(&left),
-                &crate::kernel::AddressOffset::from(&right),
-                &facts,
-            )
+            address_offset_equality_evidence(&left.clone(), &right.clone(), &facts)
         });
         assert!(answer.is_none());
         assert_eq!(KernelTermExport::machine_export_count(), exports);

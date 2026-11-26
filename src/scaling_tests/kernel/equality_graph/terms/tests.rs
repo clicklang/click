@@ -59,25 +59,14 @@ fn addition_congruence_forks_do_not_reindex_unrelated_parents() {
 
 #[test]
 fn offset_graph_construction_and_fork_queries_scale_with_indexed_work() {
-    let offset = |id| {
-        crate::kernel::OldAddressOffset::scaled_int32_node(
-            OldMachineTerm::Variable(Variable(id)),
-            4,
-        )
-    };
+    let offset = |id| AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4);
     for size in [16u64, 64, 256, 1024] {
         let ((graph, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let mut graph = EqualityGraph::default();
                 for i in 0..size {
-                    graph.add_offset_equality(
-                        &crate::kernel::AddressOffset::from(&offset(i)),
-                        &crate::kernel::AddressOffset::from(&offset(i + 1)),
-                    );
-                    assert!(graph.are_offsets_equal(
-                        &crate::kernel::AddressOffset::from(&offset(0)),
-                        &crate::kernel::AddressOffset::from(&offset(i + 1))
-                    ));
+                    graph.add_offset_equality(&offset(i).clone(), &offset(i + 1).clone());
+                    assert!(graph.are_offsets_equal(&offset(0).clone(), &offset(i + 1).clone()));
                 }
                 graph
             })
@@ -90,18 +79,9 @@ fn offset_graph_construction_and_fork_queries_scale_with_indexed_work() {
         );
         let (_, fork_work) = crate::persistent::measure_persistent_work(|| {
             let mut branch = graph.clone();
-            branch.add_offset_equality(
-                &crate::kernel::AddressOffset::from(&offset(size)),
-                &crate::kernel::AddressOffset::from(&offset(size + 1)),
-            );
-            assert!(branch.are_offsets_equal(
-                &crate::kernel::AddressOffset::from(&offset(0)),
-                &crate::kernel::AddressOffset::from(&offset(size + 1))
-            ));
-            assert!(!graph.are_offsets_equal(
-                &crate::kernel::AddressOffset::from(&offset(0)),
-                &crate::kernel::AddressOffset::from(&offset(size + 1))
-            ));
+            branch.add_offset_equality(&offset(size).clone(), &offset(size + 1).clone());
+            assert!(branch.are_offsets_equal(&offset(0).clone(), &offset(size + 1).clone()));
+            assert!(!graph.are_offsets_equal(&offset(0).clone(), &offset(size + 1).clone()));
         });
         assert!(
             fork_work < 160 * logarithm,
@@ -117,12 +97,10 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
         let mut graph = EqualityGraph::default();
         let scaled = |base: &OldAddress, value| OldAddress {
             base: base.base.clone(),
-            offset: crate::kernel::AddressOffset::from(
-                crate::kernel::OldAddressOffset::scaled_int64_node(
-                    OldMachineTerm::Variable(Variable(value)),
-                    4,
-                    true,
-                ),
+            offset: AddressOffset::scaled_int64_node(
+                OldMachineTerm::Variable(Variable(value)),
+                4,
+                true,
             ),
         };
         for i in 0..size {

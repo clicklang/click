@@ -8,7 +8,7 @@ use super::*;
 fn local_initialization_havoc_checks_scale_with_changed_cells() {
     let target = OldAddress {
         base: "local:target".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let range = MemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
     let facts = PureFactContext::new();
@@ -23,7 +23,7 @@ fn local_initialization_havoc_checks_scale_with_changed_cells() {
         for index in 0..count {
             let pointer = OldAddress {
                 base: format!("local:ambient-{index}").into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             };
             std::sync::Arc::make_mut(&mut before.heap)
                 .initialized
@@ -65,7 +65,7 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
         });
         let at = |offset| OldAddress {
             base: "local:byte-havoc".into(),
-            offset: OldAddressOffset::Constant(offset).into(),
+            offset: AddressOffset::constant(offset),
         };
         // The call writes byte 33. The cached word at byte 32 overlaps even
         // though its starting address lies before the write range.
@@ -125,7 +125,7 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
 fn exact_call_havoc_ignores_disjoint_run_slots_and_holes() {
     let at = |offset: u32| OldAddress {
         base: "local:call-run-havoc".into(),
-        offset: OldAddressOffset::Constant(i64::from(offset)).into(),
+        offset: AddressOffset::constant(i64::from(offset)),
     };
     let value = ProgramValue::Int32(OldMachineTerm::constant(7));
     let facts = PureFactContext::new();

@@ -31,7 +31,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
     let interface = boxed.contract_interface();
     let heap = |id: u64| OldAddress {
         base: AddressBase::Heap(id),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let bytes = OldMachineTerm::constant(4);
     let samples = [16, 64, 256]
@@ -121,7 +121,7 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
     let interface = function.contract_interface();
     let heap = |id| OldAddress {
         base: AddressBase::Heap(id),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let consumed = heap(933_000);
     let bytes = OldMachineTerm::constant(4);

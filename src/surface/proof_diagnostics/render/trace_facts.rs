@@ -225,9 +225,7 @@ mod tests {
                 Proposition::condition_is(
                     OldConditionTerm::AddressOffsetEqual(
                         Box::new(p.offset.clone()),
-                        Box::new(crate::kernel::AddressOffset::from(
-                            crate::kernel::OldAddressOffset::Constant(16),
-                        )),
+                        Box::new(AddressOffset::constant(16)),
                     ),
                     true,
                 ),

@@ -7,7 +7,7 @@ fn compound_read_query_ignores_cached_expression_size() {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = OldAddress {
             base: "cached-expression".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let mut cached = OldMachineTerm::Variable(Variable(989201));
         for _ in 0..size {

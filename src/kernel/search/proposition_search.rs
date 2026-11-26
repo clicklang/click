@@ -2075,7 +2075,7 @@ mod condition_premise_tests {
         let memory = SymbolicMemory::new().with_block("cell", 64).store(
             OldAddress {
                 base: "cell".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             ProgramValue::Int32(term(70)),
         );

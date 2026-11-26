@@ -132,7 +132,7 @@ mod tests {
     fn fixture() -> (ExecutionState, ProgramFunction, MemorySegment, MemoryRange) {
         let base = OldAddress {
             base: AddressBase::Concrete("initialized-input".into()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let state = ExecutionState::new().with_local(
             "p",

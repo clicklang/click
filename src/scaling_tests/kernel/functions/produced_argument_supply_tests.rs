@@ -8,7 +8,7 @@ fn check_returned_resource_construction(outputs: u32) {
         let entry = state(outputs);
         let pointer = OldAddress {
             base: "produced-cells".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let facts = (0..count).fold(PureFactContext::new(), |facts, index| {
             facts.assume_condition(

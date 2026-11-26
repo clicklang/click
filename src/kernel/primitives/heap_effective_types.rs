@@ -19,7 +19,6 @@
 //! block it names, positioned in O(log n).
 
 use super::{AddressBase, AddressOffset, HashedOrdMap, OldAddress, ProgramValue};
-use crate::kernel::OffsetTree;
 use crate::kernel::effective_type::CAccessClass;
 
 /// The widest scalar a store writes, which bounds how far before a store an

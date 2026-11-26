@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::borrows::{BorrowBinding, BorrowLedger};
-use crate::kernel::{AddressBase, OldAddressOffset, int32};
+use crate::kernel::{AddressBase, AddressOffset, int32};
 use std::collections::BTreeSet;
 
 /// The two largest adjacent ratios of a doubling series, the same
@@ -85,10 +85,11 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
 /// it never enters the concrete dyadic index and stays in its block's
 /// unindexed bucket.
 fn parameter_view(variable: u64) -> ResourceFact {
+    use crate::kernel::OffsetTree;
     ResourceFact::view_memory(MemoryRange::new_with_element_width(
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(variable)).into(),
+            offset: AddressOffset::variable(Variable(variable)),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(1),
@@ -122,7 +123,7 @@ fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
         memory = memory.store(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(4 * index as i64).into(),
+                offset: AddressOffset::constant(4 * index as i64),
             },
             int32(0),
         );

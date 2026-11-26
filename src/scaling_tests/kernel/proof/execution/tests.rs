@@ -69,10 +69,10 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
 
 #[test]
 fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
-    use crate::kernel::{AddressBase, OldAddress, OldAddressOffset, SymbolicMemory};
+    use crate::kernel::{AddressBase, AddressOffset, OldAddress, SymbolicMemory};
     let target = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
@@ -81,7 +81,7 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
             before = before.store(
                 OldAddress {
                     base: AddressBase::Heap(index),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
@@ -266,9 +266,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
         memory.store(
             OldAddress {
                 base: "ambient".into(),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(i64::from(index) * 4),
-                ),
+                offset: AddressOffset::constant(i64::from(index) * 4),
             },
             int32(index),
         )
@@ -279,9 +277,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
             memory.with_seeded_cells(
                 OldAddress {
                     base: format!("cache-{index}").into(),
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Constant(0),
-                    ),
+                    offset: AddressOffset::constant(0),
                 },
                 4,
                 crate::kernel::ProgramType::Int32,
@@ -294,9 +290,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
             memory,
             base: OldAddress {
                 base: "body".into(),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(i64::from(index) * 4),
-                ),
+                offset: AddressOffset::constant(i64::from(index) * 4),
             },
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
@@ -811,7 +805,7 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
             memory = memory.store(
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::Constant(i64::from(index * 4)).into(),
+                    offset: AddressOffset::constant(i64::from(index * 4)),
                 },
                 int32(index),
             );
@@ -1001,7 +995,7 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
         memory,
         base: OldAddress {
             base: block.into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         },
         bytes: (OldMachineTerm::constant(width)).into(),
         wide: false,
@@ -1177,7 +1171,7 @@ fn an_interface_owned_export_normalizes_only_its_neighbors() {
         let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -1249,7 +1243,7 @@ fn an_interface_view_check_ignores_unrelated_owned_ranges() {
         let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -1319,7 +1313,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let mut memory = SymbolicMemory::new();
         for index in 0..count {

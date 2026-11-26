@@ -405,23 +405,11 @@ mod tests {
             let scalar =
                 SharedMachineIntegerTerm::index(ty, OldMachineTerm::Variable(Variable(1010003)));
             let scaled = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
-                crate::kernel::OldAddressOffset::Int32Scaled {
-                    value: scalar,
-                    byte_width: -4,
-                }
+                AddressOffset::int32_scaled(scalar, -4)
             } else {
-                crate::kernel::OldAddressOffset::Int64Scaled {
-                    value: scalar,
-                    byte_width: 8,
-                    unsigned: true,
-                }
+                AddressOffset::int64_scaled(scalar, 8, true)
             };
-            let source = pointer(crate::kernel::AddressOffset::from(
-                crate::kernel::OldAddressOffset::Add(
-                    Box::new(scaled),
-                    Box::new(crate::kernel::OldAddressOffset::Constant(3)),
-                ),
-            ));
+            let source = pointer(AddressOffset::raw_add(scaled, AddressOffset::constant(3)));
             let shared = SharedPointer::import(&source);
             let expected = memory_erased_pointer_key(&source);
             let alpha = alpha_program_value_key_with_bindings::<true>(
@@ -448,20 +436,16 @@ mod tests {
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let make = |memory| {
-            SharedPointer::import(&pointer(crate::kernel::AddressOffset::from(
-                crate::kernel::OldAddressOffset::Int32Scaled {
-                    value: SharedMachineIntegerTerm::index(
-                        MachineIntegerType::Int32,
-                        OldMachineTerm::read_named(
-                            crate::kernel::ProgramPoint::at(
-                                &(crate::kernel::intern_memory(memory)),
-                            ),
-                            Box::new(address.clone()),
-                            LoadKind::Int32,
-                        ),
+            SharedPointer::import(&pointer(AddressOffset::int32_scaled(
+                SharedMachineIntegerTerm::index(
+                    MachineIntegerType::Int32,
+                    OldMachineTerm::read_named(
+                        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
+                        Box::new(address.clone()),
+                        LoadKind::Int32,
                     ),
-                    byte_width: 4,
-                },
+                ),
+                4,
             )))
         };
         let a = make(before);
@@ -501,9 +485,7 @@ mod tests {
                 base: AddressBase::PureFunctionApplication(
                     crate::kernel::SharedPureApplication::intern("pointer-key-call".into(), vec![]),
                 ),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(0),
-                ),
+                offset: AddressOffset::constant(0),
             })
         };
         let a = make();
@@ -518,9 +500,7 @@ mod tests {
     #[test]
     fn compact_key_fingerprints_survive_dropping_all_handles() {
         let fingerprint = || {
-            let key = memory_erased_address_offset_key(&crate::kernel::AddressOffset::from(
-                &crate::kernel::OldAddressOffset::Constant(1010301),
-            ));
+            let key = memory_erased_address_offset_key(&AddressOffset::constant(1010301).clone());
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             key.hash(&mut hasher);
             hasher.finish()

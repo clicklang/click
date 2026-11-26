@@ -668,15 +668,11 @@ mod compound_observation_lookup_tests {
         for truth in [false, true] {
             for width in [4, 8] {
                 let source = OldConditionTerm::AddressOffsetEqual(
-                    Box::new(crate::kernel::AddressOffset::from(
-                        OldAddressOffset::Int32Scaled {
-                            value: MachineOperandView::Shared(&root).retain(ty),
-                            byte_width: width,
-                        },
+                    Box::new(AddressOffset::int32_scaled(
+                        MachineOperandView::Shared(&root).retain(ty),
+                        width,
                     )),
-                    Box::new(crate::kernel::AddressOffset::from(
-                        OldAddressOffset::Constant(0),
-                    )),
+                    Box::new(AddressOffset::constant(0)),
                 );
                 let mut index = ObservationComparisons::default();
                 let parent = index.clone();

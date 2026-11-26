@@ -29,7 +29,7 @@ fn memory_constructions_cover_non_transition_producers() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = OldAddress {
         base: "local:construction".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_block("local:construction", 16)
@@ -115,7 +115,7 @@ fn unrecorded_mutation_cannot_inherit_an_incorrect_origin() {
 fn construction_pins_detect_mutation_of_an_uninterned_state() {
     let pointer = OldAddress {
         base: "local:unpinned".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let mut memory = SymbolicMemory::new().with_uninitialized_object(pointer.clone(), 4);
     assert!(memory.diagnostic_construction().is_some());

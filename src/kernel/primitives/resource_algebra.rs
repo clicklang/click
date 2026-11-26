@@ -65,7 +65,7 @@ fn composition_query_guard_refuses_reentry_and_keeps_the_outer_query() {
         MemoryRange::new(
             OldAddress {
                 base: "buffer".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             OldMachineTerm::constant(index as u32),
             OldMachineTerm::constant(index as u32 + 1),
@@ -14653,7 +14653,7 @@ mod support_removal_tests {
         let authority = ResourceFact::own_memory(MemoryRange::new(
             OldAddress {
                 base: "frame".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(4),
@@ -14785,7 +14785,7 @@ mod support_removal_tests {
         let range = MemoryRange::new(
             OldAddress {
                 base: "boundary".into(),
-                offset: OldAddressOffset::Constant(1).into(),
+                offset: AddressOffset::constant(1),
             },
             OldMachineTerm::constant((i32::MAX - 1) as u32),
             OldMachineTerm::constant(i32::MAX as u32),
@@ -14797,11 +14797,11 @@ mod support_removal_tests {
     fn memory_load_footprints_use_checked_state_widths() {
         let short_pointer = OldAddress {
             base: "typed-loads".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let wide_pointer = OldAddress {
             base: "typed-loads".into(),
-            offset: OldAddressOffset::Constant(8).into(),
+            offset: AddressOffset::constant(8),
         };
         let memory = SymbolicMemory::new()
             .with_block("typed-loads", 24)
@@ -14823,7 +14823,7 @@ mod support_removal_tests {
         let fact = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "result".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             short_load,
             wide_load,
@@ -14847,7 +14847,7 @@ mod support_removal_tests {
     fn memory_load_footprints_reject_mixed_source_states() {
         let pointer = OldAddress {
             base: "mixed-loads".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let first = SymbolicMemory::new()
             .with_block("mixed-loads", 8)
@@ -14866,7 +14866,7 @@ mod support_removal_tests {
         let fact = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "mixed-result".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             first_load,
             second_load,
@@ -14881,7 +14881,7 @@ mod support_removal_tests {
     fn memory_load_footprint_depth_is_bounded_conservatively() {
         let pointer = OldAddress {
             base: "deep-load".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block("deep-load", 8)
@@ -14903,7 +14903,7 @@ mod support_removal_tests {
         let fact = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "deep-result".into(),
-                offset: OldAddressOffset::Constant(0).into(),
+                offset: AddressOffset::constant(0),
             },
             OldMachineTerm::constant(0),
             nested,
@@ -15076,7 +15076,7 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         base: base.base.clone(),
         offset: AddressOffset::add(
             base.offset.clone(),
-            OldAddressOffset::Constant((1i64 << 32) * 16 + 8).into(),
+            AddressOffset::constant((1i64 << 32) * 16 + 8),
         ),
     };
     assert!(!memory_range_covers(
@@ -15093,7 +15093,7 @@ fn exact_principal_input_view_ignores_covering_views() {
     let assumptions = PureFactContext::new();
     let pointer = OldAddress {
         base: "local:input-view".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let required =
         ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
@@ -15122,7 +15122,7 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
     let assumptions = PureFactContext::new();
     let pointer = OldAddress {
         base: "local:selected-view".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let required = ResourceFact::view_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
     for size in [0, 16, 64, 256] {
@@ -15131,7 +15131,7 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
             owned = owned.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 OldAddress {
                     base: format!("local:unrelated-view-owner-{index}").into(),
-                    offset: OldAddressOffset::Constant(0).into(),
+                    offset: AddressOffset::constant(0),
                 },
                 0u32.into(),
                 1u32.into(),
@@ -15279,7 +15279,7 @@ mod shared_wide_bound_tests {
         let _session = VerificationSession::enter();
         let base = OldAddress {
             base: "shared_wide_bound".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let length = OldMachineTerm::Variable(Variable(1018501));
         let low = OldMachineTerm::uint32_from_64(length.clone());
@@ -15334,7 +15334,7 @@ mod shared_wide_bound_tests {
         let _session = VerificationSession::enter();
         let base = OldAddress {
             base: "wide_bound_outputs".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let big = 1u64 << 40;
         let range = |start, end| {

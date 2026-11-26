@@ -6,7 +6,7 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
     let second = OldAddress::symbolic(Variable(896_001));
     let storage = OldAddress {
         base: "local:mutex".into(),
-        offset: OldAddressOffset::Constant(8).into(),
+        offset: AddressOffset::constant(8),
     };
     let empty = PureFactContext::new();
     let joined = empty
@@ -28,7 +28,7 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
     assert_eq!(empty.equality_graph.storage_address(&first), first);
     let other = OldAddress {
         base: "local:other".into(),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let ambiguous = joined
         .clone()
@@ -41,19 +41,19 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
 fn external_addresses_select_their_own_concrete_storage_anchor() {
     let first = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(896_010)).into(),
+        offset: AddressOffset::variable(Variable(896_010)),
     };
     let second = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(896_011)).into(),
+        offset: AddressOffset::variable(Variable(896_011)),
     };
     let one = OldAddress {
         base: "global:first".into(),
-        offset: OldAddressOffset::Constant(8).into(),
+        offset: AddressOffset::constant(8),
     };
     let two = OldAddress {
         base: "global:second".into(),
-        offset: OldAddressOffset::Constant(16).into(),
+        offset: AddressOffset::constant(16),
     };
     let facts = PureFactContext::new()
         .assume_condition(
@@ -86,7 +86,7 @@ fn alignment_uses_the_checked_storage_anchor_through_transitive_equality() {
     let last = OldAddress::symbolic(Variable(896_901));
     let storage = OldAddress {
         base: AddressBase::Heap(896_990),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let empty = PureFactContext::new();
     let facts = empty
@@ -162,7 +162,7 @@ fn automatic_declaration_storage_is_an_anchor_and_an_indexed_local_alias() {
             binding,
             instance: crate::kernel::LocalStorageInstance::Frame(3),
         },
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let alias = OldAddress::symbolic(Variable(896_999));
     let facts = PureFactContext::new().assume_condition(

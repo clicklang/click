@@ -4133,7 +4133,7 @@ mod shared_read_equality_rule_tests {
         let write_index = OldMachineTerm::Variable(Variable(995_782));
         let base = OldAddress {
             base: "selected-word".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let pointer = base.offset_by_elements(read_index.clone(), 4);
         let written = base.offset_by_elements(write_index.clone(), 4);
@@ -4161,7 +4161,7 @@ mod shared_read_equality_rule_tests {
         let right = read(after.clone(), &pointer);
         let unrelated = OldAddress {
             base: "different-word".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let wrong_address = read(after.clone(), &unrelated);
         let wrong_state = read(
@@ -4249,7 +4249,7 @@ mod shared_read_order_bridge_tests {
         let write_index = OldMachineTerm::Variable(Variable(995_802));
         let base = OldAddress {
             base: "order-read-bridge".into(),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let pointer = base.offset_by_elements(read_index.clone(), 4);
         let write = base.offset_by_elements(write_index.clone(), 4);
@@ -4350,26 +4350,11 @@ mod shared_byte_rebuild_tests {
         let empty = PureFactContext::new();
         let lower_only = empty.clone().assume_condition(lower, true);
         let bounded = lower_only.clone().assume_condition(upper, true);
-        let offset = OldAddressOffset::Int32Scaled {
-            value: index,
-            byte_width: 8,
-        };
+        let offset = AddressOffset::int32_scaled(index, 8);
         let exports = KernelTermExport::machine_export_count();
-        assert!(bounded.rebuilt_offset_is_exact(
-            &crate::kernel::AddressOffset::from(&offset),
-            4,
-            true
-        ));
-        assert!(!empty.rebuilt_offset_is_exact(
-            &crate::kernel::AddressOffset::from(&offset),
-            4,
-            true
-        ));
-        assert!(!lower_only.rebuilt_offset_is_exact(
-            &crate::kernel::AddressOffset::from(&offset),
-            4,
-            true
-        ));
+        assert!(bounded.rebuilt_offset_is_exact(&offset.clone(), 4, true));
+        assert!(!empty.rebuilt_offset_is_exact(&offset.clone(), 4, true));
+        assert!(!lower_only.rebuilt_offset_is_exact(&offset.clone(), 4, true));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

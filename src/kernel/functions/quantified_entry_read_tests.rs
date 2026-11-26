@@ -11,7 +11,7 @@ fn fixture(
 ) {
     let pointer = OldAddress {
         base: AddressBase::Concrete("quantity-pool".into()),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     };
     let state = ExecutionState::new()
         .with_local("pool", ProgramValue::pointer(pointer.clone()))
@@ -188,7 +188,7 @@ fn symbolic_quantity_keeps_the_entry_field_read_through_materialization() {
     let _session = crate::kernel::VerificationSession::enter();
     let pool = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(38_500)), 4).into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(38_500)), 4),
     };
     let capacity = pool.offset_by_bytes(4);
     let view = ResourceFact::view_memory(MemoryRange::new(

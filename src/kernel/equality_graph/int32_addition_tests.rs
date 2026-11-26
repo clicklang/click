@@ -21,16 +21,10 @@ fn int32_addition_closes_both_operands_early_and_late_through_scaled_offsets() {
         let right = add(add(var(2), var(4)), var(5));
         graph.add_int32_equality(&left, &var(10));
         graph.add_int32_equality(&right, &var(11));
-        let offset = |v| OldAddressOffset::scale_int32(v, 4);
-        let alias = |i| OldAddressOffset::Variable(Variable(i));
-        graph.add_offset_equality(
-            &crate::kernel::AddressOffset::from(&offset(left)),
-            &crate::kernel::AddressOffset::from(&alias(20)),
-        );
-        graph.add_offset_equality(
-            &crate::kernel::AddressOffset::from(&offset(right)),
-            &crate::kernel::AddressOffset::from(&alias(21)),
-        );
+        let offset = |v| AddressOffset::scale_int32(v, 4);
+        let alias = |i| AddressOffset::variable(Variable(i));
+        graph.add_offset_equality(&offset(left).clone(), &alias(20).clone());
+        graph.add_offset_equality(&offset(right).clone(), &alias(21).clone());
         let parent = graph.clone();
         let sibling = graph.clone();
         if !early {
@@ -39,16 +33,10 @@ fn int32_addition_closes_both_operands_early_and_late_through_scaled_offsets() {
         assert!(!graph.are_int32_equal(&var(10), &var(11)));
         graph.add_int32_equality(&var(4), &var(3));
         assert!(graph.are_int32_equal(&var(11), &var(10)));
-        assert!(graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&alias(20)),
-            &crate::kernel::AddressOffset::from(&alias(21))
-        ));
+        assert!(graph.are_offsets_equal(&alias(20).clone(), &alias(21).clone()));
         for unchanged in [parent, sibling] {
             assert!(!unchanged.are_int32_equal(&var(10), &var(11)));
-            assert!(!unchanged.are_offsets_equal(
-                &crate::kernel::AddressOffset::from(&alias(20)),
-                &crate::kernel::AddressOffset::from(&alias(21))
-            ));
+            assert!(!unchanged.are_offsets_equal(&alias(20).clone(), &alias(21).clone()));
         }
     }
 }
@@ -96,15 +84,12 @@ fn int32_addition_does_not_cancel_commute_or_merge_other_sorts() {
     };
     assert!(!graph.are_int32_equal(&wide(var(1)), &wide(var(2))));
     assert!(!graph.are_int32_equal(&add(var(1), var(3)), &wide(var(1))));
-    let scalar_offset = OldAddressOffset::scale_int32(add(var(1), var(3)), 4);
-    let offset_sum = OldAddressOffset::Add(
-        Box::new(OldAddressOffset::Variable(Variable(1))),
-        Box::new(OldAddressOffset::Variable(Variable(3))),
+    let scalar_offset = AddressOffset::scale_int32(add(var(1), var(3)), 4);
+    let offset_sum = AddressOffset::raw_add(
+        AddressOffset::variable(Variable(1)),
+        AddressOffset::variable(Variable(3)),
     );
-    assert!(!graph.are_offsets_equal(
-        &crate::kernel::AddressOffset::from(&scalar_offset),
-        &crate::kernel::AddressOffset::from(&offset_sum)
-    ));
+    assert!(!graph.are_offsets_equal(&scalar_offset.clone(), &offset_sum.clone()));
 }
 
 #[test]

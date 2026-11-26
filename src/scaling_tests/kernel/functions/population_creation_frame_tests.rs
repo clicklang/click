@@ -125,7 +125,7 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(7_993_000)).into(),
+                offset: AddressOffset::variable(Variable(7_993_000)),
             };
             let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
             let member = ResourceSpec::composite(

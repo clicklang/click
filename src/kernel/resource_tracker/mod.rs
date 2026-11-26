@@ -1504,11 +1504,7 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
         Term::Bitvector32(term) => collect_bitvector_reads(term.old_form(), reads),
         Term::Integer(term) => collect_integer_term_reads(term.old_form(), reads),
         Term::PointerOffset(offset) => {
-            if let Some(root) = offset.root() {
-                collect_shared_offset_reads(root, reads);
-            } else {
-                collect_offset_reads(offset.old_form(), reads);
-            }
+            collect_shared_offset_reads(offset.root(), reads);
         }
         Term::Algebraic(term) => {
             term.old_form()

@@ -19,30 +19,22 @@ fn framed_index_transport_visits_shared_nodes_without_tree_exports() {
             }
             let value = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
             let offset = match ty {
-                MachineIntegerType::Int32 => OldAddressOffset::Int32Scaled {
-                    value,
-                    byte_width: 4,
-                },
-                _ => OldAddressOffset::Int64Scaled {
-                    value,
-                    byte_width: 4,
-                    unsigned: ty == MachineIntegerType::UInt64,
-                },
+                MachineIntegerType::Int32 => AddressOffset::int32_scaled(value, 4),
+                _ => AddressOffset::int64_scaled(value, 4, ty == MachineIntegerType::UInt64),
             };
             let after = SymbolicMemory::new();
             let exports = KernelTermExport::machine_export_count();
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 transport_framed_atomic_pointer_offset(
-                    &crate::kernel::AddressOffset::from(&offset),
+                    &offset.clone(),
                     &crate::kernel::ProgramPoint::of_memory(&after),
                     None,
                 )
                 .unwrap()
             });
             assert_eq!(exports, KernelTermExport::machine_export_count());
-            let (OldAddressOffset::Int32Scaled { value: result, .. }
-            | OldAddressOffset::Int64Scaled { value: result, .. }) =
-                crate::kernel::OldAddressOffset::from(result)
+            let (crate::kernel::OffsetView::Int32Scaled { index: result, .. }
+            | crate::kernel::OffsetView::Int64Scaled { index: result, .. }) = result.view()
             else {
                 panic!("retained scaled index")
             };
@@ -86,28 +78,17 @@ fn exact_index_normalization_visits_shared_nodes_without_tree_exports() {
             }
             let value = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
             let offset = match ty {
-                MachineIntegerType::Int32 => OldAddressOffset::Int32Scaled {
-                    value,
-                    byte_width: 4,
-                },
-                _ => OldAddressOffset::Int64Scaled {
-                    value,
-                    byte_width: 4,
-                    unsigned: ty == MachineIntegerType::UInt64,
-                },
+                MachineIntegerType::Int32 => AddressOffset::int32_scaled(value, 4),
+                _ => AddressOffset::int64_scaled(value, 4, ty == MachineIntegerType::UInt64),
             };
             let facts = PureFactContext::new();
             let exports = KernelTermExport::machine_export_count();
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                normalize_exact_memory_loads_in_pointer_offset(
-                    &crate::kernel::AddressOffset::from(&offset),
-                    &facts,
-                )
+                normalize_exact_memory_loads_in_pointer_offset(&offset.clone(), &facts)
             });
             assert_eq!(exports, KernelTermExport::machine_export_count());
-            let (OldAddressOffset::Int32Scaled { value: result, .. }
-            | OldAddressOffset::Int64Scaled { value: result, .. }) =
-                crate::kernel::OldAddressOffset::from(result)
+            let (crate::kernel::OffsetView::Int32Scaled { index: result, .. }
+            | crate::kernel::OffsetView::Int64Scaled { index: result, .. }) = result.view()
             else {
                 panic!("retained scaled index")
             };
@@ -165,22 +146,17 @@ fn exact_index_normalization_rewrites_shared_read_dags_without_exports() {
                 [expected.clone(), expected],
             );
         }
-        let offset = OldAddressOffset::Int32Scaled {
-            value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
-            byte_width: 4,
-        };
+        let offset = AddressOffset::int32_scaled(
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            4,
+        );
         let facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            normalize_exact_memory_loads_in_pointer_offset(
-                &crate::kernel::AddressOffset::from(&offset),
-                &facts,
-            )
+            normalize_exact_memory_loads_in_pointer_offset(&offset.clone(), &facts)
         });
         assert_eq!(exports, KernelTermExport::machine_export_count());
-        let OldAddressOffset::Int32Scaled { value, .. } =
-            crate::kernel::OldAddressOffset::from(result)
-        else {
+        let crate::kernel::OffsetView::Int32Scaled { index: value, .. } = result.view() else {
             panic!("retained index")
         };
         assert_eq!(value.shared_operand(), Some(&expected));

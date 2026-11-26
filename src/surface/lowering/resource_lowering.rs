@@ -4417,7 +4417,7 @@ mod entry_cell_tests {
         let source = entry.program_point();
         let base = OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         for ty in [ProgramType::Float32, ProgramType::Float64] {
             let width = ty.byte_width();
@@ -4456,8 +4456,7 @@ mod entry_cell_tests {
         let source = entry.program_point();
         let address = |variable| OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::OldAddressOffset::Variable(crate::kernel::Variable(variable))
-                .into(),
+            offset: AddressOffset::variable(crate::kernel::Variable(variable)),
         };
         let integer_base = address(1_009_104);
         let generic_base = address(1_009_105);

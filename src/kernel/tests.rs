@@ -317,7 +317,7 @@ fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Prop
 fn arc_pointer(offset: i64) -> OldAddress {
     OldAddress {
         base: "arg-memory".into(),
-        offset: OldAddressOffset::Constant(offset).into(),
+        offset: AddressOffset::constant(offset),
     }
 }
 

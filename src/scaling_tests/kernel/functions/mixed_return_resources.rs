@@ -6,18 +6,16 @@ fn executed_body_return_axis(axis: &str) {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4)
-                .into(),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4),
         };
         let other = |index| {
             if axis == "same-block aliases" {
                 OldAddress {
                     base: AddressBase::ExternalArgument,
-                    offset: OldAddressOffset::scale_int32(
+                    offset: AddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(9_910_000 + index)),
                         4,
-                    )
-                    .into(),
+                    ),
                 }
             } else {
                 OldAddress::symbolic(Variable(9_910_000 + index))
@@ -217,8 +215,7 @@ fn early_return_group_alias_work(symbolic_end: bool) -> Vec<[usize; 3]> {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4)
-                    .into(),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4),
             };
             let neighbor = OldAddress::symbolic(Variable(9_810_000));
             let mut facts = PureFactContext::new();
@@ -302,7 +299,7 @@ fn mixed_return_composition_ignores_related_aliases_and_retained_owners() {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(8_820_000)).into(),
+                offset: AddressOffset::variable(Variable(8_820_000)),
             };
             let other = |id: u32| OldAddress::symbolic(Variable(8_830_000 + u64::from(id)));
             let owner = |base, start: u32| {
@@ -435,14 +432,13 @@ fn consumed_scalar_return_ignores_aliases_and_retained_owners() {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Variable(Variable(8_870_000)).into(),
+                offset: AddressOffset::variable(Variable(8_870_000)),
             };
             let other = |id| {
                 if axis == "same block aliases" {
                     OldAddress {
                         base: pointer.base.clone(),
-                        offset: OldAddressOffset::Variable(Variable(8_870_001 + u64::from(id)))
-                            .into(),
+                        offset: AddressOffset::variable(Variable(8_870_001 + u64::from(id))),
                     }
                 } else {
                     OldAddress::symbolic(Variable(8_870_001 + u64::from(id)))
@@ -566,10 +562,7 @@ fn mixed_occurrence_transfers_ignore_ambient_aliases_and_owners() {
                     let alias = if axis == "same block aliases" {
                         OldAddress {
                             base: pointer.base.clone(),
-                            offset: OldAddressOffset::Variable(Variable(
-                                8_890_000 + u64::from(index),
-                            ))
-                            .into(),
+                            offset: AddressOffset::variable(Variable(8_890_000 + u64::from(index))),
                         }
                     } else {
                         other
@@ -822,11 +815,9 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
                         } else {
                             OldAddress {
                                 base: pointer.base.clone(),
-                                offset: crate::kernel::AddressOffset::from(
-                                    OldAddressOffset::Variable(Variable(
-                                        8_921_000 + u64::from(index),
-                                    )),
-                                ),
+                                offset: AddressOffset::variable(Variable(
+                                    8_921_000 + u64::from(index),
+                                )),
                             }
                         };
                         facts = facts.assume_condition(
@@ -1938,7 +1929,7 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                     } else if family == "control" {
                         OldAddress {
                             base: AddressBase::ExternalArgument,
-                            offset: OldAddressOffset::Constant(0),
+                            offset: AddressOffset::constant(0),
                         }
                     } else {
                         OldAddress::symbolic(Variable(8_880_000))
@@ -2290,7 +2281,7 @@ fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_alia
                 let pointer = if axis == "same-block aliases" {
                     OldAddress {
                         base: first.memory_own_range().unwrap().base().base.clone(),
-                        offset: OldAddressOffset::Variable(Variable(9_950_000 + index)),
+                        offset: AddressOffset::variable(Variable(9_950_000 + index)),
                     }
                 } else {
                     OldAddress::symbolic(Variable(9_950_000 + index))
@@ -2436,7 +2427,7 @@ fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classe
                 let pointer = if axis == "same-block aliases" {
                     OldAddress {
                         base: first.memory_own_range().unwrap().base().base.clone(),
-                        offset: OldAddressOffset::Variable(Variable(9_960_000 + index)),
+                        offset: AddressOffset::variable(Variable(9_960_000 + index)),
                     }
                 } else {
                     OldAddress::symbolic(Variable(9_960_000 + index))

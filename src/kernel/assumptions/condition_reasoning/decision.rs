@@ -3654,11 +3654,10 @@ mod shared_offset_evidence_tests {
             MachineIntegerType::Int32,
             MachineOperandView::Old(term),
         );
-        OldAddressOffset::Int32Scaled {
-            value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
-            byte_width: width,
-        }
-        .into()
+        AddressOffset::int32_scaled(
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            width,
+        )
     }
 
     #[test]
@@ -3801,12 +3800,8 @@ mod shared_offset_evidence_tests {
         let cases = [
             offset(&x, 4),
             offset(&x, -4),
-            OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(offset(&x, 4))),
-                Box::new(OldAddressOffset::Constant(8)),
-            )
-            .into(),
-            OldAddressOffset::Constant(-12).into(),
+            AddressOffset::raw_add(offset(&x, 4), AddressOffset::constant(8)),
+            AddressOffset::constant(-12),
         ];
         for v in cases {
             for width in [0, 1, 4, 8] {

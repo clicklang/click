@@ -11,7 +11,6 @@ mod exclusive_calls;
 pub(crate) mod mutex_calls;
 
 mod return_backing;
-use crate::kernel::OffsetTree;
 use crate::kernel::{bits32_constant, constant_u32};
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
 use return_backing::PermittedDescriptions;

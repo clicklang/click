@@ -77,17 +77,11 @@ fn offset_equality_work_is_linear_in_shared_offset_terms() {
         else {
             unreachable!("the goal is a pointer equality");
         };
-        let unequal = OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(right.offset.clone())),
-            Box::new(OldAddressOffset::Constant(1)),
-        );
-        let summed = OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(left.offset.clone())),
-            Box::new(OldAddressOffset::Constant(0)),
-        );
+        let unequal = AddressOffset::raw_add(right.offset.clone(), AddressOffset::constant(1));
+        let summed = AddressOffset::raw_add(left.offset.clone(), AddressOffset::constant(0));
         [
             (left.offset.clone(), right.offset.clone()),
-            (summed.into(), unequal.into()),
+            (summed, unequal),
         ]
     };
     let mut equal_work = Vec::new();

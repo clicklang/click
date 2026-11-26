@@ -3480,7 +3480,7 @@ mod tests {
         let memory = crate::kernel::SymbolicMemory::new();
         let cell = OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let read = || {
             let point = crate::kernel::ProgramPoint::starting_at(&memory).for_exact_read();
@@ -3560,7 +3560,7 @@ mod tests {
     fn at(block: AddressBase, offset: i64) -> OldAddress {
         OldAddress {
             base: block,
-            offset: OldAddressOffset::Constant(offset).into(),
+            offset: AddressOffset::constant(offset),
         }
     }
 
@@ -3617,27 +3617,21 @@ mod tests {
 
     #[test]
     fn offsets_spelled_differently_share_one_normal_form() {
-        let nested = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(
-                    AddressOffset::scaled_int32_node(index(7), 4),
-                )),
-                Box::new(OldAddressOffset::Constant(4)),
-            )),
-            Box::new(OldAddressOffset::Constant(4)),
-        );
-        let flat = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::Constant(8)),
-            Box::new(crate::kernel::OldAddressOffset::from(
+        let nested = AddressOffset::raw_add(
+            AddressOffset::raw_add(
                 AddressOffset::scaled_int32_node(index(7), 4),
-            )),
+                AddressOffset::constant(4),
+            ),
+            AddressOffset::constant(4),
+        );
+        let flat = AddressOffset::raw_add(
+            AddressOffset::constant(8),
+            AddressOffset::scaled_int32_node(index(7), 4),
         );
         assert_eq!(AffineOffset::of(&nested), AffineOffset::of(&flat));
-        let other_index = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::Constant(8)),
-            Box::new(crate::kernel::OldAddressOffset::from(
-                AddressOffset::scaled_int32_node(index(8), 4),
-            )),
+        let other_index = AddressOffset::raw_add(
+            AddressOffset::constant(8),
+            AddressOffset::scaled_int32_node(index(8), 4),
         );
         assert_ne!(AffineOffset::of(&flat), AffineOffset::of(&other_index));
     }
@@ -3709,31 +3703,29 @@ mod tests {
     #[test]
     fn affine_offset_equality_reaches_same_block_solve() {
         let base = symbolic(11_080);
-        let x = OldAddressOffset::Variable(Variable(11_081));
-        let nested = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::Add(
-                Box::new(x.clone()),
-                Box::new(OldAddressOffset::Constant(4)),
-            )),
-            Box::new(OldAddressOffset::Constant(4)),
+        let x = AddressOffset::variable(Variable(11_081));
+        let nested = AddressOffset::raw_add(
+            AddressOffset::raw_add(x.clone(), AddressOffset::constant(4)),
+            AddressOffset::constant(4),
         );
-        let reordered =
-            OldAddressOffset::Add(Box::new(OldAddressOffset::Constant(8)), Box::new(x.clone()));
-        let wrong = AddressOffset::add(x.into(), OldAddressOffset::Constant(9).into());
+        let reordered = AddressOffset::raw_add(AddressOffset::constant(8), x.clone());
+        let wrong = AddressOffset::add(x, AddressOffset::constant(9));
         let context = PureFactContext::new();
-        assert!(context.equality_graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&nested),
-            &crate::kernel::AddressOffset::from(&reordered)
-        ));
-        assert!(context.equality_graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&reordered),
-            &crate::kernel::AddressOffset::from(&nested)
-        ));
+        assert!(
+            context
+                .equality_graph
+                .are_offsets_equal(&nested.clone(), &reordered.clone())
+        );
+        assert!(
+            context
+                .equality_graph
+                .are_offsets_equal(&reordered.clone(), &nested.clone())
+        );
         assert_eq!(
             context.selected_for_test().decide_selected_condition(
                 &OldConditionTerm::address_equal(
-                    at_offset(base.clone(), nested.clone().into()),
-                    at_offset(base.clone(), reordered.clone().into()),
+                    at_offset(base.clone(), nested.clone()),
+                    at_offset(base.clone(), reordered.clone()),
                 )
             ),
             Some(true)
@@ -3741,12 +3733,12 @@ mod tests {
         assert!(
             !context
                 .equality_graph
-                .are_offsets_equal(&crate::kernel::AddressOffset::from(&nested), &wrong)
+                .are_offsets_equal(&nested.clone(), &wrong)
         );
         assert_ne!(
             context.selected_for_test().decide_selected_condition(
                 &OldConditionTerm::address_equal(
-                    at_offset(base.clone(), nested.into()),
+                    at_offset(base.clone(), nested),
                     at_offset(base, wrong),
                 )
             ),
@@ -3756,19 +3748,16 @@ mod tests {
 
     #[test]
     fn same_block_pointer_query_uses_exact_offset_classes() {
-        let left_offset = OldAddressOffset::Variable(Variable(11_001));
-        let right_offset = OldAddressOffset::Variable(Variable(11_002));
+        let left_offset = AddressOffset::variable(Variable(11_001));
+        let right_offset = AddressOffset::variable(Variable(11_002));
         let base = symbolic(11_003);
-        let left = at_offset(base.clone(), left_offset.clone().into());
-        let right = at_offset(base.clone(), right_offset.clone().into());
-        let other_block = at_offset(symbolic(11_004), right_offset.clone().into());
+        let left = at_offset(base.clone(), left_offset.clone());
+        let right = at_offset(base.clone(), right_offset.clone());
+        let other_block = at_offset(symbolic(11_004), right_offset.clone());
         let trunk = EqualityGraph::default();
         assert!(!trunk.are_equal(&left, &right));
         let mut branch = trunk.clone();
-        branch.add_offset_equality(
-            &crate::kernel::AddressOffset::from(&left_offset),
-            &crate::kernel::AddressOffset::from(&right_offset),
-        );
+        branch.add_offset_equality(&left_offset.clone(), &right_offset.clone());
         assert!(branch.are_equal(&left, &right));
         assert!(!trunk.are_equal(&left, &right));
         assert!(!branch.are_equal(&left, &other_block));
@@ -3777,46 +3766,45 @@ mod tests {
     #[test]
     fn same_block_pointer_premise_joins_offsets_and_survives_only_in_its_context() {
         let block = symbolic(11_020);
-        let x = OldAddressOffset::Variable(Variable(11_021));
-        let y = OldAddressOffset::Variable(Variable(11_022));
-        let z = OldAddressOffset::Variable(Variable(11_023));
-        let left = at_offset(block.clone(), x.clone().into());
-        let middle = at_offset(block, y.clone().into());
+        let x = AddressOffset::variable(Variable(11_021));
+        let y = AddressOffset::variable(Variable(11_022));
+        let z = AddressOffset::variable(Variable(11_023));
+        let left = at_offset(block.clone(), x.clone());
+        let middle = at_offset(block, y.clone());
         let pointer_fact = OldConditionTerm::address_equal(left.clone(), middle.clone());
-        let offset_fact =
-            OldConditionTerm::address_offset_equal(y.clone().into(), z.clone().into());
+        let offset_fact = OldConditionTerm::address_offset_equal(y.clone(), z.clone());
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
-        assert!(!trunk.equality_graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&x),
-            &crate::kernel::AddressOffset::from(&z)
-        ));
-        assert!(branch.equality_graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&x),
-            &crate::kernel::AddressOffset::from(&z)
-        ));
+        assert!(
+            !trunk
+                .equality_graph
+                .are_offsets_equal(&x.clone(), &z.clone())
+        );
+        assert!(
+            branch
+                .equality_graph
+                .are_offsets_equal(&x.clone(), &z.clone())
+        );
         assert!(branch.equality_graph.are_equal(
             &at_offset(
                 left.base.clone(),
-                AddressOffset::add(x.clone().into(), OldAddressOffset::Constant(8).into())
+                AddressOffset::add(x.clone(), AddressOffset::constant(8))
             ),
             &at_offset(
                 left.base.clone(),
-                AddressOffset::add(z.clone().into(), OldAddressOffset::Constant(8).into())
+                AddressOffset::add(z.clone(), AddressOffset::constant(8))
             ),
         ));
         let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
-        assert!(!restricted.equality_graph.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&x),
-            &crate::kernel::AddressOffset::from(&z)
-        ));
+        assert!(
+            !restricted
+                .equality_graph
+                .are_offsets_equal(&x.clone(), &z.clone())
+        );
 
         let mut cross_block = EqualityGraph::default();
-        cross_block.add_equality(&left, &at_offset(symbolic(11_024), y.clone().into()));
-        assert!(!cross_block.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&x),
-            &crate::kernel::AddressOffset::from(&y)
-        ));
+        cross_block.add_equality(&left, &at_offset(symbolic(11_024), y.clone()));
+        assert!(!cross_block.are_offsets_equal(&x.clone(), &y.clone()));
     }
 
     #[test]
@@ -3824,10 +3812,9 @@ mod tests {
         let a = symbolic(11_040);
         let b = symbolic(11_041);
         let c = symbolic(11_042);
-        let x = OldAddressOffset::Variable(Variable(11_043));
-        let y = OldAddressOffset::Variable(Variable(11_044));
-        let offset_fact =
-            OldConditionTerm::address_offset_equal(x.clone().into(), y.clone().into());
+        let x = AddressOffset::variable(Variable(11_043));
+        let y = AddressOffset::variable(Variable(11_044));
+        let offset_fact = OldConditionTerm::address_offset_equal(x.clone(), y.clone());
         let ab = OldConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 0));
         let bc = OldConditionTerm::address_equal(at(b.clone(), 0), at(c.clone(), 0));
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
@@ -3835,35 +3822,32 @@ mod tests {
             .clone()
             .assume_condition(ab.clone(), true)
             .assume_condition(bc.clone(), true);
-        let left = at_offset(a.clone(), x.clone().into());
-        let right = at_offset(c.clone(), y.clone().into());
+        let left = at_offset(a.clone(), x.clone());
+        let right = at_offset(c.clone(), y.clone());
         assert!(!trunk.equality_graph.are_equal(&left, &right));
         assert!(branch.equality_graph.are_equal(&left, &right));
         let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
         assert!(!restricted.equality_graph.are_equal(&left, &right));
 
         let mut displaced = EqualityGraph::default();
-        displaced.add_offset_equality(
-            &crate::kernel::AddressOffset::from(&x),
-            &crate::kernel::AddressOffset::from(&y),
-        );
+        displaced.add_offset_equality(&x.clone(), &y.clone());
         displaced.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
-        assert!(!displaced.are_equal(&at_offset(a, x.into()), &at_offset(b, y.into())));
+        assert!(!displaced.are_equal(&at_offset(a, x), &at_offset(b, y)));
     }
 
     #[test]
     fn constant_displacement_uses_only_a_stated_translated_offset_equality() {
         let a = symbolic(11_060);
         let b = symbolic(11_061);
-        let x = OldAddressOffset::Variable(Variable(11_062));
-        let y = OldAddressOffset::Variable(Variable(11_063));
-        let translated = AddressOffset::add(x.clone().into(), OldAddressOffset::Constant(8).into());
-        let offset_fact = OldConditionTerm::address_offset_equal(translated, y.clone().into());
+        let x = AddressOffset::variable(Variable(11_062));
+        let y = AddressOffset::variable(Variable(11_063));
+        let translated = AddressOffset::add(x.clone(), AddressOffset::constant(8));
+        let offset_fact = OldConditionTerm::address_offset_equal(translated, y.clone());
         let pointer_fact = OldConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 8));
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
-        let left = at_offset(a.clone(), x.clone().into());
-        let right = at_offset(b.clone(), y.clone().into());
+        let left = at_offset(a.clone(), x.clone());
+        let right = at_offset(b.clone(), y.clone());
         assert!(!trunk.equality_graph.are_equal(&left, &right));
         assert!(branch.equality_graph.are_equal(&left, &right));
         assert!(branch.equality_graph.are_equal(&right, &left));
@@ -3877,7 +3861,7 @@ mod tests {
         assert!(
             !branch
                 .equality_graph
-                .are_equal(&left, &at_offset(b.clone(), x.clone().into()))
+                .are_equal(&left, &at_offset(b.clone(), x.clone()))
         );
         let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
         assert!(!restricted.equality_graph.are_equal(&left, &right));
@@ -3885,8 +3869,8 @@ mod tests {
         let mut other_spelling = EqualityGraph::default();
         other_spelling.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
         other_spelling.add_offset_equality(
-            &crate::kernel::AddressOffset::from(&x),
-            &AddressOffset::add(y.clone().into(), OldAddressOffset::Constant(-8).into()),
+            &x.clone(),
+            &AddressOffset::add(y.clone(), AddressOffset::constant(-8)),
         );
         assert!(other_spelling.are_equal(&left, &right));
         assert!(other_spelling.are_equal(&right, &left));
@@ -3894,11 +3878,8 @@ mod tests {
         let mut unraisable = EqualityGraph::default();
         unraisable.add_equality(&at(a, 0), &at(b, i64::MIN));
         unraisable.add_offset_equality(
-            &crate::kernel::AddressOffset::from(&OldAddressOffset::Add(
-                Box::new(x.clone()),
-                Box::new(OldAddressOffset::Constant(i64::MIN)),
-            )),
-            &crate::kernel::AddressOffset::from(&y),
+            &(AddressOffset::raw_add(x.clone(), AddressOffset::constant(i64::MIN))).clone(),
+            &y.clone(),
         );
         // The raw address applications can use the stated MIN translation
         // directly, without constructing its unrepresentable opposite sign.
@@ -3911,11 +3892,11 @@ mod tests {
     fn mixed_offset_and_block_premises_compose_in_any_order() {
         let x = at_offset(
             AddressBase::ExternalArgument,
-            OldAddressOffset::Variable(Variable(930_001)).into(),
+            AddressOffset::variable(Variable(930_001)),
         );
         let y = at_offset(
             AddressBase::ExternalArgument,
-            OldAddressOffset::Variable(Variable(930_002)).into(),
+            AddressOffset::variable(Variable(930_002)),
         );
         let z = at(symbolic(930_003), 0);
         for order in [
@@ -3953,7 +3934,7 @@ mod tests {
         let offset = |id| {
             AddressOffset::add(
                 AddressOffset::scale_int32(index(id), 4),
-                OldAddressOffset::Constant(8).into(),
+                AddressOffset::constant(8),
             )
         };
         let left = at_offset(base.clone(), offset(11_011));
@@ -3962,7 +3943,7 @@ mod tests {
             base.clone(),
             AddressOffset::add(
                 AddressOffset::scale_int32(index(11_012), 8),
-                OldAddressOffset::Constant(8).into(),
+                AddressOffset::constant(8),
             ),
         );
         let mut graph = EqualityGraph::default();
@@ -3988,7 +3969,7 @@ mod tests {
             base,
             AddressOffset::add(
                 AddressOffset::scale_int32(max, 4),
-                OldAddressOffset::Constant(4).into(),
+                AddressOffset::constant(4),
             ),
         );
         assert!(!EqualityGraph::default().are_equal(&wrapped, &exact_sum));
@@ -4004,13 +3985,10 @@ mod tests {
         classes.add_equality(&at(symbolic(1), 0), &element);
         let next = OldAddress {
             base: symbolic(2),
-            offset: OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(
-                    AddressOffset::scaled_int32_node(index(9), 4),
-                )),
-                Box::new(OldAddressOffset::Constant(4)),
-            )
-            .into(),
+            offset: AddressOffset::raw_add(
+                AddressOffset::scaled_int32_node(index(9), 4),
+                AddressOffset::constant(4),
+            ),
         };
         assert!(classes.are_equal(&at(symbolic(1), 4), &next));
         assert!(!classes.are_equal(&at(symbolic(1), 4), &element));
@@ -4037,10 +4015,9 @@ mod tests {
         for (member, delta) in blocks {
             let restated = OldAddress {
                 base: member,
-                offset: OldAddressOffset::Constant(
+                offset: AddressOffset::constant(
                     i64::try_from(delta.constant).expect("small constant"),
-                )
-                .into(),
+                ),
             };
             assert!(delta.terms.is_empty());
             assert!(classes.are_equal(&at(symbolic(1), 0), &restated));
@@ -4104,7 +4081,7 @@ mod tests {
         let displaced = from_p.offset_by_bytes(8);
         assert_eq!(
             displaced.as_loaded_value().unwrap().displacement,
-            OldAddressOffset::Constant(8)
+            AddressOffset::constant(8)
         );
         assert!(from_p.has_symbolic_block());
         let cell_bits = crate::kernel::OldMachineTerm::read_named(
@@ -4118,7 +4095,7 @@ mod tests {
         assert_eq!(OldAddress::loaded(&cell_bits.clone()).unwrap(), named_read);
         let read = named_read.as_loaded_value().expect("a typed pointer read");
         assert_eq!(read.defining_address, p);
-        assert_eq!(read.displacement, OldAddressOffset::Constant(0));
+        assert_eq!(read.displacement, AddressOffset::constant(0));
         let scalar_indexed_address = p.offset_by_elements(cell_bits, 8);
         assert!(scalar_indexed_address.as_loaded_value().is_none());
         assert_ne!(scalar_indexed_address, named_read);
@@ -4300,7 +4277,7 @@ mod tests {
         // different names, and only the path's facts make them one value.
         let cell = OldAddress {
             base: AddressBase::Heap(95_001),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let other = at(symbolic(95_003), 0);
         let before = crate::kernel::SymbolicMemory::new().with_block(AddressBase::Heap(95_001), 16);
@@ -4522,7 +4499,7 @@ mod tests {
         assert_eq!(
             sum.to_offset_term(),
             Some(AddressOffset::add(
-                AddressOffset::add(OldAddressOffset::Constant(0).into(), low),
+                AddressOffset::add(AddressOffset::constant(0), low),
                 high,
             ))
         );
@@ -4598,7 +4575,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = OldAddress {
             base: AddressBase::Concrete("local:scalar-versions".into()),
-            offset: OldAddressOffset::Constant(0).into(),
+            offset: AddressOffset::constant(0),
         };
         let entry = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block("local:scalar-versions", 8));

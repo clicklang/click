@@ -2552,9 +2552,7 @@ mod tests {
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(crate::kernel::OldAddress {
                 base: crate::kernel::AddressBase::Concrete("cells".into()),
-                offset: crate::kernel::AddressOffset::from(
-                    crate::kernel::OldAddressOffset::Constant(4),
-                ),
+                offset: AddressOffset::constant(4),
             }),
             crate::kernel::LoadKind::Int32,
         );

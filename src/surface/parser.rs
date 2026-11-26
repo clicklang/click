@@ -11,7 +11,6 @@ mod rust_literals;
 mod rust_reference_authority;
 mod rust_type_resources;
 use super::names;
-use crate::kernel::OffsetTree;
 use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
 mod rust_trait_objects;

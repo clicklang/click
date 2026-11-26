@@ -23,7 +23,7 @@ const TARGET_HEAP: u64 = 1_000_000;
 fn heap_base(identity: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::Heap(identity),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     }
 }
 
@@ -77,7 +77,7 @@ fn address_equal(left: OldAddress, right: OldAddress) -> OldConditionTerm {
 fn symbolic_base(identity: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::Symbolic(Variable(identity)),
-        offset: OldAddressOffset::Constant(0).into(),
+        offset: AddressOffset::constant(0),
     }
 }
 
@@ -825,18 +825,11 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     // symbolic base, as the arena's descriptors do.
     let object = |identity: u64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     };
     let field = |identity: u64, bytes: i64| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(
-                object(identity).offset,
-            )),
-            Box::new(OldAddressOffset::Constant(bytes)),
-        )
-        .into(),
+        offset: AddressOffset::raw_add(object(identity).offset, AddressOffset::constant(bytes)),
     };
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
@@ -1001,8 +994,7 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
 fn parameter_base(identity: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1375,11 +1367,10 @@ fn normalizing_external_ranges_compares_only_related_bases() {
         for index in 0..size {
             let base = OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::scale_int32(
+                offset: AddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9 * TARGET_HEAP + index)),
                     4,
-                )
-                .into(),
+                ),
             };
             facts.push(owned_range(base.clone(), 0, 1));
             facts.push(owned_range(base, 1, 2));
@@ -1568,7 +1559,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
             memory.store(
                 OldAddress {
                     base: AddressBase::Heap(TARGET_HEAP),
-                    offset: OldAddressOffset::Constant(4 * node as i64).into(),
+                    offset: AddressOffset::constant(4 * node as i64),
                 },
                 int32(node as u32),
             )
@@ -1645,8 +1636,7 @@ fn slot_definitions() -> Vec<CompositeResourceDefinition> {
 fn external_descriptor(identity: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4)
-            .into(),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -2281,11 +2271,7 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
 fn argument_base(variable: u64) -> OldAddress {
     OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scaled_int32_node(
-            OldMachineTerm::Variable(Variable(variable)),
-            4,
-        )
-        .into(),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
@@ -2758,12 +2744,11 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         MemoryRange::new_wide(
             OldAddress {
                 base: AddressBase::Heap(TARGET_HEAP),
-                offset: OldAddressOffset::scaled_int64_node(
+                offset: AddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable((1 << 41) + index)),
                     8,
                     true,
-                )
-                .into(),
+                ),
             },
             zero(),
             OldMachineTerm::uint64_constant(1),
@@ -2799,15 +2784,14 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
     };
     let field = OldAddress {
         base: AddressBase::Heap(TARGET_HEAP),
-        offset: OldAddressOffset::Add(
-            Box::new(OldAddressOffset::scaled_int64_node(
+        offset: AddressOffset::raw_add(
+            AddressOffset::scaled_int64_node(
                 OldMachineTerm::int64_multiply(index.clone(), OldMachineTerm::int64_constant(8)),
                 1,
                 false,
-            )),
-            Box::new(OldAddressOffset::Constant(4)),
-        )
-        .into(),
+            ),
+            AddressOffset::constant(4),
+        ),
     };
     let mut take = Vec::new();
     let mut give_back = Vec::new();

@@ -3050,18 +3050,9 @@ mod shared_reconstruction_tests {
 
     fn scaled(value: S, width: i64, wide: bool) -> AddressOffset {
         if wide {
-            OldAddressOffset::Int64Scaled {
-                value,
-                byte_width: width,
-                unsigned: true,
-            }
-            .into()
+            AddressOffset::int64_scaled(value, width, true)
         } else {
-            OldAddressOffset::Int32Scaled {
-                value,
-                byte_width: width,
-            }
-            .into()
+            AddressOffset::int32_scaled(value, width)
         }
     }
 
@@ -3080,12 +3071,7 @@ mod shared_reconstruction_tests {
             let offset = if ty == T::Int32 {
                 scaled(index.clone(), 8, false)
             } else {
-                OldAddressOffset::Int64Scaled {
-                    value: index.clone(),
-                    byte_width: 8,
-                    unsigned: ty == T::UInt64,
-                }
-                .into()
+                AddressOffset::int64_scaled(index.clone(), 8, ty == T::UInt64)
             };
             let exports = KernelTermExport::machine_export_count();
             let element = scaled_element_offset(&offset).unwrap();
@@ -3195,17 +3181,9 @@ mod shared_reconstruction_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let x = OldMachineTerm::Variable(Variable(1018204));
         let y = OldMachineTerm::Variable(Variable(1018205));
-        let offset = OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(scaled(
-                S::index(T::Int32, x.clone()),
-                4,
-                false,
-            ))),
-            Box::new(crate::kernel::OldAddressOffset::from(scaled(
-                S::index(T::Int32, y.clone()),
-                4,
-                false,
-            ))),
+        let offset = AddressOffset::raw_add(
+            scaled(S::index(T::Int32, x.clone()), 4, false),
+            scaled(S::index(T::Int32, y.clone()), 4, false),
         );
         let empty = PureFactContext::new();
         let mut bounded = empty.clone();
@@ -3221,22 +3199,13 @@ mod shared_reconstruction_tests {
                 );
         }
         let exports = KernelTermExport::machine_export_count();
-        assert!(!empty.element_index_rebuild_is_exact_for_width(
-            &crate::kernel::AddressOffset::from(&offset),
-            4
-        ));
-        assert!(bounded.element_index_rebuild_is_exact_for_width(
-            &crate::kernel::AddressOffset::from(&offset),
-            4
-        ));
-        let wraps = OldAddressOffset::Add(
-            Box::new(OldAddressOffset::Constant(i64::from(i32::MAX) * 4)),
-            Box::new(OldAddressOffset::Constant(4)),
+        assert!(!empty.element_index_rebuild_is_exact_for_width(&offset.clone(), 4));
+        assert!(bounded.element_index_rebuild_is_exact_for_width(&offset.clone(), 4));
+        let wraps = AddressOffset::raw_add(
+            AddressOffset::constant(i64::from(i32::MAX) * 4),
+            AddressOffset::constant(4),
         );
-        assert!(!empty.element_index_rebuild_is_exact_for_width(
-            &crate::kernel::AddressOffset::from(&wraps),
-            4
-        ));
+        assert!(!empty.element_index_rebuild_is_exact_for_width(&wraps.clone(), 4));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 

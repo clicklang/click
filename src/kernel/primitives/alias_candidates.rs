@@ -56,7 +56,6 @@
 use super::{
     AddressBase, AddressOffset, HashedOrdMap, HashedOrdSet, OldAddress, ProgramType, Variable,
 };
-use crate::kernel::OffsetTree;
 use std::hash::Hash;
 use std::ops::Bound;
 
@@ -651,6 +650,7 @@ impl AliasCandidates {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::OffsetTree;
 
     fn sample_blocks() -> Vec<AddressBase> {
         vec![
@@ -733,9 +733,7 @@ mod tests {
                 map.insert(
                     OldAddress {
                         base: block.clone(),
-                        offset: crate::kernel::AddressOffset::from(
-                            crate::kernel::OldAddressOffset::Constant(offset),
-                        ),
+                        offset: AddressOffset::constant(offset),
                     },
                     index as u32,
                 );
@@ -743,9 +741,7 @@ mod tests {
             map.insert(
                 OldAddress {
                     base: block.clone(),
-                    offset: crate::kernel::AddressOffset::from(
-                        crate::kernel::OldAddressOffset::Variable(Variable(1)),
-                    ),
+                    offset: AddressOffset::variable(Variable(1)),
                 },
                 index as u32,
             );

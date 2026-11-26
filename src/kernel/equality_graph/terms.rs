@@ -3289,7 +3289,7 @@ mod tests {
     use crate::kernel::{OldAddress, OldConditionTerm, OldMachineTerm, PureFactContext};
 
     fn var(id: u64) -> AddressOffset {
-        crate::kernel::OldAddressOffset::Variable(Variable(id)).into()
+        AddressOffset::variable(Variable(id))
     }
     fn equality(left: &AddressOffset, right: &AddressOffset) -> OldConditionTerm {
         OldConditionTerm::address_offset_equal(left.clone(), right.clone())
@@ -3297,11 +3297,7 @@ mod tests {
 
     fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
         // Preserve nested applications rather than folding constants here.
-        crate::kernel::OldAddressOffset::Add(
-            Box::new(crate::kernel::OldAddressOffset::from(left)),
-            Box::new(crate::kernel::OldAddressOffset::from(right)),
-        )
-        .into()
+        AddressOffset::raw_add(left, right)
     }
 
     #[test]
@@ -3324,7 +3320,7 @@ mod tests {
             )
             .unwrap();
         let written = AddressOffset::add(
-            crate::kernel::OldAddressOffset::Constant(12).into(),
+            AddressOffset::constant(12),
             AddressOffset::scale_int32(native, 4),
         );
         let mut terms = TermClasses::default();
@@ -3387,8 +3383,8 @@ mod tests {
         assert!(!graph.are_offsets_equal(&a, &b));
         graph.add_offset_equality(&a, &b);
         assert!(!graph.are_offsets_equal(
-            &add(a, crate::kernel::OldAddressOffset::Constant(1).into()),
-            &add(b, crate::kernel::OldAddressOffset::Constant(2).into()),
+            &add(a, AddressOffset::constant(1)),
+            &add(b, AddressOffset::constant(2)),
         ));
     }
 
@@ -3511,20 +3507,8 @@ mod tests {
         assert!(branch.are_offsets_equal(&c, &a));
         assert!(branch.are_offsets_equal(&a, &a));
         assert!(!parent.are_offsets_equal(&a, &c));
-        let plus_one = |x| {
-            crate::kernel::OldAddressOffset::Add(
-                Box::new(x),
-                Box::new(crate::kernel::OldAddressOffset::Constant(1)),
-            )
-        };
-        assert!(branch.are_offsets_equal(
-            &crate::kernel::AddressOffset::from(&plus_one(crate::kernel::OldAddressOffset::from(
-                a
-            ))),
-            &crate::kernel::AddressOffset::from(&plus_one(crate::kernel::OldAddressOffset::from(
-                c
-            )))
-        ));
+        let plus_one = |x| AddressOffset::raw_add(x, AddressOffset::constant(1));
+        assert!(branch.are_offsets_equal(&plus_one(a).clone(), &plus_one(c).clone()));
     }
 
     #[test]
@@ -3564,7 +3548,7 @@ mod tests {
             &scaled(4, true),
             &OldAddress {
                 base: base.base.clone(),
-                offset: crate::kernel::OldAddressOffset::Constant(4i64 << 32).into()
+                offset: AddressOffset::constant(4i64 << 32)
             }
         ));
         assert!(!high_word.are_equal(&scaled(4, true), &base));

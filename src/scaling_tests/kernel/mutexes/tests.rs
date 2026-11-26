@@ -283,7 +283,7 @@ fn initialization_storage_lookup_is_indexed_within_one_object() {
     use super::super::super::*;
     let base = OldAddress {
         base: AddressBase::Heap(91_001),
-        offset: OldAddressOffset::Constant(0),
+        offset: AddressOffset::constant(0),
     };
     let mut samples = vec![];
     for size in [16usize, 64, 256, 1024] {
@@ -355,7 +355,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
                     .initialize_empty(
                         OldAddress {
                             base: block,
-                            offset: OldAddressOffset::constant(0),
+                            offset: AddressOffset::constant(0),
                         },
                         40,
                     )
@@ -368,7 +368,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
                 let range = allocation_range(
                     OldAddress {
                         base: block.clone(),
-                        offset: OldAddressOffset::constant(0),
+                        offset: AddressOffset::constant(0),
                     },
                     48,
                 );
@@ -384,7 +384,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
                 let range = allocation_range(
                     OldAddress {
                         base: block,
-                        offset: OldAddressOffset::constant(0),
+                        offset: AddressOffset::constant(0),
                     },
                     48,
                 );

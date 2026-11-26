@@ -13,9 +13,9 @@ fn int32_load_late_merge_and_fork_work_scales_with_affected_applications() {
         let memory = memory();
         let indexed = |index, suffix| OldAddress {
             base: "array".into(),
-            offset: OldAddressOffset::Add(
-                Box::new(address(index).offset),
-                Box::new(OldAddressOffset::Variable(Variable(100 + suffix))),
+            offset: AddressOffset::raw_add(
+                address(index).offset,
+                AddressOffset::variable(Variable(100 + suffix)),
             ),
         };
         let mut graph = EqualityGraph::default();
@@ -67,7 +67,7 @@ fn int32_load_nested_registration_and_late_closure_are_iterative_and_scale() {
                     &memory,
                     &OldAddress {
                         base: "array".into(),
-                        offset: OldAddressOffset::scale_int32(value, 4),
+                        offset: AddressOffset::scale_int32(value, 4),
                     },
                     4,
                 );
@@ -113,7 +113,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         };
         let backing = OldAddress {
             base: owner.base.clone(),
-            offset: OldAddressOffset::scale_int32(load(&execution), 4).into(),
+            offset: AddressOffset::scale_int32(load(&execution), 4),
         };
         let after = execution.clone().store(
             backing.offset_by_int32_elements(var(88)),
@@ -121,7 +121,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         );
         let selected = OldAddress {
             base: owner.base.clone(),
-            offset: OldAddressOffset::scale_int32(load(&after), 4).into(),
+            offset: AddressOffset::scale_int32(load(&after), 4),
         };
         let mut graph = EqualityGraph::default();
         for extra in 0..size {

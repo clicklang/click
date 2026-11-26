@@ -124,12 +124,8 @@ fn solve_retains_recorded_load_address_equality_premises() {
                 LoadKind::Int32,
             ))
         };
-        let indexed = load(crate::kernel::AddressOffset::from(
-            OldAddressOffset::scaled_int32_node(term(0), 4),
-        ));
-        let first = load(crate::kernel::AddressOffset::from(
-            OldAddressOffset::Constant(0),
-        ));
+        let indexed = load(AddressOffset::scaled_int32_node(term(0), 4));
+        let first = load(AddressOffset::constant(0));
         let equality = |left, right| {
             Proposition::condition_is(
                 OldConditionTerm::Compare {
@@ -231,11 +227,10 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
     for count in [8u64, 16, 32, 64, 128] {
         let pointer = |index| OldAddress {
             base: "indexed".into(),
-            offset: OldAddressOffset::scaled_int32_node(
+            offset: AddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(9_340_000 + index)),
                 4,
-            )
-            .into(),
+            ),
         };
         let equality = |left, right| {
             Proposition::condition_is(OldConditionTerm::address_equal(left, right), true)
@@ -248,11 +243,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
         let memory = intern_memory(SymbolicMemory::new().with_block("indexed", 4096));
         let load = |index| {
             let mut at = pointer(index);
-            at.offset = OldAddressOffset::Add(
-                Box::new(crate::kernel::OldAddressOffset::from(at.offset)),
-                Box::new(OldAddressOffset::Constant(4)),
-            )
-            .into();
+            at.offset = AddressOffset::raw_add(at.offset, AddressOffset::constant(4));
             crate::kernel::canonical_term(&OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at),
