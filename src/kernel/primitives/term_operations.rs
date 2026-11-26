@@ -3071,13 +3071,13 @@ impl OldConditionTerm {
     /// nested sums are refused.
     pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<OldConditionTerm> {
         fn scalar(offset: &OldAddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
-            match offset {
-                OldAddressOffset::Int64Scaled {
-                    value,
+            match offset.view() {
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned: true,
-                } if *byte_width == width => Some(value.clone()),
-                OldAddressOffset::Constant(value) if *value >= 0 && value % width == 0 => {
+                } if byte_width == width => Some(index),
+                OffsetView::Constant(value) if value >= 0 && value % width == 0 => {
                     Some(SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
                         OldMachineTerm::uint64_constant((value / width) as u64),
@@ -3088,29 +3088,29 @@ impl OldConditionTerm {
         }
         let (left, right) = self.pointer_offset_sides()?;
         for (expanded, indexed) in [(left, right), (right, left)] {
-            let OldAddressOffset::Add(left, right) = expanded else {
+            let OffsetView::Add(left, right) = expanded.view() else {
                 continue;
             };
-            let (left, indexed) = match (left.as_ref(), indexed) {
-                (OldAddressOffset::Add(base, index), OldAddressOffset::Add(other_base, sum))
+            let (left, indexed) = match (left.view(), indexed.view()) {
+                (OffsetView::Add(base, index), OffsetView::Add(other_base, sum))
                     if base == other_base =>
                 {
-                    (index.as_ref(), sum.as_ref())
+                    (index, sum)
                 }
-                _ => (left.as_ref(), indexed),
+                _ => (left, indexed),
             };
-            let OldAddressOffset::Int64Scaled {
-                value,
+            let OffsetView::Int64Scaled {
+                index: value,
                 byte_width,
                 unsigned: true,
-            } = indexed
+            } = indexed.view()
             else {
                 continue;
             };
-            if *byte_width <= 0 {
+            if byte_width <= 0 {
                 continue;
             }
-            let (Some(left), Some(right)) = (scalar(left, *byte_width), scalar(right, *byte_width))
+            let (Some(left), Some(right)) = (scalar(left, byte_width), scalar(right, byte_width))
             else {
                 continue;
             };
@@ -3156,11 +3156,9 @@ impl OldConditionTerm {
     /// precede them; other nested sums and full-width indices are refused.
     pub(crate) fn pointer_offset_association_guard(&self) -> Option<[SharedMachineIntegerTerm; 2]> {
         fn scalar(offset: &OldAddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
-            match offset {
-                OldAddressOffset::Int32Scaled { value, byte_width } if *byte_width == width => {
-                    Some(value.clone())
-                }
-                OldAddressOffset::Constant(value) if value % width == 0 => {
+            match offset.view() {
+                OffsetView::Int32Scaled { index, byte_width } if byte_width == width => Some(index),
+                OffsetView::Constant(value) if value % width == 0 => {
                     i32::try_from(value / width).ok().map(|value| {
                         SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
@@ -3173,27 +3171,31 @@ impl OldConditionTerm {
         }
         let (left, right) = self.pointer_offset_sides()?;
         for (expanded, indexed) in [(left, right), (right, left)] {
-            let OldAddressOffset::Add(left, right) = expanded else {
+            let OffsetView::Add(left, right) = expanded.view() else {
                 continue;
             };
             // Source pointers can carry a symbolic byte offset before the
             // selected index. Cancel only an identical leading base, without
             // consulting aliases or traversing unrelated offset addends.
-            let (left, indexed) = match (left.as_ref(), indexed) {
-                (OldAddressOffset::Add(base, index), OldAddressOffset::Add(other_base, sum))
+            let (left, indexed) = match (left.view(), indexed.view()) {
+                (OffsetView::Add(base, index), OffsetView::Add(other_base, sum))
                     if base == other_base =>
                 {
-                    (index.as_ref(), sum.as_ref())
+                    (index, sum)
                 }
-                _ => (left.as_ref(), indexed),
+                _ => (left, indexed),
             };
-            let OldAddressOffset::Int32Scaled { value, byte_width } = indexed else {
+            let OffsetView::Int32Scaled {
+                index: value,
+                byte_width,
+            } = indexed.view()
+            else {
                 continue;
             };
-            if !(*byte_width > 0 && *byte_width <= i64::from(u32::MAX)) {
+            if !(byte_width > 0 && byte_width <= i64::from(u32::MAX)) {
                 continue;
             }
-            let (Some(left), Some(right)) = (scalar(left, *byte_width), scalar(right, *byte_width))
+            let (Some(left), Some(right)) = (scalar(left, byte_width), scalar(right, byte_width))
             else {
                 continue;
             };
@@ -4905,7 +4907,7 @@ impl OldPointer {
 
 impl OldAddress {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
-        if self.offset == OldAddressOffset::Constant(0)
+        if matches!(self.offset.view(), OffsetView::Constant(0))
             && let AddressBase::PureFunctionApplication(application) = &self.base
         {
             application.integer_address_bits()
@@ -4922,9 +4924,9 @@ impl OldAddress {
     /// deciding whether the originating object base may be null.
     pub(in crate::kernel) fn object_base(&self) -> Self {
         fn external_base(offset: &OldAddressOffset) -> &OldAddressOffset {
-            match offset {
-                OldAddressOffset::Add(base, _) => external_base(base),
-                offset => offset,
+            match offset.view() {
+                OffsetView::Add(base, _) => external_base(base),
+                _ => offset,
             }
         }
 
@@ -4933,7 +4935,7 @@ impl OldAddress {
             offset: if self.base == AddressBase::ExternalArgument {
                 external_base(&self.offset).clone()
             } else {
-                OldAddressOffset::Constant(0)
+                OldAddressOffset::constant(0)
             },
         }
     }
@@ -4950,18 +4952,17 @@ impl OldAddress {
     pub(in crate::kernel) fn object_identity(&self) -> Self {
         if self.base == AddressBase::ExternalArgument {
             let base = self.object_base();
-            let variable = match &base.offset {
-                OldAddressOffset::Variable(variable) => Some(*variable),
-                OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. } => {
-                    value.operand_view().variable().copied()
+            let variable = match base.offset.view() {
+                OffsetView::Variable(variable) => Some(variable),
+                OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                    index.operand_view().variable().copied()
                 }
-                OldAddressOffset::Constant(_) | OldAddressOffset::Add(_, _) => None,
+                OffsetView::Constant(_) | OffsetView::Add(_, _) => None,
             };
             if let Some(variable) = variable {
                 return Self {
                     base: AddressBase::ExternalObject(variable),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 };
             }
             return Self {
@@ -4972,14 +4973,14 @@ impl OldAddress {
 
         Self {
             base: self.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
     pub(crate) fn null() -> Self {
         Self {
             base: "null".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -5003,14 +5004,14 @@ impl OldAddress {
                 "$integer-address".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(bits))],
             )),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
     pub(crate) fn symbolic(variable: Variable) -> Self {
         Self {
             base: AddressBase::Symbolic(variable),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -5021,7 +5022,7 @@ impl OldAddress {
     pub(crate) fn verifier_temporary(identity: Variable) -> Self {
         Self {
             base: AddressBase::Temporary(identity.0),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -5187,13 +5188,14 @@ impl OldAddress {
             Some(ProgramValue::Pointer(stored))
                 if stored.address().as_loaded_value().is_some_and(|read| {
                     read.defining_address == *address
-                        && read.displacement == OldAddressOffset::Constant(0)
+                        && matches!(read.displacement.view(), OffsetView::Constant(0))
                 }) || matches!(
                     stored.address(),
                     OldAddress {
                         base: AddressBase::Symbolic(variable),
-                        offset: OldAddressOffset::Constant(0),
-                    } if crate::kernel::registered_load_for_variable(variable)
+                        offset,
+                    } if matches!(offset.view(), OffsetView::Constant(0))
+                        && crate::kernel::registered_load_for_variable(variable)
                         .is_some_and(|(_, registered)| registered == *address)
                 ) =>
             {
@@ -5223,14 +5225,14 @@ impl OldAddress {
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
         Self {
             base: AddressBase::FunctionSymbolic(variable),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
     pub(crate) fn function(name: impl Into<String>) -> Self {
         Self {
             base: AddressBase::Function(name.into()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
     pub(in crate::kernel) fn has_symbolic_block(&self) -> bool {
@@ -5255,7 +5257,7 @@ impl OldAddress {
             base: self.base.clone(),
             offset: OldAddressOffset::add(
                 self.offset.clone(),
-                OldAddressOffset::Constant(i64::from(bytes)),
+                OldAddressOffset::constant(i64::from(bytes)),
             ),
         }
     }
@@ -5282,12 +5284,9 @@ impl OldAddress {
     ) -> Self {
         let displacement = match elements.operand_view().word32_constant() {
             Some(value) => {
-                OldAddressOffset::Constant(i64::from(value as i32) * i64::from(byte_width))
+                OldAddressOffset::constant(i64::from(value as i32) * i64::from(byte_width))
             }
-            None => OldAddressOffset::Int32Scaled {
-                value: elements,
-                byte_width: i64::from(byte_width),
-            },
+            None => OldAddressOffset::int32_scaled(elements, i64::from(byte_width)),
         };
         Self {
             base: self.base.clone(),
@@ -5353,13 +5352,14 @@ impl OldAddress {
         byte_width: u32,
     ) -> Option<SharedMachineIntegerTerm> {
         let width = i64::from(byte_width);
-        match self.offset_from_base(base)? {
-            OldAddressOffset::Int64Scaled {
-                value,
+        let offset = self.offset_from_base(base)?;
+        match offset.view() {
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned: true,
-            } if byte_width == width => Some(value),
-            OldAddressOffset::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
+            } if byte_width == width => Some(index),
+            OffsetView::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
                 let root = KernelTerm::retained_native_machine_operand(
                     MachineIntegerType::UInt64,
                     &OldMachineTerm::uint64_constant((bytes / width) as u64),
@@ -5383,15 +5383,15 @@ impl OldAddress {
             return Some(OldMachineTerm::constant(0));
         }
 
-        if base.offset == OldAddressOffset::Constant(0) {
+        if matches!(base.offset.view(), OffsetView::Constant(0)) {
             return crate::kernel::reasoning::element_index_from_offset(&self.offset, byte_width);
         }
 
-        match &self.offset {
-            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+        match self.offset.view() {
+            OffsetView::Add(left, right) if left == &base.offset => {
                 crate::kernel::reasoning::element_index_from_offset(right, byte_width)
             }
-            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+            OffsetView::Add(left, right) if right == &base.offset => {
                 crate::kernel::reasoning::element_index_from_offset(left, byte_width)
             }
             _ => {
@@ -5428,18 +5428,18 @@ impl OldAddress {
             );
         }
 
-        if base.offset == OldAddressOffset::Constant(0) {
+        if matches!(base.offset.view(), OffsetView::Constant(0)) {
             return crate::kernel::reasoning::shared_element_index_from_offset(
                 &self.offset,
                 byte_width,
             );
         }
 
-        match &self.offset {
-            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+        match self.offset.view() {
+            OffsetView::Add(left, right) if left == &base.offset => {
                 crate::kernel::reasoning::shared_element_index_from_offset(right, byte_width)
             }
-            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+            OffsetView::Add(left, right) if right == &base.offset => {
                 crate::kernel::reasoning::shared_element_index_from_offset(left, byte_width)
             }
             _ => {
@@ -5494,14 +5494,14 @@ impl OldAddress {
         if self.offset == base.offset {
             return Some(ExactElementDelta::zero());
         }
-        if base.offset == OldAddressOffset::Constant(0) {
+        if matches!(base.offset.view(), OffsetView::Constant(0)) {
             return exact_element_delta_from_offset(&self.offset, byte_width);
         }
-        match &self.offset {
-            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+        match self.offset.view() {
+            OffsetView::Add(left, right) if left == &base.offset => {
                 exact_element_delta_from_offset(right, byte_width)
             }
-            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+            OffsetView::Add(left, right) if right == &base.offset => {
                 exact_element_delta_from_offset(left, byte_width)
             }
             _ => {
@@ -5527,12 +5527,12 @@ fn native_element_index_of_difference(
     difference: &OldAddressOffset,
     byte_width: u32,
 ) -> Option<OldMachineTerm> {
-    if let OldAddressOffset::Add(symbolic, constant) = difference
-        && let OldAddressOffset::Constant(bytes) = constant.as_ref()
-        && *bytes < 0
+    if let OffsetView::Add(symbolic, constant) = difference.view()
+        && let OffsetView::Constant(bytes) = constant.view()
+        && bytes < 0
     {
         let elements = crate::kernel::reasoning::element_index_from_offset(
-            &OldAddressOffset::Constant(-bytes),
+            &OldAddressOffset::constant(-bytes),
             byte_width,
         )?;
         return Some(OldMachineTerm::subtract(
@@ -5547,12 +5547,12 @@ fn element_index_of_difference(
     difference: &OldAddressOffset,
     byte_width: u32,
 ) -> Option<SharedMachineIntegerTerm> {
-    if let OldAddressOffset::Add(symbolic, constant) = difference
-        && let OldAddressOffset::Constant(bytes) = constant.as_ref()
-        && *bytes < 0
+    if let OffsetView::Add(symbolic, constant) = difference.view()
+        && let OffsetView::Constant(bytes) = constant.view()
+        && bytes < 0
     {
         let elements = crate::kernel::reasoning::shared_element_index_from_offset(
-            &OldAddressOffset::Constant(-bytes),
+            &OldAddressOffset::constant(-bytes),
             byte_width,
         )?;
         return Some(crate::kernel::assumptions::index_binary(
@@ -5588,14 +5588,14 @@ fn offset_less_base(
                 constant = constant.checked_add(value)?;
                 continue;
             }
-            match current {
-                OldAddressOffset::Add(left, right) => {
+            match current.view() {
+                OffsetView::Add(left, right) => {
                     // Right first, so `left` is walked first and the
                     // summands keep their written order.
                     pending.push(right);
                     pending.push(left);
                 }
-                other => symbolic.push(other),
+                _ => symbolic.push(current),
             }
         }
         Some((symbolic, constant))
@@ -5611,10 +5611,10 @@ fn offset_less_base(
         .into_iter()
         .cloned()
         .reduce(OldAddressOffset::add)
-        .unwrap_or(OldAddressOffset::Constant(0));
+        .unwrap_or(OldAddressOffset::constant(0));
     Some(OldAddressOffset::add(
         difference,
-        OldAddressOffset::Constant(constant),
+        OldAddressOffset::constant(constant),
     ))
 }
 

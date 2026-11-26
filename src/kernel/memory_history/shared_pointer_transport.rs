@@ -93,7 +93,7 @@ impl<'a> Transport<'a> {
             let target = OldAddress::loaded_value(&after, load.cell());
             let before = OldAddress {
                 base: node.base.native_atom().clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             // Both observations carry the same displacement. The selected
             // complete-word frame check is on their load identities, so it
@@ -115,7 +115,7 @@ impl<'a> Transport<'a> {
             // offset neither exports nor inspects the shared displacement.
             let atom = OldAddress {
                 base: node.base.native_atom().clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             let result = transport_framed_atomic_pointer(&atom, self.after, self.assumptions)?;
             let block = SharedAddressBase::import(&result.base);

@@ -498,18 +498,18 @@ pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
     if left == right {
         return true;
     }
-    match (left, right) {
-        (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+    match (left.view(), right.view()) {
+        (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
             pointer_offsets_match_from_memory_derivations(left_a, right_a, assumptions)
                 && pointer_offsets_match_from_memory_derivations(left_b, right_b, assumptions)
         }
         (
-            OldAddressOffset::Int32Scaled {
-                value: left,
+            OffsetView::Int32Scaled {
+                index: left,
                 byte_width: left_width,
             },
-            OldAddressOffset::Int32Scaled {
-                value: right,
+            OffsetView::Int32Scaled {
+                index: right,
                 byte_width: right_width,
             },
         ) => {
@@ -2058,8 +2058,8 @@ pub(super) fn address_offset_equality_evidence(
     if left == right {
         return Some(AddressOffsetEqualityEvidence::Exact);
     }
-    match (left, right) {
-        (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+    match (left.view(), right.view()) {
+        (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
             if let Some((first, second)) =
                 address_offset_equality_evidence(left_a, right_a, assumptions).zip(
                     address_offset_equality_evidence(left_b, right_b, assumptions),
@@ -2082,12 +2082,12 @@ pub(super) fn address_offset_equality_evidence(
             })
         }
         (
-            OldAddressOffset::Int32Scaled {
-                value: left,
+            OffsetView::Int32Scaled {
+                index: left,
                 byte_width: left_width,
             },
-            OldAddressOffset::Int32Scaled {
-                value: right,
+            OffsetView::Int32Scaled {
+                index: right,
                 byte_width: right_width,
             },
         ) if left_width == right_width => {
@@ -2097,7 +2097,7 @@ pub(super) fn address_offset_equality_evidence(
             values
                 .is_fully_typed()
                 .then_some(AddressOffsetEqualityEvidence::Int32Scaled {
-                    byte_width: *left_width,
+                    byte_width: left_width,
                     values,
                 })
         }
@@ -2119,36 +2119,34 @@ impl AddressOffsetEqualityEvidence {
                 second,
                 swapped,
             } => {
-                let (
-                    OldAddressOffset::Add(left_a, left_b),
-                    OldAddressOffset::Add(right_a, right_b),
-                ) = (left, right)
+                let (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) =
+                    (left.view(), right.view())
                 else {
                     return false;
                 };
                 let (right_first, right_second) = if *swapped {
-                    (right_b.as_ref(), right_a.as_ref())
+                    (right_b, right_a)
                 } else {
-                    (right_a.as_ref(), right_b.as_ref())
+                    (right_a, right_b)
                 };
                 first.checks(left_a, right_first, assumptions)
                     && second.checks(left_b, right_second, assumptions)
             }
             Self::Int32Scaled { byte_width, values } => {
                 let (
-                    OldAddressOffset::Int32Scaled {
-                        value: left,
+                    OffsetView::Int32Scaled {
+                        index: left,
                         byte_width: left_width,
                     },
-                    OldAddressOffset::Int32Scaled {
-                        value: right,
+                    OffsetView::Int32Scaled {
+                        index: right,
                         byte_width: right_width,
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                 else {
                     return false;
                 };
-                if left_width != byte_width || right_width != byte_width {
+                if left_width != *byte_width || right_width != *byte_width {
                     return false;
                 }
                 let (Some(left), Some(right)) = (
@@ -2394,12 +2392,12 @@ pub(in crate::kernel) fn forward_range_offset_from_pointer(
     if range.base.base != pointer.base {
         return None;
     }
-    let OldAddressOffset::Add(left, right) = &range.base.offset else {
+    let OffsetView::Add(left, right) = range.base.offset.view() else {
         return None;
     };
-    if pointer.offset == **left {
+    if pointer.offset == *left {
         shared_element_index_from_offset(right, range.element_width())
-    } else if pointer.offset == **right {
+    } else if pointer.offset == *right {
         shared_element_index_from_offset(left, range.element_width())
     } else {
         None
@@ -2997,18 +2995,19 @@ fn store_member_probe_bases(
     loop {
         bases.push(base.clone());
         bases.extend(assumptions.exact_pointer_aliases(&base).cloned());
-        base.offset = match &base.offset {
-            OldAddressOffset::Add(left, _) => (**left).clone(),
-            OldAddressOffset::Constant(value) if *value != 0 => OldAddressOffset::Constant(0),
+        let next = match base.offset.view() {
+            OffsetView::Add(left, _) => left.clone(),
+            OffsetView::Constant(value) if value != 0 => OldAddressOffset::constant(0),
             // A loaded pointer's displacement is all of its offset: the
             // read itself, at displacement zero, is the object's base.
-            OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. }
+            OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. }
                 if matches!(base.base, AddressBase::Load(_)) =>
             {
-                OldAddressOffset::Constant(0)
+                OldAddressOffset::constant(0)
             }
             _ => break,
         };
+        base.offset = next;
     }
     bases
 }
@@ -3568,7 +3567,7 @@ pub(crate) fn pointer_load_offset_proven_equal(
     right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
-    let OldAddressOffset::Int32Scaled { value, .. } = left else {
+    let OffsetView::Int32Scaled { index: value, .. } = left.view() else {
         return false;
     };
     let Some(source) = value.operand_view().read_source() else {
@@ -5195,15 +5194,15 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &OldMachineTerm) -> boo
                     pending.push(Node::Condition(left, depth + 1));
                 }
             },
-            Node::Offset(offset, depth) => match offset {
-                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
-                OldAddressOffset::Add(left, right) => {
+            Node::Offset(offset, depth) => match offset.view() {
+                OffsetView::Constant(_) | OffsetView::Variable(_) => {}
+                OffsetView::Add(left, right) => {
                     pending.push(Node::Offset(right, depth + 1));
                     pending.push(Node::Offset(left, depth + 1));
                 }
                 // Scaled indices hash by retained identity, including legacy
                 // operands; they add no recursive native-key depth.
-                OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. } => {}
+                OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. } => {}
             },
         }
     }
@@ -6070,45 +6069,42 @@ pub(super) fn canonicalize_pointer_loads(pointer: &OldAddress) -> OldAddress {
     let mut results = Vec::new();
     while let Some(task) = tasks.pop() {
         match task {
-            OffsetTask::Visit(offset) => match offset {
-                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
-                    results.push(offset.clone())
-                }
-                OldAddressOffset::Add(left, right) => {
+            OffsetTask::Visit(offset) => match offset.view() {
+                OffsetView::Constant(_) | OffsetView::Variable(_) => results.push(offset.clone()),
+                OffsetView::Add(left, right) => {
                     tasks.push(OffsetTask::RebuildAdd);
                     tasks.push(OffsetTask::Visit(right));
                     tasks.push(OffsetTask::Visit(left));
                 }
-                OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. }
-                    if value.shared_operand().is_some() =>
+                OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. }
+                    if index.shared_operand().is_some() =>
                 {
                     // A shared index retains its chosen read states. Its
                     // stored values are comparison evidence, not address syntax.
                     results.push(offset.clone());
                 }
-                OldAddressOffset::Int32Scaled { value, byte_width } => {
+                OffsetView::Int32Scaled { index, byte_width } => {
                     results.push(OldAddressOffset::scale_int32(
                         canonicalize_atomic_loads_deep(
-                            value
+                            index
                                 .retained_written_operand()
                                 .expect("shared indices handled above"),
                         ),
-                        *byte_width,
+                        byte_width,
                     ));
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned,
                 } => results.push(OldAddressOffset::scale_int64(
                     canonicalize_atomic_loads_deep(
-                        value
+                        index
                             .retained_written_operand()
                             .expect("shared indices handled above"),
                     ),
-                    *byte_width,
-                    *unsigned,
+                    byte_width,
+                    unsigned,
                 )),
             },
             OffsetTask::RebuildAdd => {
@@ -6995,25 +6991,25 @@ fn transport_framed_atomic_pointer_offset(
     if crate::kernel::assumptions::reasoning_interrupted() {
         return None;
     }
-    Some(match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => offset.clone(),
-        OldAddressOffset::Add(left, right) => OldAddressOffset::add(
+    Some(match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => offset.clone(),
+        OffsetView::Add(left, right) => OldAddressOffset::add(
             transport_framed_atomic_pointer_offset(left, after, assumptions)?,
             transport_framed_atomic_pointer_offset(right, after, assumptions)?,
         ),
-        OldAddressOffset::Int32Scaled { value, byte_width } => transported_scaled_index(
-            transport_framed_index(value, after, assumptions)?,
-            *byte_width,
+        OffsetView::Int32Scaled { index, byte_width } => transported_scaled_index(
+            transport_framed_index(&index, after, assumptions)?,
+            byte_width,
             None,
         ),
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index,
             byte_width,
             unsigned,
         } => transported_scaled_index(
-            transport_framed_index(value, after, assumptions)?,
-            *byte_width,
-            Some(*unsigned),
+            transport_framed_index(&index, after, assumptions)?,
+            byte_width,
+            Some(unsigned),
         ),
     })
 }
@@ -7258,12 +7254,9 @@ pub(super) fn normalize_exact_memory_loads_in_pointer_offset(
                             .unwrap_or_else(|| value.clone());
                         results.push(
                             if let Some(bits) = normalized.operand_view().word32_constant() {
-                                OldAddressOffset::Constant((bits as i32 as i64) * byte_width)
+                                OldAddressOffset::constant((bits as i32 as i64) * byte_width)
                             } else {
-                                OldAddressOffset::Int32Scaled {
-                                    value: normalized,
-                                    byte_width,
-                                }
+                                OldAddressOffset::int32_scaled(normalized, byte_width)
                             },
                         );
                     }
