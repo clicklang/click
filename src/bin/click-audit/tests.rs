@@ -2171,42 +2171,47 @@ fn rewrites_of_the_same_text_do_not_combine() {
 #[ignore = "nightly: audits combined rewrites of three multi-site claims"]
 fn a_claims_rewrites_are_verified_in_one_run() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests");
-    // Exercise loop, branch, and 64-bit-index claims without inventorying the
-    // unrelated corpus. These are the same cases the corpus scan selected.
-    let sources = [
+    let directory = tempfile::tempdir().unwrap();
+    let fixtures = [
         "statement_regions_reach_a_loop_body.md",
         "a_condition_reaching_one_value_along_two_paths_splits_into_them.md",
         "a_frame_holds_across_a_write_at_a_64_bit_index.md",
-    ]
-    .map(|fixture| root.join(fixture));
-    let sites = inventory_sites(&sources).unwrap();
-    // Each selected claim has at least three independently expandable sites.
-    let mut by_claim: BTreeMap<(PathBuf, String), Vec<&AuditSite>> = BTreeMap::new();
-    for site in &sites {
-        by_claim
-            .entry((site.click_path.clone(), site.claim.clone()))
-            .or_default()
-            .push(site);
-    }
+    ];
+    // Exercise three disjoint replacements in each claim. The spaces inside
+    // the written closers distinguish a replacement from a fixed point even
+    // when emission can close the same fact directly.
+    let probes = [
+        "    have 1 == 1 by { close( ); }",
+        "    have 2 == 2 by { close( ); }",
+        "    have 3 == 3 by { close( ); }",
+    ];
     let limits = AuditLimits::default();
     let deadline = Instant::now() + Duration::from_secs(600);
-    let mut checked = 0;
-    for ((path, claim), claim_sites) in by_claim {
-        if claim_sites.len() < 3 {
-            continue;
-        }
+    for fixture in fixtures {
+        let original = fs::read_to_string(root.join(fixture)).unwrap();
+        let source =
+            original.replacen("} by {\n", &format!("}} by {{\n{}\n", probes.join("\n")), 1);
+        assert_ne!(original, source, "{fixture}");
+        let path = directory.path().join(fixture);
+        fs::write(&path, &source).unwrap();
+        let inventory = inventory_sites(std::slice::from_ref(&path)).unwrap();
         let mut worker = AuditSessionWorker::start(&path, limits.session).unwrap();
         let mut rewrites = Vec::new();
         let mut alone = Vec::new();
-        for site in &claim_sites {
-            let Ok(rewrite) = audit_site_rewrite(site, &mut worker, &limits, false, deadline)
-            else {
-                break;
-            };
+        let mut claim = None;
+        for probe in probes {
+            let line = source.lines().position(|line| line == probe).unwrap() + 1;
+            let site = inventory
+                .iter()
+                .find(|site| site.position.line == line)
+                .unwrap_or_else(|| panic!("{fixture}:{line} must inventory its proof"));
+            assert_eq!(*claim.get_or_insert(site.claim.as_str()), site.claim);
+            let rewrite = audit_site_rewrite(site, &mut worker, &limits, false, deadline)
+                .unwrap_or_else(|error| panic!("{fixture}:{line}: {error}"));
             alone.push(
                 verify_rewrite_in_session(
                     &mut worker,
-                    &claim,
+                    &site.claim,
                     &rewrite.expanded,
                     &limits,
                     deadline,
@@ -2216,32 +2221,22 @@ fn a_claims_rewrites_are_verified_in_one_run() {
             );
             rewrites.push(rewrite.expanded);
         }
-        if rewrites.len() < claim_sites.len() {
-            continue;
-        }
-        let original = worker.source.container_source.clone();
         let references = rewrites.iter().map(String::as_str).collect::<Vec<_>>();
-        if combine_rewrites(&original, &references).is_none() {
-            continue;
-        }
+        assert!(
+            combine_rewrites(&source, &references).is_some(),
+            "{fixture}"
+        );
         let together =
-            verify_claim_rewrites(&mut worker, &claim, &references, &limits, deadline).unwrap();
+            verify_claim_rewrites(&mut worker, claim.unwrap(), &references, &limits, deadline)
+                .unwrap();
         let largest = *alone.iter().max().unwrap();
         let total: usize = alone.iter().sum();
         assert!(
             together.work <= largest * 2 && together.work < total,
-            "{claim}: together {} units, alone {alone:?}",
+            "{fixture}: together {} units, alone {alone:?}",
             together.work
         );
-        checked += 1;
-        if checked == 3 {
-            break;
-        }
     }
-    assert_eq!(
-        checked, 3,
-        "the fixtures have claims with several smart sites"
-    );
 }
 
 #[test]

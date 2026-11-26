@@ -16,6 +16,24 @@ fn guarded_array(value: &mut i32, x: u16) -> u32 {
     owns value[0..1];
     ensures result == x;
     ensures value[0] == old(value[0]);
+} by {
+    step_until(call(Guard_drop, 0).entry);
+    have guard.slot == value by { close(); }
+    have guard.saved == old(value[0]) by { close(); }
+    mark before_drop;
+    step(Guard_drop);
+    have guard.slot == value by { close(); }
+    have guard.slot[0] == at(before_drop, guard.saved) by { close(); }
+    have value[0] == at(before_drop, guard.saved) by {
+        rewrite(value, guard.slot);
+        close();
+    }
+    have value[0] == old(value[0]) by {
+        rewrite(value[0], at(before_drop, guard.saved));
+        close();
+    }
+    step_until(function.exit);
+    close();
 }
 
 fn large_array() -> u8 {

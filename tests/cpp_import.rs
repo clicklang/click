@@ -347,6 +347,11 @@ fn check_trivial_record_parameter_copy(tools: bool) {
         // environment. Do not run the tactic-level round trip as well.
         let (session, verified) =
             ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        let proof_span = |source: &str, name: &str| {
+            let declaration = source.find(&format!(" {name}(")).unwrap();
+            let body = declaration + source[declaration..].find("} by {").unwrap() + "} by {".len();
+            body..body + source[body..].find("\n}").unwrap()
+        };
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
             proof,
             &verified,
@@ -362,31 +367,50 @@ fn check_trivial_record_parameter_copy(tools: bool) {
             0,
         )
         .unwrap();
-        click::surface::without_implicit_solve(|| {
-            session.verify_at_project(&expanded, position.line, position.column)
-        })
-        .unwrap();
+        let expanded = click::surface::SelectedTacticExpansion {
+            replacement_spans: std::iter::once(proof_span(&expanded, "probe")).collect(),
+            source: expanded,
+        };
+        expanded
+            .with_checked_closers(|| {
+                click::surface::without_implicit_solve(|| {
+                    session.verify_at_project(&expanded.source, position.line, position.column)
+                })
+            })
+            .unwrap()
+            .unwrap();
         // Expand the earlier callee after the later caller, keeping the
         // original certificate positions valid. Finish printing before the
         // independent cold check resets the kernel tables.
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
-            &expanded,
+            &expanded.source,
             &verified,
             "change.contract",
         )
         .unwrap()
         .unwrap();
         drop(session);
-        let rewritten = parsed.with_entry_source(expanded);
-        assert!(
-            project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
-                .unwrap()
-                .is_empty()
-        );
-        click::surface::without_implicit_solve(|| {
-            verify_program_prepared_project(&rewritten, &import)
-        })
-        .unwrap();
+        let expanded = click::surface::SelectedTacticExpansion {
+            replacement_spans: vec![
+                proof_span(&expanded, "change"),
+                proof_span(&expanded, "probe"),
+            ],
+            source: expanded,
+        };
+        let rewritten = parsed.with_entry_source(expanded.source.clone());
+        expanded
+            .with_checked_closers(|| {
+                assert!(
+                    project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
+                        .unwrap()
+                        .is_empty()
+                );
+                click::surface::without_implicit_solve(|| {
+                    verify_program_prepared_project(&rewritten, &import)
+                })
+                .unwrap();
+            })
+            .unwrap();
     } else {
         check_arithmetic_sidecar_with_tools(&project, &import, proof, false);
     }
@@ -9566,14 +9590,25 @@ fn cpp20_modular_conversion_contract_preserves_bits_and_frames_memory() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "conversion.cpp";
-int64 explicit_cast(uint64 value) { ensures (result as uint64) == value; }
+int64 explicit_cast(uint64 value) { ensures (result as uint64) == value; } by {
+ step_until(function.exit);
+ have (result as uint64) == value by { apply(same_bits(value)); close(); }
+ close();
+}
 int64 relay(uint64 value, int32* untouched) {
  owns untouched[0..1];
  ensures (result as uint64) == value;
  ensures untouched[0] == old(untouched[0]);
+} by {
+ step_until(function.exit);
+ have (result as uint64) == value by { apply(same_bits(value)); close(); }
+ have untouched[0] == old(untouched[0]) by { apply(same_cell(old(untouched[0]))); close(); }
+ close();
 }
+theorem same_bits(x: uint64) { ensures x == x by { close(); } }
+theorem same_cell(x: int32) { ensures x == x by { close(); } }
 "#;
-    check_first_claim_certificate(&project, &import, source);
+    check_selected_claim_certificate(&project, &import, source);
 }
 
 #[test]
@@ -22453,11 +22488,35 @@ fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
     project.write_config_with_exception_behavior("probe", "cleanup.cpp", true, profile);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = r#"verifying "cleanup.cpp";
+    let source = r#"import click::separation;
+    verifying "cleanup.cpp";
     Guard::Guard(int32* p) { owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }
-    Guard::~Guard() { requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }
+    Guard::~Guard() {
+        requires separate(memory(*this), memory(this->slot[0..1]));
+        views this->slot;
+        owns this->slot[0];
+        ensures this->slot[0] == 9;
+    } by {
+        have separate(memory(this->slot[0..1]), memory(this->slot)) by {
+            have contains(memory(*this), memory(this->slot)) by { close(); }
+            apply(separation::contains_refl(memory(this->slot[0..1])));
+            apply(separation::separate_restrict(memory(*this), memory(this->slot[0..1]), memory(this->slot), memory(this->slot[0..1])));
+            close();
+        }
+        step_until(function.exit);
+        have this->slot == old(this->slot) by {
+            apply(same_pointer(old(this->slot)));
+            close();
+        }
+        have this->slot[0] == 9 by {
+            rewrite(this->slot, old(this->slot));
+            close();
+        }
+        close();
+    }
     int32 fallible(bool fail) { requires fail == false; ensures result == 4; }
     int32 probe(int32* slot, bool fail) { requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }
+    theorem same_pointer(p: int32*) { ensures p == p by { close(); } }
     "#.to_string();
     click::surface::with_proof_trace("probe", || {
         check_noexcept_replay_all(&project, &import, &source)

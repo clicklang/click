@@ -1200,7 +1200,7 @@ fn rbtree_erase_black_successor_requires_the_fixup_parent() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = NULL;\n",
-        "equality: 0 == mp",
+        "goal: 0 == parent",
     );
 }
 
@@ -1344,7 +1344,7 @@ fn rbtree_erase_black_successor_requires_its_old_parent_as_fixup_parent() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = rb_is_black(successor) ? tmp : NULL;\n",
-        "equality: rebalance == mp",
+        "`have` failed for `rebalance == parent`",
     );
 }
 
