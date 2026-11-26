@@ -3579,7 +3579,9 @@ mod tests {
         let error = crate::surface::verify_c_sources(changed_goal, &[])
             .expect_err("a subproof cannot introduce its own induction goal");
         assert!(
-            error.message().contains("only one top-level `induct` tactic"),
+            error
+                .message()
+                .contains("only one top-level `induct` tactic"),
             "{}",
             error.report()
         );
