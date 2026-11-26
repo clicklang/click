@@ -1,3 +1,4 @@
+import click::integer;
 import "seeded-batch.click";
 import "../adler2/bounded-count.click";
 
@@ -54,7 +55,8 @@ theorem zlib_full_stream_prefix_step(total: uint64, remaining: uint64, amount: u
  requires remaining <= total;
  requires total <= 2147483647u64;
  requires amount <= remaining;
- ensures to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining) + amount as uint32 as int32) by {
+ ensures defined(zlib_prefix_count(total, remaining) + amount as uint32 as int32)
+     and to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining) + amount as uint32 as int32) by {
   apply(zlib_full_stream_remaining_step(total, remaining, amount));
   have to_integer(total - remaining) <= to_integer(2147483647u64) by close() using { remaining <= total; total <= 2147483647u64; };
   have amount <= 2147483647u64 by close() using { amount <= remaining; remaining <= total; total <= 2147483647u64; };
@@ -80,7 +82,8 @@ theorem zlib_full_stream_split_count(total: uint64, middle: uint64, remaining: u
  requires remaining <= middle;
  requires middle <= total;
  requires total <= 2147483647u64;
- ensures to_integer(zlib_prefix_count(total, remaining)) == to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by {
+ ensures defined(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining))
+     and to_integer(zlib_prefix_count(total, remaining)) == to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by {
   have remaining <= total by close() using { remaining <= middle; middle <= total; total <= 2147483647u64; };
   have middle <= 2147483647u64 by close() using { middle <= total; total <= 2147483647u64; };
   have to_integer(total - middle) <= to_integer(2147483647u64) by close() using { middle <= total; total <= 2147483647u64; };
@@ -466,18 +469,10 @@ theorem zlib_components_pack_u64(bytes: uint8[], length: uint64, a: uint64, b: u
  requires to_integer(a % 65521u64) == adler_spec_a_u64(bytes, length, 1);
  requires to_integer(b % 65521u64) == adler_spec_b_u64(bytes, length, 1, 0);
  ensures to_integer((a % 65521u64) | ((b % 65521u64) << 16)) == adler_spec_checksum_u64(bytes, length, 1, 0) by {
-  apply(integer::uint64_remainder_to_integer(a, 65521u64));
-  apply(integer::uint64_remainder_to_integer(b, 65521u64));
-  apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
-  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(a % 65521u64) <= 65535 by close() using {
-   to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
-  };
-  have to_integer(b % 65521u64) <= 65535 by close() using {
-   to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
-  };
+  apply(zlib_reduced_component_bound(a));
+  apply(zlib_reduced_component_bound(b));
+  have to_integer(a % 65521u64) <= 65535 by close() using { to_integer(a % 65521u64) <= 65520; };
+  have to_integer(b % 65521u64) <= 65535 by close() using { to_integer(b % 65521u64) <= 65520; };
   apply(integer::uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum_u64(bytes, length, 1, 0));
   close() using {

@@ -1,3 +1,4 @@
+import click::integer;
 import "full-stream-helpers.click";
 
 function zlib_seed_a(word: uint64) -> uint64 { word & 65535u64 }
@@ -68,18 +69,10 @@ theorem zlib_general_components_pack(bytes: uint8[], length: int32, a: uint64, b
  requires to_integer(a % 65521u64) == adler_spec_a(bytes, length, initial_a);
  requires to_integer(b % 65521u64) == adler_spec_b(bytes, length, initial_a, initial_b);
  ensures to_integer((a % 65521u64) | ((b % 65521u64) << 16)) == adler_spec_checksum(bytes, length, initial_a, initial_b) by {
-  apply(integer::uint64_remainder_to_integer(a, 65521u64));
-  apply(integer::uint64_remainder_to_integer(b, 65521u64));
-  apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
-  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(a % 65521u64) <= 65535 by close() using {
-   to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
-  };
-  have to_integer(b % 65521u64) <= 65535 by close() using {
-   to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
-  };
+  apply(zlib_reduced_component_bound(a));
+  apply(zlib_reduced_component_bound(b));
+  have to_integer(a % 65521u64) <= 65535 by close() using { to_integer(a % 65521u64) <= 65520; };
+  have to_integer(b % 65521u64) <= 65535 by close() using { to_integer(b % 65521u64) <= 65520; };
   apply(integer::uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum(bytes, length, initial_a, initial_b));
   close() using {
@@ -204,18 +197,10 @@ theorem zlib_general_components_pack_u64(bytes: uint8[], length: uint64, a: uint
  requires to_integer(a % 65521u64) == adler_spec_a_u64(bytes, length, initial_a);
  requires to_integer(b % 65521u64) == adler_spec_b_u64(bytes, length, initial_a, initial_b);
  ensures to_integer((a % 65521u64) | ((b % 65521u64) << 16)) == adler_spec_checksum_u64(bytes, length, initial_a, initial_b) by {
-  apply(integer::uint64_remainder_to_integer(a, 65521u64));
-  apply(integer::uint64_remainder_to_integer(b, 65521u64));
-  apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
-  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(a % 65521u64) <= 65535 by close() using {
-   to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
-  };
-  have to_integer(b % 65521u64) <= 65535 by close() using {
-   to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
-  };
+  apply(zlib_reduced_component_bound(a));
+  apply(zlib_reduced_component_bound(b));
+  have to_integer(a % 65521u64) <= 65535 by close() using { to_integer(a % 65521u64) <= 65520; };
+  have to_integer(b % 65521u64) <= 65535 by close() using { to_integer(b % 65521u64) <= 65520; };
   apply(integer::uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum_u64(bytes, length, initial_a, initial_b));
   close() using {
