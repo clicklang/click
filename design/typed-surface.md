@@ -239,6 +239,17 @@ program expressions are typed Surface (stage 3). The kind elaboration records
 now is the top-down decision: whether a written comparison is native, Integer,
 algebraic or sequence, which depends on both operands at once.
 
+Elaboration is being separated from the lowerer so that it can run with no
+kernel. It reads outer names through the `TypeScope` trait
+(`annotations/typing_environment.rs`), declared C types through
+`Declarations` (`annotations/declarations.rs`), and does type synthesis
+(`contract_expression_click_type`, the enum and pointer element types) on an
+`Elaborator` (`annotations/elaborator.rs`), which holds only declarations,
+specification definitions and recorded states. The lowerer delegates those
+queries to it. The elaboration entry points themselves still live on the
+lowerer, because generic instantiation and call pointer widths still reach
+into lowering.
+
 Still to do in stage 2: elaboration runs where lowering reaches a comparison,
 not as a pass before lowering; the raiser still returns Syntax and keeps its
 guessing special cases; and arithmetic kind is still chosen by which lowering
