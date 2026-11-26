@@ -3796,12 +3796,11 @@ int32 arena_pipeline(
                                 instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
                                 close();
                             }
-                            normalize() using {
-                                first->arena == arena;
-                                first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
-                                at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
-                                at(f1, arena->occupied[k]) == 0;
-                            };
+                            rewrite(arena, first->arena);
+                            rewrite(first->arena->occupied[k], at(f1, first->arena->occupied[k]));
+                            rewrite(at(f1, first->arena->occupied[k]), at(f1, arena->occupied[k]));
+                            rewrite(at(f1, arena->occupied[k]), 0);
+                            close();
                         }
                     }
                     have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
@@ -3810,10 +3809,8 @@ int32 arena_pipeline(
                             have k < first->end;
                             have arena->occupied[k] == 0 by {
                                 instantiate(forall (j: int32) { first->start <= j and j < first->end implies first->arena->occupied[j] == 0 }, k);
-                                normalize() using {
-                                    first->arena == arena;
-                                    first->arena->occupied[k] == 0;
-                                };
+                                rewrite(arena, first->arena);
+                                close();
                             }
                             close();
                         }
@@ -3843,12 +3840,11 @@ int32 arena_pipeline(
                                 instantiate(forall (j: int32) { 0 <= j and j < at(f1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) implies at(f1, arena->occupied[j]) == 0 }, k);
                                 close();
                             }
-                            normalize() using {
-                                first->arena == arena;
-                                first->arena->occupied[k] == at(f1, first->arena->occupied[k]);
-                                at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]);
-                                at(f1, arena->occupied[k]) == 0;
-                            };
+                            rewrite(arena, first->arena);
+                            rewrite(first->arena->occupied[k], at(f1, first->arena->occupied[k]));
+                            rewrite(at(f1, first->arena->occupied[k]), at(f1, arena->occupied[k]));
+                            rewrite(at(f1, arena->occupied[k]), 0);
+                            close();
                         }
                     }
                     if k < first->start {
@@ -4106,12 +4102,11 @@ int32 arena_pipeline(
                     instantiate(forall (j: int32) { 0 <= j and j < at(w1, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(w1, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                normalize() using {
-                    first->arena->occupied[k] == at(w1, first->arena->occupied[k]);
-                    at(w1, first->arena->occupied[k]) == at(w1, arena->occupied[k]);
-                    at(w1, arena->occupied[k]) == 0;
-                    first->arena == arena;
-                };
+                rewrite(arena, first->arena);
+                rewrite(first->arena->occupied[k], at(w1, first->arena->occupied[k]));
+                rewrite(at(w1, first->arena->occupied[k]), at(w1, arena->occupied[k]));
+                rewrite(at(w1, arena->occupied[k]), 0);
+                close();
             }
         }
     }
