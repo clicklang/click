@@ -79,7 +79,15 @@ theorem adler_signed_small_prefix(n: uint64) {
  ensures 0 <= (n - n % 4u64) as uint32 as int32 and (n - n % 4u64) as uint32 as int32 <= 22204 by {
   apply(adler_unsigned_small_partition(n));
   have n % 4u64 <= n by close();
-  have to_integer(n - n % 4u64) <= to_integer(n) by normalize() using { n % 4u64 <= n; };
+  have to_integer(n - n % 4u64) <= to_integer(n) by {
+   have to_integer(n % 4u64) <= to_integer(n) by close() using { n % 4u64 <= n; };
+   apply(integer::uint64_subtract_to_integer(n, n % 4u64));
+   have 0 <= to_integer(n % 4u64) by close();
+   close() using {
+    to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64);
+    0 <= to_integer(n % 4u64);
+   };
+  }
   have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by close() using { to_integer(n - n % 4u64) <= to_integer(n); n <= 22207u64; };
   have to_integer((n - n % 4u64) as uint32 as int32) == to_integer(n - n % 4u64) by {
    close() using { 0 <= to_integer(n - n % 4u64); to_integer(n - n % 4u64) <= 22204; };
@@ -143,7 +151,15 @@ theorem adler_small_prefix_divisible(n: uint64) {
    rewrite(to_integer(n % 4u64), truncating_remainder(to_integer(n), to_integer(4u64)));
    close() using { to_integer(n) == truncating_quotient(to_integer(n), 4) * 4 + truncating_remainder(to_integer(n), 4); };
   }
-  have to_integer(n - n % 4u64) <= to_integer(n) by normalize() using { n % 4u64 <= n; };
+  have to_integer(n - n % 4u64) <= to_integer(n) by {
+   have to_integer(n % 4u64) <= to_integer(n) by close() using { n % 4u64 <= n; };
+   apply(integer::uint64_subtract_to_integer(n, n % 4u64));
+   have 0 <= to_integer(n % 4u64) by close();
+   close() using {
+    to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64);
+    0 <= to_integer(n % 4u64);
+   };
+  }
   have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by close() using { to_integer(n - n % 4u64) <= to_integer(n); n <= 22207u64; };
   have to_integer((n - n % 4u64) as uint32 as int32) == to_integer(n - n % 4u64) by {
    close() using { 0 <= to_integer(n - n % 4u64); to_integer(n - n % 4u64) <= 22204; };
@@ -186,7 +202,15 @@ theorem adler_small_tail_metadata(n: uint64) {
   have 0u64 <= n by close();
   apply(adler_small_partition(to_integer(n)));
   have n % 4u64 <= n by close();
-  have to_integer(n - n % 4u64) <= to_integer(n) by normalize() using { n % 4u64 <= n; };
+  have to_integer(n - n % 4u64) <= to_integer(n) by {
+   have to_integer(n % 4u64) <= to_integer(n) by close() using { n % 4u64 <= n; };
+   apply(integer::uint64_subtract_to_integer(n, n % 4u64));
+   have 0 <= to_integer(n % 4u64) by close();
+   close() using {
+    to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64);
+    0 <= to_integer(n % 4u64);
+   };
+  }
   have to_integer(4u64) != 0 by { close(); }
   apply(integer::uint64_remainder_to_integer(n, 4u64));
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
@@ -249,13 +273,13 @@ theorem adler_signed_partition_identity(n: uint64) {
   apply(adler_small_signed_tail(n));
   apply(adler_small_native_prefix(n));
   apply(adler_small_tail_metadata(n));
-  have n <= 2147483647u64 by normalize() using { n <= 22207u64; };
-  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by normalize() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
-  have n % 4u64 <= 2147483647u64 by normalize() using { n % 4u64 <= 3u64; };
+  have n <= 2147483647u64 by close() using { n <= 22207u64; };
+  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by close() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
+  have n % 4u64 <= 2147483647u64 by close() using { n % 4u64 <= 3u64; };
   apply(adler_index_observation(n));
   apply(adler_index_observation(n - n % 4u64));
   apply(adler_index_observation(n % 4u64));
-  have n % 4u64 <= n by normalize();
+  have n % 4u64 <= n by close();
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
   have to_integer((n - n % 4u64) as uint32 as int32) + to_integer((n % 4u64) as uint32 as int32) <= 2147483647 by close() using {
    (n - n % 4u64) as uint32 as int32 <= 22204; (n % 4u64) as uint32 as int32 <= 3;
@@ -366,7 +390,15 @@ theorem adler_small_prefix_within_full(n: uint64) {
   apply(adler_index_observation(n));
   apply(adler_index_observation(n - n % 4u64));
   have n % 4u64 <= n by close();
-  have to_integer(n - n % 4u64) <= to_integer(n) by normalize() using { n % 4u64 <= n; };
+  have to_integer(n - n % 4u64) <= to_integer(n) by {
+   have to_integer(n % 4u64) <= to_integer(n) by close() using { n % 4u64 <= n; };
+   apply(integer::uint64_subtract_to_integer(n, n % 4u64));
+   have 0 <= to_integer(n % 4u64) by close();
+   close() using {
+    to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64);
+    0 <= to_integer(n % 4u64);
+   };
+  }
   have to_integer((n - n % 4u64) as uint32 as int32) <= to_integer(n as uint32 as int32) by {
    rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64));
    rewrite(to_integer(n as uint32 as int32), to_integer(n));
@@ -384,13 +416,13 @@ theorem adler_small_tail_indices(n: uint64) {
   apply(adler_small_signed_tail(n));
   apply(adler_small_native_prefix(n));
   apply(adler_small_tail_metadata(n));
-  have n <= 2147483647u64 by normalize() using { n <= 22207u64; };
-  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by normalize() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
-  have n % 4u64 <= 2147483647u64 by normalize() using { n % 4u64 <= 3u64; };
+  have n <= 2147483647u64 by close() using { n <= 22207u64; };
+  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by close() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
+  have n % 4u64 <= 2147483647u64 by close() using { n % 4u64 <= 3u64; };
   apply(adler_index_observation(n));
   apply(adler_index_observation(n - n % 4u64));
   apply(adler_index_observation(n % 4u64));
-  have n % 4u64 <= n by normalize();
+  have n % 4u64 <= n by close();
   have to_integer((n % 4u64) as uint32 as int32) <= to_integer(n as uint32 as int32) by {
    rewrite(to_integer((n % 4u64) as uint32 as int32), to_integer(n % 4u64));
    rewrite(to_integer(n as uint32 as int32), to_integer(n));
@@ -404,13 +436,13 @@ theorem adler_small_tail_indices(n: uint64) {
   apply(adler_small_signed_tail(n));
   apply(adler_small_native_prefix(n));
   apply(adler_small_tail_metadata(n));
-  have n <= 2147483647u64 by normalize() using { n <= 22207u64; };
-  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by normalize() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
-  have n % 4u64 <= 2147483647u64 by normalize() using { n % 4u64 <= 3u64; };
+  have n <= 2147483647u64 by close() using { n <= 22207u64; };
+  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by close() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
+  have n % 4u64 <= 2147483647u64 by close() using { n % 4u64 <= 3u64; };
   apply(adler_index_observation(n));
   apply(adler_index_observation(n - n % 4u64));
   apply(adler_index_observation(n % 4u64));
-  have n % 4u64 <= n by normalize();
+  have n % 4u64 <= n by close();
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
   have to_integer(n as uint32 as int32) - to_integer((n % 4u64) as uint32 as int32) <= 2147483647 by close() using {
    n as uint32 as int32 <= 22207; 0 <= (n % 4u64) as uint32 as int32;
@@ -441,13 +473,13 @@ theorem adler_small_tail_indices(n: uint64) {
   apply(adler_small_signed_tail(n));
   apply(adler_small_native_prefix(n));
   apply(adler_small_tail_metadata(n));
-  have n <= 2147483647u64 by normalize() using { n <= 22207u64; };
-  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by normalize() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
-  have n % 4u64 <= 2147483647u64 by normalize() using { n % 4u64 <= 3u64; };
+  have n <= 2147483647u64 by close() using { n <= 22207u64; };
+  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by close() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
+  have n % 4u64 <= 2147483647u64 by close() using { n % 4u64 <= 3u64; };
   apply(adler_index_observation(n));
   apply(adler_index_observation(n - n % 4u64));
   apply(adler_index_observation(n % 4u64));
-  have n % 4u64 <= n by normalize();
+  have n % 4u64 <= n by close();
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
   have to_integer(n as uint32 as int32) - to_integer((n - n % 4u64) as uint32 as int32) <= 2147483647 by close() using {
    n as uint32 as int32 <= 22207; 0 <= (n - n % 4u64) as uint32 as int32;
