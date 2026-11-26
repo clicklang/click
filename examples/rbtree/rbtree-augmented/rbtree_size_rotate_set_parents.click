@@ -4,13 +4,52 @@ verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
 import "rbtree_size_link_distinct.click";
 
+theorem sized_word_matches_neither(word: uint64, first: uint64, second: uint64) {
+    requires word != first;
+    requires word != second;
+    ensures (if word == first { 1 } else { if word == second { 1 } else { 0 } }) == 0 by {
+        have (if word == first { 1 } else { (if word == second { 1 } else { 0 }) }) == (if word == second { 1 } else { 0 }) by {
+            close();
+        }
+        rewrite((if word == first { 1 } else { (if word == second { 1 } else { 0 }) }), (if word == second { 1 } else { 0 }));
+        have (if word == second { 1 } else { 0 }) == 0 by {
+            close();
+        }
+        rewrite((if word == second { 1 } else { 0 }), 0);
+        close();
+    }
+}
+
+theorem sized_word_matches_second(word: uint64, first: uint64, second: uint64) {
+    requires word == second;
+    ensures (if word == first { 1 } else { if word == second { 1 } else { 0 } }) == 1 by {
+        if word == first {
+            have (if word == first { 1 } else { (if word == second { 1 } else { 0 }) }) == 1 by {
+                close();
+            }
+            rewrite((if word == first { 1 } else { (if word == second { 1 } else { 0 }) }), 1);
+            close();
+        } else {
+            have (if word == first { 1 } else { (if word == second { 1 } else { 0 }) }) == (if word == second { 1 } else { 0 }) by {
+                close();
+            }
+            rewrite((if word == first { 1 } else { (if word == second { 1 } else { 0 }) }), (if word == second { 1 } else { 0 }));
+            have (if word == second { 1 } else { 0 }) == 1 by {
+                close();
+            }
+            rewrite((if word == second { 1 } else { 0 }), 1);
+            close();
+        }
+    }
+}
+
 function sized_context_parent_word(ctx: SizedContext, word: uint64) -> int32 {
     match ctx {
-        SizedContext::Top => if word == 0 or word == 1 { 1 } else { 0 },
+        SizedContext::Top => if word == 0u64 { 1 } else { if word == 1u64 { 1 } else { 0 } },
         SizedContext::Left(node, parent, color, count, sibling, up) =>
-            if word == address(node) or word == address(node) + 1 { 1 } else { 0 },
+            if word == address(node) { 1 } else { if word == address(node) + 1u64 { 1 } else { 0 } },
         SizedContext::Right(node, parent, color, count, sibling, up) =>
-            if word == address(node) or word == address(node) + 1 { 1 } else { 0 },
+            if word == address(node) { 1 } else { if word == address(node) + 1u64 { 1 } else { 0 } },
     }
 }
 
@@ -31,7 +70,8 @@ theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_nod
                 }
                 rewrite(ctx, SizedContext::Top);
                 unfold(sized_context_parent_word(SizedContext::Top, word));
-                normalize() using { word == address(0) + 1; };
+                have word == 1u64 by { rewrite(word, address(0) + 1); close(); }
+                apply(sized_word_matches_second(word, 0u64, 1u64));
             },
             SizedContext::Left(a, ancestor, color, count, sibling, up) => {
                 have parent == a by {
@@ -44,7 +84,7 @@ theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_nod
                 }
                 rewrite(ctx, SizedContext::Left(a, ancestor, color, count, sibling, up));
                 unfold(sized_context_parent_word(SizedContext::Left(a, ancestor, color, count, sibling, up), word));
-                normalize() using { word == address(a) + 1; };
+                apply(sized_word_matches_second(word, address(a), address(a) + 1u64));
             },
             SizedContext::Right(a, ancestor, color, count, sibling, up) => {
                 have parent == a by {
@@ -57,7 +97,7 @@ theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_nod
                 }
                 rewrite(ctx, SizedContext::Right(a, ancestor, color, count, sibling, up));
                 unfold(sized_context_parent_word(SizedContext::Right(a, ancestor, color, count, sibling, up), word));
-                normalize() using { word == address(a) + 1; };
+                apply(sized_word_matches_second(word, address(a), address(a) + 1u64));
             },
         }
     }
@@ -115,7 +155,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                         if old->__rb_parent_color == 1 { close(); } else {
                             have sized_context_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, SizedContext::Top); unfold(sized_context_parent_word(SizedContext::Top, old->__rb_parent_color));
-                                close() using { not(old->__rb_parent_color == 0); not(old->__rb_parent_color == 1); };
+                                apply(sized_word_matches_neither(old->__rb_parent_color, 0u64, 1u64));
                             }
                             have not(sized_context_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(sized_context_parent_word(d.model, old->__rb_parent_color), 0); close(); }
                             contradiction(sized_context_parent_word(d.model, old->__rb_parent_color) == 1);
@@ -134,7 +174,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             mark s2; step();
             have separate(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), memory(new->__rb_parent_color)) by { close(); }
             have separate(statement(1).footprint, memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1])) by {
-                close() using { separate(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), memory(new->__rb_parent_color)); };
+                close();
             }
             have (old as (uint8 *) as (struct sized_node *))->size == at(s2, (old as (uint8 *) as (struct sized_node *))->size) by {
                 preserve(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), statement(1));
@@ -193,7 +233,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                         if old->__rb_parent_color == address(id) + 1 { close(); } else {
                             have sized_context_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, SizedContext::Left(id, above, pc, count, sibling, up)); unfold(sized_context_parent_word(SizedContext::Left(id, above, pc, count, sibling, up), old->__rb_parent_color));
-                                close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
+                                apply(sized_word_matches_neither(old->__rb_parent_color, address(id), address(id) + 1u64));
                             }
                             have not(sized_context_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(sized_context_parent_word(d.model, old->__rb_parent_color), 0); close(); }
                             contradiction(sized_context_parent_word(d.model, old->__rb_parent_color) == 1);
@@ -212,7 +252,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             mark s2; step();
             have separate(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), memory(new->__rb_parent_color)) by { close(); }
             have separate(statement(1).footprint, memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1])) by {
-                close() using { separate(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), memory(new->__rb_parent_color)); };
+                close();
             }
             have (old as (uint8 *) as (struct sized_node *))->size == at(s2, (old as (uint8 *) as (struct sized_node *))->size) by {
                 preserve(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), statement(1));
@@ -271,7 +311,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                         if old->__rb_parent_color == address(id) + 1 { close(); } else {
                             have sized_context_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, SizedContext::Right(id, above, pc, count, sibling, up)); unfold(sized_context_parent_word(SizedContext::Right(id, above, pc, count, sibling, up), old->__rb_parent_color));
-                                close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
+                                apply(sized_word_matches_neither(old->__rb_parent_color, address(id), address(id) + 1u64));
                             }
                             have not(sized_context_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(sized_context_parent_word(d.model, old->__rb_parent_color), 0); close(); }
                             contradiction(sized_context_parent_word(d.model, old->__rb_parent_color) == 1);
@@ -290,7 +330,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             mark s2; step();
             have separate(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), memory(new->__rb_parent_color)) by { close(); }
             have separate(statement(1).footprint, memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1])) by {
-                close() using { separate(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), memory(new->__rb_parent_color)); };
+                close();
             }
             have (old as (uint8 *) as (struct sized_node *))->size == at(s2, (old as (uint8 *) as (struct sized_node *))->size) by {
                 preserve(memory((&((old as (uint8 *) as (struct sized_node *))->size))[0..1]), statement(1));
