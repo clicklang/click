@@ -758,13 +758,19 @@ impl Printer<'_> {
             Proposition::HeapAllocationFreed {
                 before,
                 after,
-                allocation_base,
+                blocks,
                 ..
             } => {
-                let base = self.pointer(allocation_base, depth)?.text;
+                let bases = blocks
+                    .iter()
+                    .map(|(base, _)| self.pointer(base, depth).map(|base| base.text))
+                    .collect::<Option<Vec<_>>>()?
+                    .join(", ");
                 let before = self.state_phrase(before);
                 let after = self.state_phrase(after);
-                Some(atom(format!("<{base} freed between {before} and {after}>")))
+                Some(atom(format!(
+                    "<{bases} freed between {before} and {after}>"
+                )))
             }
             Proposition::ProgramExpressionEvaluates { .. }
             | Proposition::ProgramConditionEvaluates { .. }

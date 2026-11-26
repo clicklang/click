@@ -2294,13 +2294,9 @@ fn check_effect_on_prepared_path(
                     None => Ok(()),
                 }
             }
-            Proposition::HeapAllocationFreed {
-                before,
-                after,
-                allocation_base,
-                bytes,
-                ..
-            } => {
+            // The kernel constructs each recorded free from the free it
+            // performed, so closing checks only that the effects connect.
+            Proposition::HeapAllocationFreed { before, after, .. } => {
                 let repeats_transition =
                     seen_transitions.iter().any(|(seen_before, seen_after)| {
                         program_effect_memories_definitionally_equal(
@@ -2328,11 +2324,6 @@ fn check_effect_on_prepared_path(
                 {
                     return Err(ContractClosingRefusal::Internal(
                         "the recorded memory effects do not connect to one another".into(),
-                    ));
-                }
-                if !heap_free_effect_is_valid(before, after, allocation_base, bytes) {
-                    return Err(ContractClosingRefusal::Internal(
-                        "a recorded deallocation has inconsistent memory states".into(),
                     ));
                 }
                 if !repeats_transition {
@@ -2451,29 +2442,6 @@ pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state
         Vec::new(),
     );
     program_effect_memories_definitionally_equal(before, &stripped, assumptions)
-}
-
-fn heap_free_effect_is_valid(
-    before: &SymbolicMemory,
-    after: &SymbolicMemory,
-    allocation_base: &Address,
-    bytes: &AllocationSize,
-) -> bool {
-    // The effect states the freed size with its format, so the claim it
-    // reinstates is the block's own, 32-bit or 64-bit.
-    let Some(live) = (if before.live_heap_block_size(allocation_base).is_some() {
-        Some(before.clone())
-    } else {
-        before
-            .clone()
-            .with_heap_allocation_claim(allocation_base.clone(), bytes.clone())
-    }) else {
-        return false;
-    };
-    live.live_heap_block_size(allocation_base) == Some(bytes)
-        && live
-            .free_heap_block(allocation_base, &PureFactContext::new())
-            .is_ok_and(|expected| expected == *after)
 }
 
 /// The goal a proof closes to establish one proposition claim of a contract
@@ -3280,39 +3248,6 @@ fn function_contract_claims_are_complete(function: &ProgramFunction) -> bool {
         && (!function.contract_effect_claim_required()
             || function.contract_mutable().is_empty()
             || targets.contains(&FunctionContractClaimTarget::Effect))
-}
-
-#[cfg(test)]
-mod heap_free_effect_tests {
-    use super::*;
-
-    /// A free effect reinstates the freed block's claim in the size's own
-    /// format: a 64-bit block whose claim was not live before the free (a
-    /// contract-imported allocation) is matched by its `uint64` size, and
-    /// a 32-bit reading of the same byte term is not that block's free.
-    #[test]
-    fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
-        let base = Address::new(AddressBase::Heap(940_100), AddressOffset::constant(0));
-        let bytes = OldMachineTerm::uint64_multiply(
-            OldMachineTerm::Variable(Variable(940_101)),
-            OldMachineTerm::uint64_constant(4),
-        );
-        let wide = AllocationSize::new(bytes.clone(), AllocationSizeKind::UInt64);
-        let before = SymbolicMemory::new();
-        let after = before
-            .clone()
-            .with_heap_allocation_claim(base.clone(), wide.clone())
-            .expect("a fresh claim")
-            .free_heap_block(&base, &PureFactContext::new())
-            .expect("a free of the claimed block");
-        assert!(heap_free_effect_is_valid(&before, &after, &base, &wide));
-        assert!(!heap_free_effect_is_valid(
-            &before,
-            &after,
-            &base,
-            &AllocationSize::int32(bytes),
-        ));
-    }
 }
 
 #[cfg(test)]

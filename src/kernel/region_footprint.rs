@@ -143,12 +143,17 @@ impl RegionFootprint {
                     members.extend(mutable_ranges.iter().cloned().map(Resource::Memory));
                 }
                 Proposition::HeapAllocationFreed {
-                    allocation_base,
-                    bytes,
+                    blocks,
+                    mutable_ranges,
                     ..
                 } => {
                     extra_effect = true;
-                    members.push_back(Resource::Memory(bytes.byte_range(allocation_base.clone())));
+                    members.extend(
+                        blocks
+                            .iter()
+                            .map(|(base, bytes)| Resource::Memory(bytes.byte_range(base.clone()))),
+                    );
+                    members.extend(mutable_ranges.iter().cloned().map(Resource::Memory));
                 }
                 _ => {}
             }

@@ -1542,8 +1542,8 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             before_point,
             after_point,
         } => Proposition::HeapAllocationFreed {
@@ -1551,8 +1551,14 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             after_point: after_point.clone(),
             before: s.memory(before),
             after: s.memory(after),
-            allocation_base: s.pointer(allocation_base),
-            bytes: bytes.map_bytes(|bytes| s.bitvector(bytes)),
+            blocks: blocks
+                .iter()
+                .map(|(base, bytes)| (s.pointer(base), bytes.map_bytes(|bytes| s.bitvector(bytes))))
+                .collect(),
+            mutable_ranges: mutable_ranges
+                .iter()
+                .map(|range| walk_memory_range(range, s))
+                .collect(),
         },
         Proposition::And(left, right) => Proposition::And(
             Box::new(walk_proposition(left, s)),
@@ -2505,14 +2511,21 @@ fn collect_proposition_bound_variables_one(
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
-            collect_pointer_bound_variables(allocation_base, variables);
-            collect_bitvector_bound_variables(bytes.bytes(), variables);
+            for (base, bytes) in blocks {
+                collect_pointer_bound_variables(base, variables);
+                collect_bitvector_bound_variables(bytes.bytes(), variables);
+            }
+            for range in mutable_ranges {
+                collect_pointer_bound_variables(&range.base, variables);
+                collect_bitvector_bound_variables(range.bound_terms().0, variables);
+                collect_bitvector_bound_variables(range.bound_terms().1, variables);
+            }
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)

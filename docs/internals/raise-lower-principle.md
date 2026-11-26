@@ -116,11 +116,14 @@ a rewrite of a fact keeps its point.
 
 Where a fact quotes a memory no point holds, it says so with
 `PathLink::not_yet_a_point()`, a migration marker: each use is a fact to give
-a point before it can drop its memory. The current uses are the frees of a
-call's allocation delta, whose memories lie inside the call's exit region; a
-staged state's memory; a distinct load case's hypothetical memory; a spec
-read with no selected state; and the test-only `prove_memory_load*`
-theorems. A proposition built only to look a fact up by its memory takes
+a point before it can drop its memory. The current uses are a distinct load
+case's hypothetical memory, a spec read with no selected state, and the
+test-only `prove_memory_load*` theorems. No fact quotes a staged state:
+`ExecutionState::memory_point` panics on one, as `program_point` does. A
+call's exit region records its frees in one `HeapAllocationFreed` from its
+effect point to its exit, whose `mutable_ranges` hold the region's other
+changes (the heap claims it retires or makes and the memory it produces), so
+the fact needs no memory between the two points. A proposition built only to look a fact up by its memory takes
 `PathLink::lookup_key()`: lookups compare no point, and these go when fact
 indexes are keyed by point.
 A state's memory can also differ from its point's when it is not marked: a

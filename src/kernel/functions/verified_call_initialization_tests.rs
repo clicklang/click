@@ -192,7 +192,7 @@ fn byte_output_initializes_the_concrete_storage_held_through_an_alias() {
         let mut budget = ExecutionBudget::new();
         budget.install_program_byte_order(ByteOrder::Little);
         let mut post_state = state.clone();
-        let (_, words) = initialize_produced_memory(
+        let (_, words, _) = initialize_produced_memory(
             &state,
             &state,
             function.contract_interface(),
