@@ -184,7 +184,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(focus.model, SizedTree::Node(identity, 0, Color::Black, value, left, right));
                                 rewrite(path.model, SizedContext::Top);
                                 unfold(sized_context_parent(SizedContext::Top, 0));
-                                unfold(sized_parent_is(SizedTree::Node(identity, 0, Color::Black, value, left, right), 0)); normalize();
+                                unfold(sized_parent_is(SizedTree::Node(identity, 0, Color::Black, value, left, right), 0)); close();
                             }
                             have sized_plug(path.model, focus.model) == sized_flip_result(old(state.chain), old(state.model)) by {
                                 rewrite(path.model, SizedContext::Top);
@@ -359,7 +359,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(focus.model, SizedTree::Node(stopped_node, stopped_parent, stopped_shade, stopped_value, stopped_left, stopped_right));
                         unfold(sized_parent_is(SizedTree::Node(stopped_node, stopped_parent, stopped_shade, stopped_value, stopped_left, stopped_right), sized_context_parent(path.model, 0)));
                         rewrite(sized_context_parent(path.model, 0), stopped_parent);
-                        normalize();
+                        close();
                     }
                     have sized_plug(path.model, focus.model) == sized_flip_result(old(state.chain), old(state.model)) by {
                         rewrite(path.model, at(stopped, state.context));
