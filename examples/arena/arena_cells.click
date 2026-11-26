@@ -4268,11 +4268,10 @@ int32 arena_pipeline(
         close();
     }
     have s0.capacity == arena->capacity by {
-        normalize() using {
-            s0.capacity == at(w2, s0.capacity);
-            at(w2, s0.capacity) == at(w2, arena->capacity);
-            arena->capacity == at(w2, arena->capacity);
-        };
+        rewrite(s0.capacity, at(w2, s0.capacity));
+        rewrite(at(w2, s0.capacity), at(w2, arena->capacity));
+        rewrite(arena->capacity, at(w2, arena->capacity));
+        close();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) and (k < at(z2, second->start) or at(z2, second->end) <= k) implies arena->occupied[k] == 0 } by {
         intro() {
@@ -4500,11 +4499,10 @@ int32 arena_pipeline(
         close();
     }
     have arena->capacity == at(m3, arena->capacity) by {
-        normalize() using {
-            arena->capacity == first->arena->capacity;
-            first->arena->capacity == at(m3, first->arena->capacity);
-            at(m3, first->arena->capacity) == at(m3, arena->capacity);
-        };
+        rewrite(arena->capacity, first->arena->capacity);
+        rewrite(first->arena->capacity, at(m3, first->arena->capacity));
+        rewrite(at(m3, first->arena->capacity), at(m3, arena->capacity));
+        close();
     }
     have s0.capacity == at(m3, s0.capacity) by {
         close();
@@ -4676,16 +4674,14 @@ int32 arena_pipeline(
         close();
     }
     have at(m4, second->arena->capacity) == at(m4, arena->capacity) by {
-        normalize() using {
-            at(m4, second->arena) == arena;
-        };
+        rewrite(at(m4, second->arena), arena);
+        close();
     }
     have arena->capacity == at(m4, arena->capacity) by {
-        normalize() using {
-            arena->capacity == second->arena->capacity;
-            second->arena->capacity == at(m4, second->arena->capacity);
-            at(m4, second->arena->capacity) == at(m4, arena->capacity);
-        };
+        rewrite(arena->capacity, second->arena->capacity);
+        rewrite(second->arena->capacity, at(m4, second->arena->capacity));
+        rewrite(at(m4, second->arena->capacity), at(m4, arena->capacity));
+        close();
     }
     have s0.capacity == at(m4, s0.capacity) by {
         close();
@@ -4807,16 +4803,14 @@ int32 arena_pipeline(
         close();
     }
     have at(f2, second->arena->capacity) == at(f2, arena->capacity) by {
-        normalize() using {
-            at(f2, second->arena) == arena;
-        };
+        rewrite(at(f2, second->arena), arena);
+        close();
     }
     have arena->capacity == at(f2, arena->capacity) by {
-        normalize() using {
-            arena->capacity == second->arena->capacity;
-            second->arena->capacity == at(f2, second->arena->capacity);
-            at(f2, second->arena->capacity) == at(f2, arena->capacity);
-        };
+        rewrite(arena->capacity, second->arena->capacity);
+        rewrite(second->arena->capacity, at(f2, second->arena->capacity));
+        rewrite(at(f2, second->arena->capacity), at(f2, arena->capacity));
+        close();
     }
     have second->start == at(f2, r2.start) by {
         close();
@@ -5002,11 +4996,10 @@ int32 arena_pipeline(
         close();
     }
     have arena->capacity == at(f3, arena->capacity) by {
-        normalize() using {
-            arena->capacity == first->arena->capacity;
-            first->arena->capacity == at(f3, first->arena->capacity);
-            at(f3, first->arena->capacity) == at(f3, arena->capacity);
-        };
+        rewrite(arena->capacity, first->arena->capacity);
+        rewrite(first->arena->capacity, at(f3, first->arena->capacity));
+        rewrite(at(f3, first->arena->capacity), at(f3, arena->capacity));
+        close();
     }
     have first->start == at(f3, r1.start) by {
         close();
