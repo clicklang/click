@@ -1258,7 +1258,7 @@ fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
     let mut requirement_work = Vec::new();
     for size in [8, 16, 32, 64] {
         let unrelated = (0..size)
-            .map(|index| format!("    have 0 <= {index} by {{\n        normalize();\n    }}\n"))
+            .map(|index| format!("    have 0 <= {index} by {{\n        close();\n    }}\n"))
             .collect::<String>();
         let click_source = format!(
             "verifying \"conditional_callee.c\";\n\
@@ -2751,7 +2751,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
          \x20       match m {\n\
          \x20           Chain::Nil => {\n\
          \x20               unfold(chain_len(Chain::Nil));\n\
-         \x20               normalize();\n\
+         \x20               close();\n\
          \x20           }\n\
          \x20           Chain::Link(rest) => {\n\
          \x20               apply(ih(rest));\n\
@@ -2798,7 +2798,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
              \x20                       rewrite(c.model, Chain::Link(rest_model));\n\
              \x20                       unfold(chain_len(Chain::Link(rest_model)));\n\
-             \x20                       normalize();\n\
+             \x20                       close();\n\
              \x20                   }}\n\
              \x20                   apply(chain_len_is_nonnegative(rest_model));\n\
              \x20                   have chain_len(rest_model) < chain_len(c.model) by {{\n\
