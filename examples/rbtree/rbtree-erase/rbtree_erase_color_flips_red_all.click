@@ -655,6 +655,22 @@ theorem aligned_parent_word_from_bit(p: void*, bit: int32) {
     }
 }
 
+theorem erase_parent_word_matches_neither(word: uint64, first: uint64, second: uint64) {
+    requires word != first;
+    requires word != second;
+    ensures (if word == first { 1 } else { if word == second { 1 } else { 0 } }) == 0 by {
+        have (if word == first { 1 } else { (if word == second { 1 } else { 0 }) }) == (if word == second { 1 } else { 0 }) by {
+            close();
+        }
+        rewrite((if word == first { 1 } else { (if word == second { 1 } else { 0 }) }), (if word == second { 1 } else { 0 }));
+        have (if word == second { 1 } else { 0 }) == 0 by {
+            close();
+        }
+        rewrite((if word == second { 1 } else { 0 }), 0);
+        close();
+    }
+}
+
 void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
 struct rb_root* root, int32 color) {
     consumes c: ctx_at(old, root);
@@ -685,10 +701,14 @@ struct rb_root* root, int32 color) {
                 } else {
                     have old->__rb_parent_color == 1 by {
                         if old->__rb_parent_color == 1 { close(); } else {
-                            have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
+                            have ctx_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, Context::Top);
                                 unfold(ctx_parent_word(Context::Top, old->__rb_parent_color));
-                                close() using { not(old->__rb_parent_color == 0); not(old->__rb_parent_color == 1); };
+                                apply(erase_parent_word_matches_neither(old->__rb_parent_color, 0u64, 1u64));
+                            }
+                            have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
+                                rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
+                                close();
                             }
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
@@ -727,7 +747,7 @@ struct rb_root* root, int32 color) {
                         if old->__rb_parent_color == address(id) + 1 { close(); } else {
                             have ctx_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, Context::Left(id, above, pc, sibling, up)); unfold(ctx_parent_word(Context::Left(id, above, pc, sibling, up), old->__rb_parent_color));
-                                close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
+                                apply(erase_parent_word_matches_neither(old->__rb_parent_color, address(id), address(id) + 1u64));
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
@@ -776,7 +796,7 @@ struct rb_root* root, int32 color) {
                         if old->__rb_parent_color == address(id) + 1 { close(); } else {
                             have ctx_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, Context::Right(id, above, pc, sibling, up)); unfold(ctx_parent_word(Context::Right(id, above, pc, sibling, up), old->__rb_parent_color));
-                                close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
+                                apply(erase_parent_word_matches_neither(old->__rb_parent_color, address(id), address(id) + 1u64));
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
