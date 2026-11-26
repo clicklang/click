@@ -823,7 +823,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have (address(parent) & 7u64) == 0u64 by {
                                                         close() using { aligned(parent, 8); };
                                                     }
-                                                    have (7u64 & 1u64) == 1u64 by normalize();
+                                                    have (7u64 & 1u64) == 1u64 by close();
                                                     apply(integer::uint64_mask_subset(address(parent), 7u64, 1u64));
                                                     have (g->__rb_parent_color & 1) == color_bit(Color::Red) by {
                                                         rewrite(g->__rb_parent_color, address(parent));
@@ -832,7 +832,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == address(sized_flip_parent(up)) + (g->__rb_parent_color & 1) by {
                                                         rewrite(g->__rb_parent_color, address(parent));
                                                         rewrite(sized_flip_parent(up), parent);
-                                                        rewrite((address(parent) & 1u64), 0u64); normalize();
+                                                        rewrite((address(parent) & 1u64), 0u64);
+                                                        have address(parent) + 0u64 == address(parent) by close();
+                                                        close();
                                                     }
                                                     have root->rb_node == old(root->rb_node) by close();
                                                     let uncle_tree = fold(sized_at(u), {
@@ -905,7 +907,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                     unfold(color_bit(Color::Black));
                                     have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                         rewrite(node->__rb_parent_color, 1);
-                                        rewrite(color_bit(Color::Black), 1); normalize();
+                                        rewrite(color_bit(Color::Black), 1);
+                                        have (1u64 & 1u64) == 1u64 by close();
+                                        close();
                                     }
                                     let focus = fold(sized_at(node), { model: SizedTree::Node(current, 0, Color::Black, count, lo, hi), metadata: metadata, left: l, right: r });
                                     have sized_value(focus.model) == count by {
