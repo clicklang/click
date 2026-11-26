@@ -2001,7 +2001,8 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                 left_model, right_model));
                                         unfold(rb_identity_is(RbTree::Node(identity, par, color,
                                                     left_model, right_model), node));
-                                        normalize() using { node == identity; };
+                                        rewrite(node, identity);
+                                        close();
                                     }
                                     have rb_list_starts_with(rb_inorder(sub.model),
                                         node) == 1 by {
@@ -2053,7 +2054,8 @@ struct rb_node* rb_next(struct rb_node* node) {
                             entry_left, entry_right), node) == 1 by {
                         unfold(rb_identity_is(RbTree::Node(entry_identity, entry_parent,
                                     entry_color, entry_left, entry_right), node));
-                        normalize() using { node == entry_identity; };
+                        rewrite(node, entry_identity);
+                        close();
                     }
                     have rb_list_ends_with(rb_inorder(RbTree::Node(entry_identity, entry_parent,
                                 entry_color, entry_left, entry_right)), node) == 1 by {
