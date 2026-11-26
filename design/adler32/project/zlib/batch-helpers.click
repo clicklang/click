@@ -1,3 +1,4 @@
+import click::integer;
 import "window.click";
 function zlib_batch_remaining(n: uint32) -> uint64 { 16u64 * n as uint64 }
 function zlib_batch_count(n: uint32) -> int32 { zlib_prefix_count(5552u64, zlib_batch_remaining(n)) }
@@ -33,7 +34,6 @@ theorem zlib_batch_remaining_bounds(n: uint32) {
   have to_integer(16u64) * to_integer(n as uint64) <= 18446744073709551615 by close() using { to_integer(n) <= 347; to_integer(n as uint64) == to_integer(n); };
   apply(integer::uint64_multiply_to_integer(16u64, n as uint64));
   unfold(zlib_batch_remaining(n));
-  close() using { to_integer(16u64 * n as uint64) == to_integer(16u64) * to_integer(n as uint64); to_integer(n as uint64) == to_integer(n); };
  }
 }
 theorem zlib_batch_remaining_limit(n: uint32) {
@@ -197,15 +197,16 @@ theorem zlib_batch_byte_lane(bytes: uint8[], n: uint32, lane: int32) {
  requires n <= 347u32;
  requires 0 <= lane;
  requires lane <= 15;
- ensures (bytes + zlib_batch_count(n))[lane] == bytes[zlib_batch_count(n) + lane] by {
-  apply(zlib_batch_lane_defined(n, lane)); apply(zlib_batch_lane(n, lane));
-  apply(zlib_batch_prefix_limit(n));
-  apply(zlib_batch_nonempty_prefix(n));
-  have defined(zlib_batch_count(n) + lane) by close();
-  have bytes + zlib_batch_count(n) + lane == bytes + (zlib_batch_count(n) + lane) by {
-   normalize() using { defined(zlib_batch_count(n) + lane); };
+ ensures defined(zlib_batch_count(n) + lane)
+     and (bytes + zlib_batch_count(n))[lane] == bytes[zlib_batch_count(n) + lane] by {
+  apply(zlib_batch_lane_defined(n, lane));
+  all {
+   defined(zlib_batch_count(n) + lane) => { close(); }
+   (bytes + zlib_batch_count(n))[lane] == bytes[zlib_batch_count(n) + lane] => {
+    apply(integer::uint8_pointer_add_associate_int32(bytes, zlib_batch_count(n), lane));
+    close();
+   }
   }
-  close() using { bytes + zlib_batch_count(n) + lane == bytes + (zlib_batch_count(n) + lane); };
  }
 }
 
@@ -231,7 +232,7 @@ theorem zlib_batch_capacity_step(n: uint32) {
   unfold(zlib_batch_remaining(n - 1u32));
   have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
   have to_integer(16u64) <= to_integer(16u64 * n as uint64) by close();
-  have to_integer((16u64 * n as uint64) - 16u64) == to_integer(16u64 * n as uint64) - to_integer(16u64);
+  apply(integer::uint64_subtract_to_integer(16u64 * n as uint64, 16u64));
   apply(zlib_batch_native_capacity_observation(n));
   apply(zlib_batch_native_capacity_observation(n - 1u32));
   have to_integer(16u64 * (n - 1u32) as uint64) == to_integer(16u64 * n as uint64 - 16u64) by close() using {
