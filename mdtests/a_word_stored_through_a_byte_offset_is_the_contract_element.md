@@ -1,9 +1,9 @@
 # a word stored through a byte offset is the contract's element
 
 The store writes `v` through `b + i * 4`, and the contract reads `q[i]`.
-The proof cites the value of the read at the point that performed the write
-and proves that both expressions address the same bytes. The checked bounds
-on `i` ensure that `i * 4` does not wrap.
+The proof expresses both addresses as byte pointers, then rewrites the typed
+load to the recorded store address. The bounds on `i` keep the byte offset in
+range.
 
 ```c filename=a_word_stored_through_a_byte_offset_is_the_contract_element.c
 #include <stdint.h>
@@ -24,23 +24,16 @@ void set(int32_t* q, int i, int32_t v) {
     owns q[0..4];
     ensures q[i] == v;
 } by {
+    step_until(statement(2).entry);
     step();
-    step();
-    step();
-    step();
-    have at(statement(2).exit, exact(*((program::b + i * 4) as (int32 *))) == v) by {
+    have exact(*((program::b + i * 4) as (int32 *))) == v by close();
+    have ((q + i) as (int8 *)) == (program::b + i * 4) by close();
+    have load<int32>((q + i) as (int8 *)) == v by {
+        rewrite((q + i) as (int8 *), program::b + i * 4);
         close();
     }
-    have at(statement(2).exit, address(q + i) == address(((program::b + i * 4) as (int32 *)))) by {
-        close();
-    }
-    have q[i] == v by {
-        normalize() using {
-            at(statement(2).exit, exact(*((program::b + i * 4) as (int32 *))) == v);
-            at(statement(2).exit, address(q + i) == address(((program::b + i * 4) as (int32 *))));
-        };
-    }
-    close();
+    have q[i] == v by close();
+    step_until(function.exit);
     close();
 }
 ```
