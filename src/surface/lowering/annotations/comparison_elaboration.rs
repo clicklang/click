@@ -320,7 +320,7 @@ impl AnnotationLowerer<'_> {
                     Op::BitwiseOr => SpecExpression::BitwiseOr(left, right),
                     Op::BitwiseXor => SpecExpression::BitwiseXor(left, right),
                     Op::Subtract => SpecExpression::Subtract(left, right),
-                    Op::Add => unreachable!("native + is not typed yet: it may be a pointer step"),
+                    Op::Add => SpecExpression::Add(left, right),
                 })
             }
             SurfaceTerm::Negate {
@@ -497,10 +497,10 @@ impl AnnotationLowerer<'_> {
     /// stays `Untyped`. A `-` is a backward pointer step when its left
     /// operand is a pointer with an element width and its right is not, as
     /// lowering decides; a `-` that lowering would refuse as an untyped
-    /// pointer step stays `Untyped`, so lowering refuses it as before. Native
-    /// `+` stays `Untyped` for now.
+    /// pointer step stays `Untyped`, so lowering refuses it as before. A `+`
+    /// is elaborated by `native_addition`.
     fn native_surface_term(
-        &self,
+        &mut self,
         term: SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> SurfaceTerm {
@@ -512,8 +512,9 @@ impl AnnotationLowerer<'_> {
         {
             return SurfaceTerm::Untyped(term);
         }
-        let mut native =
-            |term: Box<SyntaxTerm>| Box::new(self.native_surface_term(*term, environment));
+        if matches!(term, SyntaxTerm::Add(..)) {
+            return self.native_addition(term, environment);
+        }
         let binary = |op, left, right| SurfaceTerm::Binary {
             op,
             kind: ArithmeticKind::Native,
@@ -527,42 +528,70 @@ impl AnnotationLowerer<'_> {
                     self.contract_pointer_element_width(&right, environment),
                 ) {
                     (Some(element_width), None) => SurfaceTerm::PointerStep {
-                        pointer: native(left),
-                        elements: native(right),
+                        pointer: Box::new(self.native_surface_term(*left, environment)),
+                        elements: Box::new(self.native_surface_term(*right, environment)),
                         element_width,
                         backward: true,
                     },
-                    _ => binary(Op::Subtract, native(left), native(right)),
+                    _ => binary(
+                        Op::Subtract,
+                        Box::new(self.native_surface_term(*left, environment)),
+                        Box::new(self.native_surface_term(*right, environment)),
+                    ),
                 }
             }
-            SyntaxTerm::Multiply(left, right) => binary(Op::Multiply, native(left), native(right)),
-            SyntaxTerm::Divide(left, right) => binary(Op::Divide, native(left), native(right)),
-            SyntaxTerm::Remainder(left, right) => {
-                binary(Op::Remainder, native(left), native(right))
-            }
-            SyntaxTerm::ShiftLeft(left, right) => {
-                binary(Op::ShiftLeft, native(left), native(right))
-            }
-            SyntaxTerm::RustShiftLeft(left, right) => {
-                binary(Op::RustShiftLeft, native(left), native(right))
-            }
-            SyntaxTerm::ShiftRight(left, right) => {
-                binary(Op::ShiftRight, native(left), native(right))
-            }
-            SyntaxTerm::RustShiftRight(left, right) => {
-                binary(Op::RustShiftRight, native(left), native(right))
-            }
-            SyntaxTerm::BitwiseAnd(left, right) => {
-                binary(Op::BitwiseAnd, native(left), native(right))
-            }
-            SyntaxTerm::BitwiseOr(left, right) => {
-                binary(Op::BitwiseOr, native(left), native(right))
-            }
-            SyntaxTerm::BitwiseXor(left, right) => {
-                binary(Op::BitwiseXor, native(left), native(right))
-            }
+            SyntaxTerm::Multiply(left, right) => binary(
+                Op::Multiply,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::Divide(left, right) => binary(
+                Op::Divide,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::Remainder(left, right) => binary(
+                Op::Remainder,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::ShiftLeft(left, right) => binary(
+                Op::ShiftLeft,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::RustShiftLeft(left, right) => binary(
+                Op::RustShiftLeft,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::ShiftRight(left, right) => binary(
+                Op::ShiftRight,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::RustShiftRight(left, right) => binary(
+                Op::RustShiftRight,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::BitwiseAnd(left, right) => binary(
+                Op::BitwiseAnd,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::BitwiseOr(left, right) => binary(
+                Op::BitwiseOr,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
+            SyntaxTerm::BitwiseXor(left, right) => binary(
+                Op::BitwiseXor,
+                Box::new(self.native_surface_term(*left, environment)),
+                Box::new(self.native_surface_term(*right, environment)),
+            ),
             SyntaxTerm::BitwiseNot(operand) => SurfaceTerm::BitwiseNot {
-                operand: native(operand),
+                operand: Box::new(self.native_surface_term(*operand, environment)),
             },
             // Lowering refuses the negation of an Integer and reads `-n` of
             // an `int32` literal as that constant; both stay `Untyped`, so
@@ -577,10 +606,115 @@ impl AnnotationLowerer<'_> {
             {
                 SurfaceTerm::Negate {
                     kind: ArithmeticKind::Native,
-                    operand: native(operand),
+                    operand: Box::new(self.native_surface_term(*operand, environment)),
                 }
             }
             term => SurfaceTerm::Untyped(term),
+        }
+    }
+
+    /// The native Surface form of `left + right`, decided as lowering decides
+    /// it, with the same checks in the same order:
+    ///
+    /// - one lowering refuses as an untyped pointer step, or reads as a chain
+    ///   of literal additions to a non-pointer base, stays `Untyped`;
+    /// - a call result's pointer element width on either side, then a
+    ///   pointer element width on the left, then on the right, makes a
+    ///   forward pointer step from that side;
+    /// - an operand read through a call's copied parameter stays `Untyped`,
+    ///   since lowering decides that step from the lowered read;
+    /// - anything else is native `Add`.
+    ///
+    /// A check that fails leaves the term `Untyped`, so lowering reports the
+    /// same error.
+    fn native_addition(
+        &mut self,
+        term: SyntaxTerm,
+        environment: &SpecElaborationContext,
+    ) -> SurfaceTerm {
+        let SyntaxTerm::Add(left, right) = &term else {
+            unreachable!("native_addition elaborates an addition");
+        };
+        if self
+            .refuse_untyped_pointer_access(&term, environment)
+            .is_err()
+        {
+            return SurfaceTerm::Untyped(term);
+        }
+        // The literal chain `base + 1 + 2 + ...` lowering reads iteratively.
+        let mut literals = 0;
+        let mut base = &term;
+        while let SyntaxTerm::Add(inner, literal) = base {
+            if !matches!(literal.as_ref(), SyntaxTerm::IntegerLiteral(_)) {
+                literals = 0;
+                break;
+            }
+            literals += 1;
+            base = inner;
+        }
+        if literals > 0 {
+            // As lowering does: the call width is read only for a base with
+            // no pointer element type.
+            if self
+                .contract_pointer_element_type(base, &TypingEnvironment::of(environment))
+                .is_none()
+                && !matches!(
+                    self.call_pointer_element_width(base, environment),
+                    Ok(Some(_))
+                )
+            {
+                return SurfaceTerm::Untyped(term);
+            }
+        }
+        let step = |pointer: &SyntaxTerm, elements: &SyntaxTerm, element_width| {
+            (pointer.clone(), elements.clone(), element_width)
+        };
+        let chosen = match self.call_pointer_element_width(left, environment) {
+            Err(_) => return SurfaceTerm::Untyped(term),
+            Ok(Some(width)) => Some(step(left, right, width)),
+            Ok(None) => match self.call_pointer_element_width(right, environment) {
+                Err(_) => return SurfaceTerm::Untyped(term),
+                Ok(Some(width)) => Some(step(right, left, width)),
+                Ok(None) => self
+                    .contract_pointer_element_width(left, environment)
+                    .map(|width| step(left, right, width))
+                    .or_else(|| {
+                        self.contract_pointer_element_width(right, environment)
+                            .map(|width| step(right, left, width))
+                    }),
+            },
+        };
+        if let Some((pointer, elements, element_width)) = chosen {
+            return SurfaceTerm::PointerStep {
+                pointer: Box::new(self.native_surface_term(pointer, environment)),
+                elements: Box::new(self.native_surface_term(elements, environment)),
+                element_width,
+                backward: false,
+            };
+        }
+        let copied_parameter_read = |operand: &SyntaxTerm| {
+            let mut operand = operand;
+            while let SyntaxTerm::At {
+                expression: inner, ..
+            }
+            | SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner) = operand
+            {
+                operand = inner;
+            }
+            region_parameter_read(operand).is_some()
+        };
+        if copied_parameter_read(left) || copied_parameter_read(right) {
+            return SurfaceTerm::Untyped(term);
+        }
+        let SyntaxTerm::Add(left, right) = term else {
+            unreachable!()
+        };
+        SurfaceTerm::Binary {
+            op: ArithmeticOperator::Add,
+            kind: ArithmeticKind::Native,
+            left: Box::new(self.native_surface_term(*left, environment)),
+            right: Box::new(self.native_surface_term(*right, environment)),
         }
     }
 }
