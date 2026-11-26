@@ -1,8 +1,6 @@
-# A false bare `transport` after execution is refused as at a frontier
+# A false historical claim fails after execution
 
-A bare `transport` at function exit uses the same proof search as at a
-statement frontier. A reflexive equality supplies no proof of the target
-value.
+Preserving the array element does not establish what value it originally held.
 
 ```c filename=a_false_bare_transport_after_execution_is_refused_as_at_a_frontier.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
@@ -26,11 +24,11 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     mark entry;
     step();
     step_until(function.exit);
-    transport(at(entry, a[m]) == at(entry, a[m]), at(entry, a[m]) == 5);
+    have at(entry, a[m]) == 5 by { close(); }
     close();
 }
 ```
 
 ```expect
-fail: `transport` found no checked proof from its source
+fail: could not establish `at(entry, a[m]) == 5`
 ```

@@ -8182,7 +8182,7 @@ fn selected_post_execution_capture_ignores_nested_certificate_indices() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_25")]
-fn selected_post_execution_transport_emits_an_explicit_certificate() {
+fn selected_post_execution_have_expands_after_finalization() {
     let c_source = r#"
             int32 identity(int32 x) {
                 return x;
@@ -8198,23 +8198,23 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
                 have result == x by {
                     close();
                 }
-                transport(result == x, result == x);
+                have result == x;
                 close();
             }
         "#;
     let verified = verify_c_sources(click_source, &[("identity.c", c_source)]);
-    verified.expect("checked post-execution transport should verify");
+    verified.expect("checked post-execution have should verify");
 
-    let transport_offset = click_source
-        .find("transport(")
-        .expect("proof should contain the selected transport");
-    let line = click_source[..transport_offset]
+    let have_offset = click_source
+        .rfind("have result == x")
+        .expect("proof should contain the selected have");
+    let line = click_source[..have_offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let column = transport_offset
-        - click_source[..transport_offset]
+    let column = have_offset
+        - click_source[..have_offset]
             .rfind('\n')
             .map(|offset| offset + 1)
             .unwrap_or(0)
@@ -8222,11 +8222,12 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
 
     let expanded =
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
-            .expect("selected post-execution transport should expand after finalization");
+            .expect("selected post-execution have should expand after finalization");
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("close();"), "{expanded}");
+    assert!(expanded.contains("have result == x by {"), "{expanded}");
+    assert!(!expanded.contains("have result == x;"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
-        .expect("post-execution transport certificate should check");
+        .expect("post-execution have certificate should check");
 }
 
 #[test]
@@ -9181,7 +9182,7 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_30")]
-fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
+fn post_execution_have_expands_from_the_recorded_store_equation() {
     let c_source = r#"
         int32 store_both(int32 p[2]) {
             p[0] = 7;
@@ -9197,26 +9198,23 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
             ensures p[0] == 7;
         } by {
             step_until(function.exit);
-            transport(
-                at(region(0).exit, p[0]) == 7,
-                p[0] == 7
-            );
+            have p[0] == 7;
             close();
         }
     "#;
     let sources = [("store_both.c", c_source)];
 
-    verify_c_sources(click_source, &sources)
-        .expect("the post-execution store transport should verify");
-    let selected = click_source.find("transport(").unwrap();
+    verify_c_sources(click_source, &sources).expect("the post-execution store proof should verify");
+    let selected = click_source.find("have p[0] == 7").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the store transport should expand from its recorded equation");
+            .expect("the store proof should expand from its recorded equation");
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("close();"), "{expanded}");
+    assert!(expanded.contains("have p[0] == 7 by {"), "{expanded}");
+    assert!(!expanded.contains("have p[0] == 7;"), "{expanded}");
     verify_c_sources(&expanded, &sources)
-        .expect("the expanded store transport certificate should check from a fresh parse");
+        .expect("the expanded store proof certificate should check from a fresh parse");
 }
 
 #[test]
@@ -14933,7 +14931,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_55")]
-fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
+fn branch_join_retains_a_historical_fact_in_its_continuation() {
     let c_source = r#"
         int32 choose_bound_transport(int32 lower, int32 upper, int32 flag) {
             int32 choice;
@@ -14959,17 +14957,17 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
                 true => { step(); }
                 false => { step(); }
             }
-            transport(old(lower) < old(upper), lower < upper);
+            have lower < upper;
             step();
             close();
         }
     "#;
 
     let verified = verify_c_sources(click_source, &[("choose_bound_transport.c", c_source)]);
-    let verified = verified.expect("the common fact transport should advance the joined Proof");
+    let verified = verified.expect("the common historical fact should advance the joined Proof");
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the checked common fact transport should retain an expansion");
+        .expect("the checked common historical fact should retain an expansion");
     assert!(
         matches!(
             tactics.as_slice(),
@@ -14998,15 +14996,10 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
         "choose_bound_transport",
         ContractProofClaim::Grouped,
     )
-    .expect("the retained common fact transport should expand");
-    assert!(
-        !expanded
-            .lines()
-            .any(|line| line.trim_start().starts_with("transport(")),
-        "{expanded}"
-    );
+    .expect("the retained common historical fact should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
     verify_c_sources(&expanded, &[("choose_bound_transport.c", c_source)])
-        .expect("the explicit common transport step should independently re-derive");
+        .expect("the explicit common have should independently re-derive");
 }
 
 #[test]
@@ -15305,7 +15298,7 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_56")]
-fn branch_arms_retain_bare_fact_transports_on_proof() {
+fn branch_arms_retain_preserved_facts() {
     let c_source = r#"
         int32 set_choice_return_first(int32 p[2], int32 flag) {
             if (flag != 0) {
@@ -15335,11 +15328,11 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             } {
                 true => {
                     step();
-                    transport(old(p[0]) == 7, p[0] == 7);
+                    have p[0] == 7;
                 }
                 false => {
                     step();
-                    transport(old(p[0]) == 7, p[0] == 7);
+                    have p[0] == 7;
                 }
             }
             step();
@@ -15348,10 +15341,10 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
     "#;
 
     let verified = verify_c_sources(click_source, &[("set_choice_return_first.c", c_source)]);
-    let verified = verified.expect("bare arm transports should advance the branch Proof");
+    let verified = verified.expect("bare arm facts should advance the branch Proof");
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the checked arm transports should retain an expansion");
+        .expect("the checked arm facts should retain an expansion");
     assert!(
         matches!(
             tactics.get(1),
@@ -15374,10 +15367,10 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
         "set_choice_return_first",
         ContractProofClaim::Grouped,
     )
-    .expect("the retained branch transports should expand");
+    .expect("the retained branch facts should expand");
     assert!(!expanded.contains("transport("), "{expanded}");
     verify_c_sources(&expanded, &[("set_choice_return_first.c", c_source)])
-        .expect("the explicit branch transports should independently re-derive");
+        .expect("the explicit branch facts should independently re-derive");
 }
 
 #[test]
@@ -26735,7 +26728,7 @@ test_batches! {
         selected_post_execution_capture_ignores_nested_certificate_indices,
     ],
     expansion_batch_25: [
-        selected_post_execution_transport_emits_an_explicit_certificate,
+        selected_post_execution_have_expands_after_finalization,
         grouped_post_execution_unfold_retains_its_checked_proof_step,
         grouped_post_execution_closers_use_independent_checked_proofs,
         post_execution_rewrite_retains_its_checked_proof_step,
@@ -26762,7 +26755,7 @@ test_batches! {
         source_expansion_preserves_proof_marks,
     ],
     expansion_batch_30: [
-        post_execution_store_transport_expands_from_the_recorded_store_equation,
+        post_execution_have_expands_from_the_recorded_store_equation,
         statement_states_support_complete_loadability_propositions,
         statement_states_preserve_declared_resource_argument_types,
         source_expander_locates_frontier_local_have_proofs,
@@ -26875,10 +26868,10 @@ test_batches! {
     ],
     expansion_batch_55: [
         branch_join_retains_a_bare_theorem_application_in_its_continuation,
-        branch_join_retains_a_bare_fact_transport_in_its_continuation,
+        branch_join_retains_a_historical_fact_in_its_continuation,
     ],
     expansion_batch_56: [
-        branch_arms_retain_bare_fact_transports_on_proof,
+        branch_arms_retain_preserved_facts,
     ],
     expansion_batch_57: [
         explicit_branch_arms_retain_terminal_execute_search,

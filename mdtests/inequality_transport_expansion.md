@@ -18,7 +18,7 @@ void keep(int32* p, int32* q) {
         close() using { separate(memory(*p), memory(*q)); };
     }
     have *q > 0 by {
-        transport(at(statement(0).entry, *q) > 0, *q > 0);
+        close();
     }
     step();
     close();

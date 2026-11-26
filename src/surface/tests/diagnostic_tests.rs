@@ -3843,11 +3843,11 @@ fn failed_final_known_preserves_its_checked_trace_context() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
-fn known_transport_trace_retains_its_written_source_occurrence() {
+fn known_have_trace_retains_its_written_source_occurrence() {
     let source = r#"verifying "f.c";
         void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
             step(); mark saved;
-            transport(at(saved, p[0] == 7), p[0] == 7);
+            have p[0] == 7 by { close(); }
             step_until(function.exit); close();
         }
     "#;
@@ -3856,12 +3856,11 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
             source,
             &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
         )
-        .expect("identity transport should verify");
+        .expect("the already known read should close");
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-            .expect("accepted transport retains its trace");
-        let expected = "have p[0] == 7 (from `transport`)";
+            .expect("the accepted have retains its trace");
+        let expected = "have p[0] == 7";
         assert!(trace.contains(&format!("tactic 2: {expected}")), "{trace}");
-        assert!(!trace.contains("checked transport target:"), "{trace}");
         let focused = accepted_proof_trace(
             &|_, path| {
                 let line = path.first()? + 1;
@@ -3871,12 +3870,12 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
             &|_, _, _| false,
             Some(&SourcePosition::new(3, 1)),
         )
-        .expect("the written transport source occurrence remains traceable");
+        .expect("the written have source occurrence remains traceable");
         assert!(
             focused.contains(&format!("tactic@3: {expected}")),
             "{focused}"
         );
-        assert!(!focused.contains("checked transport target:"), "{focused}");
+        assert!(focused.contains("adds: p[0] == 7"), "{focused}");
     });
 }
 
@@ -3890,7 +3889,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
     let source = r#"verifying "f.c";
         void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
             step(); mark saved;
-            transport(at(saved, p[0] == 7), p[0] == 7);
+            have p[0] == 7 by { close(); }
             step_until(function.exit); close();
         }
     "#;
@@ -3899,11 +3898,10 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
             source,
             &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
         )
-        .expect("identity transport should verify");
+        .expect("the already known read should close");
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-            .expect("accepted transport retains its trace");
-        let chosen = "chosen: transport(";
-        assert!(!trace.contains(chosen), "{trace}");
+            .expect("the accepted have retains its trace");
+        assert!(!trace.contains("chosen: close("), "{trace}");
         assert!(
             trace.contains("tactic 3: step (from `step_until`)"),
             "{trace}"
@@ -3913,10 +3911,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
             "{trace}"
         );
         assert!(trace.contains("tactic 0: step\n"), "{trace}");
-        assert!(
-            trace.contains("tactic 2: have p[0] == 7 (from `transport`)\n"),
-            "{trace}"
-        );
+        assert!(trace.contains("tactic 2: have p[0] == 7\n"), "{trace}");
     });
     let source = r#"verifying "f.c";
         theorem le_trans(a: int32, b: int32, c: int32) {
@@ -3942,7 +3937,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
-fn rejected_transport_prints_checked_reads_and_retains_prefix() {
+fn rejected_historical_fact_retains_store_prefix() {
     let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();
     let c = format!("void f(int32 *p) {{ {stores} p[0] = 9; return; }}");
     let steps = "step(); ".repeat(9);
@@ -3950,7 +3945,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
         r#"verifying "f.c";
         void f(int32 *p) {{ owns p[0..10]; requires p[0] == 7; ensures true; }} by {{
             {steps} mark stored; step();
-            transport(at(stored, p[0] == 7), p[0] == 7);
+            have p[0] == 7 by {{ close(); }}
             step_until(function.exit); close();
         }}
     "#
@@ -3958,27 +3953,15 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     with_proof_trace("f", || {
         let error = verify_c_sources(&source, &[("f.c", c.as_str())])
             .expect_err("a write invalidates the transported value");
-        let message = error.message();
+        let report = error.report();
         assert!(
-            message.contains("`transport` found no checked proof from its source"),
-            "{message}"
+            report.contains("could not establish `p[0] == 7`"),
+            "{report}"
         );
-        assert!(message.contains("checked source (holds):"), "{message}");
-        assert!(message.contains("checked target (wanted):"), "{message}");
-        assert!(message.contains("read<Bits32>"), "{message}");
-        assert!(message.contains("state#"), "{message}");
-        // The target names the read of the overwritten cell, not the
-        // value the store left there.
-        assert!(
-            message.contains("checked target (wanted): int32 =(read<Bits32>"),
-            "{message}"
-        );
-        let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-            .expect("the rejected written transport retains its checked prefix");
-        assert!(
-            trace.contains("checked prefix; certification failed"),
-            "{trace}"
-        );
+        let trace = error
+            .trace_context_report()
+            .expect("the rejected have retains its checked prefix");
+        assert!(trace.contains("read<Bits32>"), "{trace}");
         assert!(trace.contains("steps through: p[1] = 9"), "{trace}");
         assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
     });
@@ -4022,35 +4005,29 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
-fn rejected_wide_transport_shows_checked_reads_and_prefix() {
+fn rejected_wide_historical_fact_retains_store_prefix() {
     let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
     let source = r#"verifying "f.c";
         void f(uint64 *p) {
             owns p[0]; requires p[0] == 7u64; ensures true;
         } by {
             mark before_write; step();
-            transport(at(before_write, p[0] == 7u64), p[0] == 7u64);
+            have p[0] == 7u64 by { close(); }
             step_until(function.exit); normalize();
         }
     "#;
     with_proof_trace("f", || {
         let error = verify_c_sources(source, &[("f.c", c)])
             .expect_err("a real write invalidates the old word");
-        let message = error.message();
-        for expected in [
-            "`transport` found no checked proof from its source",
-            "checked source (holds):",
-            "checked target (wanted):",
-            "label definitions",
-            "store",
-            "read<Bits64>",
-        ] {
-            assert!(message.contains(expected), "missing {expected}: {message}");
-        }
-        assert!(!message.contains("information unavailable"), "{message}");
+        let report = error.report();
+        assert!(
+            report.contains("could not establish `p[0] == 7u64`"),
+            "{report}"
+        );
         let trace = error
             .trace_context_report()
             .expect("retain the failed written check's prefix");
+        assert!(trace.contains("read<Bits64>"), "{trace}");
         assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
     });
 }
@@ -4128,7 +4105,7 @@ fn have_failure_trace_retains_checked_call_prefix() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
-fn budget_stopped_transport_retains_its_checked_loop_prefix() {
+fn budget_stopped_close_retains_its_checked_loop_prefix() {
     use crate::instrumentation::{TacticWorkLimits, with_tactic_work_limits};
     let source = r#"verifying "f.c";
         void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
@@ -4140,7 +4117,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 maintain by {
                     mark before;
                     step();
-                    transport(at(before, p[0] == 7), p[0] == 7);
+                    have p[0] == 7 by { close(); }
                     step();
                 }
             }
@@ -4160,7 +4137,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 )
             },
         )
-        .expect_err("the written smart transport has no work allowance");
+        .expect_err("the written close has no work allowance");
         assert!(error.message().contains("budget"), "{}", error.message());
         let trace = error
             .trace_context_report()
@@ -4559,15 +4536,15 @@ test_batches! {
         failed_final_known_preserves_its_checked_trace_context,
     ],
     diagnostic_batch_20: [
-        known_transport_trace_retains_its_written_source_occurrence,
+        known_have_trace_retains_its_written_source_occurrence,
         a_trace_marks_searched_steps_and_their_chosen_arguments,
-        rejected_transport_prints_checked_reads_and_retains_prefix,
+        rejected_historical_fact_retains_store_prefix,
         failed_normalize_using_retains_actual_wide_read_resolution,
     ],
     diagnostic_batch_21: [
-        rejected_wide_transport_shows_checked_reads_and_prefix,
+        rejected_wide_historical_fact_retains_store_prefix,
         have_failure_trace_retains_checked_call_prefix,
-        budget_stopped_transport_retains_its_checked_loop_prefix,
+        budget_stopped_close_retains_its_checked_loop_prefix,
     ],
     diagnostic_batch_22: [
         callback_refinement_hint_with_produced_resource_is_a_checked_proof,

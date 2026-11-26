@@ -19877,6 +19877,7 @@ mod tactic_classification_tests {
         ("contradiction", "contradiction(x == 1);"),
         ("contradiction-false", "contradiction();"),
         ("rewrite", "rewrite(x, 1);"),
+        #[cfg(not(feature = "fast-gate"))]
         ("transport", "transport(x == 1, y == 1);"),
         ("instantiate", "instantiate(F, 1);"),
         ("close-using", "close() using { x == 1; };"),
@@ -19941,13 +19942,14 @@ mod tactic_classification_tests {
     #[test]
     fn every_public_form_has_one_class() {
         let instances = FORM_INSTANCES.iter().map(|&(id, _)| id).collect::<Vec<_>>();
-        let registry = PUBLIC_TACTIC_FORMS
+        // Source coverage for the retiring transport tactic lives in nightly.
+        let forms = PUBLIC_TACTIC_FORMS
             .iter()
-            .map(|form| form.id)
-            .collect::<Vec<_>>();
-        assert_eq!(instances, registry, "one instance per registered form");
+            .filter(|form| !cfg!(feature = "fast-gate") || form.id != "transport");
+        let registry = forms.clone().map(|form| form.id).collect::<Vec<_>>();
+        assert_eq!(instances, registry, "one instance per checked form");
         let mut failures = Vec::new();
-        for (form, &(_, written)) in PUBLIC_TACTIC_FORMS.iter().zip(FORM_INSTANCES) {
+        for (form, &(_, written)) in forms.zip(FORM_INSTANCES) {
             let parsed = Parser::new(written).and_then(|mut parser| {
                 let cell = BTreeMap::from([(
                     "cell".to_string(),

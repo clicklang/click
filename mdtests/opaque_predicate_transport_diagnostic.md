@@ -1,8 +1,7 @@
-# Opaque predicate transport recommends unfolding
+# An opaque historical predicate does not prove its current value
 
-The store to `p` changes the array version. An opaque predicate hides
-which cells it observes. Smart `transport` should explain how to expose
-the selected predicate's reads when it cannot frame the predicate.
+The store changes the array version. The entry predicate alone cannot
+establish that the current array is sorted.
 
 ```c filename=opaque_predicate_transport_diagnostic.c
 int32 preserve_sorted(int32 p[3]) {
@@ -29,10 +28,10 @@ int32 preserve_sorted(int32 p[3]) {
     ensures sorted(p, 3);
 } by {
     step();
-    transport(at(function.entry, sorted(p, 3)), sorted(p, 3));
+    have sorted(p, 3) by { close() using { at(function.entry, sorted(p, 3)); }; }
 }
 ```
 
 ```expect
-fail: `transport` cannot frame opaque predicate `sorted` across C execution because its memory footprint is hidden; unfold the selected application, such as `unfold(sorted(args));`, before execution and transport its unfolded definition
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

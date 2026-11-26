@@ -1,7 +1,6 @@
-# A false `transport` in a `branch` arm is refused as on the main line
+# A false historical claim fails in a branch arm
 
-A branch arm uses the same ordinary transport search as the main proof.
-The historical reflexive equality supplies no proof of the target value.
+Preserving the array element does not establish what value it originally held.
 
 ```c filename=a_false_transport_in_a_branch_arm_is_refused_as_on_the_main_line.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
@@ -28,7 +27,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
     branch {
         true => {
             step();
-            transport(at(entry, a[m]) == at(entry, a[m]), at(entry, a[m]) == 5);
+            have at(entry, a[m]) == 5 by { close(); }
         }
         false => {
         }
@@ -37,5 +36,5 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
 ```
 
 ```expect
-fail: `transport` found no checked proof from its source
+fail: could not establish `at(entry, a[m]) == 5`
 ```
