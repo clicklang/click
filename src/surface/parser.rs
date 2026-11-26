@@ -12399,17 +12399,6 @@ impl Parser {
                     right,
                 ))
             }
-            "transport" => {
-                self.expect(Token::LParen)?;
-                let source = self.parse_proposition()?;
-                self.expect(Token::Comma)?;
-                let target = self.parse_proposition()?;
-                self.expect(Token::RParen)?;
-                if self.peek_ident() == Some("using") {
-                    return Err(self.error("`transport ... using` is retired; use `have`, `preserve`, and `rewrite` for explicit frame proofs"));
-                }
-                ProofTactic::Transport { source, target }
-            }
             "instantiate" => {
                 self.expect(Token::LParen)?;
                 let quantified = self.parse_proposition()?;
@@ -19877,8 +19866,6 @@ mod tactic_classification_tests {
         ("contradiction", "contradiction(x == 1);"),
         ("contradiction-false", "contradiction();"),
         ("rewrite", "rewrite(x, 1);"),
-        #[cfg(not(feature = "fast-gate"))]
-        ("transport", "transport(x == 1, y == 1);"),
         ("instantiate", "instantiate(F, 1);"),
         ("close-using", "close() using { x == 1; };"),
         ("close-bounds", "close() using bounds { x <= 1; };"),
@@ -19925,6 +19912,15 @@ mod tactic_classification_tests {
     }
 
     #[test]
+    fn rejects_removed_transport_tactic() {
+        let error = parse("void f() {} by { transport(true, true); }").unwrap_err();
+        assert!(
+            error.message().contains("unknown tactic `transport`"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn named_theorem_application_rejects_an_evidence_list() {
         let mut parser = Parser::new("apply(lemma(x)) using { x == 1; };").unwrap();
         let error = parser.parse_proof_tactic().unwrap_err();
@@ -19942,10 +19938,7 @@ mod tactic_classification_tests {
     #[test]
     fn every_public_form_has_one_class() {
         let instances = FORM_INSTANCES.iter().map(|&(id, _)| id).collect::<Vec<_>>();
-        // Source coverage for the retiring transport tactic lives in nightly.
-        let forms = PUBLIC_TACTIC_FORMS
-            .iter()
-            .filter(|form| !cfg!(feature = "fast-gate") || form.id != "transport");
+        let forms = PUBLIC_TACTIC_FORMS.iter();
         let registry = forms.clone().map(|form| form.id).collect::<Vec<_>>();
         assert_eq!(instances, registry, "one instance per checked form");
         let mut failures = Vec::new();

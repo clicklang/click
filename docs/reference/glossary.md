@@ -378,8 +378,8 @@ A proposition established and available in the current proof state. Facts
 ### Fact transport
 
 A checked transition that relates an exact source fact at one point to a
-target fact at another. Direct statement transport uses a bounded frame check;
-the `transport` tactic can select additional explicit evidence.
+target fact at another. Direct statement transport uses a bounded frame check.
+The closer can search for a proof based on earlier facts.
 
 ### Focus
 
@@ -970,8 +970,8 @@ assignment exists and therefore the propositions are contradictory.
 
 ### Search miss
 
-A smart tactic found no proof in its bounded search. For example, a bare
-`transport(P, Q)` may find no frame for the source fact. See
+A smart tactic found no proof in its bounded search. For example,
+`close()` may find no frame proof for a fact from an earlier point. See
 [Smart and simple tactics](../concepts/smart-and-simple-tactics.md#fact-transport).
 
 ### Selector

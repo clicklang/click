@@ -7,7 +7,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   `close() using`, and `step_until`, which steps to a target and proves what
   each step needs. Smart tactics also include the implicit closer, which
   ends proofs including loop `maintain` scripts and finishes a `step()` or
-  `fold`, and the frame search in bare `transport(P, Q)`. They
+  `fold`. They
   are the tactics that `click profile` may recommend expanding. The parser
   refuses retired forms such as `known()` and `solve()` and names their
   replacement, `close()`.
@@ -98,23 +98,12 @@ when the default misses or when a proof must not search.
   For a proof that must replay without search, use `click verify --checked-only`.
 - **Equalities and states.** `rewrite(from, to)` rewrites the goal with an
   equality at the current state.
-  `transport(P, Q)` carries a fact stated at an earlier state to the current
-  one when `step` did not carry it. For explicit frame evidence, establish
-  it with `have`, use `preserve` for a read across a separated footprint,
-  and apply the resulting equality with `rewrite`. Expansion emits these
-  ordinary steps when it has a replayable derivation. `close()` tries
-  rewriting and frame reasoning within its bounds.
+  To establish a fact after a state change, write `have Q;`. Its closer
+  searches for a frame proof. For explicit evidence, use `preserve` for a
+  read across a separated footprint and apply that equality with `rewrite`.
   A full pointer-value equality also rewrites displaced copies such as `p + i`,
   retaining their selected bounds. An equality of `address(p)` and `address(q)`
   supplies numeric addresses without transferring object identity or bounds.
-  A frame refusal prints both written operands and the checked propositions,
-  followed by the frontier effects and a shared memory/value legend. The
-  checked propositions may simplify to `true` or `false`; those are the
-  terms the checker compared. With `--trace-proof`, a rejected written
-  transport retains the preceding checked path without admitting its target. A planning
-  budget failure retains that prefix too; if source and target were already
-  lowered, it prints their checked identities and memory legend without
-  running more proof checks.
 - **Case splits: `if`, `cases`, `match`, `branch`.** `if P` splits on any
   proposition. `cases` checks that its written alternatives cover the path.
   `match` splits on constructors and `branch` follows a C `if`. Tactics written
@@ -841,8 +830,8 @@ from the arm's state, with its path condition available.
 
 The loop does not search the facts it entered with for ones its frame
 preserves. A fact about memory stated before the loop and needed after it is
-carried by the loop's invariants, or afterwards by
-[`transport`](#fact-transport) from the point it was stated at.
+carried by the loop's invariants or established afterwards with a
+[frame proof](#fact-transport).
 
 **Failure, checking, and tools:**
 
@@ -1177,8 +1166,8 @@ with the frontier it stands at; the end of a body is one `step()` of its own
 (`mdtests/solve_before_exit_in_arm_names_the_frontier.md`).
 
 Inside a `have` body, a tactic that already closed the goal (an `unfold`
-whose refreshed goal is an available fact, a `transport` onto the goal, a
-theorem whose conclusion is the goal) may be followed only by `close()`
+whose refreshed goal is an available fact or a theorem application whose
+conclusion is the goal) may be followed only by `close()`
 or `normalize()`, which then assert the closed judgment and emit
 nothing. So `unfold(f(x)); normalize();` means the same whether or not the
 unfold alone closed the goal
@@ -1829,7 +1818,7 @@ already held as a fact retains its existing exact-lookup behavior.
   as `y > x implies 0 < y` from `x < y implies y > 0`: `intro()`, then close
   the body.
 - A fact from another point whose reads that check does not show
-  unchanged: an explicit transport step first.
+  unchanged: use `preserve` and `rewrite` to establish the fact first.
 
 **Failure, checking, and tools:**
 
@@ -3589,7 +3578,6 @@ mathematical product.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `transport(P, Q)` | smart | Specialized | Carry a fact from an earlier memory state. | [Reference](#fact-transport) |
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a composite or create an ordinary token at return. | [Reference](#folding-resources) |
@@ -3605,27 +3593,18 @@ mathematical product.
 
 Predicate calls are opaque to framing until their definitions are unfolded.
 To carry such a fact across C execution, unfold the selected application before the relevant
-steps and transport the unfolded definition.
+steps and prove that the unfolded definition still holds.
 
 ### Fact transport
 
-**Form:** `transport(P, Q)`
+To establish a fact `Q` in the current state, write `have Q;`.
+`close()` can use a fact from an earlier point when its reads have been
+preserved. State supporting facts at their named points with `have`.
+For a direct frame proof, establish separation from the region's footprint,
+use `preserve` to obtain a read equality, and use `rewrite` to relate
+the reads.
 
-**Specialized.** Write it when a fact stated at an earlier state is needed at
-the current one and neither `step` nor `close()` carried it. When exact source `P`
-is available, derive target `Q` at another certified point, citing `P` alone
-as frame evidence. For additional premises, use `have` to establish the relevant
-facts. Prove unchanged reads across named footprints with `preserve` and use
-`rewrite` to relate them.
-
-**Failure, checking, and tools:**
-
-Unrelated propositions, unsafe writes, or a source that does not carry the
-target alone fail. When search finds no checked proof, the diagnostic shows
-the source and wanted target with their read identities. Expansion writes the
-ordinary checks, such as `preserve` and `rewrite`, for a successful proof.
-
-**Checked replacement:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md) uses `close()` to establish the preserved value.
+**Checked example:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md).
 
 ### Unfolding predicates
 
@@ -4074,7 +4053,7 @@ aggregate search cost is significant even though each smart tactic is prompt.
 
 `click profile` reports smart and simple work under the same concepts:
 statement transitions are `step`, checked loop transitions are `loop`,
-fact transports are `transport`, and atomic
+and atomic
 reasoning uses rules such as `close()`, `normalize`, `rewrite`, and named
 theorem applications. A slow simple leaf is a Click performance bug. A
 successful slow smart tactic is an expansion candidate. An unsuccessful smart

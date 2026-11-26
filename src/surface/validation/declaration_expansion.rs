@@ -1637,7 +1637,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ApplyFactUsing { .. }
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
-        | ProofTactic::Transport { .. }
         | ProofTactic::SolveUsing(_)
         | ProofTactic::NormalizeUsing(_)
         | ProofTactic::CloseBounds(_)) => {
@@ -1966,10 +1965,6 @@ fn expand_declared_resource_tactic_with_propositions(
         ProofTactic::Rewrite(proposition) => Ok(ProofTactic::Rewrite(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
-        ProofTactic::Transport { source, target } => Ok(ProofTactic::Transport {
-            source: expand_declared_resource_proposition(source, resource_definitions)?,
-            target: expand_declared_resource_proposition(target, resource_definitions)?,
-        }),
         ProofTactic::SolveUsing(solve) => Ok(ProofTactic::SolveUsing(ProofSolveUsing {
             premises: solve
                 .premises

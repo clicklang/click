@@ -84,8 +84,7 @@ If the report does not explain the premises, rerun the command under
 `To get a trace:` (`click verify --trace-proof PROOF SIDECAR`, optionally with
 `--trace-to LINE`). Read its `proof refusal` section.
 
-A goal about memory (any `transport`, frame, or `read<...>(state#N, ...)`
-goal) depends on its `state#N` and `value#N` labels: write down the legend
+A goal about memory (any frame or `read<...>(state#N, ...)` goal) depends on its `state#N` and `value#N` labels: write down the legend
 line that defines each label the goal uses. Two written forms of one C address
 (`p` and `g + 16 bytes`, or a read at entry and a read in the loop) are often
 the whole story. Otherwise ignore the legend.
@@ -175,7 +174,7 @@ search chose. Writing those steps and forms out turns the searched part of
 the link into simple tactics, so the remaining gap is the link to split.
 
 A refusal that says "this is a search miss" came from an elided form, such
-as `apply(t(x))` or a bare `transport(P, Q)`, whose search for an argument
+as `apply(t(x))` or `close()`, whose search
 found nothing. Write the argument: state the missing fact with `have` first,
 or write the `using` form it names. Only the written form's refusal can be
 `tactic-bug`.

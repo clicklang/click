@@ -1280,10 +1280,6 @@ fn instantiate_proof_tactic(
         ),
         ProofTactic::Contradiction(value) => ProofTactic::Contradiction(proposition(value)?),
         ProofTactic::Rewrite(value) => ProofTactic::Rewrite(proposition(value)?),
-        ProofTactic::Transport { source, target } => ProofTactic::Transport {
-            source: proposition(source)?,
-            target: proposition(target)?,
-        },
         ProofTactic::Instantiate {
             quantified,
             arguments,

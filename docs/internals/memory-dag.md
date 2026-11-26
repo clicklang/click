@@ -386,7 +386,7 @@ equality orientation. It uses the cited conditions to justify crossings and
 compare the recovered value. If the cheap walk stops at a store whose address
 needs recorded load identities, the bounded query checks that one endpoint with
 the full pointer matcher and the exact typed width; it never searches older
-writes at that point. Explicit `transport` uses the same read-value rule for
+writes at that point. Frame search uses the same read-value rule for
 pointer and pointer-offset equalities. Whole-pointer equality checks the
 complete stored pointer, including its block. Same-block pointer comparisons lower to offset
 equality; that form uses an exact typed-read offset definition, including its
@@ -495,10 +495,10 @@ The [historical implementation record](https://github.com/clicklang/click/blob/2
 preserves the original measurements and rejected experiments. It is not the
 current architecture contract.
 
-## Failed explicit transport walks
+## Cell walks in failure diagnostics
 
-A rejected `transport(source, target)` reports the cell walks
-actually performed while checking that operation. Each observation identifies
+A failed memory check can report the cell walks performed while checking
+that operation. Each observation identifies
 the queried address and byte width, starting and stopping states, number of
 crossed edges, stopping reason, and the extended/explicit DAG modes used by the
 query. The address and state identities share the checked source, target,

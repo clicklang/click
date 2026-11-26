@@ -119,10 +119,13 @@ without changing C or weakening contracts.
 
 ## Transport retirement
 
-Open item (b): retire the legacy `transport` tactic, written and generated.
+The written tactic and its dispatcher have been removed. Regular proof tests
+use `have`, `close()`, and explicit frame proofs. Remaining written sites
+are outside the regular gate. The inventory below describes the original
+migration scope.
 
-Written `transport(source, target)` carries a
-fact across execution. Its fixed-state route rebuilds transition contexts
+The old `transport(source, target)` carried a fact across execution. Its
+fixed-state route rebuilt transition contexts
 with `assume_proposition_uncharged` (`count_uncharged_context_entries`
 counts them), which grows with the path; see "Uncharged transport contexts"
 in [verification efficiency](../docs/internals/verification-efficiency.md#output-sensitive-exceptions).
@@ -175,7 +178,7 @@ Producer anchors investigated in chunk 30:
 `plan_explicit_loadability_transport`
 (`src/surface/proof/surface_certificates.rs`), `try_carry_entry_conjunct`
 (`src/surface/proof/smart_closures/search.rs`),
-`try_execution_fact_transport` and `fact_transport_candidate_search`
+`fact_transport_candidate_search`
 (`src/surface/proof/smart_execution/search.rs`), and the planned adapters in
 `src/surface/proof/proof_object/execution_statements/search.rs`. A
 constructor occurrence alone is not a surviving expansion.

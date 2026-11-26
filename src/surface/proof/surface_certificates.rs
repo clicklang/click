@@ -1206,7 +1206,7 @@ pub(super) fn comparison_preservation_reads(
 
 /// Decompose only the written scalar expression. Each read is preserved once;
 /// ordinary equality reasoning distributes those equalities through arithmetic.
-/// Unknown expression forms stay on the existing explicit transport route.
+/// Other proof search routes handle expression forms this decomposition cannot use.
 fn scalar_preservation_read_leaves(
     pairs: Vec<(SyntaxTerm, SyntaxTerm)>,
 ) -> Option<Vec<(SyntaxTerm, SyntaxTerm)>> {

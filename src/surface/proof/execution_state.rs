@@ -1635,12 +1635,6 @@ pub(super) enum PostExecutionTactic {
     },
     Apply(TheoremApplication),
     Have(ProofHave),
-    /// A bare `transport`, which searches for its premises. A written
-    /// `rewrite` is a leaf.
-    Transport {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-    },
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
     /// focused outcome `Proof` to decide the condition, then applies only the
@@ -2048,7 +2042,6 @@ pub(super) fn post_execution_tactic_timing(
                 "control"
             },
         ),
-        PostExecutionTactic::Transport { .. } => ("transport", "smart"),
         PostExecutionTactic::Solve => ("solve", "smart"),
         PostExecutionTactic::SolveUsing(_) => ("close", "smart"),
         PostExecutionTactic::ImplicitSolve => ("implicit tail", "smart"),

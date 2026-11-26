@@ -10642,10 +10642,11 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
             .expect("the meaningful assignment should advance the execution Proof");
         if size == 16 {
             let retained = progressed.clone();
-            let rejected = crate::kernel::search::ProofSearch::try_execution_fact_transport(
+            let rejected = crate::kernel::search::ProofSearch::try_fact_transport_from_candidates(
                 &(progressed),
                 &source,
                 &missing,
+                [source.clone()],
             )
             .expect("a bounded rejected transport search should remain prompt");
             assert!(
@@ -10660,10 +10661,11 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
         }
 
         let before = fact_node_allocations();
-        let transported = crate::kernel::search::ProofSearch::try_execution_fact_transport(
+        let transported = crate::kernel::search::ProofSearch::try_fact_transport_from_candidates(
             &(progressed),
             &source,
             &source,
+            [source.clone()],
         )
         .expect("the bounded source candidate search should run")
         .expect("the source candidate should produce one checked transport descendant");
