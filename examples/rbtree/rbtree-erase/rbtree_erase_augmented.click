@@ -155,9 +155,9 @@ tactic open_erase_spine_link(focus: struct rb_node*, parent: struct rb_node*, an
         EraseSpine::Top => {
             have erase_spine_parent(c.model, anchor) == anchor by {
                 rewrite(c.model, EraseSpine::Top);
-                unfold(erase_spine_parent(EraseSpine::Top, anchor)); normalize();
+                unfold(erase_spine_parent(EraseSpine::Top, anchor)); close();
             }
-            have parent == anchor by { normalize() using { }; }
+            have parent == anchor by { rewrite(parent, erase_spine_parent(c.model, anchor)); close(); }
             unfold(c);
             have parent != 0;
             let frame = fold(erase_spine_frame(parent, anchor), { model: EraseSpine::Top });
@@ -167,9 +167,9 @@ tactic open_erase_spine_link(focus: struct rb_node*, parent: struct rb_node*, an
         EraseSpine::Left(identity, grandparent, color, sibling_model, up_model) => {
             have erase_spine_parent(c.model, anchor) == identity by {
                 rewrite(c.model, EraseSpine::Left(identity, grandparent, color, sibling_model, up_model));
-                unfold(erase_spine_parent(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), anchor)); normalize();
+                unfold(erase_spine_parent(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model), anchor)); close();
             }
-            have parent == identity by { normalize() using { }; }
+            have parent == identity by { rewrite(parent, erase_spine_parent(c.model, anchor)); close(); }
             let { sibling: sibling, up: up } = unfold(c);
             have parent->rb_left == focus by {
                 rewrite(parent, identity);

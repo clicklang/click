@@ -35,12 +35,16 @@ int32 count_byte2(uint8 p[], uint8 x) {
             true => {
                 step();
                 have count == (if at(first, p[0]) == at(first, x) { 1 } else { 0 }) by {
-                    normalize() using { at(first, p[0]) == at(first, x); };
+                    have (if at(first, p[0]) == at(first, x) { 1 } else { 0 }) == 1 by close();
+                    rewrite(if at(first, p[0]) == at(first, x) { 1 } else { 0 }, 1);
+                    close();
                 }
             }
             false => {
                 have count == (if at(first, p[0]) == at(first, x) { 1 } else { 0 }) by {
-                    normalize() using { at(first, p[0]) != at(first, x); };
+                    have (if at(first, p[0]) == at(first, x) { 1 } else { 0 }) == 0 by close();
+                    rewrite(if at(first, p[0]) == at(first, x) { 1 } else { 0 }, 0);
+                    close();
                 }
             }
         }
@@ -51,18 +55,20 @@ int32 count_byte2(uint8 p[], uint8 x) {
                 have count == bytes::count(p, 0, 2, x) by {
                     unfold(bytes::count(p, 0, 2, x));
                     rewrite(at(second, count), (if at(first, p[0]) == at(first, x) { 1 } else { 0 }));
-                    normalize() using {
-                        at(second, p[1]) == at(second, x);
-                    };
+                    have p[1] == x by close();
+                    have (if p[1] == x { 1 } else { 0 }) == 1 by close();
+                    rewrite(if p[1] == x { 1 } else { 0 }, 1);
+                    close();
                 }
             }
             false => {
                 have count == bytes::count(p, 0, 2, x) by {
                     unfold(bytes::count(p, 0, 2, x));
                     rewrite(at(second, count), (if at(first, p[0]) == at(first, x) { 1 } else { 0 }));
-                    normalize() using {
-                        at(second, p[1]) != at(second, x);
-                    };
+                    have p[1] != x by close();
+                    have (if p[1] == x { 1 } else { 0 }) == 0 by close();
+                    rewrite(if p[1] == x { 1 } else { 0 }, 0);
+                    close();
                 }
             }
         }
