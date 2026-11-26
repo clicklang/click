@@ -11291,6 +11291,28 @@ impl ExecutionState {
         }
     }
 
+    /// Take `memory` as one step of the atomic region in progress, with
+    /// [`Self::set_memory`]'s resource invalidation, without moving to a new
+    /// point: the region's one install, the next [`Self::set_memory`] or
+    /// [`Self::complete_staged_memory`], takes every staged step at once.
+    /// A state with staged steps stands between points; a region writes it
+    /// and never reads it.
+    pub(crate) fn stage_memory(&mut self, memory: SymbolicMemory) {
+        self.replace_memory(memory, false);
+    }
+
+    /// Ends the atomic region in progress: a state with staged memory moves
+    /// to the one new point those steps reach. Without staged memory it
+    /// stays where it is.
+    pub(crate) fn complete_staged_memory(&mut self) {
+        let steps = self.memory.pending_steps.take();
+        let shared = super::intern_memory_ref(&self.memory);
+        if steps.is_none() && self.point.memory() == Some(&shared) {
+            return;
+        }
+        self.point = self.point.after(shared, steps);
+    }
+
     /// Replace memory without the resource invalidation of
     /// [`Self::set_memory`], for a transition that has already accounted for
     /// it. It is still a transition, so the state moves to a new point.

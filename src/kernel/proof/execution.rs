@@ -9813,6 +9813,7 @@ impl ExecutionProofCore {
                     })
                 },
             )?;
+            reached.complete_staged_memory();
         }
         if let Some(pending) = &reached.pending_thread_create {
             let no_assumptions = PureFactContext::new();
