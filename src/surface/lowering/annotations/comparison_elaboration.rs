@@ -323,13 +323,20 @@ impl AnnotationLowerer<'_> {
                     Op::Add => unreachable!("native + is not typed yet: it may be a pointer step"),
                 })
             }
+            SurfaceTerm::Negate {
+                kind: ArithmeticKind::Native,
+                operand,
+            } => Ok(SpecExpression::Negate(Box::new(
+                self.lower_surface_native(operand, environment)?,
+            ))),
             SurfaceTerm::Binary {
                 kind: ArithmeticKind::Integer,
                 ..
             }
-            | SurfaceTerm::Negate { .. } => unreachable!(
-                "a native operand is never Integer arithmetic or a typed negation: {term:?}"
-            ),
+            | SurfaceTerm::Negate {
+                kind: ArithmeticKind::Integer,
+                ..
+            } => unreachable!("a native operand is never Integer arithmetic: {term:?}"),
         }
     }
 
@@ -491,7 +498,7 @@ impl AnnotationLowerer<'_> {
     /// operand is a pointer with an element width and its right is not, as
     /// lowering decides; a `-` that lowering would refuse as an untyped
     /// pointer step stays `Untyped`, so lowering refuses it as before. Native
-    /// `+` and negation stay `Untyped` for now.
+    /// `+` stays `Untyped` for now.
     fn native_surface_term(
         &self,
         term: SyntaxTerm,
@@ -557,6 +564,22 @@ impl AnnotationLowerer<'_> {
             SyntaxTerm::BitwiseNot(operand) => SurfaceTerm::BitwiseNot {
                 operand: native(operand),
             },
+            // Lowering refuses the negation of an Integer and reads `-n` of
+            // an `int32` literal as that constant; both stay `Untyped`, so
+            // lowering does so again.
+            SyntaxTerm::Negate(operand)
+                if !matches!(operand.as_ref(), SyntaxTerm::IntegerLiteral(value)
+                        if value.parse::<u64>().is_ok_and(|value| value <= (i32::MAX as u64) + 1))
+                    && !self.contract_expression_is_integer(
+                        &operand,
+                        &TypingEnvironment::of(environment),
+                    ) =>
+            {
+                SurfaceTerm::Negate {
+                    kind: ArithmeticKind::Native,
+                    operand: native(operand),
+                }
+            }
             term => SurfaceTerm::Untyped(term),
         }
     }
