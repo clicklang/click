@@ -30,7 +30,10 @@ fn next(value: &mut u32) -> u32 {
     }
     have to_integer(*value) == old(to_integer(*value)) + 1 by {
         have old(to_integer(*value)) + 1 <= 4294967295;
-        normalize() using { 0 <= old(to_integer(*value)) + 1; old(to_integer(*value)) + 1 <= 4294967295; };
+        apply(click::integer::uint32_add_to_integer(old(*value), 1u32));
+        have *value == old(*value) + 1u32 by close();
+        rewrite(*value, old(*value) + 1u32);
+        close();
     }
     close();
 }
