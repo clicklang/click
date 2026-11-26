@@ -6,14 +6,12 @@
 use super::*;
 
 /// What elaboration still asks of lowering: whether a generic call's result
-/// is algebraic at its instantiation, a pointer's element width, a call
-/// result's pointer element width, and whether an access through an untyped
-/// pointer is refused. Lowering answers these today from the values it
+/// is algebraic at its instantiation, a pointer's element width, and a call
+/// result's pointer element width. Lowering answers these today from the values it
 /// lowered and from its own type inference; each moves to the `Elaborator`
 /// once it can be answered from declared types, and this trait goes away.
 pub(super) trait LoweringQueries {
     fn generic_call_returns_algebraic(&mut self, expression: &SyntaxTerm) -> bool;
-    fn refuse_untyped_pointer_access(&mut self, expression: &SyntaxTerm) -> Result<(), String>;
     fn contract_pointer_element_width(&mut self, expression: &SyntaxTerm) -> Option<u32>;
     fn call_pointer_element_width(
         &mut self,
@@ -31,10 +29,6 @@ impl LoweringQueries for InLoweringContext<'_, '_> {
     fn generic_call_returns_algebraic(&mut self, expression: &SyntaxTerm) -> bool {
         self.lowerer
             .generic_call_returns_algebraic(expression, self.environment)
-    }
-    fn refuse_untyped_pointer_access(&mut self, expression: &SyntaxTerm) -> Result<(), String> {
-        self.lowerer
-            .refuse_untyped_pointer_access(expression, self.environment)
     }
     fn contract_pointer_element_width(&mut self, expression: &SyntaxTerm) -> Option<u32> {
         self.lowerer
@@ -686,7 +680,7 @@ impl Elaborator<'_> {
     ) -> SurfaceTerm {
         use ArithmeticOperator as Op;
         if matches!(term, SyntaxTerm::Subtract(..))
-            && lowering.refuse_untyped_pointer_access(&term).is_err()
+            && self.refuse_untyped_pointer_access(&term, typing).is_err()
         {
             return SurfaceTerm::Untyped(term);
         }
@@ -839,7 +833,7 @@ impl Elaborator<'_> {
         let SyntaxTerm::Add(left, right) = &term else {
             unreachable!("native_addition elaborates an addition");
         };
-        if lowering.refuse_untyped_pointer_access(&term).is_err() {
+        if self.refuse_untyped_pointer_access(&term, typing).is_err() {
             return SurfaceTerm::Untyped(term);
         }
         // The literal chain `base + 1 + 2 + ...` lowering reads iteratively.
