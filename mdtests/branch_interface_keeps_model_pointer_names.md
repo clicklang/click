@@ -82,7 +82,13 @@ void put(struct Node *p, struct Node *q, int32 x, uint64 stamp) {
         mark joined;
         have at(joined, child->tag) - stamp == address(id) by {
             rewrite(at(joined, child->tag), address(id) + stamp);
-            normalize() using {};
+            have to_integer(address(id)) + to_integer(stamp)
+                == to_integer(stamp) + to_integer(address(id)) by { close(); }
+            rewrite(
+                to_integer(address(id)) + to_integer(stamp),
+                to_integer(stamp) + to_integer(address(id))
+            );
+            apply(click::integer::uint64_add_subtract_cancel(stamp, address(id)));
         }
         step_until(function.exit); close();
     }, }
