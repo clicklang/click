@@ -3675,7 +3675,7 @@ int32 arena_pipeline(
     mark a2;
     let { outcome: o2 } = step(arena_alloc, { st: s0 });
     have contains(at(a2, s0) * memory(*second), statement(9).call(0).footprint) by { close(); }
-    have contains(memory(*first), memory(first->arena)) by { normalize(); }
+    have contains(memory(*first), memory(first->arena)) by { close(); }
     have separate(statement(9).call(0).footprint, memory(first->arena)) by {
         apply(separation::separate_restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).call(0).footprint, memory(first->arena)));
     }
@@ -4000,7 +4000,7 @@ int32 arena_pipeline(
         }
     }
     have contains(at(w1, r1) * at(w1, s0), statement(11).footprint) by { close(); }
-    have contains(memory(*second), memory(second->arena)) by { normalize(); }
+    have contains(memory(*second), memory(second->arena)) by { close(); }
     have separate(statement(11).footprint, memory(second->arena)) by {
         apply(separation::separate_restrict(at(w1, r1) * at(w1, s0), memory(*second), statement(11).footprint, memory(second->arena)));
     }
