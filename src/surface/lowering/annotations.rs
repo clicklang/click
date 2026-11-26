@@ -4808,7 +4808,7 @@ impl AnnotationLowerer<'_> {
         proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
-        let surface = crate::surface::elaborate_connectives(proposition);
+        let surface = self.elaborate_proposition(proposition, environment);
         self.lower_surface_proposition(&surface, environment)
     }
 
