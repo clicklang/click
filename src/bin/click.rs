@@ -2174,7 +2174,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { normalize(); } }\nint32 f() { ensures result == 1; } by { step(); close(); }\n",
+            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { close(); } }\nint32 f() { ensures result == 1; } by { step(); close(); }\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -2601,9 +2601,9 @@ int32 f() { ensures result == 2; } by { step(); close(); }
     fn supported_proof_boundary_verifies_and_profiles() {
         const STRUCTURAL_NESTING_LIMIT: usize = 32;
         let proof_goal = "0 == 0";
-        let mut proof_body = String::from("normalize();");
+        let mut proof_body = String::from("close();");
         for _ in 0..STRUCTURAL_NESTING_LIMIT - 2 {
-            proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+            proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
         }
         verify_and_profile_supported_boundary(
             "proof",

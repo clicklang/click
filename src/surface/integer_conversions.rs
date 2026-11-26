@@ -98,7 +98,7 @@ theorem scaled(x: Integer, y: Integer, k: Integer) {
 theorem rounded(x: Integer) {
     requires x * 2 <= 5;
     ensures x <= 2 by {
-        have (2 * 2) + 1 == 5 by { normalize(); }
+        have (2 * 2) + 1 == 5 by { close(); }
         have x * 2 <= (2 * 2) + 1 by {
             rewrite((2 * 2) + 1, 5);
             close();
@@ -2004,7 +2004,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
 
     #[test]
     fn signed_int64_minimum_literal_preserves_type_and_round_trips() {
-        let source = "theorem minimum() { ensures to_integer(-9223372036854775808i64) == -9223372036854775808 by { normalize(); } }";
+        let source = "theorem minimum() { ensures to_integer(-9223372036854775808i64) == -9223372036854775808 by { close(); } }";
         verify_c_sources(source, &[]).unwrap();
         let expanded = expand_c_claim_source_by_label(source, &[], "minimum.ensures_0").unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
@@ -2020,14 +2020,14 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         }
         assert!(
             verify_c_sources(
-                "theorem bad() { ensures defined(0i64 - 9223372036854775808i64) by { normalize(); } }",
+                "theorem bad() { ensures defined(0i64 - 9223372036854775808i64) by { close(); } }",
                 &[]
             )
             .is_err()
         );
         assert!(
             verify_c_sources(
-                "theorem bad() { ensures defined(-(-9223372036854775808i64)) by { normalize(); } }",
+                "theorem bad() { ensures defined(-(-9223372036854775808i64)) by { close(); } }",
                 &[]
             )
             .is_err()
