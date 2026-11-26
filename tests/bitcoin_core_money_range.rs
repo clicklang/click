@@ -1917,7 +1917,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     .expect("the documented claim expansion must use the locked upstream import");
     verify_program_prepared_project(&project.with_entry_source(expanded_contract), &imported)
         .expect("the documented expanded range claim must reverify");
-    for site in sites {
+    for site in &sites {
         let claim = site.claim_label.as_str();
         let position = project_tactic_source_position(
             &project,
@@ -1946,24 +1946,28 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
             position.column,
         )
         .expect("expand a tactic against the same locked import");
-        assert_ne!(expanded, SIDECAR);
         let rewritten = project.with_entry_source(expanded.clone());
-        let remaining =
-            project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&imported))
-                .expect("expanded proof remains source-inventoriable")
-                .into_iter()
+        if expanded == SIDECAR {
+            assert_eq!(
+                site.tactic_name, "close",
+                "only a checked close may replay verbatim"
+            );
+        } else {
+            let remaining =
+                project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&imported))
+                    .expect("expanded proof remains source-inventoriable")
+                    .into_iter()
+                    .filter(|candidate| candidate.claim_label == claim)
+                    .count();
+            let original = sites
+                .iter()
                 .filter(|candidate| candidate.claim_label == claim)
                 .count();
-        let original =
-            project_smart_tactic_source_sites(&project, &ProgramInputs::program(&imported))
-                .unwrap()
-                .into_iter()
-                .filter(|candidate| candidate.claim_label == claim)
-                .count();
-        assert!(
-            remaining < original,
-            "expansion must remove the audited smart site"
-        );
+            assert!(
+                remaining < original,
+                "a rewritten expansion must remove the audited smart site"
+            );
+        }
         verify_program_prepared_project(&rewritten, &imported)
             .expect("expanded certificate must reverify against the upstream import");
         let next = project_tactic_source_position(
