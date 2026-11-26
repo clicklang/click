@@ -6182,7 +6182,22 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             && *end == int32(1)
             && !matches!(place.as_ref(), ProgramExpression::Variable(_)) =>
         {
-            describe_program_expression(place)
+            match place.as_ref() {
+                // A bare pointer name is not a memory place. Keep the
+                // subscript that explicitly selects the variable's slot.
+                ProgramExpression::Index(base, index)
+                    if !rust_spelling()
+                        && matches!(base.as_ref(), ProgramExpression::AddressOf(object)
+                            if matches!(object.as_ref(), ProgramExpression::Variable(_))) =>
+                {
+                    describe_indexed_place(
+                        &describe_program_expression(base),
+                        &describe_program_expression(index),
+                        true,
+                    )
+                }
+                place => describe_program_expression(place),
+            }
         }
         ContractSegmentSurface::Range {
             base:
