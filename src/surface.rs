@@ -86,7 +86,9 @@ mod typed_surface;
 use integer_conversions::*;
 use integer_truncation::*;
 pub use surface_propositions::SurfacePropositionMap;
-pub(crate) use typed_surface::{ComparisonKind, SurfaceProposition, SurfaceTerm, print_comparison};
+pub(crate) use typed_surface::{
+    ComparisonKind, SurfaceProposition, SurfaceTerm, elaborate_connectives, print_comparison,
+};
 mod printing;
 mod proof;
 pub(crate) mod pure_fact_list;

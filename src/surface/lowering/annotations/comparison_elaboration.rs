@@ -13,7 +13,7 @@ impl AnnotationLowerer<'_> {
         operator: ComparisonOperator,
         right: &SyntaxTerm,
         environment: &SpecElaborationContext,
-    ) -> Result<SurfaceProposition, String> {
+    ) -> Result<SurfaceProposition<'static>, String> {
         let comparison = |kind| {
             Ok(SurfaceProposition::Comparison {
                 kind,
@@ -131,58 +131,125 @@ impl AnnotationLowerer<'_> {
         comparison(ComparisonKind::Native)
     }
 
-    /// Lower an elaborated comparison. Each operand is lowered as its
-    /// comparison's kind says; nothing here looks at the operands to decide.
+    /// Lower a Surface proposition. Connectives are lowered here, each over
+    /// its operands' lowerings; a comparison by its elaborated kind; an
+    /// `Untyped` construct by the Syntax lowering it had before it moved to
+    /// Surface. Iterative, so a long chain needs no deep stack.
     pub(super) fn lower_surface_proposition(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SurfaceProposition<'_>,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
-        match proposition {
-            SurfaceProposition::And(left, right) => Ok(SpecProposition::And(
-                Box::new(self.lower_surface_proposition(left, environment)?),
-                Box::new(self.lower_surface_proposition(right, environment)?),
-            )),
-            SurfaceProposition::Not(body) => Ok(SpecProposition::Not(Box::new(
-                self.lower_surface_proposition(body, environment)?,
-            ))),
-            SurfaceProposition::Comparison {
-                kind,
-                left,
-                operator,
-                right,
-            } => {
-                let (left, right) = (left.syntax(), right.syntax());
-                let equal = *operator == ComparisonOperator::Equal;
-                match kind {
-                    ComparisonKind::Integer => Ok(SpecProposition::IntegerComparison {
-                        left: self.lower_contract_integer_to_spec(left, environment)?,
-                        operator: integer_comparison_operator(*operator)?,
-                        right: self.lower_contract_integer_to_spec(right, environment)?,
-                    }),
-                    ComparisonKind::Algebraic => Ok(SpecProposition::AlgebraicComparison {
-                        left: self.lower_contract_algebraic_to_spec(left, environment)?,
-                        equal,
-                        right: self.lower_contract_algebraic_to_spec(right, environment)?,
-                    }),
-                    ComparisonKind::Sequence if *operator == ComparisonOperator::In => {
-                        Ok(SpecProposition::SequenceMembership {
-                            element: self.lower_contract_expression_to_spec(left, environment)?,
-                            sequence: self.lower_contract_sequence_to_spec(right, environment)?,
-                        })
-                    }
-                    ComparisonKind::Sequence => Ok(SpecProposition::SequenceComparison {
-                        left: self.lower_contract_sequence_to_spec(left, environment)?,
-                        equal,
-                        right: self.lower_contract_sequence_to_spec(right, environment)?,
-                    }),
-                    ComparisonKind::Native => Ok(SpecProposition::Comparison {
-                        left: self.lower_contract_expression_to_spec(left, environment)?,
-                        operator: c_comparison_operator(*operator),
-                        right: self.lower_contract_expression_to_spec(right, environment)?,
-                    }),
+        enum Frame<'p, 's> {
+            Visit(&'p SurfaceProposition<'s>),
+            BuildAnd,
+            BuildOr,
+            BuildImplies,
+            BuildNot,
+        }
+        let mut frames = vec![Frame::Visit(proposition)];
+        let mut lowered = Vec::new();
+        while let Some(frame) = frames.pop() {
+            let visit = match frame {
+                Frame::Visit(visit) => visit,
+                Frame::BuildNot => {
+                    let body = lowered.pop().expect("lowered negation body");
+                    lowered.push(SpecProposition::Not(Box::new(body)));
+                    continue;
+                }
+                frame => {
+                    let right = Box::new(lowered.pop().expect("lowered right operand"));
+                    let left = Box::new(lowered.pop().expect("lowered left operand"));
+                    lowered.push(match frame {
+                        Frame::BuildAnd => SpecProposition::And(left, right),
+                        Frame::BuildOr => SpecProposition::Or(left, right),
+                        _ => SpecProposition::Implies(left, right),
+                    });
+                    continue;
+                }
+            };
+            // One visit per connective and per Syntax construct, as before
+            // connectives moved to Surface. A comparison node is lowered
+            // inside its own construct's visit.
+            #[cfg(test)]
+            if !matches!(visit, SurfaceProposition::Comparison { .. }) {
+                super::tests::PROPOSITION_VISITS.with(|visits| visits.set(visits.get() + 1));
+            }
+            match visit {
+                SurfaceProposition::And(left, right) => {
+                    frames.extend([Frame::BuildAnd, Frame::Visit(right), Frame::Visit(left)]);
+                }
+                SurfaceProposition::Or(left, right) => {
+                    frames.extend([Frame::BuildOr, Frame::Visit(right), Frame::Visit(left)]);
+                }
+                SurfaceProposition::Implies(left, right) => {
+                    frames.extend([Frame::BuildImplies, Frame::Visit(right), Frame::Visit(left)]);
+                }
+                SurfaceProposition::Not(body) => {
+                    frames.extend([Frame::BuildNot, Frame::Visit(body)]);
+                }
+                SurfaceProposition::Untyped(syntax) => {
+                    lowered
+                        .push(self.click_proposition_to_spec_proposition_one(syntax, environment)?);
+                }
+                SurfaceProposition::Comparison {
+                    kind,
+                    left,
+                    operator,
+                    right,
+                } => {
+                    lowered.push(self.lower_surface_comparison(
+                        *kind,
+                        left,
+                        *operator,
+                        right,
+                        environment,
+                    )?);
                 }
             }
+        }
+        Ok(lowered.pop().expect("lowered proposition has one root"))
+    }
+
+    /// Lower an elaborated comparison. Each operand is lowered as its
+    /// comparison's kind says; nothing here looks at the operands to decide.
+    fn lower_surface_comparison(
+        &mut self,
+        kind: ComparisonKind,
+        left: &SurfaceTerm,
+        operator: ComparisonOperator,
+        right: &SurfaceTerm,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecProposition, String> {
+        let (left, right) = (left.syntax(), right.syntax());
+        let equal = operator == ComparisonOperator::Equal;
+        match kind {
+            ComparisonKind::Integer => Ok(SpecProposition::IntegerComparison {
+                left: self.lower_contract_integer_to_spec(left, environment)?,
+                operator: integer_comparison_operator(operator)?,
+                right: self.lower_contract_integer_to_spec(right, environment)?,
+            }),
+            ComparisonKind::Algebraic => Ok(SpecProposition::AlgebraicComparison {
+                left: self.lower_contract_algebraic_to_spec(left, environment)?,
+                equal,
+                right: self.lower_contract_algebraic_to_spec(right, environment)?,
+            }),
+            ComparisonKind::Sequence if operator == ComparisonOperator::In => {
+                Ok(SpecProposition::SequenceMembership {
+                    element: self.lower_contract_expression_to_spec(left, environment)?,
+                    sequence: self.lower_contract_sequence_to_spec(right, environment)?,
+                })
+            }
+            ComparisonKind::Sequence => Ok(SpecProposition::SequenceComparison {
+                left: self.lower_contract_sequence_to_spec(left, environment)?,
+                equal,
+                right: self.lower_contract_sequence_to_spec(right, environment)?,
+            }),
+            ComparisonKind::Native => Ok(SpecProposition::Comparison {
+                left: self.lower_contract_expression_to_spec(left, environment)?,
+                operator: c_comparison_operator(operator),
+                right: self.lower_contract_expression_to_spec(right, environment)?,
+            }),
         }
     }
 }

@@ -47,16 +47,74 @@ impl SurfaceTerm {
 }
 
 /// A typed Surface proposition.
+///
+/// Constructs not yet moved to Surface are carried as `Untyped`, a borrow of
+/// the Syntax they were elaborated from, which lowering reads the old way.
+/// The borrow is transitional: once every construct is typed, Surface owns
+/// all of its parts and the lifetime goes away.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum SurfaceProposition {
+pub(crate) enum SurfaceProposition<'s> {
     Comparison {
         kind: ComparisonKind,
         left: SurfaceTerm,
         operator: ComparisonOperator,
         right: SurfaceTerm,
     },
-    And(Box<SurfaceProposition>, Box<SurfaceProposition>),
-    Not(Box<SurfaceProposition>),
+    And(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
+    Or(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
+    Implies(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
+    Not(Box<SurfaceProposition<'s>>),
+    Untyped(&'s super::SyntaxProposition),
+}
+
+/// Elaborate a proposition's connective structure: `&&`, `||`, `implies` and
+/// `!` become Surface connectives, and every other construct is carried as
+/// `Untyped`. No connective needs a type, so this reads nothing but the
+/// proposition. Iterative, so a long chain needs no deep stack.
+pub(crate) fn elaborate_connectives(
+    proposition: &super::SyntaxProposition,
+) -> SurfaceProposition<'_> {
+    use super::SyntaxProposition as Syntax;
+    enum Frame<'s> {
+        Visit(&'s Syntax),
+        BuildAnd,
+        BuildOr,
+        BuildImplies,
+        BuildNot,
+    }
+    let mut frames = vec![Frame::Visit(proposition)];
+    let mut built = Vec::new();
+    while let Some(frame) = frames.pop() {
+        match frame {
+            Frame::Visit(Syntax::And(left, right)) => {
+                frames.extend([Frame::BuildAnd, Frame::Visit(right), Frame::Visit(left)]);
+            }
+            Frame::Visit(Syntax::Or(left, right)) => {
+                frames.extend([Frame::BuildOr, Frame::Visit(right), Frame::Visit(left)]);
+            }
+            Frame::Visit(Syntax::Implies(left, right)) => {
+                frames.extend([Frame::BuildImplies, Frame::Visit(right), Frame::Visit(left)]);
+            }
+            Frame::Visit(Syntax::Not(body)) => {
+                frames.extend([Frame::BuildNot, Frame::Visit(body)]);
+            }
+            Frame::Visit(other) => built.push(SurfaceProposition::Untyped(other)),
+            Frame::BuildNot => {
+                let body = built.pop().expect("elaborated negation body");
+                built.push(SurfaceProposition::Not(Box::new(body)));
+            }
+            frame => {
+                let right = Box::new(built.pop().expect("elaborated right operand"));
+                let left = Box::new(built.pop().expect("elaborated left operand"));
+                built.push(match frame {
+                    Frame::BuildAnd => SurfaceProposition::And(left, right),
+                    Frame::BuildOr => SurfaceProposition::Or(left, right),
+                    _ => SurfaceProposition::Implies(left, right),
+                });
+            }
+        }
+    }
+    built.pop().expect("elaborated proposition has one root")
 }
 
 /// Whether a term is an Integer by its own spelling, whatever its context:

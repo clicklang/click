@@ -4801,84 +4801,15 @@ impl AnnotationLowerer<'_> {
     // Keep recursive connective dispatch separate from large leaf/binder temporaries.
     // Inlining the helpers would put those temporaries back on every nesting level.
     #[inline(never)]
+    /// Lower a proposition through Surface: elaborate it, then lower the
+    /// Surface form (`design/typed-surface.md`).
     fn click_proposition_to_spec_proposition(
         &mut self,
         proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
-        enum Frame<'a> {
-            Visit(&'a SyntaxProposition),
-            BuildAnd,
-            BuildOr,
-            BuildImplies,
-        }
-
-        if !matches!(
-            proposition,
-            SyntaxProposition::And(..) | SyntaxProposition::Or(..) | SyntaxProposition::Implies(..)
-        ) {
-            #[cfg(test)]
-            tests::PROPOSITION_VISITS.with(|visits| visits.set(visits.get() + 1));
-            return self.click_proposition_to_spec_proposition_one(proposition, environment);
-        }
-
-        let mut frames = vec![Frame::Visit(proposition)];
-        let mut expanded = Vec::new();
-        while let Some(frame) = frames.pop() {
-            match frame {
-                Frame::Visit(proposition) => {
-                    #[cfg(test)]
-                    tests::PROPOSITION_VISITS.with(|visits| visits.set(visits.get() + 1));
-                    match proposition {
-                        SyntaxProposition::And(left, right) => {
-                            frames.push(Frame::BuildAnd);
-                            frames.push(Frame::Visit(right));
-                            frames.push(Frame::Visit(left));
-                        }
-                        SyntaxProposition::Or(left, right) => {
-                            frames.push(Frame::BuildOr);
-                            frames.push(Frame::Visit(right));
-                            frames.push(Frame::Visit(left));
-                        }
-                        SyntaxProposition::Implies(left, right) => {
-                            frames.push(Frame::BuildImplies);
-                            frames.push(Frame::Visit(right));
-                            frames.push(Frame::Visit(left));
-                        }
-                        proposition => {
-                            expanded.push(self.click_proposition_to_spec_proposition_one(
-                                proposition,
-                                environment,
-                            )?)
-                        }
-                    }
-                }
-                Frame::BuildAnd => {
-                    let right = expanded
-                        .pop()
-                        .expect("elaborated conjunction right operand");
-                    let left = expanded.pop().expect("elaborated conjunction left operand");
-                    expanded.push(SpecProposition::And(Box::new(left), Box::new(right)));
-                }
-                Frame::BuildOr => {
-                    let right = expanded
-                        .pop()
-                        .expect("elaborated disjunction right operand");
-                    let left = expanded.pop().expect("elaborated disjunction left operand");
-                    expanded.push(SpecProposition::Or(Box::new(left), Box::new(right)));
-                }
-                Frame::BuildImplies => {
-                    let right = expanded
-                        .pop()
-                        .expect("elaborated implication right operand");
-                    let left = expanded.pop().expect("elaborated implication left operand");
-                    expanded.push(SpecProposition::Implies(Box::new(left), Box::new(right)));
-                }
-            }
-        }
-        Ok(expanded
-            .pop()
-            .expect("elaborated proposition should have one root"))
+        let surface = crate::surface::elaborate_connectives(proposition);
+        self.lower_surface_proposition(&surface, environment)
     }
 
     #[inline(never)]
