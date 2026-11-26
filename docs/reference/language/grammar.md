@@ -152,7 +152,7 @@ documentation inventory keep the following accepted words synchronized.
 | `apply`, `have`, `if`, `cases`, `all`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `both` | Retired conjunction tactic. Use `all { P => { ... } Q => { ... } }`. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
-| `close`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
+| `close`, `normalize`, `intro`, `enumerate` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
 | `known`, `solve`, `assumption` | Retired tactic names. Write `close()` or `close() using { ... }` with selected premises. |
 | `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic names. The parser refuses each with a diagnostic that names its replacement: the omitted proof for `by auto();` and `close();` for a written `auto();`; `close() using { ... }` for `arithmetic() using { ... }` and `close() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |

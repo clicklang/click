@@ -55,7 +55,7 @@ theorem frame_null_is_null(up: struct cell*) {
                 rewrite(frame_null(Frame::Above(up)), 0);
                 close();
             }
-            contradiction(frame_null(Frame::Above(up)) == 1);
+            close();
         }
     }
 }

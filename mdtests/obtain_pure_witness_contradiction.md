@@ -7,7 +7,7 @@ theorem obtained_pair() {
         let (k, m) = obtain(exists (k: int32, m: int32) { k == m and k != m });
         have k == m by close();
         have k != m by close();
-        contradiction(k == m);
+        close();
     }
 }
 ```

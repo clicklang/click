@@ -58,7 +58,7 @@ void f(int32* q) {
             let r = fold(root(q), { sel: Sel::A, v: 3, u: 4, k: kk });
             close();
         },
-        Sel::B => { contradiction(r.sel == Sel::B); },
+        Sel::B => { close(); },
     }
 }
 ```

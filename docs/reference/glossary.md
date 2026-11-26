@@ -260,8 +260,8 @@ A modular specification of a C function, including requirements, guarantees,
 ### Contradiction
 
 Evidence that the current assumptions cannot all hold, such as exact facts `P`
-and `not P`. From a contradiction, any proposition follows; the
-`contradiction` tactic records the conflicting evidence explicitly.
+and `not P`. The branch derives `false`, which lets `close()` prove any
+proposition.
 
 ### Control
 

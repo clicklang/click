@@ -55,7 +55,7 @@ unsigned count(int n) {
                 have at(statement(2).call(take, 0).entry, left) != 0 by {
                     if at(statement(2).call(take, 0).entry, left) == 0 {
                         have statement(2).call(take, 0).result == 0 by close();
-                        contradiction(statement(2).call(take, 0).result == 0);
+                        close();
                     } else {
                         close();
                     }
@@ -68,7 +68,7 @@ unsigned count(int n) {
                     } else {
                         have statement(2).call(take, 0).result == 1 by close();
                         have statement(2).call(take, 0).result != 1 by close();
-                        contradiction(statement(2).call(take, 0).result == 1);
+                        close();
                     }
                 }
                 have left == 0 by close();

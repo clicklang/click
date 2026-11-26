@@ -2,7 +2,7 @@
 
 On the path where `x >= 32u64`, the hypothesis `x < 32u64` of the first
 claim is that comparison's arithmetic negation, and on the other path
-`32u64 <= x` negates `x < 32u64`. `contradiction` recognizes the pair in
+`32u64 <= x` negates `x < 32u64`. Exact propagation recognizes the pair in
 every order family, as it does for `int32`, so the omitted proof closes both claims of
 `fit` exactly as it closes `fit32`'s. `fit_explicit` writes the refuting
 step itself.
@@ -50,7 +50,7 @@ uint64 fit_explicit(uint64 x) {
     step_until(function.exit);
     have x < 32u64 implies result == x by {
         intro() {
-            contradiction(x < 32u64);
+            close();
         }
     }
     close();

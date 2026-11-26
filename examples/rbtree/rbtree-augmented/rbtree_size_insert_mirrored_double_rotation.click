@@ -82,7 +82,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertMirroredDoublePhase::After(g, p));
                 unfold(sized_mirrored_double_pending(SizedInsertMirroredDoublePhase::After(g, p))); normalize();
             }
-            contradiction(sized_mirrored_double_pending(state.phase) == 1);
+            close();
         },
         SizedInsertMirroredDoublePhase::Before(g, p) => {
             let { tree: tree } = unfold(state);

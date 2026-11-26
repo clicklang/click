@@ -2240,7 +2240,7 @@ fn short_circuit_return_expands_after_an_early_return() {
                     have 2 <= size implies (first as int32) == 67 implies
                         (second as int32) == 75 implies result by {
                         intro() {
-                            contradiction(size < 2);
+                            close();
                         }
                     }
                     close();
@@ -2621,20 +2621,10 @@ fn established_false_expands_to_checked_close() {
     })
     .unwrap();
 
-    let empty =
-        "theorem impossible(x: int32) { requires false; ensures x == 7 by { contradiction(); } }";
-    without_implicit_solve(|| verify_click_theorems(empty)).unwrap();
-    let explicit = empty.replace("contradiction()", "contradiction(false)");
-    without_implicit_solve(|| verify_click_theorems(&explicit)).unwrap();
-    let missing = empty.replace("requires false;", "");
-    let error = verify_click_theorems(&missing).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("requires an established `false` fact"),
-        "{}",
-        error.report()
-    );
+    let source = "theorem impossible(x: int32) { requires false; ensures x == 7 by { close(); } }";
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
+    let missing = source.replace("requires false;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }
 
 #[test]
@@ -23528,7 +23518,7 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
             ensures t.model == old(t.model);
         } by {
             match t.model {
-                Tree::Empty => { contradiction(t.model == Tree::Empty); },
+                Tree::Empty => { close(); },
                 Tree::Node(id) => {
                     loop {
                         decreases n;

@@ -41,7 +41,7 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
                 apply(integer::int32_less_equal_and_not_less_than_implies_equal(0, this->m_feerate.base.size));
                 close();
             }
-            contradiction(this->m_feerate.base.size == 0);
+            close();
         }
     }
     have -9223372036854775808 <= to_integer(this->m_feerate.base.fee);

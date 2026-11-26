@@ -36,7 +36,7 @@ int32 read_cell(struct cell* node) {
     ensures result >= 0;
 } by {
     match c.model {
-        Maybe::None => { contradiction(c.model == Maybe::None); },
+        Maybe::None => { close(); },
         Maybe::Some(value) => {
             unfold(c);
             step_until(function.exit);

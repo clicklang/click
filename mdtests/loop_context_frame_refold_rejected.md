@@ -165,7 +165,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
         initialize by close();
         maintain by {
             match t.model {
-                HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
+                HeapTree::Empty => { close(); },
                 HeapTree::Node(identity, value, left_model, right_model) => {
                     have plug(Context::Left(identity, value, right_model, ctx.model), left_model)
                         == old(t.model) by {
@@ -194,7 +194,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
         }
     }
     match t.model {
-        HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
+        HeapTree::Empty => { close(); },
         HeapTree::Node(identity, value, left_model, right_model) => {
             have plug(ctx.model, HeapTree::Node(identity, value, left_model, right_model))
                 == old(t.model) by {

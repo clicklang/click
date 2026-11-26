@@ -89,7 +89,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             have new != a by {
                 rewrite(a, parent);
                 cases {
-                    parent == 0 => { contradiction(parent == 0); }
+                    parent == 0 => { close(); }
                     new != parent => { close(); }
                 }
             }
@@ -121,7 +121,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             have new != a by {
                 rewrite(a, parent);
                 cases {
-                    parent == 0 => { contradiction(parent == 0); }
+                    parent == 0 => { close(); }
                     new != parent => { close(); }
                 }
             }

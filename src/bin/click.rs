@@ -1023,7 +1023,7 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
         if p != 0 {
             have separate(memory(p[0..1]), memory(q[0..1])) by {
                 cases {
-                    p == 0 => { contradiction(p == 0); }
+                    p == 0 => { close(); }
                     separate(memory(p[0..1]), memory(q[0..1])) => { close(); }
                 }
             }

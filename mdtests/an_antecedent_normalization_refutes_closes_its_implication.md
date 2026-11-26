@@ -4,7 +4,7 @@ Specification arithmetic compares exact Integers. The assumption
 `to_integer(i) + 1 == to_integer(i)` is contradictory because adding one
 changes the value.
 
-The first proof introduces the assumption and applies `contradiction`.
+The first proof introduces the assumption, proves its negation, and closes from `false`.
 The other claims exercise the explicit and implicit closers on the same
 false assumption. A loop-entry invariant such as
 `i == at(loop(0).entry, i) + 1 implies n <= 5u64` has the same form when
@@ -23,7 +23,8 @@ int32 r(int32 i, uint64 n) {
 } by {
     have to_integer(i) + 1 == to_integer(i) implies n <= 5u64 by {
         intro() {
-            contradiction(to_integer(i) + 1 == to_integer(i));
+            have not (to_integer(i) + 1 == to_integer(i)) by close();
+            close();
         }
     }
     have i == i + 1 implies n <= 5u64 by { close(); }

@@ -1267,8 +1267,7 @@ impl PureFactStore {
             || self.contains_opposite_constant_polarity(&falsehood)
     }
 
-    /// Whether the positive half of `contradiction(fact)` is held, so a
-    /// refusal can say which half was missing.
+    /// Whether the selected fact is held in one of its exact forms.
     pub(crate) fn holds_contradiction_fact(&self, fact: &Proposition) -> bool {
         // An introduced guard is held conjunct by conjunct, so a
         // contradiction written over the whole guard finds it that way.

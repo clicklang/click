@@ -1230,7 +1230,7 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
             };
             let split = Arc::new(split);
             let prepared = proof.prepare_execution_match(false, 0)?;
-            let plan = prepared.plan_execution_match(&split, |_| usize::MAX)?;
+            let plan = prepared.plan_execution_match(&split)?;
             splits += 1;
             for index in plan.live_cases() {
                 pending.push(prepared.enter_execution_match_arm(&plan, index)?);

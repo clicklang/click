@@ -176,7 +176,7 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
                             }
                             have after[to] == 0 by { rewrite(after[to], before[to]); close(); }
                             have after[k] == 0 by { rewrite(k, to); close(); }
-                            contradiction(after[k] != 0);
+                            close();
                         } else { close(); }
                     }
                     close();

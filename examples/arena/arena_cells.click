@@ -524,37 +524,37 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         close();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->arena == arena by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies to_integer(region->end) == (to_integer(region->start) + to_integer(count)) by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->end <= arena->capacity by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies 0 <= region->start by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->start < region->end by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
@@ -565,7 +565,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -577,7 +577,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -589,7 +589,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -601,7 +601,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -658,37 +658,37 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         close();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->arena == arena by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies to_integer(region->end) == (to_integer(region->start) + to_integer(count)) by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->end <= arena->capacity by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies 0 <= region->start by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->start < region->end by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
@@ -699,7 +699,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -711,7 +711,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -723,7 +723,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -735,7 +735,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -767,7 +767,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 have not k < 0 by {
                     close();
                 }
-                contradiction(k < 0);
+                close();
             }
         }
     }
@@ -1037,7 +1037,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             have not k < i by {
                                 close();
                             }
-                            contradiction(k < i);
+                            close();
                         }
                     }
                 }
@@ -1223,37 +1223,37 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         close();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->arena == arena by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies to_integer(region->end) == (to_integer(region->start) + to_integer(count)) by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->end <= arena->capacity by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies 0 <= region->start by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
         have result == 1 implies region->start < region->end by {
             intro() {
-                contradiction(result == 1);
+                close();
             }
         }
         close();
@@ -1264,7 +1264,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -1276,7 +1276,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -1288,7 +1288,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -1300,7 +1300,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 1 by {
                         close();
                     }
-                    contradiction(result == 1);
+                    close();
                 }
             }
         }
@@ -1422,7 +1422,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not k < start by {
                         close();
                     }
-                    contradiction(k < start);
+                    close();
                 }
             }
         }
@@ -2212,7 +2212,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have not result == 0 by {
                         close();
                     }
-                    contradiction(result == 0);
+                    close();
                 }
             }
         }
@@ -2248,7 +2248,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         close();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
             intro() {
-                contradiction(result == 0);
+                close();
             }
         }
         close();
@@ -2484,7 +2484,7 @@ void arena_free(struct region* region) {
                 have not k < region->start by {
                     close();
                 }
-                contradiction(k < region->start);
+                close();
             }
         }
     }
@@ -3518,7 +3518,7 @@ int32 arena_pipeline(
     have initialized == 1 by {
         cases {
             initialized == 0 => {
-                contradiction(initialized == 0);
+                close();
             }
             initialized == 1 => {
                 close();
@@ -3598,7 +3598,7 @@ int32 arena_pipeline(
     have allocated == 1 by {
         cases {
             allocated == 0 => {
-                contradiction(allocated == 0);
+                close();
             }
             allocated == 1 => {
                 close();
@@ -3901,7 +3901,7 @@ int32 arena_pipeline(
     have allocated == 1 by {
         cases {
             allocated == 0 => {
-                contradiction(allocated == 0);
+                close();
             }
             allocated == 1 => {
                 close();
@@ -5202,7 +5202,7 @@ int32 arena_pipeline(
         have allocated == 1 by {
             cases {
                 allocated == 0 => {
-                    contradiction(allocated == 0);
+                    close();
                 }
                 allocated == 1 => {
                     close();
@@ -5713,7 +5713,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                         }, k);
                         have middle->arena->occupied[k] == 1;
                         have not (middle->arena->occupied[k] == 0);
-                        contradiction(middle->arena->occupied[k] == 0);
+                        close();
                     } else {
                         if k < 4 {
                             have 2 <= k and k < 4;
@@ -5731,7 +5731,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                             }, k);
                             have middle->arena->occupied[k] == 1;
                             have not (middle->arena->occupied[k] == 0);
-                        contradiction(middle->arena->occupied[k] == 0);
+                        close();
                         }
                     }
                 }
@@ -5788,7 +5788,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                     have not (4 < 4) by {
                         close() using {};
                     }
-                    contradiction(4 < 4);
+                    close();
                 } else {
                     close() using {
                         not (4 < reused->end);

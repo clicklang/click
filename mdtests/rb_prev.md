@@ -221,7 +221,7 @@ theorem list_starts_with_append<T>(xs: List<T>, ys: List<T>,
                     unfold(rb_list_starts_with(List<T>::Nil, value));
                     close();
                 }
-                contradiction(rb_list_starts_with(List<T>::Nil, value) == 0);
+                close();
             }
             List::Cons(head, tail) => {
                 have rb_list_starts_with(List<T>::Cons(head, tail), value)
@@ -250,8 +250,7 @@ theorem list_starts_with_append<T>(xs: List<T>, ys: List<T>,
                         rewrite(rb_list_starts_with(List<T>::Cons(head, tail), value), if value == head { 1 } else { 0 });
                         close();
                     }
-                    contradiction(rb_list_starts_with(
-                        List<T>::Cons(head, tail), value) == 0);
+                    close();
                 }
             }
         }
@@ -268,7 +267,7 @@ theorem list_ends_with_is_nonempty<T>(xs: List<T>, value: T) {
                     unfold(rb_list_ends_with(List<T>::Nil, value));
                     close();
                 }
-                contradiction(rb_list_ends_with(List<T>::Nil, value) == 0);
+                close();
             }
             List::Cons(head, tail) => {
                 close();
@@ -331,7 +330,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                     unfold(rb_identity_is(RbTree::Empty, node));
                     close();
                 }
-                contradiction(rb_identity_is(RbTree::Empty, node) == 0);
+                close();
             }
             RbTree::Node(identity, parent, color, left, right) => {
                 have rb_left(RbTree::Node(identity, parent, color, left, right)) == left by {
@@ -391,8 +390,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                             RbTree::Node(identity, parent, color, left, right), node), 1);
                         close();
                     }
-                    contradiction(rb_identity_is(
-                        RbTree::Node(identity, parent, color, left, right), node) == 0);
+                    close();
                 }
             }
         }
@@ -414,7 +412,7 @@ theorem rb_inorder_last_at_rightmost(tree: RbTree, node: struct rb_node*) {
                     unfold(rb_identity_is(RbTree::Empty, node));
                     close();
                 }
-                contradiction(rb_identity_is(RbTree::Empty, node) == 0);
+                close();
             }
             RbTree::Node(identity, parent, color, left, right) => {
                 have rb_right(RbTree::Node(identity, parent, color, left, right)) == right by {
@@ -481,8 +479,7 @@ theorem rb_inorder_last_at_rightmost(tree: RbTree, node: struct rb_node*) {
                             RbTree::Node(identity, parent, color, left, right), node), 1);
                         close();
                     }
-                    contradiction(rb_identity_is(
-                        RbTree::Node(identity, parent, color, left, right), node) == 0);
+                    close();
                 }
             }
         }
@@ -551,8 +548,7 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
                                                        sibling_model, up_model)));
                     close();
                 }
-                contradiction(ctx_all_left(Context::Right(identity, grandparent, color,
-                                                          sibling_model, up_model)) == 0);
+                close();
             }
         }
     }
@@ -581,8 +577,7 @@ theorem plug_keeps_last(ctx: Context, sub: RbTree, node: struct rb_node*) {
                                                        sibling_model, up_model)));
                     close();
                 }
-                contradiction(ctx_all_right(Context::Left(identity, grandparent, color,
-                                                          sibling_model, up_model)) == 0);
+                close();
             }
             Context::Right(identity, grandparent, color, sibling_model, up_model) => {
                 have ctx_all_right(Context::Right(identity, grandparent, color, sibling_model,
@@ -769,7 +764,7 @@ theorem list_pair_at_parts<T>(head: T, tail: List<T>,
                 rewrite(rb_list_pair_at(head, tail, first, second), 1);
                 close();
             }
-            contradiction(rb_list_pair_at(head, tail, first, second) == 0);
+            close();
         }
     }
     ensures first == head by {
@@ -790,7 +785,7 @@ theorem list_pair_at_parts<T>(head: T, tail: List<T>,
                 rewrite(rb_list_pair_at(head, tail, first, second), 1);
                 close();
             }
-            contradiction(rb_list_pair_at(head, tail, first, second) == 0);
+            close();
         }
     }
 }
@@ -810,7 +805,7 @@ theorem list_adjacent_append_right<T>(xs: List<T>, ys: List<T>,
                     rewrite(rb_list_adjacent(List<T>::Nil, first, second), 1);
                     close();
                 }
-                contradiction(rb_list_adjacent(List<T>::Nil, first, second) == 0);
+                close();
             }
             List::Cons(head, tail) => {
                 apply(list::append_cons(head, tail, ys));
@@ -864,7 +859,7 @@ theorem list_ends_then_adjacent<T>(xs: List<T>, head: T,
                     rewrite(rb_list_ends_with(List<T>::Nil, first), 1);
                     close();
                 }
-                contradiction(rb_list_ends_with(List<T>::Nil, first) == 0);
+                close();
             }
             List::Cons(front, tail) => {
                 apply(list::append_cons(front, tail, List<T>::Cons(head, ys)));
@@ -910,8 +905,7 @@ theorem list_ends_then_adjacent<T>(xs: List<T>, head: T,
                                 List<T>::Cons(front, tail), first), 1);
                             close();
                         }
-                        contradiction(rb_list_ends_with(
-                            List<T>::Cons(front, tail), first) == 0);
+                        close();
                     }
                 } else {
                     apply(list_ends_with_cons_nonempty(front, tail, first));
@@ -1073,7 +1067,7 @@ theorem plug_successor(ctx: Context, sub: RbTree,
                     rewrite(ctx_descends_from(Context::Top, node), 1);
                     close();
                 }
-                contradiction(ctx_descends_from(Context::Top, node) == 0);
+                close();
             }
             Context::Left(identity, grandparent, color, sibling_model, up_model) => {
                 have ctx_descends_from(Context::Left(identity, grandparent, color,
@@ -1146,9 +1140,7 @@ theorem plug_successor(ctx: Context, sub: RbTree,
                                                                  sibling_model, up_model), node), 1);
                         close();
                     }
-                    contradiction(ctx_descends_from(Context::Right(identity, grandparent, color,
-                                                                   sibling_model, up_model), node)
-                        == 0);
+                    close();
                 }
             }
         }
@@ -1169,7 +1161,7 @@ theorem ctx_node_is_top(p: struct rb_node*) {
                 rewrite(ctx_node_is(Context::Top, p), 1);
                 close();
             }
-            contradiction(ctx_node_is(Context::Top, p) == 0);
+            close();
         }
     }
 }
@@ -1194,8 +1186,7 @@ theorem ctx_node_is_left(identity: struct rb_node*, grandparent: struct rb_node*
                                                   up_model), p), 1);
                 close();
             }
-            contradiction(ctx_node_is(Context::Left(identity, grandparent, color, sibling_model,
-                                                    up_model), p) == 0);
+            close();
         }
     }
 }
@@ -1220,8 +1211,7 @@ theorem ctx_node_is_right(identity: struct rb_node*, grandparent: struct rb_node
                                                    up_model), p), 1);
                 close();
             }
-            contradiction(ctx_node_is(Context::Right(identity, grandparent, color, sibling_model,
-                                                     up_model), p) == 0);
+            close();
         }
     }
 }
@@ -1250,8 +1240,7 @@ theorem rb_parent_is_node(identity: struct rb_node*, parent: struct rb_node*, co
                 rewrite(rb_parent_is(RbTree::Node(identity, parent, color, left, right), p), 1);
                 close();
             }
-            contradiction(rb_parent_is(RbTree::Node(identity, parent, color, left, right), p)
-                == 0);
+            close();
         }
     }
 }
@@ -1358,7 +1347,7 @@ theorem rb_ctx_linked_is_nonempty(tree: RbTree, ctx: Context) {
                     rewrite(rb_ctx_linked(RbTree::Empty, ctx), 1);
                     close();
                 }
-                contradiction(rb_ctx_linked(RbTree::Empty, ctx) == 0);
+                close();
             }
             RbTree::Node(identity, parent, color, left, right) => {
                 close();
@@ -1496,7 +1485,7 @@ theorem plug_predecessor(ctx: Context, sub: RbTree,
                     rewrite(ctx_descends_from_left(Context::Top, node), 1);
                     close();
                 }
-                contradiction(ctx_descends_from_left(Context::Top, node) == 0);
+                close();
             }
             Context::Right(identity, grandparent, color, sibling_model, up_model) => {
                 have ctx_descends_from_left(Context::Right(identity, grandparent, color,
@@ -1561,10 +1550,7 @@ theorem plug_predecessor(ctx: Context, sub: RbTree,
                                                                      up_model), node), 1);
                         close();
                     }
-                    contradiction(ctx_descends_from_left(Context::Left(identity, grandparent,
-                                                                       color, sibling_model,
-                                                                       up_model), node)
-                        == 0);
+                    close();
                 }
             }
         }
@@ -1686,7 +1672,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
         rb_list_starts_with(rb_inorder(plug(old(c.model), old(t.model))), node) == 1;
 } by {
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(entry_identity, entry_parent, entry_color, entry_right, entry_left) => {
             have ctx_node_is(old(c.model), entry_parent) == 1 by {
                 apply(rb_ctx_linked_node(entry_identity, entry_parent, entry_color, entry_right,
@@ -1723,7 +1709,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                         rewrite(address(node), (address(node) & ~3));
                         close();
                     }
-                    contradiction(address(entry_parent) == address(node));
+                    close();
                 } else {
                     close();
                 }
@@ -1784,10 +1770,10 @@ struct rb_node* rb_prev(struct rb_node* node) {
                     have ctx.model == Context::Left(node, entry_parent, entry_color,
                         entry_left, old(c.model)) by { close(); }
                     match ctx.model {
-                        Context::Top => { contradiction(ctx.model == Context::Top); },
+                        Context::Top => { have not (ctx.model == Context::Top) by close(); close(); },
                         Context::Right(first_identity, first_parent, first_color, first_right,
-                            above) => { contradiction(ctx.model == Context::Right(first_identity,
-                                    first_parent, first_color, first_right, above)); },
+                            above) => { have not (ctx.model == Context::Right(first_identity,
+                                    first_parent, first_color, first_right, above)) by close(); close(); },
                         Context::Left(first_identity, first_parent, first_color, first_left,
                             above) => {
                             have Context::Left(first_identity, first_parent, first_color,
@@ -1852,8 +1838,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                 initialize by close();
                                 maintain by {
                                     match t.model {
-                                        RbTree::Empty => { contradiction(t.model
-                                                == RbTree::Empty); },
+                                        RbTree::Empty => { close(); },
                                         RbTree::Node(identity, par, color, right_model,
                                             left_model) => {
                                             have ctx_node_is(ctx.model, par) == 1 by {
@@ -1904,8 +1889,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                 close();
                                             }
                                             match l.model {
-                                                RbTree::Empty => { contradiction(l.model
-                                                        == RbTree::Empty); },
+                                                RbTree::Empty => { close(); },
                                                 RbTree::Node(left_identity, left_parent,
                                                     left_color, left_right, left_left) => {
                                                     have left_model
@@ -1956,7 +1940,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                 }
                             }
                             match t.model {
-                                RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+                                RbTree::Empty => { close(); },
                                 RbTree::Node(identity, par, color, right_model, left_model) => {
                                     have plug(ctx.model, RbTree::Node(identity, par, color,
                                             right_model, left_model)) == plug(old(c.model),
@@ -2091,7 +2075,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                         initialize by close();
                         maintain by {
                             match t.model {
-                                RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+                                RbTree::Empty => { close(); },
                                 RbTree::Node(identity, par, color, right_model, left_model) => {
                                     have ctx_node_is(c.model, par) == 1 by {
                                         apply(rb_ctx_linked_node(identity, par, color,
@@ -2551,7 +2535,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                 close();
                             }
                             match t.model {
-                                RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+                                RbTree::Empty => { close(); },
                                 RbTree::Node(top_identity, top_parent, top_color, top_right, top_left) => {
                                     have plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, frame_right, RbTree::Node(top_identity, top_parent, top_color, top_right, top_left))) == plug(old(c.model), old(t.model)) by {
                                         rewrite(RbTree::Node(top_identity, top_parent, top_color, top_right, top_left), t.model);
@@ -2683,8 +2667,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                             frame_parent, frame_color, frame_left, above)));
                                 close();
                             }
-                            contradiction(ctx_is_left(Context::Left(frame_identity,
-                                        frame_parent, frame_color, frame_left, above)) == 1);
+                            close();
                         },
                     }
                 },

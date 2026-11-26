@@ -12,7 +12,7 @@ read through the arm this proof is in, in the fixup loops the C local
 `rb_parent` has just filled in. A predicate value refutes no arm by itself,
 so each `Context::Top` arm states the exclusion: it unfolds the predicate at
 `Context::Top` to `0`, rewrites the model to `Top`, and closes by
-`contradiction` against the known `1`. Evaluating a predicate at each arm to
+`close()` from the conflict with the known `1`. Evaluating a predicate at each arm to
 find such a contradiction would be a search inside `unfold` and `match`,
 which are checking steps.
 
@@ -210,7 +210,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 rewrite(ctx_up_is_framed(c.model), 1);
                 close();
             }
-            contradiction(ctx_up_is_framed(c.model) == 0);
+            close();
         },
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
             have ctx_up_is_framed(Context::Left(identity, grandparent, color,
@@ -246,7 +246,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                         rewrite(ctx_is_framed(u.model), 1);
                         close();
                     }
-                    contradiction(ctx_is_framed(u.model) == 0);
+                    close();
                 },
                 Context::Left(i2, g2, c2, s2, u2) => {
                     step();
@@ -292,7 +292,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                         rewrite(ctx_is_framed(u.model), 1);
                         close();
                     }
-                    contradiction(ctx_is_framed(u.model) == 0);
+                    close();
                 },
                 Context::Left(i2, g2, c2, s2, u2) => {
                     step();

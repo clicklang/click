@@ -41,7 +41,7 @@ uint64 f(uint64 b) {
                     i == 1 and b <= 18446744073u64 => { close(); }
                     i == 2 and b <= 18446744u64 => {
                         have b < 4294967296u64;
-                        contradiction(4294967296u64 <= b);
+                        close();
                     }
                 }
             }

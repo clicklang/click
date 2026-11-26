@@ -35,7 +35,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     ensures result != 0 implies erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(remaining.model, RbTree::Empty);
 } by {
     match tree.model {
-        RbTree::Empty => { contradiction(tree.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(id, parent_model, color, left, right) => {
             have left == RbTree::Empty by {
                 unfold(rb_left(RbTree::Node(id, parent_model, color, left, right)));

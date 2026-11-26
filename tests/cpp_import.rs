@@ -8353,7 +8353,7 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
                             rewrite(b, 0u64);
                             close();
                         }
-                        contradiction(b > 0u64);
+                        close();
                     } else {
                         close();
                     }
@@ -22325,7 +22325,7 @@ int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x;
     step_until(call(0).entry);
     outcomes {
         returned => { step_until(function.exit); close(); }
-        threw => { have fail == true; have false by { contradiction(fail); }; close(); }
+        threw => { have fail == true; have false by { close(); }; close(); }
     }
 }
 int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures result == x; exceptional ensures true; }

@@ -1504,7 +1504,7 @@ impl adler2::Adler32 {
        step_until(assignment(__rust_mir_50, 0).entry); step();
       } else {
        have __rust_mir_51 <= 4294967295u32 / __rust_mir_52 by { cases {
-        __rust_mir_52 == 0u32 => { contradiction(not (__rust_mir_52 == 0u32)); }
+        __rust_mir_52 == 0u32 => { close(); }
         __rust_mir_51 <= 4294967295u32 / __rust_mir_52 => { close(); }
        } }
        step_until(assignment(__rust_mir_50, 0).entry); step();
@@ -2511,7 +2511,7 @@ impl adler2::Adler32 {
      } else {
       have __rust_mir_77 <= 4294967295u32 / __rust_mir_80 by {
        cases {
-        __rust_mir_80 == 0u32 => { contradiction(not (__rust_mir_80 == 0u32)); }
+        __rust_mir_80 == 0u32 => { close(); }
         __rust_mir_77 <= 4294967295u32 / __rust_mir_80 => { close(); }
        }
       }

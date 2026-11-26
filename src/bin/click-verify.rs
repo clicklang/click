@@ -2054,7 +2054,7 @@ mod tests {
     }
 
     #[test]
-    fn refused_match_arm_contradiction_reports_its_own_tactic() {
+    fn refused_match_arm_false_proof_reports_its_own_tactic() {
         for name in [
             "arm_contradiction_reports_its_source",
             "nested_arm_contradiction_reports_its_source",
@@ -2063,14 +2063,11 @@ mod tests {
         ] {
             let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("mdtests/{name}.md"));
             let source = fs::read_to_string(&fixture).unwrap();
-            let (line, tactic) = source
+            let line = source
                 .lines()
                 .enumerate()
-                .find(|(_, line)| {
-                    line.trim()
-                        .starts_with("contradiction(x.model == Cell::Present(")
-                })
-                .map(|(line, tactic)| (line + 1, tactic.trim()))
+                .find(|(_, line)| line.trim().starts_with("have false by close();"))
+                .map(|(line, _)| line + 1)
                 .unwrap();
             let report = entry_with([fixture.display().to_string()])
                 .expect_err("the constructor is not refuted");
@@ -2078,15 +2075,8 @@ mod tests {
                 report.contains(&format!("tactic@{line}:")),
                 "{name}: {report}"
             );
-            assert!(report.contains(tactic), "{name}: {report}");
-            assert!(
-                report.contains("requires an exact fact and its negation"),
-                "{name}: {report}"
-            );
-            assert!(
-                report.contains("in match arm `Cell::Present`"),
-                "{name}: {report}"
-            );
+            assert!(report.contains("close();"), "{name}: {report}");
+            assert!(report.contains("goal: false"), "{name}: {report}");
         }
     }
 

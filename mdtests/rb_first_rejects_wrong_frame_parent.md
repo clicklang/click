@@ -204,7 +204,7 @@ theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_no
                     unfold(rb_list_starts_with(List<struct rb_node*>::Nil, value));
                     close();
                 }
-                contradiction(rb_list_starts_with(List<struct rb_node*>::Nil, value) == 0);
+                close();
             }
             List::Cons(head, tail) => {
                 have rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value)
@@ -233,8 +233,7 @@ theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_no
                         rewrite(rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value), if value == head { 1 } else { 0 });
                         close() using { not(value == head); };
                     }
-                    contradiction(rb_list_starts_with(
-                        List<struct rb_node*>::Cons(head, tail), value) == 0);
+                    close();
                 }
             }
         }
@@ -256,7 +255,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                     unfold(rb_identity_is(RbTree::Empty, node));
                     close();
                 }
-                contradiction(rb_identity_is(RbTree::Empty, node) == 0);
+                close();
             }
             RbTree::Node(identity, parent, color, left, right) => {
                 have rb_left(RbTree::Node(identity, parent, color, left, right)) == left by {
@@ -316,8 +315,7 @@ theorem rb_inorder_first_at_leftmost(tree: RbTree, node: struct rb_node*) {
                             RbTree::Node(identity, parent, color, left, right), node), 1);
                         close();
                     }
-                    contradiction(rb_identity_is(
-                        RbTree::Node(identity, parent, color, left, right), node) == 0);
+                    close();
                 }
             }
         }
@@ -386,8 +384,7 @@ theorem plug_keeps_first(ctx: Context, sub: RbTree, node: struct rb_node*) {
                                                        sibling_model, up_model)));
                     close();
                 }
-                contradiction(ctx_all_left(Context::Right(identity, grandparent, color,
-                                                          sibling_model, up_model)) == 0);
+                close();
             }
         }
     }
@@ -446,7 +443,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
             }
             have t.model != RbTree::Empty;
             have n != 0;
-            branch { true => { contradiction(n == 0); } false => {} }
+            branch { true => { close(); } false => {} }
             loop {
                 owns ctx: ctx_at(n, root);
                 owns t: rb_at(n);
@@ -458,7 +455,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 initialize by close();
                 maintain by {
                     match t.model {
-                        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+                        RbTree::Empty => { close(); },
                         RbTree::Node(identity, parent, color, left_model, right_model) => {
                             have plug(Context::Left(identity, parent, color, right_model,
                                                   ctx.model), left_model)
@@ -492,7 +489,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 }
             }
             match t.model {
-                RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+                RbTree::Empty => { close(); },
                 RbTree::Node(identity, parent, color, left_model, right_model) => {
                     have plug(ctx.model,
                               RbTree::Node(identity, parent, color, left_model, right_model))

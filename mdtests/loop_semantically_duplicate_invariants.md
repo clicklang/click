@@ -45,7 +45,7 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
             have forall (k: int32) { lo <= k and k < i implies p[k] == v } by {
                 intro() {
                     intro() {
-                        contradiction(lo <= k and k < i);
+                        close();
                     }
                 }
             }

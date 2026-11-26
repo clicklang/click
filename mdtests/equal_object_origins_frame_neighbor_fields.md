@@ -137,7 +137,7 @@ void inner(struct rb_node* node) {
                 rewrite(state.phase, InnerPhase::After(g, p));
                 unfold(inner_pending(InnerPhase::After(g, p))); close();
             }
-            contradiction(inner_pending(state.phase) == 1);
+            close();
         },
         InnerPhase::Before(g, p) => {
             let { gs: gs, parent_tree: parent_tree, ns: ns } = unfold(state);

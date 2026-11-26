@@ -19,7 +19,7 @@ theorem rb_erase_root_child_nonempty_left(node: struct rb_node*, parent: struct 
         match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_erase_root_child(RbTree::Node(node, parent, color, RbTree::Node(a, b, c, l, r),

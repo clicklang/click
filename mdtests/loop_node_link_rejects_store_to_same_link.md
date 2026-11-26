@@ -58,20 +58,20 @@ void rotate(struct node* parent) {
         initialize by close();
         maintain by {
             match t.model {
-                Tree::Empty => { contradiction(t.model == Tree::Empty); },
+                Tree::Empty => { close(); },
                 Tree::Node(id, lm, rm) => {
                     let { left: l, right: s } = unfold(t);
                     match s.model {
                         Tree::Empty => {
                             unfold(s);
-                            contradiction(parent->right == 0);
+                            close();
                         },
                         Tree::Node(sid, slm, srm) => {
                             let { left: sl, right: sr } = unfold(s);
                             match sl.model {
                                 Tree::Empty => {
                                     unfold(sl);
-                                    contradiction(parent->right->left == 0);
+                                    close();
                                 },
                                 Tree::Node(iid, ilm, irm) => {
                                     let { left: il, right: ir } = unfold(sl);

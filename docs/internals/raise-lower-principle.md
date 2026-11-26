@@ -594,8 +594,8 @@ Checking decides a closed condition from its literal roots with
 `machine_integer::comparison::closed_condition_value`, including when exact
 rewriting removed the last variable before the comparison was printed. It
 does so in exact matching through the comparison form, including closed
-comparisons nested under connectives and binders (so `contradiction(1 == 0)`
-matches a held `false`), in requirement matching, `normalize`, and
+comparisons nested under connectives and binders, in requirement matching,
+`normalize`, and
 assumption-free normalization. The fact store records a closed comparison
 that holds without indexing it. A closed goal is false or true whatever the
 facts, so `close()` treats a false one like the goal `false` and refutes the

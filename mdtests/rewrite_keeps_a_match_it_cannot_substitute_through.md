@@ -4,7 +4,7 @@
 is, and then "proves" it is not: it unfolds the application in the goal, so the
 goal is a `match` on `b` whose arm binds the boxed value, and rewrites by the
 premise `holds(b, p) == 1`. With `holds(b, p) == 0` and `holds(b, p) != 0` both
-in hand, `contradiction` closes `0 == 1`.
+in hand, `close()` proves the branch from `false`.
 
 The premise is satisfiable, so this must not verify. It used to, with simple
 tactics only.
@@ -45,7 +45,7 @@ theorem a_true_premise_is_not_refuted(b: Box, p: int32) {
             rewrite(holds(b, p), 1);
             close();
         }
-        contradiction(holds(b, p) == 0);
+        close();
     }
 }
 ```

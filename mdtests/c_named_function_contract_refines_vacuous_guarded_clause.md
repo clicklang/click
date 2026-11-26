@@ -4,7 +4,7 @@
 requires that the cell is not negative. The concrete `increment` always adds
 one, so it refines the guarded clause only because the guard is refuted by the
 named contract's own precondition. The refutation is spelled in the refinement
-theorem — `have not (...)`, `intro`, `contradiction` — rather than decided
+theorem — `have not (...)`, `intro`, `close()` — rather than decided
 inside contract formation.
 
 ```c filename=vacuous_guarded_step.c
@@ -60,7 +60,7 @@ theorem increment_is_guarded_progress() {
                                     close() using { 0 <= old(cell[0]); };
                                 }
                                 intro() {
-                                    contradiction(not (old(cell[0]) < 0));
+                                    close();
                                 }
                             }
                             old(cell[0]) < cell[0] => {

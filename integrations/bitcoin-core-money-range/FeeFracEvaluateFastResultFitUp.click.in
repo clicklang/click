@@ -48,7 +48,7 @@ int64 FeeFrac::EvaluateFee<false>(int32 at_size) const {
     have not (to_integer(this->size as uint32 as uint64) == 0) by { close() using { 1 <= to_integer(this->size as uint32 as uint64); }; }
     have this->size as uint32 as uint64 != 0u64 by { if this->size as uint32 as uint64 == 0u64 {
         have to_integer(this->size as uint32 as uint64) == 0 by { rewrite(this->size as uint32 as uint64, 0u64); close(); }
-        contradiction(to_integer(this->size as uint32 as uint64) == 0);
+        close();
     } else { close(); } }
     have 0 <= to_integer(this->fee) * to_integer(at_size) by {
         apply(integer::product_lower_bound(

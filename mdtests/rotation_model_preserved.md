@@ -85,7 +85,7 @@ struct tree_node* rotate_left(struct tree_node* root) {
     ensures rotated.model == heap_rotate_left(old(t.model));
 } by {
     match t.model {
-        HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
+        HeapTree::Empty => { close(); },
         HeapTree::Node(node, value, left_model, right_model) => {
             have heap_right(t.model) == right_model by {
                 rewrite(t.model, HeapTree::Node(node, value, left_model, right_model));
@@ -97,7 +97,7 @@ struct tree_node* rotate_left(struct tree_node* root) {
                 close();
             }
             match right_model {
-                HeapTree::Empty => { contradiction(right_model == HeapTree::Empty); },
+                HeapTree::Empty => { close(); },
                 HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model) => {
                     let { left: l, right: r } = unfold(t);
                     let { left: m, right: z } = unfold(r);

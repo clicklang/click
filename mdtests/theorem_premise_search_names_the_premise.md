@@ -62,7 +62,7 @@ int read_parent_value(struct node* n) {
     ensures result == 0;
 } by {
     match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Empty => { close(); },
         Tree::Node(identity, node_parent, value) => {
             have parent_is(t.model, node_parent) == 1 by {
                 rewrite(t.model, Tree::Node(identity, node_parent, value));

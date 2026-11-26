@@ -110,7 +110,7 @@ theorem adler_aligned_outer_partition_u64(p: Integer) {
     have 5552 <= truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) by close() using { 5551 < truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208); };
     have 22208 <= truncating_remainder(p, 22208) by close() using { truncating_remainder(p, 22208) == (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)) * 4; 5552 <= truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208); };
     have not (truncating_remainder(p, 22208) <= 22207) by close() using { 22208 <= truncating_remainder(p, 22208); };
-    contradiction(truncating_remainder(p, 22208) <= 22207);
+    close();
    } else {
     close() using { not (5551 < truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)); };
    }
@@ -132,7 +132,7 @@ theorem adler_aligned_outer_partition_u64(p: Integer) {
     have truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) <= -1 by close() using { truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) < 0; };
     have truncating_remainder(p, 22208) <= -4 by close() using { truncating_remainder(p, 22208) == (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)) * 4; truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) <= -1; };
     have not (0 <= truncating_remainder(p, 22208)) by close() using { truncating_remainder(p, 22208) <= -4; };
-    contradiction(0 <= truncating_remainder(p, 22208));
+    close();
    } else {
     close() using { not (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) < 0); };
    }

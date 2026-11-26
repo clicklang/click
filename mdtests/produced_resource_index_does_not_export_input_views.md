@@ -32,7 +32,7 @@ void release(struct root* root) {
     produces leaf: cell(root->node);
 } by {
     match state.shape {
-        Shape::Empty => { unfold(state); contradiction(0 == 1); },
+        Shape::Empty => { unfold(state); close(); },
         Shape::Node => { let { leaf: leaf } = unfold(state); step_until(function.exit); },
     }
 }

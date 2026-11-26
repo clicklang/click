@@ -42,7 +42,7 @@ fn count_through(n: u32) -> u32 {
                 have not (iter.is_empty() == false);
                 have iter.is_empty() == false implies iter.end() == n by {
                     intro() {
-                        contradiction(iter.is_empty() == false);
+                        close();
                     }
                 }
             }
@@ -78,7 +78,7 @@ fn every_byte() -> u32 {
                 have total == (iter.start() as u32);
                 have iter.is_empty() implies total == 256u32 by {
                     intro() {
-                        contradiction(iter.is_empty() == false);
+                        close();
                     }
                 }
             } else {

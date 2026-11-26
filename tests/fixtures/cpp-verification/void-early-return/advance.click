@@ -14,14 +14,14 @@ void advance(bool empty, int32& cursor) {
         }
         have not empty implies cursor == 7 by {
             intro() {
-                contradiction(not empty);
+                close();
             }
         }
     } else {
         step_until(function.exit);
         have empty implies cursor == old(cursor) by {
             intro() {
-                contradiction(empty);
+                close();
             }
         }
         have not empty implies cursor == 7 by {

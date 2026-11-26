@@ -2068,9 +2068,7 @@ theorem ctx_consistent_left_up(identity: struct rb_node*, grandparent: struct rb
                     { 1 } else { 0 }), 0);
                 close();
             }
-            contradiction(ctx_consistent(
-                Context::Left(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) == 1);
+            close();
         }
     }
 }
@@ -2153,9 +2151,7 @@ theorem ctx_consistent_right_up(identity: struct rb_node*, grandparent: struct r
                     { 1 } else { 0 }), 0);
                 close();
             }
-            contradiction(ctx_consistent(
-                Context::Right(identity, grandparent, color, sibling_model, up_model),
-                sub, root_parent) == 1);
+            close();
         }
     }
 }
@@ -3008,8 +3004,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                             rewrite((if focus_color == boundary_color { 1 } else { 0 }), 0);
                             close();
                         }
-                        contradiction(ctx_rb_between(Context::Top, bh, focus_color,
-                            boundary_bh, boundary_color) == 1);
+                        close();
                     }
                 } else {
                     have ctx_rb_between(Context::Top, bh, focus_color,
@@ -3024,8 +3019,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                         } else { 0 }), 0);
                         close();
                     }
-                    contradiction(ctx_rb_between(Context::Top, bh, focus_color,
-                        boundary_bh, boundary_color) == 1);
+                    close();
                 }
             }
             Context::Left(id, parent, color, sibling, up) => {
@@ -3088,8 +3082,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                                 } else { 0 }), 0);
                                 close();
                             }
-                            contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
-                                bh, focus_color, boundary_bh, boundary_color) == 1);
+                            close();
                         }
                     } else {
                         have ctx_rb_between(Context::Left(id, parent, color, sibling, up),
@@ -3111,8 +3104,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                             } else { 0 }), 0);
                             close();
                         }
-                        contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
-                            bh, focus_color, boundary_bh, boundary_color) == 1);
+                        close();
                     }
                 } else {
                     have ctx_rb_between(Context::Left(id, parent, color, sibling, up),
@@ -3137,8 +3129,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                         } else { 0 }), 0);
                         close();
                     }
-                    contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
-                        bh, focus_color, boundary_bh, boundary_color) == 1);
+                    close();
                 }
             }
             Context::Right(id, parent, color, sibling, up) => {
@@ -3201,8 +3192,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                                 } else { 0 }), 0);
                                 close();
                             }
-                            contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
-                                bh, focus_color, boundary_bh, boundary_color) == 1);
+                            close();
                         }
                     } else {
                         have ctx_rb_between(Context::Right(id, parent, color, sibling, up),
@@ -3224,8 +3214,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                             } else { 0 }), 0);
                             close();
                         }
-                        contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
-                            bh, focus_color, boundary_bh, boundary_color) == 1);
+                        close();
                     }
                 } else {
                     have ctx_rb_between(Context::Right(id, parent, color, sibling, up),
@@ -3250,8 +3239,7 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                         } else { 0 }), 0);
                         close();
                     }
-                    contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
-                        bh, focus_color, boundary_bh, boundary_color) == 1);
+                    close();
                 }
             }
         }
@@ -3711,7 +3699,7 @@ theorem node_color_ok_red_focus_is_black(color: Color, right_color: Color) {
                 apply(node_color_ok_red_left(Color::Red, right_color));
                 apply(color_black_red());
                 have color_black(Color::Red) != 1;
-                contradiction(color_black(Color::Red) == 1);
+                close();
             }
         }
     }
@@ -5217,7 +5205,7 @@ theorem node_color_ok_red_right_focus_is_black(color: Color, left_color: Color) 
                 apply(node_color_ok_red_right(left_color, Color::Red));
                 apply(color_black_red());
                 have color_black(Color::Red) != 1;
-                contradiction(color_black(Color::Red) == 1);
+                close();
             }
         }
     }
@@ -6107,7 +6095,7 @@ theorem ctx_erase_case1_left_parent_black(above: struct rb_node*, parent: struct
                     rewrite(rb_color(RbTree::Node(sibling, parent, Color::Red, sl, sr)), Color::Red);
                     close();
                 }
-                contradiction(node_color_ok(Color::Red, Color::Black, rb_color(RbTree::Node(sibling, parent, Color::Red, sl, sr))) == 1);
+                close();
             }
             Color::Black => {
                 close();
@@ -6222,7 +6210,7 @@ theorem ctx_erase_case1_right_parent_black(above: struct rb_node*, parent: struc
                     rewrite(rb_color(RbTree::Node(sibling, parent, Color::Red, sl, sr)), Color::Red);
                     close();
                 }
-                contradiction(node_color_ok(Color::Red, rb_color(RbTree::Node(sibling, parent, Color::Red, sl, sr)), Color::Black) == 1);
+                close();
             }
             Color::Black => {
                 close();
@@ -6693,7 +6681,7 @@ theorem ctx_erase_left_sibling_is_node(above: struct rb_node*, parent: struct rb
                 apply(ctx_rb_left_height(parent, above, pcolor, RbTree::Empty, up, Nat::Succ(bh), focus_color));
                 have black_height(RbTree::Empty) == Nat::Zero;
                 have Nat::Succ(bh) == Nat::Zero;
-                contradiction(Nat::Succ(bh) == Nat::Zero);
+                close();
             }
             RbTree::Node(node, node_parent, color, left, right) => {
                 close();
@@ -6715,7 +6703,7 @@ theorem ctx_erase_right_sibling_is_node(above: struct rb_node*, parent: struct r
                 apply(ctx_rb_right_height(parent, above, pcolor, RbTree::Empty, up, Nat::Succ(bh), focus_color));
                 have black_height(RbTree::Empty) == Nat::Zero;
                 have Nat::Zero == Nat::Succ(bh);
-                contradiction(Nat::Zero == Nat::Succ(bh));
+                close();
             }
             RbTree::Node(node, node_parent, color, left, right) => {
                 close();
@@ -6811,7 +6799,7 @@ theorem ctx_node_is_identity(ctx: Context, p: struct rb_node*) {
                             rewrite((if p == 0 { 1 } else { 0 }), 0);
                             close();
                         }
-                        contradiction((if p == 0 { 1 } else { 0 }) == 1);
+                        close();
                     }
                 }
                 close();
@@ -6832,7 +6820,7 @@ theorem ctx_node_is_identity(ctx: Context, p: struct rb_node*) {
                             rewrite((if p == identity { 1 } else { 0 }), 0);
                             close();
                         }
-                        contradiction((if p == identity { 1 } else { 0 }) == 1);
+                        close();
                     }
                 }
                 close();
@@ -6853,7 +6841,7 @@ theorem ctx_node_is_identity(ctx: Context, p: struct rb_node*) {
                             rewrite((if p == identity { 1 } else { 0 }), 0);
                             close();
                         }
-                        contradiction((if p == identity { 1 } else { 0 }) == 1);
+                        close();
                     }
                 }
                 close();

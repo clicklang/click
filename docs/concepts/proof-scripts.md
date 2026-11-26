@@ -109,8 +109,7 @@ proof `if`.
 `close() using { ... }` is still smart: the listed facts restrict its search,
 it tries arithmetic over them last, and expansion replaces it with named
 simple rules. A miss adds arithmetic's reason. Common proposition tactics
-include `close()`, `rewrite(...)`, `intro()`, and
-`contradiction(...)`. `close()` also closes a conjunction whose sides
+include `close()`, `rewrite(...)`, and `intro()`. `close()` also closes a conjunction whose sides
 are facts and a disjunction with one side a fact. A successful
 expansion contains only those explicit rules, ordinary arithmetic proofs, and named
 theorem applications.
@@ -240,7 +239,7 @@ declared type is refused as a field base, naming the type it was given.
 ```click
 step();
 match c.model {
-    Maybe::None => { contradiction(c.model == Maybe::None); },
+    Maybe::None => { close(); },
     Maybe::Some(value) => {
         unfold(c);
         step_until(function.exit);
@@ -273,8 +272,7 @@ arm of an entry `match`).
 
 The split also reads what the premises standing at that frontier force on the
 scrutinee's instance. A path fact that refutes an arm's own fact says the
-model is not that constructor, so the arm closes by `contradiction` on the
-model; when refutation leaves one field-free arm, the split hands the path
+model is not that constructor, giving the arm `false`; when refutation leaves one field-free arm, the split hands the path
 that constructor. See [resources](resources.md) for the rule and
 `mdtests/loop_body_refutes_an_unfolded_child.md` for a body that decides an
 unfolded child this way.
@@ -287,8 +285,6 @@ owes no function outcome or loop back-edge proof. At a function-level
 `have`, `unfold`, or a theorem application
 (`mdtests/function_match_arm_closes_by_contradiction_after_an_unfold.md`,
 `mdtests/do_while_returns_rebound_resources.md`).
-A cited `contradiction(P)` can also close an arm when its facts refute `P`
-(`mdtests/function_match_arm_closes_by_contradiction_after_a_have.md`).
 
 ## Naming a call result
 

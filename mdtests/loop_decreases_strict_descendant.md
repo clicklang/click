@@ -79,7 +79,7 @@ void countdown(int32 n) {
         initialize by close();
         maintain by {
             match c.model {
-                Chain::Nil => { contradiction(c.model == Chain::Nil); },
+                Chain::Nil => { close(); },
                 Chain::Link(rest_model) => {
                     let { rest: r } = unfold(c);
                     match r.model {

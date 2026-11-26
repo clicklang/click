@@ -113,7 +113,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
                 unfold(sized_context_uncle_pending(SizedInsertContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right))); close();
             }
-            contradiction(sized_context_uncle_pending(state.phase) == 1);
+            close();
         },
         SizedInsertContextUnclePhase::Before(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right) => {
             let { tree: tree, link: link } = unfold(state);

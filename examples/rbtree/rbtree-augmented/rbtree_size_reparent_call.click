@@ -15,7 +15,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
     match tree.model {
         SizedTree::Empty => {
             unfold(tree);
-            contradiction(rb != 0);
+            close();
         },
         SizedTree::Node(identity, before, shade, value, left_model, right_model) => {
             let { metadata: metadata, left: left, right: right } = unfold(tree);

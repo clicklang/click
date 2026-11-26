@@ -2304,10 +2304,7 @@ fn sequential_early_return_tactics(
 /// tactic's proof ends: at the end of the script, or of each arm of a final
 /// proof `match`. A refuted path has no supplied ending.
 fn remove_tactic_procedure_ending(tactics: &mut Vec<ProofTactic>, ending: usize) -> Result<(), ()> {
-    if matches!(
-        tactics.last(),
-        Some(ProofTactic::CloseUnreachable | ProofTactic::Contradiction(_))
-    ) {
+    if matches!(tactics.last(), Some(ProofTactic::CloseUnreachable)) {
         return Ok(());
     }
     if let Some(ProofTactic::Match(proof_match)) = tactics.last_mut() {
