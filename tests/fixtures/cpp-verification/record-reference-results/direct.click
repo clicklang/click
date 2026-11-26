@@ -1,3 +1,4 @@
+import click::separation;
 verifying "direct.cpp";
 
 Widget& Outer::get() {
@@ -22,8 +23,13 @@ int32 probe(Outer& outer) {
     step(); step();
     have call(0).result == &outer.child by { close(); }
     // The two adjacent views occupy one range ending before the written field.
+    have 0 <= 2 by { close(); }
+    have 2 <= 3 by { close(); }
+    have separate(memory((&outer as (int32 *))[0..2]), memory((&outer as (int32 *))[2..3])) by {
+        apply(click::separation::separate_adjacent_ranges(&outer as (int32 *), 0, 2, 3));
+    }
     have separate(memory((&outer as (int32 *))[2..3]), memory((&outer as (int32 *))[0..2])) by {
-        normalize() using {};
+        apply(click::separation::separate_symm(memory((&outer as (int32 *))[0..2]), memory((&outer as (int32 *))[2..3])));
     }
     step() by {
         rewrite(call(0).result, &outer.child);
