@@ -33,7 +33,7 @@ mod addresses;
 mod offsets;
 mod pointers;
 pub use addresses::{Address, AddressParts};
-pub(crate) use addresses::{SharedAddress, SharedAddressBase};
+pub(crate) use addresses::{AddressBlock, SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 pub(in crate::kernel) use machine::wrap_exact as wrap_exact_machine_value;
 use num_bigint::BigInt;

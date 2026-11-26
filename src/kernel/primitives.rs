@@ -111,13 +111,13 @@ pub use kernel_term::{
     KernelObservedArgument, KernelObservedPointer, KernelTerm, KernelTermNode, KernelType,
     KernelWrittenMachine,
 };
+#[allow(unused_imports)]
+pub(crate) use kernel_term::{
+    AddressBlock, KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
+};
 pub(crate) use kernel_term::{
     KernelAddressOffset, KernelArrayObject, KernelMatchArm, OffsetTree, OffsetView, SharedAddress,
     SharedAddressOffset, SharedPointer,
-};
-#[allow(unused_imports)]
-pub(crate) use kernel_term::{
-    KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
 };
 mod machine_integer;
 pub use machine_integer::{

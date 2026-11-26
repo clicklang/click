@@ -64,7 +64,7 @@ use super::{
 use crate::kernel::equality_graph::{NumericAddressConnectivity, NumericAddressOwners};
 use crate::kernel::primitives::LoadKind;
 use crate::kernel::primitives::OldMachineTerm;
-use crate::kernel::{ExecutionValue, PureFactContext, StoredMemoryValue, Variable};
+use crate::kernel::{AddressBlock, ExecutionValue, PureFactContext, StoredMemoryValue, Variable};
 use crate::kernel::{OffsetTree, OffsetView};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -406,7 +406,7 @@ impl CellRun {
     /// The run's place in a store's index: see [`RunKey`].
     pub(crate) fn key(&self) -> RunKey {
         RunKey {
-            block: self.base.base.clone(),
+            block: AddressBlock::of(&self.base),
             anchor: RunAnchor::of(&self.base.offset),
             shape: RunShape::Of {
                 element_width: self.element_width,
@@ -530,7 +530,7 @@ impl CellRun {
         let span = i64::try_from(self.span()).unwrap_or(i64::MAX);
         (
             CoverLine {
-                block: self.base.base.clone(),
+                block: AddressBlock::of(&self.base),
                 stem: stem.cloned(),
             },
             start,
@@ -786,7 +786,7 @@ pub(crate) enum RunShape {
 /// ([`CellRun::same_slots_as`]).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct RunKey {
-    block: AddressBase,
+    block: AddressBlock,
     anchor: RunAnchor,
     shape: RunShape,
 }
@@ -794,7 +794,7 @@ pub(crate) struct RunKey {
 impl RunKey {
     fn bound(block: &AddressBase, anchor: RunAnchor, shape: RunShape) -> Self {
         Self {
-            block: block.clone(),
+            block: AddressBlock::key(block),
             anchor,
             shape,
         }
@@ -1089,7 +1089,7 @@ struct PointerReachableIndex {
 struct OrderedIndexCache {
     cells: OrderedStoreCells,
     chains: crate::kernel::assumptions::variable_chains::VariableChains,
-    block: AddressBase,
+    block: AddressBlock,
     base: AddressOffset,
     stride: i64,
     root: Variable,
@@ -1202,7 +1202,7 @@ struct CoverSegment {
 /// [`offset_stem_and_constant`].
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CoverLine {
-    block: AddressBase,
+    block: AddressBlock,
     stem: Option<AddressOffset>,
 }
 
@@ -1374,7 +1374,7 @@ impl CellStore {
                 index
                     .runs
                     .diff(&self.runs)
-                    .filter(|change| change.key().block == AddressBase::ExternalArgument)
+                    .filter(|change| *change.key().block == AddressBase::ExternalArgument)
                     .map(|change| change.key().clone()),
             );
             for change in index.cells.diff(&self.concrete) {
@@ -1849,7 +1849,7 @@ impl CellStore {
         let span = assumptions.signed_variable_chains.span(variable)?;
         let mut guard = self.ordered_index.lock().unwrap();
         let index = guard.take().filter(|index| {
-            index.block == pointer.base
+            *index.block == pointer.base
                 && index.base == *base
                 && index.stride == stride
                 && index.root == span.root
@@ -1872,7 +1872,7 @@ impl CellStore {
                     OrderedIndexCache {
                         cells: domain,
                         chains: assumptions.signed_variable_chains.clone(),
-                        block: pointer.base.clone(),
+                        block: AddressBlock::of(pointer),
                         base: base.clone(),
                         stride,
                         root: span.root,
@@ -2072,7 +2072,7 @@ impl CellStore {
     fn slots_at<'a>(&'a self, pointer: &'a Address) -> impl Iterator<Item = SlotAt<'a>> + 'a {
         let (stem, offset) = offset_stem_and_constant(&pointer.offset);
         let line = CoverLine {
-            block: pointer.base.clone(),
+            block: AddressBlock::of(pointer),
             stem: stem.cloned(),
         };
         self.runs_covering(&line, offset)
@@ -2149,7 +2149,7 @@ impl CellStore {
     fn exact_run_at(&self, pointer: &Address) -> Result<Option<&CellRun>, ()> {
         let (stem, offset) = offset_stem_and_constant(&pointer.offset);
         let line = CoverLine {
-            block: pointer.base.clone(),
+            block: AddressBlock::of(pointer),
             stem: stem.cloned(),
         };
         let Some(segment) = self.cover_segment(&line, offset) else {
@@ -3252,7 +3252,7 @@ impl CellStore {
         };
         excluded.sort_unstable();
         let line = CoverLine {
-            block: pointer.base.clone(),
+            block: AddressBlock::of(pointer),
             stem: stem.cloned(),
         };
         let restored = self
@@ -3501,7 +3501,7 @@ where
     I: Iterator<Item = &'a Address> + 'a,
 {
     let (line, first, last) = run.slot_line_span();
-    let at = |offset: AddressOffset| Address::new(line.block.clone(), offset);
+    let at = |offset: AddressOffset| line.block.at(offset);
     let mut intervals = Vec::new();
     match &line.stem {
         None => {
@@ -4363,10 +4363,11 @@ mod tests {
                 let probe = pointers[runs / 2].clone();
                 let value = ProgramValue::Int32(OldMachineTerm::constant(3));
                 // Loads of a run slot and of a pointer no run holds.
+                let missing = constant(&one_block, -8);
                 let loads = work(|| {
                     for _ in 0..16 {
                         assert!(store.get(&probe).is_some());
-                        assert!(store.get(&constant(&one_block, -8)).is_none());
+                        assert!(store.get(&missing).is_none());
                     }
                 });
                 // A store into a slot, and the diff and comparisons of the

@@ -5377,7 +5377,7 @@ impl RecordedStates {
         pointer: &crate::kernel::Address,
         name_base: impl FnOnce(&crate::kernel::Address) -> Option<SyntaxTerm>,
     ) -> Option<SyntaxTerm> {
-        use crate::kernel::{Address, AddressOffset, OffsetTree, OffsetView};
+        use crate::kernel::{AddressOffset, OffsetTree, OffsetView};
         let OffsetView::Constant(bytes) = pointer.offset.view() else {
             return None;
         };

@@ -268,6 +268,74 @@ impl SharedAddressBase {
     }
 }
 
+/// A block as a key: compared, ordered and hashed as its atom, as an
+/// `AddressBase` key is, and building addresses in the block from its
+/// retained identity instead of admitting the block again.
+#[derive(Clone)]
+pub(crate) struct AddressBlock(SharedAddressBase);
+
+impl AddressBlock {
+    /// The block `address` is in.
+    pub(crate) fn of(address: &Address) -> Self {
+        Self(address.block())
+    }
+
+    /// A key for `block` that is only compared, as a range bound or a
+    /// lookup: it admits nothing. An address built from it admits the block.
+    pub(crate) fn key(block: &AddressBase) -> Self {
+        Self(SharedAddressBase {
+            atom: block.clone(),
+            identity: BlockIdentity::Inline,
+        })
+    }
+
+    /// The address `offset` bytes into this block.
+    pub(crate) fn at(&self, offset: AddressOffset) -> Address {
+        self.0.address(offset)
+    }
+}
+
+impl std::ops::Deref for AddressBlock {
+    type Target = AddressBase;
+    fn deref(&self) -> &AddressBase {
+        &self.0.atom
+    }
+}
+
+impl std::fmt::Debug for AddressBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.atom.fmt(f)
+    }
+}
+
+impl PartialEq for AddressBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.0
+            .identity
+            .logical_equal(&other.0.identity, &self.0.atom, &other.0.atom)
+    }
+}
+impl Eq for AddressBlock {}
+impl PartialOrd for AddressBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for AddressBlock {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.0.identity.same_interned(&other.0.identity) {
+            Ordering::Equal
+        } else {
+            self.0.atom.cmp(&other.0.atom)
+        }
+    }
+}
+impl Hash for AddressBlock {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.atom.hash(state);
+    }
+}
+
 /// An address's block and displacement, read through [`Address`] (and
 /// [`SharedAddress`]); never a value of its own.
 pub struct AddressParts {
@@ -416,6 +484,17 @@ impl Address {
         Self(SharedAddress::from_parts(
             BlockIdentity::intern(&base),
             base,
+            offset,
+        ))
+    }
+
+    /// A range bound or lookup key in `block`: it admits nothing, so it is
+    /// only compared, never stored or handed to a kernel term. An address
+    /// derived from it admits the block.
+    pub(crate) fn range_bound(block: &AddressBase, offset: AddressOffset) -> Self {
+        Self(SharedAddress::from_parts(
+            BlockIdentity::Inline,
+            block.clone(),
             offset,
         ))
     }

@@ -84,7 +84,7 @@ impl BlockKeyed for Address {
     fn first_key_of(block: &AddressBase) -> Self {
         // `Constant` is `AddressOffset`'s first variant, so this offset
         // orders below every offset term.
-        Address::new(block.clone(), AddressOffset::constant(i64::MIN))
+        Address::range_bound(block, AddressOffset::constant(i64::MIN))
     }
 }
 

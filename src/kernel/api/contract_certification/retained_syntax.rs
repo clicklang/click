@@ -747,9 +747,7 @@ mod tests {
 
     #[test]
     fn shared_algebraic_read_certification_preserves_address_and_state_identity() {
-        use crate::kernel::{
-            Address, AlgebraicTermNode, AlgebraicType, SharedAddress, SymbolicMemory,
-        };
+        use crate::kernel::{Address, AlgebraicTermNode, AlgebraicType, SymbolicMemory};
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory_ref(&SymbolicMemory::new());
         let changed = crate::kernel::intern_memory_ref(&memory.memory().clone().store(
