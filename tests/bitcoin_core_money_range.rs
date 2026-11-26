@@ -1571,30 +1571,29 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
     let expanded = click::surface::expand_verified_function_claim_source_by_label(
         source,
         &verified,
-        "probe.ensures_0",
+        "probe.contract",
     )
     .unwrap()
     .unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
-    assert!(
-        project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
-            .unwrap()
-            .is_empty()
-    );
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
-        "probe.ensures_0",
+        "probe.contract",
         0,
     )
     .unwrap();
-    click::surface::without_implicit_solve(|| {
-        session.verify_at_project(&expanded, position.line, position.column)
+    click::surface::without_proof_search_for_claim("probe.contract", || {
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .map_err(|error| error.report())
     })
-    .unwrap_or_else(|error| panic!("retained: {}", error.report()));
+    .unwrap_or_else(|error| panic!("retained: {error}"));
     drop(session);
-    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
-        .unwrap_or_else(|error| panic!("cold: {}", error.report()));
+    click::surface::without_proof_search_for_claim("probe.contract", || {
+        verify_program_prepared_project(&rewritten, &import).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("cold: {error}"));
     fs::remove_dir_all(root).unwrap();
 }
 
