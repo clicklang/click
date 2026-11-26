@@ -4527,26 +4527,22 @@ int32 arena_pipeline(
                     close();
                 }
                 have at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]) by {
-                    normalize() using {
-                        at(m3, first->arena) == arena;
-                    };
+                    rewrite(at(m3, first->arena), arena);
+                    close();
                 }
                 have k < at(m3, arena->capacity) by {
-                    normalize() using {
-                        k < arena->capacity;
-                        arena->capacity == at(m3, arena->capacity);
-                    };
+                    rewrite(at(m3, arena->capacity), arena->capacity);
+                    close();
                 }
                 have at(m3, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) { 0 <= j and j < at(m3, arena->capacity) and (j < at(z1, first->start) or at(z1, first->end) <= j) and (j < at(z2, second->start) or at(z2, second->end) <= j) implies at(m3, arena->occupied[j]) == 0 }, k);
                     close();
                 }
-                normalize() using {
-                    first->arena->occupied[k] == at(m3, first->arena->occupied[k]);
-                    at(m3, first->arena->occupied[k]) == at(m3, arena->occupied[k]);
-                    at(m3, arena->occupied[k]) == 0;
-                    first->arena == arena;
-                };
+                rewrite(arena, first->arena);
+                rewrite(first->arena->occupied[k], at(m3, first->arena->occupied[k]));
+                rewrite(at(m3, first->arena->occupied[k]), at(m3, arena->occupied[k]));
+                rewrite(at(m3, arena->occupied[k]), 0);
+                close();
             }
         }
     }
