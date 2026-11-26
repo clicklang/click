@@ -5082,6 +5082,40 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
     c_sources: &ProgramSourceContext<'_>,
     entry_storage: ProgramEntryStorage,
 ) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
+    let mut functions = import_verified_sources(file, c_sources, entry_storage)?;
+    attach_callee_static_storage(&mut functions);
+    Ok(functions)
+}
+
+/// Gives each imported function the static storage of the functions its body
+/// calls directly, beyond its own: its entry installs that storage with its
+/// own in one region, so none of its calls has storage to install.
+fn attach_callee_static_storage(
+    functions: &mut BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+) {
+    let storage = functions
+        .iter()
+        .map(|(name, (_, function))| (name.clone(), function.kernel_static_storage()))
+        .collect::<BTreeMap<_, _>>();
+    for (name, (_, function)) in functions.iter_mut() {
+        let callees = match function.prelowered_kernel_function() {
+            Some(lowered) => crate::kernel::program_function_callees(lowered),
+            None => c_statement_calls(function).into_iter().flatten().collect(),
+        };
+        let own = &storage[name];
+        function.callee_static_storage = callees
+            .iter()
+            .filter(|callee| *callee != name)
+            .filter_map(|callee| storage.get(callee)?.static_storage_beyond(own))
+            .collect();
+    }
+}
+
+fn import_verified_sources(
+    file: &ClickFile,
+    c_sources: &ProgramSourceContext<'_>,
+    entry_storage: ProgramEntryStorage,
+) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let build_storage = entry_storage == ProgramEntryStorage::Build;
     if file.selected_thread_runtime()
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread

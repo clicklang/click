@@ -640,6 +640,7 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         string_literals: function.string_literals.clone(),
         address_taken_locals: Default::default(),
         loop_source_index: Default::default(),
+        callee_static_storage: function.callee_static_storage.clone(),
         natural_loop_source: function.natural_loop_source,
     }
 }

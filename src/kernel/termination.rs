@@ -5505,12 +5505,12 @@ mod ranking_member_tests {
         let cell = int32_cell("counter");
         let value = OldMachineTerm::Variable(Variable(11));
         let post = OldMachineTerm::subtract(value.clone(), OldMachineTerm::constant(1));
-        let mut entry = ExecutionState::new();
-        entry.memory =
-            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
-        let mut back_edge = ExecutionState::new();
-        back_edge.memory =
-            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
+        let entry = ExecutionState::new().with_memory(
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(value.clone())),
+        );
+        let back_edge = ExecutionState::new().with_memory(
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(post.clone())),
+        );
         let measures = vec![RankingComponent::Pure {
             source: "count(counter)".to_string(),
             expression: current_load(&cell),

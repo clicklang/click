@@ -2222,6 +2222,7 @@ fn annotate_function(
         .with_static_arrays(parsed_kernel_function.static_arrays().to_vec())
         .with_static_aggregates(parsed_kernel_function.static_aggregates().to_vec())
         .with_static_aggregate_arrays(parsed_kernel_function.static_aggregate_arrays().to_vec())
+        .with_callee_static_storage(parsed_kernel_function.callee_static_storage().to_vec())
         .with_string_literals(
             parsed_function
                 .string_literals()

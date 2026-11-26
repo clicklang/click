@@ -3588,6 +3588,19 @@ impl ImportedFunction {
     }
 
     pub fn to_kernel_function(&self) -> crate::kernel::ProgramFunction {
+        self.to_kernel_function_with_own_storage()
+            .with_callee_static_storage(self.callee_static_storage.clone())
+    }
+
+    /// This function's static storage alone, as a storage-only function.
+    pub(crate) fn kernel_static_storage(&self) -> crate::kernel::ProgramFunction {
+        match &self.prelowered_kernel_function {
+            Some(function) => function.static_storage_only(),
+            None => self.to_kernel_static_storage(true),
+        }
+    }
+
+    fn to_kernel_function_with_own_storage(&self) -> crate::kernel::ProgramFunction {
         if let Some(function) = &self.prelowered_kernel_function {
             return function.clone();
         }
@@ -9835,6 +9848,7 @@ impl Parser {
             cpp_virtual: false,
             receiver_calls: Vec::new(),
             program_entry_state: None,
+            callee_static_storage: Vec::new(),
             prelowered_kernel_function: None,
             opaque_exception_constructor: None,
             parameters: header.parameters,

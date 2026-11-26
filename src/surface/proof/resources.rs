@@ -6699,7 +6699,7 @@ mod guarded_unmatched_materialization_tests {
     }
 
     #[test]
-    fn body_instantiation_keeps_a_pending_store_in_the_observation_log() {
+    fn body_instantiation_keeps_a_store_in_the_observation_log() {
         let _session = crate::kernel::VerificationSession::enter();
         let file = crate::surface::parser::parse_file_items(
             "resource initialized_cell(p: int32*) { owns *p; }",
@@ -6725,7 +6725,7 @@ mod guarded_unmatched_materialization_tests {
             slot.clone(),
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
-        let state = start.with_materialized_memory(memory);
+        let state = start.with_memory(memory);
         let point = state.observation_point_id().unwrap();
         let (memory, _) = instantiate_composite_resource_body_resources(
             definition.name(),

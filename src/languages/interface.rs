@@ -23,6 +23,10 @@ pub(crate) struct CppReceiverCall {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportedFunction {
     pub(crate) program_entry_state: Option<std::sync::Arc<crate::kernel::ExecutionState>>,
+    /// The static storage of the functions this one calls directly, beyond
+    /// its own, which its entry installs (`ProgramFunction::callee_static_storage`).
+    /// Set once the program's functions are all imported.
+    pub(crate) callee_static_storage: Vec<crate::kernel::ProgramFunction>,
     /// A typed language frontend may provide executable kernel semantics
     /// directly while reusing this declaration interface for Surface Click
     /// contract checking. C parsing always leaves this absent.
@@ -521,6 +525,16 @@ impl ImportedFunction {
         self
     }
 
+    /// This function with `storage` as its callees' static storage, for a
+    /// function synthesized after import.
+    pub(crate) fn with_callee_static_storage(
+        mut self,
+        storage: Vec<crate::kernel::ProgramFunction>,
+    ) -> Self {
+        self.callee_static_storage = storage;
+        self
+    }
+
     pub(crate) fn with_return_pointee_constant(mut self, constant: bool) -> Self {
         self.return_pointee_constant = constant;
         self
@@ -703,6 +717,7 @@ impl ImportedFunction {
             cpp_virtual: false,
             receiver_calls: Vec::new(),
             program_entry_state: None,
+            callee_static_storage: Vec::new(),
             prelowered_kernel_function: None,
             opaque_exception_constructor: None,
             parameters,
