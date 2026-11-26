@@ -450,15 +450,8 @@ int32 vector_grow(struct vector* owner) {
                         rewrite(old(owner->data[k]), at(statement(10).call(vector_copy, 0).entry, old_data[k]));
                         close();
                     }
-                    have &owner->data[k] == &new_data[k] by {
-                        rewrite(owner->data, new_data);
-                        close();
-                    }
-                    have owner->data[k] == new_data[k] by {
-                        rewrite(&owner->data[k], &new_data[k]);
-                        normalize() using {};
-                    }
-                    rewrite(owner->data[k], new_data[k]);
+                    rewrite(owner->data, new_data);
+                    rewrite(new_data[k], old(owner->data[k]));
                     close();
                 }
             }
