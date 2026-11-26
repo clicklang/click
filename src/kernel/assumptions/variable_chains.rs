@@ -258,19 +258,20 @@ pub(in crate::kernel) fn array_index(
     offset: &OldAddressOffset,
 ) -> Option<(&OldAddressOffset, Variable, i64)> {
     static ZERO: OldAddressOffset = OldAddressOffset::Constant(0);
-    let (base, index) = match offset {
-        OldAddressOffset::Add(base, index) => (base.as_ref(), index.as_ref()),
-        index => (&ZERO, index),
+    let (base, index) = match offset.view() {
+        OffsetView::Add(base, index) => (base, index),
+        _ => (&ZERO, offset),
     };
-    let OldAddressOffset::Int32Scaled { value, byte_width } = index else {
+    let OffsetView::Int32Scaled {
+        index: value,
+        byte_width,
+    } = index.view()
+    else {
         return None;
     };
     let variable = value.operand_view().variable()?;
-    (*byte_width > 0 && !crate::kernel::is_load_variable(variable)).then_some((
-        base,
-        *variable,
-        *byte_width,
-    ))
+    (byte_width > 0 && !crate::kernel::is_load_variable(variable))
+        .then_some((base, *variable, byte_width))
 }
 
 #[cfg(test)]

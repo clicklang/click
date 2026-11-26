@@ -1875,8 +1875,8 @@ impl PureFactContext {
         if let Some(evidence) = self.pointer_offset_element_index_evidence(left, right) {
             return Some(evidence);
         }
-        match (left, right) {
-            (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+        match (left.view(), right.view()) {
+            (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
                 if let Some((first, second)) = self
                     .pointer_offset_congruence_evidence(left_a, right_a)
                     .zip(self.pointer_offset_congruence_evidence(left_b, right_b))
@@ -1897,12 +1897,12 @@ impl PureFactContext {
                     })
             }
             (
-                OldAddressOffset::Int32Scaled {
-                    value: left,
+                OffsetView::Int32Scaled {
+                    index: left,
                     byte_width: left_width,
                 },
-                OldAddressOffset::Int32Scaled {
-                    value: right,
+                OffsetView::Int32Scaled {
+                    index: right,
                     byte_width: right_width,
                 },
             ) if left_width == right_width => self
@@ -1911,7 +1911,7 @@ impl PureFactContext {
                     right.operand_view(),
                 )
                 .map(|path| PointerOffsetCongruenceEvidence::Int32Scaled {
-                    byte_width: *left_width,
+                    byte_width: left_width,
                     path,
                 })
                 .or_else(|| {
@@ -1921,26 +1921,26 @@ impl PureFactContext {
                     )
                     .map(|equality| {
                         PointerOffsetCongruenceEvidence::Int32ScaledDerived {
-                            byte_width: *left_width,
+                            byte_width: left_width,
                             equality,
                         }
                     })
                 }),
             (
-                OldAddressOffset::Int64Scaled {
-                    value: left,
+                OffsetView::Int64Scaled {
+                    index: left,
                     byte_width: left_width,
                     unsigned: left_unsigned,
                 },
-                OldAddressOffset::Int64Scaled {
-                    value: right,
+                OffsetView::Int64Scaled {
+                    index: right,
                     byte_width: right_width,
                     unsigned: right_unsigned,
                 },
             ) if left_width == right_width && left_unsigned == right_unsigned => {
                 Some(PointerOffsetCongruenceEvidence::Int64Scaled {
-                    byte_width: *left_width,
-                    unsigned: *left_unsigned,
+                    byte_width: left_width,
+                    unsigned: left_unsigned,
                     path: self.exact_bitvector_equality_path_evidence_views(
                         left.operand_view(),
                         right.operand_view(),

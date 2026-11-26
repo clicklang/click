@@ -1607,19 +1607,19 @@ pub(in crate::kernel) fn cancel_common_offset_addends(
 ) {
     use crate::kernel::OldAddressOffset;
     fn addends(offset: &OldAddressOffset, out: &mut Vec<OldAddressOffset>) {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
-            other => out.push(other.clone()),
+            _ => out.push(offset.clone()),
         }
     }
     fn rebuild(addends: Vec<OldAddressOffset>) -> OldAddressOffset {
         addends
             .into_iter()
-            .reduce(|sum, addend| OldAddressOffset::Add(Box::new(sum), Box::new(addend)))
-            .unwrap_or(OldAddressOffset::Constant(0))
+            .reduce(OldAddressOffset::raw_add)
+            .unwrap_or(OldAddressOffset::constant(0))
     }
     let mut left_addends = Vec::new();
     addends(left, &mut left_addends);
@@ -2041,12 +2041,12 @@ fn drop_aligned_scaled_addends(
 ) -> Option<crate::kernel::OldAddressOffset> {
     use crate::kernel::OldAddressOffset;
     fn addends(offset: &OldAddressOffset, out: &mut Vec<OldAddressOffset>) {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
-            other => out.push(other.clone()),
+            _ => out.push(offset.clone()),
         }
     }
     let mut parts = Vec::new();
@@ -2064,14 +2064,14 @@ fn drop_aligned_scaled_addends(
             .or_else(|| right.word32_constant())
             .map(|constant| i64::from(constant as i32))
     }
-    let divisible = |part: &OldAddressOffset| match part {
-        OldAddressOffset::Int32Scaled { value, byte_width }
-        | OldAddressOffset::Int64Scaled {
-            value, byte_width, ..
+    let divisible = |part: &OldAddressOffset| match part.view() {
+        OffsetView::Int32Scaled { index, byte_width }
+        | OffsetView::Int64Scaled {
+            index, byte_width, ..
         } => {
-            let scale = constant_factor(value.operand_view())
-                .and_then(|factor| factor.checked_mul(*byte_width))
-                .unwrap_or(*byte_width);
+            let scale = constant_factor(index.operand_view())
+                .and_then(|factor| factor.checked_mul(byte_width))
+                .unwrap_or(byte_width);
             scale != 0 && scale % alignment == 0
         }
         _ => false,
@@ -2084,7 +2084,7 @@ fn drop_aligned_scaled_addends(
             .into_iter()
             .filter(|part| !divisible(part))
             .reduce(OldAddressOffset::add)
-            .unwrap_or(OldAddressOffset::Constant(0)),
+            .unwrap_or(OldAddressOffset::constant(0)),
     )
 }
 
@@ -2093,12 +2093,12 @@ fn split_constant_displacement(
 ) -> (crate::kernel::OldAddressOffset, i64) {
     use crate::kernel::OldAddressOffset;
     fn addends(offset: &OldAddressOffset, out: &mut Vec<OldAddressOffset>) {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
-            other => out.push(other.clone()),
+            _ => out.push(offset.clone()),
         }
     }
     let mut parts = Vec::new();
@@ -2114,7 +2114,7 @@ fn split_constant_displacement(
     let base = symbolic
         .into_iter()
         .reduce(OldAddressOffset::add)
-        .unwrap_or(OldAddressOffset::Constant(0));
+        .unwrap_or(OldAddressOffset::constant(0));
     (base, displacement)
 }
 
@@ -2404,16 +2404,16 @@ impl PureFactContext {
                 crate::kernel::reasoning::shared_element_index_from_offset(offset, element_width)
             }
         };
-        match offset {
-            OldAddressOffset::Constant(_) => true,
+        match offset.view() {
+            OffsetView::Constant(_) => true,
             // Full-width constants or checked unsigned bounds make the
             // element projection exact. The byte projection below still
             // requires a constant whose scaled byte displacement fits.
-            OldAddressOffset::Int64Scaled { byte_width, .. } => {
-                if !byte_path && *byte_width != i64::from(element_width) {
+            OffsetView::Int64Scaled { byte_width, .. } => {
+                if !byte_path && byte_width != i64::from(element_width) {
                     return false;
                 }
-                if byte_path && *byte_width == 0 {
+                if byte_path && byte_width == 0 {
                     return true;
                 }
                 if !byte_path {
@@ -2445,32 +2445,28 @@ impl PureFactContext {
                 crate::kernel::assumptions::exact_wide_scaled_offset_constant(offset, self)
                     .is_some_and(|bytes| i32::try_from(bytes).is_ok())
             }
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
-                if !byte_path || *byte_width <= 1 {
+            OffsetView::Int32Scaled { index, byte_width } => {
+                if !byte_path || byte_width <= 1 {
                     return true;
                 }
-                let Ok(width) = u32::try_from(*byte_width) else {
+                let Ok(width) = u32::try_from(byte_width) else {
                     return false;
                 };
                 self.rebuilt_offset_operation_is_exact(
                     crate::kernel::machine_integer::Operation::Multiply,
                     [
-                        value.operand_view(),
+                        index.operand_view(),
                         MachineOperandView::Old(&OldMachineTerm::constant(width)),
                     ],
                 )
             }
-            OldAddressOffset::Add(left, right)
-                if left.as_ref() == &OldAddressOffset::Constant(0) =>
-            {
+            OffsetView::Add(left, right) if matches!(left.view(), OffsetView::Constant(0)) => {
                 self.rebuilt_offset_is_exact(right, element_width, byte_path)
             }
-            OldAddressOffset::Add(left, right)
-                if right.as_ref() == &OldAddressOffset::Constant(0) =>
-            {
+            OffsetView::Add(left, right) if matches!(right.view(), OffsetView::Constant(0)) => {
                 self.rebuilt_offset_is_exact(left, element_width, byte_path)
             }
-            OldAddressOffset::Add(left, right) => {
+            OffsetView::Add(left, right) => {
                 if !(self.rebuilt_offset_is_exact(left, element_width, byte_path)
                     && self.rebuilt_offset_is_exact(right, element_width, byte_path))
                 {
@@ -2484,7 +2480,7 @@ impl PureFactContext {
                     _ => false,
                 }
             }
-            OldAddressOffset::Variable(_) => false,
+            OffsetView::Variable(_) => false,
         }
     }
 }

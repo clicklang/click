@@ -439,12 +439,12 @@ impl ObservationComparisons {
         if let OldConditionTerm::AddressOffsetEqual(left, right) = condition {
             use crate::kernel::machine_integer::comparison::ComparisonOperand;
             fn operand(offset: &OldAddressOffset) -> Option<ComparisonOperand<'_>> {
-                match offset {
-                    OldAddressOffset::Int32Scaled {
-                        value,
+                match offset.view() {
+                    OffsetView::Int32Scaled {
+                        index,
                         byte_width: 4,
-                    } => Some(ComparisonOperand::Observation(value.clone())),
-                    OldAddressOffset::Constant(bytes) if bytes % 4 == 0 => {
+                    } => Some(ComparisonOperand::Observation(index)),
+                    OffsetView::Constant(bytes) if bytes % 4 == 0 => {
                         i32::try_from(bytes / 4).ok().map(|value| {
                             ComparisonOperand::Constant(OldMachineTerm::constant(value as u32))
                         })
