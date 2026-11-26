@@ -284,7 +284,9 @@ theorem ctx_reroot_left_fixed(cid: struct rb_node*, grandparent: struct rb_node*
                 Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
                 unfold(ctx_node_is(
                     Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); };
+                have (if p == cid { 1 } else { 0 }) == 0 by close();
+                rewrite(if p == cid { 1 } else { 0 }, 0);
+                close();
             }
             contradiction(ctx_node_is(
                 Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
@@ -310,7 +312,9 @@ theorem ctx_reroot_right_fixed(cid: struct rb_node*, grandparent: struct rb_node
                 Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
                 unfold(ctx_node_is(
                     Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); };
+                have (if p == cid { 1 } else { 0 }) == 0 by close();
+                rewrite(if p == cid { 1 } else { 0 }, 0);
+                close();
             }
             contradiction(ctx_node_is(
                 Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
