@@ -1677,7 +1677,7 @@ at `p->right`, and the read through `s` resolves through the equality to the
 cell already cached, one value
 (`mdtests/an_unfold_through_an_alias_keeps_the_owners_cell_names.md`). A loop
 invariant `n == old(n)` therefore makes `n->right` one read across the loop
-body without listing the alias in a later `transport`
+body without restating the alias
 (`mdtests/a_retained_child_read_unfolded_at_its_older_alias_needs_no_listed_alias.md`);
 a store to the field still blocks that transport
 (`mdtests/a_store_to_a_retained_child_read_is_not_framed.md`).

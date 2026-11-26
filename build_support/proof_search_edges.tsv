@@ -59,7 +59,6 @@ src/surface/proof/driver/claims.rs	driver	::close_post_execution_claims_with_sol
 src/surface/proof/driver/claims.rs	driver	::close_post_execution_claims_with_solve	try_direct_logical_closure	2
 src/surface/proof/driver/claims.rs	driver	::close_post_execution_claims_with_solve	try_restricted_solve_closure	2
 src/surface/proof/driver/claims.rs	driver	::close_post_execution_claims_with_solve	try_solve_closure	2
-src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	apply_written_fact_transport	1
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	derive_proposition	1
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	driver	14
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	try_direct_logical_closure	1
@@ -69,12 +68,11 @@ src/surface/proof/driver/claims.rs	driver	::prepare_produced_tokens	driver	1
 src/surface/proof/driver/claims.rs	driver	::apply_claim_step	driver	1
 src/surface/proof/driver/execution.rs	driver	::advance_checked_open_scope	driver	2
 src/surface/proof/driver/execution.rs	driver	::advance_focused_execution_region_with_branch_continuation	driver	4
-src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	driver	7
+src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	driver	6
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_to_exit	1
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_until	1
 src/surface/proof/driver/execution.rs	driver	::advance_prepared_execution_match	driver	1
 src/surface/proof/driver/execution.rs	driver	::advance_preservation_region	driver	5
-src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	apply_written_fact_transport	1
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	driver	7
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	try_execute_to_exit	1
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	try_execute_until	1
@@ -127,7 +125,6 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_direct_model_equality
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_direct_structural_closure_with_quantified	try_direct_structural_closure_with_quantified	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_execute_to_exit	try_execute_to_exit_descendant	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_execute_until	try_execute_until_descendant	1
-src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_fact_transport	try_execution_fact_transport	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_index_disequality_closure	try_disequality_by_refuted_equality	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_index_disequality_closure	try_disequality_by_selected_refutation	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_index_disequality_closure	try_execution_signed_arithmetic	1
@@ -144,7 +141,6 @@ src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemm
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemma	try_direct_logical_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::have_by_integer_arithmetic	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::apply_scoped_intro	driver	2
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_written_fact_transport	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	20
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_restricted_solve_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_solve_closure	3
@@ -980,7 +976,3 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_or_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_or_difference_at_infinite_bound	try_float_bound_weakening	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_direct_selected_fact_transport	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_selected_fact_transport	driver	3
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execution_fact_transport	fact_transport_candidate_search	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::apply_written_fact_transport	try_execution_fact_transport	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::apply_written_fact_transport	derive_proposition	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::apply_written_fact_transport	try_ordinary_fact_transport	1

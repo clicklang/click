@@ -181,3 +181,45 @@ fn a_byte_product_stays_apart_without_its_no_overflow_fact() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/scaled_int32_tests.rs");
 }
+
+/// The affine form of an offset is the same read from the old value or from
+/// its shared handle, so the e-graph's offset atoms do not change when an
+/// old offset is replaced by its handle.
+#[test]
+fn affine_form_is_the_same_for_old_offsets_and_their_handles() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let constant = OldAddressOffset::Constant;
+    let add =
+        |a: OldAddressOffset, b: OldAddressOffset| OldAddressOffset::Add(Box::new(a), Box::new(b));
+    let variable = |id| OldAddressOffset::Variable(Variable(id));
+    let mut values = vec![constant(-8), constant(0), constant(12), variable(994201)];
+    for width in [1, 4, -8] {
+        values.push(OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(994202)),
+            width,
+        ));
+        values.push(OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::constant(3),
+            width,
+        ));
+        for unsigned in [false, true] {
+            values.push(OldAddressOffset::scaled_int64_node(
+                OldMachineTerm::Variable(Variable(994203)),
+                width,
+                unsigned,
+            ));
+        }
+    }
+    let leaves = values.len();
+    for index in 0..leaves {
+        values.push(add(variable(994201), values[index].clone()));
+        values.push(add(
+            add(values[index].clone(), constant(4)),
+            variable(994201),
+        ));
+    }
+    for old in &values {
+        let shared = crate::kernel::KernelAddressOffset::import(old);
+        assert_eq!(AffineOffset::of(&shared), AffineOffset::of(old), "{old:?}");
+    }
+}

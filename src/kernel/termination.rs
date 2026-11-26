@@ -1289,7 +1289,7 @@ fn expression_address_taken_locals(
     }
 }
 
-fn collect_program_expression_variables(
+pub(in crate::kernel) fn collect_program_expression_variables(
     expression: &ProgramExpression,
     names: &mut BTreeSet<BindingName>,
 ) {

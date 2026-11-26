@@ -907,8 +907,8 @@ Three standing rules keep the boundary where the 2026-09 cleanup left it.
   candidates the kernel itself enumerates lowers the choice as a finite
   disjunction so the proof proves one disjunct, closes it with
   `close()`, and expansion prints it; open
-  choices use the existing `instantiate`, `witness`, `obtain`, `rewrite`,
-  and `transport` syntax.
+  choices use the existing `instantiate`, `witness`, `obtain`, and `rewrite`
+  syntax.
 - **Retained evidence names premises, never a context.** A derivation leaf
   carries the propositions it cites, and its check rebuilds a context from
   exactly those.

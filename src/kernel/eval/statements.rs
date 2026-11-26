@@ -817,7 +817,7 @@ fn write_program_lvalue_paths_for_initialization(
                 }
             }
             let mut state = state.clone();
-            sync_retained_stack_local(&mut state, &name, &value);
+            stage_retained_stack_local(&mut state, &name, &value);
             if let Some(pointer) = volatile_pointer {
                 facts.push(volatile_access_fact(
                     budget,
@@ -1321,6 +1321,17 @@ fn end_aggregate_step_lifetimes(
     state: &ExecutionState,
     steps: &[u32],
 ) -> Result<ExecutionState, RuntimeError> {
+    let mut next = stage_aggregate_step_lifetimes(state, steps)?;
+    next.complete_staged_memory();
+    Ok(next)
+}
+
+/// [`end_aggregate_step_lifetimes`] as steps of the atomic region in
+/// progress, which completes them.
+fn stage_aggregate_step_lifetimes(
+    state: &ExecutionState,
+    steps: &[u32],
+) -> Result<ExecutionState, RuntimeError> {
     let mut next = state.clone();
     for step in steps {
         crate::instrumentation::record_deterministic_work(1);
@@ -1346,7 +1357,7 @@ fn end_aggregate_step_lifetimes(
             return Err(error);
         }
         retire_automatic_storage_owner(&mut next, &range);
-        next.set_memory(next.memory.without_local_block(&pointer.base));
+        next.stage_memory(next.memory.without_local_block(&pointer.base));
         next.retire_population_storage(&pointer.base)?;
     }
     next.end_step_results(steps);
@@ -1368,8 +1379,10 @@ fn execute_program_aggregate_step_paths(
         offset: OldAddressOffset::constant(0),
     };
     register_block_alignment(&pointer.base, layout.alignment_bytes());
+    // The temporary's allocation, the copy into it, and its freezing are
+    // the steps of this one region, installed together.
     let mut allocated = state.clone();
-    allocated.set_memory(allocated.memory.clone().with_classed_block(
+    allocated.stage_memory(allocated.memory.clone().with_classed_block(
         pointer.base.clone(),
         result_layout.declared_class.clone(),
         layout.size_bytes(),
@@ -1398,7 +1411,7 @@ fn execute_program_aggregate_step_paths(
     )?;
     for path in &mut paths {
         if let StatementOutcome::Normal(next) = &mut path.outcome {
-            next.set_memory(
+            next.stage_memory(
                 next.memory
                     .clone()
                     .freeze_aggregate_result(&pointer.base, None),
@@ -1411,6 +1424,7 @@ fn execute_program_aggregate_step_paths(
                 next.aggregate_step_objects.insert(*step, pointer.clone());
             }
         }
+        complete_staged_path(path);
     }
     Ok(paths)
 }
@@ -1601,7 +1615,8 @@ fn execute_program_aggregate_copy_paths(
                     continue;
                 }
             };
-            state.set_memory(next_memory);
+            // The copy is a step of the region in progress, which completes it.
+            state.stage_memory(next_memory);
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::Normal(Box::new(state)),
                 facts,
@@ -1957,15 +1972,15 @@ fn execute_program_heap_allocate_to_paths(
                 && effective_assumptions.decide(&enough_space) == Some(true))
             .then(|| class.clone())
         });
-        let mut success_state =
-            state
-                .clone()
-                .with_memory(state.memory.clone().with_pending_typed_heap_allocation(
-                    pointer.clone(),
-                    bytes,
-                    zeroed,
-                    object_class.clone(),
-                ));
+        // The allocation is a step of this region, which stores its result
+        // next: the region's one install takes both.
+        let mut success_state = state.clone();
+        success_state.stage_memory(state.memory.clone().with_pending_typed_heap_allocation(
+            pointer.clone(),
+            bytes,
+            zeroed,
+            object_class.clone(),
+        ));
         success_state.record_pending_population_storage_creation(pointer.base.clone());
         let assigned = target.finish(
             &success_state,
@@ -1989,7 +2004,7 @@ fn execute_program_heap_allocate_to_paths(
             // Its success already known, the allocation is a live block now.
             let outcome = match assigned_path.outcome {
                 StatementOutcome::Normal(state) if ends_program_on_failure => {
-                    StatementOutcome::Normal(Box::new(resolve_pending_heap_allocations_recording(
+                    let mut state = resolve_pending_heap_allocations_recording(
                         &state,
                         &assumptions_with_path_context(
                             assumptions,
@@ -1997,7 +2012,13 @@ fn execute_program_heap_allocate_to_paths(
                             &merged_obligations,
                         ),
                         &mut merged_obligations,
-                    )))
+                    );
+                    state.complete_staged_memory();
+                    StatementOutcome::Normal(Box::new(state))
+                }
+                StatementOutcome::Normal(mut state) => {
+                    state.complete_staged_memory();
+                    StatementOutcome::Normal(state)
                 }
                 outcome => outcome,
             };
@@ -3391,6 +3412,9 @@ fn execute_program_heap_free_paths(
 
 /// Resolve one path, letting its caller record or discharge any retirement
 /// prerequisites before the corresponding old allocation is retired.
+/// Resolves `state`'s pending heap allocations whose success `assumptions`
+/// decide, as steps staged in the atomic region in progress
+/// ([`ExecutionState::stage_memory`]); the region completes them.
 pub(crate) fn resolve_pending_heap_allocations_with<E>(
     state: &ExecutionState,
     assumptions: &PureFactContext,
@@ -3426,7 +3450,7 @@ pub(crate) fn resolve_pending_heap_allocations_with<E>(
                 .clone()
                 .resolve_pending_heap_reallocation(&base, !is_null, assumptions)
                 .expect("collected pending reallocation should still exist");
-            state = state.with_memory(memory);
+            state.stage_memory(memory);
             let rebound = state
                 .locals
                 .bindings
@@ -3490,7 +3514,7 @@ pub(crate) fn resolve_pending_heap_allocations_with<E>(
             .clone()
             .resolve_pending_heap_allocation(&base, !is_null)
             .expect("collected pending allocation should still exist");
-        state = state.with_memory(memory);
+        state.stage_memory(memory);
         state.resolve_pending_population_storage_creation(
             &base.base,
             (!is_null).then(|| resolved_base.base.clone()),
@@ -3557,13 +3581,15 @@ pub(crate) fn resolve_pending_heap_allocations(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> ExecutionState {
-    resolve_pending_heap_allocations_with(state, assumptions, |obligation| {
+    let mut state = resolve_pending_heap_allocations_with(state, assumptions, |obligation| {
         assumptions
             .states_required_goal(obligation.proposition())
             .then_some(())
             .ok_or(obligation)
     })
-    .expect("test requires checked allocation retirement")
+    .expect("test requires checked allocation retirement");
+    state.complete_staged_memory();
+    state
 }
 
 fn has_live_thread_completion(state: &ExecutionState) -> bool {
@@ -3846,6 +3872,17 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
     state: &ExecutionState,
     declared: &[BindingName],
 ) -> Result<ExecutionState, RuntimeError> {
+    let mut state = stage_scope_automatic_lifetimes(state, declared)?;
+    state.complete_staged_memory();
+    Ok(state)
+}
+
+/// [`end_scope_automatic_lifetimes`] as a step of the atomic region in
+/// progress, which completes it.
+fn stage_scope_automatic_lifetimes(
+    state: &ExecutionState,
+    declared: &[BindingName],
+) -> Result<ExecutionState, RuntimeError> {
     let mut state = state.clone();
     let mut memory = state.memory.clone();
     let mut retired = false;
@@ -3890,7 +3927,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
         state.locals.remove(name);
     }
     if retired {
-        state.set_memory(memory);
+        state.stage_memory(memory);
     }
     Ok(state)
 }
@@ -4065,6 +4102,81 @@ pub(in crate::kernel) fn execute_statement_paths(
         budget.check_path_width(paths.len())?;
         return Ok(paths);
     }
+    #[cfg(test)]
+    let entry = state.path_link().id();
+    let mut paths = execute_statement_paths_leaf_dispatch(
+        state,
+        statement,
+        assumptions,
+        execution_context,
+        budget,
+        judgment,
+    )?;
+    // Each atomic region ends at its one new point: its staged memory steps
+    // are installed together here.
+    for path in &mut paths {
+        complete_staged_path(path);
+    }
+    #[cfg(test)]
+    assert_one_point_per_region(entry, statement, &paths);
+    Ok(paths)
+}
+
+/// An atomic region reaches at most one new point: each path's exit is its
+/// entry, or one point reached from the entry alone. A contract call still
+/// makes its effects in stages, each at a point of its own.
+#[cfg(test)]
+fn assert_one_point_per_region(
+    entry: Option<crate::kernel::program_point::ProgramPointId>,
+    statement: &ProgramStatement,
+    paths: &[StatementExecutionPath],
+) {
+    let Some(entry) = entry else {
+        return;
+    };
+    if matches!(
+        statement,
+        ProgramStatement::If { .. }
+            | ProgramStatement::Loop { .. }
+            | ProgramStatement::Switch { .. }
+            | ProgramStatement::TryCatchInt32 { .. }
+            | ProgramStatement::UnwindCleanup { .. }
+            | ProgramStatement::Call { .. }
+            | ProgramStatement::CallResult { .. }
+            | ProgramStatement::CallConstruct { .. }
+    ) {
+        return;
+    }
+    for path in paths {
+        let (StatementOutcome::Normal(exit)
+        | StatementOutcome::LoopTestFalse(exit)
+        | StatementOutcome::Break(exit)
+        | StatementOutcome::Continue(exit)
+        | StatementOutcome::Jump { state: exit, .. }
+        | StatementOutcome::Return { state: exit, .. }
+        | StatementOutcome::Throw { state: exit, .. }) = &path.outcome
+        else {
+            continue;
+        };
+        let link = exit.path_link();
+        assert!(
+            link.id() == Some(entry)
+                || (!link.predecessors().is_empty()
+                    && link.predecessor_ids().iter().all(|id| *id == entry)),
+            "{} reached more than one new program point",
+            verification_operation_name(statement)
+        );
+    }
+}
+
+fn execute_statement_paths_leaf_dispatch(
+    state: &ExecutionState,
+    statement: &ProgramStatement,
+    assumptions: &PureFactContext,
+    execution_context: ExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     match judgment {
         // Profiling attributes a verification run's work to its leaf
         // statements; a branch and an abstracted loop are attributed to the
@@ -4421,8 +4533,8 @@ fn execute_execution_statement_leaf_paths(
         )],
         ProgramStatement::EndAutomaticLifetimes { names, steps } => {
             vec![StatementExecutionPath::new(
-                match end_scope_automatic_lifetimes(state, names)
-                    .and_then(|next| end_aggregate_step_lifetimes(&next, steps))
+                match stage_scope_automatic_lifetimes(state, names)
+                    .and_then(|next| stage_aggregate_step_lifetimes(&next, steps))
                 {
                     Ok(state) => StatementOutcome::Normal(Box::new(state)),
                     Err(refusal) => StatementOutcome::RuntimeError(refusal),
@@ -4460,6 +4572,7 @@ fn execute_execution_statement_leaf_paths(
                 );
                 return match declared {
                     Ok(declared) => scalar_arrays::construct_const(
+                        state,
                         &declared,
                         name,
                         element_type,
@@ -4523,10 +4636,26 @@ fn execute_execution_statement_leaf_paths(
                         Vec::new(),
                     )]);
                 }
+                // A fresh block changes no cell the initializer reads, so it
+                // is read at the region's entry, unless it names the object
+                // being declared (`void *p = &p;`).
+                let mut mentioned = BTreeSet::new();
+                crate::kernel::termination::collect_program_expression_variables(
+                    expression,
+                    &mut mentioned,
+                );
+                let evaluation_state = if mentioned.contains(name) {
+                    declared.as_ref()
+                } else {
+                    state
+                };
                 let mut paths = Vec::new();
-                for path in
-                    evaluate_expression_value_paths(declared, expression, assumptions, budget)?
-                {
+                for path in evaluate_expression_value_paths(
+                    evaluation_state,
+                    expression,
+                    assumptions,
+                    budget,
+                )? {
                     match path.outcome {
                         ExpressionOutcome::Value(value) => {
                             let lvalue = LValue::local_with_qualifiers(
@@ -4574,9 +4703,12 @@ fn execute_execution_statement_leaf_paths(
                                 .expect("initialized scalar slot")
                                 .base
                                 .clone();
-                            state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
+                            state.stage_memory(state.memory.clone().freeze_declared_scalar(&block));
                         }
                     }
+                }
+                for path in &mut paths {
+                    complete_staged_path(path);
                 }
                 paths
             } else {
@@ -4594,16 +4726,16 @@ fn execute_execution_statement_leaf_paths(
                             .expect("declared automatic slot")
                             .base
                             .clone();
-                        state.set_memory(state.memory.clone().freeze_declared_object(&block, None));
+                        state.stage_memory(
+                            state.memory.clone().freeze_declared_object(&block, None),
+                        );
                         StatementOutcome::Normal(state)
                     }
                     outcome => outcome,
                 };
-                vec![StatementExecutionPath::new(
-                    outcome,
-                    Vec::new().into(),
-                    Vec::new(),
-                )]
+                let mut path = StatementExecutionPath::new(outcome, Vec::new().into(), Vec::new());
+                complete_staged_path(&mut path);
+                vec![path]
             }
         }
         ProgramStatement::DeclareAggregate {
@@ -4679,15 +4811,21 @@ fn execute_execution_statement_leaf_paths(
             target,
             source,
             layout,
-        } => execute_program_aggregate_copy_paths(
-            state,
-            target,
-            source,
-            layout,
-            AggregateCopyDestination::Assignment,
-            assumptions,
-            budget,
-        )?,
+        } => {
+            let mut paths = execute_program_aggregate_copy_paths(
+                state,
+                target,
+                source,
+                layout,
+                AggregateCopyDestination::Assignment,
+                assumptions,
+                budget,
+            )?;
+            for path in &mut paths {
+                complete_staged_path(path);
+            }
+            paths
+        }
         ProgramStatement::InitializeScalarArray {
             target,
             source,
@@ -6067,7 +6205,7 @@ fn local_declaration_pointer(
             return Err(error);
         }
         retire_automatic_storage_owner(state, &old_range);
-        state.set_memory(state.memory.without_local_block(&previous.base));
+        state.stage_memory(state.memory.without_local_block(&previous.base));
         return Ok(fresh_local_object_identity(state, name));
     }
     let unnumbered = SymbolicMemory::local_pointer(name);
@@ -6157,6 +6295,21 @@ fn note_declared_population_storage(
 /// over the fresh block: the declaration costs the element's cells, not the
 /// array's length. Where the memory refuses runs the cells are stored one by
 /// one, which leaves the same cells.
+/// Ends the atomic region a path's state is in: its staged memory steps
+/// move it to the region's one new point ([`ExecutionState::complete_staged_memory`]).
+fn complete_staged_path(path: &mut StatementExecutionPath) {
+    if let StatementOutcome::Normal(state)
+    | StatementOutcome::LoopTestFalse(state)
+    | StatementOutcome::Break(state)
+    | StatementOutcome::Continue(state)
+    | StatementOutcome::Jump { state, .. }
+    | StatementOutcome::Return { state, .. }
+    | StatementOutcome::Throw { state, .. } = &mut path.outcome
+    {
+        state.complete_staged_memory();
+    }
+}
+
 fn zero_fill_declared_array(
     mut state: ExecutionState,
     name: &BindingName,
@@ -6227,7 +6380,7 @@ fn zero_fill_declared_array(
     // initialized once the zero cells' values are forgotten: a run dropped
     // as a whole by a loop havoc or a store the facts cannot place then
     // costs one covering query, not its slots.
-    state.set_memory(memory.with_initialized_object(&slot, object_bytes));
+    state.stage_memory(memory.with_initialized_object(&slot, object_bytes));
     Ok(state)
 }
 
@@ -6306,7 +6459,7 @@ pub(in crate::kernel) fn declare_local(
         | ProgramType::Float64PointerPointer
         | ProgramType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
         ProgramType::Int32Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
@@ -6322,7 +6475,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt8Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length,
@@ -6338,7 +6491,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int8Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length,
@@ -6354,7 +6507,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int16Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(2),
@@ -6370,7 +6523,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt16Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(2),
@@ -6386,7 +6539,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt32Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
@@ -6402,7 +6555,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int64Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
@@ -6418,7 +6571,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Int128Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(16),
@@ -6434,7 +6587,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt64Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
@@ -6450,7 +6603,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::UInt128Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(16),
@@ -6466,7 +6619,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Float32Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
@@ -6482,7 +6635,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::Float64Array(length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
@@ -6498,7 +6651,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
         ProgramType::PointerArray(element, length) => {
-            state.set_memory(state.memory.clone().with_classed_block(
+            state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(C_POINTER_BYTE_WIDTH),
@@ -6518,7 +6671,7 @@ pub(in crate::kernel) fn declare_local(
             return Ok(state);
         }
     };
-    state.set_memory(state.memory.clone().with_classed_scalar_block(
+    state.stage_memory(state.memory.clone().with_classed_scalar_block(
         pointer.base.clone(),
         byte_width,
         program_type,
@@ -6590,7 +6743,7 @@ pub(in crate::kernel) fn declare_aggregate_local(
             layout.size(),
         ),
     };
-    state.set_memory(memory);
+    state.stage_memory(memory);
     state
         .locals
         .set_aggregate_object_at(name.clone(), layout.clone(), pointer.clone());
@@ -6639,7 +6792,7 @@ fn begin_aggregate_construction(
         }
         let variable = budget.allocate_kernel_variable()?;
         let value = crate::kernel::functions::symbolic_call_result(field.program_type(), variable);
-        state.set_memory(
+        state.stage_memory(
             state
                 .memory
                 .clone()
@@ -6807,6 +6960,21 @@ pub(in crate::kernel) fn sync_stack_local(
     };
     if state.memory.has_block(&pointer.base) {
         state.set_memory(state.memory.clone().store(pointer, value.clone()));
+    }
+}
+
+/// [`sync_retained_stack_local`] as a step of the atomic region in progress,
+/// which completes it.
+fn stage_retained_stack_local(
+    state: &mut ExecutionState,
+    name: &BindingName,
+    value: &ExecutionValue,
+) {
+    let Some(pointer) = state.locals.slot(name).cloned() else {
+        return;
+    };
+    if state.memory.has_block(&pointer.base) {
+        state.stage_memory(state.memory.clone().store_retained(pointer, value.clone()));
     }
 }
 

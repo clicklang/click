@@ -106,8 +106,8 @@ pub(crate) use kernel_term::{
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub(crate) use kernel_term::{
-    KernelAddressOffset, KernelArrayObject, KernelMatchArm, SharedAddress, SharedAddressOffset,
-    SharedPointer,
+    KernelAddressOffset, KernelArrayObject, KernelMatchArm, OffsetTree, OffsetView, SharedAddress,
+    SharedAddressOffset, SharedPointer,
 };
 pub use kernel_term::{
     KernelCallArgument, KernelFloatType, KernelImportedScalar, KernelIntegerOperator,

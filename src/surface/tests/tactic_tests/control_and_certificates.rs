@@ -764,20 +764,6 @@ fn parses_and_classifies_simple_and_smart_tactics() {
         .class(),
         TacticClass::Simple(SimpleTactic::ApplyTheorem)
     ));
-    let transport_source = SyntaxProposition::Defined {
-        expression: current_int(0),
-    };
-    let transport_target = SyntaxProposition::Defined {
-        expression: current_int(1),
-    };
-    assert!(matches!(
-        ProofTactic::Transport {
-            source: transport_source.clone(),
-            target: transport_target.clone(),
-        }
-        .class(),
-        TacticClass::Smart(SmartSite::FactTransport)
-    ));
     assert!(matches!(
         ProofTactic::Step.class(),
         TacticClass::Simple(SimpleTactic::StatementTransition)

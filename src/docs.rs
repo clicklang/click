@@ -534,11 +534,6 @@ mod tests {
 
     #[test]
     fn tactic_help_uses_the_form_class() {
-        let transport = lookup("transport").unwrap();
-        assert!(
-            transport.contains("- `transport(P, Q)`: smart; it may miss;"),
-            "{transport}"
-        );
         let apply = lookup("apply").unwrap();
         assert!(apply.contains("- `apply(fact)`: simple;"), "{apply}");
         let close = lookup("close").unwrap();

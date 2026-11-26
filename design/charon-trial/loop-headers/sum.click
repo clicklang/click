@@ -65,7 +65,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 close();
             }
             have defined(bytes[((i as uint32) as int32)]) by {
-                transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), defined(bytes[((i as uint32) as int32)]));
+                close();
             }
             have 0 <= to_integer((bytes[((i as uint32) as int32)] as int32)) by {
                 apply(integer::int32_less_equal_to_integer(0, (bytes[((i as uint32) as int32)] as int32)));

@@ -341,7 +341,7 @@ common mechanism names belong to.
 | selected-premise arithmetic | the solver's choice of the facts and type ranges arithmetic refutes an arithmetic goal from | Smart tactics (slow) |
 | rewrite search, equality chain | the solver's search for rewrites that close a goal | Smart tactics (slow) |
 | premise selection, connected premises | Choosing which facts a tactic uses | Search helpers (slow) |
-| transport planner | Choosing the facts a bare `transport` carries | Search helpers (slow) |
+| Frame search | Selecting historical facts and frame evidence for the closer | Search helpers (slow) |
 | theorem premise cascade | Finding the premises of a bare `apply` | Search helpers (slow) |
 
 ## Where the details are
@@ -480,7 +480,7 @@ An otherwise unplaced write forgets the whole run. It does not enumerate
 logical slots or search separation-fact buckets. Fixed-offset writes query hole
 coverage only for the two partially covered boundary intervals, including when
 value widths exceed slot strides. Initialization records and immutable
-source history remain available; explicit separation and `transport` recover
+source history remain available. Explicit separation and a frame proof recover
 selected values, as in
 `mdtests/store_geometry_uses_explicit_order_and_transport.md`. Scaling tests
 grow order chains, separation buckets and logical run lengths independently;

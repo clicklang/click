@@ -638,7 +638,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
-                    | ProofTactic::Transport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && tactics.get(index + 1).is_some_and(|next| {
                 !matches!(
@@ -1011,19 +1010,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return finish(proof, unfinished);
                 }
-                ProofTactic::Transport { source, target } => {
-                    // The bare form selects its frame evidence at the
-                    // execution frontier this `have` was opened on, exactly
-                    // as between top-level steps. A pure theorem has no frontier to select from.
-                    if !matches!(proof.context.as_ref(), ProofContext::Execution(_)) {
-                        return Err(proof.step_error(
-                            "`transport` requires a C execution frontier; use `have`, `rewrite`, or `close() using` to prove the goal here",
-                        ));
-                    }
-                    proof = crate::kernel::search::ProofSearch::apply_written_fact_transport(
-                        &proof, source, target, index,
-                    )?;
-                }
                 tactic => {
                     if matches!(tactic, ProofTactic::Sorry) {
                         // Admitted only as a complete body (a `have` body
@@ -1070,7 +1056,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
-                    | ProofTactic::Transport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && !proof.focused_discharged()
                 && checked_fact_spells_the_goal(&proof)

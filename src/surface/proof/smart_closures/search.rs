@@ -8666,8 +8666,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // recorded ones, newest first. A path records a point per statement
         // it ran, so offering every one made this search linear in the
         // path's length for each goal, and quadratic over a function's
-        // early-return paths. An older point is still reachable by an
-        // explicit `transport`.
+        // early-return paths. A proof can cite an older point explicitly.
         let selectors = std::iter::once(ProgramPointSelector::ProgramPoint(first)).chain(
             view.fixed_state
                 .recorded_states
@@ -8765,9 +8764,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// fact is selected by one probe of the indexed conjunct projections
     /// (`PureFactStore::quantified_conjunct_projection_source`) with the goal
     /// lowered at that point, so a point holding no such fact costs one
-    /// lowering and one lookup. The proof is one explicit transport from
-    /// the larger fact to the goal, which the checked quantified frame
-    /// decides by conjunction elimination; expansion prints it.
+    /// lowering and one lookup. The proof uses the larger fact to establish
+    /// the selected conjunct and records the steps for expansion.
     pub(in crate::surface::proof) fn try_projected_state_transport(
         search_input: &Proof<'a>,
         source: &SyntaxProposition,

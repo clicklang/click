@@ -114,8 +114,8 @@ against the imported lemma.
 ## Automatic reuse is not implemented
 
 Step 3 would connect checked support to application construction and
-statement effects, so an unchanged prefix value is reused without a written
-`transport`. It must not make pure term comparison search for frame proofs,
+statement effects, so an unchanged prefix value is reused without a separate
+frame proof. It must not make pure term comparison search for frame proofs,
 and must not put context-dependent results into a global assumption-free term
 cache. It needs reusable range versions, or equivalent persistent effect
 summaries, alongside the current whole-block array naming, validated by the

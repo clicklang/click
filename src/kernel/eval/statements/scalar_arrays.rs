@@ -260,7 +260,11 @@ fn expression_error(outcome: ExpressionOutcome) -> StatementOutcome {
 
 /// Evaluate explicit initializers, then install and seal the complete array in
 /// one declaration transition. Zero-filled gaps each take one retained run.
+/// `declared`, the region's staged declaration of `name`, initialized from
+/// `fill`. Its expressions are read at `entry`, the region's entry, which
+/// the fresh block leaves unchanged, unless they name the array itself.
 pub(super) fn construct_const(
+    entry: &ExecutionState,
     declared: &ExecutionState,
     name: &BindingName,
     element_type: ProgramType,
@@ -310,8 +314,20 @@ pub(super) fn construct_const(
     };
 
     let mut paths = Vec::new();
+    let mut mentioned = std::collections::BTreeSet::new();
+    for expression in fill.expressions() {
+        crate::kernel::termination::collect_program_expression_variables(
+            expression,
+            &mut mentioned,
+        );
+    }
+    let evaluation_state = if mentioned.contains(name) {
+        declared
+    } else {
+        entry
+    };
     for evaluation in crate::kernel::functions::evaluate_retained_program_arguments_paths(
-        declared,
+        evaluation_state,
         fill.expressions(),
         assumptions,
         budget,

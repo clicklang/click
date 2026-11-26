@@ -198,11 +198,6 @@ path = "mdtests/simple_tactics.md"
 needle = "rewrite(x, y);"
 
 [[form]]
-id = "transport"
-path = "src/surface/tests/expansion_tests.rs"
-needle = "at(after_write, owner->value == 11),"
-
-[[form]]
 id = "instantiate"
 path = "mdtests/instantiate_propagates_known_guards.md"
 needle = "}, k);"

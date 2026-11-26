@@ -36,7 +36,7 @@ pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 pub(in crate::kernel) use machine::wrap_exact as wrap_exact_machine_value;
 use num_bigint::BigInt;
-pub(crate) use offsets::{KernelAddressOffset, SharedAddressOffset};
+pub(crate) use offsets::{KernelAddressOffset, OffsetTree, OffsetView, SharedAddressOffset};
 pub(crate) use pointers::{
     KernelArrayObject, KernelMemberArray, KernelSubobjectBounds, PointerRewrite,
     PointerRewriteError, SharedPointer,
