@@ -265,13 +265,17 @@ fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
     let click = fixture.click_source.as_deref().unwrap();
     let verified =
         verify_c_sources(click, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-    let expanded = expand_checked_grouped_claim(click, &verified, function)
-        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let expansion = expand_checked_grouped_claim_with_spans(click, &verified, function).unwrap();
+    let expanded = &expansion.source;
     assert!(
         !expanded.contains("close_invariants"),
         "{filename}: {expanded}"
     );
-    let parsed = crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
+    let parsed = expansion
+        .with_checked_closers(|| {
+            crate::surface::verification::parse_click_file_with_c_sources(expanded, &sources)
+        })
+        .unwrap()
         .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     let block = parsed
         .function_blocks()
@@ -297,7 +301,15 @@ fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
             });
         }
     }
-    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    expansion
+        .with_checked_closers(|| {
+            crate::surface::proof::without_implicit_solve_for_claim(
+                &format!("{function}.contract"),
+                || verify_c_sources(expanded, &sources).map_err(|e| e.report()),
+            )
+        })
+        .unwrap()
+        .unwrap_or_else(|e| panic!("{filename}: {e}"));
 }
 
 #[test]
@@ -2596,7 +2608,7 @@ int32 f(int32 n) {
 }
 "#;
     let sources = [("nested.c", c)];
-    verify_c_sources(click, &sources).unwrap();
+    let verified = verify_c_sources(click, &sources).unwrap();
     let false_arm = click.replace("have result == 7", "have result == 8");
     assert!(
         verify_c_sources(&false_arm, &sources)
@@ -2612,14 +2624,19 @@ int32 f(int32 n) {
             expand_c_tactic_source_at(click, &sources, position.line, position.column).unwrap();
         verify_c_sources(&expanded, &sources).unwrap();
     }
-    let expanded = expand_function_proof_source(click, &sources, "f").unwrap();
+    let expansion = expand_checked_grouped_claim_with_spans(click, &verified, "f").unwrap();
+    let expanded = &expansion.source;
     assert!(
-        c_smart_tactic_source_sites(&expanded, &sources)
+        expansion
+            .with_checked_closers(|| c_smart_tactic_source_sites(expanded, &sources))
+            .unwrap()
             .unwrap()
             .is_empty()
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c_sources(&expanded, &sources)
+        expansion
+            .with_checked_closers(|| verify_c_sources(expanded, &sources))
+            .unwrap()
     });
     result.unwrap();
     assert_eq!(planning, 0);
@@ -2815,23 +2832,27 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
 fn pointer_cursor_invariant_expands_and_replays() {
     let (click, sources) = loop_fixture("pointer_cursor_loop_expansion");
     let sources = borrowed_sources(&sources);
-    verify_c_sources(&click, &sources).unwrap();
-    let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
+    let verified = verify_c_sources(&click, &sources).unwrap();
+    let expansion = expand_checked_grouped_claim_with_spans(&click, &verified, "f").unwrap();
+    let expanded = &expansion.source;
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.matches("normalize()").count() <= 4, "{expanded}");
-    for law in ["product_lower_bound", "product_upper_bound"] {
-        assert!(
-            expanded
-                .matches(&format!("apply(click::integer::{law}("))
-                .count()
-                >= 4,
-            "{expanded}"
-        );
-    }
-    without_implicit_solve_for_claim("f.contract", || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .unwrap();
+    assert_eq!(
+        expanded
+            .matches("have cursor == (bytes + (4 * outer)) by {")
+            .count(),
+        2,
+        "{expanded}"
+    );
+    assert!(expanded.contains("apply(click::integer::multiply_order_nonnegative("));
+    expansion
+        .with_checked_closers(|| {
+            without_implicit_solve_for_claim("f.contract", || {
+                verify_c_sources(expanded, &sources).map_err(|error| error.report())
+            })
+        })
+        .unwrap()
+        .unwrap();
 }
 
 // Loop resource selection must use the same checked pointer-alias graph as

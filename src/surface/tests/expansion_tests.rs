@@ -3028,14 +3028,25 @@ fn vector_field_input_pointer_certificates_round_trip() {
     assert_ne!(false_bound, expanded);
     verify_c_sources(&false_bound, &sources)
         .expect_err("the expanded bound proof must not establish a false bound");
-    let expanded = expand_function_proof_source(source, &sources, name).unwrap();
+    let verified = verify_c_sources(source, &sources).unwrap();
+    let expansion = expand_checked_grouped_claim_with_spans(source, &verified, name).unwrap();
+    let expanded = &expansion.source;
     assert!(!expanded.contains("the pointer value at this program point"));
     assert!(
-        c_smart_tactic_source_sites(&expanded, &sources)
+        expansion
+            .with_checked_closers(|| c_smart_tactic_source_sites(expanded, &sources))
+            .unwrap()
             .unwrap()
             .is_empty()
     );
-    verify_c_sources(&expanded, &sources).unwrap();
+    expansion
+        .with_checked_closers(|| {
+            without_implicit_solve_for_claim(&format!("{name}.contract"), || {
+                verify_c_sources(expanded, &sources).map_err(|error| error.report())
+            })
+        })
+        .unwrap()
+        .unwrap();
 }
 
 #[test]
@@ -15622,8 +15633,8 @@ fn nested_callback_status_cases_verify() {
         (8, "have"),
         (10, "have"),
         (11, "have"),
-        (13, "solve"),
-        (16, "solve"),
+        (13, "close"),
+        (16, "close"),
     ];
     assert_eq!(
         lift.iter()
@@ -19364,25 +19375,35 @@ fn grouped_residual_normalization_expansion_checks_original_claims() {
     );
     assert_ne!(repeated_rewrite, source);
     for source in [source, repeated_rewrite.as_str()] {
-        verify_c_sources(source, &sources).unwrap();
+        let verified = verify_c_sources(source, &sources).unwrap();
         assert!(
             c_smart_tactic_source_sites(source, &sources)
                 .unwrap()
                 .iter()
                 .any(|site| site.claim_label == "current.contract")
         );
-        let expanded = expand_function_proof_source(source, &sources, "current").unwrap();
+        let expansion =
+            expand_checked_grouped_claim_with_spans(source, &verified, "current").unwrap();
+        let expanded = &expansion.source;
         // Residual equalities can close directly with `known`. Check that
         // the selected proof is fully explicit, independent of its closer.
         assert!(
-            !c_smart_tactic_source_sites(&expanded, &sources)
+            !expansion
+                .with_checked_closers(|| c_smart_tactic_source_sites(expanded, &sources))
+                .unwrap()
                 .unwrap()
                 .iter()
                 .any(|site| site.claim_label == "current.contract")
         );
         assert!(expanded.contains("    close();"));
-        verify_c_sources(&expanded, &sources)
-            .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
+        expansion
+            .with_checked_closers(|| {
+                without_implicit_solve_for_claim("current.contract", || {
+                    verify_c_sources(expanded, &sources).map_err(|error| error.report())
+                })
+            })
+            .unwrap()
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
         for proof in [source, expanded.as_str()] {
             assert!(
                 verify_c_sources(
@@ -19910,6 +19931,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
         }
     "#;
     let click_source = r#"
+        import click::separation;
         verifying "fill3_entry_guard.c";
         int32 fill3_entry_guard(int32 p[3]) {
             consumes p[0..3];
@@ -19918,11 +19940,55 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
             step();
             step();
             loop {
-                decreases 3 - i;
+                decreases 3 - to_integer(i);
                 invariant i >= 0 and i <= 3;
                 invariant forall (k: int32) { 0 <= k and k < i implies p[k] == k };
                 initialize by close();
-                maintain by close();
+                maintain by {
+                    mark iteration;
+                    step();
+                    step();
+                    have to_integer(at(iteration, i) + 1) == to_integer(at(iteration, i)) + 1;
+                    have 0 <= to_integer(3) - to_integer(at(iteration, i) + 1);
+                    have forall (k: int32) { 0 <= k and k < i implies p[k] == k } by {
+                        intro() {
+                            intro() {
+                                have 0 <= k;
+                                have k < i;
+                                if k < at(iteration, i) {
+                                    have at(iteration, p[k]) == k by {
+                                        have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, i);
+                                        instantiate(forall (cell: int32) {
+                                            at(iteration, 0) <= at(iteration, cell) and at(iteration, cell) < at(iteration, i) implies
+                                                at(iteration, p[cell]) == at(iteration, cell)
+                                        }, k);
+                                        close();
+                                    }
+                                    have at(iteration, i) != k by { close() using { k < at(iteration, i); }; }
+                                    have at(iteration, separate(memory(p[i]), memory(p[k]))) by {
+                                        apply(separation::separate_elements(p, at(iteration, i), k));
+                                    }
+                                    have separate(loop(0).statement(0).footprint, memory(p[k])) by {
+                                        close() using { at(iteration, separate(memory(p[i]), memory(p[k]))); };
+                                    }
+                                    have at(loop(0).statement(0).exit, p[k]) == at(iteration, p[k]) by {
+                                        preserve(memory(p[k]), loop(0).statement(0));
+                                    }
+                                    have separate(loop(0).statement(1).footprint, memory(p[k])) by { close() using {}; }
+                                    have p[k] == at(loop(0).statement(1).entry, p[k]) by {
+                                        preserve(memory(p[k]), loop(0).statement(1));
+                                    }
+                                    close();
+                                } else {
+                                    have k == at(iteration, i) by { close(); }
+                                    rewrite(k, at(iteration, i));
+                                    close();
+                                }
+                            }
+                        }
+                    }
+                    close();
+                }
             }
             step();
             close();
@@ -22811,15 +22877,24 @@ int32 f(int32 n) {{
         );
         let sources = [("tail.c", c.as_str())];
         let verified_for_label = verify_c_sources(&source, &sources).unwrap();
-        let expanded = expand_checked_function_claim(&source, &verified_for_label, "f.ensures_0")
+        let expansion = expand_checked_grouped_claim_with_spans(&source, &verified_for_label, "f")
             .unwrap_or_else(|error| panic!("{count} branches: {}", error.message()));
+        let expanded = &expansion.source;
         assert!(
-            c_smart_tactic_source_sites(&expanded, &sources)
+            expansion
+                .with_checked_closers(|| c_smart_tactic_source_sites(expanded, &sources))
+                .unwrap()
                 .unwrap()
                 .is_empty()
         );
-        verify_c_sources(&expanded, &sources)
-            .unwrap_or_else(|error| panic!("{count} branches: {}\n{expanded}", error.message()));
+        expansion
+            .with_checked_closers(|| {
+                without_implicit_solve_for_claim("f.ensures_0", || {
+                    verify_c_sources(expanded, &sources).map_err(|error| error.report())
+                })
+            })
+            .unwrap()
+            .unwrap_or_else(|error| panic!("{count} branches: {error}\n{expanded}"));
     }
 }
 
