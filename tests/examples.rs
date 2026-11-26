@@ -684,7 +684,7 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
         rewrite(rb->__rb_parent_color, (address(p) | color));
         rewrite(p, 0);
         rewrite(color, 1);
-        normalize();
+        close();
     }
     have (rb->__rb_parent_color & ~3) == 0u64 by {
         rewrite(rb->__rb_parent_color, 1u64);
