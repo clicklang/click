@@ -16,6 +16,7 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeSet, HashMap};
@@ -2624,14 +2625,14 @@ fn index_bitvector_equality_fact(
             if let Some((OldConditionTerm::AddressOffsetEqual(left, right), _)) =
                 condition_source_0.old_condition() =>
         {
-            match (left.as_ref(), right.as_ref()) {
+            match (left.view(), right.view()) {
                 (
-                    OldAddressOffset::Int32Scaled { value: left, .. },
-                    OldAddressOffset::Int32Scaled { value: right, .. },
+                    OffsetView::Int32Scaled { index: left, .. },
+                    OffsetView::Int32Scaled { index: right, .. },
                 ) => {
                     let mut atoms = BTreeSet::new();
-                    selected_atoms::collect(left, &mut atoms);
-                    selected_atoms::collect(right, &mut atoms);
+                    selected_atoms::collect(&left, &mut atoms);
+                    selected_atoms::collect(&right, &mut atoms);
                     for atom in atoms {
                         let mut bucket = index.get(&atom).cloned().unwrap_or_default();
                         bucket.push(fact.clone());
@@ -3241,13 +3242,13 @@ fn collect_load_address_atoms(
     }
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
-        match offset {
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. } => {
+            OffsetView::Int32Scaled { index: value, .. }
+            | OffsetView::Int64Scaled { index: value, .. } => {
                 if let Some(atom) = selected_atoms::root_atom(value.operand_view()) {
                     atoms.insert(atom);
                 }
@@ -3255,7 +3256,7 @@ fn collect_load_address_atoms(
                     collect_load_address_atoms(*inner, atoms, depth + 1);
                 }
             }
-            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
+            OffsetView::Constant(_) | OffsetView::Variable(_) => {}
         }
     }
 }

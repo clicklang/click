@@ -832,26 +832,24 @@ pub(crate) fn pointer_projection_source(condition: &OldConditionTerm) -> Option<
     let (a, b) = condition.pointer_offset_sides()?;
     // A pointer parameter is itself an exact offset in the abstract
     // argument block. Cancel that common prefix before comparing its indices.
-    let (a, b) = match (a, b) {
-        (OldAddressOffset::Add(base, a), OldAddressOffset::Add(other, b)) if base == other => {
-            (a.as_ref(), b.as_ref())
-        }
+    let (a, b) = match (a.view(), b.view()) {
+        (OffsetView::Add(base, a), OffsetView::Add(other, b)) if base == other => (a, b),
         _ => (a, b),
     };
     for (narrow, wide) in [(a, b), (b, a)] {
         if let (
-            OldAddressOffset::Int32Scaled {
-                value: narrow,
+            OffsetView::Int32Scaled {
+                index: narrow,
                 byte_width,
             },
-            OldAddressOffset::Int64Scaled {
-                value: wide,
+            OffsetView::Int64Scaled {
+                index: wide,
                 byte_width: wide_width,
                 unsigned: true,
             },
-        ) = (narrow, wide)
+        ) = (narrow.view(), wide.view())
             && byte_width == wide_width
-            && *byte_width > 0
+            && byte_width > 0
             && let Some((
                 _,
                 MachineIntegerType::UInt64,

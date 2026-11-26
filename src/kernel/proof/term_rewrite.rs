@@ -12,6 +12,7 @@ use crate::kernel::{
     AlgebraicValue, PureFunctionArgument,
 };
 use crate::kernel::{MachineCastSpelling, OldMachineTerm, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
 #[cfg(test)]
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
@@ -503,7 +504,7 @@ fn program_value_declaration_variable(value: &ProgramValue) -> Option<Variable> 
             if matches!(
                 &pointer.address().base,
                 AddressBase::Symbolic(_) | AddressBase::FunctionSymbolic(_)
-            ) && matches!(&pointer.address().offset, OldAddressOffset::Constant(0)) =>
+            ) && matches!(pointer.address().offset.view(), OffsetView::Constant(0)) =>
         {
             match pointer.address().base {
                 AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
@@ -1309,15 +1310,15 @@ fn materialized_registered_load_value(variable: Variable) -> Option<OldMachineTe
 /// assumed.
 fn pointer_addresses_four_byte_elements(pointer: &OldAddress) -> bool {
     fn offset_scales_by_four(offset: &OldAddressOffset) -> bool {
-        match offset {
-            OldAddressOffset::Int32Scaled { byte_width, .. } => *byte_width == 4,
-            OldAddressOffset::Int64Scaled { byte_width, .. } => *byte_width == 4,
-            OldAddressOffset::Add(left, right) => {
+        match offset.view() {
+            OffsetView::Int32Scaled { byte_width, .. } => byte_width == 4,
+            OffsetView::Int64Scaled { byte_width, .. } => byte_width == 4,
+            OffsetView::Add(left, right) => {
                 offset_scales_by_four(left) && offset_scales_by_four(right)
             }
             // A bare constant or variable offset carries no element width of
             // its own, so it cannot witness one.
-            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => false,
+            OffsetView::Constant(_) | OffsetView::Variable(_) => false,
         }
     }
     offset_scales_by_four(&pointer.offset)
@@ -1340,21 +1341,23 @@ fn collect_pointer_offset_carriers(offset: &OldAddressOffset, variables: &mut Ca
     if !variables.visit() {
         return;
     }
-    match offset {
-        OldAddressOffset::Constant(_) => {}
-        OldAddressOffset::Variable(variable) => {
-            variables.program_values.insert(*variable);
-            collect_registered_load_carriers(*variable, variables);
+    match offset.view() {
+        OffsetView::Constant(_) => {}
+        OffsetView::Variable(variable) => {
+            variables.program_values.insert(variable);
+            collect_registered_load_carriers(variable, variables);
         }
-        OldAddressOffset::Add(left, right) => {
+        OffsetView::Add(left, right) => {
             collect_pointer_offset_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
             collect_pointer_offset_carriers(right, variables);
         }
-        OldAddressOffset::Int32Scaled { value, .. }
-        | OldAddressOffset::Int64Scaled { value, .. } => collect_machine_carriers(value, variables),
+        OffsetView::Int32Scaled { index: value, .. }
+        | OffsetView::Int64Scaled { index: value, .. } => {
+            collect_machine_carriers(&value, variables)
+        }
     }
 }
 
@@ -1667,12 +1670,12 @@ fn exhausted_integer(term: &IntegerTerm) -> IntegerTerm {
 fn exhausted_pointer() -> OldAddress {
     OldAddress {
         base: AddressBase::Concrete(String::new()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     }
 }
 
 fn exhausted_offset() -> OldAddressOffset {
-    OldAddressOffset::Constant(0)
+    OldAddressOffset::constant(0)
 }
 
 fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
@@ -4374,7 +4377,7 @@ impl<'a> TermRewrite<'a> {
                         && v.address() != from.address()
                         && v.address().base == from.address().base
                         && ((matches!(from.address().base, AddressBase::Symbolic(_))
-                            && from.address().offset == OldAddressOffset::Constant(0))
+                            && matches!(from.address().offset.view(), OffsetView::Constant(0)))
                             || (from.address().base == AddressBase::ExternalArgument
                                 && to.address().base == AddressBase::ExternalArgument))
                 });
@@ -5553,7 +5556,7 @@ impl<'a> TermRewrite<'a> {
             && self.pointer_value_exact.is_some()
             && !self.source_disabled
             && p.base == from.base
-            && from.offset == OldAddressOffset::Constant(0)
+            && matches!(from.offset.view(), OffsetView::Constant(0))
             && matches!(from.base, AddressBase::Load(_))
         {
             self.changed = true;
@@ -5669,7 +5672,7 @@ impl<'a> TermRewrite<'a> {
         if let Some((from, to)) = self.pointer_value_exact
             && !self.source_disabled
             && matches!(from.address().base, AddressBase::Symbolic(_))
-            && from.address().offset == OldAddressOffset::Constant(0)
+            && matches!(from.address().offset.view(), OffsetView::Constant(0))
             && p.base == from.address().base
         {
             self.changed = true;
@@ -5829,12 +5832,8 @@ impl<'a> TermRewrite<'a> {
             }
         }
         match wide {
-            None => OldAddressOffset::Int32Scaled { value, byte_width },
-            Some(unsigned) => OldAddressOffset::Int64Scaled {
-                value,
-                byte_width,
-                unsigned,
-            },
+            None => OldAddressOffset::int32_scaled(value, byte_width),
+            Some(unsigned) => OldAddressOffset::int64_scaled(value, byte_width, unsigned),
         }
     }
 
@@ -5866,10 +5865,7 @@ impl<'a> TermRewrite<'a> {
                 )
             };
             // The checked narrowing keeps a written scaled node.
-            OldAddressOffset::Int32Scaled {
-                value: narrowed,
-                byte_width,
-            }
+            OldAddressOffset::int32_scaled(narrowed, byte_width)
         } else {
             self.rebuilt_index(value, byte_width, wide)
         }
@@ -5975,32 +5971,32 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_offset();
         }
-        let result = match v {
-            OldAddressOffset::Constant(_) => v.clone(),
-            OldAddressOffset::Variable(variable)
-                if self.resolve_registered_loads && crate::kernel::is_load_variable(variable) =>
+        let result = match v.view() {
+            OffsetView::Constant(_) => v.clone(),
+            OffsetView::Variable(variable)
+                if self.resolve_registered_loads && crate::kernel::is_load_variable(&variable) =>
             {
-                self.rewrite_registered_load(*variable)
-                    .map_or_else(|| v.clone(), OldAddressOffset::Variable)
+                self.rewrite_registered_load(variable)
+                    .map_or_else(|| v.clone(), OldAddressOffset::variable)
             }
-            OldAddressOffset::Variable(_) => v.clone(),
-            OldAddressOffset::Add(a, b) => {
+            OffsetView::Variable(_) => v.clone(),
+            OffsetView::Add(a, b) => {
                 let left = self.offset(a);
                 let right = self.offset(b);
                 if self.resolve_registered_loads {
                     OldAddressOffset::add(left, right)
                 } else {
-                    OldAddressOffset::Add(Box::new(left), Box::new(right))
+                    OldAddressOffset::raw_add(left, right)
                 }
             }
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
-                self.rewrite_offset_index(value, *byte_width, None)
+            OffsetView::Int32Scaled { index, byte_width } => {
+                self.rewrite_offset_index(&index, byte_width, None)
             }
-            OldAddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned,
-            } => self.rewrite_offset_index(value, *byte_width, Some(*unsigned)),
+            } => self.rewrite_offset_index(&index, byte_width, Some(unsigned)),
         };
         if self.checked_work_exhausted() {
             exhausted_offset()

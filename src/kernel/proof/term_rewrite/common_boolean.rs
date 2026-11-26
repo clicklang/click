@@ -173,7 +173,7 @@ impl TermRewrite<'_> {
             // boundary. The original shared displacement is handled above.
             let atom = self.pointer(&OldAddress {
                 base: block.clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             });
             A::new(SharedAddressBase::import(&atom.base), offset)
         };
@@ -226,7 +226,7 @@ impl TermRewrite<'_> {
         let p = source.node();
         let base = A::import(&OldAddress {
             base: p.address.node().base.native_atom().clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         });
         let selected = |address: &A| matches!(address.node().base.native_atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))

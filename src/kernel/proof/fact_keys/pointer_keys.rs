@@ -160,10 +160,10 @@ pub(super) fn state_offset(root: &SharedAddressOffset) -> MemoryErasedAddressOff
     offsets(root, |node, children| {
         Some(Canonical::new(match node {
             O::Constant(value) => {
-                MemoryErasedAddressOffsetNode::Exact(OldAddressOffset::Constant(*value))
+                MemoryErasedAddressOffsetNode::Exact(OldAddressOffset::constant(*value))
             }
             O::Variable(value) => {
-                MemoryErasedAddressOffsetNode::Exact(OldAddressOffset::Variable(*value))
+                MemoryErasedAddressOffsetNode::Exact(OldAddressOffset::variable(*value))
             }
             O::Add(_) => {
                 let [a, b] = children.unwrap();
@@ -231,7 +231,7 @@ pub(super) fn alpha_offset<const ALLOW_LOADS: bool>(
                     O::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
                     O::Variable(variable) => {
                         let key = alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
-                            &OldAddressOffset::Variable(*variable),
+                            &OldAddressOffset::variable(*variable),
                             bindings,
                             next,
                         )?;
@@ -289,7 +289,7 @@ pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedAddressKey {
     let read = match block {
         AddressBase::Load(_) if depth < 3 => OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
         .as_loaded_value()
         .map(|read| read.defining_address),
