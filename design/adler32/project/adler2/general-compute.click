@@ -160,15 +160,23 @@ theorem adler_prefix_a_step_one_u64(bytes: uint8[], n: uint64, seed: Integer, re
    close();
   }
   apply(adler_prefix_a_step_one(bytes + n, 0, adler_spec_a_u64(bytes, n, seed), representative));
-  have to_integer(0 + 1) == to_integer(1u64) by normalize();
+  have to_integer(0 + 1) == to_integer(1u64) by close();
   apply(adler_spec_a_bridge(bytes + n, 0 + 1, 1u64, adler_spec_a_u64(bytes, n, seed)));
   have to_integer(n) + to_integer(1u64) <= 18446744073709551615 by close() using { to_integer(n) + 1 <= 18446744073709551615; };
   apply(adler_spec_a_concat_u64(bytes, n, 1u64, seed));
-  close() using {
-   truncating_remainder(representative + to_integer((bytes + n)[0] as int32), 65521) == adler_spec_a(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, seed));
-   adler_spec_a(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, seed)) == adler_spec_a_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, seed));
-   adler_spec_a_u64(bytes, n + 1u64, seed) == adler_spec_a_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, seed));
-  };
+  rewrite(
+   truncating_remainder(representative + to_integer((bytes + n)[0] as int32), 65521),
+   adler_spec_a(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, seed))
+  );
+  rewrite(
+   adler_spec_a(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, seed)),
+   adler_spec_a_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, seed))
+  );
+  rewrite(
+   adler_spec_a_u64(bytes, n + 1u64, seed),
+   adler_spec_a_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, seed))
+  );
+  close();
  }
 }
 
@@ -194,15 +202,23 @@ theorem adler_prefix_b_step_one_u64(bytes: uint8[], n: uint64, a_seed: Integer, 
    close();
   }
   apply(adler_prefix_b_step_one(bytes + n, 0, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed), a_rep, b_rep));
-  have to_integer(0 + 1) == to_integer(1u64) by normalize();
+  have to_integer(0 + 1) == to_integer(1u64) by close();
   apply(adler_spec_b_bridge(bytes + n, 0 + 1, 1u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed)));
   have to_integer(n) + to_integer(1u64) <= 18446744073709551615 by close() using { to_integer(n) + 1 <= 18446744073709551615; };
   apply(adler_spec_b_concat_u64(bytes, n, 1u64, a_seed, b_seed));
-  close() using {
-   truncating_remainder((b_rep + a_rep + to_integer((bytes + n)[0] as int32)), 65521) == adler_spec_b(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
-   adler_spec_b(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed)) == adler_spec_b_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
-   adler_spec_b_u64(bytes, n + 1u64, a_seed, b_seed) == adler_spec_b_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed));
-  };
+  rewrite(
+   truncating_remainder((b_rep + a_rep + to_integer((bytes + n)[0] as int32)), 65521),
+   adler_spec_b(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed))
+  );
+  rewrite(
+   adler_spec_b(bytes + n, 0 + 1, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed)),
+   adler_spec_b_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed))
+  );
+  rewrite(
+   adler_spec_b_u64(bytes, n + 1u64, a_seed, b_seed),
+   adler_spec_b_u64(bytes + n, 1u64, adler_spec_a_u64(bytes, n, a_seed), adler_spec_b_u64(bytes, n, a_seed, b_seed))
+  );
+  close();
  }
 }
 
