@@ -162,10 +162,12 @@ impl ProgramStatement {
                 function_name,
                 arguments,
                 callee,
+                cpp_binding,
             } => Self::Call {
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
                 callee: callee.clone(),
+                cpp_binding: *cpp_binding,
             },
             Self::CallResult {
                 aggregate_layout,

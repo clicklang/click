@@ -4331,6 +4331,7 @@ impl CStatement {
                     .map(CExpression::to_kernel_expression)
                     .collect(),
                 callee: callee.as_ref().map(CCallee::to_kernel),
+                cpp_binding: None,
             },
             Self::IndirectCall { .. } => {
                 unreachable!("indirect call statements must be lowered before kernel conversion")

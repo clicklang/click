@@ -1552,6 +1552,8 @@ impl CallBinderBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallBinderTransport {
     callee: String,
+    /// The written source region when the proof steps a reference binding.
+    source_binding: Option<CodeRegionRef>,
     /// Select this named interface at the current C call; arguments come from C.
     named_contract: bool,
     /// `step(callee, { ... })`: the step names its C function, and the call's
@@ -1694,11 +1696,16 @@ impl std::fmt::Display for CallBinderTransport {
             write!(f, " }} = ")?;
         }
         if self.named_contract || self.frontier {
+            let target = self
+                .source_binding
+                .as_ref()
+                .map(diagnostics::describe_code_region_ref);
+            let callee = target.as_deref().unwrap_or(&self.callee);
             let entries = self.map_entries();
             return if entries.is_empty() {
-                write!(f, "step({})", self.callee)
+                write!(f, "step({})", callee)
             } else {
-                write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "))
+                write!(f, "step({}, {{ {} }})", callee, entries.join(", "))
             };
         }
         write!(f, "step({}(", self.callee)?;
@@ -7733,6 +7740,11 @@ pub enum SourcePathStep {
     /// The statement's `j`th call of any callee, including one through a
     /// function pointer, in evaluation order: `call(j)`; a chain's end.
     AnyCall(usize),
+    /// The checked transfer at a written C++ argument or receiver.
+    Binding {
+        slot: crate::kernel::CppBindingSlot,
+        release: bool,
+    },
     /// A loop's own test, after the calls its condition makes: `test()`; a
     /// chain's end.
     Test,

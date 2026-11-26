@@ -1232,6 +1232,21 @@ impl<'a> Proof<'a> {
         context: &ExecutionProofContext<'_>,
         transport: &CallBinderTransport,
     ) -> Result<FrontierCall, ClickError> {
+        if let Some(CodeRegionRef::Path(steps)) = &transport.source_binding {
+            let region = context
+                .constants
+                .source_layout
+                .source_path_region(steps, ProgramPointKind::Entry)
+                .map_err(|message| self.step_error(message))?;
+            if !self
+                .execution()
+                .is_some_and(|execution| execution.core.frontier.next_statement_index == region)
+            {
+                return Err(self.step_error(format!(
+                    "`{transport}` requires that reference binding at the current frontier"
+                )));
+            }
+        }
         let written = transport.callee();
         let remaining =
             self.execution()

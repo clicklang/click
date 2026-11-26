@@ -266,6 +266,8 @@ struct SourceBindingInfo {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) cpp_binding_functions:
+        BTreeMap<String, crate::languages::interface::ImportedFunction>,
     pub(in crate::surface) local_bindings: std::sync::Arc<SourceBindingIndex>,
     pub(in crate::surface) string_literal_values:
         std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
@@ -1029,6 +1031,9 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    cpp_binding_functions: BTreeMap<String, crate::languages::interface::ImportedFunction>,
+    cpp_binding_layouts: BTreeMap<String, super::lowering::SourceExecutionLayout>,
+    cpp_binding_function: Option<String>,
     checked_expansion_closers: BTreeSet<SourcePosition>,
     local_bindings: std::sync::Arc<SourceBindingIndex>,
     string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
@@ -1912,6 +1917,7 @@ impl Parser {
             imported_models,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.cpp_binding_functions = layouts.cpp_binding_functions;
         parser.local_bindings = layouts.local_bindings;
         parser.string_literal_values = layouts.string_literal_values;
         parser.string_literal_owners = layouts.string_literal_owners;
@@ -2305,6 +2311,9 @@ impl Parser {
             loop_name_context: None,
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
+            cpp_binding_functions: BTreeMap::new(),
+            cpp_binding_layouts: BTreeMap::new(),
+            cpp_binding_function: None,
             program_object_names_by_function: BTreeMap::new(),
             c_library_names_by_function: BTreeMap::new(),
             c_library_names: None,
@@ -5571,6 +5580,7 @@ impl Parser {
                 .get(&table_name)
                 .cloned(),
         );
+        let previous_cpp_binding_function = self.cpp_binding_function.replace(table_name.clone());
         let previous_c_library_names = std::mem::replace(
             &mut self.c_library_names,
             self.c_library_names_by_function.get(&table_name).cloned(),
@@ -6300,6 +6310,7 @@ impl Parser {
         self.names.program_parameter_types = previous_c_parameter_types;
         self.abstract_pointer_params = previous_abstract_pointer_params;
         self.names.program_object_names = previous_c_object_names;
+        self.cpp_binding_function = previous_cpp_binding_function;
         self.c_library_names = previous_c_library_names;
         self.rust_loop_iterators = previous_loop_iterators;
         self.rust_slice_locals = previous_slice_locals;
@@ -8444,11 +8455,46 @@ impl Parser {
         output: Option<CallOutputPattern>,
         tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let mut callee = self.expect_ident(if tactic {
-            "tactic name"
+        let source_binding = if !tactic
+            && matches!(self.peek_ident(), Some("call" | "statement"))
+            && self.peek_next() == Some(&Token::LParen)
+        {
+            let region = self.parse_code_region_ref()?;
+            if !matches!(
+                &region,
+                CodeRegionRef::Path(steps)
+                    if matches!(steps.last(), Some(SourcePathStep::Binding { .. }))
+            ) {
+                return Err(self.error("`step` needs a callee or a C++ reference binding"));
+            }
+            Some(region)
         } else {
-            "call step callee"
-        })?;
+            None
+        };
+        let mut callee = if let Some(CodeRegionRef::Path(steps)) = &source_binding {
+            let function = self
+                .cpp_binding_function
+                .as_ref()
+                .ok_or_else(|| self.error("a C++ reference binding needs a function proof"))?;
+            if !self.cpp_binding_layouts.contains_key(function) {
+                let imported = self
+                    .cpp_binding_functions
+                    .get(function)
+                    .ok_or_else(|| self.error("a reference binding needs an imported C++ body"))?;
+                let layout = super::lowering::SourceExecutionLayout::for_function(imported)?;
+                self.cpp_binding_layouts.insert(function.clone(), layout);
+            }
+            self.cpp_binding_layouts[function]
+                .cpp_binding_target(steps)
+                .map_err(|message| self.error(message))?
+                .to_string()
+        } else {
+            self.expect_ident(if tactic {
+                "tactic name"
+            } else {
+                "call step callee"
+            })?
+        };
         if !tactic && self.verifies_rust() {
             // A Rust callee is named as its function head is: its path, and a
             // generic function's instance its type arguments,
@@ -8801,6 +8847,7 @@ impl Parser {
         }
         Ok(CallBinderTransport {
             callee,
+            source_binding,
             named_contract,
             // A named function's arguments are the frontier call's.
             frontier: named_function,
@@ -13077,6 +13124,34 @@ impl Parser {
                 }
             }
         }
+        if matches!(
+            steps.last(),
+            Some(SourcePathStep::Call(..) | SourcePathStep::AnyCall(_))
+        ) && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(kind)) if matches!(kind.as_str(), "argument" | "receiver"))
+        {
+            use crate::kernel::CppBindingSlot;
+            self.expect(Token::Dot)?;
+            let slot = if self.expect_ident("argument or receiver")? == "argument" {
+                self.expect(Token::LParen)?;
+                let index = self.expect_index("argument index")?;
+                self.expect(Token::RParen)?;
+                CppBindingSlot::Argument(index)
+            } else {
+                CppBindingSlot::Receiver
+            };
+            self.expect(Token::Dot)?;
+            if self.expect_ident("binding")? != "binding" {
+                return Err(self.error("expected `.binding` after a call argument or receiver"));
+            }
+            let release = self.peek() == Some(&Token::Dot)
+                && matches!(self.peek_next(), Some(Token::Ident(step)) if step == "release");
+            if release {
+                self.expect(Token::Dot)?;
+                self.expect_ident("release")?;
+            }
+            steps.push(SourcePathStep::Binding { slot, release });
+        }
         if self.chained_region_follows(&["read_event"]) {
             self.expect(Token::Dot)?;
             self.expect_ident("read_event")?;
@@ -13107,7 +13182,15 @@ impl Parser {
         if self.peek() == Some(&Token::Amp) && matches!(self.peek_next(), Some(Token::Ident(_))) {
             self.position += 1;
         }
-        let function = self.expect_ident("called function")?;
+        let mut function = self.expect_ident("called function")?;
+        if self.verifies_cpp() && self.peek() == Some(&Token::ColonColon) {
+            let mut path = vec![function];
+            while self.peek() == Some(&Token::ColonColon) {
+                self.position += 1;
+                path.push(self.expect_ident("C++ method name")?);
+            }
+            function = crate::languages::cpp::names::path_name(&path);
+        }
         self.expect(Token::Comma)?;
         let index = self.expect_index("call index")?;
         self.expect(Token::RParen)?;
@@ -13121,7 +13204,7 @@ impl Parser {
             Some(Token::Ident(kind)) if kind == "call" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let step = self.parse_call_step()?;
-                Ok(CodeRegionRef::Path(vec![step]))
+                self.parse_source_path(vec![step])
             }
             Some(Token::Ident(kind)) if kind == "loop" => {
                 self.expect(Token::LParen)?;

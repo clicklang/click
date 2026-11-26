@@ -4732,7 +4732,10 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                 import.language()
             )));
         }
-        let mut layouts = parser::ProgramLayouts::of_execution(execution);
+        let mut layouts = parser::ProgramLayouts::of_execution(
+            execution,
+            import.language() == crate::languages::SourceLanguage::Cpp,
+        );
         layouts.language = Some(import.language());
         return Ok(layouts);
     }
@@ -4758,7 +4761,7 @@ fn receiver_constant(function: &crate::languages::interface::ImportedFunction) -
 impl parser::ProgramLayouts {
     /// The layouts and per-function locals of a prepared program's
     /// execution. A prepared program exposes no globals or unions.
-    fn of_execution(execution: &crate::languages::PreparedExecution) -> Self {
+    fn of_execution(execution: &crate::languages::PreparedExecution, cpp: bool) -> Self {
         let mut tables = parser::ProgramLayouts {
             struct_layouts: execution.layouts.clone(),
             record_spellings: execution.record_spellings.clone(),
@@ -4770,6 +4773,11 @@ impl parser::ProgramLayouts {
             .map(|function| (function.name(), function.source_name()))
             .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
+            if cpp && function.prelowered_kernel_function().is_some() {
+                tables
+                    .cpp_binding_functions
+                    .insert(function.source_name().to_string(), function.clone());
+            }
             tables.register_local_bindings(function);
             tables.register_string_literals(function);
             let captures = function.closure_captures();

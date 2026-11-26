@@ -5194,6 +5194,7 @@ mod address_escape_tests {
     #[test]
     fn helper_call_receiving_the_address_is_detected() {
         let call = ProgramStatement::Call {
+            cpp_binding: None,
             function_name: "reset".to_string(),
             arguments: vec![address_of("n")],
             callee: None,

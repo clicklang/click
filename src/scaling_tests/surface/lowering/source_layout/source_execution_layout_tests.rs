@@ -222,3 +222,58 @@ fn typed_conditional_value_layout_preserves_join_identity_and_scales() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn cpp_reference_binding_lookup_uses_the_call_and_argument_indexes() {
+    use crate::kernel::{CppBindingSlot, CppBindingSource, program_call};
+    use crate::surface::{ProgramPointKind, SourcePathStep};
+
+    let steps = [
+        SourcePathStep::Call("target".into(), 0),
+        SourcePathStep::Binding {
+            slot: CppBindingSlot::Argument(0),
+            release: false,
+        },
+    ];
+    let mut counts = Vec::new();
+    for count in [8, 32, 128, 512] {
+        let acquire = ProgramStatement::Call {
+            function_name: "acquire".into(),
+            arguments: vec![],
+            callee: None,
+            cpp_binding: Some(CppBindingSource {
+                slot: CppBindingSlot::Argument(0),
+                call_offset: 1,
+                release_offset: 2,
+            }),
+        };
+        let mut body = program_seq(
+            acquire,
+            program_seq(
+                program_call("target", vec![]),
+                program_call("release", vec![]),
+            ),
+        );
+        for _ in 0..count {
+            body = program_seq(program_call("other", vec![]), body);
+        }
+        let function = syntax::parse_function("int32 f() { return 0; }")
+            .unwrap()
+            .with_prelowered_kernel_function(program_function(
+                ProgramType::Int32,
+                "f",
+                vec![],
+                body,
+            ));
+        let layout = SourceExecutionLayout::for_function(&function).unwrap();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            layout.source_path_region(&steps, ProgramPointKind::Entry)
+        });
+        assert_eq!(result, Ok(count));
+        counts.push(work);
+    }
+    assert!(
+        counts.windows(2).all(|window| window[0] == window[1]),
+        "{counts:?}"
+    );
+}

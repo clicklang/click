@@ -3488,6 +3488,7 @@ mod tests {
                 crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
             ));
             let statement = ProgramStatement::Call {
+                cpp_binding: None,
                 function_name: name.into(),
                 arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
                     address.clone(),
@@ -3757,6 +3758,7 @@ mod tests {
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ));
         let statement = ProgramStatement::Call {
+            cpp_binding: None,
             function_name: "pthread_mutex_init".into(),
             arguments: vec![
                 ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
@@ -3851,6 +3853,7 @@ mod tests {
             let paths = eval::execute_execution_statement_paths(
                 context.state(),
                 &ProgramStatement::Call {
+                    cpp_binding: None,
                     function_name: name.into(),
                     arguments,
                     callee: None,
@@ -4462,6 +4465,7 @@ mod tests {
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ));
         let statement = ProgramStatement::Call {
+            cpp_binding: None,
             function_name: name.into(),
             arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
                 address.clone(),

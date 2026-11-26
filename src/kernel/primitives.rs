@@ -6310,6 +6310,8 @@ pub enum ProgramStatement {
         /// The function pointer the call goes through, when it is not a
         /// call of a named function; `function_name` then only describes it.
         callee: Option<Callee>,
+        /// Source provenance of a C++ reference binding implemented by this transition.
+        cpp_binding: Option<CppBindingSource>,
     },
     /// A value the rest of its statement reads: the value an operator that
     /// decides between its operands (`&&`, `||`, the ternary operator) takes
@@ -11785,6 +11787,22 @@ pub struct ExecutionState {
     pub(crate) aggregate_step_objects: crate::persistent::PersistentMap<u32, OldAddress>,
     /// Literal values of this frame. Objects themselves have static storage duration.
     pub(crate) literal_values: Arc<PersistentMap<StringLiteralId, StoredExecutionValue>>,
+}
+
+/// A reference at a written C++ call.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CppBindingSlot {
+    Receiver,
+    Argument(usize),
+}
+
+/// The regions of a checked C++ reference binding, relative to its acquisition.
+/// Its lowering places all acquisitions before the call and releases after it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CppBindingSource {
+    pub slot: CppBindingSlot,
+    pub call_offset: usize,
+    pub release_offset: usize,
 }
 
 /// The function pointer a call goes through, with its type.
