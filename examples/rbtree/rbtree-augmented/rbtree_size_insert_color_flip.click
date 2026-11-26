@@ -190,7 +190,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             have gparent == x by { close(); }
                             have aligned(gparent, 8) by close();
                             have (address(gparent) | 1) == address(gparent) + 1 by {
-                                normalize() using { aligned(gparent, 8); };
+                                have (address(gparent) & 1u64) == 0u64 by close() using { aligned(gparent, 8); };
+                                apply(click::integer::uint64_or_disjoint(address(gparent), 1u64));
                             }
                             have parent == y by { close(); }
                             step_until(call(rb_set_parent_color, 1).entry);
