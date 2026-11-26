@@ -3406,7 +3406,7 @@ mod tests {
             crate::surface::verify_c_sources(&source.replace("requires defined(n + 1);", ""), &[])
                 .is_err()
         );
-        let missing_call_guard = "theorem guarded(n: int32) { requires defined(n + 1); requires to_integer(n + 1) == 1; ensures n == n by { normalize(); } } theorem caller(n: int32) { ensures n == n by { apply(guarded(n)); normalize(); } }";
+        let missing_call_guard = "theorem guarded(n: int32) { requires defined(n + 1); requires to_integer(n + 1) == 1; ensures n == n by { close(); } } theorem caller(n: int32) { ensures n == n by { apply(guarded(n)); close(); } }";
         assert!(crate::surface::verify_c_sources(missing_call_guard, &[]).is_err());
     }
 

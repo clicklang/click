@@ -17,8 +17,8 @@ proposition can appear:
 - `rewrite(identity, p)`, which replaces the payload with the C pointer
   inside a goal, leaving a same-block pointer equality the listed premise
   `address(p) == address(q)` closes;
-- `normalize() using { address(identity) == address(q); }` inside a nested `branch` arm, where
-  the arm bindings are still in scope; and
+- `close() using { address(identity) == address(q); }` inside a nested
+  `branch` arm that can still use those bindings; and
 - the postcondition `result == cell_member(old(c.model), q)`, where
   `cell_member` compares the payload with a C pointer inside a pure function.
 
