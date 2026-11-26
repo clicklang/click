@@ -594,12 +594,13 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
 }
 
 pub(in crate::kernel) fn add_memory_store_obligation(
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     pointer: &Address,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProofObligation>> {
+    let memory = state.memory();
     if memory.can_store_concretely(pointer, value) {
         return Some(obligations);
     }
@@ -609,7 +610,7 @@ pub(in crate::kernel) fn add_memory_store_obligation(
         assumptions,
         Proposition::MemoryCanStore {
             memory: memory.clone(),
-            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+            point: state.memory_point(),
             pointer: pointer.clone(),
             byte_width: value.byte_width(),
         },

@@ -518,6 +518,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
                 unreachable!()
             };
             facts = facts.with_fact(Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory
                     .clone()
@@ -526,6 +527,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
                 value_type: *value_type,
             });
             facts = facts.with_fact(Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: Address::symbolic(Variable(8_500_000 + i)),

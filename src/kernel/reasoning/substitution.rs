@@ -1449,7 +1449,9 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             memory,
             pointer,
             value_type,
+            point,
         } => Proposition::MemoryReadDefined {
+            point: point.clone(),
             at: *at,
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
@@ -4622,6 +4624,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     if let Proposition::MemoryReadDefined {
         at,
         memory,
+        point,
         pointer,
         value_type,
     } = proposition
@@ -4641,16 +4644,17 @@ fn rewrite_integer_memory_loadable_with_walker(
         return Ok(Proposition::MemoryReadDefined {
             at: *at,
             memory: memory.clone(),
+            point: point.clone(),
             pointer: pointer.address().clone(),
             value_type: *value_type,
         });
     }
     let Proposition::MemoryLoadable {
         memory,
+        point,
         base,
         bytes,
         wide,
-        ..
     } = proposition
     else {
         unreachable!("memory-viewable helper called for another proposition carrier")
@@ -4673,7 +4677,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         // SymbolicMemory states are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
         memory: memory.clone(),
-        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+        point: point.clone(),
         base: pointer.address().clone(),
         bytes: crate::kernel::StoredMachineTerm::new(
             if *wide {

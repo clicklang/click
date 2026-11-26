@@ -2905,6 +2905,7 @@ fn synthesize_surface_atomic_proposition(
         memory,
         pointer,
         value_type,
+        ..
     } = proposition
     {
         let matches_point = |candidate: &ExecutionState| match at {

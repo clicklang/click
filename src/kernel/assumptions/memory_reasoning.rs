@@ -243,6 +243,7 @@ impl PureFactContext {
             let exact = Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
+                point: crate::kernel::program_point::PathLink::lookup_key(),
                 pointer: pointer.clone(),
                 value_type,
             };
@@ -266,6 +267,7 @@ impl PureFactContext {
                 let premise = Proposition::MemoryReadDefined {
                     at: None,
                     memory: before.as_ref().clone(),
+                    point: crate::kernel::program_point::PathLink::lookup_key(),
                     pointer: candidate.clone(),
                     value_type,
                 };
@@ -471,7 +473,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
-            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+            point: crate::kernel::program_point::PathLink::lookup_key(),
             base: base.clone(),
             bytes: crate::kernel::StoredMachineTerm::new(
                 crate::kernel::MachineIntegerType::UInt64,
@@ -692,7 +694,7 @@ impl PureFactContext {
                 self,
                 &Proposition::MemoryLoadable {
                     memory: memory.clone(),
-                    point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+                    point: crate::kernel::program_point::PathLink::lookup_key(),
                     base: base.clone(),
                     bytes: (bytes.clone()).into(),
                     wide: false,
@@ -713,7 +715,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
-            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+            point: crate::kernel::program_point::PathLink::lookup_key(),
             base: base.clone(),
             bytes: (bytes.clone()).into(),
             wide: false,
@@ -1075,7 +1077,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
-            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+            point: crate::kernel::program_point::PathLink::lookup_key(),
             base: base.clone(),
             bytes: (bytes.clone()).into(),
             wide: false,

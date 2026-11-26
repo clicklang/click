@@ -9972,6 +9972,7 @@ fn observe_composite_keeps_the_defined_read_at_the_selected_point() {
         observed
             .added_facts()
             .contains(&Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: Some(point),
                 memory: after.memory().clone(),
                 pointer,

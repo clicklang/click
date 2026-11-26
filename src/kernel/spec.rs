@@ -8399,6 +8399,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             _ => selected_state.and_then(ExecutionState::observation_point_id),
                         },
                         memory: memory_view.clone(),
+                        point: match memory {
+                            SpecPoint::At(point) => point.path_link().clone(),
+                            _ => selected_state.map_or_else(
+                                crate::kernel::program_point::PathLink::not_yet_a_point,
+                                ExecutionState::memory_point,
+                            ),
+                        },
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));

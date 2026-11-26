@@ -5777,6 +5777,7 @@ impl PureFactContext {
             let validity = Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
+                point: crate::kernel::program_point::PathLink::lookup_key(),
                 pointer: pointer.clone(),
                 value_type: *value_type,
             };
@@ -7501,6 +7502,7 @@ impl PureFactContext {
                         facts.contains_key(&Proposition::MemoryReadDefined {
                             at: None,
                             memory: memory.clone(),
+                            point: crate::kernel::program_point::PathLink::lookup_key(),
                             pointer: pointer.clone(),
                             value_type: *value_type,
                         })

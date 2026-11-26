@@ -2689,7 +2689,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             memory,
             pointer,
             value_type,
+            point,
         } => Proposition::MemoryReadDefined {
+            point: point.clone(),
             at: *at,
             memory: memory.clone(),
             pointer: pointer.with_offset(rewrite_offset_term(&pointer.offset, left, right)),

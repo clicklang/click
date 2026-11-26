@@ -1037,7 +1037,7 @@ fn write_program_lvalue_paths_for_initialization(
                 obligations
             } else {
                 let Some(obligations) = add_memory_store_obligation(
-                    &state.memory,
+                    &state,
                     &pointer,
                     &value,
                     obligations,

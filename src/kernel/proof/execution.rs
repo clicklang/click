@@ -1369,7 +1369,7 @@ fn cached_body_loadability(
     }
     allowed.contains(&Proposition::MemoryLoadable {
         memory: body_memory.clone(),
-        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+        point: crate::kernel::program_point::PathLink::lookup_key(),
         base: base.clone(),
         bytes: bytes.clone(),
         wide: *wide,

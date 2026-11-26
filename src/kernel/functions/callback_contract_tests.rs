@@ -2141,6 +2141,7 @@ fn supplementary_callback_postcondition_uses_the_return_point() {
     };
     assert_eq!(returned.memory(), caller.memory());
     let expected = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: Some(returned.observation_point_id().unwrap()),
         memory: returned.memory().clone(),
         pointer,
