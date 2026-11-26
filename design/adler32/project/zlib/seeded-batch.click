@@ -516,7 +516,7 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
   apply(integer::uint64_remainder_to_integer(a0, 65521u64)); apply(integer::uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
-  have length <= 2147483647 by normalize();
+  have length <= 2147483647 by close();
   have to_integer(a0) <= 549755879424 by close() using { to_integer(a0) <= 1500000; };
   have 0 <= to_integer(length) by close() using { to_integer(0) <= to_integer(length); };
   have to_integer(length) <= 2147483647 by close() using { to_integer(length) <= to_integer(2147483647); };
