@@ -4369,7 +4369,8 @@ int32 arena_pipeline(
         close();
     }
     have first->start < r1.end by {
-        normalize() using { r1.start == first->start; r1.start < r1.end; };
+        rewrite(first->start, r1.start);
+        close();
     }
     have (r1.start as int32) <= ((first->start + 0) as int32) by {
         rewrite(first->start, r1.start);
