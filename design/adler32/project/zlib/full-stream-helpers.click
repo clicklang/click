@@ -205,8 +205,7 @@ theorem zlib_full_stream_batch_read_bound_u64(total: uint64, remaining: uint64, 
 theorem zlib_full_native_cursor_join_u64(base: const uint8*, first: uint64, second: uint64) {
  requires to_integer(first) + to_integer(second) <= 18446744073709551615;
  ensures base + first + second == base + (first + second) by {
-  have to_integer(first + second) == to_integer(first) + to_integer(second);
-  normalize() using { to_integer(first + second) == to_integer(first) + to_integer(second); };
+  apply(integer::uint8_pointer_add_associate_uint64(base, first, second));
  }
 }
 
@@ -292,7 +291,11 @@ theorem zlib_full_prefix_advance_u64(base: const uint8*, total: uint64, remainin
  requires amount <= remaining;
  ensures base + (total - remaining) + amount == base + (total - (remaining - amount)) by {
   apply(zlib_full_stream_prefix_step_u64(total, remaining, amount));
-  normalize() using { to_integer(total - (remaining - amount)) == to_integer(total - remaining) + to_integer(amount); };
+  have (base + (total - remaining)) + 0u64 == base + (total - remaining) by close();
+  have to_integer(amount) - to_integer(0u64) == to_integer(total - (remaining - amount)) - to_integer(total - remaining) by close() using {
+   to_integer(total - (remaining - amount)) == to_integer(total - remaining) + to_integer(amount);
+  };
+  apply(integer::uint8_pointer_translate_uint64(base + (total - remaining), base, 0u64, total - remaining, amount, total - (remaining - amount)));
  }
 }
 

@@ -187,28 +187,7 @@ theorem zlib_native_cursor_join(base: const uint8*, first: uint64, second: uint6
   have to_integer(first) + to_integer(second) <= 18446744073709551615 by close() using {
    to_integer(first) <= to_integer(22208u64); to_integer(second) <= to_integer(5552u64);
   };
-  have to_integer(first + second) == to_integer(first) + to_integer(second);
-  have second <= 22208u64 by close() using { second <= 5552u64; };
-  apply(adler_count_observation(first)); apply(adler_count_bounds(first));
-  apply(adler_count_observation(second)); apply(adler_count_bounds(second));
-  apply(adler_count_observation(first + second));
-  have defined(first as uint32 as int32 + second as uint32 as int32) by close();
-  have to_integer(first as uint32 as int32 + second as uint32 as int32) == to_integer(first as uint32 as int32) + to_integer(second as uint32 as int32);
-  have to_integer((first + second) as uint32 as int32) == to_integer(first as uint32 as int32 + second as uint32 as int32) by close() using {
-   to_integer((first + second) as uint32 as int32) == to_integer(first + second);
-   to_integer(first + second) == to_integer(first) + to_integer(second);
-   to_integer(first as uint32 as int32) == to_integer(first);
-   to_integer(second as uint32 as int32) == to_integer(second);
-   to_integer(first as uint32 as int32 + second as uint32 as int32) == to_integer(first as uint32 as int32) + to_integer(second as uint32 as int32);
-  };
-  apply(adler_count_byte_pointer(base, first));
-  apply(adler_count_byte_pointer(base + first, second));
-  apply(adler_count_byte_pointer(base, first + second));
-  rewrite(base + first + second, base + first + second as uint32 as int32);
-  rewrite(base + first, base + first as uint32 as int32);
-  rewrite(base + (first + second), base + (first + second) as uint32 as int32);
-  rewrite(to_integer((first + second) as uint32 as int32), to_integer(first as uint32 as int32 + second as uint32 as int32));
-  normalize() using { defined(first as uint32 as int32 + second as uint32 as int32); };
+  apply(integer::uint8_pointer_add_associate_uint64(base, first, second));
  }
 }
 
