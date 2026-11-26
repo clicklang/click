@@ -875,37 +875,35 @@ impl PointerOffsetCongruenceEvidence {
                 second,
                 swapped,
             } => {
-                let (
-                    OldAddressOffset::Add(left_a, left_b),
-                    OldAddressOffset::Add(right_a, right_b),
-                ) = (left, right)
+                let (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) =
+                    (left.view(), right.view())
                 else {
                     return false;
                 };
                 let (right_first, right_second) = if *swapped {
-                    (right_b.as_ref(), right_a.as_ref())
+                    (right_b, right_a)
                 } else {
-                    (right_a.as_ref(), right_b.as_ref())
+                    (right_a, right_b)
                 };
                 first.checks(left_a, right_first, assumptions)
                     && second.checks(left_b, right_second, assumptions)
             }
             Self::Int32Scaled { byte_width, path } => {
                 let (
-                    OldAddressOffset::Int32Scaled {
-                        value: left,
+                    OffsetView::Int32Scaled {
+                        index: left,
                         byte_width: left_width,
                     },
-                    OldAddressOffset::Int32Scaled {
-                        value: right,
+                    OffsetView::Int32Scaled {
+                        index: right,
                         byte_width: right_width,
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                 else {
                     return false;
                 };
-                left_width == byte_width
-                    && right_width == byte_width
+                left_width == *byte_width
+                    && right_width == *byte_width
                     && assumptions.checks_exact_bitvector_equality_path_views(
                         path,
                         left.operand_view(),
@@ -917,20 +915,20 @@ impl PointerOffsetCongruenceEvidence {
                 equality,
             } => {
                 let (
-                    OldAddressOffset::Int32Scaled {
-                        value: left,
+                    OffsetView::Int32Scaled {
+                        index: left,
                         byte_width: left_width,
                     },
-                    OldAddressOffset::Int32Scaled {
-                        value: right,
+                    OffsetView::Int32Scaled {
+                        index: right,
                         byte_width: right_width,
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                 else {
                     return false;
                 };
-                left_width == byte_width
-                    && right_width == byte_width
+                left_width == *byte_width
+                    && right_width == *byte_width
                     && equality.checks_views(left.operand_view(), right.operand_view(), assumptions)
             }
             Self::Int64Scaled {
@@ -939,24 +937,24 @@ impl PointerOffsetCongruenceEvidence {
                 path,
             } => {
                 let (
-                    OldAddressOffset::Int64Scaled {
-                        value: left,
+                    OffsetView::Int64Scaled {
+                        index: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    OldAddressOffset::Int64Scaled {
-                        value: right,
+                    OffsetView::Int64Scaled {
+                        index: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                 else {
                     return false;
                 };
-                left_width == byte_width
-                    && right_width == byte_width
-                    && left_unsigned == unsigned
-                    && right_unsigned == unsigned
+                left_width == *byte_width
+                    && right_width == *byte_width
+                    && left_unsigned == *unsigned
+                    && right_unsigned == *unsigned
                     && assumptions.checks_exact_bitvector_equality_path_views(
                         path,
                         left.operand_view(),

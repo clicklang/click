@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_term;
+use crate::kernel::{OffsetTree as _, OffsetView};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct EvaluatedContractSegment {
@@ -158,19 +159,19 @@ fn pointer_element_index_from_base_with_width(
         return Some(OldMachineTerm::constant(0));
     }
 
-    if base.offset == OldAddressOffset::Constant(0) {
+    if matches!(base.offset.view(), OffsetView::Constant(0)) {
         return element_index_from_pointer_offset(&pointer.offset, element_width);
     }
 
-    match &pointer.offset {
-        OldAddressOffset::Add(left, right)
-            if left.as_ref() == &base.offset
+    match pointer.offset.view() {
+        OffsetView::Add(left, right)
+            if left == &base.offset
                 || pointer_offsets_equal_for_effect(left, &base.offset, assumptions) =>
         {
             element_index_from_pointer_offset(right, element_width)
         }
-        OldAddressOffset::Add(left, right)
-            if right.as_ref() == &base.offset
+        OffsetView::Add(left, right)
+            if right == &base.offset
                 || pointer_offsets_equal_for_effect(right, &base.offset, assumptions) =>
         {
             element_index_from_pointer_offset(left, element_width)
@@ -203,28 +204,26 @@ fn element_index_from_pointer_offset(
     if element_width == 0 {
         return None;
     }
-    match offset {
-        OldAddressOffset::Constant(offset) if offset % i64::from(element_width) == 0 => {
+    match offset.view() {
+        OffsetView::Constant(offset) if offset % i64::from(element_width) == 0 => {
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
                 .then_some(OldMachineTerm::constant((index as i32) as u32))
         }
-        OldAddressOffset::Int32Scaled { value, byte_width }
-            if *byte_width == i64::from(element_width) =>
-        {
-            Some(value.structural_value().clone())
+        OffsetView::Int32Scaled { index, byte_width } if byte_width == i64::from(element_width) => {
+            Some(index.structural_value().clone())
         }
-        OldAddressOffset::Int64Scaled {
-            value, byte_width, ..
-        } if *byte_width == i64::from(element_width) => Some(value.structural_value().clone()),
-        OldAddressOffset::Add(left, right) if left.as_ref() == &OldAddressOffset::Constant(0) => {
+        OffsetView::Int64Scaled {
+            index, byte_width, ..
+        } if byte_width == i64::from(element_width) => Some(index.structural_value().clone()),
+        OffsetView::Add(left, right) if matches!(left.view(), OffsetView::Constant(0)) => {
             element_index_from_pointer_offset(right, element_width)
         }
-        OldAddressOffset::Add(left, right) if right.as_ref() == &OldAddressOffset::Constant(0) => {
+        OffsetView::Add(left, right) if matches!(right.view(), OffsetView::Constant(0)) => {
             element_index_from_pointer_offset(left, element_width)
         }
-        OldAddressOffset::Add(left, right) => Some(bitvector32_add(
+        OffsetView::Add(left, right) => Some(bitvector32_add(
             element_index_from_pointer_offset(left, element_width)?,
             element_index_from_pointer_offset(right, element_width)?,
         )),

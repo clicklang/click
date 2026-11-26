@@ -5,6 +5,7 @@ use crate::kernel::{
     MachineOperandView as Operand, MachineUnaryOp, SharedMachineIntegerTerm,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
 
 mod contract_claims;
 pub(in crate::kernel) mod input_initialization;
@@ -337,11 +338,9 @@ fn pointer_offset_bytes(
     let max = i32::MAX as u32;
     let le =
         |a: Operand<'_>, b: Operand<'_>| certification_proves_signed_le_views(assumptions, a, b);
-    match offset {
-        OldAddressOffset::Constant(_)
-        | OldAddressOffset::Variable(_)
-        | OldAddressOffset::Int64Scaled { .. } => None,
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) | OffsetView::Int64Scaled { .. } => None,
+        OffsetView::Add(left, right) => {
             let left = pointer_offset_bytes(assumptions, left)?;
             let right = pointer_offset_bytes(assumptions, right)?;
             let sum = certification_binary(
@@ -357,19 +356,19 @@ fn pointer_offset_bytes(
                 && le(right.operand_view(), sum.operand_view()))
             .then_some(sum)
         }
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
-            let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
+        OffsetView::Int32Scaled { index, byte_width } => {
+            let width = u32::try_from(byte_width).ok().filter(|width| *width > 0)?;
             let limit = OldMachineTerm::constant(max / width);
-            (le(Operand::Old(&zero), value.operand_view())
-                && (width == 1 || le(value.operand_view(), Operand::Old(&limit))))
+            (le(Operand::Old(&zero), index.operand_view())
+                && (width == 1 || le(index.operand_view(), Operand::Old(&limit))))
             .then(|| {
                 if width == 1 {
-                    value.clone()
+                    index.clone()
                 } else {
                     certification_binary(
                         assumptions,
                         MachineBinaryOp::Multiply,
-                        value.operand_view(),
+                        index.operand_view(),
                         Operand::Old(&OldMachineTerm::constant(width)),
                     )
                 }
@@ -391,11 +390,11 @@ fn pointer_offset_byte_delta(
             OldMachineTerm::constant(0),
         ));
     }
-    if let OldAddressOffset::Add(left, right) = goal_offset {
-        if left.as_ref() == fact_offset {
+    if let OffsetView::Add(left, right) = goal_offset.view() {
+        if left == fact_offset {
             return pointer_offset_bytes(assumptions, right);
         }
-        if right.as_ref() == fact_offset {
+        if right == fact_offset {
             return pointer_offset_bytes(assumptions, left);
         }
     }
@@ -515,7 +514,7 @@ fn symbolic_base_aliases_a_held_cell(
     };
     let object = OldAddress {
         base: base.base.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     assumptions.exact_pointer_aliases(&object).any(|alias| {
         crate::instrumentation::record_deterministic_work(1);
@@ -859,18 +858,17 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
         offset: &OldAddressOffset,
         variables: &mut BTreeSet<Variable>,
     ) {
-        match offset {
-            OldAddressOffset::Constant(_) => {}
-            OldAddressOffset::Variable(variable) => {
-                variables.insert(*variable);
+        match offset.view() {
+            OffsetView::Constant(_) => {}
+            OffsetView::Variable(variable) => {
+                variables.insert(variable);
             }
-            OldAddressOffset::Add(left, right) => {
+            OffsetView::Add(left, right) => {
                 collect_shallow_offset_variables(left, variables);
                 collect_shallow_offset_variables(right, variables);
             }
-            OldAddressOffset::Int32Scaled { value, .. }
-            | OldAddressOffset::Int64Scaled { value, .. } => {
-                collect_shallow_operand_variables(value.operand_view(), variables);
+            OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                collect_shallow_operand_variables(index.operand_view(), variables);
             }
         }
     }
@@ -3164,9 +3162,9 @@ fn pointer_offsets_equal_with_resolved_atoms(
         let (atoms, mut constant) = crate::kernel::reasoning::offset_atoms_and_constant(offset);
         let mut unresolved = Vec::new();
         for atom in atoms {
-            if let OldAddressOffset::Int32Scaled { value, byte_width } = &atom
+            if let OffsetView::Int32Scaled { index, byte_width } = atom.view()
                 && let Some(known) =
-                    assumptions.known_signed_constant_after_normalization_view(value.operand_view())
+                    assumptions.known_signed_constant_after_normalization_view(index.operand_view())
             {
                 constant += known * byte_width;
                 continue;
@@ -3211,15 +3209,15 @@ fn pointer_offsets_equal_with_resolved_atoms(
             return true;
         }
         let (
-            OldAddressOffset::Int32Scaled {
-                value: left_value,
+            OffsetView::Int32Scaled {
+                index: left_value,
                 byte_width: left_width,
             },
-            OldAddressOffset::Int32Scaled {
-                value: right_value,
+            OffsetView::Int32Scaled {
+                index: right_value,
                 byte_width: right_width,
             },
-        ) = (left, right)
+        ) = (left.view(), right.view())
         else {
             return false;
         };

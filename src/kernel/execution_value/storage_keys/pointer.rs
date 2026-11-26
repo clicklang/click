@@ -2,6 +2,7 @@
 //! Offset indices keep exactly the handles used by native OldAddressOffset.
 use super::*;
 use crate::kernel::{KernelAddressOffset, SharedAddress, SharedAddressOffset};
+use crate::kernel::{OffsetTree, OffsetView};
 
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct PointerStorageKey(Arc<PointerData>);
@@ -132,17 +133,19 @@ impl OffsetKey {
 
     fn rank(&self) -> u8 {
         match &self.0 {
-            OffsetShape::Leaf(OldAddressOffset::Constant(_)) => 0,
-            OffsetShape::Leaf(OldAddressOffset::Variable(_)) => 1,
             OffsetShape::Add(_) => 2,
-            OffsetShape::Leaf(OldAddressOffset::Int32Scaled { .. }) => 3,
-            OffsetShape::Leaf(OldAddressOffset::Int64Scaled { .. }) => 4,
-            OffsetShape::Leaf(OldAddressOffset::Add(..)) => unreachable!("offset leaf"),
+            OffsetShape::Leaf(leaf) => match leaf.view() {
+                OffsetView::Constant(_) => 0,
+                OffsetView::Variable(_) => 1,
+                OffsetView::Int32Scaled { .. } => 3,
+                OffsetView::Int64Scaled { .. } => 4,
+                OffsetView::Add(..) => unreachable!("offset leaf"),
+            },
         }
     }
 
     pub(in crate::kernel) fn native(source: &OldAddressOffset) -> Self {
-        if !matches!(source, OldAddressOffset::Add(..)) {
+        if !matches!(source.view(), OffsetView::Add(..)) {
             return Self(OffsetShape::Leaf(source.clone()));
         }
         enum Task<'a> {
@@ -153,10 +156,12 @@ impl OffsetKey {
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
             match task {
-                Task::Enter(OldAddressOffset::Add(a, b)) => {
-                    pending.extend([Task::Add, Task::Enter(b), Task::Enter(a)]);
-                }
-                Task::Enter(leaf) => values.push(Self(OffsetShape::Leaf(leaf.clone()))),
+                Task::Enter(offset) => match offset.view() {
+                    OffsetView::Add(a, b) => {
+                        pending.extend([Task::Add, Task::Enter(b), Task::Enter(a)]);
+                    }
+                    _ => values.push(Self(OffsetShape::Leaf(offset.clone()))),
+                },
                 Task::Add => {
                     let b = values.pop().unwrap();
                     let a = values.pop().unwrap();
@@ -184,26 +189,19 @@ impl OffsetKey {
             KernelAddressOffset::index_key(root).expect("selected offset index key")
         };
         Self(OffsetShape::Leaf(match source.node() {
-            KernelAddressOffset::Constant(v) => OldAddressOffset::Constant(*v),
-            KernelAddressOffset::Variable(v) => OldAddressOffset::Variable(*v),
+            KernelAddressOffset::Constant(v) => OldAddressOffset::constant(*v),
+            KernelAddressOffset::Variable(v) => OldAddressOffset::variable(*v),
             KernelAddressOffset::Add(children) => {
                 return Self::add(children.each_ref().map(offset_for_root));
             }
             KernelAddressOffset::Int32Scaled { value, byte_width } => {
-                OldAddressOffset::Int32Scaled {
-                    value: index(value),
-                    byte_width: *byte_width,
-                }
+                OldAddressOffset::int32_scaled(index(value), *byte_width)
             }
             KernelAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
-            } => OldAddressOffset::Int64Scaled {
-                value: index(value),
-                byte_width: *byte_width,
-                unsigned: *unsigned,
-            },
+            } => OldAddressOffset::int64_scaled(index(value), *byte_width, *unsigned),
         }))
     }
 }
@@ -268,7 +266,7 @@ impl Drop for OffsetKey {
             if let OffsetShape::Add(add) = &mut key.0
                 && let Some(add) = Arc::get_mut(add)
             {
-                let leaf = || OffsetKey(OffsetShape::Leaf(OldAddressOffset::Constant(0)));
+                let leaf = || OffsetKey(OffsetShape::Leaf(OldAddressOffset::constant(0)));
                 pending.extend(std::mem::replace(&mut add.children, [leaf(), leaf()]));
             }
         }

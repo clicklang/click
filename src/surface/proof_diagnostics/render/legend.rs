@@ -3,6 +3,7 @@ use super::*;
 use crate::kernel::{AddressBase, MemoryConstructionKind, MemoryDerivation, ProgramValue};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -93,34 +94,34 @@ impl MemoryStateLabels {
         if depth == 0 {
             return "<offset depth limit>".into();
         }
-        match offset {
-            OldAddressOffset::Constant(bytes) => format!("{bytes} bytes"),
-            OldAddressOffset::Variable(variable) => {
+        match offset.view() {
+            OffsetView::Constant(bytes) => format!("{bytes} bytes"),
+            OffsetView::Variable(variable) => {
                 format!(
                     "({}) bytes",
-                    self.legend_bits(&OldMachineTerm::Variable(*variable))
+                    self.legend_bits(&OldMachineTerm::Variable(variable))
                 )
             }
-            OldAddressOffset::Add(left, right) => format!(
+            OffsetView::Add(left, right) => format!(
                 "({} + {})",
                 self.legend_offset(left, depth - 1),
                 self.legend_offset(right, depth - 1)
             ),
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
+            OffsetView::Int32Scaled { index, byte_width } => {
                 format!(
                     "int32({}) * {byte_width} bytes",
-                    self.legend_bits(value.structural_value())
+                    self.legend_bits(index.structural_value())
                 )
             }
-            OldAddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned,
             } => {
-                let kind = if *unsigned { "uint64" } else { "int64" };
+                let kind = if unsigned { "uint64" } else { "int64" };
                 format!(
                     "{kind}({}) * {byte_width} bytes",
-                    self.legend_bits(value.structural_value())
+                    self.legend_bits(index.structural_value())
                 )
             }
         }
@@ -209,11 +210,11 @@ impl MemoryStateLabels {
         }
         // A displacement from a named pointer keeps that pointer's complete
         // address, including a symbolic base offset such as a parameter's.
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             for (stem, shift) in [(left, right), (right, left)] {
                 let stem = OldAddress {
                     base: pointer.base.clone(),
-                    offset: stem.as_ref().clone(),
+                    offset: stem.clone(),
                 };
                 if let Some(name) = self
                     .pointer_sources
@@ -227,7 +228,7 @@ impl MemoryStateLabels {
         }
         let base = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let base_name = if let Some(name) = self.pointer_sources.get(&base) {
             name.clone()
@@ -461,21 +462,21 @@ impl MemoryStateLabels {
             MemoryDerivation::BlockDeclared { block, .. } => {
                 let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 format!("declare block at {address}")
             }
             MemoryDerivation::LocalLifetimeEnded { block, .. } => {
                 let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 format!("end local lifetime at {address}")
             }
             MemoryDerivation::HeapAllocated { block, bytes, .. } => {
                 let address = self.pointer_value_name(&OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 });
                 let bytes = self.legend_bits(bytes);
                 format!("allocate {bytes} bytes at {address}")

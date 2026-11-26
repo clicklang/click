@@ -17,6 +17,7 @@
 use super::*;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
+use crate::kernel::OffsetView;
 use crate::kernel::OverflowOperation;
 #[cfg(test)]
 use crate::kernel::binary_node;
@@ -1504,24 +1505,24 @@ impl Printer<'_> {
     }
 
     fn offset(&mut self, offset: &OldAddressOffset, depth: usize) -> String {
-        match offset {
-            OldAddressOffset::Constant(bytes) => bytes.to_string(),
-            OldAddressOffset::Variable(variable) => self
-                .variable_name(*variable)
-                .unwrap_or_else(|| self.unnamed_variable(*variable)),
-            OldAddressOffset::Add(left, right) => format!(
+        match offset.view() {
+            OffsetView::Constant(bytes) => bytes.to_string(),
+            OffsetView::Variable(variable) => self
+                .variable_name(variable)
+                .unwrap_or_else(|| self.unnamed_variable(variable)),
+            OffsetView::Add(left, right) => format!(
                 "{} + {}",
                 self.offset(left, depth + 1),
                 self.offset(right, depth + 1)
             ),
-            OldAddressOffset::Int32Scaled { value, byte_width }
-            | OldAddressOffset::Int64Scaled {
-                value, byte_width, ..
+            OffsetView::Int32Scaled { index, byte_width }
+            | OffsetView::Int64Scaled {
+                index, byte_width, ..
             } => {
                 let value = self
-                    .bitvector(value.structural_value(), None, depth + 1)
+                    .bitvector(index.structural_value(), None, depth + 1)
                     .map_or_else(|| "…".into(), |value| operand(value, MULTIPLY));
-                if *byte_width == 1 {
+                if byte_width == 1 {
                     value
                 } else {
                     format!("{value} * {byte_width}")
@@ -2115,47 +2116,50 @@ impl Printer<'_> {
             return Some(spelled(name.clone(), precedence));
         }
         if let Some((name, _)) = super::c_library_pointer_name(pointer) {
-            return Some(if pointer.offset == OldAddressOffset::Constant(0) {
-                atom(name)
-            } else {
-                let offset = self.offset(&pointer.offset, depth + 1);
-                atom(format!("byte_offset({name}, {offset})"))
-            });
+            return Some(
+                if matches!(pointer.offset.view(), OffsetView::Constant(0)) {
+                    atom(name)
+                } else {
+                    let offset = self.offset(&pointer.offset, depth + 1);
+                    atom(format!("byte_offset({name}, {offset})"))
+                },
+            );
         }
         // A pointer read from memory is the place it was read from.
         if let Some(read) = pointer.as_loaded_value() {
             let place =
                 self.pointer_cell(read.defining_memory.memory(), &read.defining_address, depth);
-            return Some(if read.displacement == OldAddressOffset::Constant(0) {
-                place
-            } else {
-                let offset = self.offset(&read.displacement, depth);
-                atom(format!("byte_offset({}, {offset})", place.text))
-            });
+            return Some(
+                if matches!(read.displacement.view(), OffsetView::Constant(0)) {
+                    place
+                } else {
+                    let offset = self.offset(&read.displacement, depth);
+                    atom(format!("byte_offset({}, {offset})", place.text))
+                },
+            );
         }
         // The result of a pointer-valued pure call is that call, and an
         // address past it is that call plus an element offset, or a byte
         // offset from it.
         if let crate::kernel::AddressBase::PureFunctionApplication(application) = &pointer.base {
             let call = self.call(application.name(), application.arguments(), depth + 1)?;
-            return Some(match &pointer.offset {
-                OldAddressOffset::Constant(0) => call,
-                OldAddressOffset::Int32Scaled { value, .. }
-                | OldAddressOffset::Int64Scaled { value, .. } => {
-                    let index = self.bitvector(value.structural_value(), None, depth + 1)?;
+            return Some(match pointer.offset.view() {
+                OffsetView::Constant(0) => call,
+                OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                    let index = self.bitvector(index.structural_value(), None, depth + 1)?;
                     spelled(
                         format!("{} + {}", operand(call, ADD), operand(index, MULTIPLY)),
                         ADD,
                     )
                 }
-                OldAddressOffset::Constant(bytes)
+                OffsetView::Constant(bytes)
                     if let Some(width) = instance_element_width(application.name())
                         && bytes % width == 0 =>
                 {
                     spelled(format!("{} + {}", operand(call, ADD), bytes / width), ADD)
                 }
-                offset => {
-                    let offset = self.offset(offset, depth + 1);
+                _ => {
+                    let offset = self.offset(&pointer.offset, depth + 1);
                     atom(format!("byte_offset({}, {offset})", call.text))
                 }
             });
@@ -2215,7 +2219,7 @@ impl Printer<'_> {
         // An address inside an allocation a local held is spelled from that
         // local: `(char *)at(region(2).exit, p) + k * 4`.
         if self.labels.state_pointer_name(pointer).is_none()
-            && pointer.offset != OldAddressOffset::Constant(0)
+            && !matches!(pointer.offset.view(), OffsetView::Constant(0))
             && let Some(base) = self.labels.block_base_name(pointer).map(str::to_owned)
             && base.len() <= 256
         {
@@ -2404,7 +2408,7 @@ impl Printer<'_> {
         depth: usize,
         tables: &NamingTables,
     ) -> Option<Spelled> {
-        let OldAddressOffset::Add(base_offset, extra) = &pointer.offset else {
+        let OffsetView::Add(base_offset, extra) = pointer.offset.view() else {
             return None;
         };
         let parameter =
@@ -2416,7 +2420,7 @@ impl Printer<'_> {
                     crate::kernel::ProgramExpression::Value(
                         crate::kernel::ProgramValue::Pointer(base),
                     ) if base.address().base == pointer.base
-                        && base.address().offset == **base_offset
+                        && base.address().offset == *base_offset
                         && parameter.name().len() <= 256 =>
                     {
                         Some(parameter)
@@ -2425,12 +2429,12 @@ impl Printer<'_> {
                 })?;
         let name = parameter.name();
         let width = crate::surface::diagnostics::diagnostic_parameter_element_width(parameter);
-        let index = match extra.as_ref() {
-            OldAddressOffset::Int32Scaled { value, byte_width }
-            | OldAddressOffset::Int64Scaled {
-                value, byte_width, ..
-            } if *byte_width == width && width > 0 => {
-                self.bitvector(value.structural_value(), None, depth + 1)
+        let index = match extra.view() {
+            OffsetView::Int32Scaled { index, byte_width }
+            | OffsetView::Int64Scaled {
+                index, byte_width, ..
+            } if byte_width == width && width > 0 => {
+                self.bitvector(index.structural_value(), None, depth + 1)
             }
             _ => None,
         };
