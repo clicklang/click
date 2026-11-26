@@ -4146,7 +4146,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldAddress {
             base: "compound-rewrite-work".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0).into(),
         };
         crate::kernel::eval::declare_load_access_width(&pointer, 8);
         let before = SymbolicMemory::new().with_block("compound-rewrite-work", 8);

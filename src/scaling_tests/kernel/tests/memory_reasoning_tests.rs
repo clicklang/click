@@ -553,7 +553,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let native = OldMachineTerm::Variable(Variable(983_110));
     let alias = OldMachineTerm::Variable(Variable(983_111));
     let last = |n| OldMachineTerm::uint64_subtract(n, OldMachineTerm::uint64_constant(1));
-    let wide = |n| OldAddressOffset::scaled_int64_node(n, 4, true);
+    let wide = |n| AddressOffset::from(OldAddressOffset::scaled_int64_node(n, 4, true));
     let projected = OldMachineTerm::uint32_from_64(last(native.clone()));
     let query = wide(last(alias.clone()));
     let bound = OldConditionTerm::uint64_less_equal(
@@ -834,7 +834,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
             } else {
                 AddressBase::ExternalArgument
             },
-            offset: OldAddressOffset::Variable(Variable(id)),
+            offset: OldAddressOffset::Variable(Variable(id)).into(),
         };
         let fact = |id| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(memory_range(pointer(id, false), 0, 1))),

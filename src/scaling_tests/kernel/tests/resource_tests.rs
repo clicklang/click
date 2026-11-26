@@ -203,7 +203,7 @@ fn indexed_memory_lookup_ignores_unrelated_pointer_parameters() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id| OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::Variable(Variable(870_000 + id)),
+            offset: OldAddressOffset::Variable(Variable(870_000 + id)).into(),
         };
         let mut resources = ResourceContext::new();
         for i in 0..size {
@@ -325,7 +325,8 @@ fn owned_fragment_reservation_scales_with_fragments_not_ambient_memory() {
         OldAddress::symbolic(Variable(862_010)),
         OldAddress {
             base: AddressBase::ExternalArgument,
-            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(862_011)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(862_011)), 4)
+                .into(),
         },
     ] {
         let fact = |start: u32, end: u32| {
@@ -1890,7 +1891,7 @@ fn unrelated_origin_does_not_disable_owned_interval_neighbors() {
 fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
     let base = OldAddress {
         base: "certified_group".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
@@ -2648,7 +2649,7 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
         let target_view = ResourceFact::view_memory(MemoryRange::new(
             OldAddress {
                 base: "curve-block".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
@@ -2672,7 +2673,7 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
             let view = ResourceFact::view_memory(MemoryRange::new(
                 OldAddress {
                     base: "curve-block".into(),
-                    offset: OldAddressOffset::Constant((8 + index * 8) as i64),
+                    offset: OldAddressOffset::Constant((8 + index * 8) as i64).into(),
                 },
                 OldMachineTerm::constant(0),
                 OldMachineTerm::constant(1),
@@ -2693,7 +2694,7 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
             state.clone().with_memory(memory.clone().store(
                 OldAddress {
                     base: "curve-block".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 int32(1),
             ))
@@ -2797,7 +2798,8 @@ fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
                 offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(88_300 + index as u64)),
                     4,
-                ),
+                )
+                .into(),
             };
             pieces.push(ResourceFact::own_memory(MemoryRange::new(
                 base.offset_by_bytes(8),

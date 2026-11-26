@@ -181,7 +181,7 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
 fn resource_object_provenance_does_not_scan_same_raw_block() {
     let pointer = |id| OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::Variable(Variable(895_000 + id)),
+        offset: OldAddressOffset::Variable(Variable(895_000 + id)).into(),
     };
     let target = pointer(0);
     let expression = crate::kernel::program_expression::less_equal(

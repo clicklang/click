@@ -107,7 +107,7 @@ fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_a
         let mut memory = SymbolicMemory::new().with_block("cells", 8 * (size as u32 + 1));
         let cell = |i: u64| OldAddress {
             base: "cells".into(),
-            offset: OldAddressOffset::Constant(8 * i as i64),
+            offset: OldAddressOffset::Constant(8 * i as i64).into(),
         };
         for i in 0..=size {
             memory = memory.store(

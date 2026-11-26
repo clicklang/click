@@ -108,7 +108,7 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
 fn checked_transition_projection_ignores_unrelated_caller_frame() {
     let pointer = OldAddress {
         base: AddressBase::Concrete("local:transition:data".to_string()),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {

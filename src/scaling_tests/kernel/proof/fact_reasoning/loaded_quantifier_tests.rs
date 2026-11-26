@@ -19,7 +19,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
                 memory = memory.with_block(block.clone(), 8).store(
                     OldAddress {
                         base: block.into(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0).into(),
                     },
                     ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
                 );
@@ -44,7 +44,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             let changed = intern_memory(memory.as_ref().clone().store(
                 OldAddress {
                     base: "loaded-quantifier".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));

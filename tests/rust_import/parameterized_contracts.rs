@@ -26,9 +26,9 @@ fn charon_parameterized_contract_fixes_its_value_where_attached() {
         .expect("a weaker `add3` contract does not meet `Adds`");
     let rendered = error.message();
     assert!(
-        rendered.contains("is missing prerequisite")
-            && rendered.contains("Adds(")
-            && rendered.contains(", 3)"),
+        rendered.contains("precondition clause 1")
+            && rendered.contains("unproved obligation: `Adds(")
+            && rendered.contains(", (3 as i32))`"),
         "{rendered}"
     );
 }

@@ -14,9 +14,10 @@ fn int32_load_late_merge_and_fork_work_scales_with_affected_applications() {
         let indexed = |index, suffix| OldAddress {
             base: "array".into(),
             offset: OldAddressOffset::Add(
-                Box::new(address(index).offset),
+                Box::new(address(index).offset.into()),
                 Box::new(OldAddressOffset::Variable(Variable(100 + suffix))),
-            ),
+            )
+            .into(),
         };
         let mut graph = EqualityGraph::default();
         for i in 0..size {
@@ -67,7 +68,7 @@ fn int32_load_nested_registration_and_late_closure_are_iterative_and_scale() {
                     &memory,
                     &OldAddress {
                         base: "array".into(),
-                        offset: OldAddressOffset::scale_int32(value, 4),
+                        offset: OldAddressOffset::scale_int32(value, 4).into(),
                     },
                     4,
                 );

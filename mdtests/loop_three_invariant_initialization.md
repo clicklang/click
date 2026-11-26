@@ -93,7 +93,12 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
             close();
         }
     }
+    have i == hi by { close() using { i <= hi; hi <= i; }; }
     step();
+    have forall (k: int32) { lo <= k and k < hi implies p[k] == v } by {
+        rewrite(hi, i);
+        close();
+    }
     close();
 }
 ```

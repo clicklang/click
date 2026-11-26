@@ -7103,7 +7103,8 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(variable)),
             4,
-        ),
+        )
+        .into(),
     };
     let loadable = |base: OldAddress, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
@@ -7180,7 +7181,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                             memory: memory.clone(),
                             base: OldAddress {
                                 base: format!("other{index}").as_str().into(),
-                                offset: OldAddressOffset::Constant(0),
+                                offset: OldAddressOffset::Constant(0).into(),
                             },
                             bytes: (OldMachineTerm::constant(16)).into(),
                             wide: false,
@@ -7363,7 +7364,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(OldAddress {
                 base: "data".into(),
-                offset,
+                offset: offset.into(),
             }),
             crate::kernel::LoadKind::Int32,
         )
@@ -7424,7 +7425,8 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     memory: memory.clone(),
                     base: OldAddress {
                         base: format!("other{index}").as_str().into(),
-                        offset: OldAddressOffset::scaled_int32_node(variable(482_000 + index), 4),
+                        offset: OldAddressOffset::scaled_int32_node(variable(482_000 + index), 4)
+                            .into(),
                     },
                     bytes: (OldMachineTerm::constant(16)).into(),
                     wide: false,
@@ -7503,7 +7505,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         memory: memory.clone(),
                         base: OldAddress {
                             base: format!("extension{step}").as_str().into(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0).into(),
                         },
                         bytes: (OldMachineTerm::constant(16)).into(),
                         wide: false,
@@ -8166,7 +8168,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     .unwrap();
     let block_pointer = |index: usize| crate::kernel::OldAddress {
         base: crate::kernel::AddressBase::Symbolic(Variable(800_000 + index as u64)),
-        offset: crate::kernel::OldAddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0).into(),
     };
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
@@ -8214,7 +8216,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
             let memory = state.memory().clone().store(
                 crate::kernel::OldAddress {
                     base: crate::kernel::AddressBase::Concrete("cells".into()),
-                    offset: crate::kernel::OldAddressOffset::Constant(4 * index as i64),
+                    offset: crate::kernel::OldAddressOffset::Constant(4 * index as i64).into(),
                 },
                 ProgramValue::Int32(value(6 * size + index)),
             );

@@ -12,11 +12,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let base = OldAddress {
                     base: AddressBase::Heap(9_970_000),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 };
                 let guards = OldAddress {
                     base: "local:iterated-exposure-guards".into(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0).into(),
                 };
                 let template = IteratedMemory::new(
                     "cells",
@@ -45,7 +45,8 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         } else {
                             OldAddress {
                                 base: base.base.clone(),
-                                offset: OldAddressOffset::Variable(Variable(9_980_000 + index)),
+                                offset: OldAddressOffset::Variable(Variable(9_980_000 + index))
+                                    .into(),
                             }
                         };
                         facts = facts.assume_condition(

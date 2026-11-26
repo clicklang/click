@@ -1424,21 +1424,12 @@ void object_retain_many(struct object* obj, int32 amount) {
         "close();\n}",
     ] {
         let line = line_of(needle);
-        let site = sites
-            .iter()
-            .find(|site| site.position.line == line)
-            .unwrap_or_else(|| panic!("line {line} should be an auditable site"));
-        let limits = AuditLimits::default();
-        let mut worker = AuditSessionWorker::start(&click_path, limits.session).unwrap();
-        audit_site(
-            site,
-            &mut worker,
-            &limits,
-            true,
-            Instant::now() + Duration::from_secs(60),
-        )
-        .unwrap_or_else(|error| panic!("line {line} should audit: {error}"));
+        assert!(
+            sites.iter().any(|site| site.position.line == line),
+            "line {line} should be an auditable site"
+        );
     }
+    audit_all_sites(&click_path);
     fs::remove_dir_all(directory).unwrap();
 }
 

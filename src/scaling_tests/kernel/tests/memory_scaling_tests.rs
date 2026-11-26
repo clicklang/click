@@ -567,7 +567,7 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
         let allocate = |(memory, resources): (SymbolicMemory, ResourceContext), identity: u64| {
             let pending = OldAddress {
                 base: AddressBase::Symbolic(Variable(identity)),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             let (memory, _, base) = memory
                 .with_pending_heap_allocation(
@@ -1113,7 +1113,8 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(variable)),
             4,
-        ),
+        )
+        .into(),
     };
     let int32_range = |base: &OldAddress, end: u32| {
         MemoryRange::new_with_element_width(
@@ -1644,9 +1645,10 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
         let data = |index: OldMachineTerm| OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Add(
-                Box::new(external_object(DATA).offset),
+                Box::new(external_object(DATA).offset.into()),
                 Box::new(OldAddressOffset::scale_int32(index, 4)),
-            ),
+            )
+            .into(),
         };
         // `data[start..start + 1]`, spelled through the instance's field.
         let range = MemoryRange::new(

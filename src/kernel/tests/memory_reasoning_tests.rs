@@ -1470,11 +1470,11 @@ fn memory_separation_candidates_ignore_unrelated_propositions() {
 fn explicit_range_alias_bounds_stay_on_the_shallow_candidate_path() {
     let left_base = OldAddress {
         base: "shallow-left".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let right_base = OldAddress {
         base: "shallow-right".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let index = OldMachineTerm::Variable(Variable(93_100));
     let end = OldMachineTerm::Variable(Variable(93_101));
@@ -1506,7 +1506,7 @@ fn explicit_range_alias_bounds_stay_on_the_shallow_candidate_path() {
                     left: Box::new(Resource::Memory(memory_range(
                         OldAddress {
                             base: format!("unrelated-left-{fact}").into(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0).into(),
                         },
                         0,
                         1,
@@ -1514,7 +1514,7 @@ fn explicit_range_alias_bounds_stay_on_the_shallow_candidate_path() {
                     right: Box::new(Resource::Memory(memory_range(
                         OldAddress {
                             base: format!("unrelated-right-{fact}").into(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0).into(),
                         },
                         0,
                         1,

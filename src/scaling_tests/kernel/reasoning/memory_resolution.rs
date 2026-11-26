@@ -11,8 +11,8 @@ use super::*;
 fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let scalar = |id| OldMachineTerm::Variable(Variable(92_000 + id));
-        let offset = |id| OldAddressOffset::scale_int32(scalar(id), 4);
-        let named = OldAddressOffset::Variable(Variable(94_000));
+        let offset = |id| AddressOffset::from(OldAddressOffset::scale_int32(scalar(id), 4));
+        let named = AddressOffset::from(OldAddressOffset::Variable(Variable(94_000)));
         let mut context = PureFactContext::new().assume_condition(
             OldConditionTerm::address_offset_equal(offset(0), named.clone()),
             true,
@@ -95,15 +95,15 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
 fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
     let base = OldAddress {
         base: AddressBase::Heap(920_000),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(920_001)),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let local = OldAddress {
         base: "local:interior-alias-store".into(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0).into(),
     };
     let equality = OldConditionTerm::address_equal(alias.clone(), base.clone());
     let mut samples = Vec::new();
@@ -114,11 +114,11 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
                 OldConditionTerm::address_equal(
                     OldAddress {
                         base: AddressBase::Symbolic(Variable(930_000 + index)),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0).into(),
                     },
                     OldAddress {
                         base: AddressBase::Heap(940_000 + index),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0).into(),
                     },
                 ),
                 true,
@@ -129,7 +129,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for offset in [-1i64, 0, 1, 2, 3, 16] {
                 let read = OldAddress {
-                    offset: OldAddressOffset::Constant(offset),
+                    offset: AddressOffset::constant(offset),
                     ..alias.clone()
                 };
                 assert!(pointers_proven_distinct_for_memory_resolution(
@@ -144,7 +144,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         });
         samples.push((size, work));
         let interior = OldAddress {
-            offset: OldAddressOffset::Constant(1),
+            offset: AddressOffset::constant(1),
             ..alias.clone()
         };
         assert!(!pointers_proven_distinct_for_memory_resolution(
@@ -487,11 +487,11 @@ fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
         for id in 1..=size {
             context = bounds(context, id);
         }
-        let bytes = OldAddressOffset::scale_int32(
+        let bytes = AddressOffset::from(OldAddressOffset::scale_int32(
             OldMachineTerm::multiply(scalar(0), OldMachineTerm::constant(4)),
             1,
-        );
-        let elements = OldAddressOffset::scale_int32(scalar(0), 4);
+        ));
+        let elements = AddressOffset::from(OldAddressOffset::scale_int32(scalar(0), 4));
         let _scope = context.enter_id_scope();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(

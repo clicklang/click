@@ -1416,12 +1416,14 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
         OldAddressOffset::Add(
             Box::new(OldAddressOffset::scale_int64(i.clone(), 1, true)),
             Box::new(OldAddressOffset::Constant(4)),
-        ),
+        )
+        .into(),
         OldAddressOffset::scale_int64(
             OldMachineTerm::uint64_add(i, OldMachineTerm::uint64_constant(4)),
             1,
             true,
-        ),
+        )
+        .into(),
     );
     let goal = Proposition::condition_is(goal_condition.clone(), true);
     let bound_of = |condition: &OldConditionTerm| {
@@ -1439,12 +1441,14 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
             OldAddressOffset::Add(
                 Box::new(OldAddressOffset::scale_int64(j.clone(), 1, true)),
                 Box::new(OldAddressOffset::Constant(4)),
-            ),
+            )
+            .into(),
             OldAddressOffset::scale_int64(
                 OldMachineTerm::uint64_add(j, OldMachineTerm::uint64_constant(4)),
                 1,
                 true,
-            ),
+            )
+            .into(),
         ))
     };
     for related in [false, true] {

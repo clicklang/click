@@ -1170,7 +1170,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
     let alias = OldAddress::symbolic(Variable(95_510));
     let address = OldAddress {
         base: AddressBase::ExternalArgument,
-        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_511)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_511)), 4).into(),
     };
     let stored = OldAddress::symbolic(Variable(95_512));
     let replacement = OldAddress::symbolic(Variable(95_513));
@@ -1196,7 +1196,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             let before = memory.clone();
             let write = OldAddress {
                 base: AddressBase::Heap(96_000 + index),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0).into(),
             };
             memory = memory.store(write.clone(), int32(7));
             let (_, _, equality) = crate::kernel::tests::explicit_frame(
@@ -2223,7 +2223,7 @@ fn structural_index_read_chains_have_near_linear_producer_work() {
                 memory = memory.store(
                     OldAddress {
                         base: AddressBase::Concrete(format!("unrelated{index}")),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0).into(),
                     },
                     ProgramValue::Int32(OldMachineTerm::constant(0)),
                 );
@@ -2239,7 +2239,7 @@ fn structural_index_read_chains_have_near_linear_producer_work() {
                     index = canonicalized_offset_index_term(index, &mut facts);
                     let address = OldAddress {
                         base: AddressBase::Concrete("array".into()),
-                        offset: OldAddressOffset::scaled_int32_node(index, 4),
+                        offset: OldAddressOffset::scaled_int32_node(index, 4).into(),
                     };
                     index = canonical_form_of_load(memory.clone(), address, LoadKind::Int32);
                 }

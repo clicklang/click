@@ -189,7 +189,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
                     OldConditionTerm::pointer_aligned(
                         OldAddress {
                             base: related,
-                            offset: OldAddressOffset::Constant(i * 8),
+                            offset: crate::kernel::AddressOffset::constant(i * 8),
                         },
                         8,
                     ),
@@ -203,7 +203,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
                     OldConditionTerm::pointer_aligned(
                         OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::Constant(offset),
+                            offset: crate::kernel::AddressOffset::constant(offset),
                         },
                         alignment,
                     ),
