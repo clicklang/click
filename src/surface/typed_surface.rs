@@ -30,20 +30,35 @@ pub(crate) enum ComparisonKind {
     Sequence,
 }
 
-/// Which arithmetic an operation is. Only Integer arithmetic is on Surface
-/// so far; machine arithmetic, with its format, moves next.
+/// Which arithmetic an operation is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ArithmeticKind {
     /// Mathematical Integer arithmetic, which does not wrap.
     Integer,
+    /// The program's own arithmetic at its operands' C type. Its format is
+    /// the operands' type, which the kernel builds bottom-up from them when
+    /// it evaluates the operation; it becomes a recorded field once Surface
+    /// operands are typed.
+    Native,
 }
 
-/// A binary arithmetic operator.
+/// A binary arithmetic or bitwise operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ArithmeticOperator {
     Add,
     Subtract,
     Multiply,
+    Divide,
+    Remainder,
+    ShiftLeft,
+    /// Rust's `<<`, whose shift count rules differ from C's.
+    RustShiftLeft,
+    ShiftRight,
+    /// Rust's `>>`.
+    RustShiftRight,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
 }
 
 /// A typed Surface term.
@@ -61,19 +76,21 @@ pub(crate) enum SurfaceTerm {
         kind: ArithmeticKind,
         operand: Box<SurfaceTerm>,
     },
+    /// `~operand`, which exists only on machine words.
+    BitwiseNot { operand: Box<SurfaceTerm> },
     /// A term elaboration has not typed yet; lowering reads it the old way,
     /// as the surrounding typed node says.
     Untyped(SyntaxTerm),
 }
 
 impl SurfaceTerm {
-    /// The Syntax of a term not yet typed. Only an Integer comparison's
-    /// operands have typed forms so far, so every other comparison's
-    /// operands are `Untyped`.
+    /// The Syntax of a term not yet typed. Only Integer and native
+    /// comparisons' operands have typed forms so far, so every other
+    /// comparison's operands are `Untyped`.
     pub(crate) fn untyped_syntax(&self) -> &SyntaxTerm {
         match self {
             Self::Untyped(term) => term,
-            typed => unreachable!("only Integer operands are typed so far: {typed:?}"),
+            typed => unreachable!("only Integer and native operands are typed so far: {typed:?}"),
         }
     }
 }
