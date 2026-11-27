@@ -25,7 +25,7 @@ fn memory_matrix(values: &[ProgramValue]) {
             let root = match value {
                 ProgramValue::Parameter(value) => KernelTermImport::default().algebraic(value),
                 ProgramValue::Pointer(value) => {
-                    KernelTerm::shared_pointer_value(SharedPointer::import(value))
+                    KernelTerm::shared_pointer_value(value.shared().clone())
                 }
                 _ => KernelTermImport::default()
                     .argument(&PureFunctionArgument::Value(value.clone())),
@@ -76,7 +76,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
     for bits in [0, 0x8000000000000000, 0x7ff8000000000001] {
         values.push(ProgramValue::Float64(OldMachineTerm::uint64_constant(bits)));
     }
-    values.push(ProgramValue::Pointer(OldPointer::new(
+    values.push(ProgramValue::Pointer(Pointer::new(
         Address::symbolic(Variable(998603)),
         ProgramType::Int32Pointer,
     )));
@@ -326,7 +326,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
             arguments: vec![arg],
         }));
     }
-    let pointer = OldPointer::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(998737)),
         ProgramType::Int32Pointer,
     );
@@ -426,7 +426,7 @@ fn deep_algebraic_storage_keys_use_a_small_stack() {
 #[test]
 fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     let _session = VerificationSession::enter();
-    let pointer = OldPointer::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(998750)),
         ProgramType::Int32Pointer,
     );
@@ -435,23 +435,19 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         pointer.clone(),
         pointer.clone(),
         pointer.clone().with_type(ProgramType::VoidPointer),
-        pointer
-            .clone()
-            .with_provenance(std::sync::Arc::new(other.clone())),
-        pointer
-            .clone()
-            .with_bounds_owner(Some(std::sync::Arc::new(other.clone()))),
+        pointer.clone().with_provenance(other.clone()),
+        pointer.clone().with_bounds_owner(Some(other.clone())),
         pointer.clone().with_root_bounds(),
         pointer
             .clone()
             .with_root_bounds()
-            .with_bounds_owner(Some(std::sync::Arc::new(other.clone()))),
+            .with_bounds_owner(Some(other.clone())),
     ];
     for width in [0, 1, 8] {
-        values.push(pointer.clone().with_bounds(Some(SubobjectBounds {
-            start: other.clone(),
-            width: OldMachineTerm::constant(width),
-        })));
+        values.push(pointer.clone().with_bounds(Some(SubobjectBounds::new(
+            other.clone(),
+            OldMachineTerm::constant(width),
+        ))));
     }
     for offset in [
         AddressOffset::constant(-1),
@@ -465,7 +461,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, false),
         AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, true),
     ] {
-        values.push(OldPointer::new(
+        values.push(Pointer::new(
             other.with_offset(offset),
             ProgramType::Int32Pointer,
         ));
@@ -507,10 +503,11 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
         .spawn(|| {
             use crate::kernel::{KernelAddressOffset, SharedAddress};
             let _session = VerificationSession::enter();
-            let value = SharedPointer::import(&OldPointer::new(
+            let value = Pointer::new(
                 Address::symbolic(Variable(998755)),
                 ProgramType::Int32Pointer,
-            ));
+            )
+            .into_shared();
             let mut payload = value.node().clone();
             let atom = KernelAddressOffset::Variable(Variable(998756))
                 .into_shared()

@@ -10,7 +10,7 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
             context = context.assume_proposition(Proposition::Predicate {
                 name: "pointer_fact".into(),
                 arguments: vec![Term::ProgramValue(
-                    (ProgramValue::Pointer(OldPointer::new(
+                    (ProgramValue::Pointer(Pointer::new(
                         Address::new(
                             format!("ambient_{index}").into(),
                             AddressOffset::constant(0),

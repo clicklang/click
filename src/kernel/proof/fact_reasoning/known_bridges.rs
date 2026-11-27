@@ -615,6 +615,7 @@ pub(in crate::kernel) fn known_uint32_from_defined_bytes(
         memory,
         pointer,
         value_type: ProgramType::UInt32,
+        point,
     } = goal
     else {
         return false;
@@ -623,6 +624,7 @@ pub(in crate::kernel) fn known_uint32_from_defined_bytes(
         && (0..ProgramType::UInt32.byte_width()).all(|offset| {
             crate::instrumentation::record_deterministic_work(1);
             contains(&Proposition::MemoryReadDefined {
+                point: point.clone(),
                 at: *at,
                 memory: memory.clone(),
                 pointer: pointer.offset_by_bytes(offset),
@@ -983,6 +985,7 @@ mod tests {
             ProgramType::UInt32,
         );
         let defined = |pointer, value_type| Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: memory.clone(),
             pointer,

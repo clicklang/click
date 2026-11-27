@@ -40,7 +40,14 @@ resource shape(node: struct node*) {
         owns node->right;
         owns shape(node->left);
         owns shape(node->right);
+        fact defined(node->left);
+        fact defined(node->right);
     }
+}
+
+resource saved_left_link(node: struct node*) {
+    owns node->left;
+    fact defined(node->left);
 }
 
 verifying "augment_rotate.c";
@@ -82,10 +89,7 @@ struct node* rotate_left(
     requires node != node->right;
     requires 0 <= node->augmented;
     requires node->augmented < 1000;
-    consumes node->left;
-    consumes node->right;
-    consumes shape(node->left);
-    consumes shape(node->right);
+    consumes shape(node);
     owns node->augmented;
     owns node->right->augmented;
     produces shape(result);
@@ -94,13 +98,47 @@ struct node* rotate_left(
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
 } by {
-    unfold(shape(node->right));
+    unfold(shape(node));
+    have defined(node->left) by close();
     // Carry the untouched link reads across each store before folding.
+    step_until(statement(1).entry);
+    have separate(memory((&pivot)[0]), memory(node->left)) by close();
+    have separate(statement(0).region(0).footprint, memory(node->left)) by {
+        close() using { separate(memory((&pivot)[0]), memory(node->left)); };
+    }
+    have at(statement(0).region(0).exit, defined(node->left)) by {
+        preserve(memory(node->left), statement(0).region(0));
+    }
+    have separate(statement(0).region(1).footprint, memory(node->left)) by {
+        close() using { separate(memory((&pivot)[0]), memory(node->left)); };
+    }
+    have defined(node->left) by {
+        preserve(memory(node->left), statement(0).region(1));
+    }
+    have pivot == node->right by close();
+    fold(saved_left_link(node));
+    unfold(shape(pivot));
+    unfold(saved_left_link(node));
+    have defined(node->left) by close();
     step_until(statement(2).entry);
-    have defined(node->left) by { close(); }
+    have separate(memory((&middle)[0]), memory(node->left)) by close();
+    have separate(statement(1).region(0).footprint, memory(node->left)) by {
+        close() using { separate(memory((&middle)[0]), memory(node->left)); };
+    }
+    have at(statement(1).region(0).exit, defined(node->left)) by {
+        preserve(memory(node->left), statement(1).region(0));
+    }
+    have separate(statement(1).region(1).footprint, memory(node->left)) by {
+        close() using { separate(memory((&middle)[0]), memory(node->left)); };
+    }
+    have defined(node->left) by {
+        preserve(memory(node->left), statement(1).region(1));
+    }
     have separate(memory(node->left), memory(node->right)) by { close(); }
     have defined(pivot->right) by { close(); }
     have separate(memory(pivot->right), memory(node->right)) by { close(); }
+    have node->augmented == old(node->augmented) by close();
+    have separate(memory(node->augmented), memory(node->right)) by close();
     mark before_right;
     step_until(statement(3).entry);
     have separate(statement(2).footprint, memory(node->left)) by {
@@ -118,6 +156,17 @@ struct node* rotate_left(
     have separate(memory(node->right), memory(pivot->left)) by { close(); }
     have defined(pivot->right) by { close(); }
     have separate(memory(pivot->right), memory(pivot->left)) by { close(); }
+    have separate(statement(2).footprint, memory(node->augmented)) by {
+        close() using { at(before_right, separate(memory(node->augmented), memory(node->right))); };
+    }
+    have node->augmented == at(before_right, node->augmented) by {
+        close();
+    }
+    have node->augmented == old(node->augmented) by {
+        rewrite(node->augmented, at(before_right, node->augmented));
+        close();
+    }
+    have separate(memory(node->augmented), memory(pivot->left)) by close();
     mark before_left;
     step_until(statement(4).entry);
     have separate(statement(3).footprint, memory(node->left)) by {
@@ -139,8 +188,26 @@ struct node* rotate_left(
     }
     have defined(pivot->right) by { preserve(memory(pivot->right), statement(3)); }
     have defined(pivot->left) by { close(); }
+    have separate(statement(3).footprint, memory(node->augmented)) by {
+        close() using { at(before_left, separate(memory(node->augmented), memory(pivot->left))); };
+    }
+    have node->augmented == at(before_left, node->augmented) by {
+        close();
+    }
+    have node->augmented == old(node->augmented) by {
+        rewrite(node->augmented, at(before_left, node->augmented));
+        close();
+    }
     fold(shape(node));
     fold(shape(pivot));
+    have 0 <= node->augmented by {
+        rewrite(node->augmented, old(node->augmented));
+        close();
+    }
+    have node->augmented < 1000 by {
+        rewrite(node->augmented, old(node->augmented));
+        close();
+    }
     step();
     step();
     close();

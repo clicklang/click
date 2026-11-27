@@ -453,6 +453,20 @@ impl SharedAddress {
         Ok(unsafe { &*(self as *const SharedAddress as *const Address) })
     }
 
+    /// The written view of a handle known to be written: a part of a
+    /// written pointer ([`crate::kernel::Pointer`]), whose addresses were
+    /// written when it was built.
+    pub(crate) fn written_view(&self) -> &Address {
+        // SAFETY: `Address` is a `repr(transparent)` wrapper of
+        // `SharedAddress`; the caller holds a written handle.
+        unsafe { &*(self as *const SharedAddress as *const Address) }
+    }
+
+    /// Whether both are one handle.
+    pub(crate) fn same_handle(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
     /// The written view as an owned handle ([`Self::written`]), whose block
     /// has a written address's identity: an observation key's inline call
     /// block is interned again.

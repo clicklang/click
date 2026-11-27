@@ -18,7 +18,7 @@ impl PureFactContext {
             (left, right)
         {
             let same_value =
-                |a: &OldPointer, b: &OldPointer| {
+                |a: &Pointer, b: &Pointer| {
                     self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.address(), b.address(), self,
@@ -49,7 +49,7 @@ impl PureFactContext {
             (left, right)
         {
             let same_value =
-                |a: &OldPointer, b: &OldPointer| {
+                |a: &Pointer, b: &Pointer| {
                     self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.address(), b.address(), self,
@@ -276,8 +276,8 @@ impl PureFactContext {
                 Proposition::HeapAllocationFreed {
                     before,
                     after,
-                    allocation_base,
-                    bytes,
+                    blocks,
+                    mutable_ranges,
                     ..
                 } => {
                     // Bounded for the same reason as the effect-summary arm.
@@ -290,12 +290,13 @@ impl PureFactContext {
                     let matches = endpoint_matches(before, left) && endpoint_matches(after, right)
                         || endpoint_matches(before, right) && endpoint_matches(after, left);
                     matches
-                        && crate::kernel::api::heap_allocation_proven_separate_from_pointer(
-                            allocation_base,
-                            bytes,
-                            pointer,
-                            self,
-                        )
+                        && blocks.iter().all(|(base, bytes)| {
+                            crate::kernel::api::heap_allocation_proven_separate_from_pointer(
+                                base, bytes, pointer, self,
+                            )
+                        })
+                        && (mutable_ranges.is_empty()
+                            || self.ranges_directly_disjoint_from_pointer(mutable_ranges, pointer))
                 }
                 _ => false,
             })

@@ -758,13 +758,19 @@ impl Printer<'_> {
             Proposition::HeapAllocationFreed {
                 before,
                 after,
-                allocation_base,
+                blocks,
                 ..
             } => {
-                let base = self.pointer(allocation_base, depth)?.text;
+                let bases = blocks
+                    .iter()
+                    .map(|(base, _)| self.pointer(base, depth).map(|base| base.text))
+                    .collect::<Option<Vec<_>>>()?
+                    .join(", ");
                 let before = self.state_phrase(before);
                 let after = self.state_phrase(after);
-                Some(atom(format!("<{base} freed between {before} and {after}>")))
+                Some(atom(format!(
+                    "<{bases} freed between {before} and {after}>"
+                )))
             }
             Proposition::ProgramExpressionEvaluates { .. }
             | Proposition::ProgramConditionEvaluates { .. }
@@ -846,6 +852,8 @@ impl Printer<'_> {
                 return Some(negate(name, polarity));
             }
             OldConditionTerm::PointerEqual(left, right) => {
+                left.expect_thin("rendering a pointer equality");
+                right.expect_thin("rendering a pointer equality");
                 if self.source_mode() && distinct_pointers_at_one_address(left, right) {
                     if let Some(naming) = &self.labels.naming
                         && let (Some(left), Some(right)) = (
@@ -2749,7 +2757,7 @@ impl Printer<'_> {
 
     fn exact_pointer_value(
         &self,
-        pointer: &crate::kernel::OldPointer,
+        pointer: &crate::kernel::Pointer,
         naming: &NamingTables,
     ) -> Option<String> {
         if self.mode == Mode::ExactIdentity
@@ -3224,9 +3232,7 @@ fn typed_literal(text: String, suffix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{
-        AddressBase, LoadKind, OldPointer, ProgramType, ProgramValue, SharedMemory,
-    };
+    use crate::kernel::{AddressBase, LoadKind, Pointer, ProgramType, ProgramValue, SharedMemory};
 
     fn equality(value: OldMachineTerm) -> Proposition {
         Proposition::condition_is(
@@ -3580,7 +3586,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(7));
         let pointer_value =
-            ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::Int32Pointer));
         let before = ExecutionState::new()
             .with_local("before_ptr", pointer_value.clone())
             .with_memory(SymbolicMemory::new());
@@ -3600,6 +3606,7 @@ mod tests {
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &current);
         labels.recorded_states(&recorded);
         let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: state.observation_point_id(),
             memory: before.memory().clone(),
             pointer: pointer.clone(),
@@ -3618,7 +3625,7 @@ mod tests {
 
     #[test]
     fn predicate_array_arguments_keep_their_individual_states() {
-        let pointer = ProgramValue::Pointer(OldPointer::new(
+        let pointer = ProgramValue::Pointer(Pointer::new(
             Address::new(
                 AddressBase::Concrete("global:cells".into()),
                 AddressOffset::constant(0),
@@ -3663,7 +3670,7 @@ mod tests {
     #[test]
     fn reserved_predicates_print_the_click_spelling_that_lowers_to_them() {
         let cell = |name: &str| {
-            ProgramValue::Pointer(OldPointer::new(
+            ProgramValue::Pointer(Pointer::new(
                 Address::new(
                     AddressBase::Concrete(format!("global:{name}")),
                     AddressOffset::constant(0),
@@ -3734,8 +3741,7 @@ mod tests {
             AddressBase::Concrete("global:cells".into()),
             AddressOffset::constant(0),
         );
-        let base =
-            ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
+        let base = ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::Int32Pointer));
         let before = ExecutionState::new()
             .with_local("cells", base.clone())
             .with_memory(SymbolicMemory::new().with_block("global:cells", 4));
@@ -3790,7 +3796,7 @@ mod tests {
         labels.source_state(&before, "pre".into());
         labels.source_result(&ProgramValue::Int32(OldMachineTerm::Variable(index)));
         // An allocation no local holds is the returned pointer.
-        labels.source_result(&ProgramValue::Pointer(OldPointer::new(
+        labels.source_result(&ProgramValue::Pointer(Pointer::new(
             heap.clone(),
             ProgramType::Int32Pointer,
         )));
@@ -3848,8 +3854,8 @@ mod tests {
 mod resource_tests {
     use super::*;
     use crate::kernel::{
-        AddressBase, AlgebraicType, ExecutionState, LoadKind, OldPointer, ProgramType,
-        ProgramValue, SharedMemory,
+        AddressBase, AlgebraicType, ExecutionState, LoadKind, Pointer, ProgramType, ProgramValue,
+        SharedMemory,
     };
 
     #[test]
@@ -3861,7 +3867,7 @@ mod resource_tests {
         let before = ExecutionState::new()
             .with_local(
                 "cells",
-                ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer)),
+                ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::Int32Pointer)),
             )
             .with_memory(SymbolicMemory::new().with_block("global:cells", 4));
         let after = before

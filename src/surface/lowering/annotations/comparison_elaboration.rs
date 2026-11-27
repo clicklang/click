@@ -6,15 +6,12 @@
 use super::*;
 
 /// What elaboration still asks of lowering: whether a generic call's result
-/// is algebraic at its instantiation, a pointer's element width, a call
-/// result's pointer element width, and whether an access through an untyped
-/// pointer is refused. Lowering answers these today from the values it
+/// is algebraic at its instantiation, and a call result's pointer element
+/// width. Lowering answers these today from the values it
 /// lowered and from its own type inference; each moves to the `Elaborator`
 /// once it can be answered from declared types, and this trait goes away.
 pub(super) trait LoweringQueries {
     fn generic_call_returns_algebraic(&mut self, expression: &SyntaxTerm) -> bool;
-    fn refuse_untyped_pointer_access(&mut self, expression: &SyntaxTerm) -> Result<(), String>;
-    fn contract_pointer_element_width(&mut self, expression: &SyntaxTerm) -> Option<u32>;
     fn call_pointer_element_width(
         &mut self,
         expression: &SyntaxTerm,
@@ -31,14 +28,6 @@ impl LoweringQueries for InLoweringContext<'_, '_> {
     fn generic_call_returns_algebraic(&mut self, expression: &SyntaxTerm) -> bool {
         self.lowerer
             .generic_call_returns_algebraic(expression, self.environment)
-    }
-    fn refuse_untyped_pointer_access(&mut self, expression: &SyntaxTerm) -> Result<(), String> {
-        self.lowerer
-            .refuse_untyped_pointer_access(expression, self.environment)
-    }
-    fn contract_pointer_element_width(&mut self, expression: &SyntaxTerm) -> Option<u32> {
-        self.lowerer
-            .contract_pointer_element_width(expression, self.environment)
     }
     fn call_pointer_element_width(
         &mut self,
@@ -686,7 +675,7 @@ impl Elaborator<'_> {
     ) -> SurfaceTerm {
         use ArithmeticOperator as Op;
         if matches!(term, SyntaxTerm::Subtract(..))
-            && lowering.refuse_untyped_pointer_access(&term).is_err()
+            && self.refuse_untyped_pointer_access(&term, typing).is_err()
         {
             return SurfaceTerm::Untyped(term);
         }
@@ -702,8 +691,8 @@ impl Elaborator<'_> {
         match term {
             SyntaxTerm::Subtract(left, right) => {
                 match (
-                    lowering.contract_pointer_element_width(&left),
-                    lowering.contract_pointer_element_width(&right),
+                    self.contract_pointer_element_width(&left, typing),
+                    self.contract_pointer_element_width(&right, typing),
                 ) {
                     (Some(element_width), None) => SurfaceTerm::PointerStep {
                         pointer: Box::new(self.native_surface_term(*left, typing, lowering)),
@@ -839,7 +828,7 @@ impl Elaborator<'_> {
         let SyntaxTerm::Add(left, right) = &term else {
             unreachable!("native_addition elaborates an addition");
         };
-        if lowering.refuse_untyped_pointer_access(&term).is_err() {
+        if self.refuse_untyped_pointer_access(&term, typing).is_err() {
             return SurfaceTerm::Untyped(term);
         }
         // The literal chain `base + 1 + 2 + ...` lowering reads iteratively.
@@ -871,12 +860,11 @@ impl Elaborator<'_> {
             Ok(None) => match lowering.call_pointer_element_width(right) {
                 Err(_) => return SurfaceTerm::Untyped(term),
                 Ok(Some(width)) => Some(step(right, left, width)),
-                Ok(None) => lowering
-                    .contract_pointer_element_width(left)
+                Ok(None) => self
+                    .contract_pointer_element_width(left, typing)
                     .map(|width| step(left, right, width))
                     .or_else(|| {
-                        lowering
-                            .contract_pointer_element_width(right)
+                        self.contract_pointer_element_width(right, typing)
                             .map(|width| step(right, left, width))
                     }),
             },

@@ -227,6 +227,7 @@ pub(crate) fn program_type_spelling(program_type: ProgramType) -> &'static str {
         ProgramType::Float32Array(_) => "float32*",
         ProgramType::Float64Array(_) => "float64*",
         ProgramType::PointerArray(element, _) => element.decayed_type_spelling(),
+        ProgramType::SlicePointer(element) => element.slice_type_spelling(),
     }
 }
 
@@ -394,7 +395,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
         contract,
         function_interface: function_interface.clone(),
         function_name: function_name.to_string(),
-        pointer: OldPointer::new(
+        pointer: Pointer::new(
             Address::new(
                 AddressBase::Function(function_name.to_string()),
                 AddressOffset::constant(0),

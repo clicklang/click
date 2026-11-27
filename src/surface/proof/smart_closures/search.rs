@@ -14500,7 +14500,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             regions.push(region.clone());
             let entry = Proposition::MemoryLoadable {
                 memory: footprint.before.clone(),
-                point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+                point: footprint.before_point.path_link().clone(),
                 base: base.clone(),
                 bytes: bytes.clone(),
                 wide: *wide,

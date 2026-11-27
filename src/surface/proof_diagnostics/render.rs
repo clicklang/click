@@ -836,8 +836,8 @@ impl MemoryStateLabels {
 /// A comparison of full pointers can carry more information than their
 /// common address contains.
 fn distinct_pointers_at_one_address(
-    left: &crate::kernel::OldPointer,
-    right: &crate::kernel::OldPointer,
+    left: &crate::kernel::Pointer,
+    right: &crate::kernel::Pointer,
 ) -> bool {
     left != right && left.address() == right.address()
 }
@@ -1805,18 +1805,19 @@ impl Renderer<'_> {
             Proposition::HeapAllocationFreed {
                 before,
                 after,
-                allocation_base,
-                bytes,
+                blocks,
                 ..
             } => {
                 self.push("heap-freed(");
                 self.memory(before);
                 self.push(" -> ");
                 self.memory(after);
-                self.push(", base=");
-                self.pointer(allocation_base);
-                self.push(", bytes=");
-                self.bitvector(bytes.bytes());
+                for (base, bytes) in blocks {
+                    self.push(", base=");
+                    self.pointer(base);
+                    self.push(", bytes=");
+                    self.bitvector(bytes.bytes());
+                }
                 self.push(")");
             }
             Proposition::ProgramExpressionEvaluates {
@@ -2168,6 +2169,13 @@ impl Renderer<'_> {
                 self.push(" = ");
                 self.offset(b, 0);
             }
+            // A wide pointer is the slice of its address and element count,
+            // as Rust spells an unrecorded construction.
+            OldConditionTerm::PointerEqual(a, b) if a.is_wide() || b.is_wide() => {
+                self.pointer_value(a);
+                self.push(" == ");
+                self.pointer_value(b);
+            }
             OldConditionTerm::PointerEqual(a, b) => {
                 if distinct_pointers_at_one_address(a, b) {
                     self.push("pointer equality at ");
@@ -2390,6 +2398,21 @@ impl Renderer<'_> {
         self.integer_shared(right);
         self.push(")");
     }
+    /// A pointer value: its address, or for a wide pointer
+    /// `slice::from_raw_parts(address, count)`.
+    fn pointer_value(&mut self, value: &crate::kernel::Pointer) {
+        match value.len() {
+            Some(count) => {
+                self.push("slice::from_raw_parts(");
+                self.pointer(value.address());
+                self.push(", ");
+                self.bitvector(count);
+                self.push(")");
+            }
+            None => self.pointer(value.address()),
+        }
+    }
+
     fn bitvector(&mut self, v: &OldMachineTerm) {
         if self.truncated || !self.visit() || self.depth >= MAX_DEPTH {
             self.truncated = true;
@@ -3074,13 +3097,13 @@ mod tests {
 
     #[test]
     fn pointer_equality_diagnostic_keeps_provenance_distinct_at_the_same_address() {
-        use crate::kernel::{OldPointer, ProgramType, SubobjectBounds};
+        use crate::kernel::{Pointer, ProgramType, SubobjectBounds};
         let address = Address::symbolic(Variable(10993745));
-        let left = OldPointer::new(address.clone(), ProgramType::Int32Pointer);
-        let right = left.clone().with_bounds(Some(SubobjectBounds {
-            start: address,
-            width: OldMachineTerm::uint64_constant(4),
-        }));
+        let left = Pointer::new(address.clone(), ProgramType::Int32Pointer);
+        let right = left.clone().with_bounds(Some(SubobjectBounds::new(
+            address,
+            OldMachineTerm::uint64_constant(4),
+        )));
         let goal = Proposition::condition_is(
             OldConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
             true,

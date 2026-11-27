@@ -28,8 +28,8 @@ fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
     };
     let original = read(&point, &source);
     let expected = read(&point, &target);
-    let source_pointer = OldPointer::new(source.clone(), ProgramType::UInt64Pointer);
-    let target_pointer = OldPointer::new(target.clone(), ProgramType::UInt64Pointer);
+    let source_pointer = Pointer::new(source.clone(), ProgramType::UInt64Pointer);
+    let target_pointer = Pointer::new(target.clone(), ProgramType::UInt64Pointer);
     for mut rewrite in [
         TermRewrite::for_pointer_exact(&source, &target),
         TermRewrite::for_pointer_value_exact(&source_pointer, &target_pointer),
@@ -89,8 +89,8 @@ fn rewriting_a_scalar_store_read_keeps_its_program_point() {
     assert!(version.indexed_stored_value().is_some());
     let original = OldMachineTerm::read_named(version.clone(), Box::new(source.clone()), kind);
 
-    let source_pointer = OldPointer::new(source.clone(), ProgramType::Int32Pointer);
-    let target_pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer);
+    let source_pointer = Pointer::new(source.clone(), ProgramType::Int32Pointer);
+    let target_pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer);
     for mut rewrite in [
         TermRewrite::for_pointer_exact(&source, &target),
         TermRewrite::for_pointer_value_exact(&source_pointer, &target_pointer),
@@ -288,12 +288,8 @@ mod scaling_tests {
 fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
     let source = Address::symbolic(Variable(420));
     let target = Address::new("target".into(), AddressOffset::constant(0));
-    let original = OldPointer::new(source.clone(), ProgramType::Int32Pointer).with_bounds(Some(
-        SubobjectBounds {
-            start: source.clone(),
-            width: 4u32.into(),
-        },
-    ));
+    let original = Pointer::new(source.clone(), ProgramType::Int32Pointer)
+        .with_bounds(Some(SubobjectBounds::new(source.clone(), 4u32.into())));
     for mut rewrite in [
         TermRewrite::for_pointer_address_variable(Variable(420), &target),
         TermRewrite::for_pointer_exact(&source, &target),
@@ -305,11 +301,11 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
         assert_eq!(result.address(), &target);
         assert_eq!(result.provenance(), original.provenance());
         assert_eq!(result.bounds_owner(), original.bounds_owner());
-        assert_eq!(result.bounds().unwrap().width, 4u32.into());
-        assert_eq!(result.bounds().unwrap().start, target);
+        assert_eq!(*result.bounds().unwrap().width(), 4u32.into());
+        assert_eq!(result.bounds().unwrap().start(), &target);
         assert_ne!(
             result,
-            OldPointer::new(target.clone(), ProgramType::Int32Pointer)
+            Pointer::new(target.clone(), ProgramType::Int32Pointer)
         );
     }
 }
@@ -318,10 +314,10 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
 fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new());
-    let p = OldPointer::new(Address::symbolic(Variable(421)), ProgramType::Int32Pointer);
-    let q = OldPointer::new(Address::symbolic(Variable(422)), ProgramType::Int32Pointer);
+    let p = Pointer::new(Address::symbolic(Variable(421)), ProgramType::Int32Pointer);
+    let q = Pointer::new(Address::symbolic(Variable(422)), ProgramType::Int32Pointer);
     let other = Address::symbolic(Variable(423));
-    let read = OldPointer::from_read(
+    let read = Pointer::from_read(
         other.clone(),
         ProgramType::Int32Pointer,
         &memory,
@@ -342,7 +338,7 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
         ProgramValue::Pointer(read)
     );
     // Matching the pointee address does not match the read's storage cell.
-    let read = OldPointer::from_read(
+    let read = Pointer::from_read(
         p.address().clone(),
         ProgramType::Int32Pointer,
         &memory,
@@ -360,20 +356,16 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let _session = crate::kernel::VerificationSession::enter();
     let retained_state = intern_memory(SymbolicMemory::new());
     let storage = Address::symbolic(Variable(424_100));
-    let source = OldPointer::from_read(
+    let source = Pointer::from_read(
         Address::symbolic(Variable(424_101)),
         ProgramType::Int32Pointer,
         &retained_state,
         &storage,
     );
     let target_base = Address::new(AddressBase::Heap(424_102), AddressOffset::constant(0));
-    let target = OldPointer::new(target_base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
-        SubobjectBounds {
-            start: target_base,
-            width: 4u32.into(),
-        },
-    ));
-    let relationship = |value: &OldPointer| Proposition::ResourceContains {
+    let target = Pointer::new(target_base.clone(), ProgramType::Int32Pointer)
+        .with_bounds(Some(SubobjectBounds::new(target_base, 4u32.into())));
+    let relationship = |value: &Pointer| Proposition::ResourceContains {
         parent: Box::new(Resource::Composite {
             name: "holder".into(),
             arguments: vec![AlgebraicValue::Program(ProgramValue::Pointer(
@@ -401,11 +393,8 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
         panic!("memory")
     };
     assert_eq!(range.base(), target.address());
-    assert_eq!(range.provenance.as_ref(), source.provenance());
-    assert_eq!(
-        range.carrier_owner().map(|owner| &**owner),
-        source.bounds_owner()
-    );
+    assert_eq!(&range.provenance, source.provenance());
+    assert_eq!(range.carrier_owner(), source.bounds_owner());
     assert!(!range.carrier_known());
 }
 
@@ -414,19 +403,19 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
     let _session = crate::kernel::VerificationSession::enter();
     let retained_state = intern_memory(SymbolicMemory::new());
     let raw = Address::symbolic(Variable(424_110));
-    let source = OldPointer::from_read(
+    let source = Pointer::from_read(
         raw.clone(),
         ProgramType::Int32Pointer,
         &retained_state,
         &Address::symbolic(Variable(424_111)),
     );
-    let unrelated = OldPointer::from_read(
+    let unrelated = Pointer::from_read(
         raw,
         ProgramType::Int32Pointer,
         &retained_state,
         &Address::symbolic(Variable(424_112)),
     );
-    let target = OldPointer::new(
+    let target = Pointer::new(
         Address::new(AddressBase::Heap(424_113), AddressOffset::constant(0)),
         ProgramType::Int32Pointer,
     );
@@ -451,18 +440,15 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
         panic!("memory")
     };
     assert_eq!(range.base(), target.address());
-    assert_eq!(range.provenance.as_ref(), unrelated.provenance());
-    assert_eq!(
-        range.carrier_owner().map(|owner| &**owner),
-        unrelated.bounds_owner()
-    );
+    assert_eq!(&range.provenance, unrelated.provenance());
+    assert_eq!(range.carrier_owner(), unrelated.bounds_owner());
     assert!(!range.carrier_known());
 }
 
 #[test]
 fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
     let parameter = |id| {
-        OldPointer::new(
+        Pointer::new(
             Address::new(
                 AddressBase::ExternalArgument,
                 AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
@@ -500,17 +486,14 @@ fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
 
 #[test]
 fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
-    let source = OldPointer::new(
+    let source = Pointer::new(
         Address::symbolic(Variable(916_211)),
         ProgramType::UInt8Pointer,
     );
     let target_address = Address::symbolic(Variable(916_212));
-    let target = OldPointer::new(target_address.clone(), ProgramType::UInt8Pointer).with_bounds(
-        Some(SubobjectBounds {
-            start: target_address.clone(),
-            width: 4u32.into(),
-        }),
-    );
+    let target = Pointer::new(target_address.clone(), ProgramType::UInt8Pointer).with_bounds(Some(
+        SubobjectBounds::new(target_address.clone(), 4u32.into()),
+    ));
     let shifted = source
         .clone()
         .with_address(source.address().offset_by_bytes(1));
@@ -526,10 +509,10 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
 
     let selected = source
         .clone()
-        .with_bounds(Some(SubobjectBounds {
-            start: source.address().offset_by_bytes(1),
-            width: 1u32.into(),
-        }))
+        .with_bounds(Some(SubobjectBounds::new(
+            source.address().offset_by_bytes(1),
+            1u32.into(),
+        )))
         .with_address(source.address().offset_by_bytes(1));
     let ProgramValue::Pointer(narrowed) = TermRewrite::for_pointer_value_exact(&source, &target)
         .value(&ProgramValue::Pointer(selected))
@@ -538,10 +521,10 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
     };
     assert_eq!(
         narrowed.bounds(),
-        Some(&SubobjectBounds {
-            start: target_address.offset_by_bytes(1),
-            width: 1u32.into(),
-        })
+        Some(&SubobjectBounds::new(
+            target_address.offset_by_bytes(1),
+            1u32.into()
+        ))
     );
 
     let ProgramValue::Pointer(numeric) =
@@ -558,7 +541,7 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
 #[test]
 fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
     let parameter = |id| {
-        OldPointer::new(
+        Pointer::new(
             Address::new(
                 AddressBase::ExternalArgument,
                 AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
@@ -568,10 +551,10 @@ fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
     };
     let source = parameter(916_241);
     let base = parameter(916_242);
-    let target = base.clone().with_bounds(Some(SubobjectBounds {
-        start: base.address().clone(),
-        width: 4u32.into(),
-    }));
+    let target = base.clone().with_bounds(Some(SubobjectBounds::new(
+        base.address().clone(),
+        4u32.into(),
+    )));
     let input = source
         .clone()
         .with_address(source.address().offset_by_bytes(1));
@@ -587,11 +570,11 @@ fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
 
 #[test]
 fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
-    let original = OldPointer::new(
+    let original = Pointer::new(
         Address::symbolic(Variable(916_251)),
         ProgramType::UInt8Pointer,
     );
-    let other = OldPointer::new(
+    let other = Pointer::new(
         Address::symbolic(Variable(916_252)),
         ProgramType::UInt8Pointer,
     );
@@ -621,20 +604,16 @@ fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
 #[test]
 fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
     let numeric = Address::symbolic(Variable(916_261));
-    let original = OldPointer::new(numeric.clone(), ProgramType::UInt8Pointer).with_bounds(Some(
-        SubobjectBounds {
-            start: numeric.clone(),
-            width: 4u32.into(),
-        },
-    ));
+    let original = Pointer::new(numeric.clone(), ProgramType::UInt8Pointer)
+        .with_bounds(Some(SubobjectBounds::new(numeric.clone(), 4u32.into())));
     let memory = intern_memory(SymbolicMemory::new());
-    let source = OldPointer::from_read(
+    let source = Pointer::from_read(
         numeric.clone(),
         ProgramType::UInt8Pointer,
         &memory,
         &Address::symbolic(Variable(916_263)),
     );
-    let target = OldPointer::new(
+    let target = Pointer::new(
         Address::symbolic(Variable(916_262)),
         ProgramType::UInt8Pointer,
     );
@@ -649,10 +628,7 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
     assert_eq!(actual.bounds_owner(), original.bounds_owner());
     assert_eq!(
         actual.bounds(),
-        Some(&SubobjectBounds {
-            start: target.address().clone(),
-            width: 4u32.into(),
-        })
+        Some(&SubobjectBounds::new(target.address().clone(), 4u32.into()))
     );
 }
 

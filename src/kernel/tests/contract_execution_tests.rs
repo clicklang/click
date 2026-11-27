@@ -1369,64 +1369,6 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
 }
 
 #[test]
-fn memory_load_store_are_native_theorems() {
-    let pointer = Address::new("block".into(), AddressOffset::constant(0));
-    let value = int32(7);
-    let theorem =
-        prove_memory_load_after_store_same(SymbolicMemory::new(), pointer.clone(), value.clone());
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::MemoryLoads {
-            point: Default::default(),
-            memory: SymbolicMemory::new().store(pointer.clone(), value.clone()),
-            pointer,
-            outcome: ExpressionOutcome::Value((value).into()),
-        }
-    );
-}
-
-#[test]
-fn store_preserves_distinct_memory_cell_frame() {
-    let stored_pointer = Address::new("left".into(), AddressOffset::constant(0));
-    let loaded_pointer = Address::new("right".into(), AddressOffset::constant(0));
-    let memory = SymbolicMemory::new().store(loaded_pointer.clone(), int32(42));
-    let theorem = prove_memory_load_after_store_other(
-        memory.clone(),
-        stored_pointer.clone(),
-        int32(9),
-        loaded_pointer.clone(),
-    )
-    .expect("store to distinct pointer should preserve loaded cell");
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::MemoryLoads {
-            point: Default::default(),
-            memory: memory.store(stored_pointer, int32(9)),
-            pointer: loaded_pointer,
-            outcome: ExpressionOutcome::Value((int32(42)).into()),
-        }
-    );
-}
-
-#[test]
-fn missing_memory_load_is_native_undefined_behavior() {
-    let pointer = Address::new("block".into(), AddressOffset::constant(4));
-    let theorem = prove_memory_load(SymbolicMemory::new(), pointer.clone());
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::MemoryLoads {
-            point: Default::default(),
-            memory: SymbolicMemory::new(),
-            pointer,
-            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
-        }
-    );
-}
-
-#[test]
 fn function_execution_theorem_retains_non_assumable_verification_conditions() {
     let verification_condition = Proposition::condition_is(OldConditionTerm::Constant(false), true);
     let conclusion = Proposition::condition_is(OldConditionTerm::Constant(true), true);

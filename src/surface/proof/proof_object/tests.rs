@@ -9971,6 +9971,7 @@ fn observe_composite_keeps_the_defined_read_at_the_selected_point() {
         observed
             .added_facts()
             .contains(&Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: Some(point),
                 memory: after.memory().clone(),
                 pointer,
@@ -15248,7 +15249,7 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = SyntaxTerm::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));

@@ -2371,7 +2371,8 @@ field and must match the constructed equality.
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
 and constructs it at the exit. At a checked function return, it can carry
-the fact through a recorded cleanup that retires a distinct automatic object.
+the fact through recorded cleanup when each retired automatic object is
+provably distinct from the selected cell.
 The separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
@@ -2382,9 +2383,9 @@ only automatic storage, or a return with only automatic-storage effects,
 including scope cleanup. The latter footprints require unchanged heap
 retirement information. Prove separation from the footprint and supply the
 exact entry viewability fact. The conclusion is a live-storage fact for the
-same range at the exit, including for symbolic `uint64` byte ranges. At the
-published outcome a return can also include one recorded retirement of a
-provably distinct automatic object after the statement's exit snapshot.
+same range at the exit, including for symbolic `uint64` byte ranges. The
+published outcome can also include recorded retirements after the return's
+exit snapshot when each retired automatic object is provably distinct.
 
 For equality goals, use an ordinary `have` to establish the equality, then
 `rewrite` and `close()` to carry a proposition across the change. The tactic remains

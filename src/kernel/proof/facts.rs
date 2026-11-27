@@ -3076,6 +3076,9 @@ fn collect_condition_bitvector_atoms(
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_atoms(pointer, atoms);
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_atoms(count, atoms);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -4609,8 +4612,8 @@ mod held_separation_tests {
         };
         Resource::Memory(
             range
-                .with_provenance(Arc::new(origin.base().clone()))
-                .with_bounds_owner(Some(Arc::new(origin.base().clone())), false)
+                .with_provenance(origin.base().clone())
+                .with_bounds_owner(Some(origin.base().clone()), false)
                 .with_typed_carrier(),
         )
     }

@@ -606,6 +606,7 @@ fn consuming_private_member_publishes_definedness_at_the_current_point() {
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
     let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: Some(state.observation_point_id().unwrap()),
         memory: state.memory().clone(),
         pointer: pointer.clone(),

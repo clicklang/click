@@ -486,7 +486,7 @@ fn false_quantified_frames_do_not_materialize_the_constant_domain() {
 #[ignore = "nightly: multi-size reference-call refusal and positive controls"]
 fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
     use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let mut samples = Vec::new();
     for size in [4, 8, 16, 32] {
         let parameters = (0..size)
@@ -502,12 +502,17 @@ fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
             "int32 read(int32* p) {{ return p[0]; }}\nint32 many({parameters}, int32* p) {{ {locals} {calls} return p[0]; }}"
         );
         let mut pair = Vec::new();
-        for (value, closer) in [(7, "solve"), (8, "known")] {
+        for value in [7, 8] {
             let source = format!(
                 r#"
                 verifying "calls.c";
                 int32 read(int32* p) {{ owns p[0..1]; ensures result == old(p[0]); ensures p[0] == old(p[0]); }}
-                int32 many({parameters}, int32* p) {{ owns p[0..1]; requires p[0] == 7; ensures result == {value}; ensures p[0] == 7; }} by {{ step_until(function.exit); {closer}(); }}
+                int32 many({parameters}, int32* p) {{ owns p[0..1]; requires p[0] == 7; ensures result == {value}; ensures p[0] == 7; }} by {{
+                    step_until(function.exit);
+                    have result == 7 by close();
+                    have result == {value} by close() using {{ result == 7; }};
+                    close();
+                }}
             "#
             );
             let ((result, events), total) = measure_deterministic_work(|| {
@@ -2441,6 +2446,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
     let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: memory.clone(),
         pointer,

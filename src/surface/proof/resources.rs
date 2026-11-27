@@ -512,6 +512,7 @@ fn dynamic_body_fact_dependency(
                 memory,
                 pointer,
                 value_type,
+                ..
             } => {
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
@@ -549,14 +550,18 @@ fn dynamic_body_fact_dependency(
                 binder,
                 selected,
             ),
-            Proposition::HeapAllocationFreed { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.bytes().clone().into()),
-                state,
-                assumptions,
-                temporary_views,
-                binder,
-                selected,
-            ),
+            Proposition::HeapAllocationFreed { blocks, .. } => {
+                blocks.iter().try_for_each(|(_, bytes)| {
+                    walk_term(
+                        &Term::Bitvector32(bytes.bytes().clone().into()),
+                        state,
+                        assumptions,
+                        temporary_views,
+                        binder,
+                        selected,
+                    )
+                })
+            }
             Proposition::MemoryCanStore { .. }
             | Proposition::MemoryMutatesOnly { .. }
             | Proposition::MemoryEffectSummary { .. }
@@ -5898,6 +5903,7 @@ void child_release(struct child* obj) {
         let no_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
         let dependency_at = |at| {
             let fact = Proposition::MemoryReadDefined {
+                point: earlier.memory_point(),
                 at,
                 memory: earlier.memory().clone(),
                 pointer: Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
@@ -5950,6 +5956,7 @@ void child_release(struct child* obj) {
                     Box::new(Proposition::MemoryReadDefined {
                         at: None,
                         memory: memory.clone(),
+                        point: Default::default(),
                         pointer: Address::new(
                             AddressBase::ExternalArgument,
                             AddressOffset::int32_scaled(
@@ -6048,6 +6055,7 @@ void child_release(struct child* obj) {
             Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
+                point: Default::default(),
                 pointer: pointer.clone(),
                 value_type: crate::kernel::ProgramType::Int32,
             }
@@ -6513,6 +6521,7 @@ mod guarded_unmatched_materialization_tests {
             checked
                 .added_facts
                 .contains(&Proposition::MemoryReadDefined {
+                    point: Default::default(),
                     at: Some(point),
                     memory: after.memory().clone(),
                     pointer,
@@ -6576,6 +6585,7 @@ mod guarded_unmatched_materialization_tests {
                     memory,
                     pointer: address,
                     value_type: ProgramType::Int32,
+                    ..
                 } if address == &pointer => Some((*at, memory)),
                 _ => None,
             })
@@ -6658,6 +6668,7 @@ mod guarded_unmatched_materialization_tests {
             .into_iter()
             .fold(assumptions.clone(), PureFactContext::assume_proposition);
         let published = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: Some(point),
             memory: before.memory().clone(),
             pointer: pointer.clone(),

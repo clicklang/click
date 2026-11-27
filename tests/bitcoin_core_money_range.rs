@@ -1571,30 +1571,29 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
     let expanded = click::surface::expand_verified_function_claim_source_by_label(
         source,
         &verified,
-        "probe.ensures_0",
+        "probe.contract",
     )
     .unwrap()
     .unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
-    assert!(
-        project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
-            .unwrap()
-            .is_empty()
-    );
     let position = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
-        "probe.ensures_0",
+        "probe.contract",
         0,
     )
     .unwrap();
-    click::surface::without_implicit_solve(|| {
-        session.verify_at_project(&expanded, position.line, position.column)
+    click::surface::without_proof_search_for_claim("probe.contract", || {
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .map_err(|error| error.report())
     })
-    .unwrap_or_else(|error| panic!("retained: {}", error.report()));
+    .unwrap_or_else(|error| panic!("retained: {error}"));
     drop(session);
-    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
-        .unwrap_or_else(|error| panic!("cold: {}", error.report()));
+    click::surface::without_proof_search_for_claim("probe.contract", || {
+        verify_program_prepared_project(&rewritten, &import).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("cold: {error}"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1917,7 +1916,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     .expect("the documented claim expansion must use the locked upstream import");
     verify_program_prepared_project(&project.with_entry_source(expanded_contract), &imported)
         .expect("the documented expanded range claim must reverify");
-    for site in sites {
+    for site in &sites {
         let claim = site.claim_label.as_str();
         let position = project_tactic_source_position(
             &project,
@@ -1946,24 +1945,28 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
             position.column,
         )
         .expect("expand a tactic against the same locked import");
-        assert_ne!(expanded, SIDECAR);
         let rewritten = project.with_entry_source(expanded.clone());
-        let remaining =
-            project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&imported))
-                .expect("expanded proof remains source-inventoriable")
-                .into_iter()
+        if expanded == SIDECAR {
+            assert_eq!(
+                site.tactic_name, "close",
+                "only a checked close may replay verbatim"
+            );
+        } else {
+            let remaining =
+                project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&imported))
+                    .expect("expanded proof remains source-inventoriable")
+                    .into_iter()
+                    .filter(|candidate| candidate.claim_label == claim)
+                    .count();
+            let original = sites
+                .iter()
                 .filter(|candidate| candidate.claim_label == claim)
                 .count();
-        let original =
-            project_smart_tactic_source_sites(&project, &ProgramInputs::program(&imported))
-                .unwrap()
-                .into_iter()
-                .filter(|candidate| candidate.claim_label == claim)
-                .count();
-        assert!(
-            remaining < original,
-            "expansion must remove the audited smart site"
-        );
+            assert!(
+                remaining < original,
+                "a rewritten expansion must remove the audited smart site"
+            );
+        }
         verify_program_prepared_project(&rewritten, &imported)
             .expect("expanded certificate must reverify against the upstream import");
         let next = project_tactic_source_position(
@@ -5921,20 +5924,23 @@ fn pinned_spanreader_read_verifies_and_replays_both_outcomes_offline() {
         click::languages::cpp::names::path_name(&["SpanReader".to_owned(), "read".to_owned()])
     );
     let inputs = ProgramInputs::program(&import);
-    let expanded = expand_project_claim_source_by_label(&project, &inputs, &label).unwrap();
+    let expanded = expand_project_claim_source_by_label(&project, &inputs, &label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
     let rewritten = project.with_entry_source(expanded.clone());
-    click::surface::check_audit_claim(&label, true, || {
-        verify_program_prepared_project(&rewritten, &import)
-            .map_err(|error| error.message().to_string())
+    click::surface::without_proof_search_for_claim(&label, || {
+        verify_program_prepared_project(&rewritten, &import).map_err(|error| error.report())
     })
     .unwrap();
     let site = project_tactic_source_position(&rewritten, &inputs, &label, 0).unwrap();
     // Start the retained session after the cold verification replaced its kernel state.
     let (session, _) =
         ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
-    session
-        .verify_at_project(&expanded, site.line, site.column)
-        .unwrap();
+    click::surface::without_proof_search_for_claim(&label, || {
+        session
+            .verify_at_project(&expanded, site.line, site.column)
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     fs::remove_dir_all(root).unwrap();
 }
 

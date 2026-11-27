@@ -1886,6 +1886,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::RuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
+        crate::kernel::RuntimeError::ThinPointerRequired { operation } => {
+            crate::kernel::RuntimeError::thin_pointer_required_message(operation)
+        }
         crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets
         | crate::kernel::RuntimeError::UnsupportedPointerComparisonOffsets
         | crate::kernel::RuntimeError::UnsupportedFunctionPointerOffset => error.kernel_summary(),
@@ -8894,6 +8897,20 @@ fn describe_integer_term(term: &crate::kernel::IntegerTerm) -> String {
     crate::surface::proof_diagnostics::render::render_integer_term(term)
 }
 
+/// A pointer value in a described condition: its address, and for a wide
+/// pointer the slice built from that address and its element count, as Rust
+/// spells an unrecorded construction (`design/rust-slice-values.md`).
+fn describe_pointer_value(value: &crate::kernel::Pointer) -> String {
+    let address = describe_pointer(value.address(), ParameterBinding::default());
+    match value.len() {
+        Some(count) => format!(
+            "slice::from_raw_parts({address}, {})",
+            describe_bitvector(count)
+        ),
+        None => address,
+    }
+}
+
 pub(super) fn describe_condition(condition: &OldConditionTerm) -> String {
     if let Some(unsigned) = describe_unsigned_comparison(condition, ParameterBinding::default()) {
         return unsigned;
@@ -8913,8 +8930,8 @@ pub(super) fn describe_condition(condition: &OldConditionTerm) -> String {
     match condition {
         OldConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
-            describe_pointer(left.address(), ParameterBinding::default()),
-            describe_pointer(right.address(), ParameterBinding::default())
+            describe_pointer_value(left),
+            describe_pointer_value(right)
         ),
 
         OldConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
@@ -9258,5 +9275,43 @@ mod assembly_fact_tests {
         let fallback =
             describe_unestablished_assembly_fact(&error, &[], &[], binding, &[]).unwrap();
         assert!(fallback.contains("missing pure fact: false"), "{fallback}");
+    }
+}
+
+#[cfg(test)]
+mod wide_pointer_description_tests {
+    use super::*;
+
+    /// A slice in a described equality keeps its count, spelled as an
+    /// unrecorded construction, and a refusal names `.as_ptr()`.
+    #[test]
+    fn a_slice_equality_is_described_with_its_count() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slice = |pointer, length| {
+            crate::kernel::Pointer::new(
+                Address::symbolic(Variable(pointer)),
+                crate::kernel::ProgramType::UInt8Pointer,
+            )
+            .with_element_count(OldMachineTerm::Variable(Variable(length)))
+        };
+        let (s, t) = (slice(985_500, 985_501), slice(985_502, 985_503));
+        let described = describe_condition(&OldConditionTerm::PointerEqual(
+            Box::new(s.clone()),
+            Box::new(t.clone()),
+        ));
+        assert_eq!(
+            described.matches("slice::from_raw_parts(").count(),
+            2,
+            "{described}"
+        );
+        assert!(described.contains(" == "), "{described}");
+        let thin = describe_condition(&OldConditionTerm::PointerEqual(
+            Box::new(s.as_ptr()),
+            Box::new(t.as_ptr()),
+        ));
+        assert!(!thin.contains("from_raw_parts"), "{thin}");
+        let refusal =
+            crate::kernel::RuntimeError::thin_pointer_required_message("pointer arithmetic");
+        assert!(refusal.contains("`.as_ptr()`"), "{refusal}");
     }
 }

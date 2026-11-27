@@ -585,7 +585,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
    cache-only `cached_symbolic_storage_cell_value`; and the post-`free`
    memory of a heap free, which has no point yet.
 7. **Untyped `Pointer`.** Once loads and stores state their own types, remove
-   `program_type` from `OldPointer` and `KernelPointer`. Today about 250 sites
+   `program_type` from `KernelPointer` (read through `Pointer`). Today about 250 sites
    read it; all have an operation or declaration in reach except untyped
    `Load`/`Index` on an embedded value (lowering emits typed loads and byte
    offsets instead), store records and memory cells (they record their encode

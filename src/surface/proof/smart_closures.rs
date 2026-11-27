@@ -4356,9 +4356,10 @@ fn source_call_argument_surface(
                 .collect(),
         };
     }
-    // C++ passes a local record by reference using a scalar pointer cast of
-    // its storage address. Restore the declared record type so a field in the
-    // callee's requirement still names the same subobject after parsing.
+    // A call can pass a local record by reference using a scalar pointer
+    // cast of its storage, repeated by Rust reborrows. Restore the declared
+    // record type so a field in the requirement still names the same subobject
+    // after parsing.
     if let ProgramExpression::Cast {
         expression,
         target_type: crate::kernel::ProgramType::Int32Pointer,
@@ -4368,7 +4369,7 @@ fn source_call_argument_surface(
         pointee_volatile: false,
         pointee_constant: false,
         explicit_qualification: false,
-    } = argument
+    } = without_repeated_cast(argument)
         && let ProgramExpression::Variable(binding) = expression.as_ref()
         && let Some(record) = function.local_struct_values().get(binding)
     {

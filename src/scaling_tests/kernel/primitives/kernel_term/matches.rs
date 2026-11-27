@@ -87,23 +87,26 @@ fn numeric_match_opaque_scrutinee_identity_keeps_exact_roots_and_shared_bodies()
                 [body.clone(), body],
             );
         }
-        let mut scrutinee = tests::scrutinee();
-        scrutinee.node = AlgebraicTermNode::PureFunctionApplication {
-            name: "opaque_model".into(),
-            // The call itself is now structural. Keep a genuinely opaque
-            // producer payload in its argument to exercise this boundary.
-            arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-                OldPointer::new(
-                    Address::symbolic(Variable(991984)),
-                    ProgramType::Int32Pointer,
-                ),
-            ))],
+        // Each scrutinee has its own producer of one logical pointer.
+        let scrutinee = || {
+            let mut scrutinee = tests::scrutinee();
+            scrutinee.node = AlgebraicTermNode::PureFunctionApplication {
+                name: "opaque_model".into(),
+                // The call itself is now structural. Keep a genuinely opaque
+                // producer payload in its argument to exercise this boundary.
+                arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
+                    Pointer::new(
+                        Address::symbolic(Variable(991984)),
+                        ProgramType::Int32Pointer,
+                    ),
+                ))],
+            };
+            scrutinee
         };
         let make = || {
             KernelMatch::new(
                 KernelType::Program(format.program_type()),
-                KernelTermImport::default()
-                    .argument(&PureFunctionArgument::Algebraic(scrutinee.clone())),
+                KernelTermImport::default().argument(&PureFunctionArgument::Algebraic(scrutinee())),
                 vec![(
                     KernelMatchArm {
                         variant: "Box".into(),

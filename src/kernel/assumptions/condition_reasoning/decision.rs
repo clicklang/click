@@ -420,6 +420,9 @@ impl PureFactContext {
             if self.equality_graph.knows_condition(condition, false) {
                 return Some(false);
             }
+            // Below, equal addresses decide the equality only for values
+            // whose metadata is known equal, which the provenance match
+            // includes (`pointer_metadata_known_equal`).
             if self.pointer_provenance_match(left, right)
                 && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     left.address(),

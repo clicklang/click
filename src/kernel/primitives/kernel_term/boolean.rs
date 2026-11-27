@@ -255,7 +255,7 @@ impl<'a> BooleanOperandView<'a> {
         let OldConditionTerm::PointerEqual(a, b) = self.native_leaf()? else {
             return None;
         };
-        Some([SharedPointer::import(a), SharedPointer::import(b)])
+        Some([a.shared().clone(), b.shared().clone()])
     }
 
     pub(crate) fn pointer_addresses(self) -> Option<[SharedAddress; 2]> {
@@ -570,10 +570,7 @@ impl KernelTermImport {
                 arguments: [self.machine(*format, left), self.machine(*format, right)],
             },
             Old::PointerEqual(a, b) => {
-                return KernelTerm::pointer_equal_raw([
-                    SharedPointer::import(a),
-                    SharedPointer::import(b),
-                ]);
+                return KernelTerm::pointer_equal_raw([a.shared().clone(), b.shared().clone()]);
             }
             Old::AddressEqual(a, b) => Node::AddressEqual {
                 arguments: [a.shared().clone(), b.shared().clone()],

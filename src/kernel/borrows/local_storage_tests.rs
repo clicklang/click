@@ -90,7 +90,7 @@ fn automatic_storage_retirement_uses_the_retained_backing_identity() {
     let other = SymbolicMemory::local_lifetime_pointer(2, "buffer");
     let bound = OldMachineTerm::Variable(Variable(91));
     let symbolic = MemoryRange::new(Address::symbolic(Variable(90)), 0u32.into(), bound.clone())
-        .with_provenance(Arc::new(slot.clone()));
+        .with_provenance(slot.clone());
     let ledger = BorrowLedger::new();
     let lender = ledger.fresh_participant().unwrap();
     let borrower = ledger.fresh_participant().unwrap();

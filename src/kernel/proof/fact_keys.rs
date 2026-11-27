@@ -16,8 +16,8 @@ use crate::kernel::{
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
-    KernelTermNode, MachineIntegerType, OldPointer, ProgramType, ProgramValue,
-    PureFunctionArgument, SharedIntegerTerm, SharedMemory, Sort, Term,
+    KernelTermNode, MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
+    SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{OffsetTree, OffsetView};
@@ -123,6 +123,8 @@ pub(crate) struct MemoryErasedPointerKey {
     bounds_owner: Option<MemoryErasedAddressKey>,
     bounds: Option<(MemoryErasedAddressKey, MemoryErasedBitvectorKey)>,
     bounds_known: bool,
+    /// A wide pointer's element count.
+    count: crate::kernel::PointerMetadataKey<MemoryErasedBitvectorKey>,
 }
 
 impl MemoryErasedPointerKey {
@@ -136,10 +138,15 @@ impl MemoryErasedPointerKey {
             || self.bounds.as_ref().is_some_and(|(start, width)| {
                 start.requires_checked_match() || width.requires_checked_match()
             })
+            || self
+                .count
+                .0
+                .as_ref()
+                .is_some_and(MemoryErasedBitvectorKey::requires_checked_match)
     }
 }
 
-fn memory_erased_pointer_key(pointer: &OldPointer) -> MemoryErasedPointerKey {
+fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
     MemoryErasedPointerKey {
         address: memory_erased_address_key(pointer.address()),
         provenance: memory_erased_address_key(pointer.provenance()),
@@ -150,11 +157,12 @@ fn memory_erased_pointer_key(pointer: &OldPointer) -> MemoryErasedPointerKey {
         },
         bounds: pointer.bounds().map(|bounds| {
             (
-                memory_erased_address_key(&bounds.start),
-                memory_erased_bitvector_key(&bounds.width),
+                memory_erased_address_key(&bounds.start()),
+                memory_erased_bitvector_key(&bounds.width()),
             )
         }),
         bounds_known: pointer.bounds_are_known(),
+        count: crate::kernel::PointerMetadataKey(pointer.len().map(memory_erased_bitvector_key)),
     }
 }
 
@@ -991,6 +999,8 @@ enum AlphaProgramValueKey {
         bounds_owner: Option<AlphaAddressKey>,
         /// The subobject bounds' start key and byte width.
         bounds: Option<(AlphaAddressKey, AlphaMachineKey)>,
+        /// A wide pointer's element count.
+        count: crate::kernel::PointerMetadataKey<AlphaMachineKey>,
     },
 }
 
@@ -2425,18 +2435,26 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             bounds: match pointer.bounds() {
                 Some(bounds) => Some((
                     alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                        &bounds.start,
+                        &bounds.start(),
                         bindings,
                         next_binder,
                     )?,
                     alpha_machine_key::<ALLOW_LOADS>(
-                        crate::kernel::MachineOperandView::Old(&bounds.width),
+                        crate::kernel::MachineOperandView::Old(&bounds.width()),
                         bindings,
                         next_binder,
                     )?,
                 )),
                 None => None,
             },
+            count: crate::kernel::PointerMetadataKey(match pointer.len() {
+                Some(count) => Some(alpha_machine_key::<ALLOW_LOADS>(
+                    crate::kernel::MachineOperandView::Old(count),
+                    bindings,
+                    next_binder,
+                )?),
+                None => None,
+            }),
         },
         other => {
             let (ty, term) = match other.numeric_value() {
@@ -3313,6 +3331,7 @@ mod proposition_identity_tests {
         forall(
             variable,
             Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: Address::new(
@@ -5425,7 +5444,7 @@ mod complete_pointer_condition_tests {
     #[test]
     fn complete_pointer_conditions_keep_state_domain_keys() {
         let _session = crate::kernel::VerificationSession::enter();
-        let a = OldPointer::new(
+        let a = Pointer::new(
             Address::symbolic(Variable(998620)),
             ProgramType::Int32Pointer,
         );
@@ -5433,10 +5452,10 @@ mod complete_pointer_condition_tests {
         for value in [
             a.clone(),
             a.clone().with_root_bounds(),
-            a.clone().with_bounds(Some(SubobjectBounds {
-                start: Address::null(),
-                width: OldMachineTerm::constant(4),
-            })),
+            a.clone().with_bounds(Some(SubobjectBounds::new(
+                Address::null(),
+                OldMachineTerm::constant(4),
+            ))),
         ] {
             let source = OldConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
             let root = crate::kernel::KernelTermImport::default().condition(&source);

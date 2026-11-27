@@ -20,6 +20,43 @@ Going back:
 | raise | Kernel | Surface | transcribes every kernel distinction and adds spellings from retained names and provenance |
 | print | Surface | text | may leave out what elaboration would infer back, such as a cast or a `to_integer`; when unsure it prints the explicit form |
 
+## Data flows one way
+
+```
+Syntax --elaborate (declarations in scope)--> Surface --lower (state at the position)--> Kernel --> proving
+```
+
+Each stage is computed once, before the stage that consumes it, and each
+reads only its input and what that input legitimately depends on:
+
+- Elaboration reads Syntax and the declarations in scope: the function's
+  parameters, result and globals, the locals in scope at the clause's
+  position, and Click's own definitions and binders. It never reads kernel
+  state.
+- Lowering reads Surface and the program state at the clause's position. It
+  never reads Syntax and never decides a type.
+- Proof code receives Kernel terms. It may have a clause lowered when its step
+  is reached, since lowering resolves names against that step's state, but it
+  never elaborates, never inspects Syntax or Surface, and never carries a
+  typing context. Raising a proof back to Surface, for expansion or
+  diagnostics, is a separate path out of the kernel.
+
+A decision is made at the earliest stage whose inputs it needs, and later
+stages read the result. When a decision is found in the wrong stage, move the
+decision up to where its inputs are; never move its inputs down to where the
+decision happens to be. Signs that a change is going the wrong way:
+
+- it grows with the number of call paths rather than the number of constructs;
+- code that should not care starts carrying something new, such as proof or
+  resource code taking a typing scope;
+- it makes two answers agree at the point of use instead of computing the
+  right answer once, upstream.
+
+The directory `src/surface` is older than this design and is named for the
+surface language, not for the Surface layer: it holds the parser, lowering,
+contract checking and the proof engine. Only `typed_surface.rs` and parts of
+lowering are the Surface layer.
+
 ## The rule: inference reads context, lowering is compositional
 
 Type inference depends on syntactic context. What `1` or `a - 1` means
@@ -80,6 +117,19 @@ lowering back to the machine comparison. Fixing lowering removes them.
   `old(x)`, `statement(2).exit`), and need not be efficient.
 - **Kernel** is the compact form for checking: variables, addresses, memory
   states, interned subterms. It holds no strings.
+
+Both are fully typed. The difference is that Surface is relative and Kernel
+is resolved. A Surface term names things as the proof writes them, and means
+something only given its context: the declarations in scope and the state at
+its position. A Kernel term is the same meaning with every name resolved to
+what it denotes there: `x` is a particular binding read at a particular state
+point, `old(..)` is the entry point, a binder is a variable, and pointer
+arithmetic is a byte offset on a known block. Lowering may also add what the
+text leaves implicit, such as obligations, side facts and the memory reads
+behind a C expression. Identities follow from resolution; interning and
+sharing are the efficiency built on top. In short, Surface plus its context
+is Kernel: lowering resolves a Surface term against its context, and raising
+recovers the names from the identities' retained provenance.
 
 Surface to Kernel is many to one: `old(x)` and `at(function.entry, x)` lower
 to the same term. Kernel to Surface must never be: two kernel terms that
@@ -249,27 +299,35 @@ specification definitions and recorded states. The lowerer delegates those
 queries to it. Comparison elaboration (`elaborate_proposition`,
 `elaborate_comparison` and the native operand forms) also runs on the
 `Elaborator`, reading names through a `TypingEnvironment`. It still asks
-lowering four questions through the `LoweringQueries` trait: whether a generic
-call's result is algebraic at its instantiation, a pointer's element width,
-a call result's pointer element width, and whether an access through an
-untyped pointer is refused. Each moves to the `Elaborator` once declared
-types answer it. `annotations/elaboration_tests.rs` elaborates comparisons
+lowering two questions through the `LoweringQueries` trait: whether a generic
+call's result is algebraic at its instantiation, and a call result's pointer
+element width. Each moves to the `Elaborator` once declared types answer it.
+Two have moved: the refusal of a step or access through an untyped pointer
+(`refuse_untyped_pointer_access`), and a pointer's element width
+(`contract_pointer_element_width`). They read the declared C types, the
+typing environment and the recorded region results. A pointer's element can
+still be known only from the value a name is bound to, a struct pointer's
+object class, so `TypeScope::bound_pointer_element` answers it from the
+lowering context, as a type (`PointerElement`), until the declaration scope
+records it. `annotations/elaboration_tests.rs` elaborates comparisons
 from declared types alone: Click binders declared in a `TypingEnvironment`
 over `NoOuterNames`, C parameters in the declarations, and a
 `LoweringQueries` that knows nothing, with no lowerer. The declarations
 still hold an (empty) entry state, a kernel value.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
-entry values, and the state that declares the clause's locals) only for
-names that no C scope resolved, which is most names in function contracts and
-fixed-state proofs. Those reads move to front-end declarations one lookup at a
-time: first a debug-build check that the declaration gives the kernel's answer
-in every lowering context, then the switch. Globals go first.
-`GlobalDeclarations` (`languages/interface.rs`) holds a function's global
-and static objects' declared types, by spelling and by kernel name, and debug
-builds check both global lookups against it. Fixed-state proofs, call-site
-requirements, composite resources and fold registration do not have the
-function's declarations yet and are not checked.
+entry values, and the state that declares the clause's locals) for names that
+no C scope resolved, which is most names in function contracts and fixed-state
+proofs. That is lowering reading kernel state to decide types, because
+elaboration runs inside lowering. `GlobalDeclarations`
+(`languages/interface.rs`) holds a function's global and static objects'
+declared types, and debug builds check the two global lookups against it where
+the lowering context has the function. Threading these declarations down
+through every lowering path into proof and resource code was tried and
+abandoned: it moved the input to the decision
+([Data flows one way](#data-flows-one-way)). Instead, clauses are elaborated
+before lowering, starting with function contracts, whose scope is fixed: the
+function's parameters, result and globals.
 
 Still to do in stage 2: elaboration runs where lowering reaches a comparison,
 not as a pass before lowering; the raiser still returns Syntax and keeps its

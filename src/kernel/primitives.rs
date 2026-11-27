@@ -105,19 +105,20 @@ pub(crate) use kernel_term::{
     KernelMatch, KernelTermExport, KernelTermImport,
 };
 // Prepared rewrite interface for the following scoped consumers.
+pub(in crate::kernel) use kernel_term::ArrayObject;
 pub use kernel_term::{
     Address, AddressOffset, AddressParts, KernelCallArgument, KernelFloatType,
     KernelImportedScalar, KernelIntegerOperator, KernelMachineLiteral, KernelNativeDescriptor,
     KernelObservedArgument, KernelObservedPointer, KernelTerm, KernelTermNode, KernelType,
-    KernelWrittenMachine,
+    KernelWrittenMachine, Pointer, SubobjectBounds,
 };
 #[allow(unused_imports)]
 pub(crate) use kernel_term::{
     AddressBlock, KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
 };
 pub(crate) use kernel_term::{
-    KernelAddressOffset, KernelArrayObject, KernelMatchArm, OffsetTree, OffsetView, SharedAddress,
-    SharedAddressOffset, SharedPointer,
+    KernelAddressOffset, KernelArrayObject, KernelMatchArm, OffsetTree, OffsetView,
+    PointerMetadataKey, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 mod machine_integer;
 pub use machine_integer::{
@@ -861,6 +862,10 @@ impl LoadKind {
             ProgramValue::UInt128(_) => Self::UInt128,
             ProgramValue::Float32(_) => Self::Float32,
             ProgramValue::Float64(_) => Self::Float64,
+            // A slice's two-word cell is no scalar or pointer-word read: no
+            // kind reads it, so no scalar read is answered by a stored slice
+            // (`design/rust-slice-values.md`, step 2b-ii-a).
+            ProgramValue::Pointer(pointer) if pointer.is_wide() => return None,
             ProgramValue::Pointer(_) => Self::Int32,
         })
     }
@@ -1403,7 +1408,7 @@ pub enum OldConditionTerm {
     AddressOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
     AddressEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
-    PointerEqual(Box<OldPointer>, Box<OldPointer>),
+    PointerEqual(Box<Pointer>, Box<Pointer>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1459,7 +1464,7 @@ enum ConditionIdentity<'a> {
     Float64(&'a FloatCondition),
     AddressOffsetEqual(&'a AddressOffset, &'a AddressOffset),
     AddressEqual(&'a Address, &'a Address),
-    PointerEqual(&'a OldPointer, &'a OldPointer),
+    PointerEqual(&'a Pointer, &'a Pointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -2478,151 +2483,6 @@ pub(super) struct ObjectTypePremise {
     pub(super) scope: u64,
 }
 
-/// A pointer value: an address and its provenance (`design/pointer-model.md`).
-/// C provenance is the allocation the pointer was derived from plus the array
-/// object within it (C11 6.5.6p8-9). The term's type is carried beside the
-/// value and is not part of its identity: equality, ordering and hashing
-/// ignore it, as they ignore the declared object class and type evidence.
-#[derive(Clone, Debug)]
-pub struct OldPointer {
-    address: Address,
-    /// The allocation designated when this value entered. Address aliases
-    /// never replace this component; only value transport or substitution
-    /// maps it.
-    provenance: Arc<Address>,
-    /// The array object within the allocation: C provenance's second part.
-    array: ArrayObject,
-    program_type: ProgramType,
-    qualifiers: Option<Arc<PointerQualifiers>>,
-}
-
-/// The C array object a pointer was derived from (C11 6.5.6p8-9): the part of
-/// its C provenance below the allocation. Arithmetic, one-past pointers,
-/// subtraction and accesses are bounded by it, not by the allocation.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::kernel) enum ArrayObject {
-    /// The complete object the provenance names: a local, a global, a heap
-    /// block, a temporary, or a function.
-    Allocation,
-    /// An array object whose creation the kernel did not see, as for a
-    /// parameter or a loaded pointer. It is named by where the pointer came
-    /// from, and coverage facts about that name give its extent. A view that
-    /// may not use the name's coverage has no name.
-    Opaque(Option<Arc<Address>>),
-    /// A member subobject of the allocation.
-    Member(Arc<MemberArray>),
-}
-
-/// A member subobject (`design/pointer-subobject-bounds.md`).
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::kernel) struct MemberArray {
-    /// The member's bytes. A memory range's carrier has none of its own: the
-    /// range's bytes are its bounds.
-    pub(in crate::kernel) bounds: Option<SubobjectBounds>,
-    /// The opaque array object the member was selected from, whose coverage
-    /// justified the selection.
-    pub(in crate::kernel) within: Option<Arc<Address>>,
-}
-
-impl ArrayObject {
-    /// The array object with these bounds and opaque name, as the three
-    /// separate fields spelled it: `known` is false only for an opaque array
-    /// object, which has no bounds of its own.
-    pub(in crate::kernel) fn from_parts(
-        known: bool,
-        bounds: Option<SubobjectBounds>,
-        owner: Option<Arc<Address>>,
-    ) -> Self {
-        if !known {
-            debug_assert!(bounds.is_none(), "an opaque array object has no bounds");
-            return Self::Opaque(owner);
-        }
-        match (bounds, owner) {
-            (None, None) => Self::Allocation,
-            (bounds, within) => Self::Member(Arc::new(MemberArray { bounds, within })),
-        }
-    }
-
-    pub(in crate::kernel) fn is_known(&self) -> bool {
-        !matches!(self, Self::Opaque(_))
-    }
-
-    pub(in crate::kernel) fn bounds(&self) -> Option<&SubobjectBounds> {
-        match self {
-            Self::Member(member) => member.bounds.as_ref(),
-            Self::Allocation | Self::Opaque(_) => None,
-        }
-    }
-
-    /// The opaque array object this one is or was selected from.
-    pub(in crate::kernel) fn owner(&self) -> Option<&Arc<Address>> {
-        match self {
-            Self::Allocation => None,
-            Self::Opaque(owner) => owner.as_ref(),
-            Self::Member(member) => member.within.as_ref(),
-        }
-    }
-
-    fn with_bounds(&self, bounds: Option<SubobjectBounds>) -> Self {
-        if bounds.is_none() && self.bounds().is_none() {
-            return self.clone();
-        }
-        Self::from_parts(true, bounds, self.owner().cloned())
-    }
-
-    fn with_owner(&self, owner: Option<Arc<Address>>) -> Self {
-        Self::from_parts(self.is_known(), self.bounds().cloned(), owner)
-    }
-
-    fn map(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
-        match self {
-            Self::Allocation => Self::Allocation,
-            Self::Opaque(owner) => Self::Opaque(owner.as_deref().map(|o| Arc::new(map(o)))),
-            Self::Member(member) => Self::Member(Arc::new(MemberArray {
-                bounds: member.bounds.as_ref().map(|bounds| SubobjectBounds {
-                    start: map(&bounds.start),
-                    width: bounds.width.clone(),
-                }),
-                within: member.within.as_deref().map(|o| Arc::new(map(o))),
-            })),
-        }
-    }
-
-    fn try_map(&self, mut map: impl FnMut(&Address) -> Option<Address>) -> Option<Self> {
-        Some(match self {
-            Self::Allocation => Self::Allocation,
-            Self::Opaque(owner) => Self::Opaque(match owner {
-                Some(owner) => Some(Arc::new(map(owner)?)),
-                None => None,
-            }),
-            Self::Member(member) => Self::Member(Arc::new(MemberArray {
-                bounds: match &member.bounds {
-                    Some(bounds) => Some(SubobjectBounds {
-                        start: map(&bounds.start)?,
-                        width: bounds.width.clone(),
-                    }),
-                    None => None,
-                },
-                within: match &member.within {
-                    Some(owner) => Some(Arc::new(map(owner)?)),
-                    None => None,
-                },
-            })),
-        })
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct PointerQualifiers {
-    /// The class of the object the pointer was formed to designate, from the
-    /// declaration that produced it (`design/effective-types.md`). It is not
-    /// part of the value's identity, and it survives casts, `void *`,
-    /// arithmetic and copies, so an access through any later spelling is
-    /// checked against it.
-    object_class: Option<crate::kernel::effective_type::CAccessClass>,
-    object_type_evidence: Option<ObjectTypeEvidence>,
-}
-
 /// Exact non-address metadata shared by native and retained certification.
 /// Optional default qualifier storage is not itself part of this reading.
 #[derive(PartialEq, Eq)]
@@ -2633,34 +2493,12 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
     evidence: Option<&'a ObjectTypeEvidence>,
 }
 
-/// The subobject a pointer was formed from, narrower than its complete
-/// object (`design/pointer-subobject-bounds.md`). C11 6.5.6p7-p8 and C++
-/// [expr.add] bound pointer arithmetic and access by the designated object,
-/// not by the enclosing allocation: `&pair.first + 1` is one past `first`,
-/// even though `pair.second` lives at that address.
-///
-/// The bounds are absolute, `[start, start + width)` bytes, so it does not
-/// change as the pointer moves through arithmetic or loops. Respelling the
-/// pointer's address through a proven alias leaves it alone; a substitution
-/// of the variables the address mentions maps `start` the same way. A value
-/// without concrete bounds either has a known complete object or carries
-/// an opaque domain whose bounds come from coverage evidence.
-///
-/// The term-valued width also supports the legacy symbolic-bounds prototype.
-/// Production unseen pointers use `Pointer::bounds_owner` instead
-/// (`design/pointer-subobject-bounds.md`, Phase C).
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct SubobjectBounds {
-    pub(crate) start: Address,
-    pub(crate) width: OldMachineTerm,
-}
-
 impl SubobjectBounds {
     /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Address| {
             Term::ProgramValue(
-                ProgramValue::Pointer(OldPointer::new(pointer, ProgramType::VoidPointer)).into(),
+                ProgramValue::Pointer(Pointer::new(pointer, ProgramType::VoidPointer)).into(),
             )
         };
         let width = range.element_width();
@@ -2668,7 +2506,7 @@ impl SubobjectBounds {
             return Proposition::Predicate {
                 name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}{width}"),
                 arguments: vec![
-                    pointer(self.start.clone()),
+                    pointer(self.start().clone()),
                     pointer(range.base().clone()),
                     Term::ProgramValue((ProgramValue::UInt64(start.clone())).into()),
                     Term::ProgramValue((ProgramValue::UInt64(end.clone())).into()),
@@ -2678,7 +2516,7 @@ impl SubobjectBounds {
         Proposition::Predicate {
             name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}{width}"),
             arguments: vec![
-                pointer(self.start.clone()),
+                pointer(self.start().clone()),
                 pointer(
                     range
                         .base()
@@ -2762,20 +2600,22 @@ impl SubobjectBounds {
 
     /// The `width` bytes at `start`: a member's bounds.
     pub(crate) fn constant(start: Address, width: u32) -> Self {
-        Self {
-            start,
-            width: OldMachineTerm::constant(width),
-        }
+        Self::new(start, OldMachineTerm::constant(width))
     }
 
     /// The width in bytes when it is a constant.
     pub(crate) fn constant_width(&self) -> Option<u32> {
-        self.width.as_const()
+        self.width().as_const()
     }
 }
 
-impl OldPointer {
+impl Pointer {
     pub(crate) fn new(pointer: Address, program_type: ProgramType) -> Self {
+        assert!(
+            !program_type.is_slice_pointer(),
+            "internal error: a slice pointer is built with its element count \
+             (`Pointer::with_element_count`), not as a thin pointer"
+        );
         assert!(
             program_type.is_pointer(),
             "C pointer values require a pointer type"
@@ -2801,17 +2641,12 @@ impl OldPointer {
         } else {
             pointer.object_identity()
         };
-        Self {
-            array: if known_root {
-                ArrayObject::Allocation
-            } else {
-                ArrayObject::Opaque(Some(Arc::new(root.clone())))
-            },
-            provenance: Arc::new(root),
-            address: pointer,
-            program_type,
-            qualifiers: None,
-        }
+        let array = if known_root {
+            ArrayObject::allocation()
+        } else {
+            ArrayObject::opaque(Some(root.clone()))
+        };
+        Self::from_parts(pointer, root, array, program_type)
     }
 
     /// A complete pointer read owns an opaque domain independently of its
@@ -2835,9 +2670,9 @@ impl OldPointer {
         site: Option<&ProgramPoint>,
         cell: &Address,
     ) -> Self {
-        let mut value = Self::new(pointer, program_type);
+        let value = Self::new(pointer, program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_))
-            || value.address.base.is_function()
+            || value.address().base.is_function()
         {
             return value;
         }
@@ -2846,9 +2681,10 @@ impl OldPointer {
         // needs explicit evidence, not a search for an older cell version.
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
-        let origin = Arc::new(Address::loaded_value_read_at(&source, site, cell));
-        value.array = ArrayObject::Opaque(Some(origin.clone()));
-        value.with_provenance(origin)
+        let origin = Address::loaded_value_read_at(&source, site, cell);
+        value
+            .with_array_object(ArrayObject::opaque(Some(origin.clone())))
+            .with_provenance(origin)
     }
 
     /// A point-named complete read uses the same identity for its address,
@@ -2875,10 +2711,9 @@ impl OldPointer {
         if matches!(program_type, ProgramType::FunctionPointer(_)) {
             return value;
         }
-        let origin = Arc::new(address);
-        let mut value = value.with_provenance(origin.clone());
-        value.array = ArrayObject::Opaque(Some(origin));
         value
+            .with_provenance(address.clone())
+            .with_array_object(ArrayObject::opaque(Some(address)))
     }
 
     /// The read that introduced this complete pointer's opaque domain when
@@ -2886,11 +2721,11 @@ impl OldPointer {
     /// the producing read, not an address-alias or preservation query.
     pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Address)> {
         if self.bounds_owner() != Some(self.provenance())
-            || self.address.object_identity() == *self.provenance()
+            || self.address().object_identity() == *self.provenance()
         {
             return None;
         }
-        let address_read = self.address.as_loaded_value()?;
+        let address_read = self.address().as_loaded_value()?;
         let origin = self.provenance().as_loaded_value()?;
         if address_read.displacement != AddressOffset::constant(0)
             || origin.displacement != AddressOffset::constant(0)
@@ -2901,27 +2736,13 @@ impl OldPointer {
         Some((origin.defining_memory, origin.defining_address))
     }
 
-    pub(crate) fn provenance(&self) -> &Address {
-        &self.provenance
-    }
-
-    /// The array object within the allocation.
-    pub(in crate::kernel) fn array_object(&self) -> &ArrayObject {
-        &self.array
-    }
-
-    pub(in crate::kernel) fn with_array_object(mut self, array: ArrayObject) -> Self {
-        self.array = array;
-        self
-    }
-
     pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
-        self.array.owner().map(|owner| &**owner)
+        self.array_object().owner()
     }
 
-    pub(in crate::kernel) fn with_bounds_owner(mut self, owner: Option<Arc<Address>>) -> Self {
-        self.array = self.array.with_owner(owner);
-        self
+    pub(in crate::kernel) fn with_bounds_owner(self, owner: Option<Address>) -> Self {
+        let array = self.array_object().with_owner(owner);
+        self.with_array_object(array)
     }
 
     /// Entry member selection establishes bounds for its parent's opaque domain.
@@ -2933,13 +2754,7 @@ impl OldPointer {
             return None;
         }
         let origin = self.bounds_owner()?;
-        Some(
-            SubobjectBounds {
-                start: origin.clone(),
-                width: OldMachineTerm::constant(0),
-            }
-            .coverage_fact(range),
-        )
+        Some(SubobjectBounds::new(origin.clone(), OldMachineTerm::constant(0)).coverage_fact(range))
     }
 
     pub(in crate::kernel) fn access_provenance(&self) -> (&Address, Option<&Address>) {
@@ -2953,80 +2768,33 @@ impl OldPointer {
         )
     }
 
-    pub(in crate::kernel) fn with_provenance(mut self, provenance: Arc<Address>) -> Self {
-        self.provenance = provenance;
-        self
-    }
-
-    pub(crate) fn address(&self) -> &Address {
-        &self.address
-    }
-
-    pub(crate) fn into_pointer(self) -> Address {
-        self.address
-    }
-
-    pub(crate) fn program_type(&self) -> ProgramType {
-        self.program_type
-    }
-
     /// Exact retained qualifiers for syntax certification. Address-bearing
     /// metadata is compared separately through its written term structure.
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
-        RetainedPointerMetadata {
-            program_type: self.program_type,
-            bounds_known: self.bounds_are_known(),
-            declared_class: self
-                .qualifiers
-                .as_ref()
-                .and_then(|q| q.object_class.as_ref()),
-            evidence: self.object_origin_evidence(),
-        }
-    }
-
-    pub(crate) fn with_type(self, program_type: ProgramType) -> Self {
-        Self {
-            program_type,
-            ..self
-        }
-    }
-
-    /// Respells the address as a proven-equal alias. The bounds keep their
-    /// own spelling: it names the same bytes either way, and the access
-    /// check resolves the address against it as it resolves a held range.
-    pub(crate) fn replace_pointer(&mut self, pointer: Address) {
-        self.address = pointer;
-    }
-
-    /// The same value at another address in the same subobject: the result
-    /// of pointer arithmetic, which keeps the type, qualifiers and bounds.
-    pub(crate) fn with_address(mut self, pointer: Address) -> Self {
-        self.address = pointer;
-        self
+        self.shared().retained_nonaddress_metadata()
     }
 
     pub(crate) fn bounds(&self) -> Option<&SubobjectBounds> {
-        self.array.bounds()
+        self.array_object().bounds()
     }
 
     pub(crate) fn bounds_are_known(&self) -> bool {
-        self.array.is_known()
+        self.array_object().is_known()
     }
 
     /// The complete allocation as the array object: a byte view's.
-    pub(in crate::kernel) fn with_root_bounds(mut self) -> Self {
-        self.array = ArrayObject::Allocation;
-        self
+    pub(in crate::kernel) fn with_root_bounds(self) -> Self {
+        self.with_array_object(ArrayObject::allocation())
     }
 
     pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
         self.object_type_evidence()
             .map(|evidence| evidence.class.clone())
-            .or_else(|| self.qualifiers.as_ref()?.object_class.clone())
+            .or_else(|| self.qualifiers()?.object_class.clone())
     }
 
     pub(crate) fn object_origin_evidence(&self) -> Option<&ObjectTypeEvidence> {
-        self.qualifiers.as_ref()?.object_type_evidence.as_ref()
+        self.qualifiers()?.object_type_evidence.as_ref()
     }
     pub(crate) fn object_type_evidence(&self) -> Option<&ObjectTypeEvidence> {
         self.object_origin_evidence()
@@ -3060,8 +2828,7 @@ impl OldPointer {
                 || (evidence.checked && self.object_type_evidence().is_none()))
         {
             self = self.with_declared_object_class(Some(evidence.class.clone()));
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default))
-                .object_type_evidence = Some(evidence);
+            self.qualifiers_mut().object_type_evidence = Some(evidence);
         }
         self
     }
@@ -3071,144 +2838,112 @@ impl OldPointer {
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         if class.is_some() && self.object_class().is_none() {
-            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).object_class =
-                class;
+            self.qualifiers_mut().object_class = class;
         }
         self
     }
 
-    pub(crate) fn with_bounds(mut self, bounds: Option<SubobjectBounds>) -> Self {
-        self.array = self.array.with_bounds(bounds);
-        self
+    pub(crate) fn with_bounds(self, bounds: Option<SubobjectBounds>) -> Self {
+        if bounds.is_none() && self.bounds().is_none() {
+            return self;
+        }
+        let array = self.array_object().with_bounds(bounds);
+        self.with_array_object(array)
     }
 
     /// Applies a substitution to every address the value mentions: its own
     /// address and its bounds' start. Use it where the rewrite maps
-    /// variables, not where it only respells the address.
-    pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
-        let mut result = self.clone();
-        result.address = map(&self.address);
-        let provenance = map(&self.provenance);
-        if provenance != *self.provenance {
-            result.provenance = Arc::new(provenance);
+    /// variables, not where it only respells the address. A wide pointer's
+    /// element count is a numeric component and is mapped by `count`, the
+    /// same substitution on machine terms; a thin pointer never calls it.
+    pub(crate) fn map_pointers(
+        &self,
+        mut map: impl FnMut(&Address) -> Address,
+        count: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+    ) -> Self {
+        let address = map(self.address());
+        let provenance = map(self.provenance());
+        let array = self.array_object().map(map);
+        let mut result = self.clone().with_address(address);
+        if provenance != *self.provenance() {
+            result = result.with_provenance(provenance);
         }
-        result.array = self.array.map(map);
-        result
+        result.with_array_object(array).map_element_count(count)
     }
 
     pub(in crate::kernel) fn try_map_pointers(
         &self,
         mut map: impl FnMut(&Address) -> Option<Address>,
+        count: impl FnOnce(&OldMachineTerm) -> Option<OldMachineTerm>,
     ) -> Option<Self> {
-        let pointer = map(&self.address)?;
-        let provenance = map(&self.provenance)?;
-        let array = self.array.try_map(map)?;
-        Some(
-            self.clone()
-                .with_address(pointer)
-                .with_provenance(Arc::new(provenance))
-                .with_array_object(array),
-        )
+        let pointer = map(self.address())?;
+        let provenance = map(self.provenance())?;
+        let array = self.array_object().try_map(map)?;
+        let count = match self.len() {
+            Some(source) => Some(count(source)?),
+            None => None,
+        };
+        let result = self
+            .clone()
+            .with_address(pointer)
+            .with_provenance(provenance)
+            .with_array_object(array);
+        Some(match count {
+            Some(count) => result.with_replaced_element_count(count),
+            None => result,
+        })
+    }
+
+    /// The same value with its element count mapped; a thin pointer is
+    /// returned unchanged without calling `count`.
+    fn map_element_count(self, count: impl FnOnce(&OldMachineTerm) -> OldMachineTerm) -> Self {
+        let Some(source) = self.len() else {
+            return self;
+        };
+        let mapped = count(source);
+        if &mapped == source {
+            return self;
+        }
+        self.with_replaced_element_count(mapped)
+    }
+
+    /// Every numeric term a wide pointer's metadata holds, for variable
+    /// collection beside [`Self::pointers`]: empty for a thin pointer.
+    pub(crate) fn metadata_terms(&self) -> impl Iterator<Item = &OldMachineTerm> {
+        self.len().into_iter()
     }
 
     /// Re-spell physical addresses without changing the value's origin.
-    pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Address) -> Address) -> Self {
-        let mapped = self.map_pointers(map);
-        let array = mapped.array.with_owner(self.array.owner().cloned());
+    /// A wide pointer's element count is a numeric component, not an origin:
+    /// `count` respells it as the caller respells the machine terms beside
+    /// the value (canonicalizing its embedded reads, or rewriting them by an
+    /// address equality), so a count that reads memory is respelled with the
+    /// scalars stored or compared with it. A thin pointer never calls it.
+    pub(in crate::kernel) fn map_addresses(
+        &self,
+        map: impl FnMut(&Address) -> Address,
+        count: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+    ) -> Self {
+        let mapped = self.map_pointers(map, count);
+        let array = mapped
+            .array_object()
+            .with_owner(self.array_object().owner().cloned());
         mapped
-            .with_provenance(self.provenance.clone())
+            .with_provenance(self.provenance().clone())
             .with_array_object(array)
     }
 
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Address> {
-        std::iter::once(&self.address)
-            .chain(std::iter::once(self.provenance.as_ref()))
+        std::iter::once(self.address())
+            .chain(std::iter::once(self.provenance()))
             .chain(self.bounds_owner())
-            .chain(self.bounds().map(|bounds| &bounds.start))
+            .chain(self.bounds().map(SubobjectBounds::start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
-        self.address.base == AddressBase::Concrete("null".to_string())
-            && self.address.offset == AddressOffset::constant(0)
-    }
-}
-
-impl OldPointer {
-    /// Everything that is the value's identity: the address, its provenance,
-    /// and the subobject it
-    /// designates, plus its opaque local-reference custody. A lease key is a
-    /// fresh scalar id, never a structural resource or ledger key.
-    /// Two values at one address with different bounds are
-    /// different values: address equality does not make a one-past pointer
-    /// designate the object that follows it.
-    fn identity(
-        &self,
-    ) -> (
-        &Address,
-        &Address,
-        bool,
-        Option<&Address>,
-        Option<&SubobjectBounds>,
-    ) {
-        (
-            &self.address,
-            &self.provenance,
-            self.bounds_are_known(),
-            if self.bounds_are_known() {
-                None
-            } else {
-                self.bounds_owner()
-            },
-            self.bounds(),
-        )
-    }
-}
-
-impl OldPointer {
-    /// Whether the two have one C provenance, as identity compares it: the
-    /// same allocation and the same array object.
-    pub(crate) fn same_provenance_as(&self, other: &Self) -> bool {
-        let (_, provenance, known, owner, bounds) = self.identity();
-        let (_, other_provenance, other_known, other_owner, other_bounds) = other.identity();
-        provenance == other_provenance
-            && known == other_known
-            && owner == other_owner
-            && bounds == other_bounds
-    }
-}
-
-impl PartialEq for OldPointer {
-    fn eq(&self, other: &Self) -> bool {
-        self.identity() == other.identity()
-    }
-}
-
-impl Eq for OldPointer {}
-
-impl std::hash::Hash for OldPointer {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.identity().hash(state);
-    }
-}
-
-impl PartialOrd for OldPointer {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for OldPointer {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.identity().cmp(&other.identity())
-    }
-}
-
-impl std::ops::Deref for OldPointer {
-    type Target = Address;
-
-    fn deref(&self) -> &Self::Target {
-        &self.address
+        self.address().base == AddressBase::Concrete("null".to_string())
+            && self.address().offset == AddressOffset::constant(0)
     }
 }
 
@@ -3792,7 +3527,7 @@ pub(in crate::kernel) enum PointerIntegerKind {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerIntegerValue {
     pub(in crate::kernel) numeric: Box<ProgramValue>,
-    pub(in crate::kernel) pointer: Box<OldPointer>,
+    pub(in crate::kernel) pointer: Box<Pointer>,
     pub(in crate::kernel) kind: PointerIntegerKind,
 }
 
@@ -3827,7 +3562,7 @@ pub enum ProgramValue {
     Float32(OldMachineTerm),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
     Float64(OldMachineTerm),
-    Pointer(OldPointer),
+    Pointer(Pointer),
     /// A value of an abstract type parameter: the spec value of that rigid
     /// type it is.
     Parameter(Box<AlgebraicTerm>),
@@ -3911,6 +3646,109 @@ pub enum ProgramType {
     /// an incomplete struct tag is tracked by the C frontend, not erased to
     /// integer storage.
     PointerArray(PointerArrayElement, u32),
+    /// A wide pointer to `[T]` or `str` (`design/rust-slice-values.md`): a
+    /// thin pointer of [`SliceElement::thin_pointer_type`] plus its element
+    /// count. Every value of this type carries the count
+    /// ([`Pointer::len`]) and no thin pointer has it. Rust's `&[T]`, `&mut
+    /// [T]`, `*const [T]`, `*mut [T]` and `Box<[T]>` are this one type, told
+    /// apart, as thin `&T`, `&mut T` and `*const T` are, by the declaration's
+    /// qualifiers and contract. It has no pointee type, so no thin pointer
+    /// operation (arithmetic, ordering, dereference, integer casts) takes
+    /// it: those read [`Pointer::as_ptr`].
+    SlicePointer(SliceElement),
+}
+
+/// The bytes a wide pointer's cell holds: its data word and its metadata
+/// word.
+pub(crate) const WIDE_POINTER_BYTE_WIDTH: u32 = 2 * C_POINTER_BYTE_WIDTH;
+
+/// The element type of a [`ProgramType::SlicePointer`]: `[T]` for a scalar
+/// or abstract `T`, or `str`, whose elements are UTF-8 bytes. `str` is its
+/// own element so the UTF-8 invariant attaches to strings and never to
+/// arbitrary bytes (`design/rust-slice-values.md`, "String slices").
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum SliceElement {
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Int128,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    Float32,
+    Float64,
+    /// `str`: a byte sequence whose thin part is a `u8` pointer.
+    Str,
+    /// An abstract element type, a generic `[T]`.
+    Parameter(TypeParameterName),
+}
+
+impl SliceElement {
+    /// The `[T]` whose thin part has this type, `T *`; `None` for a type
+    /// that is no slice's thin part. A `u8` pointer gives `[u8]`, never
+    /// `str`, which is reached only by retyping a wide pointer.
+    pub fn of_thin_pointer_type(program_type: ProgramType) -> Option<Self> {
+        Some(match program_type {
+            ProgramType::Int8Pointer => Self::Int8,
+            ProgramType::Int16Pointer => Self::Int16,
+            ProgramType::Int32Pointer => Self::Int32,
+            ProgramType::Int64Pointer => Self::Int64,
+            ProgramType::Int128Pointer => Self::Int128,
+            ProgramType::UInt8Pointer => Self::UInt8,
+            ProgramType::UInt16Pointer => Self::UInt16,
+            ProgramType::UInt32Pointer => Self::UInt32,
+            ProgramType::UInt64Pointer => Self::UInt64,
+            ProgramType::UInt128Pointer => Self::UInt128,
+            ProgramType::Float32Pointer => Self::Float32,
+            ProgramType::Float64Pointer => Self::Float64,
+            ProgramType::ParameterPointer(parameter) => Self::Parameter(parameter),
+            _ => return None,
+        })
+    }
+
+    /// The Click specification spelling of the slice pointer type:
+    /// `Slice<T>` for `&[T]`, `Str` for `&str`.
+    pub fn slice_type_spelling(self) -> &'static str {
+        let element = match self {
+            Self::Str => return "Str",
+            Self::Parameter(parameter) => parameter.name(),
+            Self::Int8 => "int8",
+            Self::Int16 => "int16",
+            Self::Int32 => "int32",
+            Self::Int64 => "int64",
+            Self::Int128 => "int128",
+            Self::UInt8 => "uint8",
+            Self::UInt16 => "uint16",
+            Self::UInt32 => "uint32",
+            Self::UInt64 => "uint64",
+            Self::UInt128 => "uint128",
+            Self::Float32 => "float32",
+            Self::Float64 => "float64",
+        };
+        TypeParameterName::intern(&format!("Slice<{element}>")).name()
+    }
+
+    /// The type of the thin part, `s.as_ptr()`.
+    pub fn thin_pointer_type(self) -> ProgramType {
+        match self {
+            Self::Int8 => ProgramType::Int8Pointer,
+            Self::Int16 => ProgramType::Int16Pointer,
+            Self::Int32 => ProgramType::Int32Pointer,
+            Self::Int64 => ProgramType::Int64Pointer,
+            Self::Int128 => ProgramType::Int128Pointer,
+            Self::UInt8 | Self::Str => ProgramType::UInt8Pointer,
+            Self::UInt16 => ProgramType::UInt16Pointer,
+            Self::UInt32 => ProgramType::UInt32Pointer,
+            Self::UInt64 => ProgramType::UInt64Pointer,
+            Self::UInt128 => ProgramType::UInt128Pointer,
+            Self::Float32 => ProgramType::Float32Pointer,
+            Self::Float64 => ProgramType::Float64Pointer,
+            Self::Parameter(parameter) => ProgramType::ParameterPointer(parameter),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4079,7 +3917,7 @@ pub struct LValue {
     /// The provenance of the pointer this memory lvalue was reached through:
     /// its allocation and array object. The access is checked against it,
     /// and `&lvalue` keeps it.
-    pub(super) provenance: Option<Arc<Address>>,
+    pub(super) provenance: Option<Address>,
     pub(super) array: Option<ArrayObject>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
@@ -6419,7 +6257,7 @@ impl Ord for SegmentValueRuns {
 pub struct MemoryRange {
     pub(super) base: Address,
     /// Origin of the value naming the range, independent of address aliases.
-    pub(super) provenance: Arc<Address>,
+    pub(super) provenance: Address,
     /// A typed clause also demands this carrier's provenance. Raw kernel
     /// intervals ask only about physical authority; both retain supplier
     /// provenances through resource algebra and subsequent C access checks.
@@ -6470,7 +6308,7 @@ impl MemoryRange {
         (
             &self.base,
             &self.provenance,
-            self.carrier.owner().map(|owner| &**owner),
+            self.carrier.owner(),
             &self.start_bound,
             &self.end_bound,
             self.element_width,
@@ -8534,6 +8372,13 @@ pub enum RuntimeError {
     /// read of a variant the value is not known to have, or a constructor
     /// whose fields do not fit its variant. The message says which.
     EnumVariant(String),
+    /// A thin-pointer operation (arithmetic, ordering, comparison, a cast,
+    /// a truth test) given a wide pointer, or a cast that would add or remove
+    /// a slice's element count. `operation` names it; the operation reads a
+    /// slice's thin part, `s.as_ptr()` (`design/rust-slice-values.md`).
+    ThinPointerRequired {
+        operation: &'static str,
+    },
     IndeterminatePointeeType,
     UnsupportedPointerSubtractionOffsets,
     UnsupportedPointerComparisonOffsets,
@@ -8919,6 +8764,14 @@ impl RuntimeError {
     /// Why an unsigned 32-bit heap allocation size was refused
     /// ([`Self::HeapAllocationSizeAboveInt32`]).
     pub const HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE: &'static str = "heap allocation size must be known to fit the signed 32-bit allocation size: Click models a heap block with a checked 32-bit size of at most 2147483647 bytes, and accepts a `uint32` size, or element count, only where the facts bound it to that size";
+
+    /// The sentence a [`Self::ThinPointerRequired`] refusal says.
+    pub fn thin_pointer_required_message(operation: &str) -> String {
+        format!(
+            "{operation} takes a thin pointer, not a slice: use the slice's data pointer \
+             `.as_ptr()`, or its length `.len()`"
+        )
+    }
 
     pub fn kernel_summary(&self) -> String {
         match self {
@@ -15066,6 +14919,9 @@ pub enum KernelProposition {
     MemoryReadDefined {
         at: Option<program_point::ProgramPointId>,
         memory: SymbolicMemory,
+        /// The point `memory` is the state at; not part of the fact's
+        /// equality ([`program_point::PathLink`]), unlike `at`.
+        point: program_point::PathLink,
         pointer: Address,
         value_type: ProgramType,
     },
@@ -15115,8 +14971,13 @@ pub enum KernelProposition {
         after_point: program_point::PathLink,
         mutable_ranges: Vec<MemoryRange>,
     },
-    /// A free of the block at `allocation_base` with size `bytes`, which
-    /// keeps its format, so a 64-bit block's free reinstates a 64-bit claim.
+    /// Frees of the heap blocks in `blocks`, each at its base with its size,
+    /// which keeps its format, so a 64-bit block's free reinstates a 64-bit
+    /// claim. Between `before` and `after` only these blocks and
+    /// `mutable_ranges` change: a `free` statement frees one block and
+    /// changes nothing else; a call's exit frees every block its allocation
+    /// effects retire, and its other effects (the claims it retires or
+    /// makes and the memory it produces) are its mutable ranges.
     HeapAllocationFreed {
         before: SymbolicMemory,
         /// The point `before` is the state at; not part of the fact's
@@ -15125,8 +14986,8 @@ pub enum KernelProposition {
         after: SymbolicMemory,
         /// The point `after` is the state at.
         after_point: program_point::PathLink,
-        allocation_base: Address,
-        bytes: AllocationSize,
+        blocks: Vec<(Address, AllocationSize)>,
+        mutable_ranges: Vec<MemoryRange>,
     },
     And(Box<KernelProposition>, Box<KernelProposition>),
     Or(Box<KernelProposition>, Box<KernelProposition>),
@@ -15359,6 +15220,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             memory,
             pointer,
             value_type,
+            ..
         } => {
             at.hash(state);
             memory.hash(state);
@@ -15403,14 +15265,14 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
             before.hash(state);
             after.hash(state);
-            allocation_base.hash(state);
-            bytes.hash(state);
+            blocks.hash(state);
+            mutable_ranges.hash(state);
         }
         Proposition::And(..)
         | Proposition::Or(..)
@@ -15657,7 +15519,9 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             memory,
             pointer,
             value_type,
+            point,
         } => Proposition::MemoryReadDefined {
+            point: point.clone(),
             at: *at,
             memory: memory.clone(),
             pointer: pointer.clone(),
@@ -15712,8 +15576,8 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             before_point,
             after_point,
         } => Proposition::HeapAllocationFreed {
@@ -15721,8 +15585,8 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             after_point: after_point.clone(),
             before: before.clone(),
             after: after.clone(),
-            allocation_base: allocation_base.clone(),
-            bytes: bytes.clone(),
+            blocks: blocks.clone(),
+            mutable_ranges: mutable_ranges.clone(),
         },
         Proposition::And(..)
         | Proposition::Or(..)
@@ -15836,7 +15700,7 @@ pub struct FunctionContractRefinementContext {
     /// not needed to lower the symbolic relation.
     pub(super) function_interface: FunctionContractInterface,
     pub(super) function_name: String,
-    pub(super) pointer: OldPointer,
+    pub(super) pointer: Pointer,
     pub(super) source_contract: Option<FunctionContract>,
     /// The values a fact fixed for the implementation side's own value
     /// parameters, when that side is a named contract found through one.

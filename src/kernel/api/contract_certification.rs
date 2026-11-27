@@ -438,6 +438,7 @@ pub fn execution_state_justifies_loadability_obligation(
         }
         Proposition::MemoryReadDefined {
             memory,
+            point,
             pointer,
             value_type,
             ..
@@ -447,7 +448,7 @@ pub fn execution_state_justifies_loadability_obligation(
             }
             let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+                point: point.clone(),
                 base: pointer.clone(),
                 bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
                 wide: false,
@@ -1078,6 +1079,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::LoadTypeMismatch { .. } => error.kernel_summary(),
         RuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()
+        }
+        RuntimeError::ThinPointerRequired { operation } => {
+            RuntimeError::thin_pointer_required_message(operation)
         }
         RuntimeError::UnsupportedPointerSubtractionOffsets => {
             "Click does not yet support pointer subtraction with these offsets".into()

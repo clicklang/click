@@ -1352,6 +1352,25 @@ produces `RuntimeError::IndeterminatePointeeType`. Importers should normally
 emit typed loads/stores and preserve enough pointer-type information to avoid
 that model error.
 
+A wide pointer (`design/rust-slice-values.md`) has type
+`ProgramType::SlicePointer(element)` and carries its element count; no thin
+pointer has that type, and retyping never adds or drops a count
+(`with_element_count` builds one, `as_ptr` takes its thin part). Arithmetic,
+ordering, equality, bitwise operations, member offsets and selections,
+dereferences, coercions, truth tests and casts that would add or drop a count
+refuse a wide operand with `RuntimeError::ThinPointerRequired`, naming the
+operation; a cast between slice pointer types keeps the count. Importers read
+a slice's address and length through its components, never through the slice.
+
+A slice is stored as one 16-byte cell. A program read of the cell at its own
+slice type returns the stored slice, count included; a read that would take
+one of its words (a thin pointer, an integer, a byte, or the cell at another
+slice type) is a `LoadTypeMismatch`, since the kernel states no layout for the
+words. No `LoadKind` reads a stored slice and no pointer decoding answers with
+one, so read-over-write and complete-pointer recovery never hand a slice to a
+thin read. A logical read of a slice cell names its version and, with no
+symbolic slice read yet, refuses (`design/rust-slice-values.md`, step 2b-ii).
+
 ## Symbolic execution
 
 ### What stepping a statement means

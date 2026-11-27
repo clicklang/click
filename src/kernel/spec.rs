@@ -3005,10 +3005,15 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &OldConditionTerm, variable: Variable) -> bool {
         match condition {
-            OldConditionTerm::PointerEqual(left, right) => left
-                .pointers()
-                .chain(right.pointers())
-                .any(|p| integer_carrier_in_pointer(p, variable)),
+            OldConditionTerm::PointerEqual(left, right) => {
+                left.pointers()
+                    .chain(right.pointers())
+                    .any(|p| integer_carrier_in_pointer(p, variable))
+                    || left
+                        .metadata_terms()
+                        .chain(right.metadata_terms())
+                        .any(|count| integer_carrier_in_bitvector(count, variable))
+            }
 
             crate::kernel::integer_comparison_condition!(left, right) => {
                 integer_carrier_in_integer(left.as_ref(), variable)
@@ -3089,12 +3094,18 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             })
         }
         Proposition::HeapAllocationFreed {
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
-            integer_carrier_in_bitvector(bytes.bytes(), variable)
-                || integer_carrier_in_pointer(allocation_base, variable)
+            blocks.iter().any(|(base, bytes)| {
+                integer_carrier_in_bitvector(bytes.bytes(), variable)
+                    || integer_carrier_in_pointer(base, variable)
+            }) || mutable_ranges.iter().any(|range| {
+                integer_carrier_in_bitvector(range.bound_terms().0, variable)
+                    || integer_carrier_in_bitvector(range.bound_terms().1, variable)
+                    || integer_carrier_in_pointer(&range.base, variable)
+            })
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)
@@ -8056,6 +8067,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 budget,
                 |value, facts, obligations| {
                     let outcome = match value {
+                        // A coercion keeps the value; a slice's count is
+                        // never dropped by one.
+                        ProgramValue::Pointer(pointer) if pointer.is_wide() => {
+                            ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {
+                                operation: "a pointer coercion",
+                            })
+                        }
                         ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
                                 && (!matches!(
@@ -8308,12 +8326,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let ProgramValue::Pointer(value) = path.value.into_native() else {
                     return None;
                 };
-                path.value =
-                    ProgramValue::Pointer(value.clone().with_bounds(Some(SubobjectBounds {
-                        start: value.address().clone(),
-                        width: (*width).into(),
-                    })))
-                    .into();
+                path.value = ProgramValue::Pointer(value.clone().with_bounds(Some(
+                    SubobjectBounds::new(value.address().clone(), (*width).into()),
+                )))
+                .into();
                 Some(path)
             })
             .collect()
@@ -8369,6 +8385,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let ProgramValue::Pointer(pointer) = pointer_path.value.into_native() else {
                     continue;
                 };
+                // A read through a slice reads its thin part, `s.as_ptr()`.
+                if pointer.is_wide() {
+                    budget
+                        .dropped_runtime_error
+                        .get_or_insert(RuntimeError::ThinPointerRequired {
+                            operation: "a dereference",
+                        });
+                    continue;
+                }
                 let pointer = pointer.into_pointer();
                 let (memory_view, selected_state) = match memory {
                     SpecPoint::Current => (state.memory(), Some(state)),
@@ -8399,6 +8424,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             _ => selected_state.and_then(ExecutionState::observation_point_id),
                         },
                         memory: memory_view.clone(),
+                        point: match memory {
+                            SpecPoint::At(point) => point.path_link().clone(),
+                            _ => selected_state.expect("selected read state").memory_point(),
+                        },
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));
@@ -8620,7 +8649,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .collect();
             let application = (!all_null)
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
-            let value = OldPointer::new(
+            let value = Pointer::new(
                 if all_null {
                     Address::null()
                 } else {
@@ -8637,7 +8666,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 SpecValue::Native(ProgramValue::Pointer(value))
             } else if let Some(application) = application {
                 KernelTermImport::default()
-                    .pointer_call(&application, retained, SharedPointer::import(&value))
+                    .pointer_call(&application, retained, value.shared().clone())
                     .into()
             } else {
                 SpecValue::retain_formed_pointer(ProgramValue::Pointer(value))
@@ -8822,7 +8851,7 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
-    let names_declared_object = |value: &OldPointer| {
+    let names_declared_object = |value: &Pointer| {
         [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
@@ -9141,6 +9170,14 @@ fn evaluate_spec_pointer_offset_paths_in(
         let ProgramValue::Pointer(pointer) = pointer_path.value.into_native() else {
             continue;
         };
+        if pointer.is_wide() {
+            budget
+                .dropped_runtime_error
+                .get_or_insert(RuntimeError::ThinPointerRequired {
+                    operation: "pointer arithmetic",
+                });
+            continue;
+        }
         let element_assumptions = assumptions_with_path_context(
             assumptions,
             &pointer_path.facts,
@@ -11490,7 +11527,7 @@ mod pointer_integer_observation_tests {
     #[test]
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );

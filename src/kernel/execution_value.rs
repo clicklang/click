@@ -69,7 +69,7 @@ impl ExecutionValue {
                 }),
         }
     }
-    pub fn pointer(&self) -> Option<&OldPointer> {
+    pub fn pointer(&self) -> Option<&Pointer> {
         let value = match self {
             Self::Native(value) => value,
             Self::Shared(root) => root.old_pointer_value()?,
@@ -121,7 +121,7 @@ impl ExecutionValue {
         let value = Self::retain_native(value);
         match value {
             Self::Native(ProgramValue::Pointer(pointer)) => {
-                KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)).into()
+                KernelTerm::shared_pointer_value(pointer.shared().clone()).into()
             }
             value => value,
         }
@@ -180,9 +180,8 @@ impl ExecutionValue {
         match self {
             Self::Shared(root) => root.clone(),
             Self::Native(ProgramValue::Pointer(pointer)) => {
-                KernelTerm::retained_pointer_read(pointer).unwrap_or_else(|| {
-                    KernelTerm::shared_pointer_value(SharedPointer::import(pointer))
-                })
+                KernelTerm::retained_pointer_read(pointer)
+                    .unwrap_or_else(|| KernelTerm::shared_pointer_value(pointer.shared().clone()))
             }
             Self::Native(value) => {
                 KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone()))
@@ -839,7 +838,7 @@ mod tests {
     #[test]
     fn pointer_local_storage_retains_root_and_native_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027000)),
             ProgramType::Int32Pointer,
         );
@@ -849,7 +848,7 @@ mod tests {
                 "local_source".into(),
                 vec![],
             ),
-            SharedPointer::import(&pointer),
+            pointer.shared().clone(),
         );
         let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
         let native = StoredExecutionValue::from(ProgramValue::Pointer(pointer.clone()));
@@ -888,7 +887,7 @@ mod tests {
                     .unwrap()
                     .pointer_payload()
                     .unwrap()
-                    .same_source_payload(&SharedPointer::import(&expected))
+                    .same_source_payload(expected.shared())
             );
         }
         let retagged = ExecutionValue::Shared(root).with_pointer_binding(ProgramType::VoidPointer);
@@ -902,12 +901,12 @@ mod tests {
     #[test]
     fn pointer_memory_cells_keep_roots_and_the_previous_native_key() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027500)),
             ProgramType::Int32Pointer,
         );
         let native = ProgramValue::Pointer(pointer.clone());
-        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
+        let root = KernelTerm::shared_pointer_value(pointer.shared().clone());
         let retained = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
         let native_cell = StoredMemoryValue::from(native.clone());
         assert_eq!(retained, native_cell);
@@ -932,7 +931,7 @@ mod tests {
     fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = SymbolicMemory::local_pointer("retained_pointer_cell");
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
         );
@@ -942,7 +941,7 @@ mod tests {
                 "stored_source".into(),
                 vec![],
             ),
-            SharedPointer::import(&pointer),
+            pointer.shared().clone(),
         );
         let memory = SymbolicMemory::new()
             .with_block(address.base.clone(), C_POINTER_BYTE_WIDTH)

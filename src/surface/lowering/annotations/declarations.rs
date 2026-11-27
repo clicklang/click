@@ -19,6 +19,9 @@ pub(super) struct Declarations<'a> {
     pub(super) global_declarations: Option<crate::languages::interface::GlobalDeclarations>,
     pub(super) program_parameter_types: Arc<BTreeMap<String, ProgramType>>,
     pub(super) pointer_element_types: Arc<BTreeMap<String, ProgramType>>,
+    /// The width each pointer parameter's element has, struct layouts
+    /// included, as the function declares it.
+    pub(super) parameter_pointer_element_widths: Arc<BTreeMap<String, u32>>,
 }
 
 impl<'a> AnnotationLowerer<'a> {
@@ -33,6 +36,7 @@ impl<'a> AnnotationLowerer<'a> {
             global_declarations: self.global_declarations.clone(),
             program_parameter_types: self.program_parameter_types.clone(),
             pointer_element_types: self.pointer_element_types.clone(),
+            parameter_pointer_element_widths: self.parameter_pointer_element_widths.clone(),
         }
     }
 }

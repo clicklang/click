@@ -21266,6 +21266,8 @@ uint64 probe(const struct View& source) {
     ensures source.data == old(source.data);
     ensures state.count == old(state.count);
 } by {
+    step_until(call(shorten, 0).entry);
+    have call(shorten, 0).parameter(value).count == old(source.count) by close();
     step(shorten, { count: old(source.count) });
 }
 "#;

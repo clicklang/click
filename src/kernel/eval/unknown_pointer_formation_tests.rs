@@ -1,10 +1,10 @@
 use super::*;
 
-fn pointer(id: u64) -> OldPointer {
-    OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+fn pointer(id: u64) -> Pointer {
+    Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
-fn view(value: &OldPointer, start: u32, end: u32) -> ResourceFact {
+fn view(value: &Pointer, start: u32, end: u32) -> ResourceFact {
     ResourceFact::view_memory(MemoryRange::from_pointer_value(
         value,
         start.into(),
@@ -14,7 +14,7 @@ fn view(value: &OldPointer, start: u32, end: u32) -> ResourceFact {
 }
 
 fn permits(
-    value: &OldPointer,
+    value: &Pointer,
     bytes: u32,
     facts: &PureFactContext,
     resources: &ResourceContext,
@@ -28,7 +28,7 @@ fn permits(
 }
 
 fn permits_at(
-    value: &OldPointer,
+    value: &Pointer,
     position: &Address,
     facts: &PureFactContext,
     resources: &ResourceContext,
@@ -284,13 +284,13 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
 }
 
 fn split_formation_fixture() -> (
-    OldPointer,
+    Pointer,
     Address,
     PureFactContext,
     ResourceContext,
     ResourceFact,
 ) {
-    let p = OldPointer::new(
+    let p = Pointer::new(
         Address::new(
             AddressBase::ExternalArgument,
             AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4),
@@ -404,7 +404,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         for (facts, expected_zero) in cases {
             let result = pointer_offset_by_elements_paths(
                 &ExecutionState::new(),
-                OldPointer::new(Address::null(), ProgramType::Int32Pointer),
+                Pointer::new(Address::null(), ProgramType::Int32Pointer),
                 offset.clone(),
                 4,
                 unsigned,
@@ -444,7 +444,7 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
     );
     let result = pointer_offset_by_elements_paths(
         &ExecutionState::new(),
-        OldPointer::new(Address::null(), ProgramType::Int32Pointer),
+        Pointer::new(Address::null(), ProgramType::Int32Pointer),
         OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),

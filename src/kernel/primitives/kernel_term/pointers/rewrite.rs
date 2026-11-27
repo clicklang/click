@@ -178,13 +178,30 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         let mut bounds = source.array.bounds().cloned();
         if let Some(selected) = source.array.bounds() {
             let start = self.address(&selected.start)?;
-            let width = self.numeric(&selected.width)?;
-            if start != selected.start || width != selected.width {
+            let width = self.numeric(selected.width())?;
+            if start != selected.start || width != *selected.width() {
                 array_changed = true;
-                bounds = Some(KernelSubobjectBounds { start, width });
+                bounds = Some(KernelSubobjectBounds::new(start, width));
             }
         }
-        if address == source.address && provenance == source.provenance && !array_changed {
+        // A wide pointer's element count is a numeric component: it is
+        // substituted as the bounds width is.
+        let mut metadata = source.metadata.clone();
+        if let Some(selected) = source.metadata.as_deref() {
+            let count = self.numeric(selected.count())?;
+            if count != *selected.count() {
+                metadata = Some(Arc::new(KernelPointerMetadata::element_count(count)));
+            }
+        }
+        let metadata_changed = match (&metadata, &source.metadata) {
+            (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        if address == source.address
+            && provenance == source.provenance
+            && !array_changed
+            && !metadata_changed
+        {
             return Ok(value.clone());
         }
         Ok(SharedPointer::new(KernelPointer {
@@ -193,6 +210,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
             array: KernelArrayObject::from_parts(source.array.is_known(), bounds, owner),
             program_type: source.program_type,
             qualifiers: source.qualifiers.clone(),
+            metadata,
         }))
     }
 }
@@ -226,12 +244,12 @@ mod tests {
     }
     #[test]
     fn unchanged_rewrite_preserves_exact_complete_payload_handle() {
-        let source = SharedPointer::import(&super::super::tests::complete_source());
+        let source = super::super::tests::complete_source().into_shared();
         assert_eq!(source.try_rewrite(&mut Identity).unwrap(), source);
     }
     #[test]
     fn selected_address_replacements_are_simultaneous_and_keep_metadata() {
-        let source = SharedPointer::import(&super::super::tests::complete_source());
+        let source = super::super::tests::complete_source().into_shared();
         let replacement = Address::symbolic(Variable(1004000)).shared().clone();
         struct Selected {
             from: SharedAddress,
@@ -325,7 +343,7 @@ mod tests {
     }
     #[test]
     fn callback_refusal_and_wrong_numeric_carrier_leave_source_unchanged() {
-        let source = SharedPointer::import(&super::super::tests::complete_source());
+        let source = super::super::tests::complete_source().into_shared();
         struct Refuse(bool);
         impl PointerRewrite for Refuse {
             type Error = &'static str;
@@ -346,7 +364,7 @@ mod tests {
             Err(PointerRewriteError::IndexType)
         );
         assert_eq!(
-            source.node().array.bounds().unwrap().width.ty(),
+            source.node().array.bounds().unwrap().width().ty(),
             &KernelType::Program(ProgramType::Int32)
         );
     }

@@ -8160,6 +8160,27 @@ impl ParameterIndex {
     }
 }
 
+/// What a pointer steps by: a struct of the tag its object class names, or
+/// its pointee type, which a pointer without one does not have. A type, read
+/// off a pointer value's class and type, so elaboration can ask for it
+/// without holding the value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PointerElement {
+    Struct(String),
+    Pointee(Option<ProgramType>),
+}
+
+impl PointerElement {
+    fn of(pointer: &crate::kernel::Pointer) -> Self {
+        match pointer.object_class() {
+            Some(crate::kernel::effective_type::CAccessClass::Struct(class)) => {
+                Self::Struct(class.tag().to_string())
+            }
+            _ => Self::Pointee(pointer.program_type().pointee_type()),
+        }
+    }
+}
+
 /// The pure definitions a specification is lowered against: its predicates
 /// and its Click functions.
 #[derive(Clone, Copy)]
@@ -8197,21 +8218,22 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::OldPointer) -> Result<u32, String> {
-        if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
-            pointer.object_class()
-        {
-            return self
+    fn pointer_element_width(&self, pointer: &crate::kernel::Pointer) -> Result<u32, String> {
+        self.element_width(&PointerElement::of(pointer))
+    }
+
+    /// The width of the element a pointer steps by.
+    fn element_width(&self, element: &PointerElement) -> Result<u32, String> {
+        match element {
+            PointerElement::Struct(tag) => self
                 .struct_sizes
-                .and_then(|sizes| sizes.get(class.tag()))
+                .and_then(|sizes| sizes.get(tag))
                 .copied()
-                .ok_or_else(|| format!("struct `{}` has no known layout", class.tag()));
+                .ok_or_else(|| format!("struct `{tag}` has no known layout")),
+            PointerElement::Pointee(pointee) => pointee
+                .map(ProgramType::byte_width)
+                .ok_or_else(|| "expected a sized pointer element".to_string()),
         }
-        pointer
-            .program_type()
-            .pointee_type()
-            .map(ProgramType::byte_width)
-            .ok_or_else(|| "expected a sized pointer element".to_string())
     }
 }
 

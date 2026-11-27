@@ -51,6 +51,9 @@ struct packet {
     int32 tail;
 };
 
+struct packet choose_packet(int32 choose_left, struct packet left, struct packet right);
+int32 sum_packet(struct packet packet);
+
 int32 struct_conditional_value() {
     struct packet left = {3, {4, 1}, 5};
     struct packet right = {20, {30, 2}, 40};

@@ -1185,8 +1185,8 @@ fn nonexact_composite_entailment_ignores_unrelated_instances_of_the_shape() {
             .unchecked_with_facts((0..size).map(|index| boxed(object(index))));
         let assumptions = PureFactContext::new().assume_condition(
             OldConditionTerm::pointer_equal(
-                OldPointer::new(alias.clone(), ProgramType::Int32Pointer),
-                OldPointer::new(object(size - 1), ProgramType::Int32Pointer),
+                Pointer::new(alias.clone(), ProgramType::Int32Pointer),
+                Pointer::new(object(size - 1), ProgramType::Int32Pointer),
             ),
             true,
         );
@@ -4293,8 +4293,7 @@ fn native_symbolic_partition_ignores_unrelated_fragments() {
             let second = match case {
                 "view" => ResourceFact::view_memory(suffix),
                 "provenance" => ResourceFact::own_memory(
-                    suffix
-                        .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(989_974)))),
+                    suffix.with_provenance(Address::symbolic(Variable(989_974))),
                 ),
                 _ => ResourceFact::own_memory(suffix),
             };

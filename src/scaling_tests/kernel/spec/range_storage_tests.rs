@@ -13,7 +13,7 @@ fn retained_range_and_allocation_handoffs_ignore_growing_operand_dags() {
                     [root.clone(), root],
                 );
             }
-            let pointer = OldPointer::new(
+            let pointer = Pointer::new(
                 Address::symbolic(Variable(10993615)),
                 ProgramType::Int32Pointer,
             );

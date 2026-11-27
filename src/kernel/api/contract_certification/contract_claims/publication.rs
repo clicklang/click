@@ -276,7 +276,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let (execution, _) = fixture();
         let seed = execution.published_outcome(0);
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996901)),
             ProgramType::Int32Pointer,
         );
@@ -285,7 +285,7 @@ mod tests {
             KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996902)),
             KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(996903)),
             KernelTermImport::default().condition(&OldConditionTerm::Variable(Variable(996904))),
-            KernelTerm::shared_pointer_value(crate::kernel::SharedPointer::import(&pointer)),
+            KernelTerm::shared_pointer_value(pointer.shared().clone()),
             KernelTerm::variable(
                 KernelType::Algebraic(crate::kernel::AlgebraicType::parameter("T".into())),
                 Variable(996905),

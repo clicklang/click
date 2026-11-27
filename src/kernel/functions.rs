@@ -4756,6 +4756,8 @@ fn execute_verified_function_applications_with_suspension(
                     effects: ExecutionFacts::new(),
                     retired_allocations: Vec::new(),
                     continued_tokens: Vec::new(),
+                    freed_blocks: Vec::new(),
+                    claim_ranges: Vec::new(),
                 })
             } else {
                 let provisional_post_contract_state = with_bound_contract_interface_argument_views(
@@ -4827,6 +4829,8 @@ fn execute_verified_function_applications_with_suspension(
             effects: allocation_effects,
             retired_allocations,
             continued_tokens,
+            freed_blocks,
+            claim_ranges,
         } = match allocation_delta {
             Ok(result) => result,
             Err(VerifiedAllocationDeltaError::Runtime(error)) => {
@@ -4856,27 +4860,44 @@ fn execute_verified_function_applications_with_suspension(
         // The call's exit: its allocation effects and the initialization of
         // the memory it produces, staged together and reached from its effect
         // point. Everything above reads the effect point.
+        let effect_memory = post_state.memory.clone();
+        let effect_point = post_state.memory_point();
         post_state.stage_memory(memory);
-        let (symbolic_initialized_bytes, produced_words) = match initialize_produced_memory(
-            &entry_resource_state,
-            &output_resource_state,
-            interface,
-            &mut post_state,
-            &effective_assumptions,
-            budget,
-            application.evidence.is_none() && application.representation_copy.is_none(),
-        )? {
-            Ok(ranges) => ranges,
-            Err(error) => {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(error),
-                    facts,
-                    obligations,
-                ));
-                continue;
-            }
-        };
+        let (symbolic_initialized_bytes, produced_words, produced_ranges) =
+            match initialize_produced_memory(
+                &entry_resource_state,
+                &output_resource_state,
+                interface,
+                &mut post_state,
+                &effective_assumptions,
+                budget,
+                application.evidence.is_none() && application.representation_copy.is_none(),
+            )? {
+                Ok(ranges) => ranges,
+                Err(error) => {
+                    paths.push(FunctionPath::new(
+                        FunctionOutcome::RuntimeError(error),
+                        facts,
+                        obligations,
+                    ));
+                    continue;
+                }
+            };
         post_state.complete_staged_memory_at_new_point();
+        // The exit region's frees, in one fact from the effect point to the
+        // exit, with the region's other changes as its mutable ranges.
+        if !freed_blocks.is_empty() {
+            facts.push(ExecutionPureFact::internal(
+                Proposition::HeapAllocationFreed {
+                    before: effect_memory,
+                    before_point: effect_point,
+                    after: post_state.memory.clone(),
+                    after_point: post_state.memory_point(),
+                    blocks: freed_blocks,
+                    mutable_ranges: claim_ranges.into_iter().chain(produced_ranges).collect(),
+                },
+            ));
+        }
         produced_word_equations(&post_state, &produced_words, &mut facts, budget);
         // A consumed allocation named through a pointer proven equal to it,
         // a contract's `result == p`, retires the storage the call's entry
@@ -10312,6 +10333,8 @@ fn apply_verified_heap_allocation_delta(
     let mut effects = Vec::new();
     let mut retired_allocations = Vec::new();
     let mut continued_tokens = Vec::new();
+    let mut freed_blocks = Vec::new();
+    let mut claim_ranges = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
     // entry. The post-call memory may have rewritten a pointer field the lent
     // resources owned, so an allocation named through it at the post state
@@ -10529,9 +10552,9 @@ fn apply_verified_heap_allocation_delta(
                 bytes.bytes(),
                 &allocation_assumptions,
             );
+            claim_ranges.push(bytes.byte_range(base.clone()));
             continue;
         }
-        let before_free = memory.clone();
         if memory.live_heap_block_size(&base).is_none() {
             memory = memory
                 .with_heap_allocation_claim(base.clone(), bytes.clone())
@@ -10546,18 +10569,9 @@ fn apply_verified_heap_allocation_delta(
             .map_err(|error| {
                 VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
-        // The frees are steps of the call's exit region: their memories lie
-        // between its effect point and its exit, and no point holds them.
-        effects.push(ExecutionPureFact::internal(
-            Proposition::HeapAllocationFreed {
-                before: before_free,
-                before_point: crate::kernel::program_point::PathLink::not_yet_a_point(),
-                after: memory.clone(),
-                after_point: crate::kernel::program_point::PathLink::not_yet_a_point(),
-                allocation_base: base,
-                bytes: bytes.clone(),
-            },
-        ));
+        // A step of the call's exit region, which records every free in
+        // one fact once its exit point exists.
+        freed_blocks.push((base, bytes.clone()));
     }
 
     // Only what the call returns can be a new allocation. An allocation one
@@ -10578,6 +10592,7 @@ fn apply_verified_heap_allocation_delta(
         let (_, bytes) = fact
             .allocation_size()
             .expect("an allocation token states its size");
+        claim_ranges.push(bytes.byte_range(base.clone()));
         memory = memory
             .with_heap_allocation_claim(base.clone(), bytes)
             .ok_or_else(|| {
@@ -10592,6 +10607,8 @@ fn apply_verified_heap_allocation_delta(
         effects: effects.into(),
         retired_allocations,
         continued_tokens,
+        freed_blocks,
+        claim_ranges,
     })
 }
 
@@ -10623,6 +10640,11 @@ struct VerifiedAllocationDelta {
     effects: ExecutionFacts,
     retired_allocations: Vec<MemoryRange>,
     continued_tokens: Vec<(ResourceFact, ResourceFact)>,
+    /// The heap blocks the delta frees.
+    freed_blocks: Vec<(Address, AllocationSize)>,
+    /// The blocks whose heap claims the delta retires or makes without a
+    /// free: its other changes to memory.
+    claim_ranges: Vec<MemoryRange>,
 }
 
 mod call_arguments;
@@ -13308,10 +13330,12 @@ fn initialize_produced_memory(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     opaque_output: bool,
-) -> ExecutionResult<Result<(Vec<MemoryRange>, Vec<Address>), RuntimeError>> {
+) -> ExecutionResult<Result<(Vec<MemoryRange>, Vec<Address>, Vec<MemoryRange>), RuntimeError>> {
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
     let mut symbolic_initialized_bytes = Vec::new();
+    // Every range whose initialization this sets, conservatively.
+    let mut produced_ranges = Vec::new();
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -13358,6 +13382,7 @@ fn initialize_produced_memory(
         if byte_span == Some(0) {
             continue;
         }
+        produced_ranges.push(range.clone());
         // Transfer checking established this output's authority and bounds.
         // Mark the same checked bytes at their unique concrete storage
         // anchor, so a descriptor-held alias initializes the original object.
@@ -13416,7 +13441,11 @@ fn initialize_produced_memory(
     // effects; the call's exit takes both, and the produced words' equations
     // are made there.
     post_state.stage_memory(memory);
-    Ok(Ok((symbolic_initialized_bytes, word_outputs)))
+    Ok(Ok((
+        symbolic_initialized_bytes,
+        word_outputs,
+        produced_ranges,
+    )))
 }
 
 /// The equations of the produced 32-bit output words at `exit`, the call's

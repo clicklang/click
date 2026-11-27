@@ -182,7 +182,7 @@ fn aggregate_copy_builds_one_borrow_obligation_without_visiting_aliases_or_borro
                 panic!("expected a separation obligation");
             };
             let expected = Resource::Memory(MemoryRange::from_pointer_value(
-                &OldPointer::new(target.clone(), ProgramType::UInt8Pointer),
+                &Pointer::new(target.clone(), ProgramType::UInt8Pointer),
                 0u32.into(),
                 layout.size_bytes().into(),
                 1,

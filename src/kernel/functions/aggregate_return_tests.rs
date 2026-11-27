@@ -1026,7 +1026,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
                     &state,
                     &program_return(crate::kernel::program_expression::typed_load(
                         ProgramExpression::Value(ProgramValue::Pointer(
-                            OldPointer::new(source.clone(), ProgramType::Int32Pointer)
+                            Pointer::new(source.clone(), ProgramType::Int32Pointer)
                                 .with_address(read.clone()),
                         )),
                         ProgramType::Int32,
@@ -1568,7 +1568,7 @@ mod scaling_tests {
 fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     let layout = node_layout();
     let temporary = Address::verifier_temporary(Variable(870_101));
-    let source = OldPointer::new(temporary.clone(), ProgramType::UInt8Pointer);
+    let source = Pointer::new(temporary.clone(), ProgramType::UInt8Pointer);
     let assumptions = PureFactContext::new();
     for bytes in [0, 8, 16] {
         let state = ExecutionState::new()
@@ -1589,7 +1589,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
         AddressBase::Symbolic(Variable(870_103)),
     ] {
         let pointer = Address::new(block.clone(), AddressOffset::constant(0));
-        let source = OldPointer::new(pointer, ProgramType::UInt8Pointer);
+        let source = Pointer::new(pointer, ProgramType::UInt8Pointer);
         let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));
         assert!(
             crate::kernel::eval::missing_aggregate_copy_read_resource(

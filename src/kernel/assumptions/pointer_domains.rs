@@ -10,7 +10,7 @@ pub(in crate::kernel) enum PointerDomain {
 }
 
 impl PointerDomain {
-    pub(in crate::kernel) fn intrinsic(value: &OldPointer) -> Self {
+    pub(in crate::kernel) fn intrinsic(value: &Pointer) -> Self {
         match value.bounds() {
             Some(bounds) => Self::Selected(bounds.clone()),
             None if value.bounds_are_known() => Self::Root,
@@ -31,8 +31,8 @@ pub(in crate::kernel) enum PointerDomainSource<'a> {
     BoundsOwner(&'a Address),
 }
 
-impl<'a> From<&'a OldPointer> for PointerDomainSource<'a> {
-    fn from(value: &'a OldPointer) -> Self {
+impl<'a> From<&'a Pointer> for PointerDomainSource<'a> {
+    fn from(value: &'a Pointer) -> Self {
         Self::Retained {
             bounds: value.bounds(),
             known: value.bounds_are_known(),
@@ -46,7 +46,7 @@ impl<'a> From<&'a LValue> for PointerDomainSource<'a> {
         Self::Retained {
             bounds: value.bounds(),
             known: value.bounds_known(),
-            opaque: value.bounds_owner().map(|owner| &**owner),
+            opaque: value.bounds_owner(),
         }
     }
 }
@@ -92,7 +92,7 @@ impl PureFactContext {
             required,
             (
                 &available.provenance,
-                available.carrier_owner().map(|owner| &**owner),
+                available.carrier_owner(),
                 available.carrier_known(),
             ),
             self,
@@ -124,9 +124,9 @@ impl PureFactContext {
             self.pointer_access_in_range(
                 pointer,
                 bytes,
-                &bounds.start,
+                &bounds.start(),
                 &0u32.into(),
-                &bounds.width,
+                &bounds.width(),
                 1,
             )
         }) || required.1.is_some_and(|owner| {
@@ -163,9 +163,9 @@ impl PureFactContext {
                 self.pointer_access_in_range(
                     &endpoint,
                     0,
-                    &bounds.start,
+                    &bounds.start(),
                     &0u32.into(),
-                    &bounds.width,
+                    &bounds.width(),
                     1,
                 )
             })
@@ -203,20 +203,20 @@ impl PureFactContext {
 mod tests {
     use super::*;
 
-    fn pointer(id: u64) -> OldPointer {
-        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    fn pointer(id: u64) -> Pointer {
+        Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equal(facts: PureFactContext, a: &OldPointer, b: &OldPointer) -> PureFactContext {
+    fn equal(facts: PureFactContext, a: &Pointer, b: &Pointer) -> PureFactContext {
         facts.assume_condition(OldConditionTerm::pointer_equal(a.clone(), b.clone()), true)
     }
-    fn member(parent: &OldPointer) -> OldPointer {
+    fn member(parent: &Pointer) -> Pointer {
         parent
             .clone()
             .with_address(parent.address().offset_by_bytes(4))
-            .with_bounds(Some(SubobjectBounds {
-                start: parent.address().offset_by_bytes(4),
-                width: 4u32.into(),
-            }))
+            .with_bounds(Some(SubobjectBounds::new(
+                parent.address().offset_by_bytes(4),
+                4u32.into(),
+            )))
     }
 
     #[test]
@@ -296,7 +296,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
-        let read = OldPointer::from_read(
+        let read = Pointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,

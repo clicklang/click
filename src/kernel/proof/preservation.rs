@@ -27,8 +27,8 @@ pub(crate) fn apply(
     if !separation_available {
         return Err("preserve separation is not exactly available".into());
     }
-    let derived = if let Proposition::MemoryLoadable { memory, .. } = result {
-        let (before, after) = preserve_viewability(separation, memory)?;
+    let derived = if let Proposition::MemoryLoadable { memory, point, .. } = result {
+        let (before, after) = preserve_viewability(separation, memory, point)?;
         if !available(&before) {
             return Err("preserve requires viewability at the footprint entry".into());
         }
@@ -68,6 +68,7 @@ pub(crate) fn apply(
 fn preserve_viewability(
     separation: &Proposition,
     goal_memory: &SymbolicMemory,
+    goal_point: &crate::kernel::program_point::PathLink,
 ) -> Result<(Proposition, Proposition), String> {
     let Proposition::ResourceSeparate { left, right } = separation else {
         return Err("preserve viewability requires footprint separation".into());
@@ -82,21 +83,18 @@ fn preserve_viewability(
             "preserve viewability requires a complete automatic-storage-only footprint".into(),
         );
     }
-    let after = if footprint.viewability_survives_return_cleanup(goal_memory, range.base()) {
-        goal_memory
-    } else {
-        &footprint.after
-    };
+    let (after, after_point) =
+        if footprint.viewability_survives_return_cleanup(goal_memory, range.base()) {
+            (goal_memory, goal_point.clone())
+        } else {
+            (&footprint.after, footprint.after_point.path_link().clone())
+        };
     Ok((
-        // A recorded footprint quotes its endpoint memories without points.
         range.loadable_fact(
             &footprint.before,
-            crate::kernel::program_point::PathLink::not_yet_a_point(),
+            footprint.before_point.path_link().clone(),
         ),
-        range.loadable_fact(
-            after,
-            crate::kernel::program_point::PathLink::not_yet_a_point(),
-        ),
+        range.loadable_fact(after, after_point),
     ))
 }
 
@@ -232,6 +230,7 @@ fn preserve_definedness(
     let defined = |point: &ProgramPoint, memory: &SymbolicMemory| Proposition::MemoryReadDefined {
         at: point.id(),
         memory: memory.clone(),
+        point: point.path_link().clone(),
         pointer: pointer.clone(),
         value_type,
     };
@@ -246,6 +245,7 @@ fn preserve_definedness(
         return Some((
             before,
             Proposition::MemoryReadDefined {
+                point: outcome.memory_point(),
                 at: outcome.observation_point_id(),
                 memory: outcome.memory().clone(),
                 pointer,
@@ -470,10 +470,9 @@ mod tests {
             right: Box::new(Resource::Memory(range.clone())),
         };
         let entry_view = range.loadable_fact(state.memory(), state.memory_point());
-        // The memory without the local's block is the state at no point.
         let goal = range.loadable_fact(
             &state.memory().without_local_block(&local.base),
-            crate::kernel::program_point::PathLink::not_yet_a_point(),
+            Default::default(),
         );
         assert_eq!(
             apply(&separation, None, &goal, None, |fact| {
@@ -546,12 +545,14 @@ mod tests {
             ))),
         };
         let old = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: before.program_point().id(),
             memory: before.memory().clone(),
             pointer: pointer.clone(),
             value_type: ty,
         };
         let goal = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: after.program_point().id(),
             memory: after.memory().clone(),
             pointer,
@@ -620,6 +621,7 @@ mod tests {
                     memory,
                     pointer,
                     value_type,
+                    ..
                 } = &mut bad
                 else {
                     unreachable!()
@@ -1018,7 +1020,7 @@ mod tests {
         };
         **left = (**left)
             .clone()
-            .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(8_399_099))));
+            .with_provenance(Address::symbolic(Variable(8_399_099)));
         wrong_domain.result = Proposition::condition_is(condition, true);
         assert!(
             wrong_domain

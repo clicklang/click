@@ -114,15 +114,17 @@ memory: `before_point` and `after_point` on `MemoryEffectSummary`,
 no reasoning. A fact built from a state takes `ExecutionState::memory_point`;
 a rewrite of a fact keeps its point.
 
-Where a fact quotes a memory no point holds, it says so with
-`PathLink::not_yet_a_point()`, a migration marker: each use is a fact to give
-a point before it can drop its memory. The current uses are memories made
-inside an atomic region (the frees of a call's allocation delta, a staged
-state's memory), memories derived from another (a footprint's endpoints, a
-memory without a local's block), facts built from a bare memory value (the
-liveness queries in `memory_reasoning`, the public `prove_memory_load*`
-theorems) and facts rewritten from `MemoryReadDefined`, whose point is an id.
-A state's memory can also differ from its point's when it is not marked: a
+Every memory a fact quotes is the state at a point. No fact quotes a staged
+state: `ExecutionState::memory_point` panics on one, as `program_point` does.
+A call's exit region records its frees in one `HeapAllocationFreed` from its
+effect point to its exit, whose `mutable_ranges` hold the region's other
+changes (the heap claims it retires or makes and the memory it produces), so
+the fact needs no memory between the two points. A distinct load case's
+memory, which drops only the undecided cell, is a view of the read's state
+and takes the read site's point. A proposition built only to look a fact up
+by its memory takes `PathLink::lookup_key()`: lookups compare no point, and
+these go when fact indexes are keyed by point.
+A state's memory can still differ from its point's memory: a
 verified proof-only view names more cells of the same state, but some states
 hold memory no point holds.
 

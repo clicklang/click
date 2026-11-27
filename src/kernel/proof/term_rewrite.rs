@@ -149,7 +149,7 @@ pub(crate) enum TypedProgramValueReplacement {
     Bitvector(OldMachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject bounds.
-    Pointer(OldPointer),
+    Pointer(Pointer),
 }
 
 type MatchFieldReplacements = (
@@ -556,13 +556,18 @@ fn replace_binding_variable(
                     AddressBase::FunctionSymbolic(_) => AddressBase::FunctionSymbolic(variable),
                     _ => AddressBase::Symbolic(variable),
                 };
-                *pointer = pointer.map_pointers(|address| {
-                    let mut renamed = address.clone();
-                    if renamed.base == old {
-                        renamed.set_base(new.clone());
-                    }
-                    renamed
-                });
+                // A pointer binder names a block; an element count is not
+                // an address and keeps its own binders.
+                *pointer = pointer.map_pointers(
+                    |address| {
+                        let mut renamed = address.clone();
+                        if renamed.base == old {
+                            renamed.set_base(new.clone());
+                        }
+                        renamed
+                    },
+                    OldMachineTerm::clone,
+                );
             }
             _ => {}
         },
@@ -838,6 +843,9 @@ fn collect_program_value_carriers(value: &ProgramValue, variables: &mut CarrierV
         ProgramValue::Pointer(pointer) => {
             for component in pointer.pointers() {
                 collect_pointer_carriers(component, variables);
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_carriers(count, variables);
             }
         }
     }
@@ -1710,8 +1718,15 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
             .unwrap(),
         ProgramValue::Float32(_) => ProgramValue::Float32(OldMachineTerm::constant(0)),
         ProgramValue::Float64(_) => ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
+        // An exhausted slice keeps its kind and type: a thin placeholder
+        // with a count, as each scalar's placeholder is its type's zero.
+        ProgramValue::Pointer(pointer) if pointer.is_wide() => ProgramValue::Pointer(
+            Pointer::new(exhausted_pointer(), pointer.as_ptr().program_type())
+                .with_element_count(OldMachineTerm::uint64_constant(0))
+                .with_type(pointer.program_type()),
+        ),
         ProgramValue::Pointer(pointer) => {
-            ProgramValue::Pointer(OldPointer::new(exhausted_pointer(), pointer.program_type()))
+            ProgramValue::Pointer(Pointer::new(exhausted_pointer(), pointer.program_type()))
         }
     }
 }
@@ -1990,7 +2005,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_variable: Option<(Variable, &'a Address)>,
     pointer_addresses_only: bool,
     pointer_exact: Option<(&'a Address, &'a Address)>,
-    pointer_value_exact: Option<(&'a OldPointer, &'a OldPointer)>,
+    pointer_value_exact: Option<(&'a Pointer, &'a Pointer)>,
     pointer_offset_exact: Option<OffsetReplacement<'a>>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
@@ -2699,7 +2714,7 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_value_exact(from: &'a OldPointer, to: &'a OldPointer) -> Self {
+    pub(crate) fn for_pointer_value_exact(from: &'a Pointer, to: &'a Pointer) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_value_exact = Some((from, to));
         // Reads named by load variables can sit at addresses formed from
@@ -3471,8 +3486,8 @@ impl<'a> TermRewrite<'a> {
                 };
                 if let Some((from, to)) = self.pointer_value_exact
                     && !self.source_disabled
-                    && range.provenance.as_ref() == from.provenance()
-                    && range.carrier_owner().map(|owner| &**owner) == from.bounds_owner()
+                    && &range.provenance == from.provenance()
+                    && range.carrier_owner() == from.bounds_owner()
                     && range.carrier_known() == from.bounds_are_known()
                 {
                     // The footprint already fixed its admitted byte bounds.
@@ -3794,6 +3809,7 @@ impl<'a> TermRewrite<'a> {
             Proposition::MemoryReadDefined {
                 at,
                 memory,
+                point,
                 pointer,
                 value_type,
             } => {
@@ -3809,6 +3825,7 @@ impl<'a> TermRewrite<'a> {
                 Proposition::MemoryReadDefined {
                     at: *at,
                     memory: memory.clone(),
+                    point: point.clone(),
                     pointer,
                     value_type: *value_type,
                 }
@@ -4353,8 +4370,11 @@ impl<'a> TermRewrite<'a> {
             ProgramValue::Float32(v) => ProgramValue::Float32(self.bits(v)),
             ProgramValue::Float64(v) => ProgramValue::Float64(self.bits(v)),
             ProgramValue::Pointer(v) => {
+                // A wide value equals only a wide one; an equality between a
+                // slice and a thin pointer is false and substitutes nothing.
                 if let Some((from, to)) = self.pointer_value_exact
                     && v == from
+                    && from.is_wide() == to.is_wide()
                     && !self.source_disabled
                 {
                     self.changed = true;
@@ -4409,7 +4429,7 @@ impl<'a> TermRewrite<'a> {
                     }
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
-                    Some(OldPointer::new(to.clone(), v.program_type()))
+                    Some(Pointer::new(to.clone(), v.program_type()))
                 }));
                 let adopted = if !v.bounds_are_known() {
                     replacement.as_ref().and_then(|p| p.bounds().cloned())
@@ -4441,29 +4461,26 @@ impl<'a> TermRewrite<'a> {
                     None => None,
                     Some(origin) => {
                         if addresses_only {
-                            Some(std::sync::Arc::new(origin.clone()))
+                            Some(origin.clone())
                         } else if replacement.is_some() && origin == &v.address().object_identity()
                         {
-                            replacement
-                                .as_ref()
-                                .and_then(|p| p.bounds_owner().cloned())
-                                .map(std::sync::Arc::new)
+                            replacement.as_ref().and_then(|p| p.bounds_owner().cloned())
                         } else if let Some((from, to)) = self.pointer_variable
                             && !self.scope.program_values.contains_key(&from)
                             && matches!(origin.base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if variable == from)
                         {
-                            Some(std::sync::Arc::new(to.object_identity()))
+                            Some(to.object_identity())
                         } else if let Some((from, to)) = self.pointer_value_exact
                             && !self.source_disabled
                             && !from.bounds_are_known()
                             && from.bounds_owner() == Some(origin)
                         {
-                            to.bounds_owner().cloned().map(std::sync::Arc::new)
+                            to.bounds_owner().cloned()
                         } else if self.pointer_exact.is_some() && self.pointer_value_exact.is_none()
                         {
-                            Some(std::sync::Arc::new(origin.clone()))
+                            Some(origin.clone())
                         } else {
-                            Some(std::sync::Arc::new(self.pointer(origin)))
+                            Some(self.pointer(origin))
                         }
                     }
                 };
@@ -4471,9 +4488,13 @@ impl<'a> TermRewrite<'a> {
                 if self.pointer_value_exact.is_some() {
                     self.resolve_registered_loads = true;
                 }
+                let count = v.len().map(|count| self.bits(count));
                 let mut mapped = v
-                    .map_pointers(|address| self.pointer(address))
-                    .with_provenance(std::sync::Arc::new(provenance))
+                    .map_pointers(
+                        |address| self.pointer(address),
+                        |_| count.expect("a wide pointer's rewritten count"),
+                    )
+                    .with_provenance(provenance)
                     .with_bounds_owner(bounds_owner);
                 if retain_view && let Some((from, _)) = shifted_source {
                     // The numeric consequence cannot identify the base's own
@@ -4482,15 +4503,13 @@ impl<'a> TermRewrite<'a> {
                     if v.provenance() != from.provenance()
                         && v.provenance().base == from.address().base
                     {
-                        mapped =
-                            mapped.with_provenance(std::sync::Arc::new(v.provenance().clone()));
+                        mapped = mapped.with_provenance(v.provenance().clone());
                     }
                     if (from.bounds_are_known() || v.bounds_owner() != from.bounds_owner())
                         && v.bounds_owner()
                             .is_some_and(|origin| origin.base == from.address().base)
                     {
-                        mapped = mapped
-                            .with_bounds_owner(v.bounds_owner().cloned().map(std::sync::Arc::new));
+                        mapped = mapped.with_bounds_owner(v.bounds_owner().cloned());
                     }
                 }
                 self.resolve_registered_loads = previous_load_resolution;
@@ -5455,6 +5474,9 @@ impl<'a> TermRewrite<'a> {
                         for address in pointer.pointers() {
                             collect_pointer_carriers(address, &mut variables);
                         }
+                        for count in pointer.metadata_terms() {
+                            collect_bitvector_carriers(count, &mut variables);
+                        }
                     }
                 }
                 if variables.exhausted() {
@@ -6148,10 +6170,13 @@ impl<'a> TermRewrite<'a> {
                 else {
                     unreachable!()
                 };
-                let canonical = |value: OldPointer| {
-                    value.map_addresses(|p| {
-                        p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset))
-                    })
+                // The count was rewritten with the value above; offset
+                // canonicalization is an address normal form only.
+                let canonical = |value: Pointer| {
+                    value.map_addresses(
+                        |p| p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset)),
+                        OldMachineTerm::clone,
+                    )
                 };
                 OldConditionTerm::pointer_equal(canonical(a), canonical(b))
             }
@@ -6452,7 +6477,11 @@ impl<'a> TermRewrite<'a> {
                     || left.same_provenance_as(right),
                     |context| context.pointer_provenance_match(left, right),
                 );
-                matches && graph.are_equal(left.address(), right.address())
+                // Address equality decides only pointers whose metadata
+                // already agrees; a wide pair needs its counts too.
+                matches
+                    && left.same_metadata_as(right)
+                    && graph.are_equal(left.address(), right.address())
             }
             OldConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
             OldConditionTerm::AddressOffsetEqual(left, right) => {
@@ -7897,7 +7926,7 @@ mod tests {
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
                         point: crate::kernel::ProgramPoint::of_memory(&memory),
-                        pointer: ProgramValue::Pointer(OldPointer::new(
+                        pointer: ProgramValue::Pointer(Pointer::new(
                             pointer,
                             ProgramType::VoidPointer,
                         )),
@@ -7967,7 +7996,7 @@ mod tests {
         let mut program_replacements = BTreeMap::new();
         program_replacements.insert(
             source,
-            TypedProgramValueReplacement::Pointer(OldPointer::new(
+            TypedProgramValueReplacement::Pointer(Pointer::new(
                 replacement.clone(),
                 ProgramType::Int32Pointer,
             )),
@@ -9522,11 +9551,11 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = OldPointer::new(
+        let from = Pointer::new(
             Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
             ProgramType::Int32Pointer,
         );
-        let to = OldPointer::new(
+        let to = Pointer::new(
             Address::symbolic(Variable(996_021)),
             ProgramType::Int32Pointer,
         );
@@ -9562,11 +9591,11 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn full_pointer_rewrite_keeps_the_read_version_and_state() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = OldPointer::new(
+        let from = Pointer::new(
             Address::symbolic(Variable(996_010)),
             ProgramType::Int32PointerPointer,
         );
-        let to = OldPointer::new(
+        let to = Pointer::new(
             Address::symbolic(Variable(996_011)),
             ProgramType::Int32PointerPointer,
         );
@@ -9640,7 +9669,7 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996_001)),
             ProgramType::Int32Pointer,
         );

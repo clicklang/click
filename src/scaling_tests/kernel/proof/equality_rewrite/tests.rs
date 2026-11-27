@@ -632,8 +632,8 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
     let target = Address::symbolic(Variable(921));
     let cited = Proposition::condition_is(
         OldConditionTerm::PointerEqual(
-            Box::new(OldPointer::new(source.clone(), ProgramType::Int32Pointer)),
-            Box::new(OldPointer::new(target.clone(), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(target.clone(), ProgramType::Int32Pointer)),
         ),
         true,
     );

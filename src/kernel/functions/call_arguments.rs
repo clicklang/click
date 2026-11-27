@@ -571,6 +571,12 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         ProgramType::FunctionPointer(_) => {
             ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
         }
+        // A slice-returning call names its result's element count beside its
+        // address; that name arrives with slice returns.
+        ProgramType::SlicePointer(_) => unreachable!(
+            "internal error: a slice-pointer call result has no named element count yet \
+             (design/rust-slice-values.md, step 2b-iii)"
+        ),
         ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")
         }
@@ -594,12 +600,13 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
 }
 
 pub(in crate::kernel) fn add_memory_store_obligation(
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     pointer: &Address,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProofObligation>> {
+    let memory = state.memory();
     if memory.can_store_concretely(pointer, value) {
         return Some(obligations);
     }
@@ -609,7 +616,7 @@ pub(in crate::kernel) fn add_memory_store_obligation(
         assumptions,
         Proposition::MemoryCanStore {
             memory: memory.clone(),
-            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
+            point: state.memory_point(),
             pointer: pointer.clone(),
             byte_width: value.byte_width(),
         },
@@ -1647,7 +1654,7 @@ mod pointer_argument_tests {
     #[test]
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027100)),
             ProgramType::Int32Pointer,
         );
@@ -1657,7 +1664,7 @@ mod pointer_argument_tests {
                 "argument_source".into(),
                 vec![],
             ),
-            SharedPointer::import(&pointer),
+            pointer.shared().clone(),
         );
         let mut state = ExecutionState::new();
         state.locals.set_retained_typed_with_all_qualifiers(
@@ -1709,7 +1716,7 @@ mod pointer_argument_tests {
                 .unwrap()
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointer::import(legacy.pointer().unwrap()))
+                .same_source_payload(&legacy.pointer().unwrap().shared().clone())
         );
     }
 }
@@ -1720,7 +1727,7 @@ mod pointer_return_tests {
     #[test]
     fn pointer_returns_keep_complete_payload() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         );
@@ -1730,7 +1737,7 @@ mod pointer_return_tests {
                 "source".into(),
                 vec![],
             ),
-            SharedPointer::import(&pointer),
+            pointer.shared().clone(),
         );
         let plain = program_function(
             ProgramType::Int32Pointer,

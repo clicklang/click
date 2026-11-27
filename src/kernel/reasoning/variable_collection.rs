@@ -862,14 +862,19 @@ fn collect_proposition_bitvector_variables_one(
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);
-            collect_pointer_bitvector_variables(allocation_base, variables);
-            collect_bitvector_variables(bytes.bytes(), variables);
+            for (base, bytes) in blocks {
+                collect_pointer_bitvector_variables(base, variables);
+                collect_bitvector_variables(bytes.bytes(), variables);
+            }
+            for range in mutable_ranges {
+                collect_memory_range_bitvector_variables(range, variables);
+            }
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)
@@ -1591,6 +1596,9 @@ fn collect_program_value_bound_identities(
                         collect_pure_argument_bound_identities(argument, variables, _integer_seen);
                     }
                 }
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_integer_variables(count, variables);
             }
         }
         ProgramValue::Int8(bits) => {
@@ -2392,6 +2400,9 @@ pub(crate) fn collect_condition_bitvector_variables(
         OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_variables(pointer, variables);
+            }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_variables(count, variables);
             }
         }
 
@@ -3794,6 +3805,9 @@ fn collect_condition_capture_variables(
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_capture_variables(pointer, variables, integer_seen);
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_capture_variables_seen(count, variables, integer_seen);
+            }
         }
 
         OldConditionTerm::Constant(_) => {}
@@ -3968,6 +3982,9 @@ fn collect_capture_variables_in_program_value(
         ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_capture_variables(address, variables, integer_seen);
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_capture_variables_seen(count, variables, integer_seen);
             }
         }
     }
@@ -4899,6 +4916,9 @@ fn collect_condition_scope_summary(
             for pointer in left.pointers().chain(right.pointers()) {
                 summary.merge(collect_pointer_scope_summary(pointer, summaries));
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                summary.merge(collect_bitvector_scope_summary(count, summaries));
+            }
             summary
         }
 
@@ -5033,6 +5053,9 @@ fn collect_program_value_scope_summary(
             let mut summary = IntegerScopeSummary::default();
             for address in pointer.pointers() {
                 summary.merge(collect_pointer_scope_summary(address, summaries));
+            }
+            for count in pointer.metadata_terms() {
+                summary.merge(collect_bitvector_scope_summary(count, summaries));
             }
             summary
         }
@@ -5562,6 +5585,14 @@ fn collect_condition_binder_variables(
                     integer_seen,
                 );
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_binder_variables_seen(
+                    count,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -5819,6 +5850,14 @@ fn collect_binder_variables_in_program_value(
             for address in pointer.pointers() {
                 collect_pointer_binder_variables(
                     address,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_binder_variables_seen(
+                    count,
                     integer_variables,
                     bitvector_variables,
                     integer_seen,
@@ -7221,6 +7260,9 @@ pub(crate) fn collect_program_value_bitvector_variables(
         ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_bitvector_variables(address, variables);
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_variables(count, variables);
             }
         }
     }
