@@ -1884,6 +1884,10 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
         zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
     let proof = include_str!("../design/adler32/project/zlib/full-stream.click")
         .replace(
+            "import \"canonical-helpers.click\";",
+            include_str!("../design/adler32/project/zlib/canonical-helpers.click"),
+        )
+        .replace(
             "import \"full-stream-helpers.click\";",
             include_str!("../design/adler32/project/zlib/full-stream-helpers.click"),
         )
