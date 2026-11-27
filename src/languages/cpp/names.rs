@@ -3,10 +3,19 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-const RESERVED_PREFIX: &str = "__click_cpp_decl_";
+/// Clang's stable declaration identity from the checked capture. Keeping it
+/// separate from the C++ path preserves overloads with the same proof types.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct DeclarationId(String);
+
+impl std::borrow::Borrow<str> for DeclarationId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Clone, Debug)]
-pub(super) struct ResolvedNames(BTreeMap<String, String>);
+pub(super) struct ResolvedNames(BTreeMap<DeclarationId, String>);
 
 impl ResolvedNames {
     pub(super) fn new<'a>(
@@ -14,34 +23,30 @@ impl ResolvedNames {
     ) -> Result<Self, String> {
         let mut by_id = BTreeMap::new();
         let mut counts = BTreeMap::<&str, usize>::new();
-        for (id, name) in declarations {
+        for (id, path) in declarations {
             crate::instrumentation::record_deterministic_work(1);
-            if id.is_empty() || name.is_empty() || by_id.insert(id, name).is_some() {
+            if id.is_empty()
+                || path.is_empty()
+                || by_id.insert(DeclarationId(id.into()), path).is_some()
+            {
                 return Err(format!(
                     "invalid or duplicate C++ declaration identity `{id}`"
                 ));
             }
-            *counts.entry(name).or_default() += 1;
+            *counts.entry(path).or_default() += 1;
         }
         let mut resolved = BTreeMap::new();
-        for (id, name) in by_id {
+        for (id, path) in by_id {
             crate::instrumentation::record_deterministic_work(1);
-            let name = if counts[name] == 1
-                && !name.starts_with(RESERVED_PREFIX)
-                && super::import::is_identifier(name)
+            let name = if counts[path] == 1
+                && super::import::is_identifier(path)
+                && !is_declaration_key(path)
             {
-                name.to_owned()
+                path.to_owned()
             } else {
-                // Full byte encoding is injective, unlike a truncated digest. Reserving
-                // the prefix also excludes collisions with ordinary source spellings.
-                let mut encoded = String::from(RESERVED_PREFIX);
-                for byte in id.bytes() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    write!(encoded, "{byte:02x}").expect("writing to String");
-                }
-                encoded
+                declaration_key(path, &id)
             };
-            resolved.insert(id.to_owned(), name);
+            resolved.insert(id, name);
         }
         Ok(Self(resolved))
     }
@@ -78,15 +83,33 @@ pub fn path_name<S: AsRef<str>>(path: &[S]) -> String {
                 if super::import::is_identifier(segment) {
                     write!(encoded, "_I{}_{segment}", segment.len()).expect("writing to String");
                 } else {
-                    write!(encoded, "_X{}_", segment.len()).expect("writing to String");
-                    for byte in segment.bytes() {
-                        write!(encoded, "{byte:02x}").expect("writing to String");
-                    }
+                    encode_component(&mut encoded, 'X', segment);
                 }
             }
             encoded
         }
     }
+}
+
+fn encode_component(encoded: &mut String, kind: char, value: &str) {
+    write!(encoded, "_{kind}{}_", value.len()).expect("writing to String");
+    for byte in value.bytes() {
+        crate::instrumentation::record_deterministic_work(1);
+        write!(encoded, "{byte:02x}").expect("writing to String");
+    }
+}
+
+/// The shared verifier's string key for an overload. It carries the C++ path
+/// for display and the unchanged Clang declaration identity for equality.
+/// The identity component is never part of the displayed path.
+fn declaration_key(path: &str, id: &DeclarationId) -> String {
+    let display = decode(path).and_then(|(display, rest, declaration)| {
+        (rest.is_empty() && !declaration).then_some(display)
+    });
+    let mut encoded = String::from(PATH_PREFIX);
+    encode_component(&mut encoded, 'X', display.as_deref().unwrap_or(path));
+    encode_component(&mut encoded, 'D', &id.0);
+    encoded
 }
 
 /// The checked declaration at a written lambda expression. The regular
@@ -110,15 +133,16 @@ pub(crate) fn lambda_name(
 
 /// Decodes the importer name at the start of `text`: its C++ path, and the
 /// text after it.
-fn decode(text: &str) -> Option<(String, &str)> {
+fn decode(text: &str) -> Option<(String, &str, bool)> {
     let mut rest = text.strip_prefix(PATH_PREFIX)?;
     let mut segments = Vec::new();
+    let mut declaration = false;
     while let Some(tail) = rest.strip_prefix('_') {
-        let (hex, tail) = match tail.as_bytes().first() {
-            Some(b'I') => (false, &tail[1..]),
-            Some(b'X') => (true, &tail[1..]),
-            _ => break,
+        let Some(kind @ (b'I' | b'X' | b'D')) = tail.bytes().next() else {
+            break;
         };
+        let tail = &tail[1..];
+        let hex = kind != b'I';
         let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
         let Some(length) = (digits > 0)
             .then(|| tail[..digits].parse::<usize>().ok())
@@ -135,7 +159,7 @@ fn decode(text: &str) -> Option<(String, &str)> {
         };
         let segment = if hex {
             let bytes = (0..length)
-                .map(|index| u8::from_str_radix(&written[2 * index..2 * index + 2], 16).ok())
+                .map(|index| u8::from_str_radix(written.get(2 * index..2 * index + 2)?, 16).ok())
                 .collect::<Option<Vec<_>>>()?;
             String::from_utf8(bytes).ok()?
         } else if super::import::is_identifier(written) {
@@ -143,16 +167,30 @@ fn decode(text: &str) -> Option<(String, &str)> {
         } else {
             break;
         };
-        segments.push(segment);
         rest = &body[width..];
+        if kind == b'D' {
+            if segments.is_empty() || segment.is_empty() {
+                return None;
+            }
+            declaration = true;
+            break;
+        }
+        segments.push(segment);
     }
-    (!segments.is_empty()).then(|| (segments.join("::"), rest))
+    (!segments.is_empty()).then(|| (segments.join("::"), rest, declaration))
+}
+
+/// Whether a verifier key selects a declaration more precisely than its
+/// displayed path. A bare path must not select this key in CLI claim lookup.
+pub(crate) fn is_declaration_key(name: &str) -> bool {
+    name.contains("_D")
+        && decode(name).is_some_and(|(_, rest, declaration)| declaration && rest.is_empty())
 }
 
 /// The C++ spelling `name` stands for, `Square::area`, when it is a whole
 /// importer name; `None` for any other name.
 pub fn cpp_display_name(name: &str) -> Option<String> {
-    let (path, rest) = decode(name)?;
+    let (path, rest, _) = decode(name)?;
     rest.is_empty().then_some(path)
 }
 
@@ -306,9 +344,10 @@ mod tests {
 
     #[test]
     fn names_are_injective_and_independent_of_traversal_order() {
+        let path = path_name(&["C", "same"]);
         let declarations = [
-            ("a", "same"),
-            ("b", "same"),
+            ("a", path.as_str()),
+            ("b", path.as_str()),
             ("c", "ordinary"),
             ("d", "__click_cpp_decl_61"),
             ("e", "(anonymous namespace)_helper"),
@@ -317,6 +356,16 @@ mod tests {
         let backward = ResolvedNames::new(declarations.into_iter().rev()).unwrap();
         assert_eq!(forward.0, backward.0);
         assert_eq!(forward.get("c"), Some("ordinary"));
+        assert_eq!(forward.get("d"), Some("__click_cpp_decl_61"));
+        for id in ["a", "b"] {
+            let key = forward.require(id).unwrap();
+            assert_eq!(cpp_display_name(key).as_deref(), Some("C::same"));
+            assert_eq!(crate::languages::source_display_name(key), None);
+            assert!(!crate::languages::claim_label_matches(
+                &format!("{key}.ensures_0"),
+                "C::same.ensures_0",
+            ));
+        }
         assert_eq!(
             forward
                 .0

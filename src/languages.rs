@@ -189,7 +189,12 @@ pub fn display_source_names(text: &str) -> std::borrow::Cow<'_, str> {
 
 /// The source spelling `name` stands for when it is a whole importer name.
 pub fn source_display_name(name: &str) -> Option<String> {
-    rust::names::rust_display_name(name).or_else(|| cpp::names::cpp_display_name(name))
+    rust::names::rust_display_name(name).or_else(|| {
+        if cpp::names::is_declaration_key(name) {
+            return None;
+        }
+        cpp::names::cpp_display_name(name)
+    })
 }
 
 /// Whether the claim label `label` is the one `requested` names, as the
@@ -197,5 +202,8 @@ pub fn source_display_name(name: &str) -> Option<String> {
 pub fn claim_label_matches(label: &str, requested: &str) -> bool {
     label == requested
         || ((requested.contains("::") || requested.contains(".statement("))
+            && !cpp::names::is_declaration_key(
+                label.split_once('.').map_or(label, |(name, _)| name),
+            )
             && display_source_names(label) == requested)
 }

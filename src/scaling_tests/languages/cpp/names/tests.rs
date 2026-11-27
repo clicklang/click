@@ -24,7 +24,7 @@ fn collision_resolution_work_scales_with_declarations_and_identity_bytes() {
         );
         let bytes = ids.iter().map(String::len).sum::<usize>();
         assert!(
-            work >= bytes && work <= bytes + 3 * size,
+            work >= bytes && work <= bytes + 7 * size,
             "size {size}: {work}"
         );
     }

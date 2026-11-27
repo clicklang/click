@@ -11228,6 +11228,11 @@ fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types()
         .map(|function| lowered.contract_name(&function.declaration_id).unwrap())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(names.len(), helpers.len());
+    assert!(
+        names
+            .iter()
+            .all(|name| !name.starts_with("__click_cpp_decl_"))
+    );
     assert_eq!(lowered.kernel_function().name(), "relay");
     let mut sidecar = String::from("verifying \"identity.cpp\";\n");
     for helper in helpers {
@@ -11249,8 +11254,23 @@ fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types()
             } => "int64",
             _ => "int32",
         };
+        // The capture preserves the identity of both 64-bit overloads, while
+        // their parameter types at the proof boundary are both int64.
+        let written = if helper.path == ["echo"] {
+            name.to_owned()
+        } else {
+            helper.path.join("::")
+        };
+        let storage = if matches!(
+            helper.function_kind,
+            click::languages::cpp::CppFunctionKind::StaticMethod { .. }
+        ) {
+            "static "
+        } else {
+            ""
+        };
         sidecar.push_str(&format!(
-            "int32 {name}({parameter_type} x) {{ ensures result == {value}; }}\n"
+            "{storage}int32 {written}({parameter_type} x) {{ ensures result == {value}; }}\n"
         ));
         assert!(
             lowered
