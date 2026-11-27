@@ -5321,30 +5321,9 @@ fn lower_spec_float_classification_proposition_at_state_in(
     .into_iter()
     .filter_map(|path| {
         let operand = path.value.float()?;
-        let format = operand.format();
-        let condition = if path.value.shared().is_none() {
-            let native = match path.value.clone().into_native() {
-                ProgramValue::Float32(value) => {
-                    OldConditionTerm::float32_classification(value, classification)
-                }
-                ProgramValue::Float64(value) => {
-                    OldConditionTerm::float64_classification(value, classification)
-                }
-                _ => unreachable!("float value"),
-            };
-            StoredConditionTerm::from(native)
-        } else {
-            let root = match operand.closed_arithmetic_bits() {
-                Some(bits) => {
-                    KernelTerm::boolean_literal(format.classify_bits(bits, classification))
-                }
-                None => {
-                    KernelTerm::float_classify(format, classification, path.value.common_operand())
-                        .expect("float classification operand")
-                }
-            };
-            StoredConditionTerm::from_root(root).expect("logical float classification")
-        };
+        let condition =
+            StoredConditionTerm::from_root(operand.evaluated_classification(classification))
+                .expect("logical float classification");
         Some(SpecPropositionPath {
             introductions: Vec::new(),
             proposition: Proposition::condition_is(condition, true),

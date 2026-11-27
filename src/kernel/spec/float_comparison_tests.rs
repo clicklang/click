@@ -2,6 +2,72 @@ use super::*;
 use crate::kernel::VerificationSession;
 
 #[test]
+fn float_classification_lowering_preserves_native_selections_and_symbolic_calls() {
+    let _session = VerificationSession::enter();
+    let state = ExecutionState::new();
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let lower = |source, native| {
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.machine_result_production_disabled = native;
+            let paths = lower_spec_float_classification_proposition_at_state_in(
+                SpecScope::unbound(&state, None),
+                &SpecExpression::Value(format.value(source)),
+                FloatClassification::Zero,
+                &PureFactContext::new(),
+                &mut budget,
+            )
+            .unwrap();
+            let [path] = paths.as_slice() else {
+                panic!("one classification path")
+            };
+            let Proposition::ConditionIs(condition, true) = &path.proposition else {
+                panic!("expected a positive condition")
+            };
+            condition
+                .root()
+                .expect("shared classification output")
+                .clone()
+        };
+        let zero = match format {
+            KernelFloatType::Float32 => OldMachineTerm::uint32_constant(0x80000000),
+            KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0x8000000000000000),
+        };
+        let selection = OldMachineTerm::If {
+            condition: Box::new(OldConditionTerm::Constant(true)),
+            then_term: Box::new(zero),
+            else_term: Box::new(OldMachineTerm::Variable(Variable(10993749))),
+        };
+        assert_eq!(
+            lower(selection.clone(), true),
+            KernelTerm::boolean_literal(true)
+        );
+        assert!(matches!(
+            lower(selection, false).node(),
+            KernelTermNode::FloatClassify { .. }
+        ));
+
+        let source = OldMachineTerm::ClickFunctionApplication {
+            name: "classification_operand".into(),
+            arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt32(
+                OldMachineTerm::uint32_constant(17),
+            ))],
+        };
+        let condition = lower(source.clone(), true);
+        assert_eq!(condition, lower(source.clone(), false));
+        let expected = match format {
+            KernelFloatType::Float32 => {
+                OldConditionTerm::float32_classification(source, FloatClassification::Zero)
+            }
+            KernelFloatType::Float64 => {
+                OldConditionTerm::float64_classification(source, FloatClassification::Zero)
+            }
+        };
+        assert_eq!(KernelTermExport::condition(&condition).unwrap(), expected);
+    }
+}
+
+#[test]
 fn float_comparison_lowering_preserves_symbolic_operator_polarity() {
     let _session = VerificationSession::enter();
     for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
