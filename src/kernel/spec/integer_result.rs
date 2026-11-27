@@ -28,22 +28,18 @@ impl IntegerResult {
             .expect("typed Integer result operands"),
         )
     }
-    pub(super) fn conditional(
-        condition: OldConditionTerm,
-        then_value: Self,
-        else_value: Self,
-    ) -> Self {
+    pub(super) fn conditional(condition: KernelTerm, then_value: Self, else_value: Self) -> Self {
         crate::instrumentation::record_deterministic_work(1);
-        match condition {
-            OldConditionTerm::Constant(true) => return then_value,
-            OldConditionTerm::Constant(false) => return else_value,
+        match condition.node() {
+            KernelTermNode::BoolLiteral(true) => return then_value,
+            KernelTermNode::BoolLiteral(false) => return else_value,
             _ => {}
         }
         if then_value.same_native_syntax(&else_value) {
             return then_value;
         }
         Self(KernelTerm::integer_if_raw([
-            KernelTermImport::default().condition(&condition),
+            condition,
             then_value.0,
             else_value.0,
         ]))
@@ -299,7 +295,7 @@ mod conditional_contract_tests {
                     let expected =
                         IntegerTerm::if_then_else(condition.clone(), left.clone(), right.clone());
                     let result = IntegerResult::conditional(
-                        condition.clone(),
+                        KernelTermImport::default().condition(&condition),
                         retained[i].clone(),
                         retained[j].clone(),
                     );

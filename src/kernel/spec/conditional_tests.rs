@@ -25,6 +25,43 @@ fn join(condition: &OldConditionTerm, left: &SpecValue, right: &SpecValue) -> Sp
 }
 
 #[test]
+fn retained_conditional_joins_reuse_the_guard_in_both_polarities() {
+    let _session = VerificationSession::enter();
+    let format = KernelFloatType::Float64;
+    let operand = KernelTerm::float_call(format, "conditional_guard_input".into(), vec![]);
+    let guard =
+        KernelTerm::float_classify(format, FloatClassification::Zero, operand.clone()).unwrap();
+    let condition = Proposition::condition_is(
+        StoredConditionTerm::from_root(guard.clone()).unwrap(),
+        false,
+    );
+    let exports = KernelTermExport::float_export_count();
+    for ty in [KernelType::Bool, KernelType::Program(ProgramType::Int32)] {
+        let left = KernelTerm::variable(ty.clone(), Variable(10993755));
+        let right = KernelTerm::variable(ty, Variable(10993756));
+        let negated = Proposition::Not(Box::new(condition.clone()));
+        for (proposition, arms) in [(&condition, [&right, &left]), (&negated, [&left, &right])] {
+            let value = SpecValue::conditional(
+                proposition,
+                &left.clone().into(),
+                &right.clone().into(),
+                true,
+            )
+            .unwrap()
+            .unwrap();
+            let root = value.shared().unwrap();
+            assert_eq!(
+                root.children(),
+                &[guard.clone(), arms[0].clone(), arms[1].clone()]
+            );
+        }
+    }
+    assert_eq!(KernelTermExport::float_export_count(), exports);
+    assert!(!guard.has_cached_native_argument());
+    assert!(!operand.has_cached_native_argument());
+}
+
+#[test]
 fn conditional_arms_keep_shared_identity_and_native_observations() {
     for format in [
         MachineIntegerType::Int32,

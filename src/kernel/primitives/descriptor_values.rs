@@ -352,6 +352,12 @@ impl From<OldConditionTerm> for StoredConditionTerm {
     }
 }
 impl StoredConditionTerm {
+    pub(crate) fn kernel_operand(&self) -> KernelTerm {
+        self.root()
+            .cloned()
+            .unwrap_or_else(|| KernelTermImport::default().condition(self.old_form()))
+    }
+
     pub(crate) fn operand_view(&self) -> BooleanOperandView<'_> {
         match self.root() {
             Some(root) => BooleanOperandView::Shared(root),

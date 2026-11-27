@@ -65,9 +65,7 @@ impl SpecValue {
             .map(Self::Native));
         }
         if let (Some(left), Some(right)) = (then_value.boolean(), else_value.boolean()) {
-            let Some((condition, expected)) = proposition_as_single_condition(proposition)
-                .or_else(|| compound_spec_value_condition(proposition))
-            else {
+            let Some((condition, expected)) = conditional_guard(proposition) else {
                 return Ok(
                     (then_value == else_value).then(|| then_value.clone().retain_boolean_result())
                 );
@@ -80,7 +78,7 @@ impl SpecValue {
             // Exact rewrites can make the arms equal while retaining the if.
             return Ok(Some(
                 KernelTerm::boolean_if_preserving_equal_arms([
-                    KernelTermImport::default().condition(&condition),
+                    condition.kernel_operand(),
                     left,
                     right,
                 ])
@@ -108,9 +106,7 @@ impl SpecValue {
             } else {
                 return Ok(None);
             };
-            let Some((condition, expected)) = proposition_as_single_condition(proposition)
-                .or_else(|| compound_spec_value_condition(proposition))
-            else {
+            let Some((condition, expected)) = conditional_guard(proposition) else {
                 return Ok((then_value == else_value).then(|| then_value.clone()));
             };
             let left = KernelTerm::retained_machine_operand(format, left);
@@ -120,22 +116,16 @@ impl SpecValue {
             } else {
                 (right, left)
             };
-            let result = match condition {
-                OldConditionTerm::Constant(true) => left,
-                OldConditionTerm::Constant(false) => right,
+            let condition = condition.kernel_operand();
+            let result = match condition.node() {
+                KernelTermNode::BoolLiteral(true) => left,
+                KernelTermNode::BoolLiteral(false) => right,
                 _ if !preserve_equal_arms
                     && crate::kernel::shared_machine_syntax_equal(&left, &right) =>
                 {
                     left
                 }
-                condition => KernelTerm::machine_if_shared(
-                    format,
-                    [
-                        KernelTermImport::default().condition(&condition),
-                        left,
-                        right,
-                    ],
-                ),
+                _ => KernelTerm::machine_if_shared(format, [condition, left, right]),
             };
             return Ok(Some(Self::Shared(result)));
         }

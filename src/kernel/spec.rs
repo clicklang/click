@@ -10285,9 +10285,9 @@ fn evaluate_spec_algebraic_if_paths_in(
             )?,
             None => {
                 let (condition, expected) =
-                    proposition_as_single_condition(&condition_path.proposition)
-                        .or_else(|| compound_spec_value_condition(&condition_path.proposition))
-                        .ok_or(ExecutionLimit::Paths)?;
+                    conditional_guard(&condition_path.proposition).ok_or(ExecutionLimit::Paths)?;
+                let shared_guard = (retain_closed || !budget.machine_result_production_disabled)
+                    .then(|| condition.kernel_operand());
                 // Each arm's obligations are owed only where it is selected,
                 // as [`evaluate_spec_if_paths_in`] scopes a scalar arm's.
                 let lowered_condition = &condition_path.proposition;
@@ -10334,28 +10334,24 @@ fn evaluate_spec_algebraic_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecAlgebraicPath {
-                            value: if retain_closed {
-                                AlgebraicResult::Shared(KernelTerm::algebraic_if_raw(
-                                    algebraic_type.clone(),
-                                    [
-                                        KernelTermImport::default().condition(&condition),
-                                        then_value.into_kernel(),
-                                        else_value.into_kernel(),
-                                    ],
-                                ))
-                            } else if budget.machine_result_production_disabled {
+                            value: if let Some(guard) = &shared_guard {
+                                let arguments = [
+                                    guard.clone(),
+                                    then_value.into_kernel(),
+                                    else_value.into_kernel(),
+                                ];
+                                AlgebraicResult::Shared(if retain_closed {
+                                    KernelTerm::algebraic_if_raw(algebraic_type.clone(), arguments)
+                                } else {
+                                    KernelTerm::algebraic_if(arguments)
+                                })
+                            } else {
                                 AlgebraicTerm::if_then_else(
-                                    condition.clone(),
+                                    condition.old_form().clone(),
                                     then_value.into_native_compat(),
                                     else_value.into_native_compat(),
                                 )
                                 .into()
-                            } else {
-                                AlgebraicResult::Shared(KernelTerm::algebraic_if([
-                                    KernelTermImport::default().condition(&condition),
-                                    then_value.into_kernel(),
-                                    else_value.into_kernel(),
-                                ]))
                             },
                             facts,
                             obligations,
@@ -10422,9 +10418,8 @@ fn evaluate_spec_integer_if_paths_in(
             )?,
             None => {
                 let (condition, expected) =
-                    proposition_as_single_condition(&condition_path.proposition)
-                        .or_else(|| compound_spec_value_condition(&condition_path.proposition))
-                        .ok_or(ExecutionLimit::Paths)?;
+                    conditional_guard(&condition_path.proposition).ok_or(ExecutionLimit::Paths)?;
+                let condition = condition.kernel_operand();
                 // Each arm's obligations are owed only where it is selected,
                 // as [`evaluate_spec_if_paths_in`] scopes a scalar arm's.
                 let lowered_condition = &condition_path.proposition;
@@ -10473,7 +10468,7 @@ fn evaluate_spec_integer_if_paths_in(
                         branch_paths.push(SpecIntegerPath {
                             value: if retain_closed {
                                 IntegerResult::from_kernel(KernelTerm::integer_if_raw([
-                                    KernelTermImport::default().condition(&condition),
+                                    condition.clone(),
                                     then_value.into_kernel(),
                                     else_value.into_kernel(),
                                 ]))
@@ -10877,6 +10872,22 @@ pub(super) fn symbolic_spec_range_fold_value(
         .expect("int32 fold producer")
         .into_term(),
     ))
+}
+
+/// Preserve the producer's selected guard and carry outer negations in its polarity.
+fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, bool)> {
+    match proposition {
+        Proposition::ConditionIs(condition, expected) => Some((condition.clone(), *expected)),
+        Proposition::Not(body) => {
+            let (condition, expected) = conditional_guard(body)?;
+            Some((condition, !expected))
+        }
+        _ => {
+            let (condition, expected) = proposition_as_single_condition(proposition)
+                .or_else(|| compound_spec_value_condition(proposition))?;
+            Some((condition.into(), expected))
+        }
+    }
 }
 
 /// Turn a compound scalar guard into one existing condition without changing
