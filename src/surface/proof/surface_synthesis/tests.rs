@@ -10369,3 +10369,26 @@ fn guarded_algebraic_matches_on_written_constructors_round_trip() {
         );
     }
 }
+
+/// A slice application's count has no Surface form until the Surface slice
+/// type arrives (`design/rust-slice-values.md`, step 2b-iii-c): raising it
+/// refuses with an internal error rather than spelling an integer
+/// application of the same name or any placeholder.
+#[test]
+#[should_panic(expected = "raising a slice application's count to Surface has no form yet")]
+fn raising_a_slice_application_count_refuses() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let count =
+        OldMachineTerm::pure_application_count(crate::kernel::SharedPureApplication::intern(
+            "bytes_of".into(),
+            vec![crate::kernel::PureFunctionArgument::Value(
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(977_990))),
+            )],
+        ));
+    let _ = synthesize_surface_bitvector(
+        &count,
+        ParameterBinding::default(),
+        &ExecutionState::new(),
+        &BTreeMap::new(),
+    );
+}

@@ -1146,6 +1146,16 @@ fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVari
                 }
             }
         }
+        // A slice application's count carries its application's arguments.
+        OldMachineTerm::PureApplicationCount(application) => {
+            let mut seen = BTreeSet::new();
+            for argument in application.arguments() {
+                collect_argument_carriers(argument, variables, &mut seen);
+                if variables.exhausted() {
+                    return;
+                }
+            }
+        }
         OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             let mut seen = BTreeSet::new();
             collect_algebraic_carriers_seen(scrutinee, variables, &mut seen);
@@ -7080,6 +7090,27 @@ impl<'a> TermRewrite<'a> {
                 OldMachineTerm::ClickFunctionApplication {
                     name: name.clone(),
                     arguments: rewritten,
+                }
+            }
+            // A slice application's count is a numeric child of its slice:
+            // its application's arguments are rewritten as the thin part's
+            // are, and the count names the rewritten application. The
+            // application itself is never read as an integer call.
+            OldMachineTerm::PureApplicationCount(application) => {
+                let mut rewritten = Vec::with_capacity(application.arguments().len());
+                for argument in application.arguments() {
+                    rewritten.push(self.argument(argument));
+                    if self.checked_work_exhausted() {
+                        return OldMachineTerm::constant(0);
+                    }
+                }
+                if rewritten.as_slice() == application.arguments() {
+                    v.clone()
+                } else {
+                    OldMachineTerm::pure_application_count(SharedPureApplication::intern(
+                        application.name().to_owned(),
+                        rewritten,
+                    ))
                 }
             }
             OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {

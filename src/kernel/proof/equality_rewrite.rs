@@ -1212,6 +1212,7 @@ fn rewrite_term(
         | OldMachineTerm::BoolCast { .. }
         | OldMachineTerm::RangeFold { .. }
         | OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
         | OldMachineTerm::AlgebraicMatch { .. }
         | OldMachineTerm::IntegerToMachine { .. } => {
             let mut rewrite = super::term_rewrite::TermRewrite::for_bits(from, to);
@@ -1726,6 +1727,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | OldMachineTerm::BoolCast { .. }
                 | OldMachineTerm::RangeFold { .. }
                 | OldMachineTerm::ClickFunctionApplication { .. }
+                | OldMachineTerm::PureApplicationCount(_)
                 | OldMachineTerm::AlgebraicMatch { .. }
                 | OldMachineTerm::IntegerToMachine { .. }
                 | OldMachineTerm::Constant { .. } => term.clone(),

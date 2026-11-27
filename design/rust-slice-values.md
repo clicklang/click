@@ -1,12 +1,14 @@
 # Rust slices as wide pointers
 
 Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
-2a, 2b-i, 2b-ii-a, 2b-ii-b and 2b-iii-a of the [plan](#plan) are done: the
-kernel has the wide pointer and its slice pointer type, every kernel
-consumer reads or refuses its count, a slice is stored and read back as one
-memory cell, a symbolic read of a slice cell names its data pointer and
-count, and a slice named by one variable, such as a call's result, names its
-count from that variable, but no front end produces a wide pointer yet.
+2a, 2b-i, 2b-ii-a, 2b-ii-b, 2b-iii-a, 2b-iii-b-i and 2b-iii-b-ii of the
+[plan](#plan) are done: the kernel has the wide pointer and its slice
+pointer type, every kernel consumer reads or refuses its count, a slice is
+stored and read back as one memory cell, a symbolic read of a slice cell
+names its data pointer and count, a slice named by one variable, such as a
+call's result or a binder, names its count from that variable, and a
+slice-valued pure application names its count from the application, but no
+front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -612,21 +614,42 @@ construct.
      2b-iii-c. Tests: `kernel::tests::slice_binder_tests`; scaling tests
      `closing_a_slice_binder_grows_linearly_with_unrelated_slices` and
      `instantiating_a_slice_binder_ignores_unrelated_binders`.
-   - **2b-iii-b-ii. Slice-valued pure applications.** Kernel only. A pure
-     application of slice type (`spec.rs`'s pointer-result branch, which
-     today builds `Pointer::new` at the result type and so cannot take a
-     slice type) is a wide pointer whose thin part is based on
-     `AddressBase::PureFunctionApplication(app)` and whose count is a
-     pure-application component of the same `app` (never an integer
-     application of the same name), so `f(x).len()` names it. That count
-     is a new machine-term form keyed by the application's identity, with
-     its own e-graph node beside the pointer call (`intern_pointer_call`),
-     its import into `KernelTermNode::PointerCall`, transport and rewrite
-     as a numeric child, and a raising refusal naming 2b-iii-c. A
-     definitional unfolding, `f(x) == body` at slice type, is a complete
-     pointer equality and joins both components with the body's slice
-     (`add_pointer_equality`). Scaling tests as unrelated applications and
-     facts grow.
+   - **2b-iii-b-ii. Slice-valued pure applications.** Done. Kernel only. A
+     pure application of slice type (a branch of its own in `spec.rs` beside
+     the pointer-result branch, `spec::pure_slice_application_value`) is a
+     wide pointer whose thin part is based on
+     `AddressBase::PureFunctionApplication(app)` at the element's thin
+     pointer type and whose count is `OldMachineTerm::PureApplicationCount(app)`,
+     `f(x).len()`: a `UInt64` term keyed by the application's identity,
+     never an integer application of the same name. It follows every other
+     `OldMachineTerm` variant, so their derived order is unchanged. In the
+     e-graph the count is the `ArgumentTag::PointerCallCount` projection of
+     the application's `PointerFunctionIdentity` node, beside the provenance
+     and bounds projections `retain_pointer_call_component` makes, so the
+     counts of applications to equal arguments are equal; one key lookup
+     per count, the identity's definition queued once. The count is an
+     exact scalar leaf of the `KernelTermNode::PointerCall` value's
+     metadata. Frame transport keeps it, as it keeps the application block
+     of the thin part. Every rewrite rewrites its application's arguments
+     and names the count of the rewritten application: `TermRewrite::bits`
+     argument by argument (never reading the application as an integer
+     call, so no replacement of `f(x)` applies to it) and
+     `substitute_bitvector_variable` through the application's call term;
+     the variable, capture, binder and scope collectors read the
+     application's arguments. A definitional unfolding, `f(x) == body` at
+     slice type, lowers to the complete pointer equality, so
+     `add_pointer_equality` joins both components with the body's slice.
+     Raising the count refuses with an internal error naming 2b-iii-c; a
+     diagnostic describes it as `f(<typed Click arguments>).len()`. No front
+     end produces a slice-valued application until 2b-iii-c. Tests:
+     `kernel::spec::slice_application_tests`,
+     `kernel::equality_graph::slice_application_tests`,
+     `framed_transport_carries_a_slice_application_count`,
+     `raising_a_slice_application_count_refuses`; scaling tests
+     `slice_application_counts_ignore_unrelated_applications` and
+     `interning_application_counts_grows_linearly`. The equality-rewrite
+     atom index (`bitvector_equality_atom_key`) files a count by its
+     application's identity.
    - **2b-iii-c. Surface slice type and raising.** `spec enum Slice<T>`
      is removed in the same step as the built-in type arrives: `Slice<T>`
      lowers to `ProgramType::SlicePointer` and gets an interface type

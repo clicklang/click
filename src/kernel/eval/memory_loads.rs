@@ -4983,6 +4983,7 @@ fn select_scalar_reads_impl(term: &OldMachineTerm, retain_selected: bool) -> Old
                     OldMachineTerm::IntegerAddress(_, _)
                     | OldMachineTerm::IntegerToMachine { .. } => term_results.push(term.clone()),
                     OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::PureApplicationCount(_)
                     | OldMachineTerm::AlgebraicMatch { .. } => term_results.push(term.clone()),
                     OldMachineTerm::If {
                         condition,
@@ -5404,7 +5405,8 @@ pub(in crate::kernel) fn term_mentions_a_memory_load(term: &OldMachineTerm) -> b
         OldMachineTerm::PureFunctionApplication { name: _, arguments } => {
             arguments.iter().any(term_mentions_a_memory_load)
         }
-        OldMachineTerm::ClickFunctionApplication { .. } => true,
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_) => true,
         OldMachineTerm::AlgebraicMatch { arms, .. } => arms
             .iter()
             .any(|arm| term_mentions_a_memory_load(&arm.body)),

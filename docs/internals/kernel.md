@@ -1402,6 +1402,23 @@ binder with the new binder's count; a replacement that mentions a count
 mentions its slice for capture. A substitution of `v` by a thin address
 (`substitute_pointer_variable_in_proposition`) leaves the count alone.
 
+A slice-valued pure application `f(x)` (step 2b-iii-b-ii,
+`spec::pure_slice_application_value`) has thin part
+`AddressBase::PureFunctionApplication(app)` at the element's pointer type and
+count `OldMachineTerm::PureApplicationCount(app)`, `f(x).len()`: a `UInt64`
+term keyed by the application's identity, never the integer application of
+`f`, which would be another function of that name. In the e-graph the count
+is the `PointerCallCount` projection of the application's
+`PointerFunctionIdentity` node, beside its provenance and bounds, so the counts
+of applications to equal arguments are equal. It imports as an exact scalar
+leaf of the `PointerCall` term's metadata, transports unchanged as its
+application block does, and every rewrite (`TermRewrite::bits`,
+`substitute_bitvector_variable`) rewrites its application's arguments and
+names the count of the rewritten application. A definitional unfolding
+`f(x) == body` at slice type is a complete pointer equality, so
+`add_pointer_equality` joins both components with the body's. Raising the
+count refuses with an internal error until step 2b-iii-c.
+
 ## Symbolic execution
 
 ### What stepping a statement means

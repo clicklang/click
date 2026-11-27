@@ -1140,7 +1140,7 @@ fn bitvector_term_exceeds_depth_limit_from(root: &OldMachineTerm, depth: usize) 
             return true;
         }
         match term {
-            OldMachineTerm::ThreadHandle(_) => {}
+            OldMachineTerm::ThreadHandle(_) | OldMachineTerm::PureApplicationCount(_) => {}
             crate::kernel::binary_machine_term!(left, right) => {
                 pending.push((left, depth + 1));
                 pending.push((right, depth + 1));
@@ -6455,6 +6455,12 @@ fn synthesize_surface_bitvector(
         OldMachineTerm::ThreadHandle(_) => {
             unreachable!("a pthread handle must have a source value name at its introduction")
         }
+        // A slice application's count raises as `f(x).len()` with the Surface
+        // slice type, never as an integer application of `f`.
+        OldMachineTerm::PureApplicationCount(_) => panic!(
+            "internal error: raising a slice application's count to Surface has no form yet \
+             (design/rust-slice-values.md, step 2b-iii-c)"
+        ),
         // The 32-bit widening of a narrow value is written as the
         // conversion it is (`c as int32`, `c as uint32`).
         OldMachineTerm::Cast {

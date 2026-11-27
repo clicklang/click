@@ -80,6 +80,8 @@ mod pointer_call_tests;
 #[cfg(test)]
 mod scaled_int32_tests;
 #[cfg(test)]
+mod slice_application_tests;
+#[cfg(test)]
 mod storage_tests;
 #[cfg(test)]
 mod uint64_tests;

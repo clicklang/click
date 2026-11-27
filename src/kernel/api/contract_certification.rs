@@ -770,8 +770,9 @@ fn collect_shallow_term_variables(term: &OldMachineTerm, variables: &mut BTreeSe
                 collect_shallow_term_variables(argument, variables);
             }
         }
-        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
-        }
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
+        | OldMachineTerm::AlgebraicMatch { .. } => {}
         // The memory state may contain a large symbolic state. Only
         // variables outside nested loads can be the surrounding
         // quantified index. Variables in the loaded address belong to

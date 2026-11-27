@@ -2265,6 +2265,7 @@ impl PureFactContext {
                 None => term.clone(),
             },
             OldMachineTerm::ClickFunctionApplication { .. }
+            | OldMachineTerm::PureApplicationCount(_)
             | OldMachineTerm::AlgebraicMatch { .. }
             | OldMachineTerm::IntegerToMachine { .. } => term.clone(),
             OldMachineTerm::MemoryLoad(memory, pointer, kind) => {

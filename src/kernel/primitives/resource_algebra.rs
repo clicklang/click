@@ -1711,6 +1711,7 @@ fn collect_memory_load_work_with<'a>(
                     | OldMachineTerm::RangeFold { .. }
                     | OldMachineTerm::PureFunctionApplication { .. }
                     | OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::PureApplicationCount(_)
                     | OldMachineTerm::AlgebraicMatch { .. }
                     | OldMachineTerm::IntegerToMachine { .. } => *uncertain = true,
                 }

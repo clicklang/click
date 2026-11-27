@@ -343,6 +343,9 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     OldMachineTerm::ThreadHandle(id) => {
                         let _ = write!(identity, "thread-handle:{id:?};");
                     }
+                    OldMachineTerm::PureApplicationCount(application) => {
+                        let _ = write!(identity, "tpcount{};", application.id());
+                    }
                     OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,

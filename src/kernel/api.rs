@@ -8443,9 +8443,9 @@ fn rewrite_int32_term_by_exact_equality(
                     .collect(),
             )
         }
-        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
-            term.clone()
-        }
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
+        | OldMachineTerm::AlgebraicMatch { .. } => term.clone(),
         bits32_constant!(_)
         | OldMachineTerm::Variable(_)
         | OldMachineTerm::MemoryLoad(_, _, _)

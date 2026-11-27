@@ -8680,6 +8680,43 @@ fn evaluate_spec_pure_function_application_paths_in(
             });
             continue;
         }
+        if let ProgramType::SlicePointer(element) = result_type {
+            // A slice-valued application is a wide pointer whose two
+            // components are named by the one application
+            // (`design/rust-slice-values.md`, step 2b-iii-b-ii): its thin part
+            // is based on the application, as a pointer-valued one is, and
+            // its count is the application's count, `f(x).len()`.
+            let (_, object_class) = pure_pointer_result_class_from(pointer_result, |index| {
+                arguments
+                    .get(index)
+                    .and_then(SpecCallArgument::native_descriptor)
+            });
+            let retained = arguments
+                .iter()
+                .map(|argument| match argument {
+                    SpecCallArgument::Shared(root) => Some(root.clone()),
+                    SpecCallArgument::Native(_) => None,
+                })
+                .collect();
+            let application =
+                SharedPureApplication::intern(name.to_owned(), call_arguments(arguments));
+            let value = pure_slice_application_value(&application, element, result_type)
+                .with_declared_object_class(result_object_class.cloned())
+                .with_object_type_evidence(object_class);
+            let value = if budget.machine_result_production_disabled {
+                SpecValue::Native(ProgramValue::Pointer(value))
+            } else {
+                KernelTermImport::default()
+                    .pointer_call(&application, retained, value.shared().clone())
+                    .into()
+            };
+            results.push(SpecExpressionPath {
+                value,
+                facts,
+                obligations,
+            });
+            continue;
+        }
         if !budget.machine_result_production_disabled
             && let ProgramType::Parameter(parameter) = result_type
         {
@@ -8732,6 +8769,27 @@ fn evaluate_spec_pure_function_application_paths_in(
         });
     }
     Ok(results)
+}
+
+/// The slice a slice-valued pure application returns
+/// (`design/rust-slice-values.md`, step 2b-iii-b-ii): the wide pointer whose
+/// thin part is based on the application at the element's thin pointer type
+/// and whose count is the application's count. Both components are named by
+/// the application alone, so building it reads no fact or state.
+pub(crate) fn pure_slice_application_value(
+    application: &SharedPureApplication,
+    element: SliceElement,
+    result_type: ProgramType,
+) -> Pointer {
+    Pointer::new(
+        Address::new(
+            AddressBase::PureFunctionApplication(application.clone()),
+            AddressOffset::constant(0),
+        ),
+        element.thin_pointer_type(),
+    )
+    .with_element_count(OldMachineTerm::pure_application_count(application.clone()))
+    .with_type(result_type)
 }
 
 /// Instantiate the body's pointer origins with this call's actual values.
@@ -11707,6 +11765,9 @@ mod execution_handoff_tests;
 
 #[cfg(test)]
 mod float_comparison_tests;
+
+#[cfg(test)]
+mod slice_application_tests;
 
 #[cfg(test)]
 mod mutex_held_tests;
