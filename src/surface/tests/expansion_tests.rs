@@ -28947,6 +28947,90 @@ fn match_arm_can_unfold_a_resource_to_establish_false_at_function_exit() {
 }
 
 #[test]
+fn an_unfold_can_refute_a_constructor_before_c_executes() {
+    let source = r#"
+        verifying "id.c";
+
+        spec enum Tag { A, B }
+        resource tag() { field model: Tag; }
+        resource non_a() {
+            field model: Tag;
+            fact model != Tag::A;
+        }
+        int32 id(int32 x) {
+            owns r: tag();
+            owns n: non_a();
+            requires r.model == n.model;
+            ensures result == x;
+            ensures n.model == old(n.model);
+        } by {
+            match r.model {
+                Tag::A => {
+                    unfold(n);
+                    close();
+                },
+                Tag::B => { },
+            }
+            step();
+            close();
+        }
+    "#;
+    let sources = [("id.c", "int32 id(int32 x) { return x; }")];
+    let expanded = expand_function_proof_source(source, &sources, "id")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("unfold(n);"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
+#[test]
+fn if_and_cases_close_refuted_arms_before_c_executes() {
+    let source = r#"
+        verifying "id.c";
+
+        spec enum Tag { A, B }
+        resource tag() { field model: Tag; }
+        function tag_code(value: Tag) -> Integer {
+            match value { Tag::A => 0, Tag::B => 1 }
+        }
+
+        int32 id(int32 x) {
+            owns r: tag();
+            requires tag_code(r.model) != 0;
+            ensures result == x;
+            ensures r.model == old(r.model);
+        } by {
+            SPLIT
+            have r.model != Tag::A by close();
+            step();
+            close();
+        }
+    "#;
+    let refutation = r#"{
+        have tag_code(r.model) == 0 by {
+            rewrite(r.model, Tag::A);
+            unfold(tag_code(Tag::A));
+            close();
+        }
+        close();
+    }"#;
+    let sources = [("id.c", "int32 id(int32 x) { return x; }")];
+    for split in [
+        format!("if r.model == Tag::A {refutation} else {{ }}"),
+        format!("cases {{ r.model == Tag::A => {refutation}, not (r.model == Tag::A) => {{ }}, }}"),
+    ] {
+        let source = source.replace("SPLIT", &split);
+        let expanded = expand_function_proof_source(&source, &sources, "id")
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.report()));
+        assert!(expanded.contains("unfold(tag_code(Tag::A())"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+        let reachable = expanded.replace("requires tag_code(r.model) != 0;", "");
+        assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
+    }
+}
+
+#[test]
 fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
     let (source, sources) = mdtest_sources(
         "mdtests/a_refuted_match_arm_bridge_at_function_exit_uses_propagated_false.md",

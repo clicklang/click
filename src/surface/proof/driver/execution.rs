@@ -1552,6 +1552,60 @@ pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
     result
 }
 
+/// A terminal closer after a proof-only prefix can refute its case at the
+/// split's program point. Check the arm on its own frontier before running
+/// the surviving sibling.
+#[allow(clippy::too_many_arguments)]
+fn try_advance_refuted_case_split<'a>(
+    split: &Proof<'a>,
+    record: &ExecutionProofCaseSplit<'a>,
+    branches: [&InternalProofNode; 2],
+    enclosing_record: Option<&ExecutionSplit<'a>>,
+    mut expansion_capture: Option<&mut ExpansionCapture>,
+    proof_site: Option<&ProofSite>,
+    owning_source_index: usize,
+    depth: usize,
+    ends_at_join: bool,
+) -> Driven<Option<Proof<'a>>> {
+    for (index, arm) in branches.iter().enumerate() {
+        let Some((bridge, last)) = refuting_arm_prefix(arm) else {
+            continue;
+        };
+        let scoped = split.focus_execution_if_arm(record, index == 0)?;
+        let mut staged = expansion_capture.as_deref().cloned();
+        let refuted = driven!(advance_refuting_bridge(
+            scoped,
+            bridge,
+            staged.as_mut(),
+            proof_site,
+            owning_source_index,
+        ));
+        if !refuted.facts().holds_false() || refuted.is_at_function_exit() {
+            continue;
+        }
+        let closed = close_refuted_arm(&refuted, last.source_index)?;
+        let live = closed
+            .focus_execution_if_arm(record, index != 0)?
+            .retain_case_after_sibling_refutation(record, &refuted)?;
+        if let (Some(capture), Some(staged)) = (expansion_capture.as_deref_mut(), staged) {
+            *capture = staged;
+        }
+        let advanced = driven!(advance_focused_execution_region_with_branch_continuation(
+            live,
+            enclosing_record,
+            branches[1 - index],
+            expansion_capture,
+            proof_site,
+            owning_source_index,
+            depth + 1,
+            None,
+            ends_at_join,
+        ));
+        return Ok(Ok(Some(advanced.join_after_case_refutation(record)?)));
+    }
+    Ok(Ok(None))
+}
+
 /// Runs the two arms of a proof-level case split, a proof `if` or `cases`,
 /// and joins them. What follows the
 /// split is checked once: two live arms must rejoin, through `ensuring` or
@@ -1575,6 +1629,22 @@ fn advance_case_split_arms<'a>(
     depth: usize,
 ) -> Driven<(Proof<'a>, bool)> {
     let must_rejoin = ensuring.is_some();
+    if !must_rejoin && !consumed_leading_steps {
+        let refuted = driven!(try_advance_refuted_case_split(
+            &split,
+            record,
+            [then_branch, else_branch],
+            enclosing_record,
+            expansion_capture.as_deref_mut(),
+            proof_site,
+            owning_source_index,
+            depth,
+            !matches!(continuation, InternalProofNode::Done),
+        ));
+        if let Some(proof) = refuted {
+            return Ok(Ok((proof, false)));
+        }
+    }
     if must_rejoin || !matches!(continuation, InternalProofNode::Done) {
         let mut advanced = split;
         let mut live = [false, false];
@@ -3684,6 +3754,31 @@ fn advance_execution_match<'a>(
     )
 }
 
+fn close_refuted_arm<'a>(proof: &Proof<'a>, source_index: usize) -> Result<Proof<'a>, ClickError> {
+    proof
+        .driver()
+        .apply_step_at(ProofStep::CloseUnreachable, source_index)
+}
+
+fn refuting_arm_prefix(arm: &InternalProofNode) -> Option<(&[IndexedTactic], &IndexedTactic)> {
+    let InternalProofNode::Linear {
+        tactics,
+        continuation,
+    } = arm
+    else {
+        return None;
+    };
+    let (last, prefix) = tactics.split_last()?;
+    (matches!(
+        last.tactic,
+        ProofTactic::Close | ProofTactic::CloseUnreachable
+    ) && matches!(continuation.as_ref(), InternalProofNode::Done)
+        && prefix
+            .iter()
+            .all(|indexed| bridges_without_executing(&indexed.tactic)))
+    .then_some((prefix, last))
+}
+
 /// Checks the existing model-match rule from its exact prepared marker.
 /// Both ordinary execution and resource scopes use this same driver.
 fn advance_prepared_execution_match<'a>(
@@ -3708,26 +3803,9 @@ fn advance_prepared_execution_match<'a>(
         if plan.excluded_certificate(index).is_some() {
             continue;
         }
-        let InternalProofNode::Linear {
-            tactics,
-            continuation,
-        } = arm
-        else {
+        let Some((bridge, last)) = refuting_arm_prefix(arm) else {
             continue;
         };
-        let Some((last, bridge)) = tactics.split_last() else {
-            continue;
-        };
-        if !matches!(
-            last.tactic,
-            ProofTactic::Close | ProofTactic::CloseUnreachable
-        ) || !matches!(continuation.as_ref(), InternalProofNode::Done)
-            || !bridge
-                .iter()
-                .all(|indexed| bridges_without_executing(&indexed.tactic))
-        {
-            continue;
-        }
         let probe = matches!(last.tactic, ProofTactic::Close)
             && proof.is_at_function_exit()
             && !plan.arm_holds_false(index);
@@ -3764,9 +3842,7 @@ fn advance_prepared_execution_match<'a>(
         if let (Some(capture), Some(bridged)) = (expansion_capture.as_deref_mut(), bridge_capture) {
             *capture = bridged;
         }
-        let closed = scoped
-            .driver()
-            .apply_step_at(ProofStep::CloseUnreachable, last.source_index)?;
+        let closed = close_refuted_arm(&scoped, last.source_index)?;
         closed.finish_execution_match_arm_exclusion(&mut plan, index, &entered, partition)?;
     }
     if plan.live_cases().is_empty() {
@@ -4420,6 +4496,25 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 // `branch` arm, rejoins where its cases end: the region's
                 // end is that join, not the function exit.
                 let must_rejoin = ensuring.is_some();
+                if !must_rejoin && !consumed_leading_steps {
+                    let refuted = driven!(try_advance_refuted_case_split(
+                        &split,
+                        &record,
+                        [then_branch, else_branch],
+                        enclosing_record,
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        depth,
+                        ends_at_join || !matches!(continuation.as_ref(), InternalProofNode::Done),
+                    ));
+                    if let Some(joined) = refuted {
+                        proof = joined.restore_execution_tactic_attribution(&owner)?;
+                        region = continuation;
+                        branch_continuation = None;
+                        continue;
+                    }
+                }
                 if must_rejoin
                     || ends_at_join
                     || !matches!(continuation.as_ref(), InternalProofNode::Done)

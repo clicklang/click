@@ -71,13 +71,13 @@ src/surface/proof/driver/execution.rs	driver	::advance_focused_execution_region_
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	driver	6
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_to_exit	1
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_until	1
-src/surface/proof/driver/execution.rs	driver	::advance_prepared_execution_match	driver	1
 src/surface/proof/driver/execution.rs	driver	::advance_preservation_region	driver	5
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	driver	7
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	try_execute_to_exit	1
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	try_execute_until	1
 src/surface/proof/driver/execution.rs	driver	::apply_source_step_proofs	driver	3
 src/surface/proof/driver/execution.rs	driver	::apply_written_theorem	driver	1
+src/surface/proof/driver/execution.rs	driver	::close_refuted_arm	driver	1
 src/surface/proof/driver/execution.rs	driver	::defer_post_execution_case_split	driver	1
 src/surface/proof/driver/execution.rs	driver	::defer_post_execution_match	driver	1
 src/surface/proof/driver/execution.rs	driver	::preservation_smart_step	driver	1

@@ -2488,22 +2488,38 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             // at its frozen state. Accept it only when the input context
             // independently proves that exact memory/resource proposition.
             let mut cached_comparisons = HashMap::new();
-            if let Some(fact) = introduced.iter().find(|fact| {
-                !allowed.contains(*fact)
-                    && !cached_body_loadability(
+            // Check direct introductions in order. On the first one that
+            // needs propagation, replay the already justified prefix once.
+            // Only consequences of that prefix can justify a later fact.
+            let mut admitted = None::<PureFactStore>;
+            for (index, fact) in introduced.iter().enumerate() {
+                let directly_allowed = allowed.contains(fact)
+                    || cached_body_loadability(
                         fact,
                         before_state.memory(),
                         &allowed,
                         &mut cached_comparisons,
                     )
-                    && !(matches!(fact, Proposition::MemoryReadDefined { .. })
-                        && assumptions.proves_atomic_memory_or_resource(fact))
-            }) {
-                *rejected_fact = Some(Arc::new(RejectedResourceRewriteFact {
-                    rejected: fact.clone(),
-                    allowed: allowed.into_iter().collect(),
-                }));
-                return Err("instance rewrite introduced an unchecked fact".to_string());
+                    || (matches!(fact, Proposition::MemoryReadDefined { .. })
+                        && assumptions.proves_atomic_memory_or_resource(fact));
+                if !directly_allowed {
+                    let context = admitted.get_or_insert_with(|| {
+                        introduced[..index]
+                            .iter()
+                            .fold(before_facts.clone(), |facts, fact| {
+                                facts.with_kernel_checked_fact(fact.clone())
+                            })
+                    });
+                    if !context.contains(fact) {
+                        *rejected_fact = Some(Arc::new(RejectedResourceRewriteFact {
+                            rejected: fact.clone(),
+                            allowed: allowed.into_iter().collect(),
+                        }));
+                        return Err("instance rewrite introduced an unchecked fact".to_string());
+                    }
+                } else if let Some(context) = &mut admitted {
+                    *context = context.with_kernel_checked_fact(fact.clone());
+                }
             }
             return Ok(Self {
                 before_state: before_state.clone(),
@@ -9992,6 +10008,76 @@ impl ExecutionProofCore {
             trace.push(CheckedExecutionEvent::ProofCase(Box::new(arm.clone())));
         }
         true
+    }
+
+    /// Retains the sole surviving case of a logical split. The sibling's
+    /// checked facts must refute the exact case it entered, and the live
+    /// trace must still be at its case entry.
+    pub(crate) fn exclude_refuted_case_sibling(
+        &mut self,
+        parent: &Self,
+        refuted: &Self,
+        refuted_facts: &PureFactStore,
+    ) -> Result<(), &'static str> {
+        let ([parent_trace], [live_trace], [refuted_trace]) = (
+            parent.execution_evidence.as_slice(),
+            self.execution_evidence.as_slice(),
+            refuted.execution_evidence.as_slice(),
+        ) else {
+            return Err("logical refutation requires one trace per case");
+        };
+        let live_events = live_trace
+            .suffix_since(parent_trace)
+            .ok_or("the live case did not start from this split")?;
+        let [CheckedExecutionEvent::ProofCase(live)] = live_events.as_slice() else {
+            return Err("the live case already advanced from its entry");
+        };
+        let refuted_events = refuted_trace
+            .suffix_since(parent_trace)
+            .ok_or("the refuted case did not start from this split")?;
+        let Some(CheckedExecutionEvent::ProofCase(dead)) = refuted_events.first() else {
+            return Err("the refutation did not enter a logical case");
+        };
+        if refuted.evidence_completed
+            || !refuted.frontier.at_same_program_point(&parent.frontier)
+            || !refuted_events[1..].iter().all(|event| {
+                matches!(
+                    event,
+                    CheckedExecutionEvent::ResourceObservation(_)
+                        | CheckedExecutionEvent::ResourceRewrite(_)
+                        | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
+                        | CheckedExecutionEvent::PopulationMemberRewrite(_)
+                        | CheckedExecutionEvent::TacticApplication(_)
+                )
+            })
+        {
+            return Err("a case refutation must leave the C frontier unchanged");
+        }
+        if !Arc::ptr_eq(&live.partition, &dead.partition)
+            || live.width() != 2
+            || live.arm_index == dead.arm_index
+            || live.partition.witness_scope.is_some()
+            || refuted_facts.introduced_since(&dead.facts).is_none()
+            || !refuted_facts.holds_false()
+        {
+            return Err("the sibling's own facts do not refute its case");
+        }
+        let mut partition = (*live.partition).clone();
+        partition.identity = Arc::new(());
+        partition.excluded[dead.arm_index] = Some(Proposition::condition_is(
+            OldConditionTerm::Constant(false),
+            true,
+        ));
+        let mut trace = parent_trace.clone();
+        trace.push(CheckedExecutionEvent::ProofCase(Box::new(
+            CheckedProofCaseArm {
+                partition: Arc::new(partition),
+                arm_index: live.arm_index,
+                facts: live.facts.clone(),
+            },
+        )));
+        self.execution_evidence = vec![trace].into();
+        Ok(())
     }
 
     /// Rejoins the live arms of the partition they entered and continues
