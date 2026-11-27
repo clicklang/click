@@ -252,7 +252,10 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
   rewrite(truncating_remainder(4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32) + 393126, 65521), truncating_remainder(4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32), 65521));
   close();
  }
- close();
+ all {
+  to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32) % 65521u32) == truncating_remainder(1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32), 65521) => { close() using { to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32) % 65521u32) == truncating_remainder(1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32), 65521); }; }
+  to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) % 65521u32) == truncating_remainder(4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32), 65521) => { close() using { to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) % 65521u32) == truncating_remainder(4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32), 65521); }; }
+ }
  }
 }
 
