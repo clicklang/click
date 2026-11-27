@@ -575,9 +575,12 @@ impl KernelTermImport {
             Old::AddressEqual(a, b) => {
                 return KernelTerm::address_equal_raw([a.shared().clone(), b.shared().clone()]);
             }
-            Old::AddressOffsetEqual(a, b) => Node::AddressOffsetEqual {
-                arguments: [a.shared().clone(), b.shared().clone()],
-            },
+            Old::AddressOffsetEqual(a, b) => {
+                return KernelTerm::address_offset_equal_raw([
+                    a.shared().clone(),
+                    b.shared().clone(),
+                ]);
+            }
             Old::Constant(value) => Node::BoolLiteral(*value),
             Old::Variable(variable) => Node::Variable(*variable),
             Old::Compare {

@@ -303,21 +303,29 @@ impl EqualityGraph {
                 previous = previous.as_ref().and_then(|node| node.parent.clone());
             }
             let Some(node) = current else { break };
-            let pair = match &node.input {
-                Input::CheckedRead(left, right) => Some((left, right)),
+            let address_equality = |left: &Address, right: &Address| {
+                crate::kernel::KernelTerm::address_equal([
+                    left.shared().clone(),
+                    right.shared().clone(),
+                ])
+            };
+            let equality = match &node.input {
+                Input::CheckedRead(left, right) => Some(address_equality(left, right)),
                 Input::Address(left, right) if is_read(left) || is_read(right) => {
-                    Some((left, right))
+                    Some(address_equality(left, right))
+                }
+                Input::Offset(left, right) if is_read_offset(left) || is_read_offset(right) => {
+                    Some(crate::kernel::KernelTerm::address_offset_equal_raw([
+                        left.shared().clone(),
+                        right.shared().clone(),
+                    ]))
                 }
                 _ => None,
             };
-            if let Some((left, right)) = pair {
-                let equality = crate::kernel::KernelTerm::address_equal([
-                    left.shared().clone(),
-                    right.shared().clone(),
-                ]);
+            if let Some(equality) = equality {
                 equalities.push(crate::kernel::Proposition::condition_is(
                     crate::kernel::StoredConditionTerm::from_root(equality)
-                        .expect("address equality"),
+                        .expect("Boolean equality"),
                     true,
                 ));
             }
@@ -353,12 +361,6 @@ impl EqualityGraph {
                         left: Box::new(left.clone()),
                         right: Box::new(right.clone()),
                     })
-                }
-                Input::Offset(left, right) if is_read_offset(left) || is_read_offset(right) => {
-                    Some(OldConditionTerm::AddressOffsetEqual(
-                        Box::new(left.clone()),
-                        Box::new(right.clone()),
-                    ))
                 }
                 _ => None,
             };
@@ -495,13 +497,16 @@ mod read_trace_tests {
         let read = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 4);
         let target = AddressOffset::constant(8);
         let checkpoint = graph.read_equality_checkpoint();
-        graph.add_offset_equality(&read, &target.clone());
+        graph.add_offset_equality(&read, &target);
+        let delta = graph.read_equalities_since(&checkpoint);
+        let [Proposition::ConditionIs(stored, true)] = delta.equalities.as_slice() else {
+            panic!("expected one offset equality");
+        };
+        let root = stored.root().expect("retained offset equality");
+        assert!(!root.has_cached_native_argument());
         assert_eq!(
-            graph.read_equalities_since(&checkpoint).equalities,
-            vec![Proposition::condition_is(
-                OldConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
-                true
-            )]
+            stored.old_form(),
+            &OldConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target))
         );
     }
 

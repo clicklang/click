@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn storing_raw_offset_equality_preserves_shared_operands_at_constant_cost() {
+    for size in [16, 64, 256] {
+        let mut offset = AddressOffset::constant(0);
+        for _ in 0..size {
+            offset = AddressOffset::raw_add(offset.clone(), offset);
+        }
+        let expected = offset.shared().clone();
+        let condition =
+            OldConditionTerm::AddressOffsetEqual(Box::new(offset.clone()), Box::new(offset));
+        let (stored, work) = crate::instrumentation::measure_deterministic_work(|| {
+            StoredConditionTerm::from(condition)
+        });
+        let root = stored.root().expect("stored offset comparison");
+        let KernelTermNode::AddressOffsetEqual { arguments } = root.node() else {
+            panic!("the written equality must survive even when both operands are zero");
+        };
+        assert_eq!(arguments, &[expected.clone(), expected]);
+        assert!(root.cached_condition_output().is_some());
+        assert_eq!(work, 1, "size={size}");
+    }
+}
+
+#[test]
 fn offset_nodes_retain_shared_index_dags_with_constant_work() {
     for unrelated in [0, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
