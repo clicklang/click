@@ -1,0 +1,10 @@
+{
+  "units": {
+    "side": {
+      "language": "rust",
+      "sources": {
+        "side.rs": {}
+      }
+    }
+  }
+}
