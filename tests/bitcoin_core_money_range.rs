@@ -1743,12 +1743,11 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         fs::write(root.join("bad.click"), &bad).unwrap();
         let project = read_click_project(&root.join("bad.click"), &bad).unwrap();
         let error = verify_program_prepared_project(&project, &import)
-            .expect_err("separation from the missing view is not available");
+            .expect_err("copying the span needs the missing field view");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let report = error.report();
         assert!(
-            error
-                .report()
-                .contains("requires the current goal as an available semantic fact"),
+            report.contains("missing resource fact `views ") && report.contains("copy aggregate"),
             "{field}: {}",
             error.report()
         );
