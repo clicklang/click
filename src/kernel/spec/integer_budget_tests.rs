@@ -574,9 +574,10 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
     );
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
         exact: false,
     });
@@ -612,9 +613,10 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
             pointer.clone(),
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         ))),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
         exact: false,
     });
@@ -783,9 +785,10 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     );
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(missing_pointer.clone(), ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            missing_pointer.clone(),
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
         exact: false,
     }));
@@ -833,15 +836,13 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
 fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     let item = Variable(71_103);
     let pointer = SpecExpression::PointerOffset {
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(
-                Address::new(
-                    AddressBase::Symbolic(Variable(71_104)),
-                    AddressOffset::constant(0),
-                ),
-                ProgramType::Int32Pointer,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            Address::new(
+                AddressBase::Symbolic(Variable(71_104)),
+                AddressOffset::constant(0),
             ),
-        ))),
+            ProgramType::Int32Pointer,
+        )))),
         elements: Box::new(SpecExpression::Value(ProgramValue::Int32(
             OldMachineTerm::Variable(item),
         ))),

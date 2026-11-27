@@ -885,7 +885,7 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
 
 #[test]
 fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
-    use crate::kernel::{KernelTermExport, KernelTermImport, OldPointer, SubobjectBounds};
+    use crate::kernel::{KernelTermExport, KernelTermImport, Pointer, SubobjectBounds};
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(999990));
@@ -898,12 +898,8 @@ fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
                 OldMachineTerm::constant(1),
             );
         }
-        let value = OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
-            SubobjectBounds {
-                start: pointer,
-                width,
-            },
-        ));
+        let value = Pointer::new(pointer.clone(), ProgramType::Int32Pointer)
+            .with_bounds(Some(SubobjectBounds::new(pointer, width)));
         let parameters = [crate::languages::interface::ImportedParameter::new(
             InterfaceType::Int32Pointer,
             "p".into(),

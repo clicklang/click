@@ -11,7 +11,7 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
     facts
         .equality_graph
         .register_pointer_read_definition(&value, &memory, &field);
-    let wrap = |pointer| OldPointer::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
+    let wrap = |pointer| Pointer::from_read(pointer, ProgramType::Int32Pointer, &memory, &field);
     let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
     let required = ResourceFact::own_designated_allocation(wrap(value), &AllocationSize::int32(4));
     assert!(
@@ -38,8 +38,8 @@ fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     resources.synchronize_memory_equalities(&facts);
     let extended = facts.clone().assume_proposition(Proposition::condition_is(
         OldConditionTerm::pointer_equal(
-            OldPointer::new(base, ProgramType::Int32Pointer),
-            OldPointer::new(alias, ProgramType::Int32Pointer),
+            Pointer::new(base, ProgramType::Int32Pointer),
+            Pointer::new(alias, ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -73,7 +73,7 @@ fn definitions_registered_after_publication_select_existing_payloads() {
     let field = Address::new("local:late_field".into(), AddressOffset::constant(0));
     let value = Address::symbolic(Variable(976_200));
     let read = Address::loaded_value(&memory, &field);
-    let wrap = |p| OldPointer::from_read(p, ProgramType::Int32Pointer, &memory, &field);
+    let wrap = |p| Pointer::from_read(p, ProgramType::Int32Pointer, &memory, &field);
     let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
     let required =
         ResourceFact::own_designated_allocation(wrap(value.clone()), &AllocationSize::int32(4));
@@ -150,7 +150,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 );
                 let wrong = ResourceFact::view_memory(
                     range(1, 3)
-                        .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(976_301))))
+                        .with_provenance(Address::symbolic(Variable(976_301)))
                         .with_typed_carrier(),
                 );
                 assert!(context.directly_supporting_fact(&wrong, &facts).is_none());

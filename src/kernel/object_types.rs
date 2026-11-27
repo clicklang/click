@@ -303,7 +303,7 @@ mod tests {
             ) else {
                 unreachable!()
             };
-            ProgramValue::Pointer(pointer.with_provenance(Arc::new(provenance)))
+            ProgramValue::Pointer(pointer.with_provenance(provenance))
         };
         let original = make(object.clone());
         let mut refined = original.clone();

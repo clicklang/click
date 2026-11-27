@@ -19,8 +19,8 @@ fn candidate_work(steps: u64, unrelated: u64) -> usize {
             let next = Address::symbolic(Variable(979_000 + i));
             facts = facts.assume_proposition(Proposition::condition_is(
                 OldConditionTerm::pointer_equal(
-                    OldPointer::new(previous, ProgramType::Int32Pointer),
-                    OldPointer::new(next.clone(), ProgramType::Int32Pointer),
+                    Pointer::new(previous, ProgramType::Int32Pointer),
+                    Pointer::new(next.clone(), ProgramType::Int32Pointer),
                 ),
                 true,
             ));

@@ -1401,7 +1401,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
 #[test]
 fn return_exchange_keeps_the_published_body_state() {
     use crate::kernel::{
-        OldPointer, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
+        Pointer, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
     };
     let pointer = Address::symbolic(Variable(810_000));
     let schema = ResourceFieldSchema::new(vec![(
@@ -1426,9 +1426,10 @@ fn return_exchange_keeps_the_published_body_state() {
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
                 point: SpecPoint::Current,
-                pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                    OldPointer::new(pointer.clone(), ProgramType::Int32Pointer),
-                ))),
+                pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+                    pointer.clone(),
+                    ProgramType::Int32Pointer,
+                )))),
                 value_type: ProgramType::Int32,
                 exact: false,
             },
@@ -2381,8 +2382,11 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         after_point: Default::default(),
         before: before.memory().clone(),
         after: freed.memory().clone(),
-        allocation_base: allocation_base.clone(),
-        bytes: crate::kernel::AllocationSize::int32(OldMachineTerm::constant(16)),
+        blocks: vec![(
+            allocation_base.clone(),
+            crate::kernel::AllocationSize::int32(OldMachineTerm::constant(16)),
+        )],
+        mutable_ranges: Vec::new(),
     });
     let mut freed_core = parent.clone();
     freed_core.state = freed.clone().into();
@@ -2746,14 +2750,15 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
 
 #[test]
 fn interface_logical_read_does_not_establish_validity() {
-    use crate::kernel::{OldPointer, SpecPoint};
+    use crate::kernel::{Pointer, SpecPoint};
     let state = ExecutionState::new();
     let pointer = Address::new("interface_cell".into(), AddressOffset::constant(0));
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
         exact: false,
     };
@@ -3222,11 +3227,7 @@ fn named_pointer_cell_requires_its_complete_read_and_provenance() {
             ProgramType::Int32Pointer,
         ),
         ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
-        ProgramValue::Pointer(
-            pointer
-                .clone()
-                .with_provenance(std::sync::Arc::new(address.clone())),
-        ),
+        ProgramValue::Pointer(pointer.clone().with_provenance(address.clone())),
     ] {
         assert!(!super::cell_value_is_exactly_load(&wrong, &name));
     }
@@ -3543,7 +3544,7 @@ fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
     assert!(before.memory().known_value(&slot).is_none());
     let source = before.program_point();
     let version = source.indexed_typed_version(&slot, ty).unwrap();
-    let pointer = crate::kernel::OldPointer::from_point_read(version, ty, &slot);
+    let pointer = crate::kernel::Pointer::from_point_read(version, ty, &slot);
     let expected = ProgramValue::Pointer(pointer.clone());
     let named = before
         .memory()
@@ -3572,7 +3573,7 @@ fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
 
     let forged = before.memory().clone().materialize_named_cell(
         slot.clone(),
-        ProgramValue::Pointer(pointer.with_provenance(std::sync::Arc::new(Address::null()))),
+        ProgramValue::Pointer(pointer.with_provenance(Address::null())),
     );
     assert!(super::memory_only_adds_named_cells(&before, &forged).is_err());
     let other = without_name();

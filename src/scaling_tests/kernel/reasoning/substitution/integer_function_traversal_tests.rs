@@ -45,7 +45,7 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
 #[test]
 fn public_integer_substitution_keeps_array_ref_states_opaque() {
     let source = Variable(840);
-    let pointer = ProgramValue::Pointer(OldPointer::new(
+    let pointer = ProgramValue::Pointer(Pointer::new(
         Address::new(
             AddressBase::Symbolic(Variable(841)),
             AddressOffset::constant(0),

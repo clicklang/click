@@ -353,7 +353,7 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
 pub(crate) fn substitute_pointer_value_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &OldPointer,
+    to: &Pointer,
 ) -> Result<Proposition, String> {
     let c = std::collections::BTreeMap::from([(
         from,
@@ -1542,8 +1542,8 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             before_point,
             after_point,
         } => Proposition::HeapAllocationFreed {
@@ -1551,8 +1551,14 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             after_point: after_point.clone(),
             before: s.memory(before),
             after: s.memory(after),
-            allocation_base: s.pointer(allocation_base),
-            bytes: bytes.map_bytes(|bytes| s.bitvector(bytes)),
+            blocks: blocks
+                .iter()
+                .map(|(base, bytes)| (s.pointer(base), bytes.map_bytes(|bytes| s.bitvector(bytes))))
+                .collect(),
+            mutable_ranges: mutable_ranges
+                .iter()
+                .map(|range| walk_memory_range(range, s))
+                .collect(),
         },
         Proposition::And(left, right) => Proposition::And(
             Box::new(walk_proposition(left, s)),
@@ -1841,11 +1847,9 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
             s.bitvector(range.bound_terms().0),
             s.bitvector(range.bound_terms().1),
         )
-        .with_provenance(std::sync::Arc::new(s.pointer(&range.provenance)))
+        .with_provenance(s.pointer(&range.provenance))
         .with_bounds_owner(
-            range
-                .carrier_owner()
-                .map(|origin| std::sync::Arc::new(s.pointer(origin))),
+            range.carrier_owner().map(|origin| s.pointer(origin)),
             range.carrier_known(),
         );
     if !range.formation_coverage.is_empty() {
@@ -2505,14 +2509,21 @@ fn collect_proposition_bound_variables_one(
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
-            collect_pointer_bound_variables(allocation_base, variables);
-            collect_bitvector_bound_variables(bytes.bytes(), variables);
+            for (base, bytes) in blocks {
+                collect_pointer_bound_variables(base, variables);
+                collect_bitvector_bound_variables(bytes.bytes(), variables);
+            }
+            for range in mutable_ranges {
+                collect_pointer_bound_variables(&range.base, variables);
+                collect_bitvector_bound_variables(range.bound_terms().0, variables);
+                collect_bitvector_bound_variables(range.bound_terms().1, variables);
+            }
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)
@@ -2623,6 +2634,9 @@ fn collect_program_value_bound_variables(value: &ProgramValue, variables: &mut B
         ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_bound_variables(address, variables);
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_bound_variables(count, variables);
             }
         }
         ProgramValue::Parameter(term) => collect_algebraic_bound_variables(term, variables),
@@ -3590,6 +3604,9 @@ fn collect_condition_bound_variables(
         OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_bound_variables(&pointer.offset, variables);
+            }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_bound_variables(count, variables);
             }
         }
 
@@ -4631,8 +4648,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     {
         integer_work(1)?;
         let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(
-            ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::VoidPointer))
-                .into(),
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)).into(),
         )) else {
             unreachable!("pointer rewrite changed its carrier")
         };
@@ -4660,7 +4676,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         unreachable!("memory-viewable helper called for another proposition carrier")
     };
     integer_work(1)?;
-    let pointer = ProgramValue::Pointer(OldPointer::new(base.clone(), ProgramType::VoidPointer));
+    let pointer = ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::VoidPointer));
     let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(pointer.into()))
     else {
         unreachable!("pointer rewrite changed its carrier")
@@ -5671,6 +5687,24 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 let offsets = map_common_substitution_offsets(arguments, &mut map_machine)?;
                 return Ok(KernelTerm::address_offset_equal(offsets));
             }
+            // A wide pointer's element count is substituted as any machine
+            // operand is, before the address map below borrows the cache.
+            let counts = match leaf.node() {
+                crate::kernel::KernelTermNode::PointerEqual(pair) => {
+                    let mut counts = [None, None];
+                    for (slot, pointer) in counts.iter_mut().zip(pair.arguments()) {
+                        if let Some(count) = pointer.len() {
+                            *slot = Some(
+                                map_machine(count, MachineIntegerType::UInt64)
+                                    .and_then(|value| value.shared_operand().cloned())
+                                    .ok_or(())?,
+                            );
+                        }
+                    }
+                    counts
+                }
+                _ => [None, None],
+            };
             let mut map_address = |address: &crate::kernel::SharedAddress| {
                 if matches!(
                     address.atom(),
@@ -5694,9 +5728,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
             };
             if let crate::kernel::KernelTermNode::PointerEqual(pair) = leaf.node() {
                 let [a, b] = pair.arguments();
+                let [a_count, b_count] = counts;
                 return Ok(KernelTerm::pointer_equal_raw([
-                    a.map_condition_addresses(&mut map_address)?,
-                    b.map_condition_addresses(&mut map_address)?,
+                    a.map_condition_addresses(&mut map_address, a_count)?,
+                    b.map_condition_addresses(&mut map_address, b_count)?,
                 ]));
             }
             if let crate::kernel::KernelTermNode::AddressEqual { arguments } = leaf.node() {
@@ -5884,8 +5919,14 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             )
         }
         OldConditionTerm::PointerEqual(left, right) => OldConditionTerm::PointerEqual(
-            Box::new(left.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
-            Box::new(right.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
+            Box::new(left.map_pointers(
+                |p| substitute_bitvector_variable_in_pointer(p, from, to),
+                |count| substitute_bitvector_variable(count, from, to),
+            )),
+            Box::new(right.map_pointers(
+                |p| substitute_bitvector_variable_in_pointer(p, from, to),
+                |count| substitute_bitvector_variable(count, from, to),
+            )),
         ),
         OldConditionTerm::AddressEqual(left, right) => OldConditionTerm::address_equal(
             substitute_bitvector_variable_in_pointer(left, from, to),
@@ -6894,11 +6935,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
                 from,
                 to,
             )),
-            pointer: Box::new(
-                record
-                    .pointer
-                    .map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to)),
-            ),
+            pointer: Box::new(record.pointer.map_pointers(
+                |p| substitute_bitvector_variable_in_pointer(p, from, to),
+                |count| substitute_bitvector_variable(count, from, to),
+            )),
         }),
         ProgramValue::Parameter(term) => ProgramValue::Parameter(Box::new(
             substitute_bitvector_variable_in_algebraic_term(term, from, to),
@@ -6931,11 +6971,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
         ProgramValue::Float64(bits) => {
             ProgramValue::Float64(substitute_bitvector_variable(bits, from, to))
         }
-        ProgramValue::Pointer(pointer) => {
-            ProgramValue::Pointer(pointer.map_pointers(|address| {
-                substitute_bitvector_variable_in_pointer(address, from, to)
-            }))
-        }
+        ProgramValue::Pointer(pointer) => ProgramValue::Pointer(pointer.map_pointers(
+            |address| substitute_bitvector_variable_in_pointer(address, from, to),
+            |count| substitute_bitvector_variable(count, from, to),
+        )),
     }
 }
 
@@ -9168,7 +9207,7 @@ mod integer_mixed_quantifier_tests {
         .expect("pointer observations are Integer-valued");
         let pointer_value = |variable| {
             Term::ProgramValue(
-                ProgramValue::Pointer(OldPointer::new(
+                ProgramValue::Pointer(Pointer::new(
                     Address::symbolic(variable),
                     ProgramType::Int32Pointer,
                 ))
@@ -10028,8 +10067,8 @@ mod checked_singleton_substitution_tests {
     use super::*;
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
-    fn pointer_value(variable: Variable) -> OldPointer {
-        OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
+    fn pointer_value(variable: Variable) -> Pointer {
+        Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
     }
 
     fn pointer_term(variable: Variable) -> Term {

@@ -1,7 +1,7 @@
 use super::*;
 
-fn opaque(id: u64) -> OldPointer {
-    OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+fn opaque(id: u64) -> Pointer {
+    Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
 /// The witness arrives after the entire related class has been built. Each
@@ -14,10 +14,10 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
         for related in [4u64, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let root = opaque(998_000);
-            let selected = root.clone().with_bounds(Some(SubobjectBounds {
-                start: root.address().clone(),
-                width: 4u32.into(),
-            }));
+            let selected = root.clone().with_bounds(Some(SubobjectBounds::new(
+                root.address().clone(),
+                4u32.into(),
+            )));
             let mut facts = PureFactContext::new();
             for i in 0..unrelated {
                 facts = facts.assume_condition(
@@ -115,7 +115,7 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
         }
         let memory = crate::kernel::intern_memory(memory);
         let cell = Address::symbolic(Variable(1_001_000));
-        let read = OldPointer::from_read(
+        let read = Pointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
@@ -129,7 +129,7 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
     }
 }
 
-fn coverage(value: &OldPointer, start: u32, end: u32) -> Proposition {
+fn coverage(value: &Pointer, start: u32, end: u32) -> Proposition {
     value
         .opaque_coverage_fact(&MemoryRange::from_pointer_value(
             value,

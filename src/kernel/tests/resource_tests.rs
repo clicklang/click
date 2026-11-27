@@ -1150,7 +1150,7 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     else {
         unreachable!()
     };
-    let stored = OldPointer::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
+    let stored = Pointer::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
     let state = state.with_memory(SymbolicMemory::new().store(
         parent.address().clone(),
         ProgramValue::Pointer(stored.clone()),
@@ -3647,8 +3647,8 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
     });
     let assumptions = PureFactContext::new().assume_condition(
         OldConditionTerm::PointerEqual(
-            Box::new(OldPointer::new(left_pointer, ProgramType::Int32Pointer)),
-            Box::new(OldPointer::new(right_pointer, ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(left_pointer, ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(right_pointer, ProgramType::Int32Pointer)),
         ),
         true,
     );

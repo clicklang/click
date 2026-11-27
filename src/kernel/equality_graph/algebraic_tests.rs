@@ -217,7 +217,7 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
             &ty,
             "Node",
             vec![AlgebraicValue::Program(ProgramValue::Pointer(
-                OldPointer::new(p, ProgramType::Int32Pointer),
+                Pointer::new(p, ProgramType::Int32Pointer),
             ))],
         )
     };
@@ -225,8 +225,8 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     graph.add_equality(&pointer("a"), &pointer("b"));
     assert!(!graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
     graph.add_pointer_equality(
-        &OldPointer::new(pointer("a"), ProgramType::Int32Pointer),
-        &OldPointer::new(pointer("b"), ProgramType::Int32Pointer),
+        &Pointer::new(pointer("a"), ProgramType::Int32Pointer),
+        &Pointer::new(pointer("b"), ProgramType::Int32Pointer),
     );
     assert!(graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
 }
@@ -509,7 +509,7 @@ fn constructor_injectivity_splits_pointer_fields() {
             &ty,
             "Node",
             vec![AlgebraicValue::Program(ProgramValue::Pointer(
-                OldPointer::new(address.clone(), ProgramType::Int32Pointer),
+                Pointer::new(address.clone(), ProgramType::Int32Pointer),
             ))],
         )
     };
@@ -527,4 +527,46 @@ fn constructor_injectivity_splits_pointer_fields() {
     );
     assert!(joined.equality_graph.are_equal(&p, &q));
     assert!(joined.equality_graph.provenance_equal(&p, &q));
+}
+
+/// The element count of a wide pointer field joins the same rule:
+/// `Some(s) == Some(t)` gives `s.len() == t.len()` (`design/rust-slice-values.md`).
+#[test]
+fn constructor_injectivity_splits_wide_pointer_counts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = model_type(
+        "WidePointerInjective",
+        AlgebraicValueType::Program(ProgramType::UInt8Pointer),
+    );
+    let (p, q) = (
+        Address::symbolic(Variable(98)),
+        Address::symbolic(Variable(99)),
+    );
+    let (n, m) = (
+        OldMachineTerm::Variable(Variable(100)),
+        OldMachineTerm::Variable(Variable(101)),
+    );
+    let node = |address: &Address, count: &OldMachineTerm| {
+        constructor(
+            &ty,
+            "Node",
+            vec![AlgebraicValue::Program(ProgramValue::Pointer(
+                Pointer::new(address.clone(), ProgramType::UInt8Pointer)
+                    .with_element_count(count.clone()),
+            ))],
+        )
+    };
+    let (model, alias) = (variable(&ty, 102), variable(&ty, 103));
+    let base = PureFactContext::new()
+        .assume_proposition(eq(&model, &node(&p, &n)))
+        .assume_proposition(eq(&node(&q, &m), &alias));
+    assert!(!base.equality_graph.are_uint64_equal(&n, &m));
+    let joined = base.assume_proposition(eq(&model, &alias));
+    assert!(
+        joined
+            .equality_graph
+            .are_algebraic_equal(&node(&p, &n), &node(&q, &m))
+    );
+    assert!(joined.equality_graph.are_uint64_equal(&n, &m));
+    assert!(joined.equality_graph.are_equal(&p, &q));
 }

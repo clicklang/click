@@ -1344,15 +1344,22 @@ impl TermClasses {
                         // equality merges the latter two domains.
                         let root = self.provenance_node(pointer.provenance());
                         let bounds = self.bounds_node(pointer);
+                        // A wide pointer's element count is one more
+                        // operand, so equal counts are congruent; the head
+                        // holds the thin remainder.
+                        let count = pointer.len().map(|count| self.intern_uint64(count));
                         let metadata = pointer
-                            .clone()
+                            .as_ptr()
                             .with_address(crate::kernel::Address::null())
-                            .with_provenance(std::sync::Arc::new(crate::kernel::Address::null()))
+                            .with_provenance(crate::kernel::Address::null())
                             .with_root_bounds();
                         let head = self.opaque_argument(&A::Value(ProgramValue::Pointer(metadata)));
                         let node = self.intern_node(Node::Apply(head, root));
                         let node = self.intern_node(Node::Apply(node, bounds));
-                        let node = self.intern_node(Node::Apply(node, address));
+                        let mut node = self.intern_node(Node::Apply(node, address));
+                        if let Some(count) = count {
+                            node = self.intern_node(Node::Apply(node, count));
+                        }
                         self.retain_pointer_value(node, pointer.clone());
                         values.push(node);
                         continue;
@@ -1686,14 +1693,15 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn add_pointer_equality(
         &mut self,
-        a: &crate::kernel::OldPointer,
-        b: &crate::kernel::OldPointer,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let roots = (
             self.provenance_node(a.provenance()),
             self.provenance_node(b.provenance()),
         );
         let bounds = (self.bounds_node(a), self.bounds_node(b));
+        let counts = self.count_nodes(a, b);
         let a = self.intern_expression(
             None,
             None,
@@ -1709,7 +1717,21 @@ impl TermClasses {
             None,
         );
         self.register_pending_loads();
-        self.close(vec![roots, bounds, (a, b)])
+        let mut pending = vec![roots, bounds];
+        pending.extend(counts);
+        pending.push((a, b));
+        self.close(pending)
+    }
+
+    /// The element-count pair of two equal wide pointers. A thin pair has
+    /// none; a thin and a wide pointer are never equal values.
+    fn count_nodes(
+        &mut self,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
+    ) -> Option<(u64, u64)> {
+        let (a, b) = (a.len()?, b.len()?);
+        Some((self.intern_uint64(a), self.intern_uint64(b)))
     }
 
     pub(in crate::kernel::equality_graph) fn merge_pointer_read_domains(
@@ -1770,8 +1792,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_values_equal(
         &mut self,
-        a: &crate::kernel::OldPointer,
-        b: &crate::kernel::OldPointer,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
     ) -> bool {
         let a = self.intern_expression(
             None,
@@ -1797,8 +1819,8 @@ impl TermClasses {
     /// stated equality.
     pub(super) fn join_pointer_components(
         &mut self,
-        a: &crate::kernel::OldPointer,
-        b: &crate::kernel::OldPointer,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
         pending: &mut PendingUnions,
     ) {
         crate::instrumentation::record_deterministic_work(1);
@@ -1809,11 +1831,14 @@ impl TermClasses {
         let bounds = (self.bounds_node(a), self.bounds_node(b));
         pending.push(roots);
         pending.push(bounds);
+        if let Some(counts) = self.count_nodes(a, b) {
+            pending.push(counts);
+        }
         self.pointer_address_merges
             .push_back((a.address().clone(), b.address().clone()));
     }
 
-    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::OldPointer) {
+    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::Pointer) {
         let root = self.root(node);
         let value = self
             .pointer_values
@@ -1826,8 +1851,8 @@ impl TermClasses {
 
     pub(in crate::kernel::equality_graph) fn pointer_value_representative(
         &mut self,
-        value: &crate::kernel::OldPointer,
-    ) -> crate::kernel::OldPointer {
+        value: &crate::kernel::Pointer,
+    ) -> crate::kernel::Pointer {
         let node = self.intern_expression(
             None,
             None,
@@ -1845,13 +1870,13 @@ impl TermClasses {
             .clone()
     }
 
-    fn bounds_node(&mut self, value: &crate::kernel::OldPointer) -> u64 {
+    fn bounds_node(&mut self, value: &crate::kernel::Pointer) -> u64 {
         let node = if let Some(bounds) = value.bounds() {
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectBounds));
-            let width = self.intern_int32(&bounds.width);
+            let width = self.intern_int32(&bounds.width());
             let head = self.intern_node(Node::Apply(head, width));
             let start = self
-                .address(bounds.start.base.clone(), bounds.start.offset.clone())
+                .address(bounds.start().base.clone(), bounds.start().offset.clone())
                 .0;
             self.intern_node(Node::Apply(head, start))
         } else if value.bounds_are_known() {
@@ -1897,7 +1922,7 @@ impl TermClasses {
         let node = self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
             "<pointer-bounds-origin>".into(),
             vec![A::Value(ProgramValue::Pointer(
-                crate::kernel::OldPointer::new(origin.clone(), ProgramType::VoidPointer),
+                crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
             ))],
         )));
         self.bounds_origin_nodes.insert(origin, node);
@@ -2006,7 +2031,7 @@ impl TermClasses {
             return node;
         }
         self.opaque_argument(&A::Value(ProgramValue::Pointer(
-            crate::kernel::OldPointer::new(origin.clone(), ProgramType::VoidPointer),
+            crate::kernel::Pointer::new(origin.clone(), ProgramType::VoidPointer),
         )))
     }
 

@@ -9,6 +9,8 @@ struct PointerIdentity {
     bounds_known: bool,
     bounds_owner: Option<SharedAddress>,
     bounds: Option<(SharedAddress, KernelTerm)>,
+    /// A wide pointer's element count; hashes nothing when thin.
+    count: PointerMetadataKey<KernelTerm>,
 }
 
 #[derive(Clone, Debug)]
@@ -55,7 +57,8 @@ impl KernelPointerEquality {
                 bounds: p
                     .array
                     .bounds()
-                    .map(|e| (address(&e.start), numeric(&e.width))),
+                    .map(|e| (address(&e.start), numeric(&e.width()))),
+                count: PointerMetadataKey(value.len().map(&mut numeric)),
             }
         });
         Self {
@@ -76,6 +79,20 @@ impl SharedPointer {
             && a.provenance.syntax_equal(&b.provenance)
             && opaque_owners_syntax_equal(&a.array, &b.array)
             && self.condition_bounds_equal(other)
+            && self.condition_counts_equal(other)
+    }
+    /// Whether the two carry syntactically equal element counts. Two thin
+    /// pointers do.
+    pub(crate) fn condition_counts_equal(&self, other: &Self) -> bool {
+        match (self.len(), other.len()) {
+            (None, None) => true,
+            (Some(a), Some(b)) => crate::kernel::machine_operand_syntax_cmp(
+                MachineOperandView::Shared(a),
+                MachineOperandView::Shared(b),
+            )
+            .is_eq(),
+            _ => false,
+        }
     }
     pub(crate) fn condition_bounds_equal(&self, other: &Self) -> bool {
         match (self.node().array.bounds(), other.node().array.bounds()) {
@@ -83,8 +100,8 @@ impl SharedPointer {
             (Some(a), Some(b)) => {
                 a.start.syntax_equal(&b.start)
                     && crate::kernel::machine_operand_syntax_cmp(
-                        MachineOperandView::Shared(&a.width),
-                        MachineOperandView::Shared(&b.width),
+                        MachineOperandView::Shared(&a.width()),
+                        MachineOperandView::Shared(&b.width()),
                     )
                     .is_eq()
             }
@@ -92,11 +109,20 @@ impl SharedPointer {
         }
     }
     /// Native map_pointers policy: addresses change, bounds width does not.
+    /// A wide pointer's element count is replaced by `count`, the caller's
+    /// substitution of [`Self::len`], given exactly when the pointer is wide.
     pub(crate) fn map_condition_addresses<E>(
         &self,
         mut map: impl FnMut(&SharedAddress) -> Result<SharedAddress, E>,
+        count: Option<KernelTerm>,
     ) -> Result<Self, E> {
+        assert_eq!(
+            count.is_some(),
+            self.len().is_some(),
+            "internal error: a wide pointer's substitution maps its element count"
+        );
         let mut p = self.node().clone();
+        p.metadata = count.map(|count| Arc::new(KernelPointerMetadata::element_count(count)));
         p.address = map(&p.address)?;
         p.provenance = map(&p.provenance)?;
         p.array = match &p.array {
@@ -107,10 +133,10 @@ impl SharedPointer {
             KernelArrayObject::Member(member) => {
                 KernelArrayObject::Member(Arc::new(KernelMemberArray {
                     bounds: match &member.bounds {
-                        Some(e) => Some(KernelSubobjectBounds {
-                            start: map(&e.start)?,
-                            width: e.width.clone(),
-                        }),
+                        Some(e) => Some(KernelSubobjectBounds::new(
+                            map(&e.start)?,
+                            e.width().clone(),
+                        )),
                         None => None,
                     },
                     within: member.within.as_ref().map(&mut map).transpose()?,
@@ -155,6 +181,12 @@ impl KernelTerm {
         // `OldConditionTerm::pointer_equal`, a comparison with null states
         // address equality, which is how `p == 0` lowers.
         let null = Address::null().shared().clone();
+        // A wide pointer's equality also compares its metadata, which
+        // address equality cannot state: it stays the complete equality,
+        // whose admission merges the element counts too.
+        if a.metadata.is_some() || b.metadata.is_some() {
+            return Self::pointer_equal_raw(arguments);
+        }
         if a.address.syntax_equal(&null) || b.address.syntax_equal(&null) {
             return Self::address_equal([a.address.clone(), b.address.clone()]);
         }
@@ -211,7 +243,7 @@ impl KernelTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn values() -> Vec<OldPointer> {
+    fn values() -> Vec<Pointer> {
         let mut values = Vec::new();
         for pointer in [
             Address::symbolic(Variable(999101)),
@@ -222,17 +254,17 @@ mod tests {
                 AddressOffset::constant(0),
             ),
         ] {
-            let raw = OldPointer::new(pointer, ProgramType::Int32Pointer);
+            let raw = Pointer::new(pointer, ProgramType::Int32Pointer);
             values.push(raw.clone());
             values.push(raw.clone());
             values.push(raw.clone().with_root_bounds());
-            values.push(raw.clone().with_bounds(Some(SubobjectBounds {
-                start: Address::symbolic(Variable(999101)),
-                width: OldMachineTerm::Variable(Variable(999102)),
-            })));
+            values.push(raw.clone().with_bounds(Some(SubobjectBounds::new(
+                Address::symbolic(Variable(999101)),
+                OldMachineTerm::Variable(Variable(999102)),
+            ))));
             values.push(
                 raw.clone()
-                    .with_provenance(Arc::new(Address::symbolic(Variable(999103)))),
+                    .with_provenance(Address::symbolic(Variable(999103))),
             );
             values.push(
                 raw.clone()
@@ -245,14 +277,14 @@ mod tests {
                     ))),
             );
         }
-        values.push(OldPointer::new(
+        values.push(Pointer::new(
             Address::new(
                 AddressBase::FunctionSymbolic(Variable(999101)),
                 AddressOffset::constant(0),
             ),
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ));
-        values.push(OldPointer::new(
+        values.push(Pointer::new(
             Address::symbolic(Variable(999101)),
             ProgramType::VoidPointer,
         ));
@@ -264,7 +296,7 @@ mod tests {
         let values = values();
         for a in &values {
             for b in &values {
-                let shared = [SharedPointer::import(a), SharedPointer::import(b)];
+                let shared = [a.shared().clone(), b.shared().clone()];
                 assert_eq!(shared[0].condition_syntax_equal(&shared[1]), a == b);
                 let expected = OldConditionTerm::pointer_equal(a.clone(), b.clone());
                 let root = KernelTerm::pointer_equal(shared);
@@ -297,7 +329,7 @@ mod tests {
             ] {
                 let source = OldConditionTerm::PointerEqual(
                     Box::new(value.clone()),
-                    Box::new(OldPointer::new(
+                    Box::new(Pointer::new(
                         Address::symbolic(Variable(999111)),
                         ProgramType::Int32Pointer,
                     )),
@@ -354,11 +386,11 @@ mod tests {
         // comparison, native or shared, builds that same term, in either
         // operand order, so a produced fact raises and lowers back to itself.
         let _session = crate::kernel::VerificationSession::enter();
-        let value = OldPointer::new(
+        let value = Pointer::new(
             Address::symbolic(Variable(999130)),
             ProgramType::Int32Pointer,
         );
-        let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
+        let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
         for (left, right) in [(value.clone(), null.clone()), (null, value)] {
             let expected =
                 OldConditionTerm::address_equal(left.address().clone(), right.address().clone());
@@ -366,7 +398,8 @@ mod tests {
                 OldConditionTerm::pointer_equal(left.clone(), right.clone()),
                 expected
             );
-            let shared = KernelTerm::pointer_equal([&left, &right].map(SharedPointer::import));
+            let shared =
+                KernelTerm::pointer_equal([&left, &right].map(|pointer| pointer.shared().clone()));
             assert_eq!(
                 format!("{:?}", KernelTermExport::condition(&shared).unwrap()),
                 format!("{expected:?}")
@@ -376,14 +409,14 @@ mod tests {
     #[test]
     fn complete_pointer_conditions_observe_semantic_identity_without_erasing_producers() {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = OldPointer::new(
+        let value = Pointer::new(
             Address::symbolic(Variable(999120)),
             ProgramType::Int32Pointer,
         );
         let roots = [value.clone(), value].map(|value| {
             KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
                 Box::new(value),
-                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         assert_ne!(roots[0], roots[1]);
@@ -420,7 +453,7 @@ mod tests {
             .map(|value| {
                 let guard = KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
                     Box::new(value.clone()),
-                    Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
+                    Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
                 ));
                 SharedMachineIntegerTerm::observe_shared(
                     MachineIntegerType::Int32,
@@ -463,8 +496,8 @@ mod tests {
                 ),
             );
             KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
-                Box::new(OldPointer::new(pointer, ProgramType::Int32Pointer)),
-                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(Pointer::new(pointer, ProgramType::Int32Pointer)),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         for allowed in [false, true] {

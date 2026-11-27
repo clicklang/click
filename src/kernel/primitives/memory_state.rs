@@ -2429,7 +2429,7 @@ impl LocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = (&'a BindingName, &'a OldPointer)> {
+    ) -> impl Iterator<Item = (&'a BindingName, &'a Pointer)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -4790,7 +4790,7 @@ impl SymbolicMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(&self, result: &OldPointer) -> Option<OldPointer> {
+    pub(crate) fn fresh_allocation_identity(&self, result: &Pointer) -> Option<Pointer> {
         let base = result.address();
         match base.base {
             AddressBase::Heap(_) => Some(result.clone()),
@@ -7098,6 +7098,20 @@ impl SymbolicMemory {
             || crate::kernel::value_mismatch(value.native()),
             value.value(),
         );
+        // A pointer cell is one machine word; a wide pointer's two-word cell
+        // is not modeled yet. Read the payload in place: O(1), no export.
+        let wide = match value.value() {
+            ExecutionValue::Native(ProgramValue::Pointer(pointer)) => pointer.is_wide(),
+            ExecutionValue::Shared(root) => root
+                .pointer_payload()
+                .is_some_and(|pointer| pointer.len().is_some()),
+            ExecutionValue::Native(_) => false,
+        };
+        assert!(
+            !wide,
+            "internal error: storing a wide pointer has no memory cell yet \
+             (design/rust-slice-values.md, step 2b)"
+        );
         let base = intern_derivation_base(&mut self);
         // Cache invalidation is internal to this store, not a memory event.
         // Retain its original input, and never intern the intermediate cache.
@@ -8959,7 +8973,7 @@ impl SymbolicMemory {
         // cell, either of which already carries its definition.
         match Address::version_read_value(&retained_state, site, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
-            Err(value) => ProgramValue::Pointer(OldPointer::from_read_at(
+            Err(value) => ProgramValue::Pointer(Pointer::from_read_at(
                 value,
                 value_type,
                 &retained_state,
@@ -8989,7 +9003,7 @@ impl SymbolicMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition_at(&value, &retained_state, site, pointer);
-        ProgramValue::Pointer(OldPointer::from_read_at(
+        ProgramValue::Pointer(Pointer::from_read_at(
             value,
             value_type,
             &retained_state,
@@ -11134,14 +11148,14 @@ impl ExecutionState {
     }
 
     /// The point this state's memory is the state at, for a fact that
-    /// quotes it: where the state stands, unless it has staged steps, whose
-    /// memory no point holds yet.
+    /// quotes it: where the state stands. A state with staged steps stands
+    /// between points, and no fact quotes its memory.
     pub(crate) fn memory_point(&self) -> super::program_point::PathLink {
-        if self.memory.pending_steps.is_some() {
-            super::program_point::PathLink::not_yet_a_point()
-        } else {
-            self.point.clone()
-        }
+        assert!(
+            self.memory.pending_steps.is_none(),
+            "a fact quotes a state with staged steps before its atomic region completes"
+        );
+        self.point.clone()
     }
 
     /// The identity of the point this state stands at, without interning its

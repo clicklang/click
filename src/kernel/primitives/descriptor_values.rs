@@ -774,7 +774,7 @@ mod protocol_value_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
 
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(998991)),
             ProgramType::Int32Pointer,
         );
@@ -784,7 +784,7 @@ mod protocol_value_tests {
                 .with_declared_object_class(Some(CAccessClass::Scalar(class)))
         });
         let [left, right] = pointers.each_ref().map(|pointer| {
-            let root = KernelTerm::shared_pointer_value(SharedPointer::import(pointer));
+            let root = KernelTerm::shared_pointer_value(pointer.shared().clone());
             StoredProgramValue::from(ExecutionValue::Shared(root))
         });
         assert_ne!(left.root(), right.root());
@@ -1007,27 +1007,6 @@ mod proposition_outcome_tests {
         assert_eq!(value.root(), Some(&root));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
-    #[test]
-    fn memory_load_theorem_output_keeps_the_cells_common_root() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let root = KernelTerm::variable(
-            KernelType::Program(ProgramType::Float32),
-            Variable(10993662),
-        );
-        let pointer = Address::symbolic(Variable(10993663));
-        let memory = SymbolicMemory::new().store_retained(pointer.clone(), root.clone().into());
-        let exports = KernelTermExport::machine_export_count();
-        let theorem = crate::kernel::prove_memory_load(memory, pointer);
-        let Proposition::MemoryLoads {
-            outcome: ExpressionOutcome::Value(value),
-            ..
-        } = theorem.proposition()
-        else {
-            panic!("value");
-        };
-        assert_eq!(value.root(), Some(&root));
-        assert_eq!(KernelTermExport::machine_export_count(), exports);
-    }
 }
 
 #[cfg(test)]
@@ -1093,7 +1072,7 @@ mod term_payload_contract_tests {
         state.finish()
     }
 
-    fn algebraic(pointer: OldPointer) -> AlgebraicTerm {
+    fn algebraic(pointer: Pointer) -> AlgebraicTerm {
         let mut value = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(
             ProgramType::Int32Pointer,
         )]);
@@ -1139,7 +1118,7 @@ mod term_payload_contract_tests {
             assert_eq!(hash(&retained), hash(value));
             assert_eq!(stored.into_native_compat(), *value);
         }
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(991701)),
             ProgramType::Int32Pointer,
         );

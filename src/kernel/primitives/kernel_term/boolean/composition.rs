@@ -47,11 +47,14 @@ mod tests {
     #[test]
     fn boolean_cast_observation_preserves_native_argument_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
-            Address::symbolic(Variable(999450)),
-            ProgramType::Int32Pointer,
-        );
-        let roots = [pointer.clone(), pointer].map(|pointer| {
+        // Two producers of one logical pointer: distinct handles.
+        let pointer = || {
+            Pointer::new(
+                Address::symbolic(Variable(999450)),
+                ProgramType::Int32Pointer,
+            )
+        };
+        let roots = [pointer(), pointer()].map(|pointer| {
             let application = SharedPureApplication::intern(
                 "cast_bool_identity".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))],

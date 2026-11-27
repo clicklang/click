@@ -38,7 +38,7 @@ fn same_load(sited: &Address, bare: &Address, site: &ProgramPoint) {
     assert_eq!(sited.cmp(bare), std::cmp::Ordering::Equal);
 }
 
-fn pointer(value: ProgramValue) -> OldPointer {
+fn pointer(value: ProgramValue) -> Pointer {
     let ProgramValue::Pointer(pointer) = value else {
         panic!("a pointer read: {value:?}");
     };
@@ -126,8 +126,8 @@ fn a_complete_read_domain_records_its_site_and_is_the_same_domain() {
     let ty = ProgramType::Int32Pointer;
     let at = cell(1_207_041);
     let value = Address::symbolic(Variable(1_207_042));
-    let sited = OldPointer::from_read_at(value.clone(), ty, &memory, Some(&site), &at);
-    let bare = OldPointer::from_read(value, ty, &memory, &at);
+    let sited = Pointer::from_read_at(value.clone(), ty, &memory, Some(&site), &at);
+    let bare = Pointer::from_read(value, ty, &memory, &at);
     same_load(sited.provenance(), bare.provenance(), &site);
     assert_eq!(sited, bare);
 }

@@ -3722,7 +3722,11 @@ impl OldConditionTerm {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
-            Self::PointerEqual(a, b) if a.base == b.base && a.same_provenance_as(b) => {
+            // Equal offsets are the whole equality only when nothing else
+            // in the two values differs, a wide pointer's metadata included.
+            Self::PointerEqual(a, b)
+                if a.base == b.base && a.same_provenance_as(b) && a.same_metadata_as(b) =>
+            {
                 Some((&a.offset, &b.offset))
             }
             _ => None,
@@ -3735,15 +3739,22 @@ impl OldConditionTerm {
     /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
     /// Producers whose result must match a lowered goal use it too; checking
     /// decides the reflexive comparison (`OldConditionTerm::reflexive_value`).
-    pub(crate) fn logical_pointer_equal(left: OldPointer, right: OldPointer) -> Self {
-        if left == right && !left.is_null() {
+    pub(crate) fn logical_pointer_equal(left: Pointer, right: Pointer) -> Self {
+        if left == right && !left.is_null() && !left.is_wide() {
             let address = left.address().clone();
             return Self::AddressEqual(Box::new(address.clone()), Box::new(address));
         }
         Self::pointer_equal(left, right)
     }
 
-    pub(crate) fn pointer_equal(left: OldPointer, right: OldPointer) -> Self {
+    pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
+        // A wide pointer's equality also compares its metadata
+        // (`design/rust-slice-values.md`, "Equality"), which no address
+        // equality states and a condition has no conjunction for: it stays
+        // the complete equality, whose admission merges the counts too.
+        if left.is_wide() || right.is_wide() {
+            return Self::PointerEqual(Box::new(left), Box::new(right));
+        }
         // A pointer equal to the null pointer is null: a comparison with null
         // states address equality, as `p == 0` lowers
         // (`surface::lowering::comparison_proposition`). Every producer
@@ -4454,7 +4465,7 @@ impl ProgramValue {
         }
         Self::PointerInteger(PointerIntegerValue {
             numeric: Box::new(self),
-            pointer: Box::new(OldPointer::new(identity, ProgramType::VoidPointer)),
+            pointer: Box::new(Pointer::new(identity, ProgramType::VoidPointer)),
             kind: PointerIntegerKind::Word { changed_bits: 0 },
         })
     }
@@ -4483,7 +4494,7 @@ impl ProgramValue {
     }
 
     pub(crate) fn typed_pointer(pointer: Address, program_type: ProgramType) -> Self {
-        Self::Pointer(OldPointer::new(pointer, program_type))
+        Self::Pointer(Pointer::new(pointer, program_type))
     }
 
     pub(crate) fn retag_pointer(self, program_type: ProgramType) -> Self {
@@ -4653,21 +4664,21 @@ impl LValue {
 
     /// The lvalue reached through `pointer`, which keeps its bounds and the
     /// class of the object it designates.
-    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &OldPointer) -> Self {
-        self.provenance = Some(std::sync::Arc::new(pointer.provenance().clone()));
+    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &Pointer) -> Self {
+        self.provenance = Some(pointer.provenance().clone());
         self.array = Some(pointer.array_object().clone());
         self.object_class = pointer.object_class();
         self
     }
 
     pub(in crate::kernel) fn access_provenance(&self) -> Option<(&Address, Option<&Address>)> {
-        self.provenance.as_deref().map(|root| {
+        self.provenance.as_ref().map(|root| {
             (
                 root,
                 if self.bounds_known() {
                     None
                 } else {
-                    self.bounds_owner().map(|owner| &**owner)
+                    self.bounds_owner()
                 },
             )
         })
@@ -4704,7 +4715,7 @@ impl LValue {
         self.array.as_ref().is_some_and(ArrayObject::is_known)
     }
 
-    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&std::sync::Arc<Address>> {
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
         self.array.as_ref()?.owner()
     }
 
@@ -4751,7 +4762,7 @@ impl SharedPureApplication {
     }
 }
 
-impl OldPointer {
+impl Pointer {
     /// The word of a pointer converted from an integer, as
     /// `(word) as (T *)` writes it.
     pub(crate) fn integer_cast_word(&self) -> Option<&OldMachineTerm> {
@@ -5014,7 +5025,7 @@ impl Address {
         memory: &SharedMemory,
         site: Option<&ProgramPoint>,
         address: &Address,
-    ) -> Result<OldPointer, Self> {
+    ) -> Result<Pointer, Self> {
         let source = memory.unchanged_bytes_source();
         let canonical = crate::kernel::memory_history::canonical_value_load_memory(
             &source,

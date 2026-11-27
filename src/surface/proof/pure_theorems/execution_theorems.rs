@@ -375,6 +375,7 @@ pub(super) fn verify_execution_theorem(
     // A concrete callee's static storage is installed at the synthetic
     // function's entry, as an imported caller's is.
     let parsed = crate::surface::verification::external_c_function(&block)
+        .with_parameter_pointee_layouts(resources.struct_layouts())
         .with_proof_body(body)
         .with_callee_static_storage(
             concrete_callee

@@ -289,7 +289,7 @@ impl Drop for LocalStructLayoutScope {
 /// written, the pointer's value here, and the struct layout at that value.
 struct StructOwner {
     base: ProgramExpression,
-    pointer: crate::kernel::OldPointer,
+    pointer: crate::kernel::Pointer,
     layout: crate::languages::interface::RecordLayout,
 }
 
@@ -384,7 +384,7 @@ fn owner_field_pointer(
 struct NamedRangeBase {
     lowered: ProgramExpression,
     surface: SyntaxTerm,
-    pointer: crate::kernel::OldPointer,
+    pointer: crate::kernel::Pointer,
     width: u32,
 }
 
@@ -1410,7 +1410,9 @@ pub(in crate::surface) fn synthesize_surface_value(
     }
     match value {
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
-            pointer.address(),
+            pointer
+                .expect_thin("raising a pointer value to Surface")
+                .address(),
             parameter_binding,
             state,
             &BTreeMap::new(),
@@ -2272,7 +2274,7 @@ fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<OldMachineTe
 fn named_pointer_bases<'a>(
     parameter_binding: ParameterBinding<'a>,
     state: Option<&'a ExecutionState>,
-) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::OldPointer, u32)> + 'a {
+) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::Pointer, u32)> + 'a {
     parameter_binding
         .parameters
         .iter()
@@ -4340,7 +4342,7 @@ fn raise_algebraic_read(
         );
     }
     let memory = point.shared_memory();
-    let same_address = |pointer: &Address| address.syntax_equal(&pointer.shared().clone());
+    let same_address = |pointer: &Address| address.syntax_equal(pointer.shared());
     if let Some((parameter, _)) = parameter_binding
         .parameters
         .iter()
@@ -4419,7 +4421,12 @@ fn raise_constructor_field(
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
     if let Some(ProgramValue::Pointer(pointer)) = term.old_pointer_value() {
-        return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
+        return raise_constructor_pointer(
+            pointer.expect_thin("raising a pointer value to Surface"),
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     if term.ty() == &KernelType::Integer {
         return raise_kernel_term(term, parameter_binding, state, bound_variables)
@@ -4461,7 +4468,7 @@ fn raise_constructor_field(
 }
 
 fn raise_constructor_pointer(
-    pointer: &crate::kernel::OldPointer,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -5261,7 +5268,7 @@ fn synthesize_surface_resource_argument(
             ))
         }
         A::Program(ProgramValue::Pointer(pointer)) => synthesize_surface_pointer_expression(
-            pointer,
+            pointer.expect_thin("raising a pointer value to Surface"),
             parameter_binding,
             state,
             bound_variables,
@@ -8467,11 +8474,12 @@ fn state_call_result(
 /// Keep this at the value-comparison boundary: resource addresses retain
 /// their existing source places and frontend layout information.
 fn synthesize_pointer_equality_operand(
-    value: &crate::kernel::OldPointer,
+    value: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
+    value.expect_thin("raising a pointer equality operand to Surface");
     if let Some(name) = pointer_names::native_name(&ProgramValue::Pointer(value.clone())) {
         return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             name.into(),
@@ -9113,7 +9121,7 @@ fn synthesize_entry_pointer_expression(
 /// state, or failing that the state state as `at(<selector>, ..)`,
 /// registers that read.
 fn synthesize_loaded_pointer_value(
-    pointer: &crate::kernel::OldPointer,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {

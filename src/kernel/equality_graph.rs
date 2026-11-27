@@ -83,6 +83,8 @@ mod scaled_int32_tests;
 mod storage_tests;
 #[cfg(test)]
 mod uint64_tests;
+#[cfg(test)]
+mod wide_pointer_tests;
 mod wide_sources;
 pub(in crate::kernel) use evidence::scalar_evidence_pair;
 pub(in crate::kernel) use inputs::InputKey;
@@ -785,11 +787,7 @@ impl EqualityGraph {
 
     /// Retain the complete value supplied by the selected typed read producer.
     /// The equality and its memo invalidation stay local to this branch.
-    pub(in crate::kernel) fn add_checked_pointer_equality(
-        &self,
-        left: &OldPointer,
-        right: &OldPointer,
-    ) {
+    pub(in crate::kernel) fn add_checked_pointer_equality(&self, left: &Pointer, right: &Pointer) {
         self.add_checked_read_equality(left.address(), right.address());
         let mut state = self.state.lock().expect("equality graph");
         state.remember_input(inputs::Input::Pointer(left.clone(), right.clone()));
@@ -1000,7 +998,7 @@ impl EqualityGraph {
         for (read, stored) in stored_values {
             state
                 .terms
-                .add_pointer_equality(&OldPointer::new(read, stored.program_type()), &stored);
+                .add_pointer_equality(&Pointer::new(read, stored.program_type()), &stored);
         }
         state.close(definitions);
     }
@@ -1630,7 +1628,7 @@ impl EqualityGraph {
         equal
     }
 
-    pub(in crate::kernel) fn pointer_value_representative(&self, value: &OldPointer) -> OldPointer {
+    pub(in crate::kernel) fn pointer_value_representative(&self, value: &Pointer) -> Pointer {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, value.pointers());
         state.register_blocks(value.pointers().map(|p| p.base.clone()));
@@ -1638,11 +1636,7 @@ impl EqualityGraph {
         state.terms.pointer_value_representative(value)
     }
 
-    pub(in crate::kernel) fn add_pointer_equality(
-        &mut self,
-        left: &OldPointer,
-        right: &OldPointer,
-    ) {
+    pub(in crate::kernel) fn add_pointer_equality(&mut self, left: &Pointer, right: &Pointer) {
         self.add_equality(left.address(), right.address());
         if left.address().base == right.address().base {
             self.add_offset_equality(&left.address().offset, &right.address().offset);
@@ -3402,7 +3396,7 @@ mod tests {
         let cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let read = || {
             let point = crate::kernel::ProgramPoint::starting_at(&memory).for_exact_read();
-            OldPointer::from_point_read(point, crate::kernel::ProgramType::Int32Pointer, &cell)
+            Pointer::from_point_read(point, crate::kernel::ProgramType::Int32Pointer, &cell)
         };
         let left = read();
         let right = read();
@@ -3421,7 +3415,7 @@ mod tests {
 
     #[test]
     fn pointer_fact_search_uses_admission_order_across_allocations_and_rebuilds() {
-        let domain = crate::kernel::OldPointer::new(
+        let domain = crate::kernel::Pointer::new(
             Address::symbolic(Variable(985_000)),
             crate::kernel::ProgramType::Int32Pointer,
         );
@@ -3976,7 +3970,7 @@ mod tests {
         );
         assert_eq!(definition.defining_address, p);
         assert_eq!(definition.defining_memory.arena_id(), memory.arena_id());
-        let byte_view = OldPointer::new(from_p.clone(), ProgramType::Int32Pointer)
+        let byte_view = Pointer::new(from_p.clone(), ProgramType::Int32Pointer)
             .with_type(ProgramType::UInt8Pointer);
         assert_eq!(byte_view.address(), &from_p);
         let displaced = from_p.offset_by_bytes(8);

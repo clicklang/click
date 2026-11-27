@@ -19,6 +19,8 @@ struct PointerIdentity {
     bounds_known: bool,
     bounds_owner: Option<AddressKey>,
     bounds: Option<(AddressKey, ScalarStorageKey)>,
+    /// A wide pointer's element count; a thin key hashes as before.
+    count: crate::kernel::PointerMetadataKey<ScalarStorageKey>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(in crate::kernel) struct AddressKey {
@@ -49,7 +51,7 @@ impl PointerStorageKey {
             fingerprint: hash.finish(),
         }))
     }
-    pub(in crate::kernel) fn native(value: &OldPointer) -> Self {
+    pub(in crate::kernel) fn native(value: &Pointer) -> Self {
         Self::new(PointerIdentity {
             address: AddressKey::native(value.address()),
             provenance: AddressKey::native(value.provenance()),
@@ -59,10 +61,11 @@ impl PointerStorageKey {
                 .flatten(),
             bounds: value.bounds().map(|e| {
                 (
-                    AddressKey::native(&e.start),
-                    ScalarStorageKey::native(&e.width),
+                    AddressKey::native(&e.start()),
+                    ScalarStorageKey::native(&e.width()),
                 )
             }),
+            count: crate::kernel::PointerMetadataKey(value.len().map(ScalarStorageKey::native)),
         })
     }
     pub(super) fn shared(value: &SharedPointer) -> Self {
@@ -75,7 +78,13 @@ impl PointerStorageKey {
             bounds: value
                 .array
                 .bounds()
-                .map(|e| (AddressKey::shared(&e.start), e.width.scalar_storage_key())),
+                .map(|e| (AddressKey::shared(&e.start), e.width().scalar_storage_key())),
+            count: crate::kernel::PointerMetadataKey(
+                value
+                    .metadata
+                    .as_deref()
+                    .map(|m| m.count().scalar_storage_key()),
+            ),
         })
     }
 }

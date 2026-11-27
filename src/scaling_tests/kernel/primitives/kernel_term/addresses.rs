@@ -158,10 +158,11 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                 .unwrap();
         }
         let values = [999802, 999803].map(|variable| {
-            let source = SharedPointer::import(&OldPointer::new(
+            let source = Pointer::new(
                 Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
-            ));
+            )
+            .into_shared();
             let mut value = source.node().clone();
             value.address = SharedAddress::new(value.address.block(), offset.clone());
             SharedPointer::new(value)

@@ -550,14 +550,18 @@ fn dynamic_body_fact_dependency(
                 binder,
                 selected,
             ),
-            Proposition::HeapAllocationFreed { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.bytes().clone().into()),
-                state,
-                assumptions,
-                temporary_views,
-                binder,
-                selected,
-            ),
+            Proposition::HeapAllocationFreed { blocks, .. } => {
+                blocks.iter().try_for_each(|(_, bytes)| {
+                    walk_term(
+                        &Term::Bitvector32(bytes.bytes().clone().into()),
+                        state,
+                        assumptions,
+                        temporary_views,
+                        binder,
+                        selected,
+                    )
+                })
+            }
             Proposition::MemoryCanStore { .. }
             | Proposition::MemoryMutatesOnly { .. }
             | Proposition::MemoryEffectSummary { .. }

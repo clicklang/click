@@ -224,7 +224,7 @@ impl TermRewrite<'_> {
             .into_shared();
         let selected = |address: &A| matches!(address.atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
-            .then(|| V::import(&OldPointer::new(to.clone(), p.program_type)));
+            .then(|| Pointer::new(to.clone(), p.program_type).into_shared());
         let target_identity = to.object_identity().into_shared();
         let provenance = if let Some(target) = &replacement {
             target.node().provenance.clone()
@@ -241,8 +241,13 @@ impl TermRewrite<'_> {
             Some(origin) if selected(origin) => Some(target_identity),
             Some(origin) => Some(self.boolean_address(origin)?),
         };
+        // A wide pointer's element count is substituted as a machine operand.
+        let count = match source.len() {
+            Some(count) => Some(self.shared_machine_operand(count)?),
+            None => None,
+        };
         let mut mapped = source
-            .map_condition_addresses(|address| self.boolean_address(address).ok_or(()))
+            .map_condition_addresses(|address| self.boolean_address(address).ok_or(()), count)
             .ok()?
             .node()
             .clone();
@@ -260,49 +265,55 @@ impl TermRewrite<'_> {
             );
         }
         // Native condition rewriting canonicalizes addresses after replacing
-        // the complete value, without rewriting the retained bounds width.
-        V::new(mapped)
-            .map_condition_addresses(|address| {
-                let offset = address.offset().try_map_root(|_, node| {
-                    let mapped = match node {
-                        O::Add([a, b]) => return Ok::<_, ()>(S::add(a, b)),
-                        O::Int32Scaled { value, byte_width } => {
-                            let index = S::exact_index(&value);
-                            if let Some(written) = index.retained_written_operand() {
-                                return Ok(AddressOffset::scale_int32(
-                                    crate::kernel::eval::canonical_term(written),
-                                    byte_width,
-                                )
-                                .into_shared());
-                            }
-                            O::Int32Scaled { value, byte_width }
-                        }
-                        O::Int64Scaled {
-                            value,
-                            byte_width,
-                            unsigned,
-                        } => {
-                            let index = S::exact_index(&value);
-                            if let Some(written) = index.retained_written_operand() {
-                                return Ok(AddressOffset::scale_int64(
-                                    crate::kernel::eval::canonical_term(written),
-                                    byte_width,
-                                    unsigned,
-                                )
-                                .into_shared());
+        // the complete value, without rewriting the retained bounds width or
+        // the element count.
+        let mapped = V::new(mapped);
+        let count = mapped.len().cloned();
+        mapped
+            .map_condition_addresses(
+                |address| {
+                    let offset = address.offset().try_map_root(|_, node| {
+                        let mapped = match node {
+                            O::Add([a, b]) => return Ok::<_, ()>(S::add(a, b)),
+                            O::Int32Scaled { value, byte_width } => {
+                                let index = S::exact_index(&value);
+                                if let Some(written) = index.retained_written_operand() {
+                                    return Ok(AddressOffset::scale_int32(
+                                        crate::kernel::eval::canonical_term(written),
+                                        byte_width,
+                                    )
+                                    .into_shared());
+                                }
+                                O::Int32Scaled { value, byte_width }
                             }
                             O::Int64Scaled {
                                 value,
                                 byte_width,
                                 unsigned,
+                            } => {
+                                let index = S::exact_index(&value);
+                                if let Some(written) = index.retained_written_operand() {
+                                    return Ok(AddressOffset::scale_int64(
+                                        crate::kernel::eval::canonical_term(written),
+                                        byte_width,
+                                        unsigned,
+                                    )
+                                    .into_shared());
+                                }
+                                O::Int64Scaled {
+                                    value,
+                                    byte_width,
+                                    unsigned,
+                                }
                             }
-                        }
-                        node => node,
-                    };
-                    mapped.into_shared().map_err(|_| ())
-                })?;
-                Ok::<_, ()>(A::new(address.block(), offset))
-            })
+                            node => node,
+                        };
+                        mapped.into_shared().map_err(|_| ())
+                    })?;
+                    Ok::<_, ()>(A::new(address.block(), offset))
+                },
+                count,
+            )
             .ok()
             .filter(|_| self.refusal().is_none())
     }

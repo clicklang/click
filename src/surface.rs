@@ -8185,7 +8185,7 @@ enum PointerElement {
 }
 
 impl PointerElement {
-    fn of(pointer: &crate::kernel::OldPointer) -> Self {
+    fn of(pointer: &crate::kernel::Pointer) -> Self {
         match pointer.object_class() {
             Some(crate::kernel::effective_type::CAccessClass::Struct(class)) => {
                 Self::Struct(class.tag().to_string())
@@ -8232,7 +8232,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::OldPointer) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::Pointer) -> Result<u32, String> {
         self.element_width(&PointerElement::of(pointer))
     }
 
