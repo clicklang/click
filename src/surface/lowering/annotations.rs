@@ -3090,7 +3090,8 @@ pub(in crate::surface) fn function_contract_summary(
         retained_states: None,
         loop_records: None,
     };
-    #[cfg(debug_assertions)]
+    // Each clause is elaborated once, from the function's declarations,
+    // before it is lowered.
     let declared = elaborator::Elaborator::of_function(parsed_function, spec_definitions);
     let mut context = SpecElaborationContext::for_function_contract();
     // Parameters shadow file-scope spellings in both current and old clauses.
@@ -3143,9 +3144,12 @@ pub(in crate::surface) fn function_contract_summary(
     let mut requires = Vec::new();
     let mut contract_requirement_sources = Vec::new();
     for proposition in requirement_definedness_surfaces(function_block.requires()) {
+        let (surface, elaboration_failure) =
+            declared.elaborate_contract_clause(&proposition, &context);
         #[cfg(debug_assertions)]
-        elaborator::check_contract_elaboration(&lowerer, &declared, &proposition, &context);
-        match lowerer.lower_opaque_contract_proposition(&proposition, &context) {
+        elaborator::check_stored_elaboration(&lowerer, &surface, &proposition, &context);
+        match lowerer.lower_elaborated_contract_proposition(&surface, elaboration_failure, &context)
+        {
             Ok(proposition) => {
                 requires.push(proposition);
                 contract_requirement_sources.push(None);
@@ -3179,9 +3183,12 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
+        let (surface, elaboration_failure) =
+            declared.elaborate_contract_clause(&proposition, &context);
         #[cfg(debug_assertions)]
-        elaborator::check_contract_elaboration(&lowerer, &declared, &proposition, &context);
-        match lowerer.lower_opaque_contract_proposition(&proposition, &context) {
+        elaborator::check_stored_elaboration(&lowerer, &surface, &proposition, &context);
+        match lowerer.lower_elaborated_contract_proposition(&surface, elaboration_failure, &context)
+        {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings.push(
@@ -3235,9 +3242,15 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
+        let (surface, elaboration_failure) =
+            declared.elaborate_contract_clause(&proposition, &ensures_context);
         #[cfg(debug_assertions)]
-        elaborator::check_contract_elaboration(&lowerer, &declared, &proposition, &ensures_context);
-        match lowerer.lower_opaque_contract_proposition(&proposition, &ensures_context) {
+        elaborator::check_stored_elaboration(&lowerer, &surface, &proposition, &ensures_context);
+        match lowerer.lower_elaborated_contract_proposition(
+            &surface,
+            elaboration_failure,
+            &ensures_context,
+        ) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings
@@ -3270,14 +3283,15 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
+        let (surface, elaboration_failure) =
+            declared.elaborate_contract_clause(proposition, &exceptional_context);
         #[cfg(debug_assertions)]
-        elaborator::check_contract_elaboration(
-            &lowerer,
-            &declared,
-            proposition,
+        elaborator::check_stored_elaboration(&lowerer, &surface, proposition, &exceptional_context);
+        match lowerer.lower_elaborated_contract_proposition(
+            &surface,
+            elaboration_failure,
             &exceptional_context,
-        );
-        match lowerer.lower_opaque_contract_proposition(proposition, &exceptional_context) {
+        ) {
             Ok(proposition) => exceptional_ensures.push(proposition),
             Err(error) => {
                 opaque_contract_supported = false;
@@ -4850,16 +4864,16 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.click_proposition_to_spec_proposition(right, environment)?),
             )),
             SyntaxProposition::ForAll { .. } => {
-                self.lower_for_all_proposition_to_spec(proposition, environment)
+                self.lower_for_all_proposition_to_spec(proposition, None, environment)
             }
             SyntaxProposition::Exists { .. } => {
-                self.lower_exists_proposition_to_spec(proposition, environment)
+                self.lower_exists_proposition_to_spec(proposition, None, environment)
             }
             SyntaxProposition::RangeAll { .. } => {
-                self.lower_range_all_proposition_to_spec(proposition, environment)
+                self.lower_range_all_proposition_to_spec(proposition, None, environment)
             }
             SyntaxProposition::RangeAny { .. } => {
-                self.lower_range_any_proposition_to_spec(proposition, environment)
+                self.lower_range_any_proposition_to_spec(proposition, None, environment)
             }
             SyntaxProposition::PredicateCall { .. } => {
                 self.lower_predicate_call_proposition_to_spec(proposition, environment)
@@ -5031,6 +5045,7 @@ impl AnnotationLowerer<'_> {
     fn lower_for_all_proposition_to_spec(
         &mut self,
         proposition: &SyntaxProposition,
+        elaborated_body: Option<&SurfaceProposition<'_>>,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
@@ -5069,8 +5084,7 @@ impl AnnotationLowerer<'_> {
                         body,
                         &body_environment,
                     );
-                    let body =
-                        self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                    let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                     return Ok(SpecProposition::ForAllInteger {
                         name: display_name.clone(),
                         variable,
@@ -5097,8 +5111,7 @@ impl AnnotationLowerer<'_> {
                         body,
                         &body_environment,
                     );
-                    let body =
-                        self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                    let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                     return Ok(SpecProposition::ForAllAlgebraic {
                         name: display_name.clone(),
                         variable,
@@ -5150,7 +5163,7 @@ impl AnnotationLowerer<'_> {
                     body,
                     &body_environment,
                 );
-                let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                 match previous {
                     Some(value) => {
                         self.quantified_values.insert(name.clone(), value);
@@ -5191,6 +5204,7 @@ impl AnnotationLowerer<'_> {
     fn lower_exists_proposition_to_spec(
         &mut self,
         proposition: &SyntaxProposition,
+        elaborated_body: Option<&SurfaceProposition<'_>>,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
@@ -5231,8 +5245,7 @@ impl AnnotationLowerer<'_> {
                         body,
                         &body_environment,
                     );
-                    let body =
-                        self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                    let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                     return Ok(SpecProposition::ExistsInteger {
                         name: display_name.clone(),
                         variable,
@@ -5259,8 +5272,7 @@ impl AnnotationLowerer<'_> {
                         body,
                         &body_environment,
                     );
-                    let body =
-                        self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                    let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                     return Ok(SpecProposition::ExistsAlgebraic {
                         name: display_name.clone(),
                         variable,
@@ -5312,7 +5324,7 @@ impl AnnotationLowerer<'_> {
                     body,
                     &body_environment,
                 );
-                let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                 match previous {
                     Some(value) => {
                         self.quantified_values.insert(name.clone(), value);
@@ -5353,6 +5365,7 @@ impl AnnotationLowerer<'_> {
     fn lower_range_all_proposition_to_spec(
         &mut self,
         proposition: &SyntaxProposition,
+        elaborated_body: Option<&SurfaceProposition<'_>>,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
@@ -5398,7 +5411,7 @@ impl AnnotationLowerer<'_> {
                     body,
                     &body_environment,
                 );
-                let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                 match previous {
                     Some(value) => {
                         self.quantified_values.insert(item.clone(), value);
@@ -5432,6 +5445,7 @@ impl AnnotationLowerer<'_> {
     fn lower_range_any_proposition_to_spec(
         &mut self,
         proposition: &SyntaxProposition,
+        elaborated_body: Option<&SurfaceProposition<'_>>,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
@@ -5477,7 +5491,7 @@ impl AnnotationLowerer<'_> {
                     body,
                     &body_environment,
                 );
-                let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
+                let body = self.lower_binder_body(body, elaborated_body, &body_environment)?;
                 match previous {
                     Some(value) => {
                         self.quantified_values.insert(item.clone(), value);
@@ -8204,25 +8218,77 @@ impl AnnotationLowerer<'_> {
             .collect()
     }
 
-    fn lower_opaque_contract_proposition(
+    /// Lower a binder form's body: from its Syntax, elaborating it in the
+    /// body context, or from the Surface elaboration already gave it.
+    fn lower_binder_body(
         &mut self,
-        proposition: &SyntaxProposition,
+        body: &SyntaxProposition,
+        elaborated_body: Option<&SurfaceProposition<'_>>,
+        body_environment: &SpecElaborationContext,
+    ) -> Result<SpecProposition, String> {
+        let Some(elaborated_body) = elaborated_body else {
+            return self.click_proposition_to_spec_proposition(body, body_environment);
+        };
+        #[cfg(debug_assertions)]
+        elaborator::check_stored_elaboration(self, elaborated_body, body, body_environment);
+        self.lower_surface_proposition(elaborated_body, body_environment)
+    }
+
+    /// Lower an elaborated binder form: `syntax` as written, with the body
+    /// elaboration gave it.
+    pub(super) fn lower_elaborated_binder(
+        &mut self,
+        syntax: &SyntaxProposition,
+        elaborated_body: &SurfaceProposition<'_>,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecProposition, String> {
+        let elaborated_body = Some(elaborated_body);
+        match syntax {
+            SyntaxProposition::ForAll { .. } => {
+                self.lower_for_all_proposition_to_spec(syntax, elaborated_body, environment)
+            }
+            SyntaxProposition::Exists { .. } => {
+                self.lower_exists_proposition_to_spec(syntax, elaborated_body, environment)
+            }
+            SyntaxProposition::RangeAll { .. } => {
+                self.lower_range_all_proposition_to_spec(syntax, elaborated_body, environment)
+            }
+            SyntaxProposition::RangeAny { .. } => {
+                self.lower_range_any_proposition_to_spec(syntax, elaborated_body, environment)
+            }
+            other => unreachable!("only binder forms elaborate to binder Surface: {other:?}"),
+        }
+    }
+
+    /// Lower a contract clause elaboration already gave its Surface, with
+    /// the type-inference failure that elaboration recorded, if any. The
+    /// failure is held where in-place elaboration would have left it, as
+    /// lowering starts, so a type error escaping lowering is classified as
+    /// before.
+    fn lower_elaborated_contract_proposition(
+        &mut self,
+        surface: &SurfaceProposition<'_>,
+        elaboration_failure: Option<String>,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, ClickError> {
-        self.type_inference_failure = None;
-        self.click_proposition_to_spec_proposition(proposition, environment)
-            .map_err(|message| {
-                // The general elaborator still uses strings. Only a type
-                // inference failure that actually escaped this lowering
-                // supplies the type diagnosis, including after spec probes.
-                let is_type_error = self.type_inference_failure.as_ref() == Some(&message);
-                let error = ClickError::new(message);
-                if is_type_error {
-                    error.with_kind(ClickErrorKind::Type)
-                } else {
-                    error
-                }
-            })
+        self.type_inference_failure = elaboration_failure;
+        let lowered = self.lower_surface_proposition(surface, environment);
+        lowered.map_err(|message| self.contract_lowering_error(message))
+    }
+
+    /// A contract clause's lowering error: a type error when it is the
+    /// type-inference failure that escaped the lowering.
+    fn contract_lowering_error(&self, message: String) -> ClickError {
+        // The general elaborator still uses strings. Only a type inference
+        // failure that actually escaped this lowering supplies the type
+        // diagnosis, including after spec probes.
+        let is_type_error = self.type_inference_failure.as_ref() == Some(&message);
+        let error = ClickError::new(message);
+        if is_type_error {
+            error.with_kind(ClickErrorKind::Type)
+        } else {
+            error
+        }
     }
 
     fn instantiate_click_function_for_call(

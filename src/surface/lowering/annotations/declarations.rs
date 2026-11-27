@@ -48,7 +48,6 @@ impl Declarations<'static> {
     /// The declarations of `function` alone, with no lowering context: its
     /// parameters, result and pointer elements, and its global and static
     /// objects. What a function contract's clauses can name.
-    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub(super) fn of_function(function: &crate::languages::interface::ImportedFunction) -> Self {
         Declarations {
             source_bindings: None,

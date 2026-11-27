@@ -46,7 +46,6 @@ impl<'a> AnnotationLowerer<'a> {
 impl<'a> Elaborator<'a> {
     /// An `Elaborator` for `function`'s contract, from its declarations
     /// alone, with no lowerer and no kernel state.
-    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     pub(super) fn of_function(
         function: &crate::languages::interface::ImportedFunction,
         definitions: SpecDefinitions<'a>,
@@ -61,24 +60,24 @@ impl<'a> Elaborator<'a> {
     }
 }
 
-/// Debug builds: a function contract's clause elaborates from the function's
-/// declarations alone to the Surface its lowering context gives it, so the
-/// contract can be elaborated before lowering (`design/typed-surface.md`).
+/// Debug builds: the Surface stored for a clause, with its binder forms
+/// read as written, is what elaborating the clause where it is lowered
+/// gives, so lowering the stored Surface lowers what lowering the Syntax
+/// would (`design/typed-surface.md`).
 #[cfg(debug_assertions)]
-pub(super) fn check_contract_elaboration(
+pub(super) fn check_stored_elaboration(
     lowerer: &AnnotationLowerer<'_>,
-    declared: &Elaborator<'_>,
+    stored: &SurfaceProposition<'_>,
     proposition: &SyntaxProposition,
     context: &SpecElaborationContext,
 ) {
     crate::instrumentation::uncharged_debug_check(|| {
-        let typing = TypingEnvironment::of(context);
         assert_eq!(
-            declared.elaborate_proposition(proposition, &typing),
+            stored.with_binder_forms_as_written(),
             lowerer
                 .elaborator()
-                .elaborate_proposition(proposition, &typing),
-            "contract clause `{proposition:?}` elaborates differently from its function's declarations"
+                .elaborate_proposition(proposition, &TypingEnvironment::of(context)),
+            "clause `{proposition:?}`: its stored Surface is not what elaborating it here gives"
         );
     });
 }
@@ -1137,9 +1136,6 @@ impl Elaborator<'_> {
     /// environment where the binder has its declared type, or a range item
     /// the type its endpoints give it. A comparison whose elaboration fails
     /// stays `Untyped`, as `elaborate_proposition` leaves it.
-    // Lowering reads binder bodies from Syntax until contracts are
-    // elaborated before lowering; until then only tests call this.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn elaborate_clause<'s>(
         &self,
         proposition: &'s SyntaxProposition,
@@ -1170,7 +1166,6 @@ impl Elaborator<'_> {
     /// The Surface form of a binder form, with its body elaborated by
     /// `elaborate_clause` where the binder is in scope; `None` for any
     /// other construct.
-    #[cfg_attr(not(test), allow(dead_code))]
     fn elaborate_binder<'s>(
         &self,
         syntax: &'s SyntaxProposition,
@@ -1234,6 +1229,17 @@ impl Elaborator<'_> {
             } => range(Quantifier::Some, start, end, item, body),
             _ => return None,
         })
+    }
+
+    /// A function contract clause's Surface, elaborated once before it is
+    /// lowered, and the type-inference failure the elaboration recorded.
+    pub(super) fn elaborate_contract_clause<'s>(
+        &self,
+        proposition: &'s SyntaxProposition,
+        context: &SpecElaborationContext,
+    ) -> (SurfaceProposition<'s>, Option<String>) {
+        let surface = self.elaborate_clause(proposition, &TypingEnvironment::of(context));
+        (surface, self.type_inference_failure.take())
     }
 }
 
