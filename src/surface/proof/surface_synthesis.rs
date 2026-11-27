@@ -17,6 +17,7 @@ pub(super) mod folds;
 mod matches;
 mod pointer_indices;
 mod pointer_names;
+mod slices;
 
 use crate::kernel::program_local_source_name as surface_local_name;
 use crate::surface::diagnostics::has_surface_iterator_binding;
@@ -1409,10 +1410,11 @@ pub(in crate::surface) fn synthesize_surface_value(
         )));
     }
     match value {
+        ProgramValue::Pointer(pointer) if pointer.is_wide() => {
+            slices::raise_slice(pointer, parameter_binding, state, &BTreeMap::new())
+        }
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
-            pointer
-                .expect_thin("raising a pointer value to Surface")
-                .address(),
+            pointer.address(),
             parameter_binding,
             state,
             &BTreeMap::new(),
@@ -1730,11 +1732,20 @@ fn synthesize_surface_quantified_proposition(
         | Proposition::Exists {
             var, sort, body, ..
         } => {
-            let integer_type = sort.machine_integer_type()?;
-            let click_type =
-                ClickType::Program(crate::surface::generics::interface_type_from_program_type(
-                    integer_type.program_type(),
-                ));
+            // A machine integer binder, or a slice binder, which names its
+            // slice, its data pointer and its count
+            // (`design/rust-slice-values.md`, step 2b-iii-b-i).
+            let slice_element = match sort.pointer_type() {
+                Some(ProgramType::SlicePointer(element)) => Some(element),
+                _ => None,
+            };
+            let binder_type = match slice_element {
+                Some(element) => ProgramType::SlicePointer(element),
+                None => sort.machine_integer_type()?.program_type(),
+            };
+            let click_type = ClickType::Program(
+                crate::surface::generics::interface_type_from_program_type(binder_type),
+            );
             // The binder keeps the name it was written with when nothing the
             // body can name is spelled the same; otherwise a generated
             // binder, which never captures a source name.
@@ -1751,6 +1762,8 @@ fn synthesize_surface_quantified_proposition(
                 .unwrap_or_else(SurfaceBinder::fresh);
             let _binder =
                 folds::Binding::enter((folds::BinderCarrier::Program, **var), name.clone());
+            let _slice_binder =
+                slice_element.map(|element| folds::SliceBinding::enter(**var, element));
             let body = Box::new(synthesize_surface_proposition_with_bound_variables(
                 body,
                 parameter_binding,
@@ -4421,12 +4434,10 @@ fn raise_constructor_field(
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
     if let Some(ProgramValue::Pointer(pointer)) = term.old_pointer_value() {
-        return raise_constructor_pointer(
-            pointer.expect_thin("raising a pointer value to Surface"),
-            parameter_binding,
-            state,
-            bound_variables,
-        );
+        if pointer.is_wide() {
+            return slices::raise_slice(pointer, parameter_binding, state, bound_variables);
+        }
+        return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
     }
     if term.ty() == &KernelType::Integer {
         return raise_kernel_term(term, parameter_binding, state, bound_variables)
@@ -5267,8 +5278,11 @@ fn synthesize_surface_resource_argument(
                 },
             ))
         }
+        A::Program(ProgramValue::Pointer(pointer)) if pointer.is_wide() => {
+            slices::raise_slice(pointer, parameter_binding, state, bound_variables)
+        }
         A::Program(ProgramValue::Pointer(pointer)) => synthesize_surface_pointer_expression(
-            pointer.expect_thin("raising a pointer value to Surface"),
+            pointer,
             parameter_binding,
             state,
             bound_variables,
@@ -6457,10 +6471,9 @@ fn synthesize_surface_bitvector(
         }
         // A slice application's count raises as `f(x).len()` with the Surface
         // slice type, never as an integer application of `f`.
-        OldMachineTerm::PureApplicationCount(_) => panic!(
-            "internal error: raising a slice application's count to Surface has no form yet \
-             (design/rust-slice-values.md, step 2b-iii-c)"
-        ),
+        OldMachineTerm::PureApplicationCount(_) => {
+            slices::raise_slice_count(term, parameter_binding, state, bound_variables)
+        }
         // The 32-bit widening of a narrow value is written as the
         // conversion it is (`c as int32`, `c as uint32`).
         OldMachineTerm::Cast {
@@ -6610,13 +6623,11 @@ fn synthesize_surface_bitvector(
             }))
         }
         OldMachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
-            // A slice's count raises as `s.len()` with 2b-iii's Surface slice
-            // type, never as a typed read of one of the cell's words.
-            assert!(
-                *kind != crate::kernel::LoadKind::SliceCount,
-                "internal error: raising a slice's count to Surface has no form yet \
-                 (design/rust-slice-values.md, step 2b-iii)"
-            );
+            // A slice's count raises as `s.len()` of the slice read, never as
+            // a typed read of one of the cell's words.
+            if *kind == crate::kernel::LoadKind::SliceCount {
+                return slices::raise_slice_count(term, parameter_binding, state, bound_variables);
+            }
             if memory.read_version_id().is_some() {
                 let value_type = load_kind_value_type(*kind)?;
                 return synthesize_point_read(
@@ -6931,12 +6942,10 @@ fn synthesize_surface_bitvector(
         // so the spelling lowers back to exactly this variable there.
         OldMachineTerm::Variable(variable) => {
             // A slice's count raises as `s.len()` from the name of its slice,
-            // with the Surface slice type, never as a variable of its own.
-            assert!(
-                variable.counted_slice().is_none(),
-                "internal error: raising a slice's count to Surface has no form yet \
-                 (design/rust-slice-values.md, step 2b-iii-c)"
-            );
+            // never as a variable of its own.
+            if variable.counted_slice().is_some() {
+                return slices::raise_slice_count(term, parameter_binding, state, bound_variables);
+            }
             // A recorded load already supplies the address to inspect. Avoid
             // searching unrelated locals when ordinary certificates name it.
             if let Some((_, pointer)) = crate::kernel::registered_load_for_variable(variable)
@@ -8499,7 +8508,9 @@ fn synthesize_pointer_equality_operand(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
-    value.expect_thin("raising a pointer equality operand to Surface");
+    if value.is_wide() {
+        return slices::raise_slice(value, parameter_binding, state, bound_variables);
+    }
     if let Some(name) = pointer_names::native_name(&ProgramValue::Pointer(value.clone())) {
         return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             name.into(),
@@ -8796,6 +8807,12 @@ fn synthesize_surface_pointer_expression_routes(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    // A slice's data pointer is `s.as_ptr()` of the slice that names it.
+    if let Some(data) =
+        slices::slice_data_pointer(pointer, parameter_binding, state, bound_variables)
+    {
+        return Some(data);
+    }
     // A call's prepared parameter object is `R.parameter(name)`, which
     // lowers to the object's address as an aggregate local does.
     if let Some(object) = prepared_parameter_object(pointer) {

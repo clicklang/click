@@ -2561,7 +2561,7 @@ fn rust_slice_value_proofs_expand_to_verified_proofs() {
     fs::write(
         p.root.join("borrow.click"),
         "import click::rust::slice;\nverifying \"borrow.rs\";\n\
-         function half(bytes: &[u8]) -> &[u8] { slice::from_raw_parts(bytes, bytes.len() / 2u64) }\n\
+         function half(bytes: &[u8]) -> &[u8] { slice::from_raw_parts(bytes.as_ptr(), bytes.len() / 2u64) }\n\
          function size(bytes: &[u8]) -> usize { bytes.len() }\n\
          fn first(bytes: &[u8]) -> u8 {\n    requires bytes.len() == 4u64;\n    views bytes[0..4];\n    ensures result == bytes[0];\n} by {\n    \
          have half(bytes).len() == bytes.len() / 2u64;\n    \
@@ -8015,7 +8015,7 @@ fn rust_pure_function_slice_arguments_are_one_value() {
 }
 
 /// A slice in a value position, a pure function's result, an `Option`
-/// payload or an enum field, is the library's `Slice<T>`. Rust's methods
+/// payload or an enum field, is the built-in `Slice<T>`. Rust's methods
 /// read it, `s.len()`, `s[i]` and `s.as_ptr()`, a slice parameter takes it
 /// as one argument, and a failure prints it in those spellings.
 #[cfg(not(feature = "fast-gate"))]
@@ -8031,7 +8031,7 @@ fn rust_methods_resolve_by_the_receivers_type() {
     let sidecar = |claims: &str| {
         format!(
             "import click::rust::slice;\nverifying \"borrow.rs\";\n\
-             function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes, bytes.len() / 2u64) }}\n\
+             function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes.as_ptr(), bytes.len() / 2u64) }}\n\
              function some_half(bytes: &[u8]) -> Option<&[u8]> {{ Option::Some(half(bytes)) }}\n\
              fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4u64;\n    views bytes[0..4];\n    ensures result == bytes[0];\n}} by {{\n    \
              have half(bytes).len() == 2u64;\n    \
@@ -8186,7 +8186,7 @@ fn rust_slice_values_import() -> click::languages::rust::PreparedRustImport {
 fn rust_slice_values_sidecar(claims: &str) -> String {
     format!(
         "import click::rust::slice;\nverifying \"borrow.rs\";\n\
-         function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes, bytes.len() / 2u64) }}\n\
+         function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes.as_ptr(), bytes.len() / 2u64) }}\n\
          function some_half(bytes: &[u8]) -> Option<&[u8]> {{ Option::Some(half(bytes)) }}\n\
          function size(bytes: &[u8]) -> usize {{ bytes.len() }}\n\
          spec enum Window {{ Window(&[u8], usize), }}\n\
@@ -8227,8 +8227,8 @@ fn rust_slice_values_read_with_rust_methods() {
     .unwrap();
     // Each refused claim, and the goal it leaves, print in spellings that
     // read back as the same terms: a slice built as a subslice is that
-    // subslice, and one built any other way is its constructor at its
-    // element type.
+    // subslice, and one built any other way is its construction,
+    // `slice::from_raw_parts(p, n)`.
     rust_slice_value_refusals(
         &prepared,
         &[
@@ -8269,23 +8269,23 @@ fn rust_slice_values_refuse_additional_claims() {
             ),
             (
                 "have bytes[1..3][1] == 7u8;",
-                &["`bytes[1..3][1] == 7u8`", "goal: old(bytes[1..3][1]) == 7"],
+                &["`bytes[1..3][1] == 7u8`", "goal: old(bytes[2]) == 7"],
             ),
             (
                 "have bytes[1..][0] == 7u8;",
-                &["`bytes[1..][0] == 7u8`", "goal: old(bytes[1..][0]) == 7"],
+                &["`bytes[1..][0] == 7u8`", "goal: old(bytes[1]) == 7"],
             ),
             (
                 "have bytes[..2][0] == 7u8;",
-                &["`bytes[..2][0] == 7u8`", "goal: old(bytes[..2][0]) == 7"],
+                &["`bytes[..2][0] == 7u8`", "goal: old(bytes[0]) == 7"],
             ),
             (
                 "have bytes[1..3].len() == 3u64;",
                 &["`bytes[1..3].len() == 3u64`"],
             ),
             (
-                "have Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2];",
-                &["goal: Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2]"],
+                "have slice::from_raw_parts(&bytes[1], 2u64) == bytes[1..2];",
+                &["goal: click::rust::slice::from_raw_parts(&bytes[1], 2u64) == bytes[1..2]"],
             ),
             (
                 "have bytes[1..3] == bytes[1..2];",
@@ -8293,7 +8293,7 @@ fn rust_slice_values_refuse_additional_claims() {
             ),
             (
                 "have half(bytes)[3..].len() == 0u64;",
-                &["not established", "`3u64 <= (half(bytes).len() as u64)`"],
+                &["not established", "`3u64 <= half(bytes).len()`"],
             ),
         ],
     );

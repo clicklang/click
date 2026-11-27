@@ -58,9 +58,9 @@ pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
     LoopPhaseSpelling, enter_rust_spelling, has_surface_iterator_binding,
-    record_pure_function_slices, rust_binding_spelling, rust_spelling, rust_variable_spelling,
-    slice_call_arguments, slice_call_spelling, slice_type_spelling, subslice_of_length,
-    subslice_spelling,
+    record_pure_function_slices, record_slice_result_function, rust_binding_spelling,
+    rust_spelling, rust_variable_spelling, slice_call_arguments, slice_call_spelling,
+    slice_result_element, subslice_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -5829,6 +5829,7 @@ pub(super) fn diagnostic_parameter_element_width(
         | InterfaceType::Float64PointerPointer => 8,
         InterfaceType::FunctionPointer(_) => 8,
         InterfaceType::PointerArray(_, _, _) => 8,
+        InterfaceType::Slice(_) => 16,
     }
 }
 
@@ -7719,31 +7720,10 @@ fn describe_contract_expression_grouping_casts(
                         .join(", ")
                 )
             };
-            let written_arguments = arguments;
             let arguments = arguments
                 .iter()
                 .map(describe_contract_expression)
                 .collect::<Vec<_>>();
-            if algebraic_type.name == "Slice" && variant == "Slice" && rust_spelling() {
-                // A subslice, built from its length's call.
-                if let [
-                    _,
-                    SyntaxTerm::Call {
-                        name,
-                        arguments: parts,
-                    },
-                ] = written_arguments.as_slice()
-                    && name == crate::surface::RUST_SUBSLICE_LEN
-                    && let [start, end, len] = parts.as_slice()
-                    && let Some(subslice) = subslice_of_length(
-                        &describe_contract_expression(start),
-                        &describe_contract_expression(end),
-                        &describe_contract_expression(len),
-                    )
-                {
-                    return subslice;
-                }
-            }
             format!(
                 "{}{type_arguments}::{variant}({})",
                 algebraic_type.name,

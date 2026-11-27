@@ -1258,9 +1258,10 @@ Arithmetic may treat an opaque result as an unknown Integer without unfolding.
 A smart tactic may emit a checked unfold step; expansion makes that step visible.
 See [the function example](https://github.com/clicklang/click/blob/master/mdtests/integer_function_successor.md).
 
-A library function whose body is exactly `match s { V(.., x, ..) => x }`,
-such as `slice::len`, is opaque in the same way: `slice::len(Slice<uint8>::Slice(p,
-n))` lowers as that call, not as `n`, and `unfold` opens it to the field. The
+A library function whose body is exactly a `match` that selects a field,
+such as `option::unwrap_or`, is opaque in the same way:
+`option::unwrap_or(Option<uint64>::Some(m), d)` lowers as that call, not as
+`m`, and `unfold` opens it to the field. The
 goal is the same term whether the constructed value is written at the call or
 arrives by `rewrite`
 ([example](https://github.com/clicklang/click/blob/master/mdtests/a_library_field_function_of_a_constructed_value_stays_a_call.md)).

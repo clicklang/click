@@ -35,6 +35,7 @@ pub(super) fn raise_match(
                     )
                 }),
             shared_declaration_variable,
+            shared_declaration_slice,
             |body| raise_kernel_term(body, parameter_binding, state, bound_variables),
         )?;
         Some(SyntaxTerm::AlgebraicMatch {
@@ -124,9 +125,34 @@ fn shared_declaration_variable(term: &KernelTerm) -> Option<(BindingCarrier, Var
     Some((BindingCarrier::Program, variable))
 }
 
-struct ArmScope(Vec<folds::Binding>);
+/// The element type of the slice a declaration names, when it names one: a
+/// wide pointer binder.
+fn shared_declaration_slice(term: &KernelTerm) -> Option<crate::kernel::SliceElement> {
+    use crate::kernel::KernelTermNode as N;
+    let term = match term.node() {
+        N::ProgramParameter { operand } => operand,
+        _ => term,
+    };
+    match term.node() {
+        N::Pointer(value) | N::PointerRead { value, .. } | N::PointerCall { value, .. } => {
+            value.len()?;
+            slice_element_of(value.node().program_type)
+        }
+        _ => None,
+    }
+}
+
+fn slice_element_of(program_type: ProgramType) -> Option<crate::kernel::SliceElement> {
+    match program_type {
+        ProgramType::SlicePointer(element) => Some(element),
+        _ => None,
+    }
+}
+
+struct ArmScope(Vec<folds::Binding>, Vec<folds::SliceBinding>);
 impl Drop for ArmScope {
     fn drop(&mut self) {
+        while self.1.pop().is_some() {}
         while self.0.pop().is_some() {}
     }
 }
@@ -135,11 +161,12 @@ fn raise_arms<'a, T: 'a, D: 'a>(
     type_name: &str,
     inputs: impl ExactSizeIterator<Item = (&'a str, &'a crate::kernel::BindingNames, &'a [D], &'a T)>,
     declaration_variable: impl Fn(&D) -> Option<(BindingCarrier, Variable)>,
+    declaration_slice: impl Fn(&D) -> Option<crate::kernel::SliceElement>,
     raise_body: impl Fn(&T) -> Option<SyntaxTerm>,
 ) -> Option<Vec<crate::surface::AlgebraicMatchArm>> {
     let mut arms = Vec::with_capacity(inputs.len());
     for (variant, binding_names, declarations, body) in inputs {
-        let mut scopes = ArmScope(Vec::with_capacity(declarations.len()));
+        let mut scopes = ArmScope(Vec::with_capacity(declarations.len()), Vec::new());
         let mut names = Vec::with_capacity(declarations.len());
         for (index, declaration) in declarations.iter().enumerate() {
             let (carrier, variable) = declaration_variable(declaration)?;
@@ -152,6 +179,9 @@ fn raise_arms<'a, T: 'a, D: 'a>(
             scopes
                 .0
                 .push(folds::Binding::enter((carrier, variable), name.clone()));
+            if let Some(element) = declaration_slice(declaration) {
+                scopes.1.push(folds::SliceBinding::enter(variable, element));
+            }
             names.push(name);
         }
         let body = raise_body(body)?;
@@ -190,6 +220,12 @@ pub(super) fn raise_machine_match(
                 )
             }),
             typed_declaration_variable,
+            |binding: &crate::kernel::AlgebraicValue| match binding {
+                crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
+                    slice_element_of(pointer.program_type())
+                }
+                _ => None,
+            },
             |body| synthesize_surface_bitvector(body, parameter_binding, state, bound_variables),
         )?;
         Some(SyntaxTerm::AlgebraicMatch {

@@ -7954,35 +7954,26 @@ Source: `library/rust/slice.click`, `import click::rust::slice;`.
 
 ### Rust slices
 
-`click::rust::slice` declares `Slice<T>`, a Rust slice as one value: its data
-pointer and its length. `==` on slices is identity, the same pointer and the
-same length. A slice value grants no access: reading `s[i]` reads memory
-through its pointer under the caller's `views` or `owns`. A sidecar names
-these operations after `import click::rust::slice;`. A Rust sidecar writes a
-slice with Rust's syntax, and each slice is one argument of a pure-function
-call, so a pointer and a length are passed as `slice::from_raw_parts(p, n)`
-([pure functions](../rust.md)). A slice parameter is lowered as its pointer
-and its length; both forms are the same slice.
-
-### `Slice`
-
-```click
-spec enum Slice<T> {
-    Slice(T*, uint64),
-}
-```
-
-A slice of `T`: a pointer to its first element and its number of elements.
-Two slices are equal exactly when their pointers and lengths are.
+`Slice<T>` is the built-in type of a Rust slice, `&[T]`, and `Str` the type
+of `&str`: one value, a wide pointer holding its data pointer and its
+length. `==`
+on slices is identity, the same pointer and the same length. A slice value
+grants no access: reading `s[i]` reads memory through its pointer under the
+caller's `views` or `owns`. `click::rust::slice` names the type's operations,
+after `import click::rust::slice;`. None has a body: each is a component or
+the constructor of the built-in value, read or built in place, so
+`slice::len(slice::from_raw_parts(p, n))` is `n` with no `unfold`. A Rust
+sidecar writes them with Rust's syntax, `s.len()`, `s.as_ptr()`, `s[i]` and
+`s[a..b]`, and each slice is one argument of a pure-function call, so a
+pointer and a length are passed as `slice::from_raw_parts(p, n)`
+([pure functions](../rust.md)). A slice parameter of a `fn` is lowered as
+its pointer and its length; passed to a pure function, it is the slice
+`slice::from_raw_parts(bytes, bytes.len())` of the two.
 
 ### `slice::len`
 
 ```click
-function len<T>(s: Slice<T>) -> uint64 {
-    match s {
-        Slice::Slice(_, n) => n,
-    }
-}
+function len<T>(s: Slice<T>) -> uint64;
 ```
 
 The number of elements, Rust's `s.len()`.
@@ -7990,11 +7981,7 @@ The number of elements, Rust's `s.len()`.
 ### `slice::as_ptr`
 
 ```click
-function as_ptr<T>(s: Slice<T>) -> T* {
-    match s {
-        Slice::Slice(p, _) => p,
-    }
-}
+function as_ptr<T>(s: Slice<T>) -> T*;
 ```
 
 The data pointer, Rust's `s.as_ptr()`.
@@ -8002,27 +7989,23 @@ The data pointer, Rust's `s.as_ptr()`.
 ### `slice::from_raw_parts`
 
 ```click
-function from_raw_parts<T>(p: T*, n: uint64) -> Slice<T> {
-    Slice::Slice(p, n)
-}
+function from_raw_parts<T>(p: T*, n: uint64) -> Slice<T>;
 ```
 
 The slice with data `p` and length `n`, Rust's
-`core::slice::from_raw_parts(p, n)`.
+`core::slice::from_raw_parts(p, n)`. Building one owes nothing.
 
-### `slice::subslice_len`
+### `slice::subslice`
 
 ```click
-function subslice_len(start: uint64, end: uint64, len: uint64) -> uint64 {
-    end - start
-}
+function subslice<T>(s: Slice<T>, start: uint64, end: uint64) -> Slice<T>;
 ```
 
-The length of the subslice `s[start..end]` of a slice of length `len`. A
-call owes `start <= end` and `end <= len` where it is evaluated, guarded as
-every evaluation condition is, where Rust panics otherwise. A Rust sidecar's
-subslice `s[a..b]` is `Slice::Slice(s.as_ptr() + a, slice::subslice_len(a,
-b, s.len()))`, and prints as `s[a..b]`.
+The subslice `s[start..end]`: the slice with data `s.as_ptr() + start` and
+length `end - start`. A call owes `start <= end` and `end <= s.len()` where
+it is evaluated, guarded as every evaluation condition is, where Rust panics
+otherwise. A Rust sidecar's subslice `s[a..b]` is `slice::subslice(s, a,
+b)`, and prints as `s[a..b]`.
 
 
 ## Rust core interfaces

@@ -27,7 +27,7 @@ imports with `import click::...;`, and the modules those import:
 | `rust/option.click` | `import click::rust::option;` | Rust's `Option::unwrap_or` proof helper |
 | `rust/result.click` | `import click::rust::result;` | Rust's `Result::unwrap_or` proof helper |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
-| `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
+| `rust/slice.click` | `import click::rust::slice;` | the operations of `Slice<T>`, the built-in Rust slice: its data pointer and length as one value |
 | `rust/core.click` | appended to a Rust sidecar when an import calls one of its methods | The `Vec`, `slice::swap` and `Option`/`Result` unwrapping contracts, as generic `extern fn` blocks written out at each called type; a block no call names is dropped |
 | `rust/integers.click` | the line of each integer method an import calls is appended to its Rust sidecar | One-line `extern fn` contracts of the integer core methods, `u32::min`, each stating its result with the function of the same path in `rust/<type>.click` |
 

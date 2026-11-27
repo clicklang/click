@@ -324,6 +324,9 @@ impl SpecElaborationContext {
         &self,
         name: &Q,
     ) -> Option<ClickType> {
+        if let Some(element) = self.slice_bindings.get(name) {
+            return Some(ClickType::Program(InterfaceType::Slice(*element)));
+        }
         self.values.get(name).and_then(spec_expression_click_type)
     }
 }
@@ -6794,45 +6797,6 @@ impl AnnotationLowerer<'_> {
             SyntaxTerm::MethodCall { method, .. } => Err(format!(
                 "the method `{method}` was not resolved by its receiver's type"
             )),
-            // A subslice's length, `end - start`, owes `start <= end <= len`
-            // where it is evaluated, as Rust panics otherwise.
-            SyntaxTerm::Call { name, arguments }
-                if name == crate::surface::RUST_SUBSLICE_LEN
-                    && let [start, end, len] = arguments.as_slice() =>
-            {
-                let at_most =
-                    |left: &SyntaxTerm, right: &SyntaxTerm| SyntaxProposition::Comparison {
-                        left: left.clone(),
-                        operator: ComparisonOperator::LessEqual,
-                        right: right.clone(),
-                    };
-                // A subslice from the start, `s[..b]`, has length `b` itself,
-                // so it is the slice `slice::from_raw_parts(s.as_ptr(), b)`
-                // is, and owes only `b <= len`.
-                let from_start = matches!(start, SyntaxTerm::IntegerLiteral(text) if text == "0")
-                    || matches!(
-                        start,
-                        SyntaxTerm::ProgramExpression(ProgramExpression::Value(_))
-                    ) && crate::surface::diagnostics::describe_contract_expression(start)
-                        == "0u64";
-                let (requirement, value) = if from_start {
-                    (at_most(end, len), end.clone())
-                } else {
-                    (
-                        SyntaxProposition::And(
-                            Box::new(at_most(start, end)),
-                            Box::new(at_most(end, len)),
-                        ),
-                        SyntaxTerm::Subtract(Box::new(end.clone()), Box::new(start.clone())),
-                    )
-                };
-                Ok(SpecExpression::Requires {
-                    requirement: Box::new(
-                        self.click_proposition_to_spec_proposition(&requirement, environment)?,
-                    ),
-                    value: Box::new(self.lower_contract_expression_to_spec(&value, environment)?),
-                })
-            }
             SyntaxTerm::Call { name, arguments } if integer_conversion_target(name).is_some() => {
                 let argument = integer_conversion_argument(name, arguments)?;
                 let destination = crate::kernel::MachineIntegerType::from_program_type(
@@ -7495,21 +7459,30 @@ impl AnnotationLowerer<'_> {
                 let reference = SpecExpression::ProgramExpression(ProgramExpression::Variable(
                     name.kernel_name(),
                 ));
-                let reference = if matches!(name, SurfaceBinder::Generated(_)) {
-                    match click_type
-                        .as_ref()
-                        .and_then(ClickType::interface_type)
-                        .or_else(|| {
-                            spec_expression_click_type(&value).and_then(|ty| ty.interface_type())
-                        })
-                        .map(|ty| ty.to_kernel_type())
-                    {
-                        Some(ty) => SpecExpression::Cast(Box::new(reference), ty),
-                        None => reference,
+                let reference_type = click_type
+                    .as_ref()
+                    .and_then(ClickType::interface_type)
+                    .or_else(|| {
+                        spec_expression_click_type(&value).and_then(|ty| ty.interface_type())
+                    })
+                    .map(|ty| ty.to_kernel_type());
+                let reference = match reference_type {
+                    Some(ty) if matches!(name, SurfaceBinder::Generated(_)) => {
+                        SpecExpression::Cast(Box::new(reference), ty)
                     }
-                } else {
-                    reference
+                    _ => reference,
                 };
+                // A slice binding's methods resolve by its slice type.
+                match reference_type {
+                    Some(ProgramType::SlicePointer(element)) => {
+                        body_environment
+                            .slice_bindings
+                            .insert(name.clone(), element);
+                    }
+                    _ => {
+                        body_environment.slice_bindings.remove(&name);
+                    }
+                }
                 body_environment.values.insert(name, reference);
                 Ok(SpecExpression::Let {
                     name: name.kernel_name(),
@@ -7976,6 +7949,15 @@ impl AnnotationLowerer<'_> {
                     } else {
                         value
                     };
+                    // A slice binder's methods resolve by its slice type.
+                    match value_type {
+                        ProgramType::SlicePointer(element) => {
+                            scope.slice_bindings.insert(binding, *element);
+                        }
+                        _ => {
+                            scope.slice_bindings.remove(binding);
+                        }
+                    }
                     SpecAlgebraicValue::Program(value)
                 }
                 AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
@@ -9631,6 +9613,11 @@ impl AnnotationLowerer<'_> {
             .clone();
         let definition =
             self.instantiate_click_function_for_call(&definition, arguments, environment)?;
+        if let Some(lowered) =
+            self.lower_slice_operation_to_spec(&definition, arguments, environment)?
+        {
+            return Ok(lowered);
+        }
         if let Some(body) = lambdas::specialize_call(&definition, arguments)? {
             return self.lower_contract_expression_to_spec(&body, environment);
         }
@@ -9664,6 +9651,109 @@ impl AnnotationLowerer<'_> {
                 .flatten(),
             result_object_class: definition.return_object_class().cloned(),
         })
+    }
+
+    /// A call of a name-table entry of the built-in slice type
+    /// (`design/rust-slice-values.md`), as the kernel's slice operation:
+    /// `slice::len(s)` and `slice::as_ptr(s)` read the slice's components in
+    /// place, `slice::from_raw_parts(p, n)` builds one, and
+    /// `slice::subslice(s, a, b)`, Rust's `s[a..b]`, builds
+    /// `from_raw_parts(s.as_ptr() + a, b - a)` owing `a <= b <= s.len()`
+    /// where it is evaluated, as Rust panics otherwise. A subslice from the
+    /// start, `s[..b]`, is `from_raw_parts(s.as_ptr(), b)` and owes only
+    /// `b <= s.len()`. `None` for any other function.
+    fn lower_slice_operation_to_spec(
+        &mut self,
+        definition: &ClickFunctionDefinition,
+        arguments: &[SyntaxTerm],
+        environment: &SpecElaborationContext,
+    ) -> Result<Option<SpecExpression>, String> {
+        let name = generic_instance_source_name(definition.name());
+        let operation = |count: usize| -> Result<(), String> {
+            if arguments.len() == count {
+                Ok(())
+            } else {
+                Err(format!(
+                    "function `{name}` expects {count} argument(s), got {}",
+                    arguments.len()
+                ))
+            }
+        };
+        // A component of a subslice is the subslice's own component, owing
+        // its bounds: `s[a..b].len()` is `b - a` and `s[a..b].as_ptr()` is
+        // `s.as_ptr() + a`, read in place as a component of a construction
+        // is, with no other component evaluated.
+        let subslice_component = |argument: &SyntaxTerm| match argument {
+            SyntaxTerm::Call { name, arguments }
+                if generic_instance_source_name(name) == crate::surface::RUST_SUBSLICE =>
+            {
+                match arguments.as_slice() {
+                    [slice, start, end] => Some(subslice_parts(slice, start, end)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let lowered = match name {
+            crate::surface::RUST_SLICE_LEN | crate::surface::RUST_SLICE_AS_PTR => {
+                operation(1)?;
+                if let Some((requirement, data, count)) = subslice_component(&arguments[0]) {
+                    let component = if name == crate::surface::RUST_SLICE_LEN {
+                        count
+                    } else {
+                        data
+                    };
+                    SpecExpression::Requires {
+                        requirement: Box::new(
+                            self.click_proposition_to_spec_proposition(&requirement, environment)?,
+                        ),
+                        value: Box::new(
+                            self.lower_contract_expression_to_spec(&component, environment)?,
+                        ),
+                    }
+                } else {
+                    let slice = Box::new(
+                        self.lower_contract_expression_to_spec(&arguments[0], environment)?,
+                    );
+                    if name == crate::surface::RUST_SLICE_LEN {
+                        SpecExpression::SliceLength(slice)
+                    } else {
+                        SpecExpression::SliceData(slice)
+                    }
+                }
+            }
+            crate::surface::RUST_SLICE_FROM_RAW_PARTS => {
+                operation(2)?;
+                SpecExpression::SliceFromRawParts {
+                    data: Box::new(
+                        self.lower_contract_expression_to_spec(&arguments[0], environment)?,
+                    ),
+                    count: Box::new(
+                        self.lower_contract_expression_to_spec(&arguments[1], environment)?,
+                    ),
+                }
+            }
+            crate::surface::RUST_SUBSLICE => {
+                operation(3)?;
+                let [slice, start, end] = arguments else {
+                    unreachable!("three arguments were checked")
+                };
+                let (requirement, data, count) = subslice_parts(slice, start, end);
+                SpecExpression::Requires {
+                    requirement: Box::new(
+                        self.click_proposition_to_spec_proposition(&requirement, environment)?,
+                    ),
+                    value: Box::new(SpecExpression::SliceFromRawParts {
+                        data: Box::new(self.lower_contract_expression_to_spec(&data, environment)?),
+                        count: Box::new(
+                            self.lower_contract_expression_to_spec(&count, environment)?,
+                        ),
+                    }),
+                }
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(lowered))
     }
 
     fn lower_array_ref_to_spec(
@@ -10150,6 +10240,45 @@ fn aggregate_projection_root(
         } => aggregate_projection_root(pointer),
         _ => None,
     }
+}
+
+/// The subslice `slice[start..end]` as its bounds and its components: it
+/// requires `start <= end <= slice.len()`, its data pointer is
+/// `slice.as_ptr() + start` and its length `end - start`. A subslice from the
+/// start, `slice[..end]`, requires only `end <= slice.len()`; its data pointer
+/// is `slice.as_ptr()` and its length `end`.
+fn subslice_parts(
+    slice: &SyntaxTerm,
+    start: &SyntaxTerm,
+    end: &SyntaxTerm,
+) -> (SyntaxProposition, SyntaxTerm, SyntaxTerm) {
+    let component = |name: &str| SyntaxTerm::Call {
+        name: name.to_string(),
+        arguments: vec![slice.clone()],
+    };
+    let at_most = |left: &SyntaxTerm, right: &SyntaxTerm| SyntaxProposition::Comparison {
+        left: left.clone(),
+        operator: ComparisonOperator::LessEqual,
+        right: right.clone(),
+    };
+    let length = component(crate::surface::RUST_SLICE_LEN);
+    let from_start = matches!(start, SyntaxTerm::IntegerLiteral(text) if text == "0")
+        || matches!(
+            start,
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(_))
+        ) && crate::surface::diagnostics::describe_contract_expression(start) == "0u64";
+    let data = component(crate::surface::RUST_SLICE_AS_PTR);
+    if from_start {
+        return (at_most(end, &length), data, end.clone());
+    }
+    (
+        SyntaxProposition::And(
+            Box::new(at_most(start, end)),
+            Box::new(at_most(end, &length)),
+        ),
+        SyntaxTerm::Add(Box::new(data), Box::new(start.clone())),
+        SyntaxTerm::Subtract(Box::new(end.clone()), Box::new(start.clone())),
+    )
 }
 
 fn spec_expression_click_type(expression: &SpecExpression) -> Option<ClickType> {
@@ -10963,6 +11092,7 @@ fn point_environment(
     }
     Ok(Some(SpecElaborationContext {
         values,
+        slice_bindings: environment.slice_bindings.clone(),
         integer_values: environment.integer_values.clone(),
         algebraic_values: environment.algebraic_values.clone(),
         array_refs: array_refs.into_iter().collect(),

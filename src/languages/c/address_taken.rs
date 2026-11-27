@@ -154,6 +154,7 @@ fn scalar_or_pointer(interface_type: InterfaceType) -> bool {
         | InterfaceType::FunctionPointer(_) => true,
         InterfaceType::Int8Array(_) => false,
         InterfaceType::PointerArray(_, _, _) => false,
+        InterfaceType::Slice(_) => false,
         InterfaceType::Void
         | InterfaceType::CharArray(_, _)
         | InterfaceType::Int32Array(_)

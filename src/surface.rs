@@ -3400,9 +3400,16 @@ mod binders;
 pub use binders::SurfaceBinder;
 use binders::{BinderMap, BinderSet, PersistentBinderMap, ScopedBinders};
 
-/// The library function a Rust subslice's length lowers through; its call
-/// owes the subslice's bounds.
-pub(crate) const RUST_SUBSLICE_LEN: &str = "click::rust::slice::subslice_len";
+/// The name-table entries of the built-in slice type
+/// (`design/rust-slice-values.md`): `slice::len(s)` and `slice::as_ptr(s)`
+/// read a slice's components, `slice::from_raw_parts(p, n)` builds one, and
+/// `slice::subslice(s, a, b)`, Rust's `s[a..b]`, builds one that owes
+/// `a <= b <= s.len()` where it is evaluated. None has a body; each lowers to
+/// the kernel's slice operation.
+pub(crate) const RUST_SLICE_LEN: &str = "click::rust::slice::len";
+pub(crate) const RUST_SLICE_AS_PTR: &str = "click::rust::slice::as_ptr";
+pub(crate) const RUST_SLICE_FROM_RAW_PARTS: &str = "click::rust::slice::from_raw_parts";
+pub(crate) const RUST_SUBSLICE: &str = "click::rust::slice::subslice";
 
 /// Source expressions shared by declarations, proof claims and raised terms.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -5987,6 +5994,10 @@ struct SpecArrayRef {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecElaborationContext {
     values: PersistentBinderMap<SpecExpression>,
+    /// The slice type of each value binding that names a slice whose value
+    /// states none, a `let` or match binder: its methods resolve by it
+    /// (`design/rust-slice-values.md`).
+    slice_bindings: PersistentBinderMap<crate::kernel::SliceElement>,
     integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentBinderMap<SpecAlgebraicExpression>,
     array_refs: PersistentBinderMap<SpecArrayRef>,
@@ -6022,6 +6033,7 @@ impl Default for SpecElaborationContext {
     fn default() -> Self {
         Self {
             values: PersistentBinderMap::default(),
+            slice_bindings: PersistentBinderMap::default(),
             integer_values: PersistentBinderMap::default(),
             algebraic_values: PersistentBinderMap::default(),
             array_refs: PersistentBinderMap::default(),
@@ -6078,6 +6090,7 @@ impl SpecElaborationContext {
         if self.function_contract {
             return Ok(Self {
                 values: self.values.clone(),
+                slice_bindings: self.slice_bindings.clone(),
                 integer_values: self.integer_values.clone(),
                 algebraic_values: self.algebraic_values.clone(),
                 array_refs: PersistentBinderMap::default(),
@@ -6115,6 +6128,7 @@ impl SpecElaborationContext {
                 .iter()
                 .map(|(name, value)| (name, value.clone()))
                 .collect(),
+            slice_bindings: self.slice_bindings.clone(),
             integer_values: self.integer_values.clone(),
             algebraic_values: self.algebraic_values.clone(),
             array_refs: PersistentBinderMap::default(),

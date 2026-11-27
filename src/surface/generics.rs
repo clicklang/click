@@ -196,6 +196,25 @@ pub(super) fn unify_click_type(
                 substitution,
             )
         }
+        // `Slice<T>` fixes `T` from the slice's element type. A string's
+        // elements are its bytes, so `Str` gives `uint8`.
+        ClickType::Program(InterfaceType::Slice(crate::kernel::SliceElement::Parameter(name)))
+            if allowed.contains(name.name()) =>
+        {
+            let Some(InterfaceType::Slice(element)) = actual.interface_type() else {
+                return Err(format!(
+                    "expected {}, got {}",
+                    validation::describe_click_type(pattern),
+                    validation::describe_click_type(actual)
+                ));
+            };
+            unify_click_type(
+                &ClickType::Parameter(name.name().to_owned()),
+                &slice_element_click_type(element),
+                allowed,
+                substitution,
+            )
+        }
         ClickType::Program(expected) => match actual {
             ClickType::Program(actual)
                 if validation::click_types_compatible(*actual, *expected) =>
@@ -319,6 +338,27 @@ pub(super) fn instantiate_click_type(
                 _ => ClickType::Program(pointer),
             })
         }
+        ClickType::Program(InterfaceType::Slice(crate::kernel::SliceElement::Parameter(name)))
+            if substitution.contains_key(name.name()) =>
+        {
+            let element = substitution
+                .get(name.name())
+                .ok_or_else(|| format!("unresolved slice element type `{}`", name.name()))?;
+            let TypeArgument::Value(element) = element else {
+                return Err(format!(
+                    "a slice's element type must be a scalar, not {}",
+                    element.describe()
+                ));
+            };
+            slice_of_element(element)
+                .map(ClickType::Program)
+                .ok_or_else(|| {
+                    format!(
+                        "a slice's element type must be a scalar, not `{}`",
+                        validation::describe_click_type(element)
+                    )
+                })
+        }
         ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(click_type.clone()),
         ClickType::Integer => Ok(ClickType::Integer),
         ClickType::Algebraic(application) => Ok(ClickType::Algebraic(instantiate_algebraic_type(
@@ -326,6 +366,42 @@ pub(super) fn instantiate_click_type(
             substitution,
         )?)),
     }
+}
+
+/// The Click type of the elements of a slice of `element`: its scalar, or
+/// the enclosing declaration's type parameter. A string's elements are its
+/// bytes.
+pub(in crate::surface) fn slice_element_click_type(
+    element: crate::kernel::SliceElement,
+) -> ClickType {
+    match element {
+        crate::kernel::SliceElement::Parameter(parameter) => {
+            ClickType::Parameter(parameter.name().to_owned())
+        }
+        element => ClickType::Program(
+            interface_type_from_program_type(element.thin_pointer_type())
+                .pointee_type()
+                .expect("a slice's thin part points at its element"),
+        ),
+    }
+}
+
+/// The slice type `Slice<T>` of elements of `element`, a scalar or a type
+/// parameter; `None` for anything else.
+pub(in crate::surface) fn slice_of_element(element: &ClickType) -> Option<InterfaceType> {
+    let thin = match element {
+        ClickType::Parameter(parameter) => {
+            return Some(InterfaceType::Slice(
+                crate::kernel::SliceElement::Parameter(crate::kernel::TypeParameterName::intern(
+                    parameter,
+                )),
+            ));
+        }
+        ClickType::Program(element) => element.pointer_type()?,
+        _ => return None,
+    };
+    crate::kernel::SliceElement::of_thin_pointer_type(thin.to_kernel_type())
+        .map(InterfaceType::Slice)
 }
 
 pub(super) fn instantiate_algebraic_type(
@@ -553,12 +629,7 @@ pub(crate) fn interface_type_from_program_type(interface_type: ProgramType) -> I
         ProgramType::PointerArray(element, length) => {
             InterfaceType::PointerArray(element, LongRank::Long, length)
         }
-        // Only a kernel test builds a slice pointer until the Surface type
-        // arrives (`design/rust-slice-values.md`, step 2b-iii).
-        ProgramType::SlicePointer(_) => unreachable!(
-            "internal error: a slice pointer type has no interface type yet \
-             (design/rust-slice-values.md, step 2b-iii)"
-        ),
+        ProgramType::SlicePointer(element) => InterfaceType::Slice(element),
     }
 }
 
@@ -649,9 +720,11 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource | ClickType::Program(InterfaceType::ParameterPointer(_)) => {
-                syntactic_expression_type(argument, variables)
-            }
+            ClickType::Resource
+            | ClickType::Program(
+                InterfaceType::ParameterPointer(_)
+                | InterfaceType::Slice(crate::kernel::SliceElement::Parameter(_)),
+            ) => syntactic_expression_type(argument, variables),
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
@@ -816,9 +889,11 @@ pub(super) fn instantiate_predicate_for_surface_call(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource | ClickType::Program(InterfaceType::ParameterPointer(_)) => {
-                syntactic_expression_type(argument, variables)
-            }
+            ClickType::Resource
+            | ClickType::Program(
+                InterfaceType::ParameterPointer(_)
+                | InterfaceType::Slice(crate::kernel::SliceElement::Parameter(_)),
+            ) => syntactic_expression_type(argument, variables),
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }

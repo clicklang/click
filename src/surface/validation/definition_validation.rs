@@ -65,6 +65,9 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let mut click_function_types = BinderMap::new();
     for definition in &click_function_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
+        if let ClickType::Program(InterfaceType::Slice(element)) = definition.return_type() {
+            crate::surface::diagnostics::record_slice_result_function(definition.name(), *element);
+        }
         generics::validate_type_parameter_list(
             "function",
             definition.name(),

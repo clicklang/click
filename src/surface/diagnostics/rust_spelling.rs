@@ -52,86 +52,90 @@ thread_local! {
     /// The loop whose phases are being checked, whose iterator a proof
     /// there names bare `iter`.
     static CURRENT_LOOP: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
-    /// For each pure function that takes a slice, the positions in its
-    /// lowered arguments where a slice's pointer is, its length following.
+    /// The pure functions whose result is a slice, with the slice's element
+    /// type: a call's data pointer is `f(x).as_ptr()`.
+    static SLICE_RESULT_FUNCTIONS: std::cell::RefCell<
+        std::collections::BTreeMap<String, crate::kernel::SliceElement>,
+    > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+    /// For each pure function that takes a slice, the positions of its
+    /// slice parameters.
     static PURE_FUNCTION_SLICES: std::cell::RefCell<
         std::collections::BTreeMap<String, std::rc::Rc<[usize]>>,
     > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
-/// Records that the pure function `name` takes slices at the written
-/// parameter positions `written`, so a call prints each slice as one
-/// argument, as it is written.
-pub(crate) fn record_pure_function_slices(name: &str, written: &[usize]) {
-    let lowered: std::rc::Rc<[usize]> = written
-        .iter()
-        .enumerate()
-        .map(|(before, position)| position + before)
-        .collect();
+/// Records that the pure function `name` returns a slice of `element`, so the
+/// data pointer of a call, which the kernel bases on the application
+/// (`design/rust-slice-values.md`, step 2b-iii-b-ii), is spelled
+/// `f(x).as_ptr()` and never as the call, which is the slice.
+pub(crate) fn record_slice_result_function(name: &str, element: crate::kernel::SliceElement) {
+    SLICE_RESULT_FUNCTIONS.with(|slot| {
+        slot.borrow_mut().insert(name.to_string(), element);
+    });
+}
+
+/// The element type of the slice the pure function `name` returns, or of
+/// an instance of it, `f::<uint8>`; `None` for a function that returns no
+/// slice.
+pub(crate) fn slice_result_element(name: &str) -> Option<crate::kernel::SliceElement> {
+    let name = name.split("::<").next().unwrap_or(name);
+    SLICE_RESULT_FUNCTIONS.with(|slot| slot.borrow().get(name).copied())
+}
+
+/// Records that the pure function `name` takes slices at the parameter
+/// positions `positions`, so a call prints a slice parameter's own slice as
+/// the parameter, as it is written.
+pub(crate) fn record_pure_function_slices(name: &str, positions: &[usize]) {
     PURE_FUNCTION_SLICES.with(|slot| {
-        slot.borrow_mut().insert(name.to_string(), lowered);
+        slot.borrow_mut()
+            .insert(name.to_string(), positions.iter().copied().collect());
     });
 }
 
 /// The spelled arguments of a call to the pure function `name`, with each
-/// slice, lowered as its pointer and its length, written as one argument
-/// again: the parameter it is (`bytes`, `old(bytes)`), or
-/// `slice::from_raw_parts(p, n)` for another pointer and length.
+/// slice built from a slice parameter's own pointer and length,
+/// `slice::from_raw_parts(bytes, bytes.len())`, written as that parameter,
+/// `bytes` or `old(bytes)`: the parser reads a slice parameter there as that
+/// slice (`design/rust-slice-values.md`, until step 3).
 pub(crate) fn slice_call_arguments(name: &str, mut arguments: Vec<String>) -> Vec<String> {
     let Some(slices) = PURE_FUNCTION_SLICES.with(|slot| slot.borrow().get(name).cloned()) else {
         return arguments;
     };
-    if !slices.iter().all(|position| position + 1 < arguments.len()) {
-        return arguments;
-    }
-    for &position in slices.iter().rev() {
-        let length = arguments.remove(position + 1);
-        let pointer = &arguments[position];
-        let parameter = pointer
-            .strip_prefix("old(")
-            .or_else(|| {
-                pointer
-                    .strip_prefix("at(")
-                    .and_then(|rest| rest.split_once(", ").map(|(_, inner)| inner))
-            })
-            .and_then(|inner| inner.strip_suffix(')'))
-            .unwrap_or(pointer);
-        if length != format!("{parameter}.len()") {
-            // The parser spreads this back into the same pointer and length.
-            arguments[position] =
-                format!("click::rust::slice::from_raw_parts({pointer}, {length})");
+    for &position in slices.iter() {
+        let Some(argument) = arguments.get_mut(position) else {
+            continue;
+        };
+        let Some((pointer, length)) = argument
+            .strip_prefix("click::rust::slice::from_raw_parts(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .and_then(split_top_level_pair)
+        else {
+            continue;
+        };
+        if let Some((parameter, lengths)) = slice_with_data(pointer)
+            && !pointer.ends_with(".as_ptr()")
+            && lengths.iter().any(|own| own == unparenthesized(length))
+        {
+            *argument = parameter;
         }
     }
     arguments
 }
 
-/// The type a slice constructor is written at, `Slice<u8>` in a function
-/// written in Rust syntax and `Slice<uint8>` elsewhere: a slice standing
-/// alone, `Slice<u8>::Slice(p, n)[1]`, has no context to infer it from.
-pub(crate) fn slice_type_spelling(element: &ProgramType) -> Option<String> {
-    let name = if rust_spelling() {
-        rust_scalar_spelling(element)?
-    } else {
-        crate::surface::printing::machine_integer_type_name(
-            crate::kernel::MachineIntegerType::from_program_type(*element)?,
-        )
-    };
-    Some(format!("Slice<{name}>"))
-}
-
-/// The subslice whose length is `slice::subslice_len(start, end, len)`, as
-/// written: `bytes[a..b]`, `bytes[a..]` or `bytes[..b]`, when `len` is a
-/// slice's own length.
-pub(crate) fn subslice_of_length(start: &str, end: &str, len: &str) -> Option<String> {
-    let slice = unparenthesized(len).strip_suffix(".len()")?;
-    let start = usize_bound(start);
-    let start = if start == "0" { "" } else { start.as_str() };
-    let end = if unparenthesized(end) == unparenthesized(len) {
-        String::new()
-    } else {
-        usize_bound(end)
-    };
-    Some(format!("{slice}[{start}..{end}]"))
+/// `left, right` split at its one top-level comma.
+fn split_top_level_pair(text: &str) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    for (index, character) in text.char_indices() {
+        match character {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => {
+                return Some((&text[..index], text[index + 1..].trim_start()));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The subslice a constructed slice with data `pointer` and length `length`
@@ -386,10 +390,10 @@ pub(super) fn rust_scalar_spelling(interface_type: &ProgramType) -> Option<&'sta
     })
 }
 
-/// A call of the library's slice functions, or its slice constructor, in
-/// the Rust spelling: `x.len()`, `x.as_ptr()`, and
-/// `slice::from_raw_parts(p, n)`. `name` may carry the qualified path and
-/// an instance, `click::rust::slice::len::<uint8>`.
+/// A call of the built-in slice type's operations in the Rust spelling
+/// (`design/rust-slice-values.md`): `x.len()`, `x.as_ptr()`, `x[a..b]` and
+/// `slice::from_raw_parts(p, n)`. `name` may carry the qualified path and an instance,
+/// `click::rust::slice::len::<uint8>`.
 pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<String> {
     // Only a function written in Rust syntax reads Rust's slice methods
     // back; elsewhere the library call is its own spelling.
@@ -401,18 +405,43 @@ pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<St
         .strip_prefix("click::rust::slice::")
         .or_else(|| base.strip_prefix("slice::"))?;
     match (method, arguments) {
-        ("len", [slice]) => Some(format!("{slice}.len()")),
+        ("len", [slice]) => Some(format!("{}.len()", slice_receiver(slice))),
         ("as_ptr", [slice]) => Some(format!("{slice}.as_ptr()")),
-        // A call is spelled as the call it is; its slice is a constructor
-        // only once unfolded.
         ("from_raw_parts", [pointer, length]) => Some(format!(
             "click::rust::slice::from_raw_parts({pointer}, {length})"
         )),
-        // A subslice's length is that subslice's `.len()`: written as
-        // `end - start` it would read as Integer subtraction in a comparison.
-        ("subslice_len", [start, end, len]) => {
-            subslice_of_length(start, end, len).map(|subslice| format!("{subslice}.len()"))
-        }
+        ("subslice", [slice, start, end]) => Some(subslice_of(slice_receiver(slice), start, end)),
         _ => None,
     }
+}
+
+/// A slice spelled `slice` as the receiver of a Rust slice method: a slice
+/// parameter's own slice, `slice::from_raw_parts(bytes, bytes.len())`, is
+/// the parameter, `bytes`, which the parser reads there as that slice
+/// (`design/rust-slice-values.md`, until step 3).
+fn slice_receiver(slice: &str) -> &str {
+    slice
+        .strip_prefix("click::rust::slice::from_raw_parts(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .and_then(split_top_level_pair)
+        .filter(|(pointer, length)| {
+            !pointer.ends_with(".as_ptr()")
+                && slice_with_data(pointer).is_some_and(|(_, lengths)| {
+                    lengths.iter().any(|own| own == unparenthesized(length))
+                })
+        })
+        .map_or(slice, |(pointer, _)| pointer)
+}
+
+/// The subslice `slice[start..end]` as written: a start of `0` and an end of
+/// the slice's own length are left out, `bytes[..2]` and `bytes[1..]`.
+fn subslice_of(slice: &str, start: &str, end: &str) -> String {
+    let start = usize_bound(start);
+    let start = if start == "0" { String::new() } else { start };
+    let end = if unparenthesized(end) == format!("{slice}.len()") {
+        String::new()
+    } else {
+        usize_bound(end)
+    };
+    format!("{slice}[{start}..{end}]")
 }

@@ -711,14 +711,6 @@ mod tests {
         let _ = wide.with_element_count(count(1000107));
     }
 
-    #[test]
-    #[should_panic(expected = "has no form for a wide pointer's metadata yet")]
-    fn thin_only_operations_refuse_a_wide_pointer() {
-        let wide = element_source().with_element_count(count(1000108));
-        complete_source().expect_thin("a thin consumer");
-        wide.expect_thin("a thin consumer");
-    }
-
     /// Substitution and variable collection reach the count term, through
     /// the written view and the kernel rewrite alike.
     #[test]

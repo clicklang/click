@@ -100,15 +100,22 @@ impl EnumTypes {
                                 if let Some(nested) = payload_type(field)? {
                                     return Ok(nested);
                                 }
+                                // The library's `Option` of a shared slice,
+                                // which a chunk iterator's `next()` returns,
+                                // holds that slice, one wide pointer
+                                // (`design/rust-slice-values.md`).
+                                if declared.generic.as_deref() == Some("Option")
+                                    && let Some(slice) = shared_slice_type(field)?
+                                {
+                                    return Ok(AlgebraicValueType::Program(slice));
+                                }
                                 let interface_type = scalar_type(field)?;
                                 // The library's `Option` of a shared
                                 // reference, which a slice iterator's
                                 // `next()` returns, holds that reference.
-                                // So does the library's `Slice`, a shared
-                                // slice's data and length.
-                                let reference_payload =
-                                    matches!(declared.generic.as_deref(), Some("Option" | "Slice"))
-                                        && matches!(field, Type::Reference { mutable: false, .. });
+                                let reference_payload = declared.generic.as_deref()
+                                    == Some("Option")
+                                    && matches!(field, Type::Reference { mutable: false, .. });
                                 if interface_type == InterfaceType::Void
                                     || (interface_type.is_pointer() && !reference_payload)
                                 {
@@ -132,6 +139,9 @@ impl EnumTypes {
                 .map(|argument| {
                     if let Some(nested) = payload_type(argument)? {
                         return Ok(nested);
+                    }
+                    if let Some(slice) = shared_slice_type(argument)? {
+                        return Ok(AlgebraicValueType::Program(slice));
                     }
                     Ok(AlgebraicValueType::Program(
                         scalar_type(argument)?.to_kernel_type(),
@@ -576,6 +586,36 @@ pub(super) fn shared_slice_local(slice: &E) -> Option<&MirLocalId> {
         },
         _ => None,
     }
+}
+
+/// The slice type of a shared slice `&[T]` of a scalar `T`, a wide pointer
+/// (`design/rust-slice-values.md`); `None` for any other type.
+fn shared_slice_type(t: &Type) -> Result<Option<ProgramType>, String> {
+    let slice = match t {
+        Type::ByteSlice { mutable: false } | Type::ScalarSlice { mutable: false, .. } => t,
+        Type::Reference {
+            mutable: false,
+            pointee,
+        } if matches!(
+            pointee.as_ref(),
+            Type::ByteSlice { .. } | Type::ScalarSlice { .. }
+        ) =>
+        {
+            pointee.as_ref()
+        }
+        _ => return Ok(None),
+    };
+    let element = match slice {
+        Type::ScalarSlice { element, .. } => scalar_type(element)?,
+        _ => InterfaceType::UInt8,
+    };
+    let thin = element
+        .pointer_type()
+        .ok_or("a slice's element must be a scalar")?;
+    Ok(
+        crate::kernel::SliceElement::of_thin_pointer_type(thin.to_kernel_type())
+            .map(ProgramType::SlicePointer),
+    )
 }
 
 fn scalar_type(t: &Type) -> Result<InterfaceType, String> {

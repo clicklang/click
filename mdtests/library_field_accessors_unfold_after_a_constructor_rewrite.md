@@ -2,39 +2,34 @@
 
 A library accessor stays a pure-function call when a rewrite replaces its
 symbolic argument with a constructor. The same explicit `unfold` works before
-or after that rewrite, for both the slice length and its pointer field.
-Previously lowering reduced a library accessor on a constructor to its field,
-but rewriting retained the call; the subsequent `unfold` only added `true`.
+or after that rewrite. Previously lowering reduced a library accessor on a
+constructor to its field, but rewriting retained the call; the subsequent
+`unfold` only added `true`.
 
 ```click
-import click::rust::slice;
+import click::rust::option;
 
-theorem slice_fields_after_rewrite(s: Slice<uint8>, p: uint8*, n: uint64) {
-    requires s == Slice<uint8>::Slice(p, n);
-    ensures slice::len(s) == n by {
-        rewrite(s, Slice<uint8>::Slice(p, n));
-        unfold(slice::len(Slice<uint8>::Slice(p, n)));
+theorem payload_after_rewrite(o: Option<uint64>, m: uint64, d: uint64) {
+    requires o == Option<uint64>::Some(m);
+    ensures option::unwrap_or(o, d) == m by {
+        rewrite(o, Option<uint64>::Some(m));
+        unfold(option::unwrap_or(Option<uint64>::Some(m), d));
         close();
     }
-    ensures slice::as_ptr(s) == p by {
-        rewrite(s, Slice<uint8>::Slice(p, n));
-        unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
-        close();
-    }
-    ensures slice::len(s) == n by {
-        unfold(slice::len(s));
-        rewrite(s, Slice<uint8>::Slice(p, n));
+    ensures option::unwrap_or(o, d) == m by {
+        unfold(option::unwrap_or(o, d));
+        rewrite(o, Option<uint64>::Some(m));
         close();
     }
 }
 
-theorem direct_slice_fields(p: uint8*, n: uint64) {
-    ensures slice::len(Slice<uint8>::Slice(p, n)) == n by {
-        unfold(slice::len(Slice<uint8>::Slice(p, n)));
+theorem direct_payload(m: uint64, d: uint64) {
+    ensures option::unwrap_or(Option<uint64>::Some(m), d) == m by {
+        unfold(option::unwrap_or(Option<uint64>::Some(m), d));
         close();
     }
-    ensures slice::as_ptr(Slice<uint8>::Slice(p, n)) == p by {
-        unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
+    ensures option::unwrap_or(Option<uint64>::None, d) == d by {
+        unfold(option::unwrap_or(Option<uint64>::None, d));
         close();
     }
 }

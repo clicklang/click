@@ -10370,25 +10370,70 @@ fn guarded_algebraic_matches_on_written_constructors_round_trip() {
     }
 }
 
-/// A slice application's count has no Surface form until the Surface slice
-/// type arrives (`design/rust-slice-values.md`, step 2b-iii-c): raising it
-/// refuses with an internal error rather than spelling an integer
-/// application of the same name or any placeholder.
+/// A slice application's count raises as `f(x).len()` of the application
+/// that names it (`design/rust-slice-values.md`, step 2b-iii-c-ii), never
+/// as an integer application of the same name or any placeholder; the
+/// slice itself raises as the application.
 #[test]
-#[should_panic(expected = "raising a slice application's count to Surface has no form yet")]
-fn raising_a_slice_application_count_refuses() {
+fn a_slice_application_and_its_count_raise_from_the_application() {
     let _session = crate::kernel::VerificationSession::enter();
-    let count =
-        OldMachineTerm::pure_application_count(crate::kernel::SharedPureApplication::intern(
-            "bytes_of".into(),
-            vec![crate::kernel::PureFunctionArgument::Value(
-                ProgramValue::Int32(OldMachineTerm::Variable(Variable(977_990))),
-            )],
-        ));
-    let _ = synthesize_surface_bitvector(
-        &count,
+    let application = crate::kernel::SharedPureApplication::intern(
+        "bytes_of".into(),
+        vec![crate::kernel::PureFunctionArgument::Value(
+            ProgramValue::Int32(OldMachineTerm::constant(3)),
+        )],
+    );
+    let count = synthesize_surface_bitvector(
+        &OldMachineTerm::pure_application_count(application.clone()),
         ParameterBinding::default(),
         &ExecutionState::new(),
         &BTreeMap::new(),
     );
+    let Some(SyntaxTerm::Call { name, arguments }) = count else {
+        panic!("a slice application's count raises as a call: {count:?}");
+    };
+    assert_eq!(name, crate::surface::RUST_SLICE_LEN);
+    let [SyntaxTerm::Call { name: slice, .. }] = arguments.as_slice() else {
+        panic!("`len` reads the application: {arguments:?}");
+    };
+    assert_eq!(slice, "bytes_of");
+    let value = crate::kernel::pure_slice_application_value(
+        &application,
+        crate::kernel::SliceElement::UInt8,
+        ProgramType::SlicePointer(crate::kernel::SliceElement::UInt8),
+    );
+    let raised = slices::raise_slice(
+        &value,
+        ParameterBinding::default(),
+        &ExecutionState::new(),
+        &BTreeMap::new(),
+    );
+    assert!(
+        matches!(&raised, Some(SyntaxTerm::Call { name, .. }) if name == "bytes_of"),
+        "{raised:?}"
+    );
+}
+
+/// A slice no one value names raises as its construction,
+/// `slice::from_raw_parts(p, n)`, of its spelled components.
+#[test]
+fn an_unnamed_slice_raises_as_its_construction() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ProgramValue::Pointer(data) =
+        ProgramValue::typed_pointer(crate::kernel::Address::null(), ProgramType::UInt8Pointer)
+    else {
+        unreachable!("a typed pointer is a pointer")
+    };
+    let slice = data.with_element_count(OldMachineTerm::uint64_constant(4));
+    let raised = slices::raise_slice(
+        &slice,
+        ParameterBinding::default(),
+        &ExecutionState::new(),
+        &BTreeMap::new(),
+    );
+    let Some(SyntaxTerm::Call { name, arguments }) = raised else {
+        panic!("an unnamed slice raises as a call: {raised:?}");
+    };
+    assert_eq!(name, crate::surface::RUST_SLICE_FROM_RAW_PARTS);
+    assert_eq!(arguments.len(), 2);
 }

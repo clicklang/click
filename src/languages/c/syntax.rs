@@ -2263,6 +2263,8 @@ impl CAbi {
             (Self::Lp64, InterfaceType::PointerArray(_, _, length)) => {
                 (length.saturating_mul(8), 8)
             }
+            // A slice is a wide pointer: its data pointer and its length.
+            (Self::Lp64, InterfaceType::Slice(_)) => (16, 8),
         }
     }
 }
@@ -3982,7 +3984,8 @@ impl InterfaceType {
             | Self::Int32Pointer
             | Self::Int32PointerPointer
             | Self::FunctionPointer(_)
-            | Self::PointerArray(..) => None,
+            | Self::PointerArray(..)
+            | Self::Slice(_) => None,
         }
     }
 
@@ -11050,6 +11053,9 @@ impl Parser {
                 }
                 InterfaceType::PointerArray(_, _, _) => {
                     return Err(self.error_at_previous("pointer-to-array types are not supported"));
+                }
+                InterfaceType::Slice(_) => {
+                    return Err(self.error_at_previous("pointers to a slice are not supported"));
                 }
                 InterfaceType::Int32Array(_)
                 | InterfaceType::CharArray(_, _)

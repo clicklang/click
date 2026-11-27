@@ -282,6 +282,11 @@ pub enum InterfaceType {
     /// long` rank of a 64-bit integer pointee, which [`LongRank`] keeps (and
     /// is [`LongRank::Long`] for every other element).
     PointerArray(crate::kernel::PointerArrayElement, LongRank, u32),
+    /// A Rust slice, `Slice<T>` (`&[T]`) or `Str` (`&str`): one wide
+    /// pointer, its data pointer and its element count
+    /// (`design/rust-slice-values.md`); its kernel type is
+    /// `ProgramType::SlicePointer`.
+    Slice(crate::kernel::SliceElement),
 }
 
 /// The nominal part of a callback signature that the kernel's structural
@@ -2083,6 +2088,9 @@ impl InterfaceType {
             Self::Float32Pointer | Self::Float32Array(_) => Some(Self::Float32),
             Self::Float64Pointer | Self::Float64Array(_) => Some(Self::Float64),
             Self::PointerArray(element, rank, _) => Some(pointer_array_element_type(element, rank)),
+            // A slice is no thin pointer: its element is read through its
+            // data pointer, `s.as_ptr()`.
+            Self::Slice(_) => None,
             Self::Int8PointerPointer => Some(Self::Int8Pointer),
             Self::Int16PointerPointer => Some(Self::Int16Pointer),
             Self::UInt16PointerPointer => Some(Self::UInt16Pointer),
@@ -2177,7 +2185,7 @@ impl InterfaceType {
             | Self::UInt64Array(_, _)
             | Self::Float32Array(_)
             | Self::Float64Array(_) => return None,
-            Self::PointerArray(_, _, _) => return None,
+            Self::PointerArray(_, _, _) | Self::Slice(_) => return None,
         })
     }
 
@@ -2269,6 +2277,7 @@ impl InterfaceType {
             Self::PointerArray(element, _, length) => {
                 crate::kernel::ProgramType::PointerArray(element, length)
             }
+            Self::Slice(element) => crate::kernel::ProgramType::SlicePointer(element),
         }
     }
 }

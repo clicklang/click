@@ -15,7 +15,7 @@ const SIZES: &str = "
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
+fn a_pure_function_slice_parameter_is_one_slice() {
     // A caller with no slice in scope builds one from the pointer and the
     // length; the slice is still one argument.
     prove(&format!(
@@ -61,10 +61,12 @@ fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
         .iter()
         .map(|parameter| parameter.name())
         .collect::<Vec<_>>();
-    assert_eq!(parameters, ["bytes", "bytes.len()", "bytes_len"]);
+    // The slice is one parameter of the built-in slice type
+    // (`design/rust-slice-values.md`), not its pointer and its length.
+    assert_eq!(parameters, ["bytes", "bytes_len"]);
     assert_eq!(
-        both.parameters()[1].binding_name(),
-        crate::kernel::BindingName::slice_length("bytes"),
+        both.parameters()[0].click_type(),
+        &ClickType::Program(InterfaceType::Slice(crate::kernel::SliceElement::UInt8)),
     );
 }
 

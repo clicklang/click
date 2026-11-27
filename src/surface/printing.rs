@@ -1677,9 +1677,9 @@ fn format_theorem_application(application: &TheoremApplication) -> String {
 }
 
 fn format_click_function_application(application: &ClickFunctionApplication) -> String {
-    // Each slice is one written argument, as the call is read: the parsed
-    // call holds a slice parameter's pointer and length separately. The
-    // application itself stays a call, which `unfold` names.
+    // Each slice is one written argument, as the call is read: a slice
+    // parameter's own slice is written as the parameter. The application
+    // itself stays a call, which `unfold` names.
     let arguments = crate::surface::diagnostics::slice_call_arguments(
         &application.name,
         application

@@ -308,6 +308,10 @@ pub(super) struct NameTable {
     pub(super) aggregate_objects: BTreeMap<String, String>,
     pub(super) global_array_shapes: BTreeMap<String, GlobalArrayShape>,
     pub(super) algebraic_params: BTreeMap<String, (AlgebraicTypeApplication, usize)>,
+    /// The parameters of the declaration being parsed whose type is the
+    /// built-in slice type (`design/rust-slice-values.md`): each is one
+    /// value whose methods, `s.len()` and `s[i]`, resolve by that type.
+    pub(super) slice_value_params: BTreeSet<String>,
     /// The C names (parameters, locals and file-scope objects) visible to the
     /// C function block being parsed. `true` and `false` are specification
     /// literals unless one of these names spells them.

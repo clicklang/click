@@ -134,6 +134,16 @@ impl Declarations<'_> {
             })
     }
 
+    /// Whether `name` is a Rust slice parameter, a pointer and the length
+    /// beside it (`design/rust-slice-values.md`, until step 3).
+    pub(super) fn is_rust_slice_parameter(&self, name: &str) -> bool {
+        let length = crate::kernel::BindingName::slice_length(name);
+        length
+            .metadata_in(self.program_parameter_types.as_ref())
+            .is_some()
+            || length.metadata_in(self.entry_values.as_ref()).is_some()
+    }
+
     /// The declared C type of a parameter or local named in a clause, from
     /// its typed entry value or the live declaration state.
     pub(super) fn c_variable_type(
