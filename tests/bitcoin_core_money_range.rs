@@ -3897,6 +3897,10 @@ uint8 probe(const std::vector<unsigned char>& bytes) {
     ensures state.data == backing.data;
 } by {
     unfold(backing);
+    step_until(call(read_first, 0).entry);
+    have std_span_data(view) == old(backing.data) by close();
+    have std_span_size(view) == old(backing.length) by close();
+    step();
     step_until(function.exit);
     fold(backing);
 }
@@ -3936,7 +3940,7 @@ uint8 probe(const std::vector<unsigned char>& bytes) {
             .unwrap_err()
             .report();
         assert!(
-            report.contains("read_first") && report.contains("required borrow backing"),
+            report.contains("read_first") && report.contains("cannot supply `views view[0]`"),
             "{report}"
         );
     }

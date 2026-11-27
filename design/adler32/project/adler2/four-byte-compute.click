@@ -43,7 +43,13 @@ impl adler2::Adler32 {
      have loop(2).iter.v == old(bytes);
      step_until(loop(2).statement(0).entry);
      have loop(2).iter.v.len() == 0u64 by { close(); }
-     have loop(2).iter.v == old(bytes) + 4u64 by { close(); }
+     have loop(2).iter.v == old(bytes) + 4u64 by {
+      have loop(2).iter.v == byte_offset(at(loop(2).entry, loop(2).iter.v), 4) by close();
+      have at(loop(2).entry, loop(2).iter.v) == old(bytes) by close();
+      rewrite(loop(2).iter.v, byte_offset(at(loop(2).entry, loop(2).iter.v), 4));
+      rewrite(at(loop(2).entry, loop(2).iter.v), old(bytes));
+      close() using {};
+     }
      // Record the constructor's lane values before they are copied into val.
      step_until(statement(10).statement(0).call(0).entry);
      have byte_vec == old(bytes) by close();
