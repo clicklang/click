@@ -759,7 +759,7 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
         }),
         Resource::ConditionalMutexGuard(carrier) => {
             let mut mapped = (**carrier).clone();
-            mapped.held = s.condition(carrier.condition()).into();
+            mapped.held = s.stored_condition(&carrier.held);
             Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
         }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
@@ -1879,6 +1879,96 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
 #[cfg(test)]
 mod resource_frame_substitution_tests {
     use super::*;
+
+    #[test]
+    fn pointer_substitution_in_condition_terms_preserves_each_declaration() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(10998570);
+        let root = KernelTerm::address_equal_raw([
+            Address::symbolic(from).into_shared(),
+            Address::symbolic(Variable(10998571)).into_shared(),
+        ]);
+        let term = Term::Condition(StoredConditionTerm::from_root(root.clone()).unwrap());
+        let declarations = [
+            ("first", ProgramType::Int32),
+            ("second", ProgramType::Int64),
+        ];
+        let results = declarations.map(|(name, ty)| {
+            let owner = LocalFunctionId::new(None, "condition_term_pointer_substitution".into());
+            owner.record_declaration_spelling(name, false);
+            let binding = LocalBindingId::new(owner, false, 0, Some(name.into()));
+            binding.initialize_program_type(ty);
+            let address = Address::new(
+                AddressBase::AutomaticLocal {
+                    binding,
+                    instance: LocalStorageInstance::Implicit,
+                },
+                AddressOffset::constant(0),
+            );
+            substitute_pointer_variable_in_term(&term, from, &address)
+        });
+        for (result, (name, ty)) in results.iter().zip(declarations) {
+            let Term::Condition(condition) = result else {
+                panic!("expected condition")
+            };
+            let KernelTermNode::AddressEqual { arguments, .. } = condition.root().unwrap().node()
+            else {
+                panic!("expected address equality")
+            };
+            let AddressBase::AutomaticLocal { binding, .. } = arguments[0].atom() else {
+                panic!("expected automatic local")
+            };
+            assert_eq!(binding.spelling(), Some(name));
+            assert_eq!(binding.program_type(), Some(ty));
+        }
+        assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn condition_terms_and_mutex_guards_rewrite_the_same_stored_operand() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(10998561);
+        let to = Variable(10998562);
+        let word = |var| KernelTerm::variable(KernelType::Program(ProgramType::Int32), var);
+        let comparison = |var| {
+            KernelTerm::boolean_comparison_raw(
+                MachineIntegerType::Int32,
+                CompareRelation::Equal,
+                [word(var), KernelTerm::int32_literal(7)],
+            )
+        };
+        let root = comparison(from);
+        let held = StoredConditionTerm::from_root(root.clone()).unwrap();
+        let mutex = MutexIdentity {
+            mutex: Address::symbolic(from),
+            epoch: Some(99),
+        };
+        let guard = ConditionalMutexGuard {
+            identity: InstanceId::from_variable(Variable(10998563)),
+            guard: mutex.clone(),
+            initialization: mutex,
+            held: held.clone(),
+        };
+        let replacement = OldMachineTerm::Variable(to);
+        let Term::Condition(term) =
+            substitute_bitvector_variable_in_term(&Term::Condition(held), from, &replacement)
+        else {
+            panic!("expected a condition term")
+        };
+        let Resource::ConditionalMutexGuard(mapped) = substitute_bitvector_variable_in_resource(
+            &Resource::ConditionalMutexGuard(std::sync::Arc::new(guard.clone())),
+            from,
+            &replacement,
+        ) else {
+            panic!("expected a conditional guard")
+        };
+        assert_eq!(term.root(), Some(&comparison(to)));
+        assert_eq!(mapped.held.root(), term.root());
+        assert_eq!(mapped.guard, guard.guard);
+        assert_eq!(mapped.initialization, guard.initialization);
+        assert_eq!(mapped.identity, guard.identity);
+        assert!(!root.has_cached_native_argument());
+    }
 
     #[test]
     fn guard_substitution_renames_abstract_authority_but_preserves_concrete_acquisition() {
@@ -3727,9 +3817,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
     to: &OldMachineTerm,
 ) -> Term {
     match term {
-        Term::Condition(condition) => Term::Condition(
-            substitute_bitvector_variable_in_condition(condition.old_form(), from, to).into(),
-        ),
+        Term::Condition(condition) => {
+            Term::Condition(BitvectorSubstitution::new(from, to).stored_condition(condition))
+        }
         Term::Bitvector32(bits) => {
             Term::Bitvector32(bits.map_native(|word| substitute_bitvector_variable(word, from, to)))
         }
@@ -7010,9 +7100,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_value(
 
 fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address) -> Term {
     match term {
-        Term::Condition(condition) => Term::Condition(
-            substitute_pointer_variable_in_condition(condition.old_form(), from, to).into(),
-        ),
+        Term::Condition(condition) => {
+            Term::Condition(PointerSubstitution { from, to }.stored_condition(condition))
+        }
         Term::Integer(_) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .term(term)

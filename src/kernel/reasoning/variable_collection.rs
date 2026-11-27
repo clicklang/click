@@ -733,11 +733,7 @@ fn collect_proposition_bitvector_variables_one(
             collect_sequence_bitvector_variables(sequence, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            retained_folds::collect_boolean_variables(
-                condition.operand_view(),
-                retained_folds::FoldVariableRead::ExpressionFree,
-                variables,
-            );
+            collect_stored_condition_bitvector_variables(condition, variables);
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -896,7 +892,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
 ) {
     match term {
         Term::Condition(condition) => {
-            collect_condition_bitvector_variables(condition.old_form(), variables)
+            collect_stored_condition_bitvector_variables(condition, variables)
         }
         Term::Bitvector32(bits) => collect_bitvector_variables(bits.old_form(), variables),
         Term::Integer(integer) => {
@@ -1910,7 +1906,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             }
         }
         Resource::ConditionalMutexGuard(carrier) => {
-            collect_condition_bitvector_variables(carrier.condition(), variables)
+            collect_stored_condition_bitvector_variables(&carrier.held, variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -2394,6 +2390,17 @@ pub(in crate::kernel) fn collect_condition_index_variables(
     let _scope = ConditionStateDeferral(prior);
     collect_condition_bitvector_variables(condition, variables);
     DEFER_CONDITION_STATES.with(|state| state.get() == Some(true))
+}
+
+fn collect_stored_condition_bitvector_variables(
+    condition: &StoredConditionTerm,
+    variables: &mut BTreeSet<Variable>,
+) {
+    retained_folds::collect_boolean_variables(
+        condition.operand_view(),
+        retained_folds::FoldVariableRead::ExpressionFree,
+        variables,
+    );
 }
 
 pub(crate) fn collect_condition_bitvector_variables(
