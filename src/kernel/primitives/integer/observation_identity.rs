@@ -235,13 +235,17 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                         normalize,
                     )),
                 ),
-                KernelTermNode::AddressEqual { arguments } => {
-                    KernelTerm::address_equal_raw(arguments.each_ref().map(|address| {
+                KernelTermNode::AddressEqual { arguments, .. } => {
+                    let arguments = arguments.each_ref().map(|address| {
                         crate::kernel::SharedAddress::new(
                             address.block().observation(),
                             normalize_offset(address.offset()),
                         )
-                    }))
+                    });
+                    KernelTerm::intern(KernelType::Bool, KernelTermNode::AddressEqual {
+                        arguments,
+                        block_payloads: [None; 2],
+                    })
                 }
                 KernelTermNode::AddressOffsetEqual { arguments } => {
                     KernelTerm::address_offset_equal_raw(arguments.each_ref().map(normalize_offset))

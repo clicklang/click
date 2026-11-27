@@ -6774,7 +6774,7 @@ pub(in crate::kernel) fn transport_framed_common_condition(
                 },
             )
         }
-        Node::AddressEqual { arguments } => Some(crate::kernel::KernelTerm::address_equal(
+        Node::AddressEqual { arguments, .. } => Some(crate::kernel::KernelTerm::address_equal(
             shared_pointer_transport::transport_addresses(arguments, after, assumptions)?,
         )),
         Node::AddressOffsetEqual { arguments } => {

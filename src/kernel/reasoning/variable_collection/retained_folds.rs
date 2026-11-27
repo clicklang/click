@@ -334,7 +334,7 @@ pub(super) fn common_variables(
                     }
                 }
             }
-            KernelTermNode::AddressEqual { arguments } => {
+            KernelTermNode::AddressEqual { arguments, .. } => {
                 for address in arguments {
                     super::retained_pointers::collect_address_variables_with_summaries(
                         address,

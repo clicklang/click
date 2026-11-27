@@ -943,6 +943,22 @@ impl Hash for SliceLengthBinding {
     }
 }
 
+impl AddressBase {
+    /// Allocation carrying a declaration's metadata or a load's point and
+    /// cell. The process-wide term store can outlive either producer.
+    pub(super) fn block_payload(&self) -> Option<std::num::NonZeroUsize> {
+        let pointer = match self {
+            Self::Load(load) | Self::SliceData(load) => return Some(load.payload_id()),
+            Self::AutomaticLocal { binding, .. } => Arc::as_ptr(&binding.0).cast::<()>(),
+            Self::StaticObject { binding } => Arc::as_ptr(&binding.0).cast(),
+            Self::SliceLength { slice, .. } => Arc::as_ptr(&slice.0).cast(),
+            Self::ReferenceCarrier { referent, .. } => Arc::as_ptr(referent).cast(),
+            _ => return None,
+        };
+        std::num::NonZeroUsize::new(pointer.addr())
+    }
+}
+
 impl BindingName {
     pub(crate) fn slice_length(slice: &str) -> Self {
         Self::slice_length_binding(SliceLengthOwner::Parameter(Arc::from(slice)), slice, false)

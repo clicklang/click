@@ -5738,7 +5738,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     b.map_condition_addresses(&mut map_address, b_count)?,
                 ]));
             }
-            if let crate::kernel::KernelTermNode::AddressEqual { arguments } = leaf.node() {
+            if let crate::kernel::KernelTermNode::AddressEqual { arguments, .. } = leaf.node() {
                 return Ok(KernelTerm::address_equal([
                     map_address(&arguments[0])?,
                     map_address(&arguments[1])?,
@@ -5768,7 +5768,7 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
             condition, from, to,
         );
     }
-    if let crate::kernel::KernelTermNode::AddressEqual { arguments } = condition.node() {
+    if let crate::kernel::KernelTermNode::AddressEqual { arguments, .. } = condition.node() {
         use crate::kernel::{SharedAddress as A, SharedAddressOffset as S};
         let mut mapped = Vec::with_capacity(2);
         for address in arguments {

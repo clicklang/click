@@ -3,7 +3,14 @@ use super::*;
 
 impl KernelTerm {
     pub(crate) fn address_equal_raw(arguments: [SharedAddress; 2]) -> Self {
-        Self::intern(KernelType::Bool, KernelTermNode::AddressEqual { arguments })
+        let block_payloads = arguments.each_ref().map(|a| a.atom().block_payload());
+        Self::intern(
+            KernelType::Bool,
+            KernelTermNode::AddressEqual {
+                arguments,
+                block_payloads,
+            },
+        )
     }
 
     pub(crate) fn address_equal(arguments: [SharedAddress; 2]) -> Self {

@@ -260,7 +260,7 @@ impl<'a> BooleanOperandView<'a> {
 
     pub(crate) fn pointer_addresses(self) -> Option<[SharedAddress; 2]> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::AddressEqual { arguments } = root.node()
+            && let KernelTermNode::AddressEqual { arguments, .. } = root.node()
         {
             return Some(arguments.clone());
         }
@@ -572,9 +572,9 @@ impl KernelTermImport {
             Old::PointerEqual(a, b) => {
                 return KernelTerm::pointer_equal_raw([a.shared().clone(), b.shared().clone()]);
             }
-            Old::AddressEqual(a, b) => Node::AddressEqual {
-                arguments: [a.shared().clone(), b.shared().clone()],
-            },
+            Old::AddressEqual(a, b) => {
+                return KernelTerm::address_equal_raw([a.shared().clone(), b.shared().clone()]);
+            }
             Old::AddressOffsetEqual(a, b) => Node::AddressOffsetEqual {
                 arguments: [a.shared().clone(), b.shared().clone()],
             },
@@ -659,9 +659,9 @@ impl KernelTermExport {
                 let [a, b] = pair.arguments();
                 Old::PointerEqual(Box::new(a.export()?), Box::new(b.export()?))
             }
-            Node::AddressEqual { arguments: [a, b] } => {
-                Old::AddressEqual(Box::new(a.export()?), Box::new(b.export()?))
-            }
+            Node::AddressEqual {
+                arguments: [a, b], ..
+            } => Old::AddressEqual(Box::new(a.export()?), Box::new(b.export()?)),
             Node::AddressOffsetEqual { arguments: [a, b] } => Old::AddressOffsetEqual(
                 Box::new(AddressOffset::try_from_shared(a.clone())?),
                 Box::new(AddressOffset::try_from_shared(b.clone())?),

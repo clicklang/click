@@ -311,8 +311,13 @@ impl EqualityGraph {
                 _ => None,
             };
             if let Some((left, right)) = pair {
+                let equality = crate::kernel::KernelTerm::address_equal([
+                    left.shared().clone(),
+                    right.shared().clone(),
+                ]);
                 equalities.push(crate::kernel::Proposition::condition_is(
-                    crate::kernel::OldConditionTerm::address_equal(left.clone(), right.clone()),
+                    crate::kernel::StoredConditionTerm::from_root(equality)
+                        .expect("address equality"),
                     true,
                 ));
             }
