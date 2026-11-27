@@ -2566,7 +2566,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
     owning_source_index: usize,
     claim_label: &str,
     leaves: &mut Vec<Proof<'a>>,
-    refuted_match_paths: &mut Vec<(ExecutionProofState, ProofCertificate)>,
+    refuted_case_paths: &mut Vec<(ExecutionProofState, ProofCertificate)>,
     unfinished: &mut Vec<UnfinishedPreservationPath<'a>>,
     mut last_tactic: Option<(usize, &'static str)>,
 ) -> Result<Proof<'a>, ClickError> {
@@ -2682,7 +2682,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     owning_source_index,
                     claim_label,
                     leaves,
-                    refuted_match_paths,
+                    refuted_case_paths,
                     unfinished,
                     0,
                     Some((*index, "match")),
@@ -2785,15 +2785,13 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     };
                     if let Some(step) = refutation {
                         let execution = proof.execution_view()?.execution.clone();
-                        let inside_match = execution
-                            .presentation
-                            .case_assumptions
-                            .iter()
-                            .any(|choice| choice.match_arm.is_some());
+                        // A surviving sibling can depend on its case assumption.
+                        // Keep the refuted arm's proof so expansion can replay the split.
+                        let inside_case = !execution.presentation.case_assumptions.is_empty();
                         let proof = proof.start_source_tactic(indexed.source_index)?;
                         let proof = proof.driver().apply_step_at(step, indexed.source_index)?;
-                        if inside_match {
-                            refuted_match_paths.push((execution, proof.path_certificate()?));
+                        if inside_case {
+                            refuted_case_paths.push((execution, proof.path_certificate()?));
                         }
                         return Ok(proof);
                     }
@@ -3078,7 +3076,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                         owning_source_index,
                         claim_label,
                         leaves,
-                        refuted_match_paths,
+                        refuted_case_paths,
                         unfinished,
                         Some((*index, "if")),
                     )?;
@@ -3404,7 +3402,7 @@ fn advance_preservation_match_group<'a>(
     owning_source_index: usize,
     claim_label: &str,
     leaves: &mut Vec<Proof<'a>>,
-    refuted_match_paths: &mut Vec<(ExecutionProofState, ProofCertificate)>,
+    refuted_case_paths: &mut Vec<(ExecutionProofState, ProofCertificate)>,
     unfinished: &mut Vec<UnfinishedPreservationPath<'a>>,
     split_depth: usize,
     last_tactic: Option<(usize, &'static str)>,
@@ -3435,7 +3433,7 @@ fn advance_preservation_match_group<'a>(
                 owning_source_index,
                 claim_label,
                 leaves,
-                refuted_match_paths,
+                refuted_case_paths,
                 unfinished,
                 split_depth + 1,
                 last_tactic,
@@ -3462,7 +3460,7 @@ fn advance_preservation_match_group<'a>(
         owning_source_index,
         claim_label,
         leaves,
-        refuted_match_paths,
+        refuted_case_paths,
         unfinished,
         last_tactic,
     )

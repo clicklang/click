@@ -34,6 +34,58 @@ fn expanded_addition_and_subtraction_preserve_association() {
 }
 
 #[test]
+fn loop_expansion_retains_refuted_proof_if_arm() {
+    let c = r#"
+int32 count(int32 n, uint64 y) {
+    while (n > 0) {
+        n--;
+    }
+    return n;
+}
+"#;
+    let source = r#"
+verifying "count.c";
+
+theorem positive(y: uint64) {
+    requires 0u64 < y;
+    ensures 0u64 < y by close();
+}
+
+int32 count(int32 n, uint64 y) {
+    requires 0 <= n;
+    requires 1u64 <= y;
+    ensures result == 0;
+} by {
+    loop {
+        decreases to_integer(n);
+        invariant 0 <= n;
+        invariant 1u64 <= y;
+        maintain by {
+            if 0u64 < y {
+                apply(positive(y));
+                step_until(loop(0).back_edge);
+            } else {
+                have 0u64 < y by close() using { 1u64 <= y; };
+                close();
+            }
+        }
+    }
+    step_until(function.exit);
+    close();
+}
+"#;
+    let sources = [("count.c", c)];
+    let claim = "count.contract";
+    verify_c_sources(source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
 fn nested_loop_range_bound_replays_after_theorem_application() {
     let c = r#"
 void check_span(unsigned char *p, unsigned long len) {
