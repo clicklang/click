@@ -264,6 +264,9 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::LoopEntryState(_)
             | SpecExpression::Cast(..)
             | SpecExpression::PointerCoercion(..)
+            | SpecExpression::SliceLength(_)
+            | SpecExpression::SliceData(_)
+            | SpecExpression::SliceFromRawParts { .. }
             | SpecExpression::If { .. }
             | SpecExpression::Requires { .. }
             | SpecExpression::Let { .. }
@@ -387,6 +390,9 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::NarrowArithmetic(..)
             | SpecExpression::Cast(..)
             | SpecExpression::PointerCoercion(..)
+            | SpecExpression::SliceLength(_)
+            | SpecExpression::SliceData(_)
+            | SpecExpression::SliceFromRawParts { .. }
             | SpecExpression::If { .. }
             | SpecExpression::Requires { .. }
             | SpecExpression::Let { .. }

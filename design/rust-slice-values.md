@@ -1,14 +1,15 @@
 # Rust slices as wide pointers
 
 Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
-2a, 2b-i, 2b-ii-a, 2b-ii-b, 2b-iii-a, 2b-iii-b-i and 2b-iii-b-ii of the
-[plan](#plan) are done: the kernel has the wide pointer and its slice
-pointer type, every kernel consumer reads or refuses its count, a slice is
-stored and read back as one memory cell, a symbolic read of a slice cell
-names its data pointer and count, a slice named by one variable, such as a
-call's result or a binder, names its count from that variable, and a
-slice-valued pure application names its count from the application, but no
-front end produces a wide pointer yet.
+2a, 2b-i, 2b-ii-a, 2b-ii-b, 2b-iii-a, 2b-iii-b-i, 2b-iii-b-ii and
+2b-iii-c-i of the [plan](#plan) are done: the kernel has the wide pointer
+and its slice pointer type, every kernel consumer reads or refuses its
+count, a slice is stored and read back as one memory cell, a symbolic read
+of a slice cell names its data pointer and count, a slice named by one
+variable, such as a call's result or a binder, names its count from that
+variable, a slice-valued pure application names its count from the
+application, and the spec language reads a slice's components and builds
+one from raw parts, but no front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -650,7 +651,36 @@ construct.
      `interning_application_counts_grows_linearly`. The equality-rewrite
      atom index (`bitvector_equality_atom_key`) files a count by its
      application's identity.
-   - **2b-iii-c. Surface slice type and raising.** `spec enum Slice<T>`
+   - **2b-iii-c. Spec operations, Surface slice type and raising**, in
+     two parts: the kernel's spec operations on slices, which `s.len()`,
+     `s.as_ptr()`, `slice::from_raw_parts(p, n)` and `s[a..b]` lower to,
+     then the Surface type with its raising, which replaces the enum. The
+     second cannot split further: raising needs a Surface spelling that
+     lowers back to the wide pointer, which is the enum's spelling until the
+     enum goes, and removing the enum without raising leaves every
+     expansion and diagnostic of a slice on an internal error.
+   - **2b-iii-c-i. Spec slice operations.** Done. Kernel only.
+     `SpecExpression::SliceLength(s)` and `SpecExpression::SliceData(s)`
+     read the count and the thin part of the wide pointer `s` evaluates to
+     (`Pointer::len`, `Pointer::as_ptr`), in place, with no unfold and no
+     fact read; a thin or non-pointer operand is a `TypeMismatch`.
+     `SpecExpression::SliceFromRawParts { data, count }` evaluates its
+     operands in order, as a binary operator does, and builds
+     `data.with_element_count(count)` directly; it owes nothing and adds no
+     fact. A wide `data` is refused with `ThinPointerRequired` (naming
+     `slice::from_raw_parts` and `.as_ptr()`); a thin pointer no slice has,
+     such as `void *`, or a count that is not a `u64` is a `TypeMismatch`.
+     So `from_raw_parts(p, n).len()` is `n` itself and every slice `s`
+     evaluates equal to `from_raw_parts(s.as_ptr(), s.len())` (requirement
+     7's eta) by construction. The spec walks, the rewrite, pointer-variable
+     substitution, the contract interface identity, `defined(...)` (whose
+     operands are the slice and the data and count) and the termination and
+     refinement read classifications treat the three as pure operations of
+     their operands; the generated spec trees of the walk oracle tests
+     include them. Tests: `kernel::spec::slice_operation_tests`; scaling
+     tests `slice_component_reads_ignore_unrelated_facts` and
+     `nested_slice_rebuilds_grow_linearly`.
+   - **2b-iii-c-ii. Surface slice type and raising.** `spec enum Slice<T>`
      is removed in the same step as the built-in type arrives: `Slice<T>`
      lowers to `ProgramType::SlicePointer` and gets an interface type
      (`interface_type_from_program_type` panics today);
@@ -673,7 +703,16 @@ construct.
      example of a library enum (`library_field_accessors_*`,
      `a_library_field_function_of_a_constructed_value_*`) change meaning:
      `slice::len(slice::from_raw_parts(p, n))` is the component `n` with no
-     unfold, an intended change each explained in the PR.
+     unfold, an intended change each explained in the PR. The Rust front
+     end's program values also carry the enum today: a chunk iterator's
+     `Option<&[u8]>` item is an `Option` whose payload is a `Slice<u8>`
+     enum value (`rust/lowering.rs`, `rust_enum_type_name` in
+     `verification.rs`), so its payload becomes a wide pointer field in the
+     same step (constructor injectivity already splits one, step 2a).
+     `s.len()`, `s.as_ptr()` and `slice::from_raw_parts` lower to the
+     2b-iii-c-i operations, and `s[a..b]` to
+     `Requires { a <= b <= s.len(), SliceFromRawParts(s.as_ptr() + a,
+     b - a) }`, recorded so it raises as `s[a..b]`.
    - **2b-iii-d. Strings.** `str.interface.click` states `as_bytes` as
      `result == s` retyped (a cast between slice types keeps the count),
      mapped in the Rust front end's name table only. This finishes slice

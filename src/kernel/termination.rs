@@ -1648,6 +1648,9 @@ fn collect_spec_program_variables(
                     | SpecExpression::NarrowArithmetic(_, _)
                     | SpecExpression::Cast(_, _)
                     | SpecExpression::PointerCoercion(_, _)
+                    | SpecExpression::SliceLength(_)
+                    | SpecExpression::SliceData(_)
+                    | SpecExpression::SliceFromRawParts { .. }
                     | SpecExpression::PureFunctionApplication { .. }
                     | SpecExpression::IntegerToMachine { .. }
                     | SpecExpression::AlgebraicMatch { .. } => {}
