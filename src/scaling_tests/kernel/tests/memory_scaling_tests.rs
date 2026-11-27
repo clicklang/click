@@ -3194,7 +3194,12 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
                 original.clone()
             };
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.has_memory_read_defined_evidence(&memory, &read, ProgramType::Int32)
+                facts.has_memory_read_defined_evidence(
+                    &memory,
+                    &Default::default(),
+                    &read,
+                    ProgramType::Int32,
+                )
             });
             if adjacent || exact || index == 0 {
                 assert!(proved, "read initialization at query {index} of {size}");

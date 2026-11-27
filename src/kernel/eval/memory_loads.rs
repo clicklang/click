@@ -1164,6 +1164,14 @@ fn evaluate_retained_memory_load_case(
 ) -> Vec<ExecutionValuePath> {
     let branches_on_unresolved_aliases =
         splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
+    // The memory the load is read at stands at the read's site, and a
+    // distinct case's memory, which only drops the undecided cell, is a view
+    // of that state. A specification load has no site: it is a query whose
+    // obligations are only looked up.
+    let read_point = site.or(origin).map_or_else(
+        crate::kernel::program_point::PathLink::lookup_key,
+        |point| point.path_link().clone(),
+    );
     let symbolic_value =
         |memory: &SymbolicMemory, facts: &mut ExecutionFacts, assumptions: &PureFactContext| {
             point_named_symbolic_read(origin, &pointer, value_type)
@@ -1247,7 +1255,12 @@ fn evaluate_retained_memory_load_case(
         && (!memory.may_read_uninitialized_object(&pointer, value_type.byte_width())
             || purpose == LoadPurpose::Logical
             || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
-            || assumptions.has_memory_read_defined_evidence(written, &pointer, value_type));
+            || assumptions.has_memory_read_defined_evidence(
+                written,
+                &read_point,
+                &pointer,
+                value_type,
+            ));
     // An ordinary external scalar fallback names the written state even
     // when the alias-resolution case is examining a projection of it.
     let reads_written_state = allow_symbolic_external_load
@@ -1548,7 +1561,7 @@ fn evaluate_retained_memory_load_case(
     if purpose != LoadPurpose::Logical
         && memory.is_uninitialized_heap_address(&pointer, value_type.byte_width(), assumptions)
         && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
-        && !assumptions.has_memory_read_defined_evidence(written, &pointer, value_type)
+        && !assumptions.has_memory_read_defined_evidence(written, &read_point, &pointer, value_type)
     {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
@@ -2014,14 +2027,7 @@ fn evaluate_retained_memory_load_case(
     }
 
     if purpose != LoadPurpose::Logical && !has_external_read_resource {
-        // The memory the load is read at stands at the read's site, and a
-        // distinct case's memory, which only drops the undecided cell, is a
-        // view of that state. A specification load has no site: it is a
-        // query whose obligations are only looked up.
-        let point = site.or(origin).map_or_else(
-            crate::kernel::program_point::PathLink::lookup_key,
-            |point| point.path_link().clone(),
-        );
+        let point = read_point.clone();
         let proposition = Proposition::MemoryLoadable {
             memory: memory.clone(),
             point,
@@ -2036,6 +2042,7 @@ fn evaluate_retained_memory_load_case(
         } else if assumptions.should_defer_non_exact_loadability_obligations() {
             if !assumptions.proves_memory_loadable_for_memory_resolution(
                 &memory,
+                &read_point,
                 &pointer,
                 &OldMachineTerm::constant(value_type.byte_width()),
             ) && !assumptions.proves_exact(&proposition)
@@ -2068,7 +2075,7 @@ fn evaluate_retained_memory_load_case(
         && ((pointer.base.is_local_block() && memory.has_block(&pointer.base))
             || memory.may_read_uninitialized_object(&pointer, value_type.byte_width()))
         && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
-        && !assumptions.has_memory_read_defined_evidence(written, &pointer, value_type)
+        && !assumptions.has_memory_read_defined_evidence(written, &read_point, &pointer, value_type)
     {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead),
@@ -8962,15 +8969,26 @@ mod tests {
         assert!(!context.proves_exact(path.facts[0].proposition()));
         assert!(!is_load_variable_defining_fact(path.facts[0].proposition()));
         let before = context.fact_counts();
-        assert!(context.proves_memory_read_defined(&memory, &field, ProgramType::Int32Pointer));
+        assert!(context.proves_memory_read_defined(
+            &memory,
+            &Default::default(),
+            &field,
+            ProgramType::Int32Pointer
+        ));
         assert_eq!(context.fact_counts(), before);
         // Recovering a value and its equation grants no missing read span.
         assert!(!PureFactContext::new().proves_memory_read_defined(
             &memory,
+            &Default::default(),
             &field,
             ProgramType::Int32Pointer,
         ));
-        assert!(!view(4).proves_memory_read_defined(&memory, &field, ProgramType::Int32Pointer));
+        assert!(!view(4).proves_memory_read_defined(
+            &memory,
+            &Default::default(),
+            &field,
+            ProgramType::Int32Pointer
+        ));
     }
 
     #[test]

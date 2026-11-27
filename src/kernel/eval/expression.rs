@@ -1499,6 +1499,7 @@ pub(super) fn evaluate_native_expression_paths(
                     // storage, and is what a load of it would rest on.
                     if !assumptions.proves_memory_loadable(
                         state.memory(),
+                        &state.memory_point(),
                         pointer.address(),
                         &OldMachineTerm::constant(width),
                     ) && state.resources().permits_memory_read(
@@ -3410,7 +3411,12 @@ fn read_retained_lvalue_paths_without_ranges(
             pointee_volatile,
             ..
         }) = state.locals.binding(name)
-        && assumptions.has_memory_read_defined_evidence(&state.memory, slot, *program_type)
+        && assumptions.has_memory_read_defined_evidence(
+            &state.memory,
+            &state.memory_point(),
+            slot,
+            *program_type,
+        )
     {
         let memory = LValue::memory_with_qualifiers(
             slot.clone(),

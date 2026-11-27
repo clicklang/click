@@ -10594,6 +10594,7 @@ impl ExecutionState {
                 && !self.memory.access_in_bounds(&base, bytes)
                 && !assumptions.proves_memory_loadable_for_memory_resolution(
                     &self.memory,
+                    &self.memory_point(),
                     &base,
                     &OldMachineTerm::constant(bytes),
                 )

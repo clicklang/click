@@ -14,6 +14,7 @@ fn read_validity_misses_do_not_walk_pointer_aliases() {
             for _ in 0..4 {
                 assert!(!context.has_memory_read_defined_evidence(
                     &SymbolicMemory::new(),
+                    &Default::default(),
                     &base,
                     ProgramType::Int32
                 ));
@@ -122,11 +123,13 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             for _ in 0..4 {
                 assert!(context.has_memory_read_defined_evidence(
                     &memory,
+                    &Default::default(),
                     &query,
                     ProgramType::Int32
                 ));
                 assert!(!context.has_memory_read_defined_evidence(
                     &memory,
+                    &Default::default(),
                     &query,
                     ProgramType::UInt32
                 ));
@@ -175,11 +178,13 @@ fn read_validity_state_buckets_keep_exact_hits_and_bounded_misses() {
             for _ in 0..4 {
                 assert!(context.has_memory_read_defined_evidence(
                     &memory,
+                    &Default::default(),
                     &source,
                     ProgramType::Int32
                 ));
                 assert!(!context.has_memory_read_defined_evidence(
                     &missing,
+                    &Default::default(),
                     &source,
                     ProgramType::Int32
                 ));

@@ -8405,6 +8405,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }
                     SpecPoint::At(point) => (point.memory(), None),
                 };
+                let memory_point = match memory {
+                    SpecPoint::At(point) => point.path_link().clone(),
+                    _ => selected_state.expect("selected read state").memory_point(),
+                };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
                 // even when this state's cached cell already proves it.
@@ -8414,6 +8418,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     && (budget.program_definedness
                         || !PureFactContext::new().proves_memory_read_defined(
                             memory_view,
+                            &memory_point,
                             &pointer,
                             *value_type,
                         ))
@@ -8424,10 +8429,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             _ => selected_state.and_then(ExecutionState::observation_point_id),
                         },
                         memory: memory_view.clone(),
-                        point: match memory {
-                            SpecPoint::At(point) => point.path_link().clone(),
-                            _ => selected_state.expect("selected read state").memory_point(),
-                        },
+                        point: memory_point.clone(),
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));

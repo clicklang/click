@@ -6001,12 +6001,12 @@ mod wrapped_assumed_span_is_refused {
         for bounded in [false, true] {
             let (memory, assumptions) = context(count, bounded);
             assert_eq!(
-                assumptions.proves_memory_access(&memory, &array_base(0), 4),
+                assumptions.proves_memory_access(&memory, &Default::default(), &array_base(0), 4),
                 bounded,
                 "a cell inside `v[0..n]` needs the range's span bound (bounded: {bounded})"
             );
             assert_eq!(
-                assumptions.proves_memory_access(&memory, &array_base(4), 4),
+                assumptions.proves_memory_access(&memory, &Default::default(), &array_base(4), 4),
                 bounded,
                 "so does a later cell (bounded: {bounded})"
             );
@@ -6023,6 +6023,7 @@ mod wrapped_assumed_span_is_refused {
             assert_eq!(
                 assumptions.proves_memory_loadable_for_memory_resolution(
                     &memory,
+                    &Default::default(),
                     &array_base(4),
                     &OldMachineTerm::constant(4),
                 ),
@@ -6075,7 +6076,7 @@ mod wrapped_assumed_span_is_refused {
         // `1 << 30` four-byte elements scale to `0` bytes: the fact is true
         // and covers nothing, so no cell comes out of it.
         assert!(
-            !wrapped.proves_memory_access(&memory, &array_base(0), 4),
+            !wrapped.proves_memory_access(&memory, &Default::default(), &array_base(0), 4),
             "a constant wrapped span yields no cell"
         );
         let widest = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
@@ -6090,7 +6091,7 @@ mod wrapped_assumed_span_is_refused {
             wide: false,
         });
         assert!(
-            widest.proves_memory_access(&memory, &array_base(0), 4),
+            widest.proves_memory_access(&memory, &Default::default(), &array_base(0), 4),
             "one element fewer is the widest span that fits, and it still works"
         );
     }
@@ -6117,7 +6118,7 @@ mod wrapped_assumed_span_is_refused {
                 true,
             );
         assert!(
-            assumptions.proves_memory_access(&memory, &array_base(1), 1),
+            assumptions.proves_memory_access(&memory, &Default::default(), &array_base(1), 1),
             "a one-byte element range is its own byte count"
         );
     }
@@ -7328,8 +7329,8 @@ fn a_byte_range_narrows_by_its_endpoints() {
         OldConditionTerm::signed_less_equal(k.clone(), n.clone()),
         true,
     );
-    assert!(bounded.proves_memory_loadable(&memory, &base, &k));
-    assert!(!held.proves_memory_loadable(&memory, &base, &k));
+    assert!(bounded.proves_memory_loadable(&memory, &Default::default(), &base, &k));
+    assert!(!held.proves_memory_loadable(&memory, &Default::default(), &base, &k));
 }
 
 mod loadable_span_graph_tests {
@@ -7362,13 +7363,28 @@ mod loadable_span_graph_tests {
         let _scope = branch.enter_id_scope();
 
         PureFactContext::reset_bitvector_equality_index_fact_visits();
-        assert!(branch.proves_memory_loadable_for_memory_resolution(&memory, &base, &goal_bytes));
+        assert!(branch.proves_memory_loadable_for_memory_resolution(
+            &memory,
+            &Default::default(),
+            &base,
+            &goal_bytes
+        ));
         assert!(branch.proves_loadable_region_from_range(&base, &range_bytes, &base, &goal_bytes));
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-        assert!(!parent.proves_memory_loadable_for_memory_resolution(&memory, &base, &goal_bytes));
+        assert!(!parent.proves_memory_loadable_for_memory_resolution(
+            &memory,
+            &Default::default(),
+            &base,
+            &goal_bytes
+        ));
         assert!(!parent.proves_loadable_region_from_range(&base, &range_bytes, &base, &goal_bytes));
         let other = Address::symbolic(Variable(9_320_003));
-        assert!(!branch.proves_memory_loadable_for_memory_resolution(&memory, &other, &goal_bytes));
+        assert!(!branch.proves_memory_loadable_for_memory_resolution(
+            &memory,
+            &Default::default(),
+            &other,
+            &goal_bytes
+        ));
     }
 
     #[cfg(test)]

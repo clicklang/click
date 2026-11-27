@@ -1700,7 +1700,12 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         ),
     );
     assert!(
-        assumptions.proves_memory_loadable(&later, &goal_base, &OldMachineTerm::constant(4)),
+        assumptions.proves_memory_loadable(
+            &later,
+            &Default::default(),
+            &goal_base,
+            &OldMachineTerm::constant(4)
+        ),
         "the viewable bound check must connect the two len forms along \
          the recorded block-declaration and cell-forgetting edges"
     );
