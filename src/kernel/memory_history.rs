@@ -4399,52 +4399,39 @@ thread_local! {
 
 const DAG_LOAD_EQUALITY_MEMO_LIMIT: usize = 200_000;
 
-/// Searches the finite graph of recorded effects connecting two memory
-/// states, regardless of what the effects wrote. Used for properties that
-/// survive writes, such as loadability of a still-present range.
-pub(crate) fn memories_connected_by_effects(
-    before: &SymbolicMemory,
-    after: &SymbolicMemory,
-    assumptions: &PureFactContext,
-) -> bool {
-    // A walk over the write effects (`MemoryMutatesOnly`,
-    // `MemoryEffectSummary`) filed under each memory it reaches, in either
-    // direction, not over every proposition fact. A memory reached is the
-    // target when it is the target's canonical equal.
-    if memories_canonically_equal(before, after) {
-        return true;
-    }
-    let mut seen = std::collections::HashSet::from([before.clone()]);
-    let mut frontier = vec![before.clone()];
-    while let Some(current) = frontier.pop() {
-        for fact in assumptions.memory_effect_facts_naming(&current) {
-            let (Proposition::MemoryMutatesOnly {
-                before: step_before,
-                after: step_after,
-                ..
-            }
-            | Proposition::MemoryEffectSummary {
-                before: step_before,
-                after: step_after,
-                ..
-            }) = fact
-            else {
-                continue;
-            };
-            let other = if step_before == &current {
-                step_after
-            } else {
-                step_before
-            };
-            if seen.insert(other.clone()) {
-                if memories_canonically_equal(other, after) {
-                    return true;
-                }
-                frontier.push(other.clone());
-            }
+/// The memory history's liveness query: whether storage in `block` that is
+/// live at one of `left` and `right` is live at the other. One point must be
+/// reached from the other through single predecessors, and no step between
+/// them may end a lifetime that could be `block`'s: a free, a local
+/// lifetime's end, a contract allocation's retirement, or an effect that
+/// does not say which claims it changes. `None` when neither point is
+/// reached from the other.
+pub(crate) fn liveness_preserved_between_points(
+    left: &crate::kernel::program_point::PathLink,
+    right: &crate::kernel::program_point::PathLink,
+    block: &AddressBase,
+) -> Option<bool> {
+    let distinct = |other: &AddressBase| other != block && !block.observable_by_load(other);
+    let preserves = |step: &MemoryDerivation| match step {
+        MemoryDerivation::HeapFreed {
+            allocation_base, ..
         }
-    }
-    false
+        | MemoryDerivation::ContractAllocationRetired {
+            allocation_base, ..
+        } => distinct(&allocation_base.base),
+        MemoryDerivation::LocalLifetimeEnded { block: ended, .. } => distinct(ended),
+        MemoryDerivation::HeapAllocationFailed { .. }
+        | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+        | MemoryDerivation::BranchJoin { .. }
+        | MemoryDerivation::LoopHavoc {
+            mutable_ranges: None,
+            ..
+        } => false,
+        _ => true,
+    };
+    right
+        .visit_steps_since(left, preserves)
+        .or_else(|| left.visit_steps_since(right, preserves))
 }
 
 /// Address inequality frames a load only when the two typed accesses fit
@@ -8970,48 +8957,48 @@ mod direct_unchanged_scaling_tests {
         ProgramValue::UInt32(OldMachineTerm::uint32_constant(index as u32))
     }
 
-    /// `memories_connected_by_effects` walks the effects filed under the
-    /// memories it reaches. It once collected every write effect among the
-    /// proposition facts and searched them with `Vec::contains`, so each
-    /// loadability fallback paid for every call the path had made.
+    /// The memory history's liveness query walks only the steps between its
+    /// two points: unrelated stores keep a block live, the block's own
+    /// lifetime ending does not, and the work grows with the steps walked,
+    /// never with facts or other paths.
     #[test]
-    fn effect_connection_ignores_unrelated_effect_facts() {
+    fn liveness_walks_only_the_steps_between_its_points() {
+        let block: AddressBase = "local:kept".into();
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let start = SymbolicMemory::new().store(cell("target"), value(1));
-            let middle = start.clone().with_block("call-havoc:0", 0);
-            let end = middle.clone().with_block("call-havoc:1", 0);
-            let summary = |before: &SymbolicMemory, after: &SymbolicMemory| {
-                Proposition::MemoryEffectSummary {
-                    before_point: Default::default(),
-                    after_point: Default::default(),
-                    before: before.clone(),
-                    after: after.clone(),
-                    mutable_ranges: Vec::new(),
-                }
-            };
-            let facts = (0..size)
-                .fold(PureFactContext::new(), |facts, index| {
-                    let base = SymbolicMemory::new()
-                        .store(cell(&format!("unrelated-{index}")), value(index));
-                    let next = base
-                        .clone()
-                        .store(cell(&format!("unrelated-{index}")), value(index + 1));
-                    facts.assume_proposition(summary(&base, &next))
-                })
-                .assume_proposition(summary(&start, &middle))
-                .assume_proposition(summary(&middle, &end));
-            let (connected, work) = crate::instrumentation::measure_deterministic_work(|| {
-                memories_connected_by_effects(&start, &end, &facts)
+            let start = ExecutionState::new()
+                .with_memory(SymbolicMemory::new().with_block(block.clone(), 4))
+                .begin_function_entry_memory();
+            let mut state = start.clone();
+            for index in 0..size {
+                let memory = state
+                    .memory()
+                    .clone()
+                    .with_block(format!("local:other{index}"), 4)
+                    .store(cell(&format!("local:other{index}")), value(index));
+                state = state.with_memory(memory);
+            }
+            let (live, work) = crate::instrumentation::measure_deterministic_work(|| {
+                liveness_preserved_between_points(start.path_link(), state.path_link(), &block)
             });
-            assert!(connected, "two recorded calls connect the states");
+            assert_eq!(live, Some(true), "unrelated stores keep the block live");
             samples.push((size, work));
+            let ended = state
+                .clone()
+                .with_memory(state.memory().without_local_block(&block));
+            assert_eq!(
+                liveness_preserved_between_points(start.path_link(), ended.path_link(), &block),
+                Some(false),
+                "the block's lifetime ended"
+            );
         }
-        let (_, smallest) = samples[0];
+        let per_step = |(size, work): (usize, usize)| work / size;
         assert!(
-            samples.iter().all(|(_, work)| *work == smallest),
-            "the effect connection grew with unrelated effect facts: {samples:?}"
+            samples
+                .iter()
+                .all(|sample| per_step(*sample) == per_step(samples[0])),
+            "the liveness walk is not linear in the steps between its points: {samples:?}"
         );
     }
 

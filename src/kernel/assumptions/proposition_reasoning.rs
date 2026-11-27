@@ -603,20 +603,21 @@ impl PureFactContext {
             } => {
                 self.proves_memory_loadable(memory, point, base, bytes.old_form())
                     // Loadability survives writes: an assumed loadable fact
-                    // for the same range transports across any chain of
-                    // recorded effects connecting the states. Its
-                    // candidates are the loadable facts filed under the
-                    // base's block, not every proposition fact.
+                    // for the same range transports along the memory history
+                    // from its point to this one, unless a step between them
+                    // ends the block's lifetime. Its candidates are the
+                    // loadable facts filed under the base's block, not every
+                    // proposition fact.
                     || self.memory_loadable_candidates_for_base(base).any(|fact| {
                         #[cfg(test)]
                         crate::kernel::memory_history::CARRIED_LOADABLE_VISITS
                             .with(|visits| visits.set(visits.get() + 1));
                         let Proposition::MemoryLoadable {
-                            memory: fact_memory,
+                            memory: _,
+                            point: fact_point,
                             base: fact_base,
                             bytes: fact_bytes,
                             wide: false,
-                            ..
                         } = fact
                         else {
                             return false;
@@ -635,11 +636,11 @@ impl PureFactContext {
                                 );
                             base_match
                                 && bytes_match
-                                && crate::kernel::api::memories_connected_by_effects(
-                                    fact_memory,
-                                    memory,
-                                    self,
-                                )
+                                && crate::kernel::memory_history::liveness_preserved_between_points(
+                                    fact_point,
+                                    point,
+                                    &base.base,
+                                ) == Some(true)
                         }
                     })
                     // A goal subrange of a wider assumed loadable span is

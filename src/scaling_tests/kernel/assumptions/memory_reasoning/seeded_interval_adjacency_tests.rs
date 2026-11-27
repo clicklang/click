@@ -31,6 +31,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
             let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
                 context.adjacent_loadable_region_facts(
                     &memory,
+                    &Default::default(),
                     &base,
                     &OldMachineTerm::constant(size + 1),
                 )
