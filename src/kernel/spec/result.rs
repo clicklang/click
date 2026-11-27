@@ -333,32 +333,18 @@ impl SpecValue {
                 left.closed_arithmetic_bits()
                     .zip(right_view.closed_arithmetic_bits())
             };
-            let condition = match folded {
+            let root = match folded {
                 Some((left, right)) => {
-                    let native = match format {
-                        KernelFloatType::Float32 => OldConditionTerm::float32_compare(
-                            OldMachineTerm::uint32_constant(left as u32),
-                            OldMachineTerm::uint32_constant(right as u32),
-                            op,
-                        ),
-                        KernelFloatType::Float64 => OldConditionTerm::float64_compare(
-                            OldMachineTerm::uint64_constant(left),
-                            OldMachineTerm::uint64_constant(right),
-                            op,
-                        ),
-                    };
-                    StoredConditionTerm::from_minted(native)
+                    KernelTerm::boolean_literal(format.compare_bits(left, right, op))
                 }
-                None => StoredConditionTerm::from_root(
-                    KernelTerm::float_compare(
-                        format,
-                        op,
-                        [self.common_operand(), right.common_operand()],
-                    )
-                    .expect("same float format"),
+                None => KernelTerm::float_compare(
+                    format,
+                    op,
+                    [self.common_operand(), right.common_operand()],
                 )
-                .expect("logical float comparison"),
+                .expect("same float format"),
             };
+            let condition = StoredConditionTerm::from_root(root).expect("logical float comparison");
             return Ok(Some(Proposition::condition_is(condition, true)));
         }
         let left = self.native();

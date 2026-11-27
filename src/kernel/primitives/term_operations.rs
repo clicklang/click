@@ -1695,10 +1695,7 @@ pub(in crate::kernel) fn float_binary_bits_at(
     right: u64,
     operator: FloatBinaryOperator,
 ) -> u64 {
-    let (exponent, fraction) = match format {
-        crate::kernel::KernelFloatType::Float32 => (8, 23),
-        crate::kernel::KernelFloatType::Float64 => (11, 52),
-    };
+    let (exponent, fraction) = format.exponent_and_fraction_widths();
     float_binary_bits(left, right, exponent, fraction, operator)
 }
 
@@ -2544,17 +2541,7 @@ impl OldConditionTerm {
     pub(crate) fn literal_float_comparison_value(&self) -> Option<bool> {
         let (format, operator, [left, right]) =
             BooleanOperandView::Native(self).float_comparison()?;
-        let (exponent, fraction) = match format {
-            KernelFloatType::Float32 => (8, 23),
-            KernelFloatType::Float64 => (11, 52),
-        };
-        Some(compare_float_bits(
-            left.literal_bits()?,
-            right.literal_bits()?,
-            exponent,
-            fraction,
-            operator,
-        ))
+        Some(format.compare_bits(left.literal_bits()?, right.literal_bits()?, operator))
     }
 
     pub(crate) fn float32_compare(
@@ -2563,11 +2550,9 @@ impl OldConditionTerm {
         operator: ComparisonOperator,
     ) -> Self {
         match (left.float32_as_const(), right.float32_as_const()) {
-            (Some(left), Some(right)) => Self::Constant(compare_float_bits(
+            (Some(left), Some(right)) => Self::Constant(KernelFloatType::Float32.compare_bits(
                 u64::from(left),
                 u64::from(right),
-                8,
-                23,
                 operator,
             )),
             _ => Self::Float32(FloatCondition::Comparison {
@@ -2585,7 +2570,7 @@ impl OldConditionTerm {
     ) -> Self {
         match (left.float64_as_const(), right.float64_as_const()) {
             (Some(left), Some(right)) => {
-                Self::Constant(compare_float_bits(left, right, 11, 52, operator))
+                Self::Constant(KernelFloatType::Float64.compare_bits(left, right, operator))
             }
             _ => Self::Float64(FloatCondition::Comparison {
                 operator,
@@ -2600,9 +2585,9 @@ impl OldConditionTerm {
         classification: FloatClassification,
     ) -> Self {
         match value.float32_as_const() {
-            Some(value) => {
-                Self::Constant(classify_float_bits(u64::from(value), 8, 23, classification))
-            }
+            Some(value) => Self::Constant(
+                KernelFloatType::Float32.classify_bits(u64::from(value), classification),
+            ),
             None => Self::Float32(FloatCondition::Classification {
                 classification,
                 value: Box::new(value),
@@ -2615,7 +2600,9 @@ impl OldConditionTerm {
         classification: FloatClassification,
     ) -> Self {
         match value.float64_as_const() {
-            Some(value) => Self::Constant(classify_float_bits(value, 11, 52, classification)),
+            Some(value) => {
+                Self::Constant(KernelFloatType::Float64.classify_bits(value, classification))
+            }
             None => Self::Float64(FloatCondition::Classification {
                 classification,
                 value: Box::new(value),
@@ -3792,94 +3779,6 @@ fn machine_constant_value(
     match IntegerTerm::from_machine(format, term.clone())? {
         IntegerTerm::Constant(value) => Some(value),
         _ => None,
-    }
-}
-
-fn classify_float_bits(
-    bits: u64,
-    exponent_bits: u32,
-    fraction_bits: u32,
-    classification: FloatClassification,
-) -> bool {
-    let exponent_mask = (1u64 << exponent_bits) - 1;
-    let exponent = (bits >> fraction_bits) & exponent_mask;
-    let fraction = bits & ((1u64 << fraction_bits) - 1);
-    let all_ones = exponent == exponent_mask;
-    let zero_exponent = exponent == 0;
-    match classification {
-        FloatClassification::Finite => !all_ones,
-        FloatClassification::Infinite => all_ones && fraction == 0,
-        FloatClassification::Zero => zero_exponent && fraction == 0,
-        FloatClassification::Subnormal => zero_exponent && fraction != 0,
-        FloatClassification::Nan => all_ones && fraction != 0,
-    }
-}
-
-fn compare_float_bits(
-    left: u64,
-    right: u64,
-    exponent_bits: u32,
-    fraction_bits: u32,
-    operator: ComparisonOperator,
-) -> bool {
-    let nan = FloatClassification::Nan;
-    let left_nan = classify_float_bits(left, exponent_bits, fraction_bits, nan);
-    let right_nan = classify_float_bits(right, exponent_bits, fraction_bits, nan);
-    if left_nan || right_nan {
-        return matches!(operator, ComparisonOperator::NotEqual);
-    }
-
-    let left_zero = classify_float_bits(
-        left,
-        exponent_bits,
-        fraction_bits,
-        FloatClassification::Zero,
-    );
-    let right_zero = classify_float_bits(
-        right,
-        exponent_bits,
-        fraction_bits,
-        FloatClassification::Zero,
-    );
-    let equal = (left_zero && right_zero) || left == right;
-    if equal {
-        return matches!(
-            operator,
-            ComparisonOperator::Equal
-                | ComparisonOperator::LessEqual
-                | ComparisonOperator::GreaterEqual
-        );
-    }
-
-    // Order the two payloads by the usual monotone key: complement a negative
-    // encoding, set the sign bit of a non-negative one. The complement has to
-    // stay inside the format's own width, since these payloads sit in a `u64`
-    // that is wider than every format except binary64. Complementing all 64
-    // bits of a binary32 payload would raise every negative value above every
-    // non-negative one, making `-1.0f < 1.0f` false.
-    let width = exponent_bits + fraction_bits + 1;
-    let payload_mask = if width >= u64::BITS {
-        u64::MAX
-    } else {
-        (1u64 << width) - 1
-    };
-    let sign_bit = 1u64 << (exponent_bits + fraction_bits);
-    let ordering_key = |bits: u64| {
-        if bits & sign_bit != 0 {
-            !bits & payload_mask
-        } else {
-            bits ^ sign_bit
-        }
-    };
-    let left_key = ordering_key(left);
-    let right_key = ordering_key(right);
-    match operator {
-        ComparisonOperator::Equal => false,
-        ComparisonOperator::NotEqual => true,
-        ComparisonOperator::LessThan => left_key < right_key,
-        ComparisonOperator::LessEqual => left_key <= right_key,
-        ComparisonOperator::GreaterThan => left_key > right_key,
-        ComparisonOperator::GreaterEqual => left_key >= right_key,
     }
 }
 
