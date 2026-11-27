@@ -85,6 +85,7 @@ impl LoweredCppFunction {
 pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, String> {
     // Each function is named by its C++ path, which an artifact locked
     // before paths were exported does not carry.
+    let lambda_paths = super::schema::lambda_paths(import.export())?;
     let paths = import
         .export()
         .functions
@@ -99,7 +100,10 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             }
             Ok((
                 function.declaration_id.as_str(),
-                super::names::path_name(&function.path),
+                lambda_paths
+                    .get(function.declaration_id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| super::names::path_name(&function.path)),
             ))
         })
         .collect::<Result<Vec<_>, String>>()?;

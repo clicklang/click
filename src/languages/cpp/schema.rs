@@ -6353,6 +6353,14 @@ fn collect_local_function_addresses<'a>(
 }
 
 fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCall<'a>>) {
+    collect_calls_in(statements, calls, &mut collect_calls);
+}
+
+fn collect_calls_in<'a>(
+    statements: &'a [CppStatement],
+    calls: &mut Vec<CollectedCall<'a>>,
+    children: &mut impl FnMut(&'a [CppStatement], &mut Vec<CollectedCall<'a>>),
+) {
     for statement in statements {
         let first = calls.len();
         collect_statement_expression_calls(statement, calls);
@@ -6477,12 +6485,12 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                         calls,
                     );
                 }
-                collect_calls(then_branch, calls);
-                collect_calls(else_branch, calls);
+                children(then_branch, calls);
+                children(else_branch, calls);
             }
-            CppStatement::While { body, .. } => collect_calls(body, calls),
+            CppStatement::While { body, .. } => children(body, calls),
             CppStatement::Scope { body, cleanups, .. } => {
-                collect_calls(body, calls);
+                children(body, calls);
                 for cleanup in cleanups {
                     let CppCleanup::Destructor { object, callee, .. } = cleanup;
                     calls.push(CollectedCall::Destructor { object, callee });
@@ -6491,8 +6499,8 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             CppStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
-                collect_calls(try_body, calls);
-                collect_calls(handler, calls);
+                children(try_body, calls);
+                children(handler, calls);
             }
             CppStatement::ReturnCall {
                 callee,
@@ -7961,6 +7969,193 @@ fn same_function_pointer_type(left: &CppType, right: &CppType) -> bool {
             .iter()
             .zip(right_parameters)
             .all(|(left, right)| same(left, right))
+}
+
+/// Written lambda sites from the compiler's checked call references. Frozen
+/// captures still tag call operators with an ordinal path segment. Use that
+/// tag only to identify lambda declarations, and join by declaration ID.
+pub(super) fn lambda_paths(export: &CppExport) -> Result<BTreeMap<&str, String>, String> {
+    let functions = export.functions.iter().chain(&export.reachable_functions);
+    let lambdas = functions
+        .clone()
+        .filter(|function| {
+            function
+                .path
+                .last()
+                .is_some_and(|segment| segment.starts_with("(lambda#"))
+        })
+        .map(|function| function.declaration_id.as_str())
+        .collect::<BTreeSet<_>>();
+    if lambdas.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let receivers = functions
+        .clone()
+        .filter(|function| {
+            matches!(function.function_kind, CppFunctionKind::Method { .. })
+                && function.receiver().is_some()
+        })
+        .map(|function| function.declaration_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let owners = functions
+        .clone()
+        .filter(|function| lambdas.contains(function.declaration_id.as_str()))
+        .filter_map(|function| function.path.split_last().map(|(_, owner)| owner))
+        .collect::<BTreeSet<_>>();
+    let mut paths = BTreeMap::new();
+    for function in functions.filter(|function| owners.contains(function.path.as_slice())) {
+        collect_lambda_sites(
+            function.body.iter(),
+            &function.path.join("::"),
+            &lambdas,
+            &receivers,
+            &mut Vec::new(),
+            &mut paths,
+        )?;
+    }
+    if let Some(id) = lambdas.into_iter().find(|id| !paths.contains_key(id)) {
+        return Err(format!(
+            "C++ capture does not identify a written expression for lambda declaration `{id}`"
+        ));
+    }
+    Ok(paths)
+}
+
+fn collect_lambda_sites<'a>(
+    statements: impl IntoIterator<Item = &'a CppStatement>,
+    owner: &str,
+    lambdas: &BTreeSet<&str>,
+    receivers: &BTreeSet<&str>,
+    path: &mut Vec<usize>,
+    sites: &mut BTreeMap<&'a str, String>,
+) -> Result<(), String> {
+    for (statement_index, statement) in statements.into_iter().enumerate() {
+        crate::instrumentation::record_deterministic_work(1);
+        path.push(statement_index);
+        let mut calls = Vec::new();
+        let mut children = Vec::new();
+        collect_calls_in(
+            std::slice::from_ref(statement),
+            &mut calls,
+            &mut |body, _| children.extend(body),
+        );
+        let mut calls = calls
+            .into_iter()
+            .filter_map(|call| match call {
+                CollectedCall::Ordinary {
+                    callee, arguments, ..
+                }
+                | CollectedCall::Constructor {
+                    callee, arguments, ..
+                }
+                | CollectedCall::ReturnedConstructor {
+                    callee, arguments, ..
+                }
+                | CollectedCall::MemberConstructor {
+                    callee, arguments, ..
+                }
+                | CollectedCall::BaseConstructor {
+                    callee, arguments, ..
+                } => Some((callee, arguments)),
+                _ => None,
+            })
+            .map(|(callee, arguments)| {
+                // Inner calls finish before their enclosing call. Sibling calls
+                // use the capture's written order.
+                let end = std::iter::once(&callee.span)
+                    .chain(arguments.iter().map(lambda_argument_span))
+                    .map(|span| (span.end_line, span.end_column))
+                    .max()
+                    .expect("a written call has a callee");
+                let start = (callee.span.start_line, callee.span.start_column);
+                ((end, std::cmp::Reverse(start)), callee, arguments)
+            })
+            .collect::<Vec<_>>();
+        calls.sort_by_key(|(position, _, _)| *position);
+        for (index, (_, callee, arguments)) in calls.into_iter().enumerate() {
+            let offset = usize::from(receivers.contains(callee.declaration_id.as_str()));
+            for (argument, value) in arguments.iter().skip(offset).enumerate() {
+                if let CppCallArgument::Value { value } = value {
+                    record_lambda_site(
+                        value,
+                        owner,
+                        path,
+                        Some((index, argument)),
+                        lambdas,
+                        sites,
+                    )?;
+                }
+            }
+        }
+        if let CppStatement::Declare {
+            initializer: CppInitializer::Value { value },
+            ..
+        } = statement
+        {
+            record_lambda_site(value, owner, path, None, lambdas, sites)?;
+        }
+        collect_lambda_sites(children, owner, lambdas, receivers, path, sites)?;
+        path.pop();
+    }
+    Ok(())
+}
+
+fn lambda_argument_span(argument: &CppCallArgument) -> &CppSpan {
+    match argument {
+        CppCallArgument::Value { value } => match value {
+            CppExpression::RuntimeConstantEvaluation { span, .. }
+            | CppExpression::LogicalNot { span, .. }
+            | CppExpression::ObserverCall { span, .. }
+            | CppExpression::IntegerLiteral { span, .. }
+            | CppExpression::NullPointer { span, .. }
+            | CppExpression::CompilerConstant { span, .. }
+            | CppExpression::ConstantReference { span, .. }
+            | CppExpression::Load { span, .. }
+            | CppExpression::AddressOf { span, .. }
+            | CppExpression::ReferenceBinding { span, .. }
+            | CppExpression::Dereference { span, .. }
+            | CppExpression::MemberLoad { span, .. }
+            | CppExpression::IntegralCast { span, .. }
+            | CppExpression::EnumCast { span, .. }
+            | CppExpression::PointerQualification { span, .. }
+            | CppExpression::VoidPointerCast { span, .. }
+            | CppExpression::BytePointerCast { span, .. }
+            | CppExpression::Binary { span, .. }
+            | CppExpression::FunctionAddress { span, .. }
+            | CppExpression::ClosureInstance { span, .. } => span,
+        },
+        CppCallArgument::Reference { place } => &place.span,
+        CppCallArgument::RecordCopy { span, .. }
+        | CppCallArgument::Call { span, .. }
+        | CppCallArgument::Construct { span, .. } => span,
+    }
+}
+
+fn record_lambda_site<'a>(
+    value: &'a CppExpression,
+    owner: &str,
+    statements: &[usize],
+    argument: Option<(usize, usize)>,
+    lambdas: &BTreeSet<&str>,
+    sites: &mut BTreeMap<&'a str, String>,
+) -> Result<(), String> {
+    let function = match value {
+        CppExpression::FunctionAddress { function, .. }
+        | CppExpression::ClosureInstance { function, .. } => function,
+        _ => return Ok(()),
+    };
+    let id = function.declaration_id.as_str();
+    if lambdas.contains(id) {
+        let path = super::names::lambda_name(owner, statements, argument);
+        if let Some(previous) = sites.insert(id, path.clone())
+            && previous != path
+        {
+            return Err(format!(
+                "C++ lambda declaration `{id}` has two written expression paths"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The `&f` values a call passes.

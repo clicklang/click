@@ -21,12 +21,12 @@ int apply(int (*f)(int), int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
 }
-int caller::(lambda#0)(int y) {
+int caller.statement(0).call(0).argument(0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures result >= y;
 }
 theorem proposed_lambda_doubles() {
-    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling(&caller::(lambda#0))); close(); }
+    ensures Doubling(&caller.statement(0).call(0).argument(0)) by { unfold(Doubling(&caller.statement(0).call(0).argument(0))); close(); }
 }
 int caller(int x) {
     requires 0 <= x and x <= 1000;
@@ -35,5 +35,5 @@ int caller(int x) {
 ```
 
 ```expect
-fail: contract-refinement proof does not establish `Doubling(&caller::(lambda#0))`
+fail: contract-refinement proof does not establish `Doubling(&caller.statement(0).call(0).argument(0))`
 ```

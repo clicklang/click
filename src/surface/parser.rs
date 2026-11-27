@@ -16038,6 +16038,12 @@ impl Parser {
                 ProgramExpression::Load(Box::new(pointer)),
             ));
         }
+        if self.verifies_cpp()
+            && self.peek() == Some(&Token::Amp)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if self.closure_captures.contains_key(name))
+        {
+            return Err(self.error("a capturing C++ lambda cannot convert to a function pointer"));
+        }
         if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
             return self.parse_reference_parameter_address();
         }
