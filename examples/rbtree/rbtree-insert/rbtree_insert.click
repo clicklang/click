@@ -653,7 +653,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         let { left: l, right: r } = unfold(t);
                                         step();
                                         step();
-                                        have node->__rb_parent_color == 1 by { close(); }
+                                        have node->__rb_parent_color == 1 by close() using {
+                                            node->__rb_parent_color == address(0) + 1;
+                                        };
                                         have (node->__rb_parent_color & 1)
                                             == color_bit(Color::Black) by {
                                             rewrite(node->__rb_parent_color, 1);

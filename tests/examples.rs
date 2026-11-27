@@ -927,7 +927,9 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
     assert!(
         (message.contains("`have` failed for `node->__rb_parent_color == 1`")
             || message.contains("`have` failed for `load<uint64>(node) == 1`"))
-            && message.contains("known")
+            && message.contains(
+                "`close() using` could not prove the current goal from only its listed premises"
+            )
             && !message.contains("budget exhausted"),
         "unexpected refusal: {message}"
     );
