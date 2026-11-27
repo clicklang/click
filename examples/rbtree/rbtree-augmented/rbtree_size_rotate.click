@@ -31,6 +31,8 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures source.value == 1 + old(left.value) + old(right.value);
     ensures left.value == old(left.value);
     ensures right.value == old(right.value);
+    ensures rb_old->rb_left == old(rb_old->rb_left);
+    ensures rb_old->rb_right == old(rb_old->rb_right);
 } by {
     unfold(source);
     unfold(target);
