@@ -159,7 +159,7 @@ fn checked_logical_shift_right_const(left: u32, right: u32) -> Option<u32> {
     Some(left >> count)
 }
 
-fn signed_shift_left_overflows_const(left: u32, right: u32) -> Option<bool> {
+pub(super) fn signed_shift_left_overflows_const(left: u32, right: u32) -> Option<bool> {
     let count = checked_shift_count_const(right)?;
     let left = left as i32;
     if left < 0 {
@@ -3394,9 +3394,7 @@ impl OldConditionTerm {
         right: OldMachineTerm,
     ) -> Self {
         match (left.int64_as_const(), right.int64_as_const()) {
-            (Some(left), Some(right)) => {
-                Self::Constant(right == 0 || (left == i64::MIN && right == -1))
-            }
+            (Some(left), Some(right)) => Self::Constant(left.checked_div(right).is_none()),
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::Divide,
@@ -3412,7 +3410,9 @@ impl OldConditionTerm {
     ) -> Self {
         match (left.int64_as_const(), int64_shift_count_constant(&right)) {
             (Some(left), Some(count)) => Self::Constant(
-                count >= 64 || left < 0 || left.checked_shl(count).is_none_or(|result| result < 0),
+                MachineBinaryOp::ShiftLeft
+                    .evaluate_int64(left, i64::from(count))
+                    .is_none(),
             ),
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,

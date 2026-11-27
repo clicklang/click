@@ -40,7 +40,9 @@ impl KernelTerm {
         }
         if format.format().bits() == 32 {
             for argument in &mut arguments {
-                if let Some(value) = MachineOperandView::Shared(argument).literal() {
+                if let KernelTermNode::MachineLiteral(value) = argument.node() {
+                    *argument = value.guard_operand(format);
+                } else if let Some(value) = MachineOperandView::Shared(argument).literal() {
                     *argument = KernelTermImport::default().machine(format, &value.into_word32());
                 }
             }

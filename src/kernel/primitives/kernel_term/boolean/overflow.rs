@@ -32,6 +32,33 @@ impl KernelTerm {
                 b.to_integer(),
             ));
         }
+        if matches!(
+            operation,
+            OverflowOperation::Divide | OverflowOperation::ShiftLeft
+        ) && let [
+            KernelTermNode::MachineLiteral(left),
+            KernelTermNode::MachineLiteral(right),
+        ] = arguments.each_ref().map(Self::node)
+        {
+            use MachineIntegerType as Ty;
+            use OverflowOperation as Op;
+            let folded = match (format, operation) {
+                (Ty::Int32, Op::Divide) => left.word32().zip(right.word32())
+                    .map(|(a, b)| a == i32::MIN as u32 && b == u32::MAX),
+                (Ty::Int64, Op::Divide) => left.signed64().zip(right.signed64())
+                    .map(|(a, b)| a.checked_div(b).is_none()),
+                (Ty::Int32, Op::ShiftLeft) => left.word32().zip(right.word32())
+                    .and_then(|(a, b)| crate::kernel::primitives::term_operations::signed_shift_left_overflows_const(a, b)),
+                (Ty::Int64, Op::ShiftLeft) => left.signed64().zip(arguments[1].literal_shift_count())
+                    .map(|(a, count)| MachineBinaryOp::ShiftLeft.evaluate_int64(a, i64::from(count)).is_none()),
+                _ => None,
+            };
+            if let Some(value) = folded {
+                return Self::boolean_literal(value);
+            }
+            let operands = [left, right].map(|literal| literal.guard_operand(format));
+            return Self::boolean_overflow_raw(format, operation, operands);
+        }
         let views = arguments.each_ref().map(MachineOperandView::Shared);
         if let [Some(a), Some(b)] = views.map(|view| view.literal()) {
             return KernelTermImport::default().condition(&OldConditionTerm::machine_overflows(
@@ -40,7 +67,9 @@ impl KernelTerm {
         }
         if format.format().bits() == 32 {
             for argument in &mut arguments {
-                if let Some(value) = MachineOperandView::Shared(argument).literal() {
+                if let KernelTermNode::MachineLiteral(value) = argument.node() {
+                    *argument = value.guard_operand(format);
+                } else if let Some(value) = MachineOperandView::Shared(argument).literal() {
                     *argument = KernelTermImport::default().machine(format, &value.into_word32());
                 }
             }
@@ -94,6 +123,15 @@ mod tests {
         }
         if let Some(value) = MachineIntegerConstant::from_signed(format.format(), -1) {
             values.push(OldMachineTerm::machine_constant(value));
+        }
+        if matches!(
+            format,
+            MachineIntegerType::Int32 | MachineIntegerType::Int64
+        ) {
+            values.extend([
+                OldMachineTerm::uint32_constant(63),
+                OldMachineTerm::uint64_constant(1 << 32),
+            ]);
         }
         if format == MachineIntegerType::Int64 {
             values.push(OldMachineTerm::legacy_cast(

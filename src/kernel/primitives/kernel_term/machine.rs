@@ -16,6 +16,16 @@ fn retained_machine_input(node: &KernelTermNode) -> Option<&OldMachineTerm> {
 }
 
 impl KernelTerm {
+    /// Wide shifts accept a literal count at either word width.
+    pub(super) fn literal_shift_count(&self) -> Option<u32> {
+        let KernelTermNode::MachineLiteral(value) = self.node() else {
+            return None;
+        };
+        value
+            .word32()
+            .or_else(|| u32::try_from(value.signed64()?).ok())
+    }
+
     pub(super) fn literal_constant_at(
         &self,
         format: MachineIntegerType,
@@ -356,18 +366,38 @@ impl KernelMachineLiteral {
         Some(Self::constant_term(value))
     }
 
-    pub(super) fn constant_term(value: MachineIntegerConstant) -> KernelTerm {
-        let destination = MachineIntegerType::of_format(value.format());
+    fn from_constant(value: MachineIntegerConstant) -> Self {
         let bits = value.bits();
-        let literal = match destination {
+        match MachineIntegerType::of_format(value.format()) {
             MachineIntegerType::Int32 => Self::Word32(bits as u32),
             MachineIntegerType::UInt32 => Self::UInt32(bits as u32),
             MachineIntegerType::Int64 => Self::Int64(bits as i64),
             MachineIntegerType::UInt64 => Self::UInt64(bits as u64),
             _ => Self::Wide(value),
-        };
+        }
+    }
+
+    pub(super) fn constant_term(value: MachineIntegerConstant) -> KernelTerm {
+        let destination = MachineIntegerType::of_format(value.format());
         KernelTerm::intern(
             KernelType::Program(destination.program_type()),
+            KernelTermNode::MachineLiteral(Self::from_constant(value)),
+        )
+    }
+
+    /// Comparison and overflow constructors read a 32-bit literal as its word.
+    pub(super) fn guard_operand(&self, format: MachineIntegerType) -> KernelTerm {
+        let literal = if format.format().bits() == 32
+            && let Some(bits) = self.word32()
+        {
+            Self::Word32(bits)
+        } else if let Self::Wide(value) = self {
+            Self::from_constant(*value)
+        } else {
+            self.clone()
+        };
+        KernelTerm::intern(
+            KernelType::Program(format.program_type()),
             KernelTermNode::MachineLiteral(literal),
         )
     }
@@ -471,18 +501,10 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
         } => {
             let left = left.machine_constant_reading()?;
             let rhs = right.machine_constant_reading()?;
-            // A wide shift requires a literal count, even if a computed
-            // operand has a known value. Counts may be 32- or 64-bit.
-            let shift_count = || {
-                if !matches!(right.node(), KernelTermNode::MachineLiteral(_)) {
-                    return None;
-                }
-                rhs.word32().or_else(|| u32::try_from(rhs.signed64()?).ok())
-            };
             Some(match format {
                 MachineIntegerType::Int64 => {
                     let right = if operator.is_shift() {
-                        i64::from(shift_count()?)
+                        i64::from(right.literal_shift_count()?)
                     } else {
                         rhs.signed64()?
                     };
@@ -490,7 +512,7 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                 }
                 MachineIntegerType::UInt64 => {
                     let right = if operator.is_shift() {
-                        u64::from(shift_count()?)
+                        u64::from(right.literal_shift_count()?)
                     } else {
                         rhs.unsigned64()?
                     };
