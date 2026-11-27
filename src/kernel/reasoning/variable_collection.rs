@@ -2361,7 +2361,7 @@ pub(crate) fn resource_context_has_read(
 /// accounting while the checked constructors can stop before descending into
 /// another payload.
 #[inline]
-fn checked_collection_checkpoint() -> bool {
+pub(super) fn checked_collection_checkpoint() -> bool {
     #[cfg(test)]
     crate::instrumentation::record_checked_collection_attempt();
     crate::instrumentation::record_deterministic_work(1);
