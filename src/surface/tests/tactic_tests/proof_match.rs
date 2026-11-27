@@ -211,10 +211,11 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             expand_c_claim_source(&good, &sources, "read", ContractProofClaim::Grouped).unwrap();
         verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
-        let (_, excluded) = expanded.split_once("Maybe::None => {").unwrap();
+        let (_, excluded) = expanded.rsplit_once("Maybe::None => {").unwrap();
         assert!(excluded.trim_start().starts_with("close();"), "{expanded}");
         // `have` is one selectable C-proof tactic, including its nested proof.
         for offset in [
+            good.find("Maybe::None => { close(); }").unwrap() + "Maybe::None => { ".len(),
             good.find("step_until(function.exit);").unwrap(),
             good.find("have result").unwrap(),
             good.rfind("close();").unwrap(),
@@ -222,7 +223,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             let position = expansion::position_at_offset(&good, offset);
             let selected =
                 expand_c_tactic_source_at(&good, &sources, position.line, position.column).unwrap();
-            verify_c_sources(&selected, &sources).expect("selected live arm expansion");
+            verify_c_sources(&selected, &sources).expect("selected arm expansion");
         }
     }
     // The live arm's solve may reconstruct the omitted resource fold.

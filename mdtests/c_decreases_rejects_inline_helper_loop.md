@@ -51,5 +51,5 @@ int32 drain(int32 n) {
 ```
 
 ```expect
-fail: could not certify termination for `drain`: callee `halve_down` has no termination evidence: loop 0 declares no `decreases` measure
+fail: could not certify termination for `drain`: callee `"c_decreases_rejects_inline_helper_loop.c"::halve_down` has no termination evidence: loop 0 declares no `decreases` measure
 ```

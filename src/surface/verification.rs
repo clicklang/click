@@ -5076,8 +5076,8 @@ pub(in crate::surface) fn parse_verified_sources_context(
     parse_verified_sources_context_with_entry(file, c_sources, ProgramEntryStorage::Build)
 }
 
-/// Whether parsing the verifying sources also builds `main`'s program-entry
-/// storage. Storage is as large as the program's static objects; a caller
+/// Whether parsing the verifying sources also builds program-entry and
+/// callee static storage. Storage is as large as the program's static objects; a caller
 /// that reads only function names, signatures, and call graphs (the
 /// external-dependency summary) skips it. Static initializers are validated
 /// either way, so both report the same source errors.
@@ -5093,7 +5093,9 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
     entry_storage: ProgramEntryStorage,
 ) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
     let mut functions = import_verified_sources(file, c_sources, entry_storage)?;
-    attach_callee_static_storage(&mut functions);
+    if entry_storage == ProgramEntryStorage::Build {
+        attach_callee_static_storage(&mut functions);
+    }
     Ok(functions)
 }
 
