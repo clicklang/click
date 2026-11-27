@@ -3416,7 +3416,9 @@ pub(in crate::surface) fn concrete_loadable_block(
 ) -> Result<Option<(String, ConcreteMemoryRangeSeed)>, ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
-            let state = ExecutionState::new();
+            // A segment's bounds read only parameters: they are evaluated at
+            // the entry of an otherwise empty state.
+            let state = ExecutionState::new().begin_function_entry_memory();
             let source_segment = segment;
             let Ok(segment) =
                 evaluate_requirement_segment(parameter_binding, &state, source_segment)
@@ -3493,7 +3495,9 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
         .into_iter()
         .filter(|segment| !segment.is_uninitialized())
     {
-        let state = ExecutionState::new();
+        // A segment's bounds read only parameters: they are evaluated at the
+        // entry of an otherwise empty state.
+        let state = ExecutionState::new().begin_function_entry_memory();
         let source_segment = segment;
         let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
         else {
@@ -3555,7 +3559,9 @@ pub(in crate::surface) fn loadable_base_and_bytes(
 ) -> Result<(Address, OldMachineTerm, Vec<Proposition>), ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
-            let state = ExecutionState::new();
+            // A segment's bounds read only parameters: they are evaluated at
+            // the entry of an otherwise empty state.
+            let state = ExecutionState::new().begin_function_entry_memory();
             let segment = evaluate_requirement_segment(parameter_binding, &state, segment)
                 .map_err(|message| {
                     ClickError::new(format!("could not lower `viewable` segment: {message}"))
