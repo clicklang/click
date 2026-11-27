@@ -795,6 +795,11 @@ mod condition_output_tests {
                 OldMachineTerm::Variable(Variable(10993727)),
             )
             .unwrap(),
+            IntegerTerm::from_machine(
+                MachineIntegerType::UInt128,
+                OldMachineTerm::Variable(Variable(10993729)),
+            )
+            .unwrap(),
             IntegerTerm::Add(
                 IntegerTerm::Variable(Variable(10993728)).into(),
                 IntegerTerm::constant_i64(3).into(),
@@ -844,11 +849,13 @@ mod condition_output_tests {
                         Some((OldConditionTerm::Constant(_), _)) | None => (native, true),
                         Some(result) => result,
                     };
+                    let exports = KernelTermExport::integer_export_count();
                     let actual = retained_integer_comparison(
                         &left.clone().into(),
                         operator,
                         &right.clone().into(),
                     );
+                    assert_eq!(KernelTermExport::integer_export_count(), exports);
                     assert!(actual.0.root().is_some());
                     assert_eq!((actual.0.old_form(), actual.1), (&expected.0, expected.1));
                     let expected_root =
