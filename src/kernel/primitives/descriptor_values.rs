@@ -323,6 +323,9 @@ impl From<OldConditionTerm> for StoredConditionTerm {
                     *variable,
                 )));
             }
+            crate::kernel::integer_comparison_condition!(_, _) => {
+                KernelTermImport::default().condition(&value)
+            }
             OldConditionTerm::PointerEqual(left, right) => {
                 KernelTerm::pointer_equal_raw([left.shared().clone(), right.shared().clone()])
             }
