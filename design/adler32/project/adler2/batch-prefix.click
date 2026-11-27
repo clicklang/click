@@ -53,7 +53,9 @@ theorem adler_native_deferred_b_step(pos: int32, a: uint32, b: uint32, a0: uint3
   rewrite(to_integer(b2) + (to_integer(a2) + to_integer(v2)), to_integer(b2) + to_integer(a2) + to_integer(v2));
   have to_integer(b3) + (to_integer(a3) + to_integer(v3)) == to_integer(b3) + to_integer(a3) + to_integer(v3) by close() using {};
   rewrite(to_integer(b3) + (to_integer(a3) + to_integer(v3)), to_integer(b3) + to_integer(a3) + to_integer(v3));
-  close();
+  close() using {
+   adler_lane_b((to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a), to_integer(a1) + to_integer(v1), to_integer(a2) + to_integer(v2), to_integer(a3) + to_integer(v3), to_integer(b0) + to_integer(a0) + to_integer(v0), to_integer(b1) + to_integer(a1) + to_integer(v1), to_integer(b2) + to_integer(a2) + to_integer(v2), to_integer(b3) + to_integer(a3) + to_integer(v3)) == adler_lane_b((to_integer(b) + to_integer(pos) * to_integer(a)), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) + 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) + 4 * to_integer(v0) + 3 * to_integer(v1) + 2 * to_integer(v2) + to_integer(v3);
+  };
  }
 }
 
@@ -113,7 +115,7 @@ theorem adler_empty_full_batch_position(remaining: int32) {
  requires remaining == 22208;
  ensures to_integer(22208 - remaining) == 0 by {
   rewrite(remaining, 22208);
-  close();
+  close() using {};
  }
 }
 
@@ -121,7 +123,7 @@ theorem adler_complete_full_batch_position(remaining: int32) {
  requires remaining == 0;
  ensures to_integer(22208 - remaining) == 22208 by {
   rewrite(remaining, 0);
-  close();
+  close() using {};
  }
 }
 
@@ -162,7 +164,9 @@ theorem adler_native_deferred_b_prefix_step(bytes: uint8[], n: int32, pos: int32
    close() using {  };
   }
   rewrite(to_integer(b) + (to_integer(pos) + 4) * to_integer(a), (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a));
-  close();
+  close() using {
+   truncating_remainder(adler_lane_b((to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a), to_integer(a1 + v1), to_integer(a2 + v2), to_integer(a3 + v3), to_integer(b0 + (a0 + v0)), to_integer(b1 + (a1 + v1)), to_integer(b2 + (a2 + v2)), to_integer(b3 + (a3 + v3))), 65521) == adler_spec_b(bytes, n + 4, a_seed, b_seed);
+  };
  }
 }
 
