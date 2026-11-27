@@ -6111,6 +6111,13 @@ pub enum ProgramStatement {
     BuiltinConstantP {
         step: u32,
     },
+    /// Form a callable with the written closure's captured values.
+    CreateClosure {
+        step: u32,
+        closure: String,
+        captures: Vec<ProgramExpression>,
+        source: Option<ClosureSite>,
+    },
     /// A call inside an expression of the statement that follows it: its
     /// result is that statement's `ProgramExpression::StepResult { step, .. }`,
     /// never a variable of the program.
@@ -7921,6 +7928,7 @@ impl VerifiedFunctionRule {}
 /// source/template representation.
 #[derive(Clone, Debug)]
 pub struct FunctionContract {
+    pub(super) closure: bool,
     pub(super) name: String,
     /// Source-name origin retained only for diagnostics. It is not part
     /// of the contract identity and cannot alter callback behavior.
@@ -11870,6 +11878,23 @@ pub struct ReferenceBindingSource {
 pub struct Callee {
     pub pointer: ProgramExpression,
     pub pointer_type: ProgramType,
+}
+
+/// The expression that supplies a written closure.
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub struct ClosureSite {
+    pub(crate) statements: Vec<u32>,
+    pub(crate) expression: ClosureExpression,
+}
+
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub enum ClosureExpression {
+    Argument { call: u32, argument: u32 },
+    Initializer,
 }
 
 /// What made a statement's step result.

@@ -47,9 +47,9 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
         ),
         // A false closure contract.
         (
-            Some("fn impl_fn::twice::{closure#0}("),
-            "    ensures result == y + k;\n}\n\nfn impl_fn::twice::{closure#1}",
-            "    ensures result == y + k + 1;\n}\n\nfn impl_fn::twice::{closure#1}",
+            Some("fn impl_fn::twice.statement(0).call(0).argument(0)("),
+            "    ensures result == y + k;\n}\n\nfn impl_fn::twice.statement(0).call(0).argument(1)",
+            "    ensures result == y + k + 1;\n}\n\nfn impl_fn::twice.statement(0).call(0).argument(1)",
             "ensures_1",
         ),
         // A type parameter's bound must be the source's.

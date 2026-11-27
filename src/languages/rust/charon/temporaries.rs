@@ -4607,6 +4607,10 @@ mod tests {
     fn a_closure_moves_only_into_its_immediate_first_argument() {
         let closure = E::ClosureInstance {
             function: "closure_body".into(),
+            site: crate::kernel::ClosureSite {
+                statements: vec![0],
+                expression: crate::kernel::ClosureExpression::Initializer,
+            },
             captures: vec![local("a")],
             value_type: Type::FnPointer {
                 parameters: vec![Type::U32],

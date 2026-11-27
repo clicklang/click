@@ -2035,10 +2035,11 @@ impl LoweringContext<'_> {
                     values.push(self.lower_expression(value)?);
                 }
                 let closure = self.names.require(&function.declaration_id)?;
-                let (call, returned) = crate::kernel::program_call_value(
+                let (call, returned) = crate::kernel::program_create_closure(
                     self.result_step(),
-                    crate::languages::rust::names::closure_instance_name(closure),
+                    closure.to_owned(),
                     values,
+                    None,
                 );
                 evaluation = evaluate_then(evaluation, call);
                 lowered.push(returned);

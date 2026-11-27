@@ -2130,6 +2130,7 @@ impl Context<'_> {
     fn prepared_closure(
         &mut self,
         function: &str,
+        site: &crate::kernel::ClosureSite,
         captures: &[E],
         value_type: &Type,
     ) -> Result<(ProgramStatement, ProgramExpression), String> {
@@ -2159,9 +2160,11 @@ impl Context<'_> {
             checks = program_seq(checks, capture_checks);
             values.push(value);
         }
-        let (call, result) = self.call_value(
-            crate::languages::rust::names::closure_instance_name(function),
+        let (call, result) = crate::kernel::program_create_closure(
+            self.result_step(),
+            function.to_owned(),
             values,
+            Some(site.clone()),
         );
         Ok((program_seq(checks, call), result))
     }
@@ -2181,9 +2184,10 @@ impl Context<'_> {
             }
             E::ClosureInstance {
                 function,
+                site,
                 captures,
                 value_type,
-            } => self.prepared_closure(function, captures, value_type),
+            } => self.prepared_closure(function, site, captures, value_type),
             E::Call {
                 function,
                 arguments,

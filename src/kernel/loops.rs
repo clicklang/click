@@ -9230,6 +9230,7 @@ pub(super) fn statement_may_write_memory(
 ) -> bool {
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
@@ -9322,6 +9323,7 @@ pub(super) fn collect_loop_modified_locals(
             names.extend(retired.iter().cloned())
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
@@ -9605,7 +9607,13 @@ fn for_each_statement_expression<'a>(
         | ProgramStatement::StepValue { expression, .. }
         | ProgramStatement::Return(expression)
         | ProgramStatement::Throw(expression) => visit(expression),
-        ProgramStatement::CallConstruct { arguments, .. } => arguments.iter().for_each(&mut *visit),
+        ProgramStatement::CreateClosure {
+            captures: arguments,
+            ..
+        }
+        | ProgramStatement::CallConstruct { arguments, .. } => {
+            arguments.iter().for_each(&mut *visit)
+        }
         ProgramStatement::Call {
             arguments, callee, ..
         }
@@ -9714,7 +9722,11 @@ pub(crate) fn collect_address_taken_locals(
         ProgramStatement::Assign { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
-        ProgramStatement::CallConstruct { arguments, .. } => {
+        ProgramStatement::CreateClosure {
+            captures: arguments,
+            ..
+        }
+        | ProgramStatement::CallConstruct { arguments, .. } => {
             for argument in arguments {
                 collect_address_taken_in_expression(argument, names);
             }

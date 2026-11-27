@@ -137,6 +137,9 @@ struct SourceExecutionLayoutData {
         (usize, crate::kernel::ReferenceBindingContract),
     >,
     reference_binding_sites: BTreeMap<usize, (usize, crate::kernel::ReferenceBindingSlot, bool)>,
+    /// Exact written expressions for closure creation regions, in both directions.
+    closure_regions: BTreeMap<Vec<crate::surface::SourcePathStep>, Option<usize>>,
+    closure_paths: BTreeMap<usize, Vec<crate::surface::SourcePathStep>>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
     /// The object each call region receives as each by-value aggregate
@@ -367,6 +370,10 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
         }
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallConstruct { arguments, .. }
+        | ProgramStatement::CreateClosure {
+            captures: arguments,
+            ..
+        }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
@@ -942,7 +949,34 @@ impl SourceExecutionLayout {
                             .aggregate_results
                             .insert(statement_index, aggregate_result_fields(&result.layout));
                     }
+                    if let ProgramStatement::CreateClosure {
+                        source: Some(site), ..
+                    } = statement
+                    {
+                        use crate::surface::SourcePathStep;
+                        let mut path = site
+                            .statements
+                            .iter()
+                            .map(|&index| SourcePathStep::Statement(index as usize))
+                            .collect::<Vec<_>>();
+                        match site.expression {
+                            crate::kernel::ClosureExpression::Argument { call, argument } => {
+                                path.push(SourcePathStep::AnyCall(call as usize));
+                                path.push(SourcePathStep::ClosureArgument(argument as usize));
+                            }
+                            crate::kernel::ClosureExpression::Initializer => {
+                                path.push(SourcePathStep::ClosureInitializer)
+                            }
+                        }
+                        layout
+                            .closure_regions
+                            .entry(path.clone())
+                            .and_modify(|region| *region = None)
+                            .or_insert(Some(statement_index));
+                        layout.closure_paths.insert(statement_index, path);
+                    }
                     if let ProgramStatement::CallResult { call, .. }
+                    | ProgramStatement::CreateClosure { step: call, .. }
                     | ProgramStatement::BuiltinConstantP { step: call } = statement
                     {
                         layout.call_numbers.insert(statement_index, *call);
@@ -2037,7 +2071,10 @@ impl SourceExecutionLayout {
         &self,
         region: usize,
     ) -> Option<crate::surface::CodeRegionRef> {
-        if self.data.region_paths.contains_key(&region) || self.data.calls.contains(&region) {
+        if self.data.closure_paths.contains_key(&region)
+            || self.data.region_paths.contains_key(&region)
+            || self.data.calls.contains(&region)
+        {
             self.source_path_spelling(region, crate::surface::ProgramPointKind::Exit)
                 .map(crate::surface::CodeRegionRef::Path)
         } else {
@@ -2114,6 +2151,24 @@ impl SourceExecutionLayout {
     ) -> Result<usize, String> {
         use crate::surface::{ProgramPointKind, SourcePathStep};
         let data = &self.data;
+        if matches!(
+            steps.last(),
+            Some(SourcePathStep::ClosureArgument(_) | SourcePathStep::ClosureInitializer)
+        ) {
+            return data
+                .closure_regions
+                .get(steps)
+                .copied()
+                .flatten()
+                .ok_or_else(|| {
+                    format!(
+                        "`{}` does not identify one closure creation",
+                        crate::surface::diagnostics::describe_code_region_ref(
+                            &crate::surface::CodeRegionRef::Path(steps.to_vec())
+                        )
+                    )
+                });
+        }
         if matches!(steps.last(), Some(SourcePathStep::Binding { .. })) {
             return Ok(self.reference_binding_region(steps)?.0);
         }
@@ -2340,6 +2395,9 @@ impl SourceExecutionLayout {
                             .into(),
                     );
                 }
+                SourcePathStep::ClosureArgument(_) | SourcePathStep::ClosureInitializer => {
+                    return Err("a closure expression ends a source path".into());
+                }
                 SourcePathStep::Binding { .. } | SourcePathStep::ReadEvent(_) => {
                     return Err("`read_event(i)` selects a volatile observation's `.result`, not a statement boundary".into());
                 }
@@ -2375,6 +2433,9 @@ impl SourceExecutionLayout {
     ) -> Option<Vec<crate::surface::SourcePathStep>> {
         use crate::surface::SourcePathStep;
         let data = &self.data;
+        if let Some(path) = data.closure_paths.get(&region) {
+            return (data.closure_regions.get(path) == Some(&Some(region))).then(|| path.clone());
+        }
         if let Some(&(call, slot, release)) = data.reference_binding_sites.get(&region) {
             if matches!(
                 data.reference_bindings.get(&(call, slot)),
@@ -3308,6 +3369,8 @@ mod source_execution_layout_tests {
                 reference_bindings: BTreeMap::new(),
                 reference_releases: BTreeMap::new(),
                 reference_binding_sites: BTreeMap::new(),
+                closure_regions: BTreeMap::new(),
+                closure_paths: BTreeMap::new(),
                 statements,
                 assignments: BTreeMap::new(),
                 reads: Vec::new(),

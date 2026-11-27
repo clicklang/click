@@ -27,14 +27,10 @@ use std::borrow::Cow;
 
 const PREFIX: &str = "__rust_q";
 
-/// Appends one path segment to an importer name: `_I`, its length, `_`, and
-/// the segment. A closure, `{closure#0}` as rustc names it, is `_K` and its
-/// index.
+/// Appends one path segment to an importer name: `_I`, its length, `_`,
+/// and the segment.
 pub(crate) fn push_path_segment(encoded: &mut String, segment: &str) {
-    match closure_index(segment) {
-        Some(index) => encoded.push_str(&format!("_K{index}")),
-        None => encoded.push_str(&format!("_I{}_{segment}", segment.len())),
-    }
+    encoded.push_str(&format!("_I{}_{segment}", segment.len()));
 }
 
 /// Appends a type argument of the segment before it, a generic trait's
@@ -173,26 +169,6 @@ pub(crate) fn interface_instance(name: &str) -> Option<(String, Vec<String>)> {
         }
     }
     (rest.is_empty() && method).then_some((trait_name, arguments))
-}
-
-/// The index of a closure segment, `{closure#0}`.
-fn closure_index(segment: &str) -> Option<u32> {
-    let digits = segment.strip_prefix("{closure#")?.strip_suffix('}')?;
-    (!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
-        .then(|| digits.parse().ok())
-        .flatten()
-}
-
-/// The function that creates an instance of the closure named `closure`:
-/// it takes the captured values and returns the callable value. No path
-/// segment ends in `_instance`, so the name is no item's.
-pub(crate) fn closure_instance_name(closure: &str) -> String {
-    format!("{closure}_instance")
-}
-
-/// The rustc spelling of the closure with index `index`, `{closure#0}`.
-pub(crate) fn closure_segment(index: u32) -> String {
-    format!("{{closure#{index}}}")
 }
 
 /// Appends the type an inherent method's `impl` block names: `_T`, the
@@ -369,6 +345,9 @@ pub fn rust_display_name(name: &str) -> Option<String> {
     if rest.is_empty() {
         return Some(path);
     }
+    if rest.starts_with(".statement(") {
+        return Some(format!("{path}{rest}"));
+    }
     operator_method_display(&path, rest)
 }
 
@@ -451,18 +430,6 @@ fn decode(text: &str) -> Option<(String, &str)> {
     let mut rest = text.strip_prefix(PREFIX)?;
     let mut segments: Vec<String> = Vec::new();
     while let Some(tail) = rest.strip_prefix('_') {
-        if let Some(closure) = tail.strip_prefix('K') {
-            let digits = closure.bytes().take_while(u8::is_ascii_digit).count();
-            let Ok(index) = closure[..digits].parse::<u32>() else {
-                break;
-            };
-            if !(closure[digits..].is_empty() || closure[digits..].starts_with('_')) {
-                break;
-            }
-            segments.push(closure_segment(index));
-            rest = &closure[digits..];
-            continue;
-        }
         let (kind, tail) = match tail.as_bytes().first() {
             Some(b'I') => ('I', &tail[1..]),
             Some(b'T') => ('T', &tail[1..]),
@@ -739,17 +706,13 @@ mod tests {
     }
 
     #[test]
-    fn closure_names_read_as_rustc_spells_them() {
-        let name = path_name(&["closures", "choose", "{closure#1}"]);
-        assert_eq!(name, "__rust_q_I8_closures_I6_choose_K1");
+    fn closure_names_read_as_source_paths() {
+        let owner = path_name(&["closures", "choose"]);
+        let path = ".statement(0).statement(1).call(0).argument(0)";
         assert_eq!(
-            rust_display_name(&name).as_deref(),
-            Some("closures::choose::{closure#1}")
+            rust_display_name(&format!("{owner}{path}")),
+            Some(format!("closures::choose{path}"))
         );
-        // A segment that only resembles a closure is an ordinary segment.
-        assert_eq!(closure_index("{closure#}"), None);
-        assert_eq!(closure_index("{closure#1x}"), None);
-        assert_eq!(rust_display_name("__rust_q_I8_closures_K1x"), None);
     }
 
     #[test]

@@ -57,10 +57,10 @@ fn charon_capturing_closures_meet_parameterized_contracts() {
         ),
         // A false closure contract.
         (
-            "capturing_closures::moved::{closure#0}",
+            "capturing_closures::moved.statement(1).call(0).argument(0)",
             "    ensures result == y + m;\n",
             "    ensures result == y + m + 1;\n",
-            "moved_K0.ensures_0`",
+            "moved.statement(1).call(0).argument(0).ensures_0`",
         ),
         // A closure that captures nothing is its function.
         (
@@ -88,7 +88,7 @@ fn charon_capturing_closure_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "__rust_q_I18_capturing_closures_I6_caller_K0.ensures_0",
+        "capturing_closures::caller.statement(0).call(0).argument(0).ensures_0",
         "__rust_q_I18_capturing_closures_I6_caller.ensures_0",
         "__rust_q_I18_capturing_closures_I5_moved.ensures_0",
         "__rust_q_I18_capturing_closures_I5_plain.ensures_0",
@@ -96,4 +96,51 @@ fn charon_capturing_closure_tools_recheck_expanded_certificates() {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
     assert_cli(&p, &["verify"]);
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: uses the pinned Charon executable for live capture"]
+fn charon_capturing_closure_result_replays_at_the_written_argument() {
+    let p = Project::new(
+        "fn keep(_f: &dyn Fn(i32) -> i32, x: i32) -> i32 { x }\n\
+         pub fn caller(k: i32, x: i32) -> i32 { keep(&|y| y + k, x) }\n",
+    );
+    fs::write(
+        p.project_file(),
+        r#"{"units":{"borrow":{"language":"rust","sources":{"borrow.rs":{}},"crate":{"name":"borrow","edition":"2021","features":[],"roots":["borrow::caller"],"files":["borrow.rs"]}}}}"#,
+    )
+    .unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+
+fn borrow::keep(_f: &dyn Fn(i32) -> i32, x: i32) -> i32 {
+    ensures result == x;
+}
+
+fn borrow::caller.statement(0).call(0).argument(0)(y: i32) -> i32 {
+    requires 0 <= k and k <= 1000;
+    requires 0 <= y and y <= 1000;
+    ensures result == y + k;
+}
+
+fn borrow::caller(k: i32, x: i32) -> i32 {
+    requires 0 <= k and k <= 1000;
+    ensures result == x;
+} by {
+    step_until(statement(0).call(0).entry);
+    have statement(0).call(0).argument(0).result == statement(0).call(0).argument(0).result by close();
+    step_until(function.exit);
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    p.refresh().unwrap();
+    assert_cli(
+        &p,
+        &["expand", "--claim", "borrow::caller.contract", "--in-place"],
+    );
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(!expanded.contains("_instance"), "{expanded}");
+    assert!(!expanded.contains("{closure#"), "{expanded}");
+    assert!(expanded.contains(".argument(0).result"), "{expanded}");
+    assert_cli(&p, &["verify", "--locked"]);
 }

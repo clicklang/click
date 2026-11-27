@@ -2566,7 +2566,6 @@ fn verify_program_in_context(
                     .collect::<BTreeSet<_>>();
                 assumed_terminating
                     .extend(admitted_functions.difference(&declared_diverging).cloned());
-                assumed_terminating.extend(closure_instance_names(&parsed_sources));
                 assumed_terminating.extend(modeled_thread_runtime_names());
                 let preliminary = program_contracts
                     .bootstrap_termination_rules(crate::kernel::ProgramTerminationInputs {
@@ -2885,7 +2884,6 @@ fn verify_program_in_context(
         .filter(|name| !declared_diverging.contains(name))
         .collect::<BTreeSet<_>>();
     assumed_terminating.extend(admitted_functions.difference(&declared_diverging).cloned());
-    assumed_terminating.extend(closure_instance_names(&parsed_sources));
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
@@ -5715,7 +5713,14 @@ pub(in crate::surface) fn build_function_environment(
             None => function.to_kernel_function(),
         };
         if closure_captures > 0 {
-            environment = with_closure_instance(environment, &function, closure_captures)?;
+            let contract = FunctionContract::for_closure(function.clone(), closure_captures)
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "closure `{}` has a contract that cannot be applied opaquely",
+                        crate::languages::display_source_names(function.name())
+                    ))
+                })?;
+            environment = environment.with_function_contract(contract);
         }
         environment = environment.with_function(function);
     }
@@ -6132,82 +6137,6 @@ fn check_trait_method_implementations(
         }
     }
     Ok(())
-}
-
-/// The functions that make instances of the program's capturing closures.
-/// Each returns at once: it only forms a function value.
-fn closure_instance_names(
-    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
-) -> impl Iterator<Item = String> + '_ {
-    parsed_sources
-        .values()
-        .filter(|(_, function)| !function.closure_captures().is_empty())
-        .map(|(_, function)| crate::languages::rust::names::closure_instance_name(function.name()))
-}
-
-/// Registers a capturing closure's contract and the function that makes an
-/// instance of it.
-///
-/// The closure's contract is a named contract under the closure's own name
-/// whose value parameters are its captures. The instance function takes the
-/// captured values and returns a fresh function value whose fact attaches
-/// that contract fixed to them, so a callee requiring another contract of
-/// the value is answered by contract-to-contract refinement.
-fn with_closure_instance(
-    environment: ExecutionEnvironment,
-    closure: &ProgramFunction,
-    captures: usize,
-) -> Result<ExecutionEnvironment, ClickError> {
-    let contract = FunctionContract::new(closure.name(), closure.clone())
-        .and_then(|contract| contract.with_leading_value_parameters(captures))
-        .ok_or_else(|| {
-            ClickError::new(format!(
-                "closure `{}` has a contract that cannot be applied opaquely",
-                closure.name()
-            ))
-        })?;
-    let parameters = contract.interface().value_parameters().to_vec();
-    let mut arguments = vec![SpecPredicateArgument::Value(
-        SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            crate::kernel::CONTRACT_RESULT,
-        )),
-    )];
-    arguments.extend(parameters.iter().map(|parameter| {
-        SpecPredicateArgument::Value(SpecExpression::ProgramExpression(
-            crate::kernel::program_expression::variable(parameter.binding_name()),
-        ))
-    }));
-    let instance = crate::kernel::program_function(
-        contract.function_pointer_type(),
-        crate::languages::rust::names::closure_instance_name(closure.name()),
-        parameters,
-        ProgramStatement::Skip,
-    )
-    .with_contract(
-        vec![],
-        vec![SpecProposition::Predicate {
-            resource_state_dependent: false,
-            name: contract.predicate_name(),
-            arguments,
-        }],
-        vec![],
-        vec![
-            FunctionContractClaim::body_safety(),
-            FunctionContractClaim::ensure_proposition(0, 0),
-        ],
-        true,
-    );
-    let rule =
-        crate::kernel::program_external_function_rule(instance.clone()).ok_or_else(|| {
-            ClickError::new(format!(
-                "closure `{}` cannot be made into a function value",
-                closure.name()
-            ))
-        })?;
-    Ok(environment
-        .with_function_contract(contract)
-        .with_function(instance)
-        .with_external_function_rule(rule))
 }
 
 /// Whether `function_block` is the standard-library declaration that carries

@@ -8,8 +8,8 @@ fn closure_project() -> Project {
     p
 }
 
-// A closure that captures nothing is verified under its rustc name,
-// `caller::{closure#0}`, and a caller passing it for a `fn` pointer must
+// A closure that captures nothing is verified at its written expression,
+// and a caller passing it for a `fn` pointer must
 // show it meets the contract the callee requires of the pointer.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
@@ -19,7 +19,7 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    let caller_closure = "fn closures::caller::{closure#0}(y: i32) -> i32 {\n    requires 0 <= y and y <= 1000;\n    ensures result == y + y;\n}\n";
+    let caller_closure = "fn closures::caller.statement(0).call(0).argument(0)(y: i32) -> i32 {\n    requires 0 <= y and y <= 1000;\n    ensures result == y + y;\n}\n";
     assert!(SIDECAR.contains(caller_closure));
     // Keep the original full positive check. Select complete function
     // proofs for local failures; declaration/interface boundary cases
@@ -32,10 +32,10 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
             "does not satisfy named contract `Doubling`",
         ),
         (
-            Some("fn closures::choose::{closure#1}("),
+            Some("fn closures::choose.statement(0).statement(1).call(0).argument(0)("),
             "    ensures result == z + z;",
             "    ensures result == z + z + 1;".to_string(),
-            "failed for `__rust_q_I8_closures_I6_choose_K1.ensures_0`",
+            "failed for `closures::choose.statement(0).statement(1).call(0).argument(0).ensures_0`",
         ),
         (
             Some("fn closures::caller("),
@@ -45,9 +45,9 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
         ),
         (
             None,
-            "fn closures::choose::{closure#1}(z: i32)",
-            "fn closures::choose::{closure#2}(z: i32)".to_string(),
-            "choose_K2` is not defined by any `verifying` source",
+            "fn closures::choose.statement(0).statement(1).call(0).argument(0)(z: i32)",
+            "fn closures::choose.statement(0).statement(2).call(0).argument(0)(z: i32)".to_string(),
+            "choose.statement(0).statement(2).call(0).argument(0)` is not defined by any `verifying` source",
         ),
     ] {
         let invalid = SIDECAR.replace(before, &after);
@@ -61,6 +61,7 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
                 .expect("a closure without the contract its use needs must fail")
         };
         let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::display_source_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
     }
 }
@@ -74,8 +75,8 @@ fn charon_closure_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "__rust_q_I8_closures_I6_caller_K0.ensures_0",
-        "__rust_q_I8_closures_I6_choose_K1.ensures_0",
+        "closures::caller.statement(0).call(0).argument(0).ensures_0",
+        "closures::choose.statement(0).statement(1).call(0).argument(0).ensures_0",
         "__rust_q_I8_closures_I6_choose.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);

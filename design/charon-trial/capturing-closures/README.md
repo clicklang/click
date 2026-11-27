@@ -10,9 +10,10 @@ parameters are the captures, and reads the cast as the creation of a
 function value from the captured values. A closure that captures nothing
 is its function's address.
 
-The sidecar names a closure as rustc does, `capturing_closures::caller::
-{closure#0}`, with only the closure's own parameters in the head; its
-contract reads the captures by name, `ensures result == y + k;`. `shift`
+The sidecar selects the closure at
+`capturing_closures::caller.statement(0).call(0).argument(0)`. The head lists
+the closure's own parameters, and its contract reads the captures by name,
+as in `ensures result == y + k;`. `shift`
 requires the parameterized contract `Adds(f, { amount: k })`. Creating a
 closure gives a function value carrying the closure's contract fixed to its
 captured values, and the call to `shift` checks that contract refines

@@ -3,7 +3,7 @@
 //! method taking `&self` and its arguments as one tuple, and, for a `fn`
 //! pointer, a generated `ClosureAsFn` function the pointer cast names. The
 //! importer keeps only the `call` body, named as rustc names the closure
-//! (`caller::{closure#0}`) and rewritten as an ordinary function of the
+//! at its written expression and rewritten as an ordinary function of the
 //! closure's captures and parameters. A cast of the generated function is the
 //! address of that function; a state reference unsized to `&dyn Fn`, or a
 //! state passed by value for an `impl Fn` parameter, is the closure's
@@ -21,20 +21,53 @@ impl Adapter<'_> {
         else {
             return Ok(None);
         };
-        self.closure_name(closure).map(Some)
+        self.closure_name(closure, f.item_meta.span).map(Some)
     }
 
-    /// The name of a closure from its path, which ends in its closure element.
-    pub(super) fn closure_name(&self, path: &[a::PathElem]) -> Result<String, String> {
-        if !matches!(
-            path.last(),
-            Some(a::PathElem::Builtin(a::BuiltinPathElem::Closure, _))
-        ) {
+    /// Join the compiler's closure declaration to its exact written expression.
+    pub(super) fn closure_name(
+        &self,
+        path: &[a::PathElem],
+        span: a::Span,
+    ) -> Result<String, String> {
+        self.closure_identity(path, span).map(|(name, _)| name)
+    }
+
+    fn closure_identity(
+        &self,
+        path: &[a::PathElem],
+        span: a::Span,
+    ) -> Result<(String, crate::kernel::ClosureSite), String> {
+        let Some((a::PathElem::Builtin(a::BuiltinPathElem::Closure, _), owner)) = path.split_last()
+        else {
             return Err(unsupported("closure path"));
-        }
-        self.qualified_function_name(&a::Name {
-            name: path.to_vec(),
-        })
+        };
+        let owner = if let Some(parent) = self.closure_declarations.get(owner) {
+            self.closure_name(owner, *parent)?
+        } else {
+            self.qualified_function_name(&a::Name {
+                name: owner.to_vec(),
+            })?
+        };
+        let at = span.data();
+        let mut sources = self.closure_sources.borrow_mut();
+        let sites = sources.entry(at.file_id.index()).or_insert_with(|| {
+            self.krate
+                .files
+                .get(at.file_id)
+                .and_then(|file| file.contents.as_deref())
+                .and_then(super::super::source_statements::parse)
+                .map(|file| super::super::source_statements::closure_sites(&file))
+                .unwrap_or_default()
+        });
+        let site = sites
+            .get(&(
+                (at.beg.line as usize, at.beg.col as usize),
+                (at.end.line as usize, at.end.col as usize),
+            ))
+            .cloned()
+            .ok_or_else(|| unsupported("closure without a supported written expression path"))?;
+        Ok((site.contract_name(&owner), site))
     }
 }
 
@@ -793,7 +826,7 @@ impl BodyAdapter<'_, '_> {
                     return Ok(Some(None));
                 }
                 if let Some((state, captures)) = self.plumbing.creations.get(&local) {
-                    let function = self.adapter.closure_state_function(*state)?;
+                    let (function, site) = self.adapter.closure_state_identity(*state)?;
                     let captures = captures
                         .iter()
                         .map(|capture| {
@@ -812,6 +845,7 @@ impl BodyAdapter<'_, '_> {
                     } else {
                         E::ClosureInstance {
                             function,
+                            site,
                             captures,
                             value_type,
                         }
@@ -866,14 +900,16 @@ impl BodyAdapter<'_, '_> {
 }
 
 impl Adapter<'_> {
-    /// The name of the closure whose state type is `state`.
-    pub(super) fn closure_state_function(&self, state: a::TypeDeclId) -> Result<String, String> {
+    fn closure_state_identity(
+        &self,
+        state: a::TypeDeclId,
+    ) -> Result<(String, crate::kernel::ClosureSite), String> {
         let decl = self
             .krate
             .type_decls
             .get(state)
             .ok_or_else(|| unsupported("missing closure state"))?;
-        self.closure_name(&decl.item_meta.name.name)
+        self.closure_identity(&decl.item_meta.name.name, decl.item_meta.span)
     }
 }
 

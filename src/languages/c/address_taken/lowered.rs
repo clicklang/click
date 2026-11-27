@@ -74,6 +74,10 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             }
             ProgramStatement::Call { arguments, .. }
             | ProgramStatement::CallResult { arguments, .. }
+            | ProgramStatement::CreateClosure {
+                captures: arguments,
+                ..
+            }
             | ProgramStatement::CallConstruct { arguments, .. } => {
                 expressions.extend(arguments.iter().map(|argument| (argument, false)));
             }

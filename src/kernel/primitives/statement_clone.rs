@@ -213,6 +213,17 @@ impl ProgramStatement {
                 condition: condition.clone(),
                 label: label.clone(),
             },
+            Self::CreateClosure {
+                step,
+                closure,
+                captures,
+                source,
+            } => Self::CreateClosure {
+                step: *step,
+                closure: closure.clone(),
+                captures: captures.clone(),
+                source: source.clone(),
+            },
             Self::StepValue {
                 aggregate_layout,
                 steps,

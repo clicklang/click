@@ -14,7 +14,7 @@ fn capturing_closures::shift(f: &dyn Fn(i32) -> i32, x: i32, k: i32) -> i32 {
     ensures result == x + k;
 }
 
-fn capturing_closures::caller::{closure#0}(y: i32) -> i32 {
+fn capturing_closures::caller.statement(0).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 1000;
     requires 0 <= k and k <= 1000;
     ensures result == y + k;
@@ -26,7 +26,7 @@ fn capturing_closures::caller(k: i32, x: i32) -> i32 {
     ensures result == x + k;
 }
 
-fn capturing_closures::moved::{closure#0}(y: i32) -> i32 {
+fn capturing_closures::moved.statement(1).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 1000;
     requires 0 <= m and m <= 1000;
     ensures result == y + m;
@@ -49,7 +49,7 @@ fn capturing_closures::increment(f: &dyn Fn(i32) -> i32, x: i32) -> i32 {
     ensures result == x + 1;
 }
 
-fn capturing_closures::plain::{closure#0}(y: i32) -> i32 {
+fn capturing_closures::plain.statement(0).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 1000;
     ensures result == y + 1;
 }

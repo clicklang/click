@@ -20,7 +20,7 @@ fn impl_fn::shift(f: impl Fn(i32) -> i32, x: i32, k: i32) -> i32 {
     ensures result == x + k;
 }
 
-fn impl_fn::caller::{closure#0}(y: i32) -> i32 {
+fn impl_fn::caller.statement(0).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 1000;
     requires 0 <= k and k <= 1000;
     ensures 0 <= result and result <= 2000;
@@ -39,7 +39,7 @@ fn impl_fn::apply<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {
     ensures result == x + 1;
 }
 
-fn impl_fn::plain::{closure#0}(y: i32) -> i32 {
+fn impl_fn::plain.statement(0).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 2000;
     ensures result == y + 1;
 }
@@ -67,14 +67,14 @@ fn impl_fn::both(f: impl Fn(i32) -> i32, g: impl Fn(i32) -> i32, x: i32, k: i32)
     ensures result == x + k + 1;
 }
 
-fn impl_fn::twice::{closure#0}(y: i32) -> i32 {
+fn impl_fn::twice.statement(0).call(0).argument(0)(y: i32) -> i32 {
     requires 0 <= y and y <= 1000;
     requires 0 <= k and k <= 1000;
     ensures 0 <= result and result <= 2000;
     ensures result == y + k;
 }
 
-fn impl_fn::twice::{closure#1}(y: i32) -> i32 {
+fn impl_fn::twice.statement(0).call(0).argument(1)(y: i32) -> i32 {
     requires 0 <= y and y <= 2000;
     ensures result == y + 1;
 }

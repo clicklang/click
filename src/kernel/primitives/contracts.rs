@@ -3944,6 +3944,7 @@ impl FunctionContract {
             && interface.resource_constructors().is_empty()
             && !name.is_empty())
         .then_some(Self {
+            closure: false,
             name,
             callee_name,
             interface,
@@ -3962,6 +3963,13 @@ impl FunctionContract {
     pub fn with_leading_value_parameters(mut self, count: usize) -> Option<Self> {
         self.interface = self.interface.with_leading_value_parameters(count)?;
         Some(self)
+    }
+
+    pub(crate) fn for_closure(function: ProgramFunction, captures: usize) -> Option<Self> {
+        let mut contract = Self::new(function.name().to_owned(), function)?
+            .with_leading_value_parameters(captures)?;
+        contract.closure = true;
+        Some(contract)
     }
 
     /// This contract as a fact attaching it to a function value found it:
