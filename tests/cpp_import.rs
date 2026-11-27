@@ -7086,7 +7086,30 @@ fn cpp_unsigned_byte_record_fields_preserve_layout_and_authority_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"bytes.cpp\"; uint8 probe(struct Bytes& bytes, uint8 value) { owns bytes.first; views bytes.second; views bytes.tail; ensures bytes.first == value; ensures result == old(bytes.second); ensures bytes.second == old(bytes.second); ensures bytes.tail == old(bytes.tail); }";
+    let proof = r#"import click::separation;
+verifying "bytes.cpp";
+uint8 probe(struct Bytes& bytes, uint8 value) {
+ owns bytes.first;
+ views bytes.second;
+ views bytes.tail;
+ ensures bytes.first == value;
+ ensures result == old(bytes.second);
+ ensures bytes.second == old(bytes.second);
+ ensures bytes.tail == old(bytes.tail);
+} by {
+ have separate(memory(bytes.first), memory(bytes.second));
+ have separate(memory(bytes.first), memory(bytes.tail));
+ apply(separation::separate_symm(memory(bytes.first), memory(bytes.second)));
+ apply(separation::separate_symm(memory(bytes.first), memory(bytes.tail)));
+ apply(separation::separate_star(memory(bytes.second), memory(bytes.tail), memory(bytes.first)));
+ apply(separation::separate_symm(memory(bytes.second) * memory(bytes.tail), memory(bytes.first)));
+ step() by {
+  close() using { separate(memory(bytes.first), memory(bytes.second) * memory(bytes.tail)); };
+ }
+ step_until(function.exit);
+ close();
+}
+"#;
     check_selected_claim_certificate(&project, &import, proof);
     let bad = proof.replace("owns bytes.first", "views bytes.first");
     let path = project.directory.join("bad.click");
@@ -17085,7 +17108,10 @@ contract int32 PositiveRead(const struct State& state) {
 }
 theorem read_application() executes read(const struct State& state) {
     ensures PositiveRead(&read) by {
-        have state.child.value > 0 by { close() using { state.child.value == 2; } }
+        have state.child.value > 0 by {
+            rewrite(state.child.value, 2);
+            close() using {};
+        }
         step_until(function.exit); close();
     }
 }
@@ -18397,6 +18423,11 @@ uint64 probe(int32* backing, uint64 count) {
  views backing[0];
  ensures result == count;
  ensures backing[0] == old(backing[0]);
+} by {
+ step();
+ have separate(memory((&view.extent.size)[0..1]), memory(backing[0..1]));
+ step_until(function.exit);
+ close();
 }
 "#;
     check_first_claim_certificate(&project, &import, proof);
@@ -18568,6 +18599,11 @@ uint64 probe(int32* backing, uint64 count) {
  views backing[0];
  ensures result == count;
  ensures backing[0] == old(backing[0]);
+} by {
+ step();
+ have separate(memory((&descriptor.extent.size)[0..1]), memory(backing[0..1]));
+ step_until(function.exit);
+ close();
 }
 "#;
     check_first_claim_certificate(&project, &import, proof);
@@ -19030,8 +19066,36 @@ int32& probe(struct View& view, int32 n) {
  ensures result == old(view.data[view.size - 1]);
  ensures view.data == old(view.data);
  ensures view.size == old(view.size) - 1;
-
-} by { have 0 <= view.size - 1 by { close() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { close() using { 1 <= view.size; view.size <= 1073741823; } } step_until(function.exit); close(); }
+} by {
+ have 0 <= view.size - 1 by close() using { 1 <= view.size; view.size <= 1073741823; };
+ have view.size - 1 < view.size by close() using { 1 <= view.size; view.size <= 1073741823; };
+ step_until(region(7).entry);
+ have &back == old(view.data) + (old(view.size) - 1);
+ have back == old(view.data[view.size - 1]);
+ step();
+ // The copy takes the size from the resized temporary.
+ have view.size == at(region(7).entry, load<int32>(byte_offset(call(resize, 0).result, 8)));
+ have to_integer(at(region(7).entry, load<int32>(byte_offset(call(resize, 0).result, 8))))
+  == to_integer(old(view.size) - 1);
+ have to_integer(old(view.size) - 1) == to_integer(old(view.size)) - 1 by close() using {
+  1 <= old(view.size);
+  old(view.size) <= 1073741823;
+ };
+ have view.size == old(view.size) - 1 by {
+  rewrite(view.size, at(region(7).entry, load<int32>(byte_offset(call(resize, 0).result, 8))));
+  close() using {
+   to_integer(at(region(7).entry, load<int32>(byte_offset(call(resize, 0).result, 8))))
+    == to_integer(old(view.size) - 1);
+   to_integer(old(view.size) - 1) == to_integer(old(view.size)) - 1;
+  };
+ }
+ have separate(region(7).footprint, memory((&back)[0..1]));
+ have back == at(region(7).entry, back) by {
+  preserve(memory((&back)[0..1]), region(7));
+ }
+ step_until(function.exit);
+ close();
+}
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     let missing = proof.replace(

@@ -338,7 +338,7 @@ pub(super) fn verify_execution_theorem(
     let arguments = execution
         .parameters
         .iter()
-        .map(|p| syntax::CExpression::Variable((p.name().to_string()).into()))
+        .map(|parameter| syntax::CExpression::Variable(parameter.binding_name()))
         .collect();
     let body = if block.signature().return_type() == InterfaceType::Void {
         syntax::CStatement::Call {
