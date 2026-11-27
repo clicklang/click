@@ -238,9 +238,18 @@ fn integer_comparison_bridge_reconstructs_shared_operands_linearly() {
                 value = IntegerTerm::Add(value.clone(), value).into();
             }
             let source = OldConditionTerm::IntegerGreaterEqual(value.clone(), value);
+            let (stored, storage_work) = crate::instrumentation::measure_deterministic_work(|| {
+                StoredConditionTerm::from(source.clone())
+            });
+            assert!(
+                storage_work <= 2,
+                "size={size}, storage_work={storage_work}"
+            );
             let ((term, restored), work) =
                 crate::instrumentation::measure_deterministic_work(|| {
                     let term = KernelTermImport::default().condition(&source);
+                    assert_eq!(stored.root(), Some(&term));
+                    drop(stored);
                     drop(source);
                     let restored = KernelTermExport::condition(&term).unwrap();
                     (term, restored)

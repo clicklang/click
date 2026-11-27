@@ -357,27 +357,12 @@ pub(crate) fn integer_affine_machine_values(
     }
     // A native comparison observes the machine values its Integer reading
     // does, as `integer_affine_claim` reads it.
-    if !matches!(
-        condition.old_form(),
-        crate::kernel::integer_comparison_condition!(_, _)
-    ) && let Some(reading) =
-        crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-            &Proposition::condition_is(condition.clone(), value),
-        )
-        .into_iter()
-        .next()
-    {
-        return integer_affine_machine_values(&reading);
-    }
-    let (left, right) = match condition.old_form() {
-        OldConditionTerm::IntegerLessThan(left, right)
-        | OldConditionTerm::IntegerLessEqual(left, right)
-        | OldConditionTerm::IntegerGreaterThan(left, right)
-        | OldConditionTerm::IntegerGreaterEqual(left, right)
-        | OldConditionTerm::IntegerEqual(left, right) => (left, right),
-        _ => return Vec::new(),
-    };
-    retained_affine_machine_values([left.root(), right.root()])
+    crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+        &Proposition::condition_is(condition.clone(), value),
+    )
+    .first()
+    .map(integer_affine_machine_values)
+    .unwrap_or_default()
 }
 
 fn retained_affine_machine_values(
@@ -514,35 +499,11 @@ fn integer_affine_claim_with_context(
     context: &mut IntegerAffineCollectionContext,
 ) -> Option<IntegerAffineClaim> {
     let (condition, value) = affine_condition(proposition)?;
-    if let Some((operator, arguments)) = retained_integer_comparison(condition)
-        && let Some(claim) = integer_affine_comparison_claim(
-            *operator,
-            value,
-            arguments.each_ref(),
-            |operand, weight, terms, constant| {
-                collect_retained_affine_operand(operand, weight, terms, constant, context)
-            },
-        )
-    {
-        return claim;
+    if let Some((operator, arguments)) = retained_integer_comparison(condition) {
+        return integer_affine_comparison_claim(*operator, value, arguments.each_ref(), context);
     }
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
-    }
-    // A native comparison of machine values holds exactly when the Integer
-    // comparison of their exact observations does, so it is that Integer
-    // claim. One constant-size reading; nothing else is consulted.
-    if !matches!(
-        condition.old_form(),
-        crate::kernel::integer_comparison_condition!(_, _) | OldConditionTerm::Constant(_)
-    ) && let Some(reading) =
-        crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
-            &Proposition::condition_is(condition.clone(), value),
-        )
-        .into_iter()
-        .next()
-    {
-        return integer_affine_claim_with_context(&reading, context);
     }
     if let OldConditionTerm::Constant(actual) = condition.old_form() {
         return Some(IntegerAffineClaim {
@@ -555,24 +516,11 @@ fn integer_affine_claim_with_context(
             },
         });
     }
-    use IntegerComparisonOperator as Op;
-    let (operator, operands) = match condition.old_form() {
-        OldConditionTerm::IntegerLessThan(left, right) => (Op::LessThan, [left, right]),
-        OldConditionTerm::IntegerLessEqual(left, right) => (Op::LessEqual, [left, right]),
-        OldConditionTerm::IntegerGreaterThan(left, right) => (Op::GreaterThan, [left, right]),
-        OldConditionTerm::IntegerGreaterEqual(left, right) => (Op::GreaterEqual, [left, right]),
-        OldConditionTerm::IntegerEqual(left, right) => (Op::Equal, [left, right]),
-        OldConditionTerm::IntegerNotEqual(left, right) => (Op::NotEqual, [left, right]),
-        _ => return None,
-    };
-    integer_affine_comparison_claim(
-        operator,
-        value,
-        operands,
-        |operand, weight, terms, constant| {
-            collect_retained_affine_operand(operand.root(), weight, terms, constant, context)
-        },
-    )?
+    // A machine comparison contributes the affine claim of its first Integer reading.
+    let readings = crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+        &Proposition::condition_is(condition.clone(), value),
+    );
+    integer_affine_claim_with_context(readings.first()?, context)
 }
 
 fn retained_integer_comparison(
@@ -619,14 +567,12 @@ fn affine_difference<T>(
     })
 }
 
-/// The outer option reports whether both operands could be read. The inner
-/// option reports whether the comparison has an affine claim.
-fn integer_affine_comparison_claim<T>(
+fn integer_affine_comparison_claim(
     operator: IntegerComparisonOperator,
     value: bool,
-    [left, right]: [T; 2],
-    collect: impl FnMut(T, &BigInt, &mut BTreeMap<IntegerAffineAtom, BigInt>, &mut BigInt) -> Option<()>,
-) -> Option<Option<IntegerAffineClaim>> {
+    [left, right]: [&KernelTerm; 2],
+    context: &mut IntegerAffineCollectionContext,
+) -> Option<IntegerAffineClaim> {
     use IntegerComparisonOperator as Op;
     let (reverse, strict) = match (operator, value) {
         (Op::LessThan, true) | (Op::GreaterEqual, false) => (false, true),
@@ -639,19 +585,19 @@ fn integer_affine_comparison_claim<T>(
     } else {
         [left, right]
     };
-    let mut difference = affine_difference(operands, collect)?;
+    let mut difference = affine_difference(operands, |operand, weight, terms, constant| {
+        collect_retained_affine_operand(operand, weight, terms, constant, context)
+    })?;
 
     let relation = match (operator, value) {
         (Op::Equal, true) | (Op::NotEqual, false) => IntegerAffineRelation::Equal,
         (Op::Equal, false) | (Op::NotEqual, true) => {
-            return Some(
-                (difference.terms.is_empty() && !difference.constant.is_zero()).then_some(
-                    IntegerAffineClaim {
-                        relation: IntegerAffineRelation::LessEqual,
-                        terms: difference.terms,
-                        constant: BigInt::from(-1),
-                    },
-                ),
+            return (difference.terms.is_empty() && !difference.constant.is_zero()).then_some(
+                IntegerAffineClaim {
+                    relation: IntegerAffineRelation::LessEqual,
+                    terms: difference.terms,
+                    constant: BigInt::from(-1),
+                },
             );
         }
         _ => IntegerAffineRelation::LessEqual,
@@ -665,7 +611,7 @@ fn integer_affine_comparison_claim<T>(
         difference.constant += BigInt::one();
     }
     difference.relation = relation;
-    Some(Some(difference))
+    Some(difference)
 }
 
 fn collect_retained_affine_operand(

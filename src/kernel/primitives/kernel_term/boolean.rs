@@ -996,8 +996,11 @@ mod tests {
                 KernelTermNode::IntegerLiteral(_)
             ));
             assert!(distinct.insert(term.clone()));
-            assert_eq!(KernelTermImport::default().condition(&source), term);
+            let stored = StoredConditionTerm::from(source.clone());
+            assert_eq!(stored.root(), Some(&term));
+            assert_eq!(stored.old_form(), &source);
             drop(source);
+            drop(stored);
             let restored = KernelTermExport::condition(&term).unwrap();
             // Reconstructed old objects may have new allocation IDs; the
             // common operator and ordered operands must retain their identity.
