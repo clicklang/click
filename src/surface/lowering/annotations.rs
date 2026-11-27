@@ -4835,12 +4835,17 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     /// Lower a proposition through Surface: elaborate it, then lower the
     /// Surface form (`design/typed-surface.md`).
+    /// Lower a proposition written in Syntax: elaborate the whole clause,
+    /// binder bodies included, then lower the Surface, so no part of the
+    /// clause is elaborated inside its lowering (`design/typed-surface.md`).
     fn click_proposition_to_spec_proposition(
         &mut self,
         proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
-        let surface = self.elaborate_proposition(proposition, environment);
+        let surface = self.with_elaborator(|elaborator| {
+            elaborator.elaborate_clause(proposition, &TypingEnvironment::of(environment))
+        });
         self.lower_surface_proposition(&surface, environment)
     }
 

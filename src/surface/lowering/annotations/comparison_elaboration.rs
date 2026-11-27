@@ -6,17 +6,6 @@
 use super::*;
 
 impl AnnotationLowerer<'_> {
-    /// Elaborate a proposition in the lowering context it is lowered in.
-    pub(super) fn elaborate_proposition<'s>(
-        &mut self,
-        proposition: &'s SyntaxProposition,
-        environment: &SpecElaborationContext,
-    ) -> SurfaceProposition<'s> {
-        self.with_elaborator(|elaborator| {
-            elaborator.elaborate_proposition(proposition, &TypingEnvironment::of(environment))
-        })
-    }
-
     /// Elaborate `left operator right` in the lowering context it is lowered
     /// in.
     pub(super) fn elaborate_comparison(
