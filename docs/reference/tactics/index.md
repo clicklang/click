@@ -130,7 +130,7 @@ and then closes every open claim on every path with the implicit closer, per
 claim or once for a grouped proof. A written `close()` closes the first open goal and runs no C, so
 `by close();` restates the omitted proof only where no C is left to run, as
 for a pure theorem or a `have`; with C left it is refused, since its goals
-exist only at function exit. An execution `match`, plain proof `if`, or
+exist only at function exit. An execution `match`, proof `if`, or
 `cases` arm can end with `close()` when its proof prefix establishes `false`
 at the split's program point. A loop `maintain` path holding `false` can
 also end at its current point with `close()`.
@@ -2745,8 +2745,9 @@ implications and checks their complete conjunction. An impossible arm may
 end with `close()` once that case holds `false`. The arm can establish
 `false` with a checked proof prefix, such as `unfold(r)` to expose a fact
 from an owned resource. This works at function exit in a `match ... ensuring`
-as well. The remaining live arms are split and joined normally, and a sole
-live arm runs on the parent frontier without a join.
+as well. The remaining live arms are split and joined normally. A sole live arm
+runs on the parent frontier and must establish every clause of a written
+`ensuring` interface.
 
 **Failure, checking, and tools:**
 
@@ -2984,10 +2985,10 @@ continues once from that state, with the facts both arms established.
 The arms may reason, run the same C statements, and unfold and refold resources.
 The case facts and anything only one arm proved do not survive the join. With
 `ensuring { fact ...; owns ...; views ...; } then`, the arms must rejoin through
-that interface, as the arms of a `branch ensuring` do: both arms establish every
-interface fact and hold every interface resource, and the proof continues once
-from the state the interface describes, even when the arms ended in different
-states.
+that interface, as the arms of a `branch ensuring` do. Every live arm must
+establish each interface fact and hold each interface resource. If an arm
+establishes `false` without executing C, it can end with `close()`. A sole
+surviving arm keeps its concrete state after the interface check.
 
 `owns name: resource(...);` names an instance that carries fields: each arm
 supplies the instance it has bound to `name`, the join gives `name` a fresh
@@ -3006,7 +3007,8 @@ those tactics at different points are different paths of the C and each
 is finished its own way.
 
 At function exit the C state is fixed. When the path's facts already decide
-`P`, only the matching arm runs. When `P` is open and tactics follow the `if`,
+`P`, only the matching arm runs and it must establish its written `ensuring`
+interface. When `P` is open and tactics follow the `if`,
 the `if` is refused, because its arms would not rejoin and what follows would
 be checked once per arm (`mdtests/a_proof_if_after_execution_that_would_fork_is_refused.md`).
 Write those tactics inside the arms instead

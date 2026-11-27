@@ -509,6 +509,7 @@ pub(super) struct SurfaceIfArmEnd {
 #[derive(Clone, PartialEq)]
 pub(super) enum SurfacePathSelector {
     Proposition(SyntaxProposition),
+    IfEnsuring(SyntaxProposition, Arc<[ProofAssertion]>),
     /// The arm of a `cases` split on this disjunction: `true` is its left
     /// side.
     Disjunction(SyntaxProposition),
@@ -1369,7 +1370,10 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     if paths.len() == 1
         && !paths[0].choices().iter().any(|choice| {
             choice.if_arm_end.is_some_and(|end| end.binds_obtain)
-                || matches!(&choice.selector, SurfacePathSelector::MatchArm(..))
+                || matches!(
+                    &choice.selector,
+                    SurfacePathSelector::MatchArm(..) | SurfacePathSelector::IfEnsuring(..)
+                )
         })
     {
         return Ok(paths[0].steps().to_vec());
@@ -1480,6 +1484,15 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         return Ok(steps);
     }
 
+    if let SurfacePathSelector::IfEnsuring(condition, assertions) = &first_choice.selector {
+        return synthesize_scoped_if(
+            prefix,
+            condition,
+            Some(assertions.to_vec()),
+            then_paths,
+            else_paths,
+        );
+    }
     if let SurfacePathSelector::Proposition(condition) = &first_choice.selector
         && then_paths.iter().chain(&else_paths).any(|path| {
             path.choices[path.choice - 1]
@@ -1487,7 +1500,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
                 .is_some_and(|end| end.binds_obtain)
         })
     {
-        return synthesize_scoped_if(prefix, condition, then_paths, else_paths);
+        return synthesize_scoped_if(prefix, condition, None, then_paths, else_paths);
     }
 
     if then_paths.is_empty() {
@@ -1529,7 +1542,9 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         SurfacePathSelector::CallOutcome => {
             return Err("call paths require the retained frontier outcomes arms".to_string());
         }
-        SurfacePathSelector::MatchArm(..) => unreachable!("a match synthesizes above"),
+        SurfacePathSelector::MatchArm(..) | SurfacePathSelector::IfEnsuring(..) => {
+            unreachable!("scoped splits synthesize above")
+        }
     });
     Ok(steps)
 }
@@ -1539,6 +1554,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
 fn synthesize_scoped_if<'p>(
     mut prefix: Vec<ProofStep>,
     condition: &SyntaxProposition,
+    ensuring: Option<Vec<ProofAssertion>>,
     then_paths: Vec<SurfacePathCursor<'p>>,
     else_paths: Vec<SurfacePathCursor<'p>>,
 ) -> Result<Vec<ProofStep>, String> {
@@ -1568,7 +1584,7 @@ fn synthesize_scoped_if<'p>(
     let then_proof = synthesize_arm(then_paths)?;
     let else_proof = synthesize_arm(else_paths)?;
     prefix.push(ProofStep::If {
-        ensuring: None,
+        ensuring,
         condition: condition.clone(),
         then_proof,
         else_proof,
@@ -1635,6 +1651,8 @@ pub(super) enum PostExecutionTactic {
     },
     Apply(TheoremApplication),
     Have(ProofHave),
+    /// A sole surviving arm checks its interface on each reached outcome.
+    Ensuring(Arc<[ProofAssertion]>),
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
     /// focused outcome `Proof` to decide the condition, then applies only the
@@ -1647,6 +1665,7 @@ pub(super) enum PostExecutionTactic {
         /// A terminal join routes its deferred operations through this exact
         /// checked decision. Written post-execution cases have no such route.
         execution_route: Option<usize>,
+        ensuring: Option<Arc<DeferredPostExecutionTactic>>,
         then_tactics: DeferredArm,
         else_tactics: DeferredArm,
     },
@@ -1745,6 +1764,22 @@ pub(super) struct DeferredPostExecutionTactic {
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
+}
+
+impl DeferredPostExecutionTactic {
+    pub(super) fn interface_check(
+        assertions: Option<&[ProofAssertion]>,
+        tactic_index: usize,
+    ) -> Option<Arc<Self>> {
+        let assertions = assertions?;
+        Some(Arc::new(Self {
+            lexical_bindings: None,
+            reads_deferred_obtain: false,
+            tactic_index,
+            source_index: usize::MAX,
+            tactic: PostExecutionTactic::Ensuring(Arc::from(assertions)),
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -2052,6 +2087,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
         PostExecutionTactic::ResourceStepProved(tactic) => (tactic_name(tactic), "control"),
         PostExecutionTactic::CloseOpen { .. } => ("with", "control"),
+        PostExecutionTactic::Ensuring(_) => ("ensuring", "simple"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),
         PostExecutionTactic::Match { .. } => ("match", "control"),
