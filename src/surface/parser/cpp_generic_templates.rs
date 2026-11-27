@@ -349,8 +349,8 @@ fn instance(
             }
         }
     }
-    // A head restates its declaration's parameter names, which an instance
-    // may name otherwise; a count that differs is the signature check's.
+    // A named instance parameter supplies its spelling. An unnamed external
+    // parameter takes the written contract's name when its head is checked.
     let renaming = if block.parameters.len() == parameters.len() {
         block
             .parameters
@@ -359,7 +359,7 @@ fn instance(
             .filter_map(|(generic, instance)| {
                 generic
                     .as_ref()
-                    .filter(|generic| *generic != instance)
+                    .filter(|generic| !instance.is_empty() && *generic != instance)
                     .map(|generic| (generic.as_str(), instance.as_str()))
             })
             .collect::<BTreeMap<_, _>>()

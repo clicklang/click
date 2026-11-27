@@ -404,7 +404,7 @@ fn prepare_functions(
             if imported.prelowered_kernel_function().is_some() {
                 imported.opaque_exception_constructor = opaque_exception_constructor;
             }
-            if source.axiom.is_some() && generic.is_none() {
+            if source.axiom.is_some() {
                 imported = imported.with_positional_parameters();
             }
             Ok(imported
