@@ -95,9 +95,10 @@ fn written_close_closes_only_one_selected_closing_goal() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn expansion_omits_finalization_after_an_explicit_claim_proof() {
-    let source = proof("normalize();");
+    let source = proof("close() using {};");
     let expanded = expand_function_proof_source(&source, C, "value").unwrap();
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(expanded.contains("have result == 7 by"), "{expanded}");
+    assert_eq!(expanded.matches("close();").count(), 2, "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, C)).unwrap();
 }
 
