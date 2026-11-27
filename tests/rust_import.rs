@@ -468,7 +468,7 @@ fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
         ("add_assign", "views other.0[0..4];", "views other.0[1..4];"),
         (
             "mul_assign",
-            "requires rhs == 0u32 or self.0[0] <= 4294967295u32 / rhs;",
+            "requires to_integer(self.0[0]) * to_integer(rhs) <= 4294967295;",
             "requires rhs == 2u32; requires self.0[0] == 4294967295u32;",
         ),
         ("local", "(b * 2u32 % 7u32)", "(b * 2u32 % 3u32)"),
@@ -562,7 +562,7 @@ fn charon_assignment_operators_cli_tools_recheck_expanded_certificates() {
         "U32X4_mul_assign_u32.contract",
         "U32X4_add_assign_ref_U32X4.contract",
         "reduced.contract",
-        "local.contract",
+        "local.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
