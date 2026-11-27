@@ -40,7 +40,7 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
                             rewrite(old(std_span_size(dst)), 0u64);
                             close();
                         }
-                        contradiction(k < old(std_span_size(dst)));
+                        close();
                     }
                 }
             }

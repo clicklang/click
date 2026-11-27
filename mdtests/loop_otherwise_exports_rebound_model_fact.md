@@ -45,7 +45,7 @@ void finish(int32* p, int32* stop) {
         otherwise {
             have pending(w.model) == 0 by {
                 cases {
-                    address(p) != address(stop) => { contradiction(address(p) != address(stop)); }
+                    address(p) != address(stop) => { close(); }
                     pending(w.model) == 0 => { close(); }
                 }
             }

@@ -1,11 +1,6 @@
-# A function-level `match` arm's `contradiction` must name a refuted fact
+# A reachable constructor arm cannot prove false
 
-The arm of
-[`function_match_arm_closes_by_contradiction_after_an_unfold.md`](function_match_arm_closes_by_contradiction_after_an_unfold.md),
-except that the function no longer requires `p != 0`. Unfolding the
-`Cell::Missing` body still publishes `p == 0`, but nothing on the arm's path
-denies it, so the arm is not impossible and its `contradiction` is refused,
-naming the proposition as written.
+Unfolding the missing-cell arm gives `p == 0`. Without a conflicting requirement, the arm cannot establish `false`.
 
 ```c filename=peek_nonnull.c
 struct node { int32 shade; };
@@ -41,7 +36,7 @@ int32 peek(struct node* p) {
     match x.model {
         Cell::Missing => {
             unfold(x);
-            contradiction(p == 0);
+            have false by close(); close();
         },
         Cell::Present(identity) => {
         },
@@ -50,5 +45,5 @@ int32 peek(struct node* p) {
 ```
 
 ```expect
-fail: constructor-arm `contradiction(p == 0)` requires an exact fact and its negation in that arm
+fail: could not establish `false`
 ```

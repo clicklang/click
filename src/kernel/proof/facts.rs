@@ -528,7 +528,7 @@ impl PropositionSource for PureFactStore {
 
 /// Whether `proposition` equates two constructors of different variants of
 /// one algebraic type, which no value satisfies.
-fn is_constructor_clash(proposition: &Proposition) -> bool {
+pub(super) fn is_constructor_clash(proposition: &Proposition) -> bool {
     matches!(proposition,
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
             if left.old_form().algebraic_type == right.old_form().algebraic_type
@@ -1267,8 +1267,7 @@ impl PureFactStore {
             || self.contains_opposite_constant_polarity(&falsehood)
     }
 
-    /// Whether the positive half of `contradiction(fact)` is held, so a
-    /// refusal can say which half was missing.
+    /// Whether the selected fact is held in one of its exact forms.
     pub(crate) fn holds_contradiction_fact(&self, fact: &Proposition) -> bool {
         // An introduced guard is held conjunct by conjunct, so a
         // contradiction written over the whole guard finds it that way.

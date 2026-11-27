@@ -212,7 +212,7 @@ have viewable(buf[0u64..len]) by close();
       if 0u64 < len { close(); } else {
        have 0u64 == len;
        have len == 0u64 by { rewrite(0u64, len); close(); }
-       contradiction(len == 0u64);
+       close();
       }
      }
      have to_integer(0u64) < to_integer(len);
@@ -2737,7 +2737,7 @@ apply(zlib_seed_bounds(adler));
       if 0u64 < len { close(); } else {
        have 0u64 == len;
        have len == 0u64 by { rewrite(0u64, len); close(); }
-       contradiction(len == 0u64);
+       close();
       }
      }
      have to_integer(0u64) < to_integer(len);

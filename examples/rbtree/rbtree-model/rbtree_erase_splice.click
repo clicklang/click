@@ -147,7 +147,7 @@ theorem rb_min_list_nonempty_left(node: struct rb_node*, parent: struct rb_node*
         match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_min_list(RbTree::Node(node, parent, color,
@@ -168,7 +168,7 @@ theorem rb_remove_min_nonempty_left(node: struct rb_node*, parent: struct rb_nod
         match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_remove_min(RbTree::Node(node, parent, color,
@@ -188,7 +188,7 @@ theorem rb_minimum_nonempty_left(node: struct rb_node*, parent: struct rb_node*,
         match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_minimum(RbTree::Node(node, parent, color,
@@ -209,7 +209,7 @@ theorem rb_min_context_nonempty_left(node: struct rb_node*, parent: struct rb_no
         match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_min_context(RbTree::Node(node, parent, color,
@@ -228,7 +228,7 @@ theorem rb_minimum_list(tree: RbTree, successor: struct rb_node*, color: Color, 
         match tree {
             RbTree::Empty => {
                 have rb_minimum(RbTree::Empty) != RbMinimum::Found(successor, color, child);
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, color, child));
+                close();
             }
             RbTree::Node(node, parent, ncolor, left, right) => {
                 if left == RbTree::Empty {
@@ -315,8 +315,7 @@ theorem rb_min_context_cut_leaf(tree: RbTree, up: Context, successor: struct rb_
                     unfold(rb_minimum(RbTree::Empty));
                     close();
                 }
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color,
-                    RbTree::Empty));
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
@@ -359,8 +358,7 @@ theorem rb_min_context_child(tree: RbTree, up: Context, successor: struct rb_nod
                     unfold(rb_minimum(RbTree::Empty));
                     close();
                 }
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color,
-                    child));
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
@@ -726,7 +724,7 @@ theorem rb_min_parent_nonempty_left(node: struct rb_node*, parent: struct rb_nod
         match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_min_parent(RbTree::Node(node, parent, color,
@@ -746,7 +744,7 @@ theorem rb_min_context_cut_child(tree: RbTree, up: Context, successor: struct rb
         match tree {
             RbTree::Empty => {
                 have not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {

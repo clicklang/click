@@ -68,7 +68,7 @@ void walk(struct tree_node* root, struct tree_node* other) {
         initialize by close();
         maintain by {
             match t.model {
-                HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
+                HeapTree::Empty => { close(); },
                 HeapTree::Node(identity, value, left_model, right_model) => {
                     step();
                 },

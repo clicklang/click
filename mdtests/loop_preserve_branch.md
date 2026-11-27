@@ -5,8 +5,7 @@ branch-entry execution steps. Each proof branch must reach the loop back edge
 and reestablish the complete invariant set, including the ranking obligations
 the `decreases` clause adds. The `i < 0` arm cannot happen — the invariant
 `i >= 0` rules it out — but the proof still walks it to the back edge, so its
-decrease obligation is closed by `contradiction`, citing the arm guard whose
-negation the invariant already states.
+decrease obligation closes from `false`: the invariant negates the arm guard.
 
 ```c filename=loop_preserve_branch.c
 int32 loop_preserve_branch(int32 n) {

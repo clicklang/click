@@ -259,7 +259,7 @@ template<class T> Stack<T>::~Stack() {
         initialize by close();
         maintain by {
             match list.items {
-                List::Nil => { contradiction(list.items == List<T>::Nil); },
+                List::Nil => { close(); },
                 List::Cons(value, rest) => {
                     let { tail: tail } = unfold(list);
                     unfold(length(List::Cons(value, rest)));

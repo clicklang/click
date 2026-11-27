@@ -57,13 +57,11 @@ Kernel files:
   every retained arm is individually valid. Surface joins a constructor family
   of any width by splitting the frontier over the live arms, and preserves
   lexical bindings across deferred folds.
-  An exact contradiction under the partition root plus one constructor
-  equation can exclude that arm. The kernel retains the named contradiction
-  in a new partition identity, and coverage counts it without a C trace or
-  invented return state. Other arms still require checked execution evidence.
-  Surface currently accepts an excluded arm consisting of one
-  `contradiction(...)`, and splits the remaining live arms normally;
-  all-excluded matches remain unsupported.
+  A constructor arm can be excluded once its fact context holds `false`. The
+  kernel retains that exclusion in a new partition identity, and coverage
+  counts it without a C trace or return state. Surface uses a terminal
+  `close()` to exclude the arm and splits the remaining live arms normally.
+  All-excluded matches remain unsupported.
 - `reasoning.rs`: deterministic proof helpers, finite forall/range reasoning,
   substitutions, execution-derived pure facts, and obligation plumbing.
 - `spec.rs`: `SpecExpression`/`SpecProposition` lowering and evaluation.

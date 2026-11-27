@@ -87,7 +87,7 @@ void destroy(struct tree* t) {
         initialize by close();
         maintain by {
             match x.model {
-                Tree::Leaf => { contradiction(x.model == Tree::Leaf); },
+                Tree::Leaf => { close(); },
                 Tree::Node(child_model, sibling_model) => {
                     apply(tree_size_is_nonnegative(child_model));
                     apply(tree_size_is_nonnegative(sibling_model));

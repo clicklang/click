@@ -114,7 +114,10 @@ memory: `before_point` and `after_point` on `MemoryEffectSummary`,
 no reasoning. A fact built from a state takes `ExecutionState::memory_point`;
 a rewrite of a fact keeps its point.
 
-Every memory a fact quotes is the state at a point. No fact quotes a staged
+Every memory a fact quotes is the state at a point, and every state a fact is
+built from stands at one: a proof's entry, bound from a state on no path,
+starts at a function-entry point (`bind_program_function_arguments_impl`), as
+does a scratch state that evaluates a requirement segment's bounds. No fact quotes a staged
 state: `ExecutionState::memory_point` panics on one, as `program_point` does.
 A call's exit region records its frees in one `HeapAllocationFreed` from its
 effect point to its exit, whose `mutable_ranges` hold the region's other
@@ -596,8 +599,8 @@ Checking decides a closed condition from its literal roots with
 `machine_integer::comparison::closed_condition_value`, including when exact
 rewriting removed the last variable before the comparison was printed. It
 does so in exact matching through the comparison form, including closed
-comparisons nested under connectives and binders (so `contradiction(1 == 0)`
-matches a held `false`), in requirement matching, `normalize`, and
+comparisons nested under connectives and binders, in requirement matching,
+`normalize`, and
 assumption-free normalization. The fact store records a closed comparison
 that holds without indexing it. A closed goal is false or true whatever the
 facts, so `close()` treats a false one like the goal `false` and refutes the

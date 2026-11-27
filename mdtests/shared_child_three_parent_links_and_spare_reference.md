@@ -75,15 +75,15 @@ struct child* last_kid(struct parent* a, struct parent* b, struct parent* c) {
     ensures result == c->kid;
 } by {
     match c_link.link {
-        ParentLink::Empty => { contradiction(c_link.link == ParentLink::Empty); },
+        ParentLink::Empty => { close(); },
         ParentLink::Linked(ck) => {
             unfold(c_link);
             match b_link.link {
-                ParentLink::Empty => { contradiction(b_link.link == ParentLink::Empty); },
+                ParentLink::Empty => { close(); },
                 ParentLink::Linked(bk) => {
                     unfold(b_link);
                     match a_link.link {
-                        ParentLink::Empty => { contradiction(a_link.link == ParentLink::Empty); },
+                        ParentLink::Empty => { close(); },
                         ParentLink::Linked(ak) => {
                             unfold(a_link);
                             step_until(function.exit);

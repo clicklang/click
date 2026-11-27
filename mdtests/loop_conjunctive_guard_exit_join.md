@@ -43,7 +43,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
                     close();
                 } else {
                     have a == 0;
-                    contradiction(a == 0);
+                    close();
                 }
             }
             step();
@@ -60,7 +60,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
                         have a == 0 by {
                             close();
                         }
-                        contradiction(a == 0);
+                        close();
                     }
                     p[0] == 0 => {
                         close();

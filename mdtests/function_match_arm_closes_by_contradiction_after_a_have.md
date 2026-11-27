@@ -1,28 +1,7 @@
-# A function-level `match` arm closes by `contradiction` after a `have`
+# A match arm closes after a bridge establishes false
 
-`peek` holds a modelled instance and matches its model. The `Cell::Missing` arm
-is impossible, and the proof says why in three steps: the precondition restated
-at the arm's constructor, the predicate's value there, and the `contradiction`
-between them.
-
-A `contradiction` refutes the path it stands on wherever on that path it
-stands, inside a loop's `maintain` and in a `match` at the function's own
-level. An arm that only bridges facts
-before its `contradiction` (`have`s, unfolds, theorem applications, but no C
-step) runs that bridge inside the arm, and the arm is then excluded from the
-facts the bridge reached, exactly as a sole `contradiction` excludes it. It
-owes no C outcome and does not reach function exit.
-
-Here the sole-tactic form `contradiction(x.model == Cell::Missing)` happens to
-work too, because the predicate is a precondition and contract lowering refutes
-the arm from it. The bridged form is the only one there is when the refuting
-fact is established by the proof rather than required by the contract, as
-after the unchanged Linux `rb_next`'s ascent loop, where what rules out a
-`Right` frame is something each `break` exit stated ([`rb_next.md`](rb_next.md)).
-The bridge may also be an `unfold`
-([`function_match_arm_closes_by_contradiction_after_an_unfold.md`](function_match_arm_closes_by_contradiction_after_an_unfold.md)),
-and a `contradiction` the arm does not refute is still refused
-([`function_match_arm_contradiction_needs_a_refuted_fact.md`](function_match_arm_contradiction_needs_a_refuted_fact.md)).
+The bridge records the opposing fact in the constructor arm. The arm then
+uses `close()` to exclude that constructor before executing C.
 
 ```c filename=peek.c
 struct node { int32 shade; };
@@ -77,7 +56,7 @@ int32 peek(struct node* p) {
                 unfold(is_present(Cell::Missing));
                 close();
             }
-            contradiction(is_present(Cell::Missing) == 0);
+            close();
         },
         Cell::Present(identity) => {
             step_until(function.exit);

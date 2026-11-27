@@ -202,7 +202,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
                                                 rewrite(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)), 0); close();
                                             }
-                                            contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                            close();
                                         },
                                         SizedTree::Node(u, ug, uc, uv, ul, ur) => {
                                             match uc {
@@ -214,7 +214,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
                                                         rewrite(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)), 0); close();
                                                     }
-                                                    contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                                    close();
                                                 },
                                                 Color::Red => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)));
@@ -236,7 +236,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have not (sized_parent_is(uncle,g) == 1) by {
                                                                 rewrite(sized_parent_is(uncle,g), 0); close();
                                                             }
-                                                            contradiction(sized_parent_is(uncle,g) == 1);
+                                                            close();
                                                         }
                                                     }
                                                     have separate(memory(p->__rb_parent_color), memory(u->__rb_parent_color)) by close();
@@ -374,7 +374,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
                                                 rewrite(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)), 0); close();
                                             }
-                                            contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                            close();
                                         },
                                         SizedTree::Node(u, ug, uc, uv, ul, ur) => {
                                             match uc {
@@ -386,7 +386,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
                                                         rewrite(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)), 0); close();
                                                     }
-                                                    contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                                    close();
                                                 },
                                                 Color::Red => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)));
@@ -408,7 +408,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have not (sized_parent_is(uncle,g) == 1) by {
                                                                 rewrite(sized_parent_is(uncle,g), 0); close();
                                                             }
-                                                            contradiction(sized_parent_is(uncle,g) == 1);
+                                                            close();
                                                         }
                                                     }
                                                     have separate(memory(p->__rb_parent_color), memory(u->__rb_parent_color)) by close();
@@ -547,7 +547,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
                                                 rewrite(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)), 0); close();
                                             }
-                                            contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                            close();
                                         },
                                         SizedTree::Node(u, ug, uc, uv, ul, ur) => {
                                             match uc {
@@ -559,7 +559,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
                                                         rewrite(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)), 0); close();
                                                     }
-                                                    contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                                    close();
                                                 },
                                                 Color::Red => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)));
@@ -583,7 +583,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have not (sized_parent_is(uncle,g) == 1) by {
                                                                 rewrite(sized_parent_is(uncle,g), 0); close();
                                                             }
-                                                            contradiction(sized_parent_is(uncle,g) == 1);
+                                                            close();
                                                         }
                                                     }
                                                     have separate(memory(p->__rb_parent_color), memory(u->__rb_parent_color)) by close();
@@ -725,7 +725,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
                                                 rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); close();
                                             }
-                                            contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                            close();
                                         },
                                         SizedTree::Node(u, ug, uc, uv, ul, ur) => {
                                             match uc {
@@ -737,7 +737,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
                                                         rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); close();
                                                     }
-                                                    contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
+                                                    close();
                                                 },
                                                 Color::Red => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
@@ -761,7 +761,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have not (sized_parent_is(uncle,g) == 1) by {
                                                                 rewrite(sized_parent_is(uncle,g), 0); close();
                                                             }
-                                                            contradiction(sized_parent_is(uncle,g) == 1);
+                                                            close();
                                                         }
                                                     }
                                                     have separate(memory(p->__rb_parent_color), memory(u->__rb_parent_color)) by close();
@@ -957,7 +957,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(ctx, SizedContext::Top);
                                                 unfold(sized_flip_black_boundary(SizedContext::Top)); close();
                                             }
-                                            contradiction(sized_flip_black_boundary(ctx) == 1);
+                                            close();
                                         },
                                         SizedContext::Left(a, gp, color, cached, sibling, up) => {
                                             have parent == a by {

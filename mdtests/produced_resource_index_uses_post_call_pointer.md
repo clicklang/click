@@ -36,7 +36,7 @@ void release(struct root* root, struct node* replacement) {
     ensures root->node == replacement;
 } by {
     match state.shape {
-        Shape::Empty => { unfold(state); contradiction(0 == 1); },
+        Shape::Empty => { unfold(state); close(); },
         Shape::Node => {
             let { leaf: original } = unfold(state);
             unfold(incoming);

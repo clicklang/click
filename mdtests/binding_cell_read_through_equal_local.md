@@ -81,7 +81,7 @@ int32 read_through_equal_local(struct cell* node, struct cell* parent) {
     ensures result == 7;
 } by {
     match f.model {
-        Holder::Empty => { contradiction(f.model == Holder::Empty); },
+        Holder::Empty => { close(); },
         Holder::Full(identity, value) => {
             have holder_reroot(Holder::Full(identity, value), parent)
                 == Holder::Full(parent, value) by {

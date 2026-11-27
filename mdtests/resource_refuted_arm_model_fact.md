@@ -66,7 +66,7 @@ int32 probe_present(struct node* root) {
     ensures t.model == old(t.model);
 } by {
     match t.model {
-        HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
+        HeapTree::Empty => { close(); },
         HeapTree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: rt } = unfold(t);
             have left_model != HeapTree::Empty by close();
@@ -87,7 +87,7 @@ int32 probe_absent(struct node* root) {
     ensures t.model == old(t.model);
 } by {
     match t.model {
-        HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
+        HeapTree::Empty => { close(); },
         HeapTree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: rt } = unfold(t);
             have left_model == HeapTree::Empty by close();

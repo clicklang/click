@@ -1,4 +1,7 @@
-# A bridged constructor-arm contradiction names its own source
+# A bridged constructor-arm refutation names its own source
+
+The constructor is reachable, so the local attempt to prove `false` fails.
+The diagnostic points to the closer inside the selected arm.
 
 ```c filename=peek.c
 struct node { int32 shade; };
@@ -37,12 +40,12 @@ int32 peek(struct node* p) {
         },
         Cell::Present(identity) => {
             have p == p by close();
-            contradiction(x.model == Cell::Present(identity));
+            have false by close(); close();
         },
     }
 }
 ```
 
 ```expect
-fail: contradiction(x.model == Cell::Present(identity))
+fail: could not establish `false`
 ```

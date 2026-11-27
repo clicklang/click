@@ -24,12 +24,9 @@ This is the shape of every rbtree fixup body that climbs two frames: the uncle
 case reads `rb_parent(node)` and only then knows whether the frame above the
 one it just left is `Context::Top`.
 
-Before package A26 the `contradiction` was refused with `constructor-arm
-`contradiction` requires an exact fact and its negation in that arm`, and the
-body had to nest a proof `match` over the child and carry both cases through
-the rest of the iteration
-([`loop_decreases_strict_descendant.md`](loop_decreases_strict_descendant.md)
-is that spelling).
+The earlier proof explicitly matched both child constructors through the
+rest of the iteration
+([`loop_decreases_strict_descendant.md`](loop_decreases_strict_descendant.md)).
 
 ```c filename=countdown_two.c
 void countdown_two(int32 n) {
@@ -74,13 +71,13 @@ void countdown_two(int32 n) {
         initialize by close();
         maintain by {
             match c.model {
-                Chain::Nil => { contradiction(c.model == Chain::Nil); },
+                Chain::Nil => { close(); },
                 Chain::Link(rest_model) => {
                     let { rest: r } = unfold(c);
                     step();
                     if n != 0 {
                         match r.model {
-                            Chain::Nil => { contradiction(r.model == Chain::Nil); },
+                            Chain::Nil => { close(); },
                             Chain::Link(rest2_model) => {
                                 let { rest: r2 } = unfold(r);
                                 step();

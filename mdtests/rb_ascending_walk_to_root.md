@@ -321,7 +321,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                         rewrite(if parent == 0 { 1 } else { 0 }, 0);
                         close();
                     }
-                    contradiction(ctx_node_is(c.model, parent) == 1);
+                    close();
                 },
                 Context::Left(identity, grandparent, color, sibling_model, up_model) => {
                     have ctx_reroot(Context::Left(identity, grandparent, color,
@@ -426,7 +426,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
             }
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
             have identity != 0 by close();
-            contradiction(identity == 0);
+            close();
         },
         Context::Right(identity, grandparent, color, sibling_model, up_model) => {
             have identity == 0 by {
@@ -435,7 +435,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
             }
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
             have identity != 0 by close();
-            contradiction(identity == 0);
+            close();
         },
     }
     have plug(c.model, t.model) == t.model by {
@@ -450,7 +450,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
     unfold(c);
     let ctx = fold(ctx_at(node, root), { model: Context::Top });
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, parent_model, color, left_model, right_model) => {
             have RbTree::Node(identity, parent_model, color, left_model, right_model)
                 == plug(old(c.model), old(t.model)) by {

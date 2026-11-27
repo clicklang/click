@@ -12,7 +12,7 @@ theorem rb_minimum_child_valid(tree: RbTree, successor: struct rb_node*, min_col
         match tree {
             RbTree::Empty => {
                 have not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
@@ -39,7 +39,7 @@ theorem rb_minimum_child_height(tree: RbTree, successor: struct rb_node*, min_co
         match tree {
             RbTree::Empty => {
                 have not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
@@ -69,7 +69,7 @@ theorem zero_frame_is_red(color: Color, height: Nat) {
             Color::Red => { close(); }
             Color::Black => {
                 have not(frame_black_height(Color::Black, height) == Nat::Zero);
-                contradiction(frame_black_height(Color::Black, height) == Nat::Zero);
+                close();
             }
         }
     }
@@ -83,7 +83,7 @@ theorem nonempty_zero_height_is_red(tree: RbTree) {
         match tree {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 apply(black_height_node_frame(node, parent, color, left, right));
@@ -110,7 +110,7 @@ theorem red_right_child_has_black_parent(node: struct rb_node*, parent: struct r
                     rewrite(rb_color(right), Color::Red);
                     unfold(color_black(Color::Red)); close();
                 }
-                contradiction(rb_root_black(right) == 1);
+                close();
             }
             Color::Black => { close(); }
         }
@@ -127,7 +127,7 @@ theorem rb_minimum_nonempty_child_parent_color(tree: RbTree, successor: struct r
         match tree {
             RbTree::Empty => {
                 have not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 apply(rb_minimum_child_height(RbTree::Node(node, parent, color, left, right), successor,
@@ -159,7 +159,7 @@ theorem blackening_red_adds_one(tree: RbTree) {
         match tree {
             RbTree::Empty => {
                 have not(rb_color(RbTree::Empty) == Color::Red);
-                contradiction(rb_color(RbTree::Empty) == Color::Red);
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 have color == Color::Red;
@@ -180,7 +180,7 @@ theorem black_color_is_black(color: Color) {
         match color {
             Color::Red => {
                 have not(color_black(Color::Red) == 1);
-                contradiction(color_black(Color::Red) == 1);
+                close();
             }
             Color::Black => { close(); }
         }
@@ -356,7 +356,7 @@ theorem rb_remove_min_blackened_nonempty_left(node: struct rb_node*, parent: str
         match left {
             RbTree::Empty => {
                 have RbTree::Empty == RbTree::Empty;
-                contradiction(RbTree::Empty == RbTree::Empty);
+                close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_remove_min_blackened(RbTree::Node(node, parent, color,
@@ -376,7 +376,7 @@ theorem rb_min_context_cut_blackened_child(tree: RbTree, up: Context, successor:
         match tree {
             RbTree::Empty => {
                 have not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
-                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
@@ -700,7 +700,7 @@ theorem rb_erase_no_fixup_successor_splice(erased: struct rb_node*, successor: s
         if child == RbTree::Empty {
             have min_color == Color::Red by {
                 cases {
-                    not(child == RbTree::Empty) => { contradiction(child == RbTree::Empty); }
+                    not(child == RbTree::Empty) => { close(); }
                     min_color == Color::Red => { close(); }
                 }
             }

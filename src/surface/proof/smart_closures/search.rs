@@ -5467,7 +5467,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if matches!(search_input.context.as_ref(), ProofContext::Pure(_)) {
             for (kernel, surface) in &anchored_pairs {
-                if search_input.facts().contradicts(kernel)
+                let opposite = match kernel {
+                    Proposition::ConditionIs(condition, truth) => {
+                        Proposition::condition_is(condition.clone(), !truth)
+                    }
+                    proposition => Proposition::Not(Box::new(proposition.clone())),
+                };
+                if (search_input.facts().holds_false()
+                    || search_input.facts().contains(&opposite)
+                    || order_claim_forms(&opposite)
+                        .iter()
+                        .any(|form| search_input.facts().contains(form))
+                    || normalizes_context_free_leaf(&opposite))
                     && let Some(closed) =
                         attempt::candidate_outcome(Self::close_refuted_fact(search_input, surface))?
                 {

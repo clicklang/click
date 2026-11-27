@@ -158,7 +158,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 apply(sized_word_matches_neither(old->__rb_parent_color, 0u64, 1u64));
                             }
                             have not(sized_context_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(sized_context_parent_word(d.model, old->__rb_parent_color), 0); close(); }
-                            contradiction(sized_context_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     rewrite(old->__rb_parent_color, 1); close();
@@ -236,7 +236,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 apply(sized_word_matches_neither(old->__rb_parent_color, address(id), address(id) + 1u64));
                             }
                             have not(sized_context_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(sized_context_parent_word(d.model, old->__rb_parent_color), 0); close(); }
-                            contradiction(sized_context_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
@@ -314,7 +314,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 apply(sized_word_matches_neither(old->__rb_parent_color, address(id), address(id) + 1u64));
                             }
                             have not(sized_context_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(sized_context_parent_word(d.model, old->__rb_parent_color), 0); close(); }
-                            contradiction(sized_context_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };

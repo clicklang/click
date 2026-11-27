@@ -943,7 +943,7 @@ theorem black_color_is_black(color: Color) {
         match color {
             Color::Red => {
                 have not(color_black(Color::Red) == 1);
-                contradiction(color_black(Color::Red) == 1);
+                close();
             }
             Color::Black => { close(); }
         }
@@ -970,7 +970,7 @@ theorem black_color_is_black(color: Color) {
         match color {
             Color::Red => {
                 have not(color_black(Color::Red) == 1) by close();
-                contradiction(color_black(Color::Red) == 1);
+                close();
             }
             Color::Black => { close(); }
         }

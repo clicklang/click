@@ -163,7 +163,7 @@ theorem adler_residue_unique(n: Integer, q: Integer, r: Integer) {
    have q <= -1 by { close() using { q < 0; }; }
    have n <= -1 by { close() using { n == q * 65521 + r; q <= -1; r <= 65520; }; }
    have not (0 <= n) by { close() using { n <= -1; }; }
-   contradiction(0 <= n);
+   close();
   } else {
    have 0 <= q by { close() using { not (q < 0); }; }
    have q * 65521 <= n by { close() using { n == q * 65521 + r; 0 <= r; }; }

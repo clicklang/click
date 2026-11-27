@@ -200,7 +200,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
         initialize by close();
         maintain by {
             match c.model {
-                Context::Top => { contradiction(c.model == Context::Top); },
+                Context::Top => { close(); },
                 Context::Left(identity, grandparent, color, sibling_model, up_model) => {
                     have plug(up_model,
                               RbTree::Node(identity, color, t.model, sibling_model))
@@ -246,7 +246,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
         }
     }
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             step();

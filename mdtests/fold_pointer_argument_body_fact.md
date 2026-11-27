@@ -78,7 +78,7 @@ void clear(struct cell* c) {
     ensures is_owner(u.model, c) == 1;
 } by {
     match t.model {
-        Owned::Free => { contradiction(t.model == Owned::Free); },
+        Owned::Free => { close(); },
         Owned::Held(owner, v) => {
             unfold(t);
             have is_owner(Owned::Held(c, 0), c) == 1 by {
@@ -98,7 +98,7 @@ int32 peek(struct cell* c) {
     ensures t.model == old(t.model);
 } by {
     match t.model {
-        Owned::Free => { contradiction(t.model == Owned::Free); },
+        Owned::Free => { close(); },
         Owned::Held(owner, v) => {
             unfold(t);
             step_until(function.exit);

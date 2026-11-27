@@ -150,7 +150,7 @@ application.
   closer, so a tactic's expansion, which leaves it out, is checked the same
   way with that closer off. The script runs no code: it may not `step`, but a
   `fold` may prove its instance facts with `by { ... }`.
-  A terminal `contradiction` in a proof `match` arm instead refutes that
+  A terminal `close()` in a proof `match` arm instead refutes that
   path with a checked fact and its negation; no return or postcondition
   suffix is added there, and expansion preserves the refutation. The IR is the one all
   three frontends lower to, so nothing about this is specific to C.

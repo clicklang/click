@@ -118,7 +118,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertMirroredContextFocusPhase::After(g, p, above, nv, pv, gv, left, right));
                 unfold(sized_mirrored_context_focus_pending(SizedInsertMirroredContextFocusPhase::After(g, p, above, nv, pv, gv, left, right))); close();
             }
-            contradiction(sized_mirrored_context_focus_pending(state.phase) == 1);
+            close();
         },
         SizedInsertMirroredContextFocusPhase::Before(g, p, above, nv, pv, gv, left, right) => {
             let { tree: tree, link: link } = unfold(state);

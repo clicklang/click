@@ -145,7 +145,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertContextDoubleMiddleSubtreePhase::After(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv));
                 unfold(sized_context_double_middle_subtree_pending(SizedInsertContextDoubleMiddleSubtreePhase::After(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv))); close();
             }
-            contradiction(sized_context_double_middle_subtree_pending(state.phase) == 1);
+            close();
         },
         SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv) => {
             let { tree: tree, link: link } = unfold(state);

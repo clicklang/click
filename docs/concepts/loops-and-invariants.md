@@ -385,7 +385,7 @@ operand failed splits on that disjunction with `cases`:
 have p[0] == 0 by {
     cases {
         a == 0 => {
-            contradiction(a == 0);
+            close();
         }
         p[0] == 0 => {
             close();
@@ -963,7 +963,7 @@ it:
 ```click
 maintain by {
     match c.model {
-        Maybe::None => { contradiction(c.model == Maybe::None); },
+        Maybe::None => { close(); },
         Maybe::Some(value) => {
             have Maybe::Some(value) == old(c.model) by {
                 close() using { c.model == Maybe::Some(value); c.model == old(c.model); };
@@ -987,22 +987,13 @@ on its own path, with the resource state that arm produced. An arm that
 unfolds the binder and never folds it again fails at the back edge by name
 even when its sibling succeeds
 (`mdtests/loop_body_proof_match_arm_drops_binder.md`). An arm the invariants
-exclude closes by `contradiction`; every remaining arm runs, and a `match`
+exclude closes from `false`; every remaining arm runs, and a `match`
 that omits a constructor is refused exactly as at function entry
 (`mdtests/loop_body_proof_match_missing_arm.md`).
 
-`contradiction` does not have to be an arm's only tactic. It refutes the path
-it stands on wherever on that path it stands, so an arm may first bridge the
-refuting fact into its own terms — a `have`
-(`mdtests/function_match_arm_closes_by_contradiction_after_a_have.md`, in a
-`match` at the function's own level), or the `unfold` that exposes the fact at
-all (`mdtests/do_while_returns_rebound_resources.md`, whose loop body's `Empty`
-arm unfolds the binder first) — and close afterwards. A refuted path owes no
-invariant and no measure, contributes
-neither a back edge nor a loop exit, and nothing written after the
-`contradiction` on it is executed or proved. The refutation is still decided
-from the facts standing there: naming a proposition the path does not deny
-leaves the arm open and is refused by the proposition as written
+An arm may establish `false` with a `have` or an `unfold` before calling
+`close()`. A refuted path contributes neither a back edge nor a loop exit and
+owes no invariant or measure proof. A reachable path still owes its usual proof
 (`mdtests/preserve_arm_contradiction_needs_a_refuted_fact.md`).
 
 `mdtests/loop_body_proof_match_two_live_arms.md` is the shape where both
@@ -1034,14 +1025,14 @@ same point, they have to become one path before those tactics run:
 Arms that reach those tactics at different points are different paths
 of the C, one having stepped to a `break` and another to the body's end, say.
 Each is finished its own way and nothing is repeated. An arm closed by
-`contradiction` reaches nothing.
+closure from `false` reaches nothing.
 
 The invariants and the loop condition are the head's premises, so they also
 refute arms. A premise that contradicts an arm's own binding-free fact says
 the binder's model is not that constructor, and the body gets that as an
 ordinary premise: the guard `n > 0` against a chain resource's `Nil` arm
 `fact k == 0` publishes `c.model != Chain::Nil`, which is what lets the
-`Nil` arm close by `contradiction` on the model instead of unfolding the
+`Nil` arm close from the model's indexed falsehood instead of unfolding the
 instance (`mdtests/loop_decreases_strict_descendant.md`).
 The back edge publishes the same way, so a descent that unfolds a child under
 a guard hands the next iteration the model fact that guard established. The
@@ -1052,7 +1043,7 @@ body unfolded is often decided by a fact the body establishes afterwards — the
 C local the next statement reads — so the case split a proof `match` issues,
 and the `unfold` that opens a matched instance, both read the premises at that
 frontier. A body that decrements and then asks whether it may step down again
-closes the child's dead arm by `contradiction` on the child's model, and the
+closes the child's dead arm from the child model's indexed falsehood, and the
 arm the `unfold` opened is published so the structural measure can still see
 that the binder holds the child this path descended into
 (`mdtests/loop_body_refutes_an_unfolded_child.md`).

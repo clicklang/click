@@ -1,4 +1,7 @@
-# A nested constructor-arm contradiction names its own source
+# A nested constructor-arm refutation names its own source
+
+The constructor is reachable, so the local attempt to prove `false` fails.
+The diagnostic points to the closer inside the selected arm.
 
 ```c filename=peek.c
 struct node { int32 shade; };
@@ -41,7 +44,7 @@ int32 peek(struct node* p) {
             match x.model {
                 Cell::Missing => { step_until(function.exit); close(); },
                 Cell::Present(child) => {
-                    contradiction(x.model == Cell::Present(child));
+                    have false by close(); close();
                 },
             }
         },
@@ -50,5 +53,5 @@ int32 peek(struct node* p) {
 ```
 
 ```expect
-fail: contradiction(x.model == Cell::Present(child))
+fail: could not establish `false`
 ```

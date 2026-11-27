@@ -655,7 +655,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             have at(head, j) == 2;
                             have 100u32 <= at(head, sf_cap) by { close(); }
                             have 99u32 < at(head, sf_cap);
-                            contradiction(at(head, sf_cap) <= 99u32);
+                            close();
                         }
                     }
                     have j <= 2;

@@ -237,7 +237,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "consumes",
     "contains",
     "contract",
-    "contradiction",
     "count",
     "decreases",
     "defined",
@@ -6480,7 +6479,6 @@ pub enum ProofTactic {
         body: Vec<ProofTactic>,
     },
     Enumerate,
-    Contradiction(SyntaxProposition),
     CloseInvariants,
     Rewrite(SyntaxProposition),
     Preserve(SyntaxProposition),
@@ -6573,7 +6571,6 @@ pub enum SimpleTactic {
     Normalize,
     Intro,
     Enumerate,
-    Contradiction,
     Rewrite,
     FactTransport,
     Instantiate,
@@ -6868,16 +6865,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "contradiction",
-        syntax: "contradiction(P)",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "contradiction-false",
-        syntax: "contradiction()",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "rewrite",
         syntax: "rewrite(from, to)",
         class: "simple",
@@ -7058,7 +7045,6 @@ impl ProofTactic {
                 TacticClass::Simple(SimpleTactic::Intro)
             }
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
-            Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
             Self::CloseInvariants => TacticClass::Smart(SmartSite::CloseInvariants),
             Self::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
             Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),

@@ -51,7 +51,7 @@ int32 touch(int32 n) {
     ensures d.model == old(c.model);
 } by {
     match c.model {
-        Chain::Nil => { contradiction(c.model == Chain::Nil); },
+        Chain::Nil => { close(); },
         Chain::Link(rest_model) => {
             let { rest: r } = unfold(c);
             let d = fold(chain(n), { model: Chain::Link(rest_model), rest: r });
@@ -77,7 +77,7 @@ void caller(int32 n) {
         initialize by close();
         maintain by {
             match c.model {
-                Chain::Nil => { contradiction(c.model == Chain::Nil); },
+                Chain::Nil => { close(); },
                 Chain::Link(rest_model) => {
                     let { rest: r } = unfold(c);
                     step();

@@ -68,12 +68,12 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                     }
                     have rb == stop by {
                         cases {
-                            sized_walk_pending(walk.model) == 1 => { contradiction(sized_walk_pending(walk.model) == 1); }
+                            sized_walk_pending(walk.model) == 1 => { close(); }
                             rb == stop => { close(); }
                         }
                     }
                     have address(rb) == address(stop) by { rewrite(rb, stop); close(); }
-                    contradiction(address(rb) == address(stop));
+                    close();
                 },
                 SizedWalk::Active(previous, sub_model, path_model) => {
                     have sized_walk_tree(walk.model) == sized_plug(sized_path_context(path_model), sub_model) by {
@@ -106,7 +106,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                     if status != 0 {
                         have sized_value(repaired.model) == previous by {
                             cases {
-                                status == 0 => { contradiction(status == 0); }
+                                status == 0 => { close(); }
                                 sized_value(repaired.model) == sized_value(at(before_recompute, dirty.model)) => {
                                     rewrite(sized_value(repaired.model), sized_value(at(before_recompute, dirty.model)));
                                     rewrite(at(before_recompute, dirty.model), sub_model); close();
@@ -121,7 +121,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                     } else {
                         step();
                         match repaired.model {
-                            SizedTree::Empty => { unfold(repaired); contradiction(&node->rb == 0); },
+                            SizedTree::Empty => { unfold(repaired); close(); },
                             SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
                                 have sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) == 1 by {
                                     rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model), repaired.model); close();
@@ -182,7 +182,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
             have sized_walk_pending(walk.model) == 0 by {
                 cases {
-                    address(rb) != address(stop) => { contradiction(address(rb) != address(stop)); }
+                    address(rb) != address(stop) => { close(); }
                     sized_walk_pending(walk.model) == 0 => { close(); }
                 }
             }

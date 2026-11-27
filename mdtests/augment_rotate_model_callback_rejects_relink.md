@@ -148,7 +148,7 @@ struct node* rotate_left(
     ensures result->augmented <= 1000;
 } by {
     match r.model {
-        Shape::Empty => { contradiction(r.model == Shape::Empty); },
+        Shape::Empty => { close(); },
         Shape::Node(pivot_node, middle_model, far_model) => {
             have defined(node->left) by close();
             // Carry the untouched link reads across each store before folding.

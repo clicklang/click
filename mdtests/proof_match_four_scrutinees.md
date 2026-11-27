@@ -48,16 +48,16 @@ int32 sum4(struct cell* a, struct cell* b, struct cell* c, struct cell* d) {
     ensures ta.model == old(ta.model);
 } by {
     match ta.model {
-        Maybe::None => { contradiction(ta.model == Maybe::None); },
+        Maybe::None => { close(); },
         Maybe::Some(va) => {
             match tb.model {
-                Maybe::None => { contradiction(tb.model == Maybe::None); },
+                Maybe::None => { close(); },
                 Maybe::Some(vb) => {
                     match tc.model {
-                        Maybe::None => { contradiction(tc.model == Maybe::None); },
+                        Maybe::None => { close(); },
                         Maybe::Some(vc) => {
                             match td.model {
-                                Maybe::None => { contradiction(td.model == Maybe::None); },
+                                Maybe::None => { close(); },
                                 Maybe::Some(vd) => {
                                     unfold(ta);
                                     unfold(tb);

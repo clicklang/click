@@ -55,7 +55,7 @@ void clear(struct cell* c, struct cell* other) {
     produces u: cell_at(c);
 } by {
     match t.model {
-        Owned::Free => { contradiction(t.model == Owned::Free); },
+        Owned::Free => { close(); },
         Owned::Held(owner, v) => {
             unfold(t);
             step_until(function.exit);

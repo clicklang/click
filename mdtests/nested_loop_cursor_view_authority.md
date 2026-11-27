@@ -21,7 +21,7 @@ theorem nonzero_cursor_below_two(value: int32) {
         have 0 < value by {
             if value <= 0 {
                 have value == 0 by close() using { 0 <= value; value <= 0; };
-                contradiction(value == 0);
+                close();
             } else {
                 close();
             }

@@ -55,7 +55,7 @@ theorem compute_size_restores_subtree_size()
     executes compute_size(struct sized_node* node, int32 exit) {
     ensures RecomputeTree(&compute_size) as { tree: tree, checked: checked } by {
         match tree.model {
-            SizedTree::Empty => { unfold(tree); contradiction(node == 0); },
+            SizedTree::Empty => { unfold(tree); close(); },
             SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
                 let { metadata: metadata, left: left, right: right } = unfold(tree);
                 have sized_left(old(tree.model)) == left_model by {

@@ -1785,7 +1785,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires x == x;
             ensures not (x != x and x == x) by {
                 if x != x and x == x {
-                    contradiction(x == x);
+                    close();
                 } else {
                     close();
                 }
@@ -1812,7 +1812,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires not (x != x);
             ensures x != x implies x == 0 by {
                 intro() {
-                    contradiction(x != x);
+                    close();
                 }
             }
         }
@@ -1821,7 +1821,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires x == 0;
             requires not (x == 0);
             ensures x == 1 by {
-                contradiction(x == 0);
+                close();
             }
         }
 
@@ -1829,7 +1829,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires x < y;
             requires not (x < y);
             ensures x == 0 by {
-                contradiction(x < y);
+                close();
             }
         }
     "#;
@@ -2468,7 +2468,7 @@ theorem false_guard(x: int32) {
 theorem false_guard(x: int32) {
     ensures 1 == 2 implies x == 0 by {
         intro() {
-            contradiction(0u32 == 1u32);
+            close();
         }
     }
 }

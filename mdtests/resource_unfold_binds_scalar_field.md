@@ -90,7 +90,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                         rewrite(occupied[i], 0);
                         close();
                     }
-                    contradiction(occupied[i] == 1);
+                    close();
                 }
             }
             have to_integer(i + 1) <= to_integer(p);
@@ -122,7 +122,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 }, i);
                 apply(0 <= i and i < p implies occupied[i] == 1);
             }
-            contradiction(occupied[i] == 1);
+            close();
         } else {
             have i == p;
             close();

@@ -54,7 +54,7 @@ void walk(struct Node* p, int32* marker) {
         initialize by close();
         maintain by {
             match t.model {
-                Chain::Empty => { unfold(t); contradiction(p == 0); },
+                Chain::Empty => { unfold(t); close(); },
                 Chain::Node(identity, rest) => {
                     let { tail: next } = unfold(t);
                     let frame = fold(path(p->next), { model: Path::Step(identity, c.model), up: c });
@@ -68,7 +68,7 @@ void walk(struct Node* p, int32* marker) {
     }
     have c.model != Path::Top by close();
     match c.model {
-        Path::Top => { contradiction(c.model == Path::Top); },
+        Path::Top => { close(); },
         Path::Step(identity, before) => {
             let { up: above } = unfold(c);
             have p == 0 by close();
@@ -84,7 +84,7 @@ void walk(struct Node* p, int32* marker) {
                     have t.model != Chain::Empty by {
                         rewrite(t.model, Chain::Node(next_identity, rest)); close();
                     }
-                    contradiction(t.model == Chain::Empty);
+                    close();
                 },
             }
         },

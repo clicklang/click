@@ -143,14 +143,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedContextFlipPhase::After(g, p, u));
                 unfold(sized_context_flip_pending(SizedContextFlipPhase::After(g, p, u))); close();
             }
-            contradiction(sized_context_flip_pending(state.phase) == 1);
+            close();
         },
         SizedContextFlipPhase::Done(g, p, u) => {
             have sized_context_flip_pending(state.phase) != 1 by {
                 rewrite(state.phase, SizedContextFlipPhase::Done(g, p, u));
                 unfold(sized_context_flip_pending(SizedContextFlipPhase::Done(g, p, u))); close();
             }
-            contradiction(sized_context_flip_pending(state.phase) == 1);
+            close();
         },
         SizedContextFlipPhase::Before(g, p, u) => {
             let { focus: focus, path: path } = unfold(state);
@@ -205,7 +205,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(state.phase, SizedContextFlipPhase::Done(x, y, z));
                                 unfold(sized_context_flip_running(SizedContextFlipPhase::Done(x, y, z))); close();
                             }
-                            contradiction(sized_context_flip_running(state.phase) == 1);
+                            close();
                         },
                         SizedContextFlipPhase::After(x, y, z) => {
                             have parent == sized_context_parent(at(iteration,state.outer),0) by {
@@ -230,7 +230,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(at(iteration,state.outer), SizedContext::Top);
                                         unfold(sized_context_flip_black(SizedContext::Top)); close();
                                     }
-                                    contradiction(sized_context_flip_black(at(iteration,state.outer)) == 1);
+                                    close();
                                 },
                                 SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model) => {
                                     unfold(sized_context_parent(SizedContext::Left(a, ancestor, shade, value, sibling_model, up_model),0));

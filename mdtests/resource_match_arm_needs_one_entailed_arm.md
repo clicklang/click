@@ -41,7 +41,7 @@ int32 read_cell(struct cell* node) {
     ensures result >= 0;
 } by {
     match c.model {
-        Slot::Empty => { contradiction(c.model == Slot::Empty); },
+        Slot::Empty => { close(); },
         Slot::Reserved => { step_until(function.exit); },
         Slot::Filled(value) => {
             unfold(c);

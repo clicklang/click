@@ -346,7 +346,7 @@ memory storage, rewriting and substitution carry it without a global
 address-to-class registry. It is not part of the term's identity: equality,
 hashing and ordering ignore it, as they ignore a pointer value's class. A
 classed and a bare form of one address are therefore one term in equality
-closure, exact fact lookup, `rewrite`, `contradiction` and theorem-premise
+closure, exact fact lookup, `rewrite`, `close()` and theorem-premise
 matching. The supported tag operations carry the
 annotation to decoding; an integer-to-pointer cast restores the original
 class, never the destination type's class. A bare address remains unclassified,

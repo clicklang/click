@@ -153,7 +153,7 @@ int32 vector_copy(
                     intro() {
                         have 0 <= k;
                         have k < i;
-                        contradiction(0 <= k);
+                        close();
                     }
                 }
             }
@@ -220,7 +220,7 @@ int32 vector_copy(
                                     have false by {
                                         close() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
                                     }
-                                    contradiction();
+                                    close();
                                 } else {
                                     close();
                                 }
@@ -737,12 +737,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
                 intro() {
-                    contradiction(result == 1);
+                    close();
                 }
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
                 intro() {
-                    contradiction(result == 1);
+                    close();
                 }
             }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
@@ -750,17 +750,17 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
                 intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
+                    close();
                 }
             }
             have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
                 intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
+                    close();
                 }
             }
             have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
                 intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
+                    close();
                 }
             }
             have owner->cap == old(owner->cap) by {
@@ -794,7 +794,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have program::grown == 1 by {
                 cases {
                     program::grown == 0 => {
-                        contradiction(program::grown == 0);
+                        close();
                     }
                     program::grown == 1 => {
                         close();
@@ -935,17 +935,17 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
                 intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
+                    close();
                 }
             }
             have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
                 intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
+                    close();
                 }
             }
             have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
                 intro() {
-                    contradiction(old(owner->len) < old(owner->cap));
+                    close();
                 }
             }
             have owner->cap == old(owner->cap) + 1 by {

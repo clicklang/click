@@ -324,7 +324,7 @@ fn constructor_partition_checks_complete_coverage_and_exact_scopes() {
 }
 
 #[test]
-fn constructor_partition_exclusion_requires_its_exact_contradiction() {
+fn constructor_partition_exclusion_requires_false_in_that_arm() {
     let (core, mut value) = constructor_partition_fixture(2);
     value.node = crate::kernel::AlgebraicTermNode::Constructor {
         variant: "C0".into(),
@@ -341,24 +341,12 @@ fn constructor_partition_exclusion_requires_its_exact_contradiction() {
             0,
         )
         .unwrap();
-    let live = partition.case_fact(0).unwrap().clone();
-    let dead = partition.case_fact(1).unwrap().clone();
-    assert!(
-        partition
-            .excluding_constructor_case(0, live.clone())
-            .is_none()
-    );
-    assert!(
-        partition
-            .excluding_constructor_case(1, live.clone())
-            .is_none()
-    );
-    assert!(
-        partition
-            .excluding_constructor_case(2, dead.clone())
-            .is_none()
-    );
-    let excluded = partition.excluding_constructor_case(1, dead).unwrap();
+    let live = partition.facts_for_case(0).unwrap();
+    let dead = partition.facts_for_case(1).unwrap();
+    assert!(partition.excluding_constructor_case_in(0, &live).is_none());
+    assert!(partition.excluding_constructor_case_in(1, &live).is_none());
+    assert!(partition.excluding_constructor_case_in(2, &dead).is_none());
+    let excluded = partition.excluding_constructor_case_in(1, &dead).unwrap();
     assert!(!Arc::ptr_eq(&partition.identity, &excluded.identity));
     let mut old_arm = core.clone();
     let live_facts = partition.facts_for_case(0).unwrap();

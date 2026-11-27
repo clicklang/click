@@ -2398,7 +2398,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                                     step();
                                 },
                                 Marker::Inactive => {
-                                    contradiction(marker() == Marker::Inactive);
+                                    close();
                                 },
                             }
                         }
@@ -2407,7 +2407,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                     close();
                 },
                 Marker::Inactive => {
-                    contradiction(marker() == Marker::Inactive);
+                    close();
                 },
             }
         }

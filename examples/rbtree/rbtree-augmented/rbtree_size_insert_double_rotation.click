@@ -81,7 +81,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertDoublePhase::After(g, p));
                 unfold(sized_double_pending(SizedInsertDoublePhase::After(g, p))); close();
             }
-            contradiction(sized_double_pending(state.phase) == 1);
+            close();
         },
         SizedInsertDoublePhase::Before(g, p) => {
             let { tree: tree } = unfold(state);

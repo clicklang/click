@@ -143,7 +143,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertMirroredContextDoubleMiddleSubtreePhase::After(g, p, above, pv, gv, far, m, mv, middle_right, middle_left, nv));
                 unfold(sized_mirrored_context_double_middle_subtree_pending(SizedInsertMirroredContextDoubleMiddleSubtreePhase::After(g, p, above, pv, gv, far, m, mv, middle_right, middle_left, nv))); close();
             }
-            contradiction(sized_mirrored_context_double_middle_subtree_pending(state.phase) == 1);
+            close();
         },
         SizedInsertMirroredContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_right, middle_left, nv) => {
             let { tree: tree, link: link } = unfold(state);

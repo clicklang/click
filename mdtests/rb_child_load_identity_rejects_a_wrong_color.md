@@ -95,11 +95,11 @@ void reparent_left_child(struct rb_node* victim, struct rb_node* new_node,
     produces l2: rb_at(new_node->rb_left, new_node);
 } by {
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             match l.model {
-                RbTree::Empty => { contradiction(l.model == RbTree::Empty); },
+                RbTree::Empty => { close(); },
                 RbTree::Node(lid, lc, ll, lr) => {
                     have separate(memory((new_node as (int32 *))[0..2]), memory(victim->rb_left)) by close();
                     have separate(memory((new_node as (int32 *))[2..4]), memory(victim->rb_left)) by close();
