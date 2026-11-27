@@ -10919,10 +10919,19 @@ fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, 
         Proposition::SequenceMembership { .. } => {
             conditional_guard(&sequence_membership_view(proposition)?)
         }
-        _ => {
-            let (condition, expected) = proposition_as_single_condition(proposition)?;
-            Some((condition.into(), expected))
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
+            let operand = |value: &StoredAlgebraicTerm| {
+                value.root().cloned().unwrap_or_else(|| {
+                    KernelTermImport::for_exact_field_inputs().algebraic(value.old_form())
+                })
+            };
+            let root = KernelTerm::algebraic_equal_raw([operand(left), operand(right)]);
+            Some((
+                StoredConditionTerm::from_root(root).expect("algebraic equality"),
+                true,
+            ))
         }
+        _ => None,
     }
 }
 
