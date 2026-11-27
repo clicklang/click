@@ -21,9 +21,13 @@ fn nested(bytes: &[u8]) -> usize {
         maintain by {
             if 4u64 <= iter.v.len() {
                 have to_integer(8u64 - iter.v.len()) + 4 <= 8;
-                have to_integer((8u64 - iter.v.len()) + 4u64) <= 8;
-                have to_integer(8u64 - iter.v.len()) < 8;
                 have to_integer(8u64 - iter.v.len()) + 4 <= 18446744073709551615;
+                apply(integer::uint64_add_to_integer(8u64 - iter.v.len(), 4u64));
+                have to_integer((8u64 - iter.v.len()) + 4u64) <= 8 by close() using {
+                    to_integer((8u64 - iter.v.len()) + 4u64) == to_integer(8u64 - iter.v.len()) + 4;
+                    to_integer(8u64 - iter.v.len()) + 4 <= 8;
+                };
+                have to_integer(8u64 - iter.v.len()) < 8;
                 have (bytes + (8u64 - iter.v.len())) + 4u64 == bytes + ((8u64 - iter.v.len()) + 4u64);
                 mark taken;
                 step_until(loop(1).entry);
@@ -60,6 +64,15 @@ fn nested(bytes: &[u8]) -> usize {
                             step_until(loop(1).back_edge);
                             have 2u64 <= at(took, iter.v.len());
                             have to_integer(iter.v.len()) == to_integer(at(took, iter.v.len())) - 2;
+                            have to_integer(at(took, iter.v.len())) <= 4;
+                            have to_integer(iter.v.len()) <= 4 by close() using {
+                                to_integer(iter.v.len()) == to_integer(at(took, iter.v.len())) - 2;
+                                to_integer(at(took, iter.v.len())) <= 4;
+                            };
+                            have iter.v.len() <= 4u64 by close() using { to_integer(iter.v.len()) <= 4; };
+                            have iter.v.len() < at(took, iter.v.len()) by close() using {
+                                to_integer(iter.v.len()) == to_integer(at(took, iter.v.len())) - 2;
+                            };
                             have ((4u64 - loop(0).iter.v.len()) + (4u64 - at(took, iter.v.len()))) + 2u64 == (4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len());
                             have iter.v == bytes + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()));
                         } else {
@@ -69,6 +82,15 @@ fn nested(bytes: &[u8]) -> usize {
                 }
                 step_until(loop(0).back_edge);
                 have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
+                have to_integer(at(taken, iter.v.len())) <= 8;
+                have to_integer(iter.v.len()) <= 8 by close() using {
+                    to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
+                    to_integer(at(taken, iter.v.len())) <= 8;
+                };
+                have iter.v.len() <= 8u64 by close() using { to_integer(iter.v.len()) <= 8; };
+                have iter.v.len() < at(taken, iter.v.len()) by close() using {
+                    to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
+                };
                 have (8u64 - at(taken, iter.v.len())) + 4u64 == 8u64 - iter.v.len();
                 have iter.v == bytes + (8u64 - iter.v.len());
             } else {

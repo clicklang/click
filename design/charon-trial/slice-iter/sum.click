@@ -14,6 +14,14 @@ theorem pointer_association(base: const uint8*, p: uint64, q: uint64) {
         close() using { to_integer(p + q) == to_integer(p) + to_integer(q); };
     }
 }
+theorem read_same_byte(base: const uint8*, alias: const uint8*) {
+    requires base == alias;
+    requires viewable(memory(*base));
+    ensures *alias == *base by {
+        rewrite(alias, base);
+        close();
+    }
+}
 fn sum(bytes: &[u8]) -> i32 {
     requires bytes.len() <= 1000u64;
     views bytes[0..bytes.len()];
@@ -44,7 +52,13 @@ fn sum(bytes: &[u8]) -> i32 {
             if 0u64 < iter.len() {
                 mark iteration;
                 have bytes.len() - iter.len() < bytes.len();
-                have to_integer((bytes.len() - iter.len())) <= 1000;
+                apply(integer::uint64_subtract_to_integer(bytes.len(), iter.len()));
+                have to_integer(bytes.len()) <= 1000 by close() using { bytes.len() <= 1000u64; };
+                have 0 <= to_integer(iter.len());
+                have to_integer(bytes.len() - iter.len()) <= 1000 by {
+                    rewrite(to_integer(bytes.len() - iter.len()), to_integer(bytes.len()) - to_integer(iter.len()));
+                    close() using { to_integer(bytes.len()) <= 1000; 0 <= to_integer(iter.len()); };
+                }
                 have (bytes.len() - iter.len()) < 1000u64;
                 have (bytes.len() - iter.len()) < 18446744073709551615u64;
                 have prefix(bytes, (bytes.len() - iter.len()) + 1u64) == prefix(bytes, (bytes.len() - iter.len())) + to_integer(bytes[(bytes.len() - iter.len())] as i32) by {
@@ -68,9 +82,30 @@ fn sum(bytes: &[u8]) -> i32 {
                     close();
                 }
                 step_until(read(0).entry);
+                have viewable(bytes[0u64..bytes.len()]) by {
+                    observe(bytes[0u64..bytes.len()]);
+                }
+                have bytes.len() - at(iteration, iter.len()) < bytes.len();
+                have contains(memory(bytes[0u64..bytes.len()]), memory(bytes[(bytes.len() - at(iteration, iter.len()))])) by {
+                    apply(click::separation::contains_element(bytes, 0u64, bytes.len(), bytes.len() - at(iteration, iter.len())));
+                }
+                have viewable(memory(bytes[(bytes.len() - at(iteration, iter.len()))])) by {
+                    apply(click::separation::viewable_restrict(memory(bytes[0u64..bytes.len()]), memory(bytes[(bytes.len() - at(iteration, iter.len()))])));
+                }
+                have *byte == bytes[(bytes.len() - at(iteration, iter.len()))] by {
+                    apply(read_same_byte(bytes + (bytes.len() - at(iteration, iter.len())), byte));
+                    close();
+                }
+                have bytes[(bytes.len() - at(iteration, iter.len()))] == at(iteration, bytes[(bytes.len() - iter.len())]) by {
+                    close();
+                }
+                mark before_byte_read;
                 let { result: loaded_byte } = step();
                 mark loaded;
-                have at(iteration, bytes[(bytes.len() - iter.len())]) == loaded_byte;
+                have at(before_byte_read, *byte) == loaded_byte;
+                have at(iteration, bytes[(bytes.len() - iter.len())]) == loaded_byte by {
+                    close();
+                }
                 have 0 <= to_integer(loaded_byte as i32);
                 have to_integer(loaded_byte as i32) <= 255;
                 have defined(total + loaded_byte as i32);

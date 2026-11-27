@@ -1119,10 +1119,10 @@ fn charon_nested_cli_tools_recheck_expanded_certificates() {
     }
     for claim in [
         "nested.contract",
-        "array_len.contract",
-        "array_mut.contract",
-        "array_read.contract",
-        "large_array_len.contract",
+        "array_len.ensures_0",
+        "array_mut.ensures_0",
+        "array_read.ensures_0",
+        "large_array_len.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

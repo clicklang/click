@@ -1,3 +1,4 @@
+import click::integer;
 verifying "enumerate.rs";
 
 // `for (i, x) in xs.iter().enumerate()` is `core`'s `Enumerate { iter,
@@ -21,8 +22,12 @@ fn last_index(bytes: &[u8]) -> usize {
                 mark taken;
                 have to_integer(iter.count) < to_integer(bytes.len());
                 have to_integer(iter.count) + 1 <= to_integer(bytes.len());
-                have to_integer(iter.count + 1u64) <= to_integer(bytes.len());
                 have to_integer(iter.count) + 1 <= 18446744073709551615;
+                apply(integer::uint64_add_to_integer(iter.count, 1u64));
+                have to_integer(iter.count + 1u64) <= to_integer(bytes.len()) by {
+                    rewrite(to_integer(iter.count + 1u64), to_integer(iter.count) + 1);
+                    close();
+                }
                 have (bytes + iter.count) + 1u64 == bytes + (iter.count + 1u64);
                 step_until(loop.back_edge);
                 have iter.count == at(taken, iter.count) + 1u64;
@@ -63,8 +68,12 @@ fn last_pair(words: &[u16]) -> u32 {
                 mark taken;
                 have to_integer(iter.count) < to_integer(words.len());
                 have to_integer(iter.count) + 1 <= to_integer(words.len());
-                have to_integer(iter.count + 1u64) <= to_integer(words.len());
                 have to_integer(iter.count) + 1 <= 18446744073709551615;
+                apply(integer::uint64_add_to_integer(iter.count, 1u64));
+                have to_integer(iter.count + 1u64) <= to_integer(words.len()) by {
+                    rewrite(to_integer(iter.count + 1u64), to_integer(iter.count) + 1);
+                    close();
+                }
                 have (words + iter.count) + 1u64 == words + (iter.count + 1u64);
                 step_until(loop.back_edge);
                 have iter.count == at(taken, iter.count) + 1u64;

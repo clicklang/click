@@ -4029,7 +4029,7 @@ pub(super) fn decode_crate(
             &mut blocks,
             &anonymous_slice_components,
         );
-        temporaries::bind_copied_call_arguments(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_owned_call_arguments(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         temporaries::fold_try_result_aliases(&mut locals, &mut blocks, &temporaries);

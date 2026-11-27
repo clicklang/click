@@ -106,11 +106,28 @@ int32 walk(const uint8* p, int32 n) {
    have defined(at(before_pointer, p[0])) by close();
    have at(before_pointer, viewable(p[0..1])) by { close(); }
    apply(byte_as_int32(at(before_pointer, p[0])));
-   have to_integer(old(n) - n) <= 14 by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
+   apply(integer::int32_subtract_to_integer(old(n), n));
+   apply(integer::int32_less_equal_to_integer(1, n));
+   apply(integer::int32_less_equal_to_integer(old(n), 15));
+   have to_integer(old(n) - n) <= 14 by {
+    rewrite(to_integer(old(n) - n), to_integer(old(n)) - to_integer(n));
+    apply(integer::subtract_le(to_integer(old(n)), 15, to_integer(n), 1));
+    close();
+   }
    have 255 * (old(n) - n) <= 3570 by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have total <= 3570 by close() using { total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3570; };
    have at(before_pointer, p[0] as int32) <= 255 by close();
-   have to_integer(total) <= to_integer(2147483647 - at(before_pointer, p[0] as int32)) by close() using { total <= 3570; 0 <= at(before_pointer, p[0] as int32); at(before_pointer, p[0] as int32) <= 255; };
+   apply(integer::int32_less_equal_to_integer(total, 3570));
+   apply(integer::int32_less_equal_to_integer(at(before_pointer, p[0] as int32), 255));
+   apply(integer::int32_nonnegative_subtract_within_value_is_defined(2147483647, at(before_pointer, p[0] as int32)));
+   apply(integer::int32_subtract_to_integer(2147483647, at(before_pointer, p[0] as int32)));
+   have to_integer(total) <= to_integer(2147483647 - at(before_pointer, p[0] as int32)) by {
+    rewrite(to_integer(2147483647 - at(before_pointer, p[0] as int32)), 2147483647 - to_integer(at(before_pointer, p[0] as int32)));
+    apply(integer::subtract_left_order(to_integer(at(before_pointer, p[0] as int32)), 255, 2147483647));
+    have 3570 <= 2147483647 - 255 by close() using {};
+    apply(integer::le_transitive(to_integer(total), 3570, 2147483647 - 255));
+    apply(integer::le_transitive(to_integer(total), 2147483647 - 255, 2147483647 - to_integer(at(before_pointer, p[0] as int32))));
+   }
    have defined(total + (at(before_pointer, p[0] as int32)));
    have defined(total + at(before_pointer, p[0] as int32)) by close();
    mark before_sum;
@@ -124,7 +141,9 @@ int32 walk(const uint8* p, int32 n) {
    have p == old(p) + (old(n) - n) by {
     rewrite(p, at(before_pointer, p) + 1);
     rewrite(to_integer(old(n) - n), to_integer((old(n) - at(before_pointer, n)) + 1));
-    close() using { at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n)); 0 <= to_integer(old(n) - at(before_pointer, n)); to_integer(old(n) - at(before_pointer, n)) <= 14; };
+    rewrite(at(before_pointer, p), old(p) + (old(n) - at(before_pointer, n)));
+    apply(integer::uint8_pointer_add_associate_int32(old(p), old(n) - at(before_pointer, n), 1));
+    close();
    }
    have 0 <= to_integer(old(n) - n) by close() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
    have to_integer(old(n) - n + n) == to_integer(old(n)) by close() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
@@ -184,8 +203,23 @@ int32 walk(const uint8* p, int32 n) {
   }
  }
  have n == 0 by close() using { 0 <= n; n <= 0; };
- have 0 <= to_integer(old(n) - n) by close() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
- have to_integer(old(n) - n) <= 15 by close() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
+ apply(integer::int32_subtract_to_integer(old(n), n));
+ apply(integer::int32_less_equal_to_integer(0, old(n)));
+ apply(integer::int32_less_equal_to_integer(old(n), 15));
+ have to_integer(n) == 0 by { rewrite(n, 0); close(); }
+ have to_integer(old(n)) - 0 == to_integer(old(n)) by close() using {};
+ have 0 <= to_integer(old(n) - n) by {
+  rewrite(to_integer(old(n) - n), to_integer(old(n)) - to_integer(n));
+  rewrite(to_integer(n), 0);
+  rewrite(to_integer(old(n)) - 0, to_integer(old(n)));
+  close() using { 0 <= to_integer(old(n)); };
+ }
+ have to_integer(old(n) - n) <= 15 by {
+  rewrite(to_integer(old(n) - n), to_integer(old(n)) - to_integer(n));
+  rewrite(to_integer(n), 0);
+  rewrite(to_integer(old(n)) - 0, to_integer(old(n)));
+  close() using { to_integer(old(n)) <= 15; };
+ }
  have 255 * (old(n) - n) <= 3825 by close() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
  have total <= 3825 by close() using { 0 <= total; total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3825; 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
 }
