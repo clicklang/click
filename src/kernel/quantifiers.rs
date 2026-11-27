@@ -97,7 +97,8 @@ fn rename_unreduced(
             } else {
                 Address::symbolic(to)
             };
-            rename_program_occurrences(body, pointer)
+            let body = rename_slice_count(body, from, to, sort);
+            rename_program_occurrences(&body, pointer)
         }
         // A rename cannot capture and changes no value, so it walks every
         // carrier, where the general Integer substitution refuses a
@@ -122,6 +123,47 @@ fn rename_unreduced(
         }
         _ => rename_program_occurrences(body, Address::symbolic(to)),
     }
+}
+
+/// `body` with the element count of the slice `from` names renamed to that
+/// of the slice `to` names, when `sort` is a slice sort; `body` itself for
+/// any other sort (`design/rust-slice-values.md`, step 2b-iii-b). A slice
+/// binder is one variable whose count is [`Variable::element_count`], an
+/// independent variable to the logic, so every pass that renames, closes
+/// over or opens a slice binder calls this beside the rename of `from`
+/// itself: the two components stay named by one binder. The work is one
+/// walk of `body`, as the rename of `from` is; it reads no fact.
+pub(crate) fn rename_slice_count(
+    body: &Proposition,
+    from: Variable,
+    to: Variable,
+    sort: &Sort,
+) -> Proposition {
+    if !sort
+        .pointer_type()
+        .is_some_and(ProgramType::is_slice_pointer)
+    {
+        return body.clone();
+    }
+    substitute_int32_variable_in_proposition(
+        body,
+        from.element_count(),
+        OldMachineTerm::Variable(to.element_count()),
+    )
+}
+
+/// Whether `variables`, the free variables of a body, name `target` as a
+/// binder of `sort` would: `target` itself or, for a slice sort, its count.
+pub(crate) fn binder_variables_mention(
+    variables: &std::collections::BTreeSet<Variable>,
+    target: Variable,
+    sort: &Sort,
+) -> bool {
+    variables.contains(&target)
+        || (sort
+            .pointer_type()
+            .is_some_and(ProgramType::is_slice_pointer)
+            && variables.contains(&target.element_count()))
 }
 
 /// The binder and body of a quantifier of `sort` over `body`, whose free

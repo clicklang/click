@@ -1071,6 +1071,11 @@ fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVari
         OldMachineTerm::Constant { .. } => {}
         OldMachineTerm::Variable(variable) => {
             variables.program_values.insert(*variable);
+            // A slice's count mentions its slice: a binder of that slice
+            // would capture it.
+            if let Some(slice) = variable.counted_slice() {
+                variables.program_values.insert(slice);
+            }
             collect_registered_load_carriers(*variable, variables);
         }
         crate::kernel::binary_machine_term!(left, right) => {
@@ -4431,7 +4436,14 @@ impl<'a> TermRewrite<'a> {
                     }
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
-                    Some(Pointer::new(to.clone(), v.program_type()))
+                    // A slice's replacement supplies its thin part's
+                    // provenance and bounds; the count is rewritten below.
+                    let thin_type = if v.is_wide() {
+                        v.as_ptr().program_type()
+                    } else {
+                        v.program_type()
+                    };
+                    Some(Pointer::new(to.clone(), thin_type))
                 }));
                 let adopted = if !v.bounds_are_known() {
                     replacement.as_ref().and_then(|p| p.bounds().cloned())
@@ -6841,6 +6853,25 @@ impl<'a> TermRewrite<'a> {
         {
             self.changed = true;
             return replacement.clone();
+        }
+        // A slice binder's count goes with its binder
+        // (`design/rust-slice-values.md`, step 2b-iii-b): a renamed binder's
+        // count is the new binder's count, and a binder replaced by a slice
+        // value has that value's count. One lookup of the counted slice.
+        if let OldMachineTerm::Variable(variable) = v
+            && let Some(slice) = variable.counted_slice()
+        {
+            if let Some(mapped) = self.scope.program_values.get(&slice) {
+                return OldMachineTerm::Variable(mapped.element_count());
+            }
+            if let Some(replacements) = &self.typed_variables
+                && let Some(TypedProgramValueReplacement::Pointer(replacement)) =
+                    replacements.program_values.get(&slice)
+                && let Some(count) = replacement.len()
+            {
+                self.changed = true;
+                return count.clone();
+            }
         }
         if let Some(reads) = self.comparison_reads
             && let Some(OldMachineTerm::MemoryLoad(memory, pointer, kind)) =

@@ -1228,6 +1228,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if let ProofObligation::Proposition(goal) = &branch.obligation {
             excluded.extend(crate::kernel::proposition_variables(goal.proposition()));
         }
+        // A slice's count names its slice: the witness's count is fresh too.
+        let counted = excluded
+            .iter()
+            .filter_map(Variable::counted_slice)
+            .collect::<Vec<_>>();
+        excluded.extend(counted);
         let fresh = branch
             .state
             .facts
@@ -1356,6 +1362,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         } else {
                             crate::kernel::Address::symbolic(chosen)
                         };
+                    let body =
+                        crate::kernel::quantifiers::rename_slice_count(&body, *var, chosen, &sort);
                     crate::kernel::substitute_pointer_variable_in_proposition(&body, *var, &pointer)
                 }
                 Sort::Algebraic(algebraic_type) => {
