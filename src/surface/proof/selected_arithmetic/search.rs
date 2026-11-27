@@ -893,13 +893,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if candidates.is_empty() {
             return Ok(None);
         }
-        let mut seen =
-            std::collections::BTreeMap::from([(RewriteGoalKey::new(goal), candidates.len())]);
         let mut budget = RewriteBudget {
             attempts: REWRITE_ATTEMPTS,
             solve_closures: REWRITE_SOLVE_CLOSURES,
         };
-        crate::kernel::search::ProofSearch::rewrite_search(
+        let mut seen =
+            std::collections::BTreeMap::from([(RewriteGoalKey::new(goal), candidates.len())]);
+        let closed = Self::rewrite_search(
             search_input,
             &candidates,
             &mut vec![false; candidates.len()],
@@ -907,7 +907,110 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &mut seen,
             &mut budget,
             closers,
+        )?;
+        if closed.is_some() {
+            return Ok(closed);
+        }
+        let RewriteClosers::ExactListed(_) = closers else {
+            return Ok(None);
+        };
+        Self::try_rewrite_differing_equality_side(
+            search_input,
+            premise_pairs,
+            &candidates,
+            &mut budget,
         )
+    }
+
+    // With a listed `a == b` and goal `a == c`, a rewrite of the whole goal
+    // may alter the shared `a`. Prove `b == c` in its own scope, then carry
+    // that equality back to the original goal.
+    fn try_rewrite_differing_equality_side(
+        search_input: &Proof<'a>,
+        premises: &[(Proposition, SyntaxProposition)],
+        candidates: &[Vec<(Proposition, SyntaxProposition)>],
+        budget: &mut RewriteBudget,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_rewrite_differing_equality_side");
+        let Some(SyntaxProposition::Comparison {
+            left: goal_left,
+            operator: ComparisonOperator::Equal,
+            right: goal_right,
+        }) = search_input.surface_goal()
+        else {
+            return Ok(None);
+        };
+        for pair in premises.iter().take(REWRITE_EQUALITIES) {
+            let SyntaxProposition::Comparison {
+                left: premise_left,
+                operator: ComparisonOperator::Equal,
+                right: premise_right,
+            } = &pair.1
+            else {
+                continue;
+            };
+            for (shared, desired) in [(goal_left, goal_right), (goal_right, goal_left)] {
+                let supplied = if shared == premise_left {
+                    premise_right
+                } else if shared == premise_right {
+                    premise_left
+                } else {
+                    continue;
+                };
+                if supplied == desired {
+                    continue;
+                }
+                check_verification_deadline()?;
+                if budget.attempts == 0 {
+                    return Ok(None);
+                }
+                budget.attempts -= 1;
+                let sides = relate(supplied.clone(), desired.clone(), Relation::Equal);
+                let Some(scope) =
+                    attempt::candidate_outcome(search_input.driver().open_have(sides))?
+                else {
+                    continue;
+                };
+                let Some(goal) = scope.body().goal() else {
+                    continue;
+                };
+                let mut seen = std::collections::BTreeMap::from([(
+                    RewriteGoalKey::new(goal),
+                    candidates.len(),
+                )]);
+                let Some(closed) = Self::rewrite_search(
+                    scope.body(),
+                    candidates,
+                    &mut vec![false; candidates.len()],
+                    candidates.len(),
+                    &mut seen,
+                    budget,
+                    RewriteClosers::ExactListed(premises),
+                )?
+                else {
+                    continue;
+                };
+                let rewrite = relate(desired.clone(), supplied.clone(), Relation::Equal);
+                let Some(rewritten) = attempt::candidate_outcome(
+                    scope
+                        .join_with_completed_body(closed)?
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(rewrite)),
+                )?
+                else {
+                    continue;
+                };
+                if let Some(closed) = Self::try_close_after_rewrite(
+                    &rewritten,
+                    budget,
+                    RewriteClosers::ExactListed(std::slice::from_ref(pair)),
+                )? {
+                    return Ok(Some(closed));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// `solve` on a goal about the fields of a value that two connected facts

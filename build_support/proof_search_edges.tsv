@@ -255,6 +255,10 @@ src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_machine_
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_machine_goal_through_integer_for	selected_arithmetic	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_machine_goal_through_integer_for	try_equality_by_bounds	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_premise_equality_chain_closure	rewrite_search	1
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_premise_equality_chain_closure	try_rewrite_differing_equality_side	1
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_rewrite_differing_equality_side	driver	2
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_rewrite_differing_equality_side	rewrite_search	1
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_rewrite_differing_equality_side	try_close_after_rewrite	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_single_rewrite_closure	available_rewrite_equality	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_single_rewrite_closure	driver	2
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_wide_equality_through_integer	try_machine_goal_through_integer_for	1

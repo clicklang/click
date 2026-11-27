@@ -5,7 +5,6 @@ src/surface/generics.rs	mixed	::instantiate_proof_tactic	NormalizeUsing	1
 src/surface/planning/solve.rs	search	::plan_context_free_closer	CompatibilityNormalize	1
 src/surface/planning/solve.rs	search	::plan_solve_certificate	Normalize	1
 src/surface/printing.rs	mixed	::write_tactic	Normalize	1
-src/surface/proof/driver/claims.rs	driver	::close_post_execution_claims_with_solve	CompatibilityNormalize	1
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	CompatibilityNormalize	3
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	Normalize	3
 src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	NormalizeUsing	2
