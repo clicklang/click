@@ -1088,6 +1088,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::ThinPointerRequired { operation } => {
             RuntimeError::thin_pointer_required_message(operation)
         }
+        RuntimeError::SliceTypeMismatch { operation } => {
+            RuntimeError::slice_type_mismatch_message(operation)
+        }
         RuntimeError::UnsupportedPointerSubtractionOffsets => {
             "Click does not yet support pointer subtraction with these offsets".into()
         }

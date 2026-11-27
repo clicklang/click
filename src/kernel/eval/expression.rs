@@ -1443,6 +1443,38 @@ pub(super) fn evaluate_native_expression_paths(
         ProgramExpression::EnumIs { value, variant } => {
             evaluate_program_enum_is_paths(state, value, variant, assumptions, budget)?
         }
+        ProgramExpression::SliceLength(slice) => evaluate_program_slice_component_paths(
+            state,
+            slice,
+            "`.len()`",
+            |slice| ProgramValue::UInt64(slice.len().expect("a wide pointer").clone()),
+            assumptions,
+            budget,
+        )?,
+        ProgramExpression::SliceData(slice) => evaluate_program_slice_component_paths(
+            state,
+            slice,
+            "`.as_ptr()`",
+            |slice| ProgramValue::Pointer(slice.as_ptr()),
+            assumptions,
+            budget,
+        )?,
+        ProgramExpression::SliceFromRawParts { data, count } => {
+            evaluate_program_value_binary_paths(
+                state,
+                data,
+                count,
+                assumptions,
+                budget,
+                |data, count, facts, obligations| {
+                    vec![ExpressionPath {
+                        outcome: crate::kernel::spec::slice_from_raw_parts_outcome(data, count),
+                        facts,
+                        obligations,
+                    }]
+                },
+            )?
+        }
         ProgramExpression::FloatClassification {
             expression,
             classification,
@@ -2766,6 +2798,38 @@ fn enum_is_without_witnesses(term: &AlgebraicTerm, variant: &str) -> Option<OldC
                 OldConditionTerm::Constant(false),
             )
         }),
+    )
+}
+
+/// A component of the slice `slice` evaluates to, read in place as the spec
+/// operations read it (`design/rust-slice-values.md`, step 3): `s.len()` or
+/// `s.as_ptr()` of any wide pointer, with no fact read. A thin pointer or a
+/// scalar is refused, naming `operation`.
+fn evaluate_program_slice_component_paths(
+    state: &ExecutionState,
+    slice: &ProgramExpression,
+    operation: &'static str,
+    component: impl Fn(&Pointer) -> ProgramValue,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<ExpressionPath>> {
+    Ok(
+        evaluate_program_expression_paths(state, slice, assumptions, budget)?
+            .into_iter()
+            .map(|mut path| {
+                if let ExpressionOutcome::Value(value) = &path.outcome {
+                    path.outcome = match value {
+                        ProgramValue::Pointer(slice) if slice.is_wide() => {
+                            ExpressionOutcome::Value(component(slice))
+                        }
+                        _ => ExpressionOutcome::RuntimeError(RuntimeError::SliceTypeMismatch {
+                            operation,
+                        }),
+                    };
+                }
+                path
+            })
+            .collect(),
     )
 }
 
@@ -4113,6 +4177,35 @@ pub(in crate::kernel) fn program_expression_pointee_type(
         ProgramExpression::Index(base, _) => {
             program_expression_pointee_type(state, base).and_then(ProgramType::pointee_type)
         }
+        // A slice's data pointer points at its elements, so `s.as_ptr() + k`
+        // steps by an element.
+        ProgramExpression::SliceData(slice) => match slice.as_ref() {
+            ProgramExpression::SliceFromRawParts { data, .. } => {
+                program_expression_pointee_type(state, data)
+            }
+            slice => program_expression_slice_element(state, slice)?
+                .thin_pointer_type()
+                .pointee_type(),
+        },
+        _ => None,
+    }
+}
+
+/// The element type of the slice `expression` names, from its declared type:
+/// a slice local or object read, a slice value, a call's slice result, or a
+/// cast to a slice type. `None` for an expression with no declared slice type.
+fn program_expression_slice_element(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+) -> Option<crate::kernel::SliceElement> {
+    let slice_type = match expression {
+        ProgramExpression::Value(value) => value.program_type(),
+        ProgramExpression::StepResult { step, .. } => state.step_result(*step)?.program_type(),
+        ProgramExpression::Cast { target_type, .. } => *target_type,
+        expression => program_expression_lvalue_type(state, expression)?,
+    };
+    match slice_type {
+        ProgramType::SlicePointer(element) => Some(element),
         _ => None,
     }
 }

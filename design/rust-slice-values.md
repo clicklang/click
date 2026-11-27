@@ -778,6 +778,54 @@ construct.
    locals, assignments, reborrows, call arguments and returns carry it.
    Remove `spread_slice_arguments` and the paired-local paths. Migrate
    sidecars that compare pointers.
+
+   Decided 2026-11-27: a program reads and builds a wide value through
+   three program-level operations, mirroring Rust MIR's `PtrMetadata`:
+   `ProgramExpression::SliceLength(e)` (`Pointer::len`),
+   `ProgramExpression::SliceData(e)` (`Pointer::as_ptr`) and
+   `ProgramExpression::SliceFromRawParts { data, count }`
+   (`with_element_count`), evaluated as the spec operations of 2b-iii-c-i
+   are. Rejected: type-directed binding resolution, where the hidden
+   `BindingName::SliceLength` binding and thin uses of a slice's name would
+   resolve to the components of a wide local; it keeps two spellings of one
+   component and makes a name's meaning depend on its use. In three parts:
+   - **3a. Program slice operations.** Done. Kernel only; no front end
+     produces them yet, so nothing has two representations. `s.len()` and
+     `s.as_ptr()` read the components of the wide pointer `s` evaluates
+     to, in place, with no fact read; a thin pointer or a scalar is refused
+     with `RuntimeError::SliceTypeMismatch`, naming the operation.
+     `from_raw_parts` evaluates its operands as a binary operator does
+     (`evaluate_program_value_binary_paths`) and builds the slice by the
+     spec operation's own rule (`spec::slice_from_raw_parts_outcome`): a
+     wide `data` is `ThinPointerRequired`, a pointer no slice has or a
+     count that is not a `u64` a `TypeMismatch`. The static pointee type of
+     `s.as_ptr()` is the slice's element, so `s.as_ptr() + k` steps by an
+     element. Every program-expression walk, rewrite and substitution
+     treats the three as operations of their operands (`SliceFromRawParts`
+     beside the binary operators); a termination measure may read
+     `s.len()`. Raising (`surface_synthesis/slices.rs`,
+     `raise_program_slice_operation`) spells them `s.len()` and
+     `s.as_ptr()`, methods of the operand that resolve by its type, so a
+     string slice's are `str`'s, and `slice::from_raw_parts(p, n)`. A
+     construction is never spelled `s[a..b]`: that spelling lowers to a
+     construction owing the subslice's bounds, which a program
+     construction does not owe; only a construction the kernel recorded
+     under its bounds is. Tests: `kernel::tests::program_slice_operation_tests`,
+     `program_slice_operations_raise_as_methods_and_construction`; scaling
+     tests `program_slice_component_reads_ignore_unrelated_slices_and_facts`
+     and `nested_program_slice_constructions_grow_linearly`.
+   - **3b. Wide parameters and locals.** Rust `fn` slice parameters and
+     locals become one wide value. Retires `BindingName::SliceLength`,
+     `AddressBase::SliceLength`, `slice_length_parameter`,
+     `declare_slice_length`, Charon `MirLocalId::SliceComponent`,
+     `spread_slice_arguments` and `slice_parameter_value`, and closes the
+     `&str` parameter gap. Sidecars that do pointer arithmetic on a slice's
+     bare name (`bytes + k`, as in `design/charon-trial/chunk-proof`,
+     `borrowed-chunks` and `chunk-lane-results`) move to
+     `bytes.as_ptr() + k`.
+   - **3c. Wide arguments and returns.** Call arguments and returns carry
+     the wide value, and Rust `s.as_bytes()` gets a name-table entry
+     (2b-iii-d-ii).
 4. **split_at, iterators, chunks.** Their inputs and the slices they yield
    are wide pointers; their internal fields stay.
 5. **Cleanup and docs.** `docs/reference/rust.md` (byte slices, string

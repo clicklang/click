@@ -378,3 +378,32 @@ pub(super) fn slice_data_pointer(
     )?;
     Some(SyntaxTerm::Add(Box::new(data), Box::new(index)))
 }
+
+/// A program slice operation (`design/rust-slice-values.md`, step 3) as
+/// Surface over its operands, which stay program expressions: `s.len()` and
+/// `s.as_ptr()` as methods of the operand, resolved by its type as a byte or
+/// a string slice's are, and `slice::from_raw_parts(p, n)`. Each lowers to
+/// the spec operation the program operation evaluates as. A construction is
+/// never spelled `s[a..b]`: that spelling lowers to a construction that owes
+/// the subslice's bounds, which a program construction does not, so only a
+/// construction the kernel recorded under its bounds is spelled so. `None`
+/// for any other expression.
+pub(in crate::surface) fn raise_program_slice_operation(
+    expression: &ProgramExpression,
+) -> Option<SyntaxTerm> {
+    let operand = |operand: &ProgramExpression| SyntaxTerm::ProgramExpression(operand.clone());
+    let method = |slice: &ProgramExpression, method: &str| SyntaxTerm::MethodCall {
+        receiver: Box::new(operand(slice)),
+        method: method.to_string(),
+        arguments: Vec::new(),
+    };
+    Some(match expression {
+        ProgramExpression::SliceLength(slice) => method(slice, "len"),
+        ProgramExpression::SliceData(slice) => method(slice, "as_ptr"),
+        ProgramExpression::SliceFromRawParts { data, count } => slice_call(
+            crate::surface::RUST_SLICE_FROM_RAW_PARTS,
+            vec![operand(data), operand(count)],
+        ),
+        _ => return None,
+    })
+}

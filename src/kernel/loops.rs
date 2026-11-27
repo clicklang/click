@@ -9858,7 +9858,11 @@ pub(super) fn collect_address_taken_in_expression(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => collect_address_taken_in_expression(expression, names),
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
+            collect_address_taken_in_expression(expression, names)
+        }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_address_taken_in_expression(field, names);
@@ -9874,7 +9878,11 @@ pub(super) fn collect_address_taken_in_expression(
         ProgramExpression::TypedLoad { pointer, .. } => {
             collect_address_taken_in_expression(pointer, names)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_address_taken_in_expression(left, names);
             collect_address_taken_in_expression(right, names);
         }
@@ -9914,7 +9922,9 @@ pub(super) fn collect_variable_names(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => collect_variable_names(expression, names),
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => collect_variable_names(expression, names),
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_variable_names(field, names);
@@ -9927,7 +9937,11 @@ pub(super) fn collect_variable_names(
         | ProgramExpression::Not(inner)
         | ProgramExpression::Load(inner) => collect_variable_names(inner, names),
         ProgramExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_variable_names(left, names);
             collect_variable_names(right, names);
         }

@@ -2936,7 +2936,9 @@ fn collect_resource_fact_reads_from_program_expression(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => {
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
             collect_resource_fact_reads_from_program_expression(expression, reads);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
@@ -2993,7 +2995,11 @@ fn collect_resource_fact_reads_from_program_expression(
                 extent: None,
             });
         }
-        crate::kernel::binary_c_operation!(left, right) => {
+        crate::kernel::binary_c_operation!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_resource_fact_reads_from_program_expression(left, reads);
             collect_resource_fact_reads_from_program_expression(right, reads);
         }

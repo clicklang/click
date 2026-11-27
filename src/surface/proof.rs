@@ -132,6 +132,7 @@ use resources::*;
 use source_context::SourceContext;
 use structural::*;
 use surface_certificates::*;
+pub(in crate::surface) use surface_synthesis::raise_program_slice_operation;
 #[cfg(test)]
 pub(super) use surface_synthesis::synthesize_surface_proposition_at_entry_and_post;
 #[cfg(test)]
