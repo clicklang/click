@@ -239,7 +239,7 @@ mod elaborator;
 mod typing_environment;
 use declarations::Declarations;
 use elaborator::Elaborator;
-use typing_environment::TypingEnvironment;
+use typing_environment::{PointInputs, TypingEnvironment};
 #[cfg(test)]
 mod elaboration_tests;
 #[cfg(test)]
@@ -2574,7 +2574,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
             }
         }
     }
-    lowerer.capture_referenced_names = Some(referenced.clone());
+    lowerer.capture_referenced_names = Some(Arc::new(referenced.clone()));
     for name in referenced {
         if let Some(value) = context.values.get(&name) {
             let captured =
@@ -2639,7 +2639,8 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
     );
     context.algebraic_values = algebraic_values.into_iter().collect();
     context.integer_values = integer_values.clone();
-    lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
+    lowerer.capture_referenced_names =
+        Some(Arc::new(contract_expression_referenced_names(expression)));
     lowerer.lower_contract_algebraic_to_spec(expression, &context)
 }
 
@@ -2721,7 +2722,8 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
     }
     context.integer_values = referenced_integer_values.clone();
     context.algebraic_values = algebraic_values.into_iter().collect();
-    lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
+    lowerer.capture_referenced_names =
+        Some(Arc::new(contract_expression_referenced_names(expression)));
 
     // Fold binders allocate from the fixed-state elaborator's local range.
     // Reserve identities already present in captured Integer arguments so a
@@ -2915,7 +2917,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
     }
     // A state the expression enters reads only these names, as for a
     // proposition, rather than every local the state's state binds.
-    lowerer.capture_referenced_names = Some(names);
+    lowerer.capture_referenced_names = Some(Arc::new(names));
     lowerer.lower_contract_expression_to_spec(expression, &context)
 }
 
@@ -3602,7 +3604,7 @@ struct LoopResourceDeclaration {
 }
 
 struct AnnotationLowerer<'a> {
-    capture_referenced_names: Option<BTreeSet<String>>,
+    capture_referenced_names: Option<Arc<BTreeSet<String>>>,
     source_bindings: Option<syntax::CSourceBindings>,
     structural_clauses: &'a StructuralClauses,
     implicit_contract_mutable_segments: &'a [MemorySegment],
@@ -8121,27 +8123,6 @@ impl AnnotationLowerer<'_> {
             .collect()
     }
 
-    /// Whether `expression` calls a generic function whose result type, a
-    /// type parameter, is algebraic at this call: `vec::get(v, i)` with `v`
-    /// a `Vec<T>` of a theorem's rigid `T`.
-    fn generic_call_returns_algebraic(
-        &mut self,
-        expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
-    ) -> bool {
-        let SyntaxTerm::Call { name, arguments } = expression else {
-            return false;
-        };
-        let Some(definition) = self.spec_definitions.functions.get(name).cloned() else {
-            return false;
-        };
-        if !matches!(definition.return_type(), ClickType::Parameter(_)) {
-            return false;
-        }
-        self.instantiate_click_function_for_call(&definition, arguments, environment)
-            .is_ok_and(|instance| matches!(instance.return_type(), ClickType::Algebraic(_)))
-    }
-
     fn lower_opaque_contract_proposition(
         &mut self,
         proposition: &SyntaxProposition,
@@ -8169,31 +8150,13 @@ impl AnnotationLowerer<'_> {
         arguments: &[SyntaxTerm],
         environment: &SpecElaborationContext,
     ) -> Result<ClickFunctionDefinition, String> {
-        if definition.type_parameters().is_empty() {
-            return Ok(definition.clone());
-        }
-        let argument_types = definition
-            .parameters()
-            .iter()
-            .zip(arguments)
-            .map(|(parameter, argument)| {
-                self.infer_call_argument_type(parameter.click_type(), argument, environment)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let substitution = generics::infer_type_substitution(
-            "function",
-            definition.name(),
-            definition.type_parameters(),
-            definition
-                .parameters()
-                .iter()
-                .map(|parameter| parameter.click_type().clone()),
-            argument_types,
-        )
-        .inspect_err(|message| {
-            self.type_inference_failure = Some(message.clone());
-        })?;
-        generics::instantiate_function(definition, &substitution)
+        self.with_elaborator(|elaborator| {
+            elaborator.instantiate_click_function_for_call(
+                definition,
+                arguments,
+                &TypingEnvironment::of(environment),
+            )
+        })
     }
 
     fn instantiate_predicate_for_call(
@@ -8235,91 +8198,13 @@ impl AnnotationLowerer<'_> {
         argument: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<Option<ClickType>, String> {
-        match expected {
-            ClickType::Resource => Ok(Some(ClickType::Resource)),
-            ClickType::Function { .. } => self
-                .contract_expression_click_type_in_scope(
-                    argument,
-                    &TypingEnvironment::of(environment),
-                    &mut Vec::new(),
-                )
-                .map(Some)
-                .ok_or_else(|| "callback argument needs a concrete lambda".into()),
-            ClickType::Proposition => Err("proposition parameters are not supported yet".into()),
-            // The argument's type by the rules lowering it would apply, without
-            // lowering it.
-            ClickType::Algebraic(_) => self.algebraic_argument_click_type(argument, environment),
-            // A `T*` parameter binds `T` from the argument's pointer type,
-            // as a `T` parameter binds it from the argument's type.
-            ClickType::Program(InterfaceType::ParameterPointer(_)) | ClickType::Parameter(_) => {
-                self.infer_unconstrained_call_argument_type(argument, environment)
-            }
-            ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
-            ClickType::Integer => Ok(Some(ClickType::Integer)),
-        }
-    }
-
-    /// The type of an argument passed where an algebraic value is expected,
-    /// by the rules lowering such an argument applies, without lowering it:
-    /// a program value of an enum or library type is that type's algebraic
-    /// value; `old(..)` and `at(..)` type their operand in the scope of the
-    /// point they name; a bare name is an algebraic binding or an error; a
-    /// call is its instance's result; anything else has its synthesized type.
-    /// Over the gate this answered exactly as lowering the argument did,
-    /// errors included.
-    fn algebraic_argument_click_type(
-        &mut self,
-        argument: &SyntaxTerm,
-        environment: &SpecElaborationContext,
-    ) -> Result<Option<ClickType>, String> {
-        let typing = TypingEnvironment::of(environment);
-        if let Some(enum_type) = self.enum_program_value_type(argument, &typing) {
-            return Ok(Some(generics::click_type_from_algebraic_value_type(
-                &enum_type.algebraic_type().value_type(),
-            )));
-        }
-        match argument {
-            // The operand is typed where it is read: a local named in it is
-            // one in scope at that point, as lowering reads it there.
-            SyntaxTerm::Old(inner) => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
-                self.algebraic_argument_click_type(inner, &old_environment)
-            }
-            SyntaxTerm::At {
-                selector,
-                expression,
-            } => {
-                let retained_state =
-                    self.point_environment(selector, environment)?.ok_or_else(|| {
-                        "algebraic values at unresolved program points are not supported in this slice"
-                            .to_string()
-                    })?;
-                self.algebraic_argument_click_type(expression, &retained_state)
-            }
-            // A bare name is an algebraic binding or nothing: an Integer or
-            // program binding of that name does not make it algebraic.
-            SyntaxTerm::Binding(name)
-            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::BindingName::Named(name),
-            )) => typing
-                .algebraic_binding_click_type(name)
-                .map(Some)
-                .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope")),
-            SyntaxTerm::Call { name, arguments } if name != "to_nat" => {
-                let Some(definition) = self.spec_definitions.functions.get(name).cloned() else {
-                    return Ok(None);
-                };
-                let definition =
-                    self.instantiate_click_function_for_call(&definition, arguments, environment)?;
-                Ok(Some(definition.return_type().clone()))
-            }
-            _ => Ok(self.contract_expression_click_type_in_scope(
+        self.with_elaborator(|elaborator| {
+            elaborator.infer_call_argument_type(
+                expected,
                 argument,
-                &typing,
-                &mut Vec::new(),
-            )),
-        }
+                &TypingEnvironment::of(environment),
+            )
+        })
     }
 
     fn infer_unconstrained_call_argument_type(
@@ -8327,84 +8212,12 @@ impl AnnotationLowerer<'_> {
         argument: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<Option<ClickType>, String> {
-        if let Some(cast_type) = generics::explicit_cast_click_type(argument) {
-            return Ok(Some(cast_type));
-        }
-        match argument {
-            SyntaxTerm::IntegerLiteral(_) | SyntaxTerm::Negate(_) => {
-                Ok(generics::default_numeral_click_type(argument))
-            }
-            SyntaxTerm::Old(inner)
-            | SyntaxTerm::Exact(inner)
-            | SyntaxTerm::At {
-                expression: inner, ..
-            } => self.infer_unconstrained_call_argument_type(inner, environment),
-            SyntaxTerm::ResourceField(access) => Ok(access.click_type.clone()),
-            SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
-            | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
-                Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
-            }
-            SyntaxTerm::Binding(name) => {
-                if let Some(value) = environment.algebraic_values.get(name) {
-                    return Ok(Some(generics::click_type_from_algebraic_value_type(
-                        &value.algebraic_type.value_type(),
-                    )));
-                }
-                Ok(environment
-                    .values
-                    .get(name)
-                    .and_then(spec_expression_click_type))
-            }
-            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
-                Ok(Some(generics::click_type_from_program_value(value)))
-            }
-            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::BindingName::Named(name),
-            )) => {
-                if let Some(value) = environment.algebraic_values.get(name) {
-                    return Ok(Some(generics::click_type_from_algebraic_value_type(
-                        &value.algebraic_type.value_type(),
-                    )));
-                }
-                Ok(environment
-                    .values
-                    .get(name)
-                    .and_then(spec_expression_click_type))
-            }
-            SyntaxTerm::Call { name, arguments } => {
-                let definition = self
-                    .spec_definitions
-                    .functions
-                    .get(name)
-                    .ok_or_else(|| format!("unknown function `{name}`"))?
-                    .clone();
-                let definition =
-                    self.instantiate_click_function_for_call(&definition, arguments, environment)?;
-                Ok(Some(definition.return_type().clone()))
-            }
-            // Pointer arithmetic keeps its pointer's type: `bytes + k` is a
-            // `*const u8` as `bytes` is.
-            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
-                let left = self.infer_unconstrained_call_argument_type(left, environment)?;
-                if left
-                    .as_ref()
-                    .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
-                {
-                    return Ok(left);
-                }
-                if matches!(argument, SyntaxTerm::Add(..)) {
-                    let right = self.infer_unconstrained_call_argument_type(right, environment)?;
-                    if right
-                        .as_ref()
-                        .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
-                    {
-                        return Ok(right);
-                    }
-                }
-                Ok(None)
-            }
-            _ => Ok(None),
-        }
+        self.with_elaborator(|elaborator| {
+            elaborator.infer_unconstrained_call_argument_type(
+                argument,
+                &TypingEnvironment::of(environment),
+            )
+        })
     }
 
     fn lower_contract_sequence_to_spec(
@@ -8707,137 +8520,18 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    /// The elaboration context of a state a proof recorded under `selector`:
-    /// its locals are fixed values and its memory is fixed, so the kernel
-    /// lowers loads there exactly as the proof observed them.
     fn point_environment(
         &self,
         selector: &ProgramPointSelector,
         environment: &SpecElaborationContext,
     ) -> Result<Option<SpecElaborationContext>, String> {
-        let Some(state) = self
-            .retained_states
-            .and_then(|retained_states| retained_states.get(selector))
-        else {
-            return Ok(None);
-        };
-        let mut values = environment.values.clone();
-        // A parameter reads as its entry value at any state that does not
-        // bind it as a local, which is every state taken before its first
-        // statement. The context's own binding is the current value, and a
-        // mark taken before a reassignment used to read the value after it.
-        values.extend(
-            self.entry_values
-                .iter()
-                .map(|(name, value)| (name.clone(), SpecExpression::Value(value.clone()))),
-        );
-        if let Some(names) = &self.capture_referenced_names {
-            for name in names {
-                check_integer_lowering_work(1)?;
-                if let Some(value) = state
-                    .locals()
-                    .get(name)
-                    .map(|value| value.clone().into_native())
-                    .or_else(|| state.held_local_value(name))
-                    .or_else(|| {
-                        // Aggregates are address-backed places, not entries in
-                        // object_values. A recorded private parameter must
-                        // override the caller-image entry binding even after
-                        // the live parameter has left scope.
-                        let layout = state.locals().aggregate_layout(name)?;
-                        if matches!(layout.value_type(), Some(ProgramType::Parameter(_))) {
-                            return None;
-                        }
-                        Some(ProgramValue::typed_pointer(
-                            state.locals().aggregate_object_pointer(name)?.clone(),
-                            ProgramType::UInt8Pointer,
-                        ))
-                    })
-                {
-                    values.insert(name.clone(), SpecExpression::Value(value));
-                }
-            }
-        } else {
-            values.extend(state.locals().object_values().filter_map(|(name, value)| {
-                Some((
-                    state.locals().active_source_name(name)?.to_owned(),
-                    SpecExpression::Value(value.clone().into_native()),
-                ))
-            }));
-            // A local that keeps its value in memory is named by the read of
-            // its object in the state's memory.
-            values.extend(
-                state
-                    .locals()
-                    .held_value_locals()
-                    .filter_map(|(name, _, _)| {
-                        Some((
-                            state.locals().active_source_name(name)?.to_owned(),
-                            SpecExpression::Value(state.held_local_value(name)?),
-                        ))
-                    }),
-            );
-        }
-        let mut array_refs = environment
-            .array_refs
-            .iter()
-            .map(|(name, array_ref)| {
-                (
-                    name.clone(),
-                    SpecArrayRef {
-                        point: SpecPoint::At(state.program_point()),
-                        pointer: array_ref.pointer.clone(),
-                        element_type: array_ref.element_type,
-                    },
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-        if let Some(names) = &self.capture_referenced_names {
-            for name in names {
-                check_integer_lowering_work(1)?;
-                if let Some((value, element_type)) = state.locals().array_object_value(name) {
-                    array_refs.insert(
-                        name.clone().into(),
-                        SpecArrayRef {
-                            point: SpecPoint::At(state.program_point()),
-                            pointer: SpecExpression::Value(value),
-                            element_type,
-                        },
-                    );
-                }
-            }
-        } else {
-            array_refs.extend(state.locals().array_object_values().filter_map(
-                |(name, value, element_type)| {
-                    Some((
-                        SurfaceBinder::from(state.locals().active_source_name(name)?),
-                        SpecArrayRef {
-                            point: SpecPoint::At(state.program_point()),
-                            pointer: SpecExpression::Value(value),
-                            element_type,
-                        },
-                    ))
-                },
-            ));
-        }
-        Ok(Some(SpecElaborationContext {
-            values,
-            integer_values: environment.integer_values.clone(),
-            algebraic_values: environment.algebraic_values.clone(),
-            array_refs: array_refs.into_iter().collect(),
-            // The state's own memory is the memory here; an outer
-            // binding's state does not reach into it.
-            array_points: PersistentBinderMap::default(),
-            current_point: SpecPoint::At(state.program_point()),
-            current_loop_entry: None,
-            function_contract: false,
-            at_function_entry: false,
-            reference_state: Some(state.clone()),
-            call_result_point: Some(selector.clone()),
-            contract_result_in_scope: environment.contract_result_in_scope,
-            contract_result: environment.contract_result.clone(),
-            checking_definedness: environment.checking_definedness,
-        }))
+        point_environment(
+            selector,
+            environment,
+            self.retained_states,
+            &self.entry_values,
+            self.capture_referenced_names.as_deref(),
+        )
     }
 
     /// Read a scalar field of an aggregate result at its producer's exit,
@@ -10216,48 +9910,14 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    /// The element width a pure call's result steps by when the call
-    /// returns a pointer: its declared result's pointee, at the call's own
-    /// type arguments. `None` for any other expression or result.
     fn call_pointer_element_width(
         &mut self,
         expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<Option<u32>, String> {
-        // A state changes the value read, not the call's declared type.
-        if let SyntaxTerm::Old(inner)
-        | SyntaxTerm::Exact(inner)
-        | SyntaxTerm::At {
-            expression: inner, ..
-        } = expression
-        {
-            return self.call_pointer_element_width(inner, environment);
-        }
-        // Only a declared pure function with a pointer result: a built-in
-        // conversion such as `to_int32` is not one.
-        let SyntaxTerm::Call { name, .. } = expression else {
-            return Ok(None);
-        };
-        if !self
-            .spec_definitions
-            .functions
-            .get(name)
-            .is_some_and(|definition| match definition.return_type() {
-                ClickType::Program(interface_type) => {
-                    interface_type.is_pointer()
-                        || matches!(interface_type, InterfaceType::ParameterPointer(_))
-                }
-                ClickType::CObjectPointer { .. } => true,
-                _ => false,
-            })
-        {
-            return Ok(None);
-        }
-        Ok(self
-            .infer_unconstrained_call_argument_type(expression, environment)?
-            .and_then(|result| result.interface_type())
-            .and_then(|result| result.pointee_type())
-            .map(|element| element.to_kernel_type().byte_width()))
+        self.with_elaborator(|elaborator| {
+            elaborator.call_pointer_element_width(expression, &TypingEnvironment::of(environment))
+        })
     }
 
     fn pointee_less_program_operand(
@@ -11101,4 +10761,139 @@ fn contract_expression_names_binder(expression: &SyntaxTerm, binder: &SurfaceBin
 /// format, whose `char` pointee is not the parameter's `uint8`.
 fn unrepresented_pointee_placeholder() -> ProgramType {
     ProgramType::Int32
+}
+
+/// The lowering context at the recorded state `selector` names, for
+/// `at(selector, ..)`; `None` when no state is recorded there.
+/// The elaboration context of a state a proof recorded under `selector`:
+/// its locals are fixed values and its memory is fixed, so the kernel
+/// lowers loads there exactly as the proof observed them.
+fn point_environment(
+    selector: &ProgramPointSelector,
+    environment: &SpecElaborationContext,
+    retained_states: Option<&RecordedStates>,
+    entry_values: &ProgramValueBindings,
+    capture_referenced_names: Option<&BTreeSet<String>>,
+) -> Result<Option<SpecElaborationContext>, String> {
+    let Some(state) = retained_states.and_then(|retained_states| retained_states.get(selector))
+    else {
+        return Ok(None);
+    };
+    let mut values = environment.values.clone();
+    // A parameter reads as its entry value at any state that does not
+    // bind it as a local, which is every state taken before its first
+    // statement. The context's own binding is the current value, and a
+    // mark taken before a reassignment used to read the value after it.
+    values.extend(
+        entry_values
+            .iter()
+            .map(|(name, value)| (name.clone(), SpecExpression::Value(value.clone()))),
+    );
+    if let Some(names) = &capture_referenced_names {
+        for name in names.iter() {
+            check_integer_lowering_work(1)?;
+            if let Some(value) = state
+                .locals()
+                .get(name)
+                .map(|value| value.clone().into_native())
+                .or_else(|| state.held_local_value(name))
+                .or_else(|| {
+                    // Aggregates are address-backed places, not entries in
+                    // object_values. A recorded private parameter must
+                    // override the caller-image entry binding even after
+                    // the live parameter has left scope.
+                    let layout = state.locals().aggregate_layout(name)?;
+                    if matches!(layout.value_type(), Some(ProgramType::Parameter(_))) {
+                        return None;
+                    }
+                    Some(ProgramValue::typed_pointer(
+                        state.locals().aggregate_object_pointer(name)?.clone(),
+                        ProgramType::UInt8Pointer,
+                    ))
+                })
+            {
+                values.insert(name.clone(), SpecExpression::Value(value));
+            }
+        }
+    } else {
+        values.extend(state.locals().object_values().filter_map(|(name, value)| {
+            Some((
+                state.locals().active_source_name(name)?.to_owned(),
+                SpecExpression::Value(value.clone().into_native()),
+            ))
+        }));
+        // A local that keeps its value in memory is named by the read of
+        // its object in the state's memory.
+        values.extend(
+            state
+                .locals()
+                .held_value_locals()
+                .filter_map(|(name, _, _)| {
+                    Some((
+                        state.locals().active_source_name(name)?.to_owned(),
+                        SpecExpression::Value(state.held_local_value(name)?),
+                    ))
+                }),
+        );
+    }
+    let mut array_refs = environment
+        .array_refs
+        .iter()
+        .map(|(name, array_ref)| {
+            (
+                name.clone(),
+                SpecArrayRef {
+                    point: SpecPoint::At(state.program_point()),
+                    pointer: array_ref.pointer.clone(),
+                    element_type: array_ref.element_type,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    if let Some(names) = &capture_referenced_names {
+        for name in names.iter() {
+            check_integer_lowering_work(1)?;
+            if let Some((value, element_type)) = state.locals().array_object_value(name) {
+                array_refs.insert(
+                    name.clone().into(),
+                    SpecArrayRef {
+                        point: SpecPoint::At(state.program_point()),
+                        pointer: SpecExpression::Value(value),
+                        element_type,
+                    },
+                );
+            }
+        }
+    } else {
+        array_refs.extend(state.locals().array_object_values().filter_map(
+            |(name, value, element_type)| {
+                Some((
+                    SurfaceBinder::from(state.locals().active_source_name(name)?),
+                    SpecArrayRef {
+                        point: SpecPoint::At(state.program_point()),
+                        pointer: SpecExpression::Value(value),
+                        element_type,
+                    },
+                ))
+            },
+        ));
+    }
+    Ok(Some(SpecElaborationContext {
+        values,
+        integer_values: environment.integer_values.clone(),
+        algebraic_values: environment.algebraic_values.clone(),
+        array_refs: array_refs.into_iter().collect(),
+        // The state's own memory is the memory here; an outer
+        // binding's state does not reach into it.
+        array_points: PersistentBinderMap::default(),
+        current_point: SpecPoint::At(state.program_point()),
+        current_loop_entry: None,
+        function_contract: false,
+        at_function_entry: false,
+        reference_state: Some(state.clone()),
+        call_result_point: Some(selector.clone()),
+        contract_result_in_scope: environment.contract_result_in_scope,
+        contract_result: environment.contract_result.clone(),
+        checking_definedness: environment.checking_definedness,
+    }))
 }

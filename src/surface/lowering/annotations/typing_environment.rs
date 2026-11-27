@@ -18,6 +18,16 @@ use super::*;
 /// this, so it does not depend on how a scope knows the answers. The
 /// lowering context answers from the values lowering bound the names to; a
 /// scope built from declarations can answer with no kernel at all.
+/// What a scope at another program point is built from: the function's
+/// entry values and entry point, its recorded states, and the names a
+/// capture reads.
+pub(super) struct PointInputs<'a> {
+    pub(super) entry_values: &'a ProgramValueBindings,
+    pub(super) entry_point: crate::kernel::ProgramPoint,
+    pub(super) retained_states: Option<&'a RecordedStates>,
+    pub(super) capture_referenced_names: Option<&'a BTreeSet<String>>,
+}
+
 pub(super) trait TypeScope {
     /// The type a name has.
     fn binding_click_type(
@@ -56,6 +66,16 @@ pub(super) trait TypeScope {
     /// What the pointer a C name is directly bound to steps by: a resolved
     /// local's current pointer, or a pointer value the name is bound to.
     fn bound_pointer_element(&self, name: &crate::kernel::BindingName) -> Option<PointerElement>;
+    /// This scope at the function's entry, as `old(..)` reads its operand.
+    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String>;
+    /// This scope at the recorded state `selector` names, as
+    /// `at(selector, ..)` reads its operand; `None` when no state is
+    /// recorded there.
+    fn at_point(
+        &self,
+        selector: &ProgramPointSelector,
+        inputs: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String>;
     /// The call whose result `result` and region results name here.
     fn call_result_point(&self) -> Option<&ProgramPointSelector>;
     /// Whether bare `result` names the contract's return value here.
@@ -120,6 +140,25 @@ impl TypeScope for SpecElaborationContext {
             _ => None,
         }
     }
+    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+        Ok(Box::new(
+            self.old_state(inputs.entry_values, &inputs.entry_point)?,
+        ))
+    }
+    fn at_point(
+        &self,
+        selector: &ProgramPointSelector,
+        inputs: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+        Ok(point_environment(
+            selector,
+            self,
+            inputs.retained_states,
+            inputs.entry_values,
+            inputs.capture_referenced_names,
+        )?
+        .map(|scope| Box::new(scope) as Box<dyn TypeScope>))
+    }
     fn call_result_point(&self) -> Option<&ProgramPointSelector> {
         self.call_result_point.as_ref()
     }
@@ -177,6 +216,16 @@ impl TypeScope for NoOuterNames {
     }
     fn bound_pointer_element(&self, _: &crate::kernel::BindingName) -> Option<PointerElement> {
         None
+    }
+    fn at_entry(&self, _: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+        Ok(Box::new(NoOuterNames))
+    }
+    fn at_point(
+        &self,
+        _: &ProgramPointSelector,
+        _: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+        Ok(None)
     }
     fn call_result_point(&self) -> Option<&ProgramPointSelector> {
         None
@@ -324,6 +373,23 @@ impl<'a> TypingEnvironment<'a> {
                 .filter(|ty| matches!(ty, ProgramType::Parameter(_))),
             None => self.outer.bound_enum_value_type(&name),
         }
+    }
+
+    /// The outer scope at the function's entry, for `old(..)`. Only the
+    /// outer scope moves: this environment's own binders, which only the
+    /// binder check sets today, are not carried to the new point.
+    pub(super) fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+        self.outer.at_entry(inputs)
+    }
+
+    /// The outer scope at the recorded state `selector` names, for
+    /// `at(selector, ..)`.
+    pub(super) fn at_point(
+        &self,
+        selector: &ProgramPointSelector,
+        inputs: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+        self.outer.at_point(selector, inputs)
     }
 
     /// The call whose result `result` and region results name here.

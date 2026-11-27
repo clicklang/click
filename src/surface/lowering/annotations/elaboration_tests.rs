@@ -4,24 +4,9 @@
 //! environment over `NoOuterNames`, with no lowerer and no lowering context,
 //! and checks the Surface it gives. The declarations still carry an empty
 //! entry state, a kernel value, until they become a table of declared types.
-use super::comparison_elaboration::LoweringQueries;
 use super::typing_environment::NoOuterNames;
 use super::*;
 use crate::surface::typed_surface::{ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType};
-
-/// Lowering's answers when it knows nothing: no call result widths and no
-/// generic call results. Right for any proposition without
-/// pointers or generic calls.
-struct NothingLowered;
-
-impl LoweringQueries for NothingLowered {
-    fn generic_call_returns_algebraic(&mut self, _: &SyntaxTerm) -> bool {
-        false
-    }
-    fn call_pointer_element_width(&mut self, _: &SyntaxTerm) -> Result<Option<u32>, String> {
-        Ok(None)
-    }
-}
 
 /// Click binders with their declared types, and C parameters with theirs.
 struct Declared {
@@ -34,9 +19,7 @@ type PointerElementDeclaration = (&'static str, ProgramType, u32);
 
 impl Declared {
     fn elaborate<'s>(&self, proposition: &'s SyntaxProposition) -> SurfaceProposition<'s> {
-        self.run(|elaborator, typing| {
-            elaborator.elaborate_proposition(proposition, typing, &mut NothingLowered)
-        })
+        self.run(|elaborator, typing| elaborator.elaborate_proposition(proposition, typing))
     }
 
     fn elaborate_comparison(
@@ -46,7 +29,7 @@ impl Declared {
         right: SyntaxTerm,
     ) -> Result<SurfaceProposition<'static>, String> {
         self.run(|elaborator, typing| {
-            elaborator.elaborate_comparison(&left, operator, &right, typing, &mut NothingLowered)
+            elaborator.elaborate_comparison(&left, operator, &right, typing)
         })
     }
 
@@ -91,6 +74,8 @@ impl Declared {
             },
             definitions: SpecDefinitions::new(&predicates, &functions),
             retained_states: None,
+            capture_referenced_names: None,
+            type_inference_failure: Default::default(),
         };
         let mut typing = TypingEnvironment::in_scope(&NoOuterNames);
         for (name, declared) in &self.binders {
@@ -316,7 +301,6 @@ fn a_step_of_a_pointer_parameter_is_a_pointer_step_by_its_declared_element_width
                 ComparisonOperator::Equal,
                 &c_variable("p"),
                 typing,
-                &mut NothingLowered,
             )
         },
     );

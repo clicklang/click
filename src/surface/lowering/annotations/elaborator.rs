@@ -3,6 +3,8 @@
 //! specification definitions, the recorded states and a typing environment,
 //! and nothing that lowering builds, so elaboration can be run without
 //! lowering. The lowerer builds one for each query and delegates to it.
+//! Names at another program point (`old(..)`, `at(..)`) are typed in the
+//! scope there, which the outer `TypeScope` builds from the inputs here.
 use super::*;
 
 #[derive(Clone)]
@@ -10,6 +12,11 @@ pub(super) struct Elaborator<'a> {
     pub(super) declarations: Declarations<'a>,
     pub(super) definitions: SpecDefinitions<'a>,
     pub(super) retained_states: Option<&'a RecordedStates>,
+    /// The names a capture reads, which a scope at a recorded state binds.
+    pub(super) capture_referenced_names: Option<Arc<BTreeSet<String>>>,
+    /// The last generic instantiation that failed to infer its types. The
+    /// lowerer reads it to tell a type error from another failure.
+    pub(super) type_inference_failure: std::cell::RefCell<Option<String>>,
 }
 
 impl<'a> AnnotationLowerer<'a> {
@@ -19,11 +26,38 @@ impl<'a> AnnotationLowerer<'a> {
             declarations: self.declarations(),
             definitions: self.spec_definitions,
             retained_states: self.retained_states,
+            capture_referenced_names: self.capture_referenced_names.clone(),
+            type_inference_failure: std::cell::RefCell::new(None),
         }
+    }
+
+    /// Run `elaborate` on the lowerer's `Elaborator`, keeping the type
+    /// inference failure it records, as lowering recorded its own.
+    pub(super) fn with_elaborator<T>(&mut self, elaborate: impl FnOnce(&Elaborator<'_>) -> T) -> T {
+        let elaborator = self.elaborator();
+        let result = elaborate(&elaborator);
+        if let Some(failure) = elaborator.type_inference_failure.take() {
+            self.type_inference_failure = Some(failure);
+        }
+        result
     }
 }
 
 impl Elaborator<'_> {
+    fn record_type_inference_failure(&self, message: &str) {
+        *self.type_inference_failure.borrow_mut() = Some(message.to_string());
+    }
+
+    /// What a scope at another program point is built from.
+    fn point_inputs(&self) -> PointInputs<'_> {
+        PointInputs {
+            entry_values: &self.declarations.entry_values,
+            entry_point: self.declarations.entry_state.program_point(),
+            retained_states: self.retained_states,
+            capture_referenced_names: self.capture_referenced_names.as_deref(),
+        }
+    }
+
     pub(super) fn program_name_type(
         &self,
         name: impl Into<crate::kernel::BindingName>,
@@ -777,5 +811,258 @@ impl Elaborator<'_> {
             ProgramExpression::Variable(name) => typing.bound_pointer_element(name),
             _ => None,
         }
+    }
+
+    /// Whether `expression` calls a generic function whose result type, a
+    /// type parameter, is algebraic at this call: `vec::get(v, i)` with `v`
+    /// a `Vec<T>` of a theorem's rigid `T`.
+    pub(super) fn generic_call_returns_algebraic(
+        &self,
+        expression: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> bool {
+        let SyntaxTerm::Call { name, arguments } = expression else {
+            return false;
+        };
+        let Some(definition) = self.definitions.functions.get(name).cloned() else {
+            return false;
+        };
+        if !matches!(definition.return_type(), ClickType::Parameter(_)) {
+            return false;
+        }
+        self.instantiate_click_function_for_call(&definition, arguments, typing)
+            .is_ok_and(|instance| matches!(instance.return_type(), ClickType::Algebraic(_)))
+    }
+
+    pub(super) fn instantiate_click_function_for_call(
+        &self,
+        definition: &ClickFunctionDefinition,
+        arguments: &[SyntaxTerm],
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<ClickFunctionDefinition, String> {
+        if definition.type_parameters().is_empty() {
+            return Ok(definition.clone());
+        }
+        let argument_types = definition
+            .parameters()
+            .iter()
+            .zip(arguments)
+            .map(|(parameter, argument)| {
+                self.infer_call_argument_type(parameter.click_type(), argument, typing)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let substitution = generics::infer_type_substitution(
+            "function",
+            definition.name(),
+            definition.type_parameters(),
+            definition
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.click_type().clone()),
+            argument_types,
+        )
+        .inspect_err(|message| self.record_type_inference_failure(message))?;
+        generics::instantiate_function(definition, &substitution)
+    }
+
+    pub(super) fn infer_call_argument_type(
+        &self,
+        expected: &ClickType,
+        argument: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<ClickType>, String> {
+        match expected {
+            ClickType::Resource => Ok(Some(ClickType::Resource)),
+            ClickType::Function { .. } => self
+                .contract_expression_click_type_in_scope(argument, typing, &mut Vec::new())
+                .map(Some)
+                .ok_or_else(|| "callback argument needs a concrete lambda".into()),
+            ClickType::Proposition => Err("proposition parameters are not supported yet".into()),
+            // The argument's type by the rules lowering it would apply, without
+            // lowering it.
+            ClickType::Algebraic(_) => self.algebraic_argument_click_type(argument, typing),
+            // A `T*` parameter binds `T` from the argument's pointer type,
+            // as a `T` parameter binds it from the argument's type.
+            ClickType::Program(InterfaceType::ParameterPointer(_)) | ClickType::Parameter(_) => {
+                self.infer_unconstrained_call_argument_type(argument, typing)
+            }
+            ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
+            ClickType::Integer => Ok(Some(ClickType::Integer)),
+        }
+    }
+
+    /// The type of an argument passed where an algebraic value is expected,
+    /// by the rules lowering such an argument applies, without lowering it:
+    /// a program value of an enum or library type is that type's algebraic
+    /// value; `old(..)` and `at(..)` type their operand in the scope of the
+    /// point they name; a bare name is an algebraic binding or an error; a
+    /// call is its instance's result; anything else has its synthesized type.
+    /// Over the gate this answered exactly as lowering the argument did,
+    /// errors included.
+    pub(super) fn algebraic_argument_click_type(
+        &self,
+        argument: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<ClickType>, String> {
+        if let Some(enum_type) = self.enum_program_value_type(argument, typing) {
+            return Ok(Some(generics::click_type_from_algebraic_value_type(
+                &enum_type.algebraic_type().value_type(),
+            )));
+        }
+        match argument {
+            // The operand is typed where it is read: a local named in it is
+            // one in scope at that point, as lowering reads it there.
+            SyntaxTerm::Old(inner) => {
+                let entry = typing.at_entry(&self.point_inputs())?;
+                self.algebraic_argument_click_type(inner, &TypingEnvironment::in_scope(&*entry))
+            }
+            SyntaxTerm::At {
+                selector,
+                expression,
+            } => {
+                let retained_state =
+                    typing.at_point(selector, &self.point_inputs())?.ok_or_else(|| {
+                        "algebraic values at unresolved program points are not supported in this slice"
+                            .to_string()
+                    })?;
+                self.algebraic_argument_click_type(
+                    expression,
+                    &TypingEnvironment::in_scope(&*retained_state),
+                )
+            }
+            // A bare name is an algebraic binding or nothing: an Integer or
+            // program binding of that name does not make it algebraic.
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => typing
+                .algebraic_binding_click_type(name)
+                .map(Some)
+                .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope")),
+            SyntaxTerm::Call { name, arguments } if name != "to_nat" => {
+                let Some(definition) = self.definitions.functions.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let definition =
+                    self.instantiate_click_function_for_call(&definition, arguments, typing)?;
+                Ok(Some(definition.return_type().clone()))
+            }
+            _ => {
+                Ok(self.contract_expression_click_type_in_scope(argument, typing, &mut Vec::new()))
+            }
+        }
+    }
+
+    pub(super) fn infer_unconstrained_call_argument_type(
+        &self,
+        argument: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<ClickType>, String> {
+        if let Some(cast_type) = generics::explicit_cast_click_type(argument) {
+            return Ok(Some(cast_type));
+        }
+        match argument {
+            SyntaxTerm::IntegerLiteral(_) | SyntaxTerm::Negate(_) => {
+                Ok(generics::default_numeral_click_type(argument))
+            }
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
+                expression: inner, ..
+            } => self.infer_unconstrained_call_argument_type(inner, typing),
+            SyntaxTerm::ResourceField(access) => Ok(access.click_type.clone()),
+            SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
+            | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
+                Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
+            }
+            SyntaxTerm::Binding(name) => Ok(typing
+                .algebraic_binding_click_type(name)
+                .or_else(|| typing.program_binding_click_type(name))),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+                Ok(Some(generics::click_type_from_program_value(value)))
+            }
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => Ok(typing
+                .algebraic_binding_click_type(name)
+                .or_else(|| typing.program_binding_click_type(name))),
+            SyntaxTerm::Call { name, arguments } => {
+                let definition = self
+                    .definitions
+                    .functions
+                    .get(name)
+                    .ok_or_else(|| format!("unknown function `{name}`"))?
+                    .clone();
+                let definition =
+                    self.instantiate_click_function_for_call(&definition, arguments, typing)?;
+                Ok(Some(definition.return_type().clone()))
+            }
+            // Pointer arithmetic keeps its pointer's type: `bytes + k` is a
+            // `*const u8` as `bytes` is.
+            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
+                let left = self.infer_unconstrained_call_argument_type(left, typing)?;
+                if left
+                    .as_ref()
+                    .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
+                {
+                    return Ok(left);
+                }
+                if matches!(argument, SyntaxTerm::Add(..)) {
+                    let right = self.infer_unconstrained_call_argument_type(right, typing)?;
+                    if right
+                        .as_ref()
+                        .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
+                    {
+                        return Ok(right);
+                    }
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The element width a pure call's result steps by when the call
+    /// returns a pointer: its declared result's pointee, at the call's own
+    /// type arguments. `None` for any other expression or result.
+    pub(super) fn call_pointer_element_width(
+        &self,
+        expression: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<u32>, String> {
+        // A state changes the value read, not the call's declared type.
+        if let SyntaxTerm::Old(inner)
+        | SyntaxTerm::Exact(inner)
+        | SyntaxTerm::At {
+            expression: inner, ..
+        } = expression
+        {
+            return self.call_pointer_element_width(inner, typing);
+        }
+        // Only a declared pure function with a pointer result: a built-in
+        // conversion such as `to_int32` is not one.
+        let SyntaxTerm::Call { name, .. } = expression else {
+            return Ok(None);
+        };
+        if !self
+            .definitions
+            .functions
+            .get(name)
+            .is_some_and(|definition| match definition.return_type() {
+                ClickType::Program(interface_type) => {
+                    interface_type.is_pointer()
+                        || matches!(interface_type, InterfaceType::ParameterPointer(_))
+                }
+                ClickType::CObjectPointer { .. } => true,
+                _ => false,
+            })
+        {
+            return Ok(None);
+        }
+        Ok(self
+            .infer_unconstrained_call_argument_type(expression, typing)?
+            .and_then(|result| result.interface_type())
+            .and_then(|result| result.pointee_type())
+            .map(|element| element.to_kernel_type().byte_width()))
     }
 }
