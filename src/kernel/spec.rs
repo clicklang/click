@@ -10876,17 +10876,71 @@ pub(super) fn symbolic_spec_range_fold_value(
 
 /// Preserve the producer's selected guard and carry outer negations in its polarity.
 fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, bool)> {
+    crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, expected) => Some((condition.clone(), *expected)),
         Proposition::Not(body) => {
             let (condition, expected) = conditional_guard(body)?;
             Some((condition, !expected))
         }
+        Proposition::And(left, right) | Proposition::Or(left, right) => {
+            let conjunction = matches!(proposition, Proposition::And(..));
+            let (left, left_expected) = conditional_guard(left)?;
+            let (right, right_expected) = conditional_guard(right)?;
+            // The written guard compares a selected int32 word to one.
+            let word = |value| KernelTerm::int32_literal(u32::from(value));
+            let select =
+                |guard: &StoredConditionTerm, yes, no| match guard.operand_view().constant() {
+                    Some(true) => yes,
+                    Some(false) => no,
+                    None if yes == no => yes,
+                    None => KernelTerm::machine_if_shared(
+                        MachineIntegerType::Int32,
+                        [guard.kernel_operand(), yes, no],
+                    ),
+                };
+            let value = compound_guard_word(
+                conjunction,
+                (&left, left_expected),
+                (&right, right_expected),
+                word,
+                select,
+            );
+            let root = KernelTerm::boolean_comparison(
+                MachineIntegerType::Int32,
+                CompareRelation::Equal,
+                [value, word(true)],
+            );
+            Some((
+                StoredConditionTerm::from_root(root).expect("logical compound guard"),
+                true,
+            ))
+        }
+        Proposition::SequenceMembership { .. } => {
+            conditional_guard(&sequence_membership_view(proposition)?)
+        }
         _ => {
-            let (condition, expected) = proposition_as_single_condition(proposition)
-                .or_else(|| compound_spec_value_condition(proposition))?;
+            let (condition, expected) = proposition_as_single_condition(proposition)?;
             Some((condition.into(), expected))
         }
+    }
+}
+
+/// Encode a compound guard as the int32 word tested against one. Both
+/// representations use the same arm order and short-circuit value.
+fn compound_guard_word<C, W>(
+    conjunction: bool,
+    (left, left_expected): (C, bool),
+    (right, right_expected): (C, bool),
+    word: impl Fn(bool) -> W,
+    select: impl Fn(C, W, W) -> W,
+) -> W {
+    let right = select(right, word(right_expected), word(!right_expected));
+    let short_circuit = word(!conjunction);
+    if conjunction == left_expected {
+        select(left, right, short_circuit)
+    } else {
+        select(left, short_circuit, right)
     }
 }
 
@@ -10909,18 +10963,13 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(OldCondit
     };
     let (left, left_expected) = compound_spec_value_condition(left)?;
     let (right, right_expected) = compound_spec_value_condition(right)?;
-    let right_value = OldMachineTerm::if_then_else(
-        right,
-        OldMachineTerm::constant(u32::from(right_expected)),
-        OldMachineTerm::constant(u32::from(!right_expected)),
+    let value = compound_guard_word(
+        conjunction,
+        (left, left_expected),
+        (right, right_expected),
+        |bit| OldMachineTerm::constant(u32::from(bit)),
+        OldMachineTerm::if_then_else,
     );
-    let constant = OldMachineTerm::constant(u32::from(!conjunction));
-    let (then_term, else_term) = if conjunction == left_expected {
-        (right_value, constant)
-    } else {
-        (constant, right_value)
-    };
-    let value = OldMachineTerm::if_then_else(left, then_term, else_term);
     Some((
         OldConditionTerm::equal(value, OldMachineTerm::constant(1)),
         true,

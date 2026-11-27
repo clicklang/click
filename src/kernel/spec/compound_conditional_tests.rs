@@ -13,6 +13,10 @@ fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
             Proposition::Or(left, right)
         };
         let value = conditional_spec_value(&guard, int32(7), int32(9)).unwrap();
+        let retained = SpecValue::conditional(&guard, &int32(7).into(), &int32(9).into(), true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.into_native(), value);
         let ProgramValue::Int32(bits) = value else {
             panic!("int32 conditional");
         };
@@ -32,6 +36,61 @@ fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
             }
         }
     }
+}
+
+#[test]
+fn compound_guard_preserves_shared_predicates_and_written_word_selection() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let format = KernelFloatType::Float64;
+    let guard = |name: &str| {
+        let operand = KernelTerm::float_call(format, name.into(), vec![]);
+        KernelTerm::float_classify(format, FloatClassification::Zero, operand).unwrap()
+    };
+    let left = guard("compound_left");
+    let right = guard("compound_right");
+    let claim = |root: &KernelTerm, truth| {
+        Box::new(Proposition::condition_is(
+            StoredConditionTerm::from_root(root.clone()).unwrap(),
+            truth,
+        ))
+    };
+    let exports = KernelTermExport::float_export_count();
+    for conjunction in [true, false] {
+        for left_truth in [true, false] {
+            for right_truth in [true, false] {
+                let a = claim(&left, left_truth);
+                let b = claim(&right, right_truth);
+                let proposition = if conjunction {
+                    Proposition::And(a, b)
+                } else {
+                    Proposition::Or(a, b)
+                };
+                let (guard, truth) = conditional_guard(&proposition).unwrap();
+                assert!(truth);
+                let word = |bit: bool| KernelTerm::int32_literal(u32::from(bit));
+                let format = MachineIntegerType::Int32;
+                let nested = KernelTerm::machine_if_shared(
+                    format,
+                    [right.clone(), word(right_truth), word(!right_truth)],
+                );
+                let shortcut = word(!conjunction);
+                let arms = if left_truth == conjunction {
+                    [left.clone(), nested, shortcut]
+                } else {
+                    [left.clone(), shortcut, nested]
+                };
+                let expected = KernelTerm::boolean_comparison_raw(
+                    format,
+                    CompareRelation::Equal,
+                    [KernelTerm::machine_if_shared(format, arms), word(true)],
+                );
+                assert_eq!(guard.root(), Some(&expected));
+            }
+        }
+    }
+    assert_eq!(KernelTermExport::float_export_count(), exports);
+    assert!(!left.has_cached_native_argument());
+    assert!(!right.has_cached_native_argument());
 }
 
 #[cfg(test)]
