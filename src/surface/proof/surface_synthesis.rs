@@ -18,6 +18,7 @@ mod matches;
 mod pointer_indices;
 mod pointer_names;
 mod slices;
+pub(in crate::surface) use slices::raise_program_slice_operation;
 
 use crate::kernel::program_local_source_name as surface_local_name;
 use crate::surface::diagnostics::has_surface_iterator_binding;

@@ -3039,7 +3039,9 @@ pub(crate) fn collect_program_expression_variables(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => {
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
             collect_program_expression_variables(expression, names);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
@@ -3066,7 +3068,11 @@ pub(crate) fn collect_program_expression_variables(
         | ProgramExpression::TypedLoad { pointer: inner, .. } => {
             collect_program_expression_variables(inner, names);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_variables(left, names);
             collect_program_expression_variables(right, names);
         }

@@ -606,6 +606,8 @@ pub(super) fn program_expression_supports_stateful_memory_refinement(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
         | ProgramExpression::PointerOffsetBytes {
@@ -636,7 +638,11 @@ pub(super) fn program_expression_supports_stateful_memory_refinement(
                 && program_expression_supports_stateful_memory_refinement(then_branch)
                 && program_expression_supports_stateful_memory_refinement(else_branch)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             program_expression_supports_stateful_memory_refinement(left)
                 && program_expression_supports_stateful_memory_refinement(right)
         }
@@ -662,6 +668,8 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -686,7 +694,11 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
                 && program_expression_is_state_independent(then_branch)
                 && program_expression_is_state_independent(else_branch)
         }
-        crate::kernel::binary_c_operation!(left, right) => {
+        crate::kernel::binary_c_operation!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             program_expression_is_state_independent(left)
                 && program_expression_is_state_independent(right)
         }
@@ -751,6 +763,8 @@ pub(super) fn program_expression_mentions_variable(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
         | ProgramExpression::PointerOffsetBytes {
@@ -782,7 +796,11 @@ pub(super) fn program_expression_mentions_variable(
                 || program_expression_mentions_variable(then_branch, name)
                 || program_expression_mentions_variable(else_branch, name)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             program_expression_mentions_variable(left, name)
                 || program_expression_mentions_variable(right, name)
         }
@@ -813,6 +831,8 @@ pub(super) fn program_expression_takes_address_of_variable(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -842,7 +862,11 @@ pub(super) fn program_expression_takes_address_of_variable(
                 || program_expression_takes_address_of_variable(then_branch, name)
                 || program_expression_takes_address_of_variable(else_branch, name)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             program_expression_takes_address_of_variable(left, name)
                 || program_expression_takes_address_of_variable(right, name)
         }
@@ -979,6 +1003,8 @@ pub(super) fn program_expression_uses_object_address(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -1003,7 +1029,11 @@ pub(super) fn program_expression_uses_object_address(
                 || program_expression_uses_object_address(then_branch, name)
                 || program_expression_uses_object_address(else_branch, name)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             program_expression_uses_object_address(left, name)
                 || program_expression_uses_object_address(right, name)
         }

@@ -1149,7 +1149,11 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => collect_program_expression_bitvector_variables(expression, variables),
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
+            collect_program_expression_bitvector_variables(expression, variables)
+        }
         ProgramExpression::AddressOf(body)
         | ProgramExpression::CheckedObjectAddress(body)
         | ProgramExpression::Not(body)
@@ -1163,7 +1167,11 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
         ProgramExpression::TypedLoad { pointer, .. } => {
             collect_program_expression_bitvector_variables(pointer, variables);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_bitvector_variables(left, variables);
             collect_program_expression_bitvector_variables(right, variables);
         }
@@ -1678,6 +1686,8 @@ fn collect_program_expression_bound_identities(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
         | ProgramExpression::Not(expression)
@@ -1707,7 +1717,11 @@ fn collect_program_expression_bound_identities(
         | ProgramExpression::Subobject { pointer, .. } => {
             collect_program_expression_bound_identities(pointer, variables, integer_seen);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_bound_identities(left, variables, integer_seen);
             collect_program_expression_bound_identities(right, variables, integer_seen);
         }

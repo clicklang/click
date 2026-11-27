@@ -20162,6 +20162,8 @@ fn resolve_retained_aggregate_fields(
         | ProgramExpression::FloatNegate(inner)
         | ProgramExpression::EnumField { value: inner, .. }
         | ProgramExpression::EnumIs { value: inner, .. }
+        | ProgramExpression::SliceLength(inner)
+        | ProgramExpression::SliceData(inner)
         | ProgramExpression::Not(inner)
         | ProgramExpression::BitwiseNot(inner)
         | ProgramExpression::Load(inner)
@@ -20198,7 +20200,11 @@ fn resolve_retained_aggregate_fields(
                 budget,
             )?;
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             resolve_retained_aggregate_fields(entry, state, left, true, assumptions, budget)?;
             resolve_retained_aggregate_fields(entry, state, right, true, assumptions, budget)?;
         }

@@ -315,6 +315,8 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             | ProgramExpression::EnumIs {
                 value: expression, ..
             }
+            | ProgramExpression::SliceLength(expression)
+            | ProgramExpression::SliceData(expression)
             | ProgramExpression::Not(expression)
             | ProgramExpression::BitwiseNot(expression) => pending.push((expression, true)),
             ProgramExpression::EnumConstruct { fields, .. } => {
@@ -331,7 +333,8 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
                 (then_branch.as_ref(), true),
                 (else_branch.as_ref(), true),
             ]),
-            crate::kernel::binary_c_expression!(a, b) => {
+            crate::kernel::binary_c_expression!(a, b)
+            | ProgramExpression::SliceFromRawParts { data: a, count: b } => {
                 pending.extend([(a.as_ref(), true), (b.as_ref(), true)])
             }
             ProgramExpression::StringLiteral(_)
@@ -2682,7 +2685,9 @@ pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: Refe
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => {
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
             collect_program_expression_referenced_bindings(expression, names);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
@@ -2703,7 +2708,11 @@ pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: Refe
         ProgramExpression::TypedLoad { pointer, .. } => {
             collect_program_expression_referenced_bindings(pointer, names);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_referenced_bindings(left, names);
             collect_program_expression_referenced_bindings(right, names);
         }

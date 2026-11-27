@@ -9731,22 +9731,10 @@ fn evaluate_spec_slice_from_raw_parts_paths_in(
             ) else {
                 continue;
             };
-            let outcome = match (
+            let outcome = slice_from_raw_parts_outcome(
                 data_path.value.clone().into_native(),
                 count_path.value.into_native(),
-            ) {
-                (ProgramValue::Pointer(data), _) if data.is_wide() => {
-                    ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {
-                        operation: "`slice::from_raw_parts`",
-                    })
-                }
-                (ProgramValue::Pointer(data), ProgramValue::UInt64(count))
-                    if SliceElement::of_thin_pointer_type(data.program_type()).is_some() =>
-                {
-                    ExpressionOutcome::Value(ProgramValue::Pointer(data.with_element_count(count)))
-                }
-                _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
-            };
+            );
             paths.extend(spec_value_paths_in(
                 vec![ExpressionPath {
                     outcome,
@@ -9758,6 +9746,29 @@ fn evaluate_spec_slice_from_raw_parts_paths_in(
         }
     }
     Ok(paths)
+}
+
+/// The slice `slice::from_raw_parts(data, count)` builds from its evaluated
+/// operands, shared by the spec and program operations: a wide `data` is
+/// refused, naming `.as_ptr()`; a thin pointer no slice has, such as
+/// `void *`, or a count that is not a `u64`, is a type mismatch.
+pub(in crate::kernel) fn slice_from_raw_parts_outcome(
+    data: ProgramValue,
+    count: ProgramValue,
+) -> ExpressionOutcome {
+    match (data, count) {
+        (ProgramValue::Pointer(data), _) if data.is_wide() => {
+            ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {
+                operation: "`slice::from_raw_parts`",
+            })
+        }
+        (ProgramValue::Pointer(data), ProgramValue::UInt64(count))
+            if SliceElement::of_thin_pointer_type(data.program_type()).is_some() =>
+        {
+            ExpressionOutcome::Value(ProgramValue::Pointer(data.with_element_count(count)))
+        }
+        _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
+    }
 }
 
 /// `value` where `requirement` holds. The requirement is owed as an

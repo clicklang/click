@@ -2791,7 +2791,9 @@ fn collect_program_expression_bound_variables(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => {
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
             collect_program_expression_bound_variables(expression, variables);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
@@ -2811,7 +2813,11 @@ fn collect_program_expression_bound_variables(
         | ProgramExpression::TypedLoad { pointer, .. } => {
             collect_program_expression_bound_variables(pointer, variables)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_bound_variables(left, variables);
             collect_program_expression_bound_variables(right, variables);
         }
@@ -5094,6 +5100,22 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
             )),
             variant: variant.clone(),
         },
+        ProgramExpression::SliceLength(slice) => ProgramExpression::SliceLength(Box::new(
+            substitute_bitvector_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceData(slice) => ProgramExpression::SliceData(Box::new(
+            substitute_bitvector_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceFromRawParts { data, count } => {
+            ProgramExpression::SliceFromRawParts {
+                data: Box::new(substitute_bitvector_variable_in_program_expression(
+                    data, from, to,
+                )),
+                count: Box::new(substitute_bitvector_variable_in_program_expression(
+                    count, from, to,
+                )),
+            }
+        }
         ProgramExpression::AddressOf(body) => ProgramExpression::AddressOf(Box::new(
             substitute_bitvector_variable_in_program_expression(body, from, to),
         )),
@@ -7419,6 +7441,22 @@ fn substitute_pointer_variable_in_program_expression(
             )),
             variant: variant.clone(),
         },
+        ProgramExpression::SliceLength(slice) => ProgramExpression::SliceLength(Box::new(
+            substitute_pointer_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceData(slice) => ProgramExpression::SliceData(Box::new(
+            substitute_pointer_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceFromRawParts { data, count } => {
+            ProgramExpression::SliceFromRawParts {
+                data: Box::new(substitute_pointer_variable_in_program_expression(
+                    data, from, to,
+                )),
+                count: Box::new(substitute_pointer_variable_in_program_expression(
+                    count, from, to,
+                )),
+            }
+        }
         ProgramExpression::AddressOf(body) => ProgramExpression::AddressOf(Box::new(
             substitute_pointer_variable_in_program_expression(body, from, to),
         )),

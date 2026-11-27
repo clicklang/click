@@ -328,6 +328,8 @@ impl<'a> Names<'a> {
             | EnumIs {
                 value: expression, ..
             }
+            | SliceLength(expression)
+            | SliceData(expression)
             | AddressOf(expression)
             | CheckedObjectAddress(expression)
             | Not(expression)
@@ -367,7 +369,8 @@ impl<'a> Names<'a> {
             | BitwiseAnd(a, b)
             | BitwiseOr(a, b)
             | BitwiseXor(a, b)
-            | Index(a, b) => {
+            | Index(a, b)
+            | SliceFromRawParts { data: a, count: b } => {
                 self.c(a);
                 self.c(b);
             }

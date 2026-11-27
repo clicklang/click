@@ -4395,7 +4395,9 @@ fn validate_pointer_cast_operands(
         | ProgramExpression::PointerOffsetBytes { pointer: inner, .. }
         | ProgramExpression::Subobject { pointer: inner, .. }
         | ProgramExpression::EnumField { value: inner, .. }
-        | ProgramExpression::EnumIs { value: inner, .. } => {
+        | ProgramExpression::EnumIs { value: inner, .. }
+        | ProgramExpression::SliceLength(inner)
+        | ProgramExpression::SliceData(inner) => {
             validate_pointer_cast_operands(inner, variables, context)
         }
         ProgramExpression::EnumConstruct { fields, .. } => fields
@@ -4410,7 +4412,11 @@ fn validate_pointer_cast_operands(
             validate_pointer_cast_operands(then_branch, variables, context)?;
             validate_pointer_cast_operands(else_branch, variables, context)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             validate_pointer_cast_operands(left, variables, context)?;
             validate_pointer_cast_operands(right, variables, context)
         }
@@ -4580,6 +4586,26 @@ pub(in crate::surface) fn infer_program_expression_type(
             Some(InterfaceType::Parameter(_))
         )
         .then_some(InterfaceType::Bool),
+        // A slice's components and construction, typed as the spec
+        // operations they evaluate as are (`design/rust-slice-values.md`).
+        ProgramExpression::SliceLength(slice) => matches!(
+            infer_program_expression_type(slice, variables),
+            Some(InterfaceType::Slice(_))
+        )
+        .then_some(InterfaceType::UInt64(LongRank::Long)),
+        ProgramExpression::SliceData(slice) => {
+            match infer_program_expression_type(slice, variables)? {
+                InterfaceType::Slice(element) => {
+                    interface_type_from_program_type(&element.thin_pointer_type())
+                }
+                _ => None,
+            }
+        }
+        ProgramExpression::SliceFromRawParts { data, .. } => {
+            let data = infer_program_expression_type(data, variables)?;
+            crate::kernel::SliceElement::of_thin_pointer_type(data.to_kernel_type())
+                .map(InterfaceType::Slice)
+        }
         ProgramExpression::Negate(expression) => arithmetic_result_type(
             Some(InterfaceType::Int32),
             infer_program_expression_type(expression, variables),
