@@ -106,16 +106,28 @@ impl adler2::Adler32 {
      have to_integer(val.0[3]) <= 255;
      step_until(loop(2).statement(2).entry);
      have a_vec.0[0] == old((bytes[0] as u32));
-     have to_integer(a_vec.0[0]) <= 255 by { close(); }
+     have to_integer(a_vec.0[0]) <= 255 by {
+      rewrite(a_vec.0[0], old((bytes[0] as u32)));
+      close() using {};
+     }
      have to_integer(b_vec.0[0]) == 0;
      have a_vec.0[1] == old((bytes[1] as u32));
-     have to_integer(a_vec.0[1]) <= 255 by { close(); }
+     have to_integer(a_vec.0[1]) <= 255 by {
+      rewrite(a_vec.0[1], old((bytes[1] as u32)));
+      close() using {};
+     }
      have to_integer(b_vec.0[1]) == 0;
      have a_vec.0[2] == old((bytes[2] as u32));
-     have to_integer(a_vec.0[2]) <= 255 by { close(); }
+     have to_integer(a_vec.0[2]) <= 255 by {
+      rewrite(a_vec.0[2], old((bytes[2] as u32)));
+      close() using {};
+     }
      have to_integer(b_vec.0[2]) == 0;
      have a_vec.0[3] == old((bytes[3] as u32));
-     have to_integer(a_vec.0[3]) <= 255 by { close(); }
+     have to_integer(a_vec.0[3]) <= 255 by {
+      rewrite(a_vec.0[3], old((bytes[3] as u32)));
+      close() using {};
+     }
      have to_integer(b_vec.0[3]) == 0;
      have to_integer(b_vec.0[3]) + to_integer(a_vec.0[3]) <= 4294967295 by {
       close() using { to_integer(b_vec.0[3]) == 0; to_integer(a_vec.0[3]) <= 255; };
@@ -123,16 +135,28 @@ impl adler2::Adler32 {
      step_until(assignment(b, 3).entry);
      have a_vec.0[0] == old((bytes[0] as u32));
      have b_vec.0[0] == old((bytes[0] as u32));
-     have to_integer(b_vec.0[0]) <= 255 by { close(); }
+     have to_integer(b_vec.0[0]) <= 255 by {
+      rewrite(b_vec.0[0], old((bytes[0] as u32)));
+      close() using {};
+     }
      have a_vec.0[1] == old((bytes[1] as u32));
      have b_vec.0[1] == old((bytes[1] as u32));
-     have to_integer(b_vec.0[1]) <= 255 by { close(); }
+     have to_integer(b_vec.0[1]) <= 255 by {
+      rewrite(b_vec.0[1], old((bytes[1] as u32)));
+      close() using {};
+     }
      have a_vec.0[2] == old((bytes[2] as u32));
      have b_vec.0[2] == old((bytes[2] as u32));
-     have to_integer(b_vec.0[2]) <= 255 by { close(); }
+     have to_integer(b_vec.0[2]) <= 255 by {
+      rewrite(b_vec.0[2], old((bytes[2] as u32)));
+      close() using {};
+     }
      have a_vec.0[3] == old((bytes[3] as u32));
      have b_vec.0[3] == old((bytes[3] as u32));
-     have to_integer(b_vec.0[3]) <= 255 by { close(); }
+     have to_integer(b_vec.0[3]) <= 255 by {
+      rewrite(b_vec.0[3], old((bytes[3] as u32)));
+      close() using {};
+     }
      have remainder_chunk.len() == 4u64;
      step();
      have b == 4u32;

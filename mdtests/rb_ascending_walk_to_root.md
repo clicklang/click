@@ -332,6 +332,13 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                                         sibling_model, up_model), parent));
                         close();
                     }
+                    have c.model == Context::Left(identity, grandparent, color, sibling_model, up_model);
+                    have Context::Left(identity, grandparent, color, sibling_model, up_model) == Context::Left(parent, grandparent, color, sibling_model, up_model) by {
+                        rewrite(Context::Left(identity, grandparent, color, sibling_model, up_model), c.model);
+                        rewrite(Context::Left(parent, grandparent, color, sibling_model, up_model), ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
+                        rewrite(Context::Left(identity, grandparent, color, sibling_model, up_model), c.model);
+                        close();
+                    }
                     have identity == parent by close();
                     have plug(up_model,
                               RbTree::Node(identity, grandparent, color,
@@ -371,6 +378,13 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                           sibling_model, up_model) by {
                         unfold(ctx_reroot(Context::Right(identity, grandparent, color,
                                                          sibling_model, up_model), parent));
+                        close();
+                    }
+                    have c.model == Context::Right(identity, grandparent, color, sibling_model, up_model);
+                    have Context::Right(identity, grandparent, color, sibling_model, up_model) == Context::Right(parent, grandparent, color, sibling_model, up_model) by {
+                        rewrite(Context::Right(identity, grandparent, color, sibling_model, up_model), c.model);
+                        rewrite(Context::Right(parent, grandparent, color, sibling_model, up_model), ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
+                        rewrite(Context::Right(identity, grandparent, color, sibling_model, up_model), c.model);
                         close();
                     }
                     have identity == parent by close();

@@ -525,7 +525,7 @@ uint64 spell(const uint8* b, uint64 n) {
             (
                 "c_decreases_rejects_recursive_inline_helper.md",
                 "incomplete proof:",
-                "callee `step_down` has no termination evidence",
+                "callee `\"c_decreases_rejects_recursive_inline_helper.c\"::step_down` has no termination evidence",
             ),
             (
                 "diverges_named_contract_requires_marked_caller.md",

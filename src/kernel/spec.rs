@@ -10878,7 +10878,6 @@ pub(super) fn symbolic_spec_range_fold_value(
 fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, bool)> {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
-        Proposition::ConditionIs(condition, expected) => Some((condition.clone(), *expected)),
         Proposition::Not(body) => {
             let (condition, expected) = conditional_guard(body)?;
             Some((condition, !expected))
@@ -10919,10 +10918,7 @@ fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, 
         Proposition::SequenceMembership { .. } => {
             conditional_guard(&sequence_membership_view(proposition)?)
         }
-        _ => {
-            let (condition, expected) = proposition_as_single_condition(proposition)?;
-            Some((condition.into(), expected))
-        }
+        _ => single_condition(proposition).map(|(leaf, truth)| (leaf.into_stored(), truth)),
     }
 }
 
@@ -10976,6 +10972,20 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(OldCondit
     ))
 }
 
+/// The only mixed integer arms admitted by a specification conditional are
+/// the two 32-bit carriers. Their result carries the unsigned word.
+fn conditional_machine_format(
+    left: MachineIntegerType,
+    right: MachineIntegerType,
+) -> Option<MachineIntegerType> {
+    use MachineIntegerType::{Int32, UInt32};
+    match (left, right) {
+        (Int32, UInt32) | (UInt32, Int32) => Some(UInt32),
+        _ if left == right => Some(left),
+        _ => None,
+    }
+}
+
 pub(super) fn conditional_spec_value(
     proposition: &Proposition,
     then_value: ProgramValue,
@@ -10984,110 +10994,117 @@ pub(super) fn conditional_spec_value(
     if then_value == else_value {
         return Some(then_value);
     }
-    let (condition, expected) = proposition_as_single_condition(proposition)
-        .or_else(|| compound_spec_value_condition(proposition))?;
-    // A `bool` conditional of two `bool` values selects one of them, so its
-    // leaves stay exactly `0` or `1`.
-    let (then_term, else_term, rebuild): (_, _, fn(OldMachineTerm) -> ProgramValue) =
-        match (then_value, else_value) {
-            (ProgramValue::Int32(then_term), ProgramValue::Int32(else_term)) => {
-                (then_term, else_term, ProgramValue::Int32)
-            }
-            // A `Bool` conditional is the kernel sort's `if` (rule L-If).
-            (ProgramValue::Bool(then_term), ProgramValue::Bool(else_term)) => {
-                let (then_term, else_term) = if expected {
-                    (then_term, else_term)
-                } else {
-                    (else_term, then_term)
-                };
-                return Some(ProgramValue::Bool(OldMachineTerm::bool_cast(
-                    MachineIntegerType::UInt8,
-                    OldConditionTerm::bool_if(
-                        condition,
-                        OldConditionTerm::truth_of_bool_word(&then_term),
-                        OldConditionTerm::truth_of_bool_word(&else_term),
-                    ),
-                )));
-            }
-            // Two arms of one integer type: each leaf is already in that
-            // type's range, so the selection is too.
-            (ProgramValue::Int8(then_term), ProgramValue::Int8(else_term)) => {
-                (then_term, else_term, ProgramValue::Int8)
-            }
-            (ProgramValue::Int16(then_term), ProgramValue::Int16(else_term)) => {
-                (then_term, else_term, ProgramValue::Int16)
-            }
-            (ProgramValue::UInt8(then_term), ProgramValue::UInt8(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt8)
-            }
-            (ProgramValue::UInt16(then_term), ProgramValue::UInt16(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt16)
-            }
-            (ProgramValue::UInt32(then_term), ProgramValue::UInt32(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt32)
-            }
-            // An `int` arm beside an `unsigned int` one converts to
-            // `unsigned int`, which keeps its 32 bits.
-            (ProgramValue::UInt32(then_term), ProgramValue::Int32(else_term))
-            | (ProgramValue::Int32(then_term), ProgramValue::UInt32(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt32)
-            }
-            (ProgramValue::Int64(then_term), ProgramValue::Int64(else_term)) => {
-                (then_term, else_term, ProgramValue::Int64)
-            }
-            (ProgramValue::UInt64(then_term), ProgramValue::UInt64(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt64)
-            }
-            (ProgramValue::Int128(then_term), ProgramValue::Int128(else_term)) => {
-                (then_term, else_term, ProgramValue::Int128)
-            }
-            (ProgramValue::UInt128(then_term), ProgramValue::UInt128(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt128)
-            }
-            _ => return None,
-        };
-    let (then_term, else_term) = if expected {
-        (then_term, else_term)
-    } else {
-        (else_term, then_term)
+    let guard = || {
+        proposition_as_single_condition(proposition)
+            .or_else(|| compound_spec_value_condition(proposition))
     };
-    Some(rebuild(OldMachineTerm::if_then_else(
-        condition, then_term, else_term,
-    )))
+    let integer_arm = |value: ProgramValue| {
+        let format = MachineIntegerType::from_program_type(value.program_type())?;
+        let crate::kernel::integer_c_value!(term) = value else {
+            return None;
+        };
+        Some((format, term))
+    };
+    match (then_value, else_value) {
+        (ProgramValue::Bool(yes), ProgramValue::Bool(no)) => {
+            let (condition, expected) = guard()?;
+            let (yes, no) = if expected { (yes, no) } else { (no, yes) };
+            Some(ProgramValue::Bool(OldMachineTerm::bool_cast(
+                MachineIntegerType::UInt8,
+                OldConditionTerm::bool_if(
+                    condition,
+                    OldConditionTerm::truth_of_bool_word(&yes),
+                    OldConditionTerm::truth_of_bool_word(&no),
+                ),
+            )))
+        }
+        (left, right) => {
+            let (left_format, yes) = integer_arm(left)?;
+            let (right_format, no) = integer_arm(right)?;
+            let format = conditional_machine_format(left_format, right_format)?;
+            let (condition, expected) = guard()?;
+            let (yes, no) = if expected { (yes, no) } else { (no, yes) };
+            Some(crate::kernel::wrap_exact_machine_value(
+                format,
+                OldMachineTerm::if_then_else(condition, yes, no),
+            ))
+        }
+    }
+}
+
+// A single-condition probe retains the producer handles. Only consumers that
+// need the native spelling pay for the operand trees.
+enum SingleCondition {
+    Stored(StoredConditionTerm),
+    AlgebraicEqual(StoredAlgebraicTerm, StoredAlgebraicTerm),
+}
+
+impl SingleCondition {
+    fn into_stored(self) -> StoredConditionTerm {
+        match self {
+            Self::Stored(condition) => condition,
+            Self::AlgebraicEqual(left, right) => {
+                let operand = |value: StoredAlgebraicTerm| {
+                    value.root().cloned().unwrap_or_else(|| {
+                        KernelTermImport::for_exact_field_inputs().algebraic(value.old_form())
+                    })
+                };
+                let root = KernelTerm::algebraic_equal_raw([operand(left), operand(right)]);
+                StoredConditionTerm::from_root(root).expect("algebraic equality")
+            }
+        }
+    }
+
+    fn into_native(self) -> OldConditionTerm {
+        match self {
+            Self::Stored(condition) => match condition.root().map(KernelTerm::node) {
+                Some(KernelTermNode::Variable(variable)) => OldConditionTerm::Variable(*variable),
+                _ => condition.old_form().clone(),
+            },
+            Self::AlgebraicEqual(left, right) => OldConditionTerm::AlgebraicEqual(
+                Box::new(left.old_form().clone()),
+                Box::new(right.old_form().clone()),
+            ),
+        }
+    }
+}
+
+fn single_condition(proposition: &Proposition) -> Option<(SingleCondition, bool)> {
+    match proposition {
+        Proposition::ConditionIs(condition, truth) => {
+            Some((SingleCondition::Stored(condition.clone()), *truth))
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            let mut comparisons = sequence_member_comparisons(element.old_form(), sequence);
+            match (comparisons.next(), comparisons.next()) {
+                (None, _) => Some((
+                    SingleCondition::Stored(OldConditionTerm::Constant(false).into()),
+                    true,
+                )),
+                (Some(comparison), None) => single_condition(&comparison),
+                (_, Some(_)) => None,
+            }
+        }
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
+            SingleCondition::AlgebraicEqual(left.clone(), right.clone()),
+            true,
+        )),
+        Proposition::Not(body) => {
+            let (condition, value) = single_condition(body)?;
+            Some((condition, !value))
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn is_single_normalization_condition(proposition: &Proposition) -> bool {
+    single_condition(proposition).is_some()
 }
 
 pub(super) fn proposition_as_single_condition(
     proposition: &Proposition,
 ) -> Option<(OldConditionTerm, bool)> {
-    match proposition {
-        Proposition::ConditionIs(condition, value) => {
-            let condition = match condition.root().map(KernelTerm::node) {
-                Some(KernelTermNode::Variable(variable)) => OldConditionTerm::Variable(*variable),
-                _ => condition.old_form().clone(),
-            };
-            Some((condition, *value))
-        }
-        Proposition::SequenceMembership { element, sequence } => {
-            let mut comparisons = sequence_member_comparisons(element.old_form(), sequence);
-            match (comparisons.next(), comparisons.next()) {
-                (None, _) => Some((OldConditionTerm::Constant(false), true)),
-                (Some(comparison), None) => proposition_as_single_condition(&comparison),
-                (_, Some(_)) => None,
-            }
-        }
-        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
-            OldConditionTerm::AlgebraicEqual(
-                Box::new(left.old_form().clone()),
-                Box::new(right.old_form().clone()),
-            ),
-            true,
-        )),
-        Proposition::Not(body) => {
-            let (condition, value) = proposition_as_single_condition(body)?;
-            Some((condition, !value))
-        }
-        _ => None,
-    }
+    single_condition(proposition).map(|(leaf, truth)| (leaf.into_native(), truth))
 }
 
 /// The truth value a lowered specification condition establishes on its own,

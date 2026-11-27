@@ -93,6 +93,34 @@ fn compound_guard_preserves_shared_predicates_and_written_word_selection() {
     assert!(!right.has_cached_native_argument());
 }
 
+#[test]
+fn algebraic_equality_guard_keeps_its_operands_and_polarity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let native = KernelMatch::test_scrutinee(vec![]);
+    let left =
+        KernelTerm::algebraic_call(native.algebraic_type.clone(), "guard_left".into(), vec![]);
+    let right = KernelTermImport::for_exact_field_inputs().algebraic(&native);
+    let exports = KernelTermExport::algebraic_export_count();
+    for right_term in [
+        algebraic_output(right.clone()),
+        Term::Algebraic(native.clone().into()),
+    ] {
+        let claim = Proposition::Not(Box::new(Proposition::Equal(
+            algebraic_output(left.clone()),
+            right_term,
+        )));
+        assert!(is_single_normalization_condition(&claim));
+        let (guard, expected) = conditional_guard(&claim).unwrap();
+        assert!(!expected);
+        let KernelTermNode::AlgebraicEqual { arguments } = guard.root().unwrap().node() else {
+            panic!("expected algebraic equality")
+        };
+        assert_eq!(arguments, &[left.clone(), right.clone()]);
+    }
+    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    assert!(!left.has_cached_native_argument());
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/spec/compound_conditional_tests.rs");

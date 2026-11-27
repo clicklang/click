@@ -1475,12 +1475,22 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: wrong modulus and false remainder in the original four-byte computation"]
 fn charon_adler2_four_byte_compute_rejects_false_remainder_normalization() {
-    let goal = "have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result by";
+    let remainder = "b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result";
+    let checked = format!("have {remainder} by {{ close(); }}");
     for false_goal in [
-        "have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % 251u32 by",
-        "have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result + 1u32 by",
+        "b_vec.0[0] == at(reduce_b, b_vec.0[0]) % 251u32",
+        "b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result + 1u32",
     ] {
-        reject_compute(FOUR_BYTE_COMPUTE, goal, false_goal);
+        // Use the original statement result as evidence, so the false claim
+        // is rejected by a bounded check of the recorded computation.
+        let invalid = format!(
+            "{checked}\n     have {false_goal} by close() using {{ {remainder}; statement(13).call(0).result == 65521u32; }};"
+        );
+        let error = reject_compute(FOUR_BYTE_COMPUTE, &checked, &invalid);
+        assert!(
+            error.message().contains("`close() using` could not prove"),
+            "{error}"
+        );
     }
 }
 

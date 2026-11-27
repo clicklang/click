@@ -129,6 +129,10 @@ theorem adler_lane_iterator_successor(total: int32, remaining: int32) {
         rewrite(to_integer(remaining - 4), to_integer(remaining) - 4);
         rewrite(to_integer(total) - (to_integer(remaining) - 4), (to_integer(total) - to_integer(remaining)) + 4 * 1);
         apply(adler_lane_iterator_quotient_shift(to_integer(total) - to_integer(remaining), 1));
+        close() using {
+            truncating_quotient((to_integer(total) - to_integer(remaining)) + 4 * 1, 4)
+                == truncating_quotient(to_integer(total) - to_integer(remaining), 4) + 1;
+        };
     }
 }
 

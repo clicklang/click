@@ -380,6 +380,7 @@ fn next_checked_post_execution_tactic<'a>(
                 condition,
                 disjunction,
                 execution_route,
+                ensuring,
                 then_tactics,
                 else_tactics,
             } => {
@@ -417,6 +418,10 @@ fn next_checked_post_execution_tactic<'a>(
                 (
                     if *disjunction {
                         SurfacePathSelector::Disjunction(condition.clone())
+                    } else if let Some(check) = ensuring
+                        && let PostExecutionTactic::Ensuring(assertions) = &check.tactic
+                    {
+                        SurfacePathSelector::IfEnsuring(condition.clone(), assertions.clone())
                     } else {
                         SurfacePathSelector::Proposition(condition.clone())
                     },
@@ -450,7 +455,10 @@ fn next_checked_post_execution_tactic<'a>(
                 return Ok(Some(deferred));
             }
         };
-        if matches!(selector, SurfacePathSelector::Proposition(_)) {
+        if matches!(
+            selector,
+            SurfacePathSelector::Proposition(_) | SurfacePathSelector::IfEnsuring(..)
+        ) {
             pending.push(PendingPostExecutionTactic::EndIfArm {
                 choice: choices.len(),
                 obtains_before_arm: locals.checked_obtains,
@@ -463,6 +471,17 @@ fn next_checked_post_execution_tactic<'a>(
             tactic_offset: surface_tactics.len(),
             if_arm_end: None,
         });
+        if let PostExecutionTactic::If {
+            ensuring: Some(check),
+            ..
+        } = &deferred.tactic
+        {
+            pending.push(PendingPostExecutionTactic::Tactic(
+                check,
+                call_depth,
+                scope.clone(),
+            ));
+        }
         pending.extend(
             arm.iter().rev().map(|tactic| {
                 PendingPostExecutionTactic::Tactic(tactic, child_depth, scope.clone())
@@ -4303,6 +4322,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 )
                                 | PostExecutionTactic::ResourceStepProved(_)
                                 | PostExecutionTactic::CloseOpen { .. }
+                                | PostExecutionTactic::Ensuring(_)
                         )
                     }) {
                         // Read the outcome's resources through the contract's
@@ -4630,6 +4650,12 @@ pub(super) fn finish_ordered_proof<'a>(
                             }};
                         }
                         match post_tactic {
+                            PostExecutionTactic::Ensuring(assertions) => {
+                                outcome_proof = Some(
+                                    required_outcome(&outcome_proof)?
+                                        .check_sole_arm_interface(assertions)?,
+                                );
+                            }
                             PostExecutionTactic::ResourceStepProved(ProofTactic::StepProved {
                                 step,
                                 proof,

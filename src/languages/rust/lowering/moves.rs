@@ -1520,9 +1520,6 @@ fn region(
             return Err("unstructured shared MIR region outside move/drop slice".into());
         }
         if let Some(loop_) = flow.loops.get(&block) {
-            let T::If { condition, .. } = &mir.blocks[loop_.test].terminator else {
-                return Err("natural while header is not conditional".into());
-            };
             // The loop statement, as written: the source of its test.
             let loop_site = mir.blocks[loop_.test].terminator_site;
             let inner = LoopExits {
@@ -1546,26 +1543,7 @@ fn region(
                 loop_.body..block,
                 loop_.breaks.then_some(&inner),
             )?;
-            // A header that calls runs before its test each pass, so the test
-            // reads what the header left; otherwise the test is read through
-            // the header's scalar copies.
-            let condition = if loop_.header_calls {
-                condition.clone()
-            } else {
-                flow::header_condition(
-                    mir,
-                    &loop_.headers,
-                    condition,
-                    &flow.scalar_names,
-                    &flow.metadata_names,
-                )?
-            };
-            let condition = if loop_.body_on_true {
-                condition
-            } else {
-                flow::negate_condition(condition)
-            };
-            let condition = cx.condition(&condition)?;
+            let condition = cx.condition(&loop_.condition)?;
             let mut header = nodes[block].as_ref().ok_or("missing loop header")?.clone();
             for part in loop_.headers.iter().skip(1) {
                 if std::mem::replace(&mut emitted[*part], true) {
@@ -2121,8 +2099,6 @@ mod tests {
                     joins,
                     exit_tails: vec![false; mir.blocks.len()],
                     loops: BTreeMap::new(),
-                    scalar_names: BTreeSet::new(),
-                    metadata_names: BTreeSet::new(),
                 },
                 &BTreeMap::new(),
                 &mut emitted,

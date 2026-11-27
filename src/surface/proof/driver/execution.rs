@@ -144,6 +144,7 @@ fn defer_post_execution_case_split<'a>(
     source_index: usize,
     condition: &SyntaxProposition,
     disjunction: bool,
+    ensuring: Option<&[ProofAssertion]>,
     then_branch: &InternalProofNode,
     else_branch: &InternalProofNode,
     continuation: &InternalProofNode,
@@ -182,6 +183,7 @@ fn defer_post_execution_case_split<'a>(
         condition: condition.clone(),
         disjunction,
         execution_route: None,
+        ensuring: DeferredPostExecutionTactic::interface_check(ensuring, index),
         then_tactics,
         else_tactics,
     };
@@ -992,6 +994,7 @@ fn deferred_region_with_obtains(
                 index,
                 source_index,
                 condition,
+                ensuring,
                 then_branch,
                 else_branch,
                 continuation,
@@ -1001,6 +1004,10 @@ fn deferred_region_with_obtains(
                     condition: condition.clone(),
                     disjunction: false,
                     execution_route: None,
+                    ensuring: DeferredPostExecutionTactic::interface_check(
+                        ensuring.as_deref(),
+                        *index,
+                    ),
                     then_tactics: deferred_region_with_obtains(then_branch, &obtains)?,
                     else_tactics: deferred_region_with_obtains(else_branch, &obtains)?,
                 };
@@ -1031,6 +1038,7 @@ fn deferred_region_with_obtains(
                         condition: disjunction.clone(),
                         disjunction: true,
                         execution_route: None,
+                        ensuring: None,
                         then_tactics: deferred_region_with_obtains(then_branch, &obtains)?,
                         else_tactics: deferred_region_with_obtains(else_branch, &obtains)?,
                     },
@@ -1560,6 +1568,7 @@ fn try_advance_refuted_case_split<'a>(
     split: &Proof<'a>,
     record: &ExecutionProofCaseSplit<'a>,
     branches: [&InternalProofNode; 2],
+    ensuring: Option<&[ProofAssertion]>,
     enclosing_record: Option<&ExecutionSplit<'a>>,
     mut expansion_capture: Option<&mut ExpansionCapture>,
     proof_site: Option<&ProofSite>,
@@ -1599,9 +1608,12 @@ fn try_advance_refuted_case_split<'a>(
             owning_source_index,
             depth + 1,
             None,
-            ends_at_join,
+            ends_at_join || ensuring.is_some(),
         ));
-        return Ok(Ok(Some(advanced.join_after_case_refutation(record)?)));
+        return Ok(Ok(Some(advanced.join_after_case_refutation(
+            record,
+            ensuring.map(<[_]>::to_vec),
+        )?)));
     }
     Ok(Ok(None))
 }
@@ -1629,11 +1641,12 @@ fn advance_case_split_arms<'a>(
     depth: usize,
 ) -> Driven<(Proof<'a>, bool)> {
     let must_rejoin = ensuring.is_some();
-    if !must_rejoin && !consumed_leading_steps {
+    if !consumed_leading_steps {
         let refuted = driven!(try_advance_refuted_case_split(
             &split,
             record,
             [then_branch, else_branch],
+            ensuring.as_deref(),
             enclosing_record,
             expansion_capture.as_deref_mut(),
             proof_site,
@@ -1887,6 +1900,7 @@ fn try_check_structural_function_proof_inner<'a>(
                         *source_index,
                         disjunction,
                         true,
+                        None,
                         then_branch,
                         else_branch,
                         continuation,
@@ -2113,6 +2127,7 @@ fn try_check_structural_function_proof_inner<'a>(
                         *source_index,
                         condition,
                         false,
+                        ensuring.as_deref(),
                         then_branch,
                         else_branch,
                         continuation,
@@ -3844,6 +3859,17 @@ fn advance_prepared_execution_match<'a>(
         }
         let closed = close_refuted_arm(&scoped, last.source_index)?;
         closed.finish_execution_match_arm_exclusion(&mut plan, index, &entered, partition)?;
+        if last.source_index != owning_source_index
+            && let Some(site) = proof_site
+            && capture_selects_source(expansion_capture.as_deref(), site, last.source_index)
+        {
+            record_proof_site_tactic_expansion(
+                expansion_capture.as_deref_mut(),
+                site,
+                last.source_index,
+                &[ProofTactic::CloseUnreachable],
+            );
+        }
     }
     if plan.live_cases().is_empty() {
         return Err(ClickError::new(
@@ -3886,12 +3912,13 @@ fn advance_prepared_execution_match<'a>(
             "proof `match` left a constructor without a checked arm certificate",
         ));
     };
-    Ok(Ok(proof.finish_execution_match(
-        &marker,
-        source,
-        certificates,
-        plan.take_trace(),
-    )?))
+    let proof = proof.finish_execution_match(&marker, source, certificates, plan.take_trace())?;
+    if plan.has_sole_live_case()
+        && let Some(assertions) = source.ensuring.as_deref()
+    {
+        return Ok(Ok(proof.check_sole_arm_interface(assertions)?));
+    }
+    Ok(Ok(proof))
 }
 
 /// Executes one group of live constructor arms, splitting the frontier in half
@@ -4306,6 +4333,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         *source_index,
                         disjunction,
                         true,
+                        None,
                         then_branch,
                         else_branch,
                         continuation,
@@ -4365,6 +4393,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         *source_index,
                         condition,
                         false,
+                        ensuring.as_deref(),
                         then_branch,
                         else_branch,
                         continuation,
@@ -4496,11 +4525,12 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 // `branch` arm, rejoins where its cases end: the region's
                 // end is that join, not the function exit.
                 let must_rejoin = ensuring.is_some();
-                if !must_rejoin && !consumed_leading_steps {
+                if !consumed_leading_steps {
                     let refuted = driven!(try_advance_refuted_case_split(
                         &split,
                         &record,
                         [then_branch, else_branch],
+                        ensuring.as_deref(),
                         enclosing_record,
                         expansion_capture.as_deref_mut(),
                         proof_site,

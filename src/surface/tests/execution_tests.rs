@@ -2553,6 +2553,18 @@ fn every_mdtest_reports_its_mixed_read_names() {
     }
 }
 
+/// Match the mdtest harness's verifier stack for each audited proof.
+fn on_mdtest_verifier_stack<T: Send>(verify: impl FnOnce() -> T + Send) -> T {
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn_scoped(scope, verify)
+            .expect("a verifier thread")
+            .join()
+            .expect("the audited verification completed")
+    })
+}
+
 /// One read, one name, over the whole mdtest corpus: every C mdtest is
 /// verified under [`crate::kernel::duplicate_read_names::capture`], and no
 /// read may be named twice for a version the assumption-free load equality
@@ -2590,11 +2602,15 @@ fn every_mdtest_names_each_read_once() {
         let project = crate::cli::read_mdtest_project_if_needed(&path, click, &inputs)
             .ok()
             .flatten();
-        let reports = crate::kernel::duplicate_read_names::capture(|| {
-            let _ = match &project {
-                Some(project) => crate::surface::verify_c_project(project, &sources).map(|_| ()),
-                None => verify_c_sources(click, &sources).map(|_| ()),
-            };
+        let reports = on_mdtest_verifier_stack(|| {
+            crate::kernel::duplicate_read_names::capture(|| {
+                let _ = match &project {
+                    Some(project) => {
+                        crate::surface::verify_c_project(project, &sources).map(|_| ())
+                    }
+                    None => verify_c_sources(click, &sources).map(|_| ()),
+                };
+            })
         });
         if reports.is_empty() {
             continue;
@@ -2641,11 +2657,15 @@ fn report_load_variables_in_facts() {
         let project = crate::cli::read_mdtest_project_if_needed(&path, click, &inputs)
             .ok()
             .flatten();
-        let counts = crate::kernel::load_variable_fact_census::capture(|| {
-            let _ = match &project {
-                Some(project) => crate::surface::verify_c_project(project, &sources).map(|_| ()),
-                None => verify_c_sources(click, &sources).map(|_| ()),
-            };
+        let counts = on_mdtest_verifier_stack(|| {
+            crate::kernel::load_variable_fact_census::capture(|| {
+                let _ = match &project {
+                    Some(project) => {
+                        crate::surface::verify_c_project(project, &sources).map(|_| ())
+                    }
+                    None => verify_c_sources(click, &sources).map(|_| ()),
+                };
+            })
         });
         verified += 1;
         for (kind, (count, example)) in counts {

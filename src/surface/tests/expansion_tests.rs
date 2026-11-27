@@ -3234,6 +3234,38 @@ fn sequence_equality_children_retain_state_spellings() {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        let mut proof = String::new();
+        for i in 0..length {
+            proof.push_str(&format!("step(); have dst[{i}] == old(src[{i}]);\n"));
+            for j in i + 1..length {
+                proof.push_str(&format!(
+                    r#"
+                    have contains(memory(dst[0..{length}]), memory(dst[{i}])) by {{
+                        apply(click::separation::contains_element(dst, 0, {length}, {i}));
+                    }}
+                    have contains(memory(src[0..{length}]), memory(src[{j}])) by {{
+                        apply(click::separation::contains_element(src, 0, {length}, {j}));
+                    }}
+                    have separate(memory(dst[{i}]), memory(src[{j}])) by {{
+                        apply(click::separation::separate_restrict(
+                            memory(dst[0..{length}]), memory(src[0..{length}]),
+                            memory(dst[{i}]), memory(src[{j}])
+                        ));
+                    }}
+                    have separate(statement({i}).footprint, memory(src[{j}])) by {{
+                        close() using {{ separate(memory(dst[{i}]), memory(src[{j}])); }};
+                    }}
+                    have src[{j}] == at(statement({i}).entry, src[{j}]) by {{
+                        preserve(memory(src[{j}]), statement({i}));
+                    }}
+                    have src[{j}] == old(src[{j}]) by {{
+                        rewrite(src[{j}], at(statement({i}).entry, src[{j}]));
+                        close();
+                    }}
+                    "#
+                ));
+            }
+        }
         let source = format!(
             r#"
             verifying "copy.c";
@@ -3242,13 +3274,17 @@ fn sequence_equality_children_retain_state_spellings() {
                 views src[0..{length}];
                 requires separate(memory(dst[0..{length}]), memory(src[0..{length}]));
                 ensures [dst[0]] ++ [{}] == old([src[0]] ++ [{}]);
+            }} by {{
+                {proof}
+                step();
+                close();
             }}
         "#,
             tail("dst"),
             tail("src")
         );
         let sources = [("copy.c", c.as_str())];
-        let expanded = expand_function_proof_source(&source, &sources, "copy").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "copy.contract").unwrap();
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
         let wrong = c.replace(
             &format!("dst[{}] = src[{}];", length - 1, length - 1),
@@ -23509,8 +23545,8 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
     // bound premise. Reject a false comparison and a false public claim.
     for (before, after) in [
         (
-            "(8 - to_integer(x)) <= ((8 - to_integer(x)) + 4)",
-            "(8 - to_integer(x)) <= ((8 - to_integer(x)) - 4)",
+            "(8 - to_integer(x)) <= (8 - to_integer(x) + 4)",
+            "(8 - to_integer(x)) <= (8 - to_integer(x) - 4)",
         ),
         ("ensures result == 0;", "ensures result == 1;"),
     ] {
@@ -28923,6 +28959,10 @@ fn match_arm_can_unfold_a_resource_to_establish_false_at_function_exit() {
     without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
 
+    let invalid_interface = source.replace("fact result == x;", "fact false;");
+    let error = verify_c_sources(&invalid_interface, &sources).unwrap_err();
+    assert!(error.report().contains("did not establish fact"), "{error}");
+
     let reachable = expanded.replace("requires r.model == n.model;", "");
     assert_ne!(reachable, expanded);
     assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
@@ -29012,6 +29052,90 @@ fn if_and_cases_close_refuted_arms_before_c_executes() {
         let reachable = expanded.replace("requires tag_code(r.model) != 0;", "");
         assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
     }
+}
+
+#[test]
+fn a_sole_live_proof_arm_checks_every_ensuring_assertion() {
+    let source = r#"
+        verifying "id.c";
+
+        spec enum Tag { A, B }
+        resource tag() { field model: Tag; }
+        function tag_code(value: Tag) -> Integer {
+            match value { Tag::A => 0, Tag::B => 1 }
+        }
+
+        int32 id(int32 x, int32* p) {
+            owns r: tag();
+            owns p[0..1];
+            requires tag_code(r.model) != 0;
+            ensures result == x;
+        } by {
+            SPLIT
+            step();
+            close();
+        }
+    "#;
+    let interface = r#"{ owns r: tag(); views p[0..1]; fact x == x; }"#;
+    let refutation = r#"{
+        have tag_code(r.model) == 0 by {
+            rewrite(r.model, Tag::A);
+            unfold(tag_code(Tag::A));
+            close();
+        }
+        close();
+    }"#;
+    let sources = [("id.c", "int32 id(int32 x, int32* p) { return x; }")];
+    for split in [
+        format!("if r.model == Tag::A ensuring {interface} then {refutation} else {{ }}"),
+        format!(
+            "match r.model ensuring {interface} {{ Tag::A => {refutation}, Tag::B => {{ }}, }}"
+        ),
+    ] {
+        let source = source.replace("SPLIT", &split);
+        let expanded = expand_function_proof_source(&source, &sources, "id")
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains("ensuring {"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+        for (original, invalid, expected) in [
+            ("fact x == x;", "fact false;", "did not establish fact"),
+            (
+                "views p[0..1];",
+                "views p[1..2];",
+                "did not establish resource",
+            ),
+        ] {
+            let changed = source.replace(original, invalid);
+            let error = verify_c_sources(&changed, &sources).unwrap_err();
+            assert!(error.report().contains(expected), "{error}");
+        }
+    }
+}
+
+#[test]
+fn an_outcome_decided_if_still_checks_its_ensuring_interface() {
+    let source = r#"
+        verifying "id.c";
+
+        int32 id(int32 x) {
+            ensures result == x;
+        } by {
+            step_until(function.exit);
+            if result == x ensuring { fact result == x; } then { } else { }
+            close();
+        }
+    "#;
+    let sources = [("id.c", "int32 id(int32 x) { return x; }")];
+    let expanded = expand_function_proof_source(source, &sources, "id")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("ensuring {"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+
+    let invalid = source.replace("fact result == x;", "fact false;");
+    let error = verify_c_sources(&invalid, &sources).unwrap_err();
+    assert!(error.report().contains("did not establish fact"), "{error}");
 }
 
 #[test]
