@@ -1104,9 +1104,6 @@ fn evaluate_retained_memory_load_case(
 ) -> Vec<ExecutionValuePath> {
     let branches_on_unresolved_aliases =
         splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
-    // The first case reads the memory the load was read at; a distinct
-    // case's is hypothetical.
-    let reads_written_memory = std::ptr::eq(memory, written);
     let symbolic_value =
         |memory: &SymbolicMemory, facts: &mut ExecutionFacts, assumptions: &PureFactContext| {
             point_named_symbolic_read(origin, &pointer, value_type)
@@ -1943,15 +1940,14 @@ fn evaluate_retained_memory_load_case(
     }
 
     if purpose != LoadPurpose::Logical && !has_external_read_resource {
-        // The memory the load is read at stands at the read's site; a
-        // distinct case's hypothetical memory stands at no point.
-        let point = site
-            .or(origin)
-            .filter(|_| reads_written_memory)
-            .map_or_else(
-                crate::kernel::program_point::PathLink::not_yet_a_point,
-                |point| point.path_link().clone(),
-            );
+        // The memory the load is read at stands at the read's site, and a
+        // distinct case's memory, which only drops the undecided cell, is a
+        // view of that state. A specification load has no site: it is a
+        // query whose obligations are only looked up.
+        let point = site.or(origin).map_or_else(
+            crate::kernel::program_point::PathLink::lookup_key,
+            |point| point.path_link().clone(),
+        );
         let proposition = Proposition::MemoryLoadable {
             memory: memory.clone(),
             point,

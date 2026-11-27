@@ -8960,60 +8960,6 @@ pub fn prove_uint32_ge_implies_reversed_le(
 }
 
 #[cfg(test)]
-pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
-    let outcome = match memory.known_retained_value(&pointer) {
-        Some(value) => ExpressionOutcome::Value(value),
-        None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
-    };
-    Theorem::new(Proposition::MemoryLoads {
-        memory,
-        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
-        pointer,
-        outcome: outcome.map_value(Into::into),
-    })
-}
-
-#[cfg(test)]
-pub fn prove_memory_load_after_store_same(
-    memory: SymbolicMemory,
-    pointer: Address,
-    value: ProgramValue,
-) -> Theorem {
-    let stored = memory.store(pointer.clone(), value.clone());
-    Theorem::new(Proposition::MemoryLoads {
-        memory: stored,
-        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
-        pointer,
-        outcome: ExpressionOutcome::Value((value).into()),
-    })
-}
-
-#[cfg(test)]
-pub fn prove_memory_load_after_store_other(
-    memory: SymbolicMemory,
-    stored_pointer: Address,
-    stored_value: ProgramValue,
-    loaded_pointer: Address,
-) -> Option<Theorem> {
-    if stored_pointer == loaded_pointer {
-        return None;
-    }
-
-    let outcome = memory.load(&loaded_pointer);
-    let stored = memory.store(stored_pointer, stored_value);
-    if stored.load(&loaded_pointer) != outcome {
-        return None;
-    }
-
-    Some(Theorem::new(Proposition::MemoryLoads {
-        memory: stored,
-        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
-        pointer: loaded_pointer,
-        outcome: outcome.map_value(Into::into),
-    }))
-}
-
-#[cfg(test)]
 mod retained_fold_law_tests {
     use super::*;
     use crate::kernel::{
