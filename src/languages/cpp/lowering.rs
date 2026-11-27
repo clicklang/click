@@ -45,7 +45,8 @@ pub struct LoweredCppFunction {
 }
 
 impl LoweredCppFunction {
-    /// Proof-facing name for a resolved Clang declaration identity.
+    /// Shared verifier key for a resolved Clang declaration identity. Write
+    /// a C++ path and signature when naming the declaration in a proof head.
     pub fn contract_name(&self, declaration_id: &str) -> Option<&str> {
         self.names.get(declaration_id)
     }

@@ -1190,12 +1190,11 @@ across sibling scopes. Equal local names in disjoint scopes remain distinct
 when their declaration IDs differ. Separate lexical and lifetime validation
 checks visibility, construction, and cleanup order.
 
-C++ calls and contracts bind through Clang declaration IDs, named by their
-C++ paths, `A::Nested::echo` or `(anonymous namespace)::same`. If reachable
-declarations share a path, as overloads do, each contract name is
-`__click_cpp_decl_` plus the full lowercase hexadecimal UTF-8 declaration ID
-from the artifact. This prefix is reserved: a source declaration beginning
-with it also receives an encoded name. The lowered-import API exposes
+C++ calls and contracts bind through Clang declaration IDs. A proof names a
+declaration by its C++ path, such as `A::Nested::echo` or
+`(anonymous namespace)::same`. For declarations that share a path, the
+importer keeps the path and the checked Clang identity distinct. Diagnostics
+render the path. The lowered-import API exposes the verifier key through
 `contract_name(declaration_id)`.
 Reachable overloads are supported. A head at their shared path selects the
 overload whose receiver constness and parameter types it writes,
