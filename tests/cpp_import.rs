@@ -17059,7 +17059,10 @@ contract int32 PositiveRead(const struct State& state) {
 }
 theorem read_application() executes read(const struct State& state) {
     ensures PositiveRead(&read) by {
-        have state.child.value > 0 by { close() using { state.child.value == 2; } }
+        have state.child.value > 0 by {
+            rewrite(state.child.value, 2);
+            close() using {};
+        }
         step_until(function.exit); close();
     }
 }
