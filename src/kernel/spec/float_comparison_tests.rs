@@ -103,6 +103,44 @@ fn float_comparison_lowering_preserves_symbolic_operator_polarity() {
 }
 
 #[test]
+fn float_comparison_keeps_the_widened_operand_in_its_written_position() {
+    let _session = VerificationSession::enter();
+    let narrow = ProgramValue::Float32(OldMachineTerm::Variable(Variable(10993750)));
+    let wide = ProgramValue::Float64(OldMachineTerm::Variable(Variable(10993751)));
+    for (left, right, widened) in [(&narrow, &wide, 0), (&wide, &narrow, 1)] {
+        let Some(Proposition::ConditionIs(condition, true)) =
+            program_value_comparison_proposition(left, ComparisonOperator::NotEqual, right)
+        else {
+            panic!("expected a positive float comparison");
+        };
+        let KernelTermNode::FloatCompare {
+            format: KernelFloatType::Float64,
+            operator: ComparisonOperator::NotEqual,
+            arguments,
+        } = condition.root().expect("shared comparison").node()
+        else {
+            panic!("expected a Float64 inequality");
+        };
+        let KernelTermNode::FloatConvert {
+            source: ProgramType::Float32,
+            destination: ProgramType::Float64,
+            operand,
+        } = arguments[widened].node()
+        else {
+            panic!("expected the Float32 operand to widen");
+        };
+        assert_eq!(
+            FloatOperandView::Shared(operand).variable(),
+            Some(Variable(10993750))
+        );
+        assert_eq!(
+            FloatOperandView::Shared(&arguments[1 - widened]).variable(),
+            Some(Variable(10993751))
+        );
+    }
+}
+
+#[test]
 fn float_inequality_lowering_preserves_ieee_constant_results() {
     let _session = VerificationSession::enter();
     for (format, one, two, negative_zero, nan) in [

@@ -324,25 +324,17 @@ impl SpecValue {
             && (left.literal_bits().is_some() && right_view.literal_bits().is_some()
                 || self.shared().is_some() && right.shared().is_some())
         {
-            let format = left.format();
-            // Preserve comparisons of literal atoms. Keep the existing
-            // evaluation path for compound constant arithmetic.
-            let folded = if left.literal_bits().is_some() && right_view.literal_bits().is_some() {
-                None
-            } else {
-                left.closed_arithmetic_bits()
-                    .zip(right_view.closed_arithmetic_bits())
-            };
-            let root = match folded {
-                Some((left, right)) => {
-                    KernelTerm::boolean_literal(format.compare_bits(left, right, op))
-                }
-                None => KernelTerm::float_compare(
-                    format,
+            // Comparisons of literal atoms retain their written operands.
+            let root = if left.literal_bits().is_some() && right_view.literal_bits().is_some() {
+                KernelTerm::float_compare(
+                    left.format(),
                     op,
                     [self.common_operand(), right.common_operand()],
                 )
-                .expect("same float format"),
+                .expect("same float format")
+            } else {
+                left.evaluated_comparison(op, right_view)
+                    .expect("same float format")
             };
             let condition = StoredConditionTerm::from_root(root).expect("logical float comparison");
             return Ok(Some(Proposition::condition_is(condition, true)));
