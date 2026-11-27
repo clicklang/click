@@ -2196,10 +2196,12 @@ impl MutexLedger {
         }
     }
 
-    pub(super) fn held_condition(&self, mutex: &Address) -> OldConditionTerm {
+    pub(super) fn held_condition(&self, mutex: &Address) -> StoredConditionTerm {
         match self.get(mutex) {
-            Some(MutexEntry::ConditionalLoop { held, .. }) => held.old_form().clone(),
-            entry => OldConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
+            Some(MutexEntry::ConditionalLoop { held, .. }) => held.clone(),
+            entry => {
+                StoredConditionTerm::constant(matches!(entry, Some(MutexEntry::Locked { .. })))
+            }
         }
     }
 
@@ -2845,7 +2847,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .held_condition(&mutex),
-            OldConditionTerm::Constant(true)
+            StoredConditionTerm::constant(true)
         );
         assert_eq!(
             missing.release_current(&mutex, &assumptions).err(),
