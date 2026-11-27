@@ -3722,7 +3722,7 @@ impl OldConditionTerm {
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
-            _ if pointer_offsets_differ_by_residue(&left, &right) => Self::Constant(false),
+            _ if left.shared().differs_by_residue(right.shared()) => Self::Constant(false),
             _ => Self::AddressOffsetEqual(Box::new(left), Box::new(right)),
         }
     }
@@ -3833,11 +3833,6 @@ impl OldConditionTerm {
     }
 }
 
-/// Whether two offsets can never be equal because they differ by a constant
-/// that no combination of their scaled indexes makes up: every scaled leaf
-/// is a multiple of the strides' greatest common divisor, so offsets whose
-/// constants differ modulo it are distinct. `items[x].y` at `x * 8 + 4` is
-/// never the cell at `0` or `8`.
 /// The value of a constant word read at `format`, or `None` for any other
 /// term. Only constant nodes are read, so a symbolic operand costs one match.
 fn machine_constant_value(
@@ -3851,29 +3846,6 @@ fn machine_constant_value(
         IntegerTerm::Constant(value) => Some(value),
         _ => None,
     }
-}
-
-fn pointer_offsets_differ_by_residue(left: &AddressOffset, right: &AddressOffset) -> bool {
-    let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
-        left.int32_scaled_linear_form(),
-        right.int32_scaled_linear_form(),
-    ) else {
-        return false;
-    };
-    let divisor = left_scaled
-        .iter()
-        .chain(&right_scaled)
-        .fold(0u64, |divisor, (_, stride)| {
-            gcd(divisor, stride.unsigned_abs())
-        });
-    divisor > 1 && (left_constant - right_constant).unsigned_abs() % divisor != 0
-}
-
-fn gcd(mut left: u64, mut right: u64) -> u64 {
-    while right != 0 {
-        (left, right) = (right, left % right);
-    }
-    left
 }
 
 fn classify_float_bits(

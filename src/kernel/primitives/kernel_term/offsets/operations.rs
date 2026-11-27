@@ -239,6 +239,19 @@ impl SharedAddressOffset {
             .expect("typed shared offset index")
     }
 
+    /// Every scaled index contributes a multiple of its stride. Distinct
+    /// constant residues modulo their common divisor rule out equality.
+    pub(in crate::kernel::primitives) fn differs_by_residue(&self, other: &Self) -> bool {
+        let Some((a, left)) = self.residue_summary() else {
+            return false;
+        };
+        let Some((b, right)) = other.residue_summary() else {
+            return false;
+        };
+        let divisor = gcd(a, b);
+        divisor > 1 && (left - right).unsigned_abs() % divisor != 0
+    }
+
     fn residue_summary(&self) -> Option<(u64, i64)> {
         let mut pending = vec![self];
         let mut count = 0;
@@ -285,14 +298,8 @@ impl KernelTerm {
         let [a, b] = &arguments;
         let constant = match (a.as_const(), b.as_const()) {
             (Some(a), Some(b)) => Some(a == b),
-            _ => match (a.residue_summary(), b.residue_summary()) {
-                (Some((ad, ac)), Some((bd, bc)))
-                    if gcd(ad, bd) > 1 && (ac - bc).unsigned_abs() % gcd(ad, bd) != 0 =>
-                {
-                    Some(false)
-                }
-                _ => None,
-            },
+            _ if a.differs_by_residue(b) => Some(false),
+            _ => None,
         };
         match constant {
             Some(value) => Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value)),
@@ -356,6 +363,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn offset_equality_refuses_residue_reduction_past_the_occurrence_limit() {
+        let index = OldMachineTerm::Variable(Variable(998004));
+        let mut left = AddressOffset::scaled_int32_node(index, -4);
+        let right = AddressOffset::constant(1);
+        for _ in 0..31 {
+            left = AddressOffset::raw_add(left, AddressOffset::constant(0));
+        }
+        assert_eq!(
+            OldConditionTerm::address_offset_equal(left.clone(), right.clone()),
+            OldConditionTerm::Constant(false)
+        );
+        // The extra sum and its zero bring the walk from 63 occurrences to 65.
+        let left = AddressOffset::raw_add(left, AddressOffset::constant(0));
+        assert_eq!(
+            OldConditionTerm::address_offset_equal(left.clone(), right.clone()),
+            OldConditionTerm::AddressOffsetEqual(Box::new(left), Box::new(right))
+        );
     }
 
     #[test]

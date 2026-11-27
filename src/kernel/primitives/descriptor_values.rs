@@ -313,18 +313,27 @@ struct NativeConditionInput {
 }
 impl From<OldConditionTerm> for StoredConditionTerm {
     fn from(value: OldConditionTerm) -> Self {
-        if let OldConditionTerm::AddressEqual(left, right) = &value {
-            let root =
-                KernelTerm::address_equal_raw([left.shared().clone(), right.shared().clone()]);
-            // Old readers can borrow the already-produced comparison regardless
-            // of whether another verification has requested it before.
-            root.retain_old_condition_output(value);
-            return Self(StoredCondition::Shared(root));
-        }
-        Self(StoredCondition::Input(Arc::new(NativeConditionInput {
-            value,
-            connective_key: std::sync::OnceLock::new(),
-        })))
+        let root = match &value {
+            OldConditionTerm::AddressEqual(left, right) => {
+                KernelTerm::address_equal_raw([left.shared().clone(), right.shared().clone()])
+            }
+            OldConditionTerm::AddressOffsetEqual(left, right) => {
+                KernelTerm::address_offset_equal_raw([
+                    left.shared().clone(),
+                    right.shared().clone(),
+                ])
+            }
+            _ => {
+                return Self(StoredCondition::Input(Arc::new(NativeConditionInput {
+                    value,
+                    connective_key: std::sync::OnceLock::new(),
+                })));
+            }
+        };
+        // Old readers can borrow the already-produced comparison regardless
+        // of whether another verification has requested it before.
+        root.retain_old_condition_output(value);
+        Self(StoredCondition::Shared(root))
     }
 }
 impl StoredConditionTerm {
