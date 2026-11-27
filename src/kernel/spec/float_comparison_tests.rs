@@ -2,6 +2,51 @@ use super::*;
 use crate::kernel::VerificationSession;
 
 #[test]
+fn float_ternary_guards_select_the_branch_for_zero_and_nan() {
+    let _session = VerificationSession::enter();
+    let state = ExecutionState::new();
+    for (format, zero, nan) in [
+        (
+            KernelFloatType::Float32,
+            OldMachineTerm::uint32_constant(0x80000000),
+            OldMachineTerm::uint32_constant(0x7fc00001),
+        ),
+        (
+            KernelFloatType::Float64,
+            OldMachineTerm::uint64_constant(0x8000000000000000),
+            OldMachineTerm::uint64_constant(0x7ff8000000000001),
+        ),
+    ] {
+        let selected_zero = OldMachineTerm::If {
+            condition: Box::new(OldConditionTerm::Constant(true)),
+            then_term: Box::new(zero.clone()),
+            else_term: Box::new(nan.clone()),
+        };
+        for (guard, expected) in [(zero, 9), (nan, 7), (selected_zero, 9)] {
+            let expression = ProgramExpression::Ternary {
+                condition: Box::new(ProgramExpression::Value(format.value(guard))),
+                then_branch: Box::new(crate::kernel::program_expression::int32_literal(7)),
+                else_branch: Box::new(crate::kernel::program_expression::int32_literal(9)),
+            };
+            let paths = evaluate_spec_program_expression_paths_in(
+                SpecScope::unbound(&state, None),
+                &expression,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+            )
+            .unwrap();
+            let [path] = paths.as_slice() else {
+                panic!("one selected branch")
+            };
+            assert_eq!(
+                path.value.native().as_ref(),
+                &ProgramValue::Int32(OldMachineTerm::constant(expected))
+            );
+        }
+    }
+}
+
+#[test]
 fn float_classification_lowering_preserves_native_selections_and_symbolic_calls() {
     let _session = VerificationSession::enter();
     let state = ExecutionState::new();

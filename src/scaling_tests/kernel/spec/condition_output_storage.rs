@@ -71,7 +71,7 @@ fn comparison_output_producers_keep_growing_logical_and_integer_roots() {
 }
 
 #[test]
-fn float_comparison_outputs_read_shared_constant_and_symbolic_dags_once() {
+fn float_comparisons_and_ternary_guards_read_shared_dags_in_linear_work() {
     for size in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
@@ -121,6 +121,27 @@ fn float_comparison_outputs_read_shared_constant_and_symbolic_dags_once() {
                         assert_eq!(arguments, &[root.clone(), root.clone()]);
                     }
                 });
+                let (claim, guard_work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        SpecValue::Shared(root.clone())
+                            .program_truth_claim()
+                            .unwrap()
+                    });
+                let Proposition::ConditionIs(zero, false) = claim else {
+                    panic!("truth tests whether the operand is nonzero")
+                };
+                let zero = zero.root().expect("shared zero test");
+                if constant {
+                    assert!(matches!(zero.node(), KernelTermNode::BoolLiteral(false)));
+                } else {
+                    assert!(matches!(zero.node(), KernelTermNode::FloatClassify {
+                        classification: FloatClassification::Zero, operand, ..
+                    } if operand == &root));
+                }
+                assert!(
+                    guard_work <= 4 * size + 16,
+                    "size={size} guard_work={guard_work}"
+                );
                 assert_eq!(KernelTermExport::float_export_count(), exports);
                 assert!(!root.has_cached_native_argument());
                 assert!(
