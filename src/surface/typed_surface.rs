@@ -139,7 +139,40 @@ pub(crate) enum SurfaceProposition<'s> {
     Or(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
     Implies(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
     Not(Box<SurfaceProposition<'s>>),
+    // Built by `Elaborator::elaborate_clause`, which only tests call until
+    // contracts are elaborated before lowering.
+    #[cfg_attr(not(test), allow(dead_code))]
+    /// `forall` or `exists` over `name` at its declared type, with the body
+    /// elaborated where `name` has that type. `syntax` is the quantifier as
+    /// written, which lowering reads until it lowers the Surface body.
+    Quantified {
+        quantifier: Quantifier,
+        name: super::binders::SurfaceBinder,
+        click_type: super::ClickType,
+        body: Box<SurfaceProposition<'s>>,
+        syntax: &'s super::SyntaxProposition,
+    },
+    #[cfg_attr(not(test), allow(dead_code))]
+    /// A range form over `item`, which ranges over `item_type`, the type
+    /// elaboration gives the range from its endpoints, with the body
+    /// elaborated where `item` has that type. `syntax` is the range as
+    /// written, which lowering reads until it lowers the Surface body.
+    Range {
+        quantifier: Quantifier,
+        item: super::binders::SurfaceBinder,
+        item_type: super::ProgramType,
+        body: Box<SurfaceProposition<'s>>,
+        syntax: &'s super::SyntaxProposition,
+    },
     Untyped(&'s super::SyntaxProposition),
+}
+
+/// Whether a binder form states its body for every value or for some value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum Quantifier {
+    All,
+    Some,
 }
 
 /// Elaborate a proposition's connective structure: `&&`, `||`, `implies` and

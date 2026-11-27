@@ -5,7 +5,9 @@
 //! and checks the Surface it gives. The declarations hold no kernel state.
 use super::typing_environment::NoOuterNames;
 use super::*;
-use crate::surface::typed_surface::{ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType};
+use crate::surface::typed_surface::{
+    ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType, Quantifier,
+};
 
 /// Click binders with their declared types, and C parameters with theirs.
 struct Declared {
@@ -19,6 +21,10 @@ type PointerElementDeclaration = (&'static str, ProgramType, u32);
 impl Declared {
     fn elaborate<'s>(&self, proposition: &'s SyntaxProposition) -> SurfaceProposition<'s> {
         self.run(|elaborator, typing| elaborator.elaborate_proposition(proposition, typing))
+    }
+
+    fn elaborate_clause<'s>(&self, proposition: &'s SyntaxProposition) -> SurfaceProposition<'s> {
+        self.run(|elaborator, typing| elaborator.elaborate_clause(proposition, typing))
     }
 
     fn elaborate_comparison(
@@ -318,4 +324,86 @@ fn a_step_of_a_pointer_parameter_is_a_pointer_step_by_its_declared_element_width
             backward: false,
         }
     );
+}
+
+#[test]
+fn a_quantifier_body_elaborates_with_its_binder_declared() {
+    // `forall i: Integer. i + 1 > i` with no outer names: the body's
+    // comparison is an Integer comparison because the binder is declared an
+    // Integer, not because lowering bound it.
+    let declared = Declared {
+        binders: vec![],
+        c_parameters: vec![],
+    };
+    let body = SyntaxProposition::Comparison {
+        left: SyntaxTerm::Add(Box::new(binder("i")), Box::new(literal("1"))),
+        operator: ComparisonOperator::GreaterThan,
+        right: binder("i"),
+    };
+    let quantifier = SyntaxProposition::ForAll {
+        click_type: ClickType::Integer,
+        name: "i".into(),
+        written_name: None,
+        body: Box::new(body),
+    };
+    let SurfaceProposition::Quantified {
+        quantifier: Quantifier::All,
+        name,
+        click_type,
+        body,
+        ..
+    } = declared.elaborate_clause(&quantifier)
+    else {
+        panic!("a quantifier elaborates to a quantified Surface proposition");
+    };
+    assert_eq!(name, SurfaceBinder::from("i"));
+    assert_eq!(click_type, ClickType::Integer);
+    let SurfaceProposition::Comparison { kind, right, .. } = *body else {
+        panic!("the body elaborates to a comparison");
+    };
+    assert_eq!(kind, ComparisonKind::Integer);
+    assert_eq!(right, integer_name("i"));
+    // The connective-only elaboration leaves the quantifier for lowering.
+    assert_eq!(
+        declared.elaborate(&quantifier),
+        SurfaceProposition::Untyped(&quantifier)
+    );
+}
+
+#[test]
+fn a_range_with_a_uint64_endpoint_ranges_over_uint64() {
+    // `forall k in 0..n` for a `uint64` parameter `n`: the item is a
+    // `uint64`, as lowering binds it, and the body sees it at that type.
+    let declared = Declared {
+        binders: vec![],
+        c_parameters: vec![("n", ProgramType::UInt64)],
+    };
+    let range = SyntaxProposition::RangeAll {
+        start: literal("0"),
+        end: c_variable("n"),
+        item: "k".into(),
+        written_item: None,
+        body: Box::new(SyntaxProposition::Comparison {
+            left: c_variable("k"),
+            operator: ComparisonOperator::LessThan,
+            right: c_variable("n"),
+        }),
+    };
+    let SurfaceProposition::Range {
+        quantifier: Quantifier::All,
+        item_type,
+        body,
+        ..
+    } = declared.elaborate_clause(&range)
+    else {
+        panic!("a range elaborates to a range Surface proposition");
+    };
+    assert_eq!(item_type, ProgramType::UInt64);
+    let SurfaceProposition::Comparison { kind, left, .. } = *body else {
+        panic!("the body elaborates to a comparison");
+    };
+    assert_eq!(kind, ComparisonKind::Native);
+    // A binder spelled as a C name is not a declared C variable, so the
+    // native operand stays `Untyped`, as lowering's own elaboration leaves it.
+    assert_eq!(left, SurfaceTerm::Untyped(c_variable("k")));
 }

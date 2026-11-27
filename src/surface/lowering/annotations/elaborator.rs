@@ -1107,4 +1107,167 @@ impl Elaborator<'_> {
             .and_then(|result| result.pointee_type())
             .map(|element| element.to_kernel_type().byte_width()))
     }
+
+    /// Whether a range's endpoints make its item a `uint64`: one endpoint
+    /// is a `uint64`, as for a range fold.
+    pub(super) fn range_bounds_are_uint64(
+        &self,
+        start: &SyntaxTerm,
+        end: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> bool {
+        [start, end].into_iter().any(|bound| {
+            matches!(
+                self.contract_expression_click_type(bound, typing),
+                Some(ClickType::Program(InterfaceType::UInt64(_)))
+            ) || matches!(bound, SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name))
+                    if self.declarations.c_variable_type(name) == Some(ProgramType::UInt64))
+                || matches!(bound, SyntaxTerm::ProgramExpression(ProgramExpression::Value(value))
+                    if value.program_type() == ProgramType::UInt64)
+                // A written cast, `n as uint64`, has the type it names.
+                || matches!(
+                    generics::explicit_cast_click_type(bound),
+                    Some(ClickType::Program(InterfaceType::UInt64(_)))
+                )
+        })
+    }
+
+    /// Elaborate a whole clause: its connectives and comparisons, as
+    /// `elaborate_proposition` does, and each binder's body in an
+    /// environment where the binder has its declared type, or a range item
+    /// the type its endpoints give it. A comparison whose elaboration fails
+    /// stays `Untyped`, as `elaborate_proposition` leaves it.
+    // Lowering reads binder bodies from Syntax until contracts are
+    // elaborated before lowering; until then only tests call this.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn elaborate_clause<'s>(
+        &self,
+        proposition: &'s SyntaxProposition,
+        typing: &TypingEnvironment<'_>,
+    ) -> SurfaceProposition<'s> {
+        let mut surface = self.elaborate_proposition(proposition, typing);
+        let mut pending = vec![&mut surface];
+        while let Some(node) = pending.pop() {
+            match node {
+                SurfaceProposition::And(left, right)
+                | SurfaceProposition::Or(left, right)
+                | SurfaceProposition::Implies(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                SurfaceProposition::Not(body) => pending.push(body),
+                SurfaceProposition::Untyped(syntax) => {
+                    if let Some(binder) = self.elaborate_binder(syntax, typing) {
+                        *node = binder;
+                    }
+                }
+                _ => {}
+            }
+        }
+        surface
+    }
+
+    /// The Surface form of a binder form, with its body elaborated by
+    /// `elaborate_clause` where the binder is in scope; `None` for any
+    /// other construct.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn elaborate_binder<'s>(
+        &self,
+        syntax: &'s SyntaxProposition,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<SurfaceProposition<'s>> {
+        use crate::surface::typed_surface::Quantifier;
+        let quantified = |quantifier, name: &SurfaceBinder, click_type: &ClickType, body| {
+            SurfaceProposition::Quantified {
+                quantifier,
+                name: name.clone(),
+                click_type: click_type.clone(),
+                body: Box::new(
+                    self.elaborate_clause(body, &typing.with_declared(name, click_type.clone())),
+                ),
+                syntax,
+            }
+        };
+        let range = |quantifier, start, end, item: &SurfaceBinder, body| {
+            let item_type = if self.range_bounds_are_uint64(start, end, typing) {
+                ProgramType::UInt64
+            } else {
+                ProgramType::Int32
+            };
+            SurfaceProposition::Range {
+                quantifier,
+                item: item.clone(),
+                item_type,
+                body: Box::new(self.elaborate_clause(
+                    body,
+                    &typing.with_declared(item, range_item_click_type(item_type)),
+                )),
+                syntax,
+            }
+        };
+        Some(match syntax {
+            SyntaxProposition::ForAll {
+                click_type,
+                name,
+                body,
+                ..
+            } => quantified(Quantifier::All, name, click_type, body),
+            SyntaxProposition::Exists {
+                click_type,
+                name,
+                body,
+                ..
+            } => quantified(Quantifier::Some, name, click_type, body),
+            SyntaxProposition::RangeAll {
+                start,
+                end,
+                item,
+                body,
+                ..
+            } => range(Quantifier::All, start, end, item, body),
+            SyntaxProposition::RangeAny {
+                start,
+                end,
+                item,
+                body,
+                ..
+            } => range(Quantifier::Some, start, end, item, body),
+            _ => return None,
+        })
+    }
+}
+
+/// The type a range item of `item_type` has, as lowering binds it: the
+/// click type of a value of that type.
+pub(super) fn range_item_click_type(item_type: ProgramType) -> ClickType {
+    ClickType::Program(crate::surface::generics::interface_type_from_program_type(
+        item_type,
+    ))
+}
+
+/// Debug builds: a binder's body elaborates, with the binder declared at
+/// `declared`, to the Surface lowering's body context gives it, so a clause
+/// can be elaborated with its binders declared before lowering binds them
+/// (`design/typed-surface.md`). `outer` is the context the binder form is
+/// lowered in.
+#[cfg(debug_assertions)]
+pub(super) fn check_binder_body_elaboration(
+    lowerer: &AnnotationLowerer<'_>,
+    outer: &SpecElaborationContext,
+    name: &SurfaceBinder,
+    declared: &ClickType,
+    body: &SyntaxProposition,
+    body_environment: &SpecElaborationContext,
+) {
+    crate::instrumentation::uncharged_debug_check(|| {
+        let elaborator = lowerer.elaborator();
+        assert_eq!(
+            elaborator.elaborate_proposition(
+                body,
+                &TypingEnvironment::of(outer).with_declared(name, declared.clone()),
+            ),
+            elaborator.elaborate_proposition(body, &TypingEnvironment::of(body_environment)),
+            "binder `{name:?}` declared `{declared:?}`: its body elaborates differently from its lowered context"
+        );
+    });
 }
