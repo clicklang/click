@@ -42,7 +42,7 @@ impl adler2::Adler32 {
      have loop(2).iter.v.len() == 4u64;
      have loop(2).iter.v == old(bytes);
      step_until(loop(2).statement(0).entry);
-     have loop(2).iter.v.len() == 0u64 by { close() using {}; }
+     have loop(2).iter.v.len() == 0u64 by { close(); }
      have loop(2).iter.v == old(bytes) + 4u64 by {
       have loop(2).iter.v == byte_offset(at(loop(2).entry, loop(2).iter.v), 4) by close();
       have at(loop(2).entry, loop(2).iter.v) == old(bytes) by close();
