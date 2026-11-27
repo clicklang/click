@@ -852,6 +852,8 @@ impl Printer<'_> {
                 return Some(negate(name, polarity));
             }
             OldConditionTerm::PointerEqual(left, right) => {
+                left.expect_thin("rendering a pointer equality");
+                right.expect_thin("rendering a pointer equality");
                 if self.source_mode() && distinct_pointers_at_one_address(left, right) {
                     if let Some(naming) = &self.labels.naming
                         && let (Some(left), Some(right)) = (

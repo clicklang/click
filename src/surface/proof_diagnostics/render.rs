@@ -2170,6 +2170,8 @@ impl Renderer<'_> {
                 self.offset(b, 0);
             }
             OldConditionTerm::PointerEqual(a, b) => {
+                a.expect_thin("rendering a pointer equality");
+                b.expect_thin("rendering a pointer equality");
                 if distinct_pointers_at_one_address(a, b) {
                     self.push("pointer equality at ");
                     self.pointer(a.address());

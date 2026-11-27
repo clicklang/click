@@ -123,6 +123,8 @@ pub(crate) struct MemoryErasedPointerKey {
     bounds_owner: Option<MemoryErasedAddressKey>,
     bounds: Option<(MemoryErasedAddressKey, MemoryErasedBitvectorKey)>,
     bounds_known: bool,
+    /// A wide pointer's element count.
+    count: crate::kernel::PointerMetadataKey<MemoryErasedBitvectorKey>,
 }
 
 impl MemoryErasedPointerKey {
@@ -136,6 +138,11 @@ impl MemoryErasedPointerKey {
             || self.bounds.as_ref().is_some_and(|(start, width)| {
                 start.requires_checked_match() || width.requires_checked_match()
             })
+            || self
+                .count
+                .0
+                .as_ref()
+                .is_some_and(MemoryErasedBitvectorKey::requires_checked_match)
     }
 }
 
@@ -155,6 +162,7 @@ fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
             )
         }),
         bounds_known: pointer.bounds_are_known(),
+        count: crate::kernel::PointerMetadataKey(pointer.len().map(memory_erased_bitvector_key)),
     }
 }
 
@@ -991,6 +999,8 @@ enum AlphaProgramValueKey {
         bounds_owner: Option<AlphaAddressKey>,
         /// The subobject bounds' start key and byte width.
         bounds: Option<(AlphaAddressKey, AlphaMachineKey)>,
+        /// A wide pointer's element count.
+        count: crate::kernel::PointerMetadataKey<AlphaMachineKey>,
     },
 }
 
@@ -2437,6 +2447,14 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 )),
                 None => None,
             },
+            count: crate::kernel::PointerMetadataKey(match pointer.len() {
+                Some(count) => Some(alpha_machine_key::<ALLOW_LOADS>(
+                    crate::kernel::MachineOperandView::Old(count),
+                    bindings,
+                    next_binder,
+                )?),
+                None => None,
+            }),
         },
         other => {
             let (ty, term) = match other.numeric_value() {

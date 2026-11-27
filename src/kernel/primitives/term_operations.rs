@@ -3722,7 +3722,11 @@ impl OldConditionTerm {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
-            Self::PointerEqual(a, b) if a.base == b.base && a.same_provenance_as(b) => {
+            // Equal offsets are the whole equality only when nothing else
+            // in the two values differs, a wide pointer's metadata included.
+            Self::PointerEqual(a, b)
+                if a.base == b.base && a.same_provenance_as(b) && a.same_metadata_as(b) =>
+            {
                 Some((&a.offset, &b.offset))
             }
             _ => None,
@@ -3736,7 +3740,7 @@ impl OldConditionTerm {
     /// Producers whose result must match a lowered goal use it too; checking
     /// decides the reflexive comparison (`OldConditionTerm::reflexive_value`).
     pub(crate) fn logical_pointer_equal(left: Pointer, right: Pointer) -> Self {
-        if left == right && !left.is_null() {
+        if left == right && !left.is_null() && !left.is_wide() {
             let address = left.address().clone();
             return Self::AddressEqual(Box::new(address.clone()), Box::new(address));
         }
@@ -3744,6 +3748,13 @@ impl OldConditionTerm {
     }
 
     pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
+        // A wide pointer's equality also compares its metadata
+        // (`design/rust-slice-values.md`, "Equality"), which no address
+        // equality states and a condition has no conjunction for: it stays
+        // the complete equality, whose admission merges the counts too.
+        if left.is_wide() || right.is_wide() {
+            return Self::PointerEqual(Box::new(left), Box::new(right));
+        }
         // A pointer equal to the null pointer is null: a comparison with null
         // states address equality, as `p == 0` lowers
         // (`surface::lowering::comparison_proposition`). Every producer

@@ -7036,21 +7036,27 @@ pub(in crate::kernel) fn rebase_resolved_allocation(
     base: &Address,
     resolved: &Address,
 ) -> Pointer {
+    // An allocation's rebase names its block in addresses only; a wide
+    // pointer's count has no rebase yet.
     let resolved_value = value
-        .map_pointers(|address| {
-            if address == base {
-                resolved.clone()
-            } else if address.base == base.base
-                && matches!(base.offset.view(), OffsetView::Constant(0))
-            {
-                resolved.with_offset(AddressOffset::add(
-                    resolved.offset.clone(),
-                    address.offset.clone(),
-                ))
-            } else {
-                address.clone()
-            }
-        })
+        .expect_thin("rebasing a resolved allocation")
+        .map_pointers(
+            |address| {
+                if address == base {
+                    resolved.clone()
+                } else if address.base == base.base
+                    && matches!(base.offset.view(), OffsetView::Constant(0))
+                {
+                    resolved.with_offset(AddressOffset::add(
+                        resolved.offset.clone(),
+                        address.offset.clone(),
+                    ))
+                } else {
+                    address.clone()
+                }
+            },
+            OldMachineTerm::clone,
+        )
         .with_bounds_owner(None);
     if resolved_value.bounds().is_none() {
         resolved_value.with_root_bounds()

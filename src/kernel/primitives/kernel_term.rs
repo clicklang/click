@@ -41,8 +41,8 @@ pub use offsets::AddressOffset;
 pub(crate) use offsets::{KernelAddressOffset, OffsetTree, OffsetView, SharedAddressOffset};
 pub(in crate::kernel) use pointers::ArrayObject;
 pub(crate) use pointers::{
-    KernelArrayObject, KernelMemberArray, KernelSubobjectBounds, PointerRewrite,
-    PointerRewriteError, SharedPointer,
+    KernelArrayObject, KernelMemberArray, KernelPointerMetadata, KernelSubobjectBounds,
+    PointerMetadataKey, PointerRewrite, PointerRewriteError, SharedPointer,
 };
 pub use pointers::{Pointer, SubobjectBounds};
 use std::collections::{HashMap, VecDeque};

@@ -1630,6 +1630,9 @@ fn collect_condition_reads(condition: &OldConditionTerm, reads: &mut Vec<Resourc
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_reads(pointer, reads);
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_reads(count, reads);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {

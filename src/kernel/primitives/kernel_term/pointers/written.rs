@@ -18,67 +18,75 @@ use super::*;
 use std::cmp::Ordering;
 use std::sync::OnceLock;
 
-/// A bounds width: the kernel term the kernel reads and the written machine
-/// term the written view reads. At least one is set; the other is built from
-/// it when first read, by the import or export that used to run when the
-/// pointer crossed between the two representations.
+/// A machine-integer component of a pointer, such as a bounds width or a
+/// wide pointer's element count: the kernel term the kernel reads and the
+/// written machine term the written view reads. At least one is set; the
+/// other is built from it when first read, by the import or export that used
+/// to run when the pointer crossed between the two representations.
 #[derive(Clone)]
-pub(in crate::kernel::primitives::kernel_term) struct SubobjectWidth {
+pub(crate) struct MachineComponent {
+    format: MachineIntegerType,
     kernel: OnceLock<KernelTerm>,
     written: OnceLock<Result<OldMachineTerm, &'static str>>,
 }
 
-impl SubobjectWidth {
-    pub(in crate::kernel::primitives::kernel_term) fn kernel(width: KernelTerm) -> Self {
+impl MachineComponent {
+    pub(in crate::kernel::primitives::kernel_term) fn kernel(
+        format: MachineIntegerType,
+        term: KernelTerm,
+    ) -> Self {
         Self {
-            kernel: OnceLock::from(width),
+            format,
+            kernel: OnceLock::from(term),
             written: OnceLock::new(),
         }
     }
 
-    fn written(width: OldMachineTerm) -> Self {
+    fn written(format: MachineIntegerType, term: OldMachineTerm) -> Self {
         Self {
+            format,
             kernel: OnceLock::new(),
-            written: OnceLock::from(Ok(width)),
+            written: OnceLock::from(Ok(term)),
         }
     }
 
     pub(in crate::kernel::primitives::kernel_term) fn kernel_term(&self) -> &KernelTerm {
         self.kernel.get_or_init(|| {
             let Some(Ok(written)) = self.written.get() else {
-                unreachable!("a bounds width has a kernel or a written term")
+                unreachable!("a pointer component has a kernel or a written term")
             };
-            KernelTerm::retained_machine_operand(
-                MachineIntegerType::Int32,
-                MachineOperandView::Old(written),
-            )
+            KernelTerm::retained_machine_operand(self.format, MachineOperandView::Old(written))
         })
     }
 
-    fn try_written(&self) -> Result<&OldMachineTerm, &'static str> {
+    pub(in crate::kernel::primitives::kernel_term) fn try_written(
+        &self,
+    ) -> Result<&OldMachineTerm, &'static str> {
         self.written
             .get_or_init(|| {
-                KernelTermExport::machine(self.kernel.get().expect("a bounds width has a term"))
+                KernelTermExport::machine(
+                    self.kernel.get().expect("a pointer component has a term"),
+                )
             })
             .as_ref()
             .map_err(|error| *error)
     }
 
-    /// The written term of a written handle's width.
+    /// The written term of a written handle's component.
     fn written_term(&self) -> &OldMachineTerm {
         match self.written.get() {
-            Some(Ok(width)) => width,
-            _ => unreachable!("a written pointer's bounds width is written"),
+            Some(Ok(term)) => term,
+            _ => unreachable!("a written pointer's components are written"),
         }
     }
 }
 
-impl std::fmt::Debug for SubobjectWidth {
+impl std::fmt::Debug for MachineComponent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (self.written.get(), self.kernel.get()) {
             (Some(Ok(width)), _) => width.fmt(f),
             (_, Some(width)) => width.fmt(f),
-            _ => f.write_str("<width>"),
+            _ => f.write_str("<component>"),
         }
     }
 }
@@ -119,7 +127,7 @@ impl SubobjectBounds {
     pub(crate) fn new(start: Address, width: OldMachineTerm) -> Self {
         Self(KernelSubobjectBounds {
             start: start.into_shared(),
-            width: SubobjectWidth::written(width),
+            width: MachineComponent::written(MachineIntegerType::Int32, width),
         })
     }
 
@@ -352,6 +360,40 @@ impl Hash for ArrayObject {
     }
 }
 
+/// The written view of a wide pointer's metadata, as identity compares it
+/// (`design/rust-slice-values.md`). A thin pointer has none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum PointerMetadata<'a> {
+    /// A slice's element count, a `UInt64` (`usize`) term.
+    ElementCount(&'a OldMachineTerm),
+}
+
+impl<'a> PointerMetadata<'a> {
+    fn from_kernel(metadata: &'a KernelPointerMetadata) -> Self {
+        match metadata {
+            KernelPointerMetadata::ElementCount(count) => Self::ElementCount(count.written_term()),
+        }
+    }
+
+    pub(crate) fn element_count(self) -> &'a OldMachineTerm {
+        match self {
+            Self::ElementCount(count) => count,
+        }
+    }
+}
+
+/// Hashes nothing for a thin pointer, so a thin pointer's stream is the one
+/// it had before metadata existed: fact-set treap priorities are content
+/// hashes. Present metadata follows a marker no identity tuple writes in
+/// that position, then its own derived stream.
+fn hash_pointer_metadata<H: Hasher>(metadata: Option<PointerMetadata<'_>>, state: &mut H) {
+    if let Some(metadata) = metadata {
+        state.write_u64(WIDE_POINTER_HASH_MARKER);
+        metadata.hash(state);
+    }
+}
+const WIDE_POINTER_HASH_MARKER: u64 = 0x7769_6465_2d70_7472; // "wide-ptr"
+
 /// A pointer value: an address and its provenance (`design/pointer-model.md`),
 /// the written view of a kernel pointer handle (module documentation).
 /// C provenance is the allocation the pointer was derived from plus the array
@@ -386,6 +428,7 @@ impl Pointer {
             array: array.0,
             program_type,
             qualifiers: None,
+            metadata: None,
         })))
     }
 
@@ -468,12 +511,75 @@ impl Pointer {
         self.address().clone()
     }
 
-    /// Everything that is the value's identity: the address, its provenance,
+    /// A wide pointer's metadata, read from the value: O(1), no facts.
+    pub(crate) fn metadata(&self) -> Option<PointerMetadata<'_>> {
+        self.node()
+            .metadata
+            .as_deref()
+            .map(PointerMetadata::from_kernel)
+    }
+
+    /// A wide pointer's element count (`s.len()`). `None` for a thin pointer.
+    pub(crate) fn len(&self) -> Option<&OldMachineTerm> {
+        self.metadata().map(PointerMetadata::element_count)
+    }
+
+    pub(crate) fn is_wide(&self) -> bool {
+        self.node().metadata.is_some()
+    }
+
+    /// The wide pointer with this thin part and element count, a `UInt64`
+    /// term (`design/rust-slice-values.md`, "Construction").
+    pub(crate) fn with_element_count(mut self, count: OldMachineTerm) -> Self {
+        assert!(
+            !self.is_wide(),
+            "internal error: a wide pointer is built from a thin pointer"
+        );
+        self.update(|value| {
+            value.metadata = Some(Arc::new(KernelPointerMetadata::ElementCount(
+                MachineComponent::written(MachineIntegerType::UInt64, count),
+            )))
+        });
+        self
+    }
+
+    /// The thin part (`s.as_ptr()`): the same address, provenance and array
+    /// object, with no metadata. A thin pointer is its own thin part.
+    pub(crate) fn as_ptr(&self) -> Self {
+        let mut thin = self.clone();
+        if thin.is_wide() {
+            thin.update(|value| value.metadata = None);
+        }
+        thin
+    }
+
+    /// Whether the two carry the same metadata as identity compares it. Two
+    /// thin pointers do.
+    pub(crate) fn same_metadata_as(&self, other: &Self) -> bool {
+        self.metadata() == other.metadata()
+    }
+
+    /// Refuse a wide pointer where an operation reads only a thin one and has
+    /// no form for its metadata yet. This is an internal error, never a
+    /// fallback that drops the length (`design/rust-slice-values.md`, step 2b).
+    #[track_caller]
+    pub(crate) fn expect_thin(&self, operation: &str) -> &Self {
+        if self.is_wide() {
+            panic!(
+                "internal error: {operation} has no form for a wide pointer's metadata yet \
+                 (design/rust-slice-values.md, step 2b)"
+            );
+        }
+        self
+    }
+
+    /// Everything that is a thin value's identity: the address, its provenance,
     /// and the subobject it designates, plus its opaque local-reference
     /// custody. A lease key is a fresh scalar id, never a structural resource
     /// or ledger key. Two values at one address with different bounds are
     /// different values: address equality does not make a one-past pointer
-    /// designate the object that follows it.
+    /// designate the object that follows it. A wide pointer's identity adds
+    /// its metadata ([`Self::metadata`]), compared after this tuple.
     #[allow(clippy::type_complexity)]
     fn identity(
         &self,
@@ -508,18 +614,24 @@ impl Pointer {
 
 impl std::fmt::Debug for Pointer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Pointer")
+        let mut debug = f.debug_struct("Pointer");
+        debug
             .field("address", self.address())
             .field("provenance", self.provenance())
             .field("array", self.array_object())
             .field("program_type", &self.program_type())
-            .field("qualifiers", &self.qualifiers())
-            .finish()
+            .field("qualifiers", &self.qualifiers());
+        // A thin pointer prints as it did before metadata existed.
+        if let Some(metadata) = self.metadata() {
+            debug.field("metadata", &metadata);
+        }
+        debug.finish()
     }
 }
 impl PartialEq for Pointer {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 || self.identity() == other.identity()
+        self.0 == other.0
+            || (self.identity() == other.identity() && self.metadata() == other.metadata())
     }
 }
 impl Eq for Pointer {}
@@ -533,14 +645,20 @@ impl Ord for Pointer {
         if self.0 == other.0 {
             return Ordering::Equal;
         }
-        self.identity().cmp(&other.identity())
+        // Thin pointers order as before; a thin pointer precedes a wide one
+        // with the same thin part.
+        self.identity()
+            .cmp(&other.identity())
+            .then_with(|| self.metadata().cmp(&other.metadata()))
     }
 }
 impl Hash for Pointer {
     /// The native struct's identity stream. Fact-set treap priorities hash
-    /// pointers, so the values are kept.
+    /// pointers, so the values are kept; metadata adds to the stream only
+    /// when present ([`hash_pointer_metadata`]).
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.identity().hash(state);
+        hash_pointer_metadata(self.metadata(), state);
     }
 }
 impl std::ops::Deref for Pointer {
@@ -586,6 +704,13 @@ impl SharedPointer {
                 KernelArrayObject::Member(Arc::new(KernelMemberArray { bounds, within }))
             }
         };
+        if let Some(metadata) = &value.metadata {
+            match metadata.as_ref() {
+                KernelPointerMetadata::ElementCount(count) => {
+                    count.try_written()?;
+                }
+            }
+        }
         if same {
             return Ok(Pointer(self.clone()));
         }
@@ -595,6 +720,7 @@ impl SharedPointer {
             array,
             program_type: value.program_type,
             qualifiers: value.qualifiers.clone(),
+            metadata: value.metadata.clone(),
         }))))
     }
 }

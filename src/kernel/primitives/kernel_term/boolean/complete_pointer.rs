@@ -9,6 +9,8 @@ struct PointerIdentity {
     bounds_known: bool,
     bounds_owner: Option<SharedAddress>,
     bounds: Option<(SharedAddress, KernelTerm)>,
+    /// A wide pointer's element count; hashes nothing when thin.
+    count: PointerMetadataKey<KernelTerm>,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +58,7 @@ impl KernelPointerEquality {
                     .array
                     .bounds()
                     .map(|e| (address(&e.start), numeric(&e.width()))),
+                count: PointerMetadataKey(value.len().map(&mut numeric)),
             }
         });
         Self {
@@ -76,6 +79,20 @@ impl SharedPointer {
             && a.provenance.syntax_equal(&b.provenance)
             && opaque_owners_syntax_equal(&a.array, &b.array)
             && self.condition_bounds_equal(other)
+            && self.condition_counts_equal(other)
+    }
+    /// Whether the two carry syntactically equal element counts. Two thin
+    /// pointers do.
+    pub(crate) fn condition_counts_equal(&self, other: &Self) -> bool {
+        match (self.len(), other.len()) {
+            (None, None) => true,
+            (Some(a), Some(b)) => crate::kernel::machine_operand_syntax_cmp(
+                MachineOperandView::Shared(a),
+                MachineOperandView::Shared(b),
+            )
+            .is_eq(),
+            _ => false,
+        }
     }
     pub(crate) fn condition_bounds_equal(&self, other: &Self) -> bool {
         match (self.node().array.bounds(), other.node().array.bounds()) {
@@ -92,11 +109,20 @@ impl SharedPointer {
         }
     }
     /// Native map_pointers policy: addresses change, bounds width does not.
+    /// A wide pointer's element count is replaced by `count`, the caller's
+    /// substitution of [`Self::len`], given exactly when the pointer is wide.
     pub(crate) fn map_condition_addresses<E>(
         &self,
         mut map: impl FnMut(&SharedAddress) -> Result<SharedAddress, E>,
+        count: Option<KernelTerm>,
     ) -> Result<Self, E> {
+        assert_eq!(
+            count.is_some(),
+            self.len().is_some(),
+            "internal error: a wide pointer's substitution maps its element count"
+        );
         let mut p = self.node().clone();
+        p.metadata = count.map(|count| Arc::new(KernelPointerMetadata::element_count(count)));
         p.address = map(&p.address)?;
         p.provenance = map(&p.provenance)?;
         p.array = match &p.array {
@@ -155,6 +181,12 @@ impl KernelTerm {
         // `OldConditionTerm::pointer_equal`, a comparison with null states
         // address equality, which is how `p == 0` lowers.
         let null = Address::null().shared().clone();
+        // A wide pointer's equality also compares its metadata, which
+        // address equality cannot state: it stays the complete equality,
+        // whose admission merges the element counts too.
+        if a.metadata.is_some() || b.metadata.is_some() {
+            return Self::pointer_equal_raw(arguments);
+        }
         if a.address.syntax_equal(&null) || b.address.syntax_equal(&null) {
             return Self::address_equal([a.address.clone(), b.address.clone()]);
         }

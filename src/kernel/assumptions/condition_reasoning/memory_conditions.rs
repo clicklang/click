@@ -19,7 +19,8 @@ impl PureFactContext {
         {
             let same_value =
                 |a: &Pointer, b: &Pointer| {
-                    self.pointer_provenance_match(a, b)
+                    a.same_metadata_as(b)
+                    && self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.address(), b.address(), self,
                     ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
@@ -50,7 +51,8 @@ impl PureFactContext {
         {
             let same_value =
                 |a: &Pointer, b: &Pointer| {
-                    self.pointer_provenance_match(a, b)
+                    a.same_metadata_as(b)
+                    && self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.address(), b.address(), self,
                     ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(

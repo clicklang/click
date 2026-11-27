@@ -6532,6 +6532,9 @@ fn collect_condition_memories(condition: &OldConditionTerm, memories: &mut Vec<S
                 }
                 collect_pointer_offset_memories(&pointer.offset, memories);
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_memories(count, memories);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -6903,22 +6906,27 @@ fn transport_framed_atomic_pointer_value(
     // Only reconstructed complete words need their read provenance moved
     // alongside their numeric address. Ordinary pointers keep their origin.
     let reconstructed_word = value.address().integer_address_bits().is_some();
-    value.try_map_pointers(|pointer| {
-        if reconstructed_word && let Some(read) = pointer.as_loaded_value() {
-            // The supplied endpoint names this observation. Check its one
-            // immediate frame; discovering an older version would be a hidden
-            // history search even if a previous query happened to cache it.
-            let after = after.shared_memory().clone();
-            let mut target = Address::loaded_value(&after, &read.defining_address);
-            target.set_offset(pointer.offset.clone());
-            return assumptions
-                .is_some_and(|(context, _)| {
-                    complete_pointer_reads_equal_across_frame(pointer, &target, context)
-                })
-                .then_some(target);
-        }
-        transport_framed_atomic_pointer(pointer, after, assumptions)
-    })
+    value.try_map_pointers(
+        |pointer| {
+            if reconstructed_word && let Some(read) = pointer.as_loaded_value() {
+                // The supplied endpoint names this observation. Check its one
+                // immediate frame; discovering an older version would be a hidden
+                // history search even if a previous query happened to cache it.
+                let after = after.shared_memory().clone();
+                let mut target = Address::loaded_value(&after, &read.defining_address);
+                target.set_offset(pointer.offset.clone());
+                return assumptions
+                    .is_some_and(|(context, _)| {
+                        complete_pointer_reads_equal_across_frame(pointer, &target, context)
+                    })
+                    .then_some(target);
+            }
+            transport_framed_atomic_pointer(pointer, after, assumptions)
+        },
+        // A wide pointer's count has no frame transport yet (step 2b of
+        // `design/rust-slice-values.md`): the transport refuses it.
+        |_| None,
+    )
 }
 
 fn transport_framed_atomic_pointer(

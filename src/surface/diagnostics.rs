@@ -8913,8 +8913,14 @@ pub(super) fn describe_condition(condition: &OldConditionTerm) -> String {
     match condition {
         OldConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
-            describe_pointer(left.address(), ParameterBinding::default()),
-            describe_pointer(right.address(), ParameterBinding::default())
+            describe_pointer(
+                left.expect_thin("describing a pointer equality").address(),
+                ParameterBinding::default()
+            ),
+            describe_pointer(
+                right.expect_thin("describing a pointer equality").address(),
+                ParameterBinding::default()
+            )
         ),
 
         OldConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),

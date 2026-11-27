@@ -1410,7 +1410,9 @@ pub(in crate::surface) fn synthesize_surface_value(
     }
     match value {
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
-            pointer.address(),
+            pointer
+                .expect_thin("raising a pointer value to Surface")
+                .address(),
             parameter_binding,
             state,
             &BTreeMap::new(),
@@ -4419,7 +4421,12 @@ fn raise_constructor_field(
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
     if let Some(ProgramValue::Pointer(pointer)) = term.old_pointer_value() {
-        return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
+        return raise_constructor_pointer(
+            pointer.expect_thin("raising a pointer value to Surface"),
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     if term.ty() == &KernelType::Integer {
         return raise_kernel_term(term, parameter_binding, state, bound_variables)
@@ -5261,7 +5268,7 @@ fn synthesize_surface_resource_argument(
             ))
         }
         A::Program(ProgramValue::Pointer(pointer)) => synthesize_surface_pointer_expression(
-            pointer,
+            pointer.expect_thin("raising a pointer value to Surface"),
             parameter_binding,
             state,
             bound_variables,
@@ -8472,6 +8479,7 @@ fn synthesize_pointer_equality_operand(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
+    value.expect_thin("raising a pointer equality operand to Surface");
     if let Some(name) = pointer_names::native_name(&ProgramValue::Pointer(value.clone())) {
         return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             name.into(),
