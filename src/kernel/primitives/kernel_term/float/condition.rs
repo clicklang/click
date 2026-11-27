@@ -184,26 +184,58 @@ impl KernelTermExport {
 }
 
 impl FloatOperandView<'_> {
-    /// Classify an evaluated operand. The native evaluator can select a
-    /// constant arm of an If. Shared roots fold only closed arithmetic.
+    /// The native evaluator can select a constant arm of an If. Shared
+    /// roots fold only closed arithmetic.
+    fn evaluated_bits(self) -> Option<u64> {
+        match self {
+            Self::Native(..) => self.constant_bits(),
+            Self::Shared(_) => self.closed_arithmetic_bits(),
+        }
+    }
+
+    fn predicate_operand(self) -> KernelTerm {
+        match self {
+            Self::Native(format, term) => {
+                KernelTermImport::for_exact_field_inputs().float(format, term)
+            }
+            Self::Shared(root) => root.clone(),
+        }
+    }
+
     pub(crate) fn evaluated_classification(
         self,
         classification: FloatClassification,
     ) -> KernelTerm {
         let format = self.format();
-        let bits = match self {
-            Self::Native(..) => self.constant_bits(),
-            Self::Shared(_) => self.closed_arithmetic_bits(),
-        };
-        if let Some(bits) = bits {
+        if let Some(bits) = self.evaluated_bits() {
             return KernelTerm::boolean_literal(format.classify_bits(bits, classification));
         }
-        let operand = match self {
-            Self::Native(_, term) => KernelTermImport::for_exact_field_inputs().float(format, term),
-            Self::Shared(root) => root.clone(),
-        };
-        KernelTerm::float_classify(format, classification, operand)
+        KernelTerm::float_classify(format, classification, self.predicate_operand())
             .expect("float classification operand")
+    }
+
+    pub(crate) fn evaluated_comparison(
+        self,
+        operator: ComparisonOperator,
+        right: Self,
+    ) -> Option<KernelTerm> {
+        let format = self.format();
+        if right.format() != format {
+            return None;
+        }
+        if let Some(left) = self.evaluated_bits()
+            && let Some(right) = right.evaluated_bits()
+        {
+            return Some(KernelTerm::boolean_literal(
+                format.compare_bits(left, right, operator),
+            ));
+        }
+        KernelTerm::float_compare(
+            format,
+            operator,
+            [self.predicate_operand(), right.predicate_operand()],
+        )
+        .ok()
     }
 }
 

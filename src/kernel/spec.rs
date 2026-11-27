@@ -11327,17 +11327,10 @@ pub(super) fn program_value_comparison_proposition(
         if !obligations.is_empty() {
             return None;
         }
-        let condition = match (target_type, left, right) {
-            (ProgramType::Float32, ProgramValue::Float32(left), ProgramValue::Float32(right)) => {
-                OldConditionTerm::float32_compare(left, right, operator)
-            }
-            (ProgramType::Float64, ProgramValue::Float64(left), ProgramValue::Float64(right)) => {
-                OldConditionTerm::float64_compare(left, right, operator)
-            }
-            _ => return None,
-        };
-        // Float conditions retain the requested operator, including NotEqual.
-        // Unlike integer equality, inequality needs no additional negation.
+        let left = FloatOperandView::from_value(&left)?;
+        let right = FloatOperandView::from_value(&right)?;
+        let root = left.evaluated_comparison(operator, right)?;
+        let condition = StoredConditionTerm::from_root(root).expect("logical float comparison");
         return Some(Proposition::condition_is(condition, true));
     }
 
