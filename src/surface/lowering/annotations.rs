@@ -5060,6 +5060,15 @@ impl AnnotationLowerer<'_> {
                     );
                     #[cfg(test)]
                     typing_environment::check_declared_binder(name, click_type, &body_environment);
+                    #[cfg(debug_assertions)]
+                    elaborator::check_binder_body_elaboration(
+                        self,
+                        environment,
+                        name,
+                        click_type,
+                        body,
+                        &body_environment,
+                    );
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ForAllInteger {
@@ -5079,6 +5088,15 @@ impl AnnotationLowerer<'_> {
                     );
                     #[cfg(test)]
                     typing_environment::check_declared_binder(name, click_type, &body_environment);
+                    #[cfg(debug_assertions)]
+                    elaborator::check_binder_body_elaboration(
+                        self,
+                        environment,
+                        name,
+                        click_type,
+                        body,
+                        &body_environment,
+                    );
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ForAllAlgebraic {
@@ -5123,6 +5141,15 @@ impl AnnotationLowerer<'_> {
                 let previous = self.quantified_values.insert(name.clone(), value);
                 #[cfg(test)]
                 typing_environment::check_declared_binder(name, click_type, &body_environment);
+                #[cfg(debug_assertions)]
+                elaborator::check_binder_body_elaboration(
+                    self,
+                    environment,
+                    name,
+                    click_type,
+                    body,
+                    &body_environment,
+                );
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
@@ -5195,6 +5222,15 @@ impl AnnotationLowerer<'_> {
                     );
                     #[cfg(test)]
                     typing_environment::check_declared_binder(name, click_type, &body_environment);
+                    #[cfg(debug_assertions)]
+                    elaborator::check_binder_body_elaboration(
+                        self,
+                        environment,
+                        name,
+                        click_type,
+                        body,
+                        &body_environment,
+                    );
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ExistsInteger {
@@ -5214,6 +5250,15 @@ impl AnnotationLowerer<'_> {
                     );
                     #[cfg(test)]
                     typing_environment::check_declared_binder(name, click_type, &body_environment);
+                    #[cfg(debug_assertions)]
+                    elaborator::check_binder_body_elaboration(
+                        self,
+                        environment,
+                        name,
+                        click_type,
+                        body,
+                        &body_environment,
+                    );
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ExistsAlgebraic {
@@ -5258,6 +5303,15 @@ impl AnnotationLowerer<'_> {
                 let previous = self.quantified_values.insert(name.clone(), value);
                 #[cfg(test)]
                 typing_environment::check_declared_binder(name, click_type, &body_environment);
+                #[cfg(debug_assertions)]
+                elaborator::check_binder_body_elaboration(
+                    self,
+                    environment,
+                    name,
+                    click_type,
+                    body,
+                    &body_environment,
+                );
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
@@ -5331,6 +5385,19 @@ impl AnnotationLowerer<'_> {
                     .values
                     .insert(item.clone(), item_value.clone());
                 let previous = self.quantified_values.insert(item.clone(), item_carrier);
+                #[cfg(debug_assertions)]
+                elaborator::check_binder_body_elaboration(
+                    self,
+                    environment,
+                    item,
+                    &elaborator::range_item_click_type(if wide {
+                        ProgramType::UInt64
+                    } else {
+                        ProgramType::Int32
+                    }),
+                    body,
+                    &body_environment,
+                );
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
@@ -5397,6 +5464,19 @@ impl AnnotationLowerer<'_> {
                     .values
                     .insert(item.clone(), item_value.clone());
                 let previous = self.quantified_values.insert(item.clone(), item_carrier);
+                #[cfg(debug_assertions)]
+                elaborator::check_binder_body_elaboration(
+                    self,
+                    environment,
+                    item,
+                    &elaborator::range_item_click_type(if wide {
+                        ProgramType::UInt64
+                    } else {
+                        ProgramType::Int32
+                    }),
+                    body,
+                    &body_environment,
+                );
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
@@ -5890,34 +5970,14 @@ impl AnnotationLowerer<'_> {
             .contract_expression_click_type(expression, typing)
     }
 
-    /// Whether a range's endpoints make its item a `uint64`: one endpoint
-    /// is a `uint64`, as for a range fold.
     fn range_bounds_are_uint64(
         &self,
         start: &SyntaxTerm,
         end: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> bool {
-        [start, end].into_iter().any(|bound| {
-            matches!(
-                self.contract_expression_click_type(bound, &TypingEnvironment::of(environment)),
-                Some(ClickType::Program(InterfaceType::UInt64(_)))
-            ) || matches!(bound, SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name))
-                    if self.c_variable_type(name) == Some(ProgramType::UInt64))
-                || matches!(bound, SyntaxTerm::ProgramExpression(ProgramExpression::Value(value))
-                    if value.program_type() == ProgramType::UInt64)
-                // A written cast, `n as uint64`, has the type it names.
-                || matches!(
-                    generics::explicit_cast_click_type(bound),
-                    Some(ClickType::Program(InterfaceType::UInt64(_)))
-                )
-        })
-    }
-
-    /// The declared C type of a parameter or local named in a clause, from
-    /// its typed entry value or the live declaration state.
-    fn c_variable_type(&self, name: impl Into<crate::kernel::BindingName>) -> Option<ProgramType> {
-        self.declarations().c_variable_type(name)
+        self.elaborator()
+            .range_bounds_are_uint64(start, end, &TypingEnvironment::of(environment))
     }
 
     fn contract_expression_click_type_in_scope(

@@ -278,13 +278,28 @@ impl<'a> TypingEnvironment<'a> {
     /// Bind `name` with the type its declaration gives it. Every typing
     /// query then answers for `name` from that type alone, as
     /// `check_declared_binder` checks lowering does too.
-    #[cfg(test)]
     pub(super) fn declare(
         &mut self,
         name: impl Into<crate::surface::binders::SurfaceBinder>,
         declared: ClickType,
     ) {
         self.binders.insert(name.into(), declared);
+    }
+
+    /// This environment with `name` bound at `declared`, as a binder's body
+    /// sees it.
+    pub(super) fn with_declared(
+        &self,
+        name: impl Into<crate::surface::binders::SurfaceBinder>,
+        declared: ClickType,
+    ) -> Self {
+        let mut inner = TypingEnvironment {
+            outer: self.outer,
+            binders: self.binders.clone(),
+            call_result_point: self.call_result_point,
+        };
+        inner.declare(name, declared);
+        inner
     }
 
     /// The type a name has here.
