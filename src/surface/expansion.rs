@@ -5430,16 +5430,24 @@ fn resolve_source_claim_label<'a>(
     file: &ClickFile,
     claim_label: &'a str,
 ) -> std::borrow::Cow<'a, str> {
-    if let Some((function, rest)) = claim_label.split_once('.')
-        && !function
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '_')
-        && let Some(block) = file.function_blocks().iter().find(|block| {
-            crate::languages::source_display_name(block.signature().name()).as_deref()
-                == Some(function)
-        })
+    if let Some((first, rest)) = claim_label.split_once('.')
+        && (rest.starts_with("statement(")
+            || !first
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
+        && let Some((name, suffix)) = file
+            .function_blocks()
+            .iter()
+            .filter_map(|block| {
+                let name = block.signature().name();
+                let written = crate::languages::source_display_name(name)?;
+                let suffix = claim_label.strip_prefix(&written)?.strip_prefix('.')?;
+                Some((name, suffix))
+            })
+            // An enclosing function's spelling can prefix its lambda path.
+            .min_by_key(|(_, suffix)| suffix.len())
     {
-        return format!("{}.{rest}", block.signature().name()).into();
+        return format!("{name}.{suffix}").into();
     }
     claim_label.into()
 }

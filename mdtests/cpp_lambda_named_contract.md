@@ -1,9 +1,7 @@
 # A C++ lambda passed for a function pointer meets its named contract
 
 A lambda that captures nothing converts to a function pointer, and the
-converted value is its call operator's address. The sidecar names the call
-operator by its enclosing function and its index among the lambdas written
-there, `caller::(lambda#0)`, and verifies it like any function; the caller
+converted value is its call operator's address. The sidecar selects the call operator at the lambda's written expression, `caller.statement(0).call(0).argument(0)`, and verifies it like any function; the caller
 passing it shows it meets the contract `apply` requires of its pointer.
 
 ```cpp filename=lambda.cpp function=caller profile=normal_only
@@ -24,12 +22,12 @@ int apply(int (*f)(int), int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
 }
-int caller::(lambda#0)(int y) {
+int caller.statement(0).call(0).argument(0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures result == y + y;
 }
 theorem lambda_doubles() {
-    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling(&caller::(lambda#0))); close(); }
+    ensures Doubling(&caller.statement(0).call(0).argument(0)) by { unfold(Doubling(&caller.statement(0).call(0).argument(0))); close(); }
 }
 int caller(int x) {
     requires 0 <= x and x <= 1000;

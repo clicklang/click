@@ -7,7 +7,7 @@ use super::*;
 /// A C++ head's declarator, resolved to the name the C++ importer gives the
 /// declaration at its path: `Rec::m`, `Rec::Rec`, `Rec::~Rec`,
 /// `Rec::operator+=`, `ns::f`, `Stored<long long>::Read`, `choose<true>`, and
-/// the first lambda in `caller`, `caller::(lambda#0)`.
+/// a lambda at `caller.statement(0).call(0).argument(0)`.
 pub(super) struct CppDeclarator {
     pub(super) name: String,
     /// The record of a non-static member function, whose implicit `this`
@@ -200,25 +200,28 @@ impl Parser {
             ));
             plain.push(segment);
         }
-        let name = crate::languages::cpp::names::path_name(&path);
-        // `caller::(lambda#0)`: the lambda named after its enclosing
-        // function and its index there.
         if special_member.is_none()
-            && plain
-                .last()
-                .is_some_and(|segment| segment.starts_with("(lambda#"))
+            && let Some((name, end)) = lambda_path_at(&self.tokens, self.position, &path)
         {
-            if is_static || path.len() < 2 {
-                return Err(self.error(
-                    "a C++ lambda is named by its enclosing function, `caller::(lambda#0)`",
-                ));
+            if is_static {
+                return Err(self.error("a lambda contract selects its written expression"));
             }
+            self.position = end;
             return Ok(CppDeclarator {
                 name,
                 receiver: None,
                 returnless: false,
             });
         }
+        if plain
+            .last()
+            .is_some_and(|name| name.starts_with("(lambda#"))
+        {
+            return Err(self.error(
+                "select a lambda by its written expression, such as `caller.statement(0).call(0).argument(0)`",
+            ));
+        }
+        let name = crate::languages::cpp::names::path_name(&path);
         let qualifier = (path.len() >= 2).then(|| path[path.len() - 2].clone());
         let record = qualifier
             .as_deref()
@@ -302,11 +305,12 @@ pub(super) fn rewrite_function_references(
         };
         if after_marker
             && let Some((segments, end)) = cpp_path_at(&tokens, index)
-            && (segments.len() > 1 || segments[0].contains('<'))
+            && let Some((name, end)) = lambda_path_at(&tokens, end, &segments).or_else(|| {
+                (segments.len() > 1 || segments[0].contains('<'))
+                    .then(|| (crate::languages::cpp::names::path_name(&segments), end))
+            })
         {
-            out_tokens.push(Token::Ident(crate::languages::cpp::names::path_name(
-                &segments,
-            )));
+            out_tokens.push(Token::Ident(name));
             out_positions.push(positions[index].clone());
             index = end;
             continue;
@@ -316,6 +320,44 @@ pub(super) fn rewrite_function_references(
         index += 1;
     }
     (out_tokens, out_positions)
+}
+
+/// Read the same expression path in a head and in a reference to a lambda.
+fn lambda_path_at(tokens: &[Token], mut index: usize, owner: &[String]) -> Option<(String, usize)> {
+    let step = |index, name| match tokens.get(index..index + 5)? {
+        [
+            Token::Dot,
+            Token::Ident(found),
+            Token::LParen,
+            Token::Number(value),
+            Token::RParen,
+        ] if found == name => Some(*value as usize),
+        _ => None,
+    };
+    let mut statements = Vec::new();
+    while let Some(statement) = step(index, "statement") {
+        statements.push(statement);
+        index += 5;
+    }
+    if statements.is_empty() {
+        return None;
+    }
+    let argument = if matches!(
+        tokens.get(index..index + 2)?,
+        [Token::Dot, Token::Ident(name)] if name == "initializer"
+    ) {
+        index += 2;
+        None
+    } else {
+        let call = step(index, "call")?;
+        let argument = step(index + 5, "argument")?;
+        index += 10;
+        Some((call, argument))
+    };
+    Some((
+        crate::languages::cpp::names::lambda_name(&owner.join("::"), &statements, argument),
+        index,
+    ))
 }
 
 /// The C++ path at `start`, `Rec::m`, `Rec::~Rec`, `Rec::operator+=`,

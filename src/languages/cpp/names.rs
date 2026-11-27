@@ -89,6 +89,25 @@ pub fn path_name<S: AsRef<str>>(path: &[S]) -> String {
     }
 }
 
+/// The checked declaration at a written lambda expression. The regular
+/// C++ codec keeps the complete proof spelling in one path component.
+pub(crate) fn lambda_name(
+    owner: &str,
+    statements: &[usize],
+    argument: Option<(usize, usize)>,
+) -> String {
+    let mut path = owner.to_owned();
+    for statement in statements {
+        write!(path, ".statement({statement})").expect("writing to String");
+    }
+    if let Some((call, argument)) = argument {
+        write!(path, ".call({call}).argument({argument})").expect("writing to String");
+    } else {
+        path.push_str(".initializer");
+    }
+    path_name(&[path])
+}
+
 /// Decodes the importer name at the start of `text`: its C++ path, and the
 /// text after it.
 fn decode(text: &str) -> Option<(String, &str)> {
