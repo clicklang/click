@@ -109,6 +109,7 @@ fn algebraic_equality_guard_keeps_its_operands_and_polarity() {
             algebraic_output(left.clone()),
             right_term,
         )));
+        assert!(is_single_normalization_condition(&claim));
         let (guard, expected) = conditional_guard(&claim).unwrap();
         assert!(!expected);
         let KernelTermNode::AlgebraicEqual { arguments } = guard.root().unwrap().node() else {
