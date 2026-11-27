@@ -37,24 +37,52 @@ uint32 ser_readdata32<SpanReader>(struct SpanReader& s) throws std::ios_base::fa
             have at(call(2).entry, std_span_data(call(2).parameter(dst))) == ((&obj) as (uint8 *)) by { close(); }
             have forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) } by { close(); }
             have 0u64 < at(call(2).entry, std_span_size(call(2).parameter(dst))) by { close(); }
-            have defined(load<uint8>((std_span_data(call(2).parameter(dst)) + 0u64))) by { instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 0u64); close(); }
             have 1u64 < at(call(2).entry, std_span_size(call(2).parameter(dst))) by { close(); }
-            have defined(load<uint8>((std_span_data(call(2).parameter(dst)) + 1u64))) by { instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 1u64); close(); }
             have 2u64 < at(call(2).entry, std_span_size(call(2).parameter(dst))) by { close(); }
-            have defined(load<uint8>((std_span_data(call(2).parameter(dst)) + 2u64))) by { instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 2u64); close(); }
             have 3u64 < at(call(2).entry, std_span_size(call(2).parameter(dst))) by { close(); }
-            have defined(load<uint8>((std_span_data(call(2).parameter(dst)) + 3u64))) by { instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 3u64); close(); }
-            have defined(load<uint8>(((&obj) as (uint8 *)) + 0u64)) by {
-                transport(defined(load<uint8>(std_span_data(call(2).parameter(dst)) + 0u64)), defined(load<uint8>(((&obj) as (uint8 *)) + 0u64)));
+            have (((&obj) as (uint8 *)) + 0u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 0u64) by {
+                rewrite(((&obj) as (uint8 *)), at(call(2).entry, std_span_data(call(2).parameter(dst))));
+                close();
             }
-            have defined(load<uint8>(((&obj) as (uint8 *)) + 1u64)) by {
-                transport(defined(load<uint8>(std_span_data(call(2).parameter(dst)) + 1u64)), defined(load<uint8>(((&obj) as (uint8 *)) + 1u64)));
+            have defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 0u64))) by {
+                instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 0u64);
+                close();
             }
-            have defined(load<uint8>(((&obj) as (uint8 *)) + 2u64)) by {
-                transport(defined(load<uint8>(std_span_data(call(2).parameter(dst)) + 2u64)), defined(load<uint8>(((&obj) as (uint8 *)) + 2u64)));
+            have defined(load<uint8>((((&obj) as (uint8 *)) + 0u64))) by {
+                close() using { (((&obj) as (uint8 *)) + 0u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 0u64); defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 0u64))); };
             }
-            have defined(load<uint8>(((&obj) as (uint8 *)) + 3u64)) by {
-                transport(defined(load<uint8>(std_span_data(call(2).parameter(dst)) + 3u64)), defined(load<uint8>(((&obj) as (uint8 *)) + 3u64)));
+            have (((&obj) as (uint8 *)) + 1u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 1u64) by {
+                rewrite(((&obj) as (uint8 *)), at(call(2).entry, std_span_data(call(2).parameter(dst))));
+                close();
+            }
+            have defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 1u64))) by {
+                instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 1u64);
+                close();
+            }
+            have defined(load<uint8>((((&obj) as (uint8 *)) + 1u64))) by {
+                close() using { (((&obj) as (uint8 *)) + 1u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 1u64); defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 1u64))); };
+            }
+            have (((&obj) as (uint8 *)) + 2u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 2u64) by {
+                rewrite(((&obj) as (uint8 *)), at(call(2).entry, std_span_data(call(2).parameter(dst))));
+                close();
+            }
+            have defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 2u64))) by {
+                instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 2u64);
+                close();
+            }
+            have defined(load<uint8>((((&obj) as (uint8 *)) + 2u64))) by {
+                close() using { (((&obj) as (uint8 *)) + 2u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 2u64); defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 2u64))); };
+            }
+            have (((&obj) as (uint8 *)) + 3u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 3u64) by {
+                rewrite(((&obj) as (uint8 *)), at(call(2).entry, std_span_data(call(2).parameter(dst))));
+                close();
+            }
+            have defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 3u64))) by {
+                instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 3u64);
+                close();
+            }
+            have defined(load<uint8>((((&obj) as (uint8 *)) + 3u64))) by {
+                close() using { (((&obj) as (uint8 *)) + 3u64) == (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 3u64); defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + 3u64))); };
             }
             have viewable(memory((&obj)[0..1])) by { close(); }
             have defined(load<uint32>(&obj)) by { close(); }
@@ -100,7 +128,8 @@ uint32 ser_readdata32<SpanReader>(struct SpanReader& s) throws std::ios_base::fa
             // Use the byte pointer equality to relate the local word to the input.
             have load<uint8>(((&obj) as (uint8 *)) + 0u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 0u64)) by {
                 instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 0u64);
-                transport(load<uint8>(at(call(2).entry, std_span_data(call(2).parameter(dst))) + 0u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 0u64)), load<uint8>(((&obj) as (uint8 *)) + 0u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 0u64)));
+                rewrite((((&obj) as (uint8 *)) + 0u64), (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 0u64));
+                close();
             }
             have at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 0u64)) == old(load<uint8>(std_span_data(s.m_data) + 0u64)) by {
                 instantiate(forall (k: uint64) { k < 4u64 implies at(call(2).entry, load<uint8>(std_span_data(s.m_data) + k)) == old(load<uint8>(std_span_data(s.m_data) + k)) }, 0u64);
@@ -109,7 +138,8 @@ uint32 ser_readdata32<SpanReader>(struct SpanReader& s) throws std::ios_base::fa
             have load<uint8>(((&obj) as (uint8 *)) + 0u64) == old(load<uint8>(std_span_data(s.m_data) + 0u64)) by { close(); }
             have load<uint8>(((&obj) as (uint8 *)) + 1u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 1u64)) by {
                 instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 1u64);
-                transport(load<uint8>(at(call(2).entry, std_span_data(call(2).parameter(dst))) + 1u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 1u64)), load<uint8>(((&obj) as (uint8 *)) + 1u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 1u64)));
+                rewrite((((&obj) as (uint8 *)) + 1u64), (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 1u64));
+                close();
             }
             have at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 1u64)) == old(load<uint8>(std_span_data(s.m_data) + 1u64)) by {
                 instantiate(forall (k: uint64) { k < 4u64 implies at(call(2).entry, load<uint8>(std_span_data(s.m_data) + k)) == old(load<uint8>(std_span_data(s.m_data) + k)) }, 1u64);
@@ -118,7 +148,8 @@ uint32 ser_readdata32<SpanReader>(struct SpanReader& s) throws std::ios_base::fa
             have load<uint8>(((&obj) as (uint8 *)) + 1u64) == old(load<uint8>(std_span_data(s.m_data) + 1u64)) by { close(); }
             have load<uint8>(((&obj) as (uint8 *)) + 2u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 2u64)) by {
                 instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 2u64);
-                transport(load<uint8>(at(call(2).entry, std_span_data(call(2).parameter(dst))) + 2u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 2u64)), load<uint8>(((&obj) as (uint8 *)) + 2u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 2u64)));
+                rewrite((((&obj) as (uint8 *)) + 2u64), (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 2u64));
+                close();
             }
             have at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 2u64)) == old(load<uint8>(std_span_data(s.m_data) + 2u64)) by {
                 instantiate(forall (k: uint64) { k < 4u64 implies at(call(2).entry, load<uint8>(std_span_data(s.m_data) + k)) == old(load<uint8>(std_span_data(s.m_data) + k)) }, 2u64);
@@ -127,7 +158,8 @@ uint32 ser_readdata32<SpanReader>(struct SpanReader& s) throws std::ios_base::fa
             have load<uint8>(((&obj) as (uint8 *)) + 2u64) == old(load<uint8>(std_span_data(s.m_data) + 2u64)) by { close(); }
             have load<uint8>(((&obj) as (uint8 *)) + 3u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 3u64)) by {
                 instantiate(forall (k: uint64) { 0u64 <= k and k < at(call(2).entry, std_span_size(call(2).parameter(dst))) implies load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k)) == at(call(2).entry, load<uint8>((std_span_data(s.m_data) + k))) and defined(load<uint8>((at(call(2).entry, std_span_data(call(2).parameter(dst))) + k))) }, 3u64);
-                transport(load<uint8>(at(call(2).entry, std_span_data(call(2).parameter(dst))) + 3u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 3u64)), load<uint8>(((&obj) as (uint8 *)) + 3u64) == at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 3u64)));
+                rewrite((((&obj) as (uint8 *)) + 3u64), (at(call(2).entry, std_span_data(call(2).parameter(dst))) + 3u64));
+                close();
             }
             have at(call(2).entry, load<uint8>(std_span_data(s.m_data) + 3u64)) == old(load<uint8>(std_span_data(s.m_data) + 3u64)) by {
                 instantiate(forall (k: uint64) { k < 4u64 implies at(call(2).entry, load<uint8>(std_span_data(s.m_data) + k)) == old(load<uint8>(std_span_data(s.m_data) + k)) }, 3u64);

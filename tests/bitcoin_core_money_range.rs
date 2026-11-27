@@ -1743,12 +1743,11 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         fs::write(root.join("bad.click"), &bad).unwrap();
         let project = read_click_project(&root.join("bad.click"), &bad).unwrap();
         let error = verify_program_prepared_project(&project, &import)
-            .expect_err("separation from the missing view is not available");
+            .expect_err("copying the span needs the missing field view");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let report = error.report();
         assert!(
-            error
-                .report()
-                .contains("requires the current goal as an available semantic fact"),
+            report.contains("missing resource fact `views ") && report.contains("copy aggregate"),
             "{field}: {}",
             error.report()
         );
@@ -3898,6 +3897,10 @@ uint8 probe(const std::vector<unsigned char>& bytes) {
     ensures state.data == backing.data;
 } by {
     unfold(backing);
+    step_until(call(read_first, 0).entry);
+    have std_span_data(view) == old(backing.data) by close();
+    have std_span_size(view) == old(backing.length) by close();
+    step();
     step_until(function.exit);
     fold(backing);
 }
@@ -3937,7 +3940,7 @@ uint8 probe(const std::vector<unsigned char>& bytes) {
             .unwrap_err()
             .report();
         assert!(
-            report.contains("read_first") && report.contains("required borrow backing"),
+            report.contains("read_first") && report.contains("cannot supply `views view[0]`"),
             "{report}"
         );
     }
