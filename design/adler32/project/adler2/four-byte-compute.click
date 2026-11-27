@@ -1,6 +1,15 @@
 // Four-byte boundary of the original, locked Adler32::compute body.
 // The fixture harness combines this contract with the helper/getter contracts
 // from helpers.click, checks all their bodies, and rechecks the proof tools.
+theorem adler_four_byte_lane_below_modulus(value: uint32) {
+    requires value <= 255u32;
+    ensures value < 65521u32 by {
+        apply(integer::uint32_less_equal_to_integer(value, 255u32));
+        have to_integer(value) + 1 <= 65521 by close() using { to_integer(value) <= 255; };
+        apply(integer::step_le_lt(to_integer(value), 65521));
+    }
+}
+
 impl adler2::Adler32 {
     fn compute(&mut self, bytes: &[u8]) {
      requires bytes.len() == 4u64;
@@ -35,20 +44,60 @@ impl adler2::Adler32 {
      step_until(loop(2).statement(0).entry);
      have loop(2).iter.v.len() == 0u64 by { close(); }
      have loop(2).iter.v == old(bytes) + 4u64 by { close(); }
+     // Record the constructor's lane values before they are copied into val.
+     step_until(statement(10).statement(0).call(0).entry);
+     have byte_vec == old(bytes) by close();
+     let { result: loaded_lanes } = step();
+     have load<uint32>(loaded_lanes) == (byte_vec[0] as u32) by close();
+     have byte_vec[0] == old(bytes[0]) by {
+      rewrite(byte_vec, old(bytes));
+      close();
+     }
+     have load<uint32>(loaded_lanes) == old((bytes[0] as u32)) by close() using {
+      load<uint32>(loaded_lanes) == (byte_vec[0] as u32);
+      byte_vec[0] == old(bytes[0]);
+     };
+     have load<uint32>(byte_offset(loaded_lanes, 4)) == (byte_vec[1] as u32) by close();
+     have byte_vec[1] == old(bytes[1]) by {
+      rewrite(byte_vec, old(bytes));
+      close();
+     }
+     have load<uint32>(byte_offset(loaded_lanes, 4)) == old((bytes[1] as u32)) by close() using {
+      load<uint32>(byte_offset(loaded_lanes, 4)) == (byte_vec[1] as u32);
+      byte_vec[1] == old(bytes[1]);
+     };
+     have load<uint32>(byte_offset(loaded_lanes, 8)) == (byte_vec[2] as u32) by close();
+     have byte_vec[2] == old(bytes[2]) by {
+      rewrite(byte_vec, old(bytes));
+      close();
+     }
+     have load<uint32>(byte_offset(loaded_lanes, 8)) == old((bytes[2] as u32)) by close() using {
+      load<uint32>(byte_offset(loaded_lanes, 8)) == (byte_vec[2] as u32);
+      byte_vec[2] == old(bytes[2]);
+     };
+     have load<uint32>(byte_offset(loaded_lanes, 12)) == (byte_vec[3] as u32) by close();
+     have byte_vec[3] == old(bytes[3]) by {
+      rewrite(byte_vec, old(bytes));
+      close();
+     }
+     have load<uint32>(byte_offset(loaded_lanes, 12)) == old((bytes[3] as u32)) by close() using {
+      load<uint32>(byte_offset(loaded_lanes, 12)) == (byte_vec[3] as u32);
+      byte_vec[3] == old(bytes[3]);
+     };
      step_until(loop(2).statement(1).entry);
      // The four lanes of the written val binding are uint32 cells.
      have to_integer(a_vec.0[0]) == 0;
-     have load<uint32>(val) == old((bytes[0] as u32));
-     have to_integer(load<uint32>(val)) <= 255;
+     have val.0[0] == old((bytes[0] as u32));
+     have to_integer(val.0[0]) <= 255;
      have to_integer(a_vec.0[1]) == 0;
-     have load<uint32>(val + 4u64) == old((bytes[1] as u32));
-     have to_integer(load<uint32>(val + 4u64)) <= 255;
+     have val.0[1] == old((bytes[1] as u32));
+     have to_integer(val.0[1]) <= 255;
      have to_integer(a_vec.0[2]) == 0;
-     have load<uint32>(val + 8u64) == old((bytes[2] as u32));
-     have to_integer(load<uint32>(val + 8u64)) <= 255;
+     have val.0[2] == old((bytes[2] as u32));
+     have to_integer(val.0[2]) <= 255;
      have to_integer(a_vec.0[3]) == 0;
-     have load<uint32>(val + 12u64) == old((bytes[3] as u32));
-     have to_integer(load<uint32>(val + 12u64)) <= 255;
+     have val.0[3] == old((bytes[3] as u32));
+     have to_integer(val.0[3]) <= 255;
      step_until(loop(2).statement(2).entry);
      have a_vec.0[0] == old((bytes[0] as u32));
      have to_integer(a_vec.0[0]) <= 255 by { close(); }
@@ -85,16 +134,16 @@ impl adler2::Adler32 {
      mark reduce_a;
      have at(reduce_a, a_vec.0[0]) == old((bytes[0] as u32));
      have at(reduce_a, a_vec.0[0]) <= 255u32;
-     have at(reduce_a, a_vec.0[0]) < 65521u32 by close() using { at(reduce_a, a_vec.0[0]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_a, a_vec.0[0])));
      have at(reduce_a, a_vec.0[1]) == old((bytes[1] as u32));
      have at(reduce_a, a_vec.0[1]) <= 255u32;
-     have at(reduce_a, a_vec.0[1]) < 65521u32 by close() using { at(reduce_a, a_vec.0[1]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_a, a_vec.0[1])));
      have at(reduce_a, a_vec.0[2]) == old((bytes[2] as u32));
      have at(reduce_a, a_vec.0[2]) <= 255u32;
-     have at(reduce_a, a_vec.0[2]) < 65521u32 by close() using { at(reduce_a, a_vec.0[2]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_a, a_vec.0[2])));
      have at(reduce_a, a_vec.0[3]) == old((bytes[3] as u32));
      have at(reduce_a, a_vec.0[3]) <= 255u32;
-     have at(reduce_a, a_vec.0[3]) < 65521u32 by close() using { at(reduce_a, a_vec.0[3]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_a, a_vec.0[3])));
      step_until(statement(13).entry);
      have statement(12).call(0).result == 65521u32;
      have a_vec.0[0] == at(reduce_a, a_vec.0[0]) % statement(12).call(0).result;
@@ -112,16 +161,16 @@ impl adler2::Adler32 {
      mark reduce_b;
      have at(reduce_b, b_vec.0[0]) == old((bytes[0] as u32));
      have at(reduce_b, b_vec.0[0]) <= 255u32;
-     have at(reduce_b, b_vec.0[0]) < 65521u32 by close() using { at(reduce_b, b_vec.0[0]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_b, b_vec.0[0])));
      have at(reduce_b, b_vec.0[1]) == old((bytes[1] as u32));
      have at(reduce_b, b_vec.0[1]) <= 255u32;
-     have at(reduce_b, b_vec.0[1]) < 65521u32 by close() using { at(reduce_b, b_vec.0[1]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_b, b_vec.0[1])));
      have at(reduce_b, b_vec.0[2]) == old((bytes[2] as u32));
      have at(reduce_b, b_vec.0[2]) <= 255u32;
-     have at(reduce_b, b_vec.0[2]) < 65521u32 by close() using { at(reduce_b, b_vec.0[2]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_b, b_vec.0[2])));
      have at(reduce_b, b_vec.0[3]) == old((bytes[3] as u32));
      have at(reduce_b, b_vec.0[3]) <= 255u32;
-     have at(reduce_b, b_vec.0[3]) < 65521u32 by close() using { at(reduce_b, b_vec.0[3]) <= 255u32; };
+     apply(adler_four_byte_lane_below_modulus(at(reduce_b, b_vec.0[3])));
      step_until(statement(14).entry);
      have statement(13).call(0).result == 65521u32;
      have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result by { close(); }
@@ -297,7 +346,8 @@ impl adler2::Adler32 {
      have 0 <= to_integer((at(output_a, a) % 65521u32));
      have to_integer((at(output_a, a) % 65521u32)) <= 4294967295;
      have to_integer((at(output_a, a) % 65521u32)) < to_integer(65521u32);
-     have to_integer((at(output_a, a) % 65521u32)) <= 65535 by close() using { to_integer((at(output_a, a) % 65521u32)) < 65521; };
+     apply(integer::lt_le(to_integer((at(output_a, a) % 65521u32)), 65521));
+     apply(integer::le_transitive(to_integer((at(output_a, a) % 65521u32)), 65521, 65535));
      step_until(statement(23).entry);
      mark output_b;
      have at(output_b, b) == ((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32))) by close() using { b == ((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32))); };
@@ -306,23 +356,32 @@ impl adler2::Adler32 {
      have 0 <= to_integer((at(output_b, b) % 65521u32));
      have to_integer((at(output_b, b) % 65521u32)) <= 4294967295;
      have to_integer((at(output_b, b) % 65521u32)) < to_integer(65521u32);
-     have to_integer((at(output_b, b) % 65521u32)) <= 65535 by close() using { to_integer((at(output_b, b) % 65521u32)) < 65521; };
+     apply(integer::lt_le(to_integer((at(output_b, b) % 65521u32)), 65521));
+     apply(integer::le_transitive(to_integer((at(output_b, b) % 65521u32)), 65521, 65535));
      step_until(function.exit);
      have statement(22).call(0).result == 65521u32 by close();
      have self.a == ((at(output_a, a) % statement(22).call(0).result) as u16) by close();
      have self.a == ((at(output_a, a) % 65521u32) as u16) by { rewrite(self.a, ((at(output_a, a) % statement(22).call(0).result) as u16)); rewrite(statement(22).call(0).result, 65521u32); close(); }
-     have to_integer(self.a) == to_integer((at(output_a, a) % 65521u32)) by { rewrite(self.a, ((at(output_a, a) % 65521u32) as u16)); close() using { 0 <= to_integer((at(output_a, a) % 65521u32)); to_integer((at(output_a, a) % 65521u32)) <= 65535; }; }
+     have to_integer(self.a) == to_integer((at(output_a, a) % 65521u32)) by {
+      rewrite(self.a, ((at(output_a, a) % 65521u32) as u16));
+      apply(integer::to_uint16_round_trip(to_integer((at(output_a, a) % 65521u32))));
+      close();
+     }
      have statement(23).call(0).result == 65521u32 by close();
      have self.b == ((at(output_b, b) % statement(23).call(0).result) as u16) by close();
      have self.b == ((at(output_b, b) % 65521u32) as u16) by { rewrite(self.b, ((at(output_b, b) % statement(23).call(0).result) as u16)); rewrite(statement(23).call(0).result, 65521u32); close(); }
-     have to_integer(self.b) == to_integer((at(output_b, b) % 65521u32)) by { rewrite(self.b, ((at(output_b, b) % 65521u32) as u16)); close() using { 0 <= to_integer((at(output_b, b) % 65521u32)); to_integer((at(output_b, b) % 65521u32)) <= 65535; }; }
+     have to_integer(self.b) == to_integer((at(output_b, b) % 65521u32)) by {
+      rewrite(self.b, ((at(output_b, b) % 65521u32) as u16));
+      apply(integer::to_uint16_round_trip(to_integer((at(output_b, b) % 65521u32))));
+      close();
+     }
      have bytes[0] == old(bytes[0]) by close() using {};
      have bytes[1] == old(bytes[1]) by close() using {};
      have bytes[2] == old(bytes[2]) by close() using {};
      have bytes[3] == old(bytes[3]) by close() using {};
      have to_integer(self.a) == to_integer((((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32) by {
       rewrite(to_integer(self.a), to_integer((at(output_a, a) % 65521u32)));
-      rewrite((at(output_a, a) % 65521u32), (((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32); normalize();
+      rewrite((at(output_a, a) % 65521u32), (((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32); close();
      }
      have to_integer((((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32) == old(adler_spec_a(bytes, 4, 1)) by close();
      have to_integer(self.a) == old(adler_spec_a(bytes, 4, 1)) by {
@@ -330,7 +389,7 @@ impl adler2::Adler32 {
      }
      have to_integer(self.b) == to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32) by {
       rewrite(to_integer(self.b), to_integer((at(output_b, b) % 65521u32)));
-      rewrite((at(output_b, b) % 65521u32), (((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32); normalize();
+      rewrite((at(output_b, b) % 65521u32), (((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32); close();
      }
      have to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32) == old(adler_spec_b(bytes, 4, 1, 0)) by close();
      have to_integer(self.b) == old(adler_spec_b(bytes, 4, 1, 0)) by {
