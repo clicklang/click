@@ -10740,6 +10740,12 @@ pub enum MemoryDerivation {
         variable: Variable,
         mutable_ranges: Vec<MemoryRange>,
         kept_by_caller: Option<CallKeptRanges>,
+        /// The resource every write of the call lies inside, when its
+        /// contract bounds its writes by the inputs it consumes and borrows
+        /// rather than by ranges alone: `list(child)` for a call that
+        /// consumes `list(child)`. The call's write footprint is its
+        /// `mutable_ranges`, inside this resource.
+        resource_bound: Option<std::sync::Arc<Resource>>,
     },
     /// `base` with a run of seeded cells added: exactly the stores, in
     /// element order, of each slot the run held live when it was seeded
@@ -16857,8 +16863,6 @@ pub struct ExecutionPureFact {
     /// arms' own checked effects. See
     /// [`ExecutionPureFact::certified_join_summary`].
     pub(super) join_summary: bool,
-    /// Checked resource bound for this modular memory effect, retained by its producer.
-    pub(super) resource_effect_bound: Option<std::sync::Arc<Resource>>,
     pub(super) certified_store: Option<Box<CertifiedMemoryStore>>,
     pub(super) transport: Option<Box<CertifiedExecutionFactTransport>>,
     /// Exact producer metadata for a kernel-minted load variable.  This is

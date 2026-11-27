@@ -105,8 +105,37 @@ impl RegionFootprint {
         ends_with_return: bool,
     ) -> Arc<Self> {
         let mut members = imbl::Vector::new();
-        let mut resource_bound = None;
+        // The memory history records the bound on the call's step: the one
+        // call between this region's points whose writes a resource bounds.
+        let mut bounded_calls = Vec::new();
+        after
+            .path_link()
+            .visit_steps_since(before.path_link(), |step| {
+                if let MemoryDerivation::CallHavoc { resource_bound, .. } = step {
+                    bounded_calls.push(resource_bound.clone());
+                }
+                true
+            });
+        let mut resource_bound = match bounded_calls.as_slice() {
+            [Some(bound)] => Some(bound.as_ref().clone()),
+            _ => None,
+        };
         let mut bound_members = std::collections::BTreeSet::new();
+        if let Some(bound) = &resource_bound {
+            let mut pending = vec![bound];
+            while let Some(resource) = pending.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                match resource {
+                    Resource::Star(pair) => {
+                        pending.push(&pair.0);
+                        pending.push(&pair.1);
+                    }
+                    other => {
+                        bound_members.insert(other.clone());
+                    }
+                }
+            }
+        }
         let mut effect_count = 0;
         let mut extra_effect = false;
         for fact in effects.fact_iter() {
@@ -121,22 +150,6 @@ impl RegionFootprint {
                 }
                 Proposition::MemoryEffectSummary { mutable_ranges, .. } => {
                     effect_count += 1;
-                    resource_bound = fact.resource_effect_bound.as_deref().cloned();
-                    if let Some(bound) = &resource_bound {
-                        let mut pending = vec![bound];
-                        while let Some(resource) = pending.pop() {
-                            crate::instrumentation::record_deterministic_work(1);
-                            match resource {
-                                Resource::Star(pair) => {
-                                    pending.push(&pair.0);
-                                    pending.push(&pair.1);
-                                }
-                                other => {
-                                    bound_members.insert(other.clone());
-                                }
-                            }
-                        }
-                    }
                     // Keep the recorded concrete projection for existing
                     // explicit memory framing. The abstract containment bound
                     // is a separate fact, not a replacement for these members.
