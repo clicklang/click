@@ -623,6 +623,24 @@ impl ImportedFunction {
 }
 
 impl ImportedFunction {
+    /// Retain field names for proof synthesis on nominal pointer parameters.
+    pub(crate) fn with_parameter_pointee_layouts(
+        mut self,
+        layouts: &BTreeMap<String, RecordLayout>,
+    ) -> Self {
+        for parameter in &mut self.parameters {
+            if parameter.interface_type.is_pointer()
+                && let Some(layout) = parameter
+                    .struct_name
+                    .as_ref()
+                    .and_then(|name| layouts.get(name))
+            {
+                parameter.pointee_struct_layout = Some(layout.clone());
+            }
+        }
+        self
+    }
+
     /// An explicitly declared one-call proof, represented with ordinary C AST nodes.
     pub(crate) fn with_proof_body(mut self, body: CStatement) -> Self {
         self.body = body;

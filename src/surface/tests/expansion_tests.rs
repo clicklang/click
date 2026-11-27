@@ -3031,6 +3031,75 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
 }
 
 #[test]
+fn execution_theorem_expansion_preserves_pointer_parameter_field_names() {
+    let c_sources = [(
+        "executes_nested_pointer.c",
+        r#"
+            struct node {
+                int value;
+                struct node *link;
+            };
+
+            void skip(struct node *p, struct node *alias) { p->value = 1; }
+        "#,
+    )];
+    let source = r#"
+        verifying "executes_nested_pointer.c";
+
+        spec enum Tag {
+            Empty,
+            At(struct node*),
+        }
+
+        function parent_is(tag: Tag, parent: struct node*) -> int32 {
+            match tag {
+                Tag::Empty => 1,
+                Tag::At(p) => if p == parent { 1 } else { 0 },
+            }
+        }
+
+        resource tagged(p: struct node*) {
+            field model: Tag;
+            fact parent_is(model, p) == 1;
+        }
+
+        resource linked(p: struct node*, alias: struct node*) {
+            owns p->link;
+            owns child: tagged(p->link);
+            fact p->link == alias;
+        }
+
+        void skip(struct node* p, struct node* alias) { owns p->value; ensures p->value == 1; }
+
+        contract void Kept(struct node* p, struct node* alias) {
+            consumes link: linked(p, alias);
+            owns p->value;
+            produces out: tagged(alias);
+        }
+
+        theorem skip_keeps_tag() executes skip(struct node* p, struct node* alias) {
+            ensures Kept(&skip) as { link: link, out: out } by {
+                let { child: child } = unfold(link);
+                mark named;
+                step();
+                let {  } = unfold(child);
+                let out = fold(tagged(alias), { model: at(named, child.model) });
+                close();
+                close();
+            }
+        }
+    "#;
+    let claim = "skip_keeps_tag.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
+        .expect("the generated fold proof must name the nominal parameter's field");
+    assert!(expanded.contains("rewrite(1, p->value)"), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("the expanded execution proof must replay without search");
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
