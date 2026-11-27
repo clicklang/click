@@ -27,6 +27,15 @@ impl KernelFloatType {
             Self::Float64 => ProgramType::Float64,
         }
     }
+    fn carrier_bits(self, carrier: MachineIntegerType, bits: u128) -> Option<u64> {
+        match (self, carrier) {
+            (KernelFloatType::Float32, MachineIntegerType::Int32 | MachineIntegerType::UInt32) => {
+                Some(u64::from(constant_u32(bits)))
+            }
+            (KernelFloatType::Float64, MachineIntegerType::UInt64) => Some(constant_u64(bits)),
+            _ => None,
+        }
+    }
     pub(crate) fn value(self, term: OldMachineTerm) -> ProgramValue {
         match self {
             Self::Float32 => ProgramValue::Float32(term),
@@ -87,8 +96,8 @@ impl<'a> FloatOperandView<'a> {
     }
     /// Read a literal operand without evaluating a compound float expression.
     pub(crate) fn literal_bits(self) -> Option<u64> {
-        self.literal()?;
-        self.constant_bits()
+        let (carrier, bits) = self.literal()?;
+        self.format().carrier_bits(carrier, bits)
     }
     pub(crate) fn variable(self) -> Option<Variable> {
         match self {
@@ -220,6 +229,9 @@ mod tests {
                     let view = FloatOperandView::from_shared(&root).unwrap();
                     assert_eq!(view.format(), format);
                     assert_eq!(view.literal(), Some((*carrier, *bits)));
+                    assert_eq!(view.literal_bits(), Some(*bits as u64));
+                    assert_eq!(view.constant_bits(), Some(*bits as u64));
+                    assert!(root.0.argument_leaf.get().is_none());
                     assert_eq!(view.variable(), None);
                     assert_eq!(view.old_form(), Some(&native));
                     assert_eq!(KernelTermExport::float(&root).unwrap(), value);

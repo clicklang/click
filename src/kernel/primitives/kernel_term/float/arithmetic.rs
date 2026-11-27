@@ -38,6 +38,9 @@ impl<'a> FloatOperandView<'a> {
     pub(crate) fn constant_bits(self) -> Option<u64> {
         crate::instrumentation::record_deterministic_work(1);
         let format = self.format();
+        if let Some((carrier, bits)) = self.literal() {
+            return format.carrier_bits(carrier, bits);
+        }
         if matches!(self, Self::Shared(root) if matches!(root.node(),
             KernelTermNode::Variable(_) | KernelTermNode::FloatRead(_)
             | KernelTermNode::FloatCall(_) | KernelTermNode::FloatConvert { .. }))
@@ -62,21 +65,7 @@ impl<'a> FloatOperandView<'a> {
         let (operator, [left, right]) = self.binary()?;
         let left = left.constant_bits()?;
         let right = right.constant_bits()?;
-        match format {
-            KernelFloatType::Float32 => OldMachineTerm::float32_binary(
-                OldMachineTerm::constant(left as u32),
-                OldMachineTerm::constant(right as u32),
-                operator,
-            )
-            .float32_as_const()
-            .map(u64::from),
-            KernelFloatType::Float64 => OldMachineTerm::float64_binary(
-                OldMachineTerm::uint64_constant(left),
-                OldMachineTerm::uint64_constant(right),
-                operator,
-            )
-            .float64_as_const(),
-        }
+        Some(float_binary_bits_at(format, left, right, operator))
     }
 
     /// Compute a closed arithmetic operand without unfolding a shared DAG.
@@ -147,21 +136,13 @@ impl<'a> FloatOperandView<'a> {
                 Task::BinaryRight(root, operator, arguments) => {
                     let value = values[&arguments[0].id()]
                         .zip(values[&arguments[1].id()])
-                        .and_then(|(left, right)| {
-                            let format = FloatOperandView::Shared(root).format();
-                            let native = match format {
-                                KernelFloatType::Float32 => OldMachineTerm::float32_binary(
-                                    OldMachineTerm::constant(left as u32),
-                                    OldMachineTerm::constant(right as u32),
-                                    operator,
-                                ),
-                                KernelFloatType::Float64 => OldMachineTerm::float64_binary(
-                                    OldMachineTerm::uint64_constant(left),
-                                    OldMachineTerm::uint64_constant(right),
-                                    operator,
-                                ),
-                            };
-                            FloatOperandView::Native(format, &native).constant_bits()
+                        .map(|(left, right)| {
+                            float_binary_bits_at(
+                                FloatOperandView::Shared(root).format(),
+                                left,
+                                right,
+                                operator,
+                            )
                         });
                     values.insert(root.id(), value);
                 }

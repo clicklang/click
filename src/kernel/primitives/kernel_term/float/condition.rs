@@ -2,6 +2,84 @@
 //! distinct operations: neither import nor a shape read evaluates IEEE values.
 use super::*;
 
+impl KernelFloatType {
+    pub(in crate::kernel::primitives) fn exponent_and_fraction_widths(self) -> (u32, u32) {
+        match self {
+            Self::Float32 => (8, 23),
+            Self::Float64 => (11, 52),
+        }
+    }
+
+    pub(crate) fn classify_bits(self, bits: u64, classification: FloatClassification) -> bool {
+        let (exponent_bits, fraction_bits) = self.exponent_and_fraction_widths();
+        let exponent_mask = (1u64 << exponent_bits) - 1;
+        let exponent = (bits >> fraction_bits) & exponent_mask;
+        let fraction = bits & ((1u64 << fraction_bits) - 1);
+        let all_ones = exponent == exponent_mask;
+        let zero_exponent = exponent == 0;
+        match classification {
+            FloatClassification::Finite => !all_ones,
+            FloatClassification::Infinite => all_ones && fraction == 0,
+            FloatClassification::Zero => zero_exponent && fraction == 0,
+            FloatClassification::Subnormal => zero_exponent && fraction != 0,
+            FloatClassification::Nan => all_ones && fraction != 0,
+        }
+    }
+
+    pub(crate) fn compare_bits(self, left: u64, right: u64, operator: ComparisonOperator) -> bool {
+        let nan = FloatClassification::Nan;
+        let left_nan = self.classify_bits(left, nan);
+        let right_nan = self.classify_bits(right, nan);
+        if left_nan || right_nan {
+            return matches!(operator, ComparisonOperator::NotEqual);
+        }
+
+        let left_zero = self.classify_bits(left, FloatClassification::Zero);
+        let right_zero = self.classify_bits(right, FloatClassification::Zero);
+        let equal = (left_zero && right_zero) || left == right;
+        if equal {
+            return matches!(
+                operator,
+                ComparisonOperator::Equal
+                    | ComparisonOperator::LessEqual
+                    | ComparisonOperator::GreaterEqual
+            );
+        }
+
+        // Order the two payloads by the usual monotone key: complement a negative
+        // encoding, set the sign bit of a non-negative one. The complement has to
+        // stay inside the format's own width, since these payloads sit in a `u64`
+        // that is wider than every format except binary64. Complementing all 64
+        // bits of a binary32 payload would raise every negative value above every
+        // non-negative one, making `-1.0f < 1.0f` false.
+        let (exponent_bits, fraction_bits) = self.exponent_and_fraction_widths();
+        let width = exponent_bits + fraction_bits + 1;
+        let payload_mask = if width >= u64::BITS {
+            u64::MAX
+        } else {
+            (1u64 << width) - 1
+        };
+        let sign_bit = 1u64 << (exponent_bits + fraction_bits);
+        let ordering_key = |bits: u64| {
+            if bits & sign_bit != 0 {
+                !bits & payload_mask
+            } else {
+                bits ^ sign_bit
+            }
+        };
+        let left_key = ordering_key(left);
+        let right_key = ordering_key(right);
+        match operator {
+            ComparisonOperator::Equal => false,
+            ComparisonOperator::NotEqual => true,
+            ComparisonOperator::LessThan => left_key < right_key,
+            ComparisonOperator::LessEqual => left_key <= right_key,
+            ComparisonOperator::GreaterThan => left_key > right_key,
+            ComparisonOperator::GreaterEqual => left_key >= right_key,
+        }
+    }
+}
+
 impl KernelTerm {
     pub(crate) fn float_compare(
         format: KernelFloatType,
@@ -109,39 +187,15 @@ impl<'a> BooleanOperandView<'a> {
     /// Check a closed float predicate at its written precision. Symbolic
     /// leaves keep their ordinary comparison and classification rules.
     pub(crate) fn closed_float_predicate_value(self) -> Option<bool> {
-        let condition = if let Some((format, operator, [left, right])) = self.float_comparison() {
-            let left = left.closed_arithmetic_bits()?;
-            let right = right.closed_arithmetic_bits()?;
-            match format {
-                KernelFloatType::Float32 => OldConditionTerm::float32_compare(
-                    OldMachineTerm::uint32_constant(left as u32),
-                    OldMachineTerm::uint32_constant(right as u32),
-                    operator,
-                ),
-                KernelFloatType::Float64 => OldConditionTerm::float64_compare(
-                    OldMachineTerm::uint64_constant(left),
-                    OldMachineTerm::uint64_constant(right),
-                    operator,
-                ),
-            }
-        } else {
-            let (format, classification, operand) = self.float_classification()?;
-            let bits = operand.closed_arithmetic_bits()?;
-            match format {
-                KernelFloatType::Float32 => OldConditionTerm::float32_classification(
-                    OldMachineTerm::uint32_constant(bits as u32),
-                    classification,
-                ),
-                KernelFloatType::Float64 => OldConditionTerm::float64_classification(
-                    OldMachineTerm::uint64_constant(bits),
-                    classification,
-                ),
-            }
-        };
-        let OldConditionTerm::Constant(value) = condition else {
-            unreachable!("literal float predicate")
-        };
-        Some(value)
+        if let Some((format, operator, [left, right])) = self.float_comparison() {
+            return Some(format.compare_bits(
+                left.closed_arithmetic_bits()?,
+                right.closed_arithmetic_bits()?,
+                operator,
+            ));
+        }
+        let (format, classification, operand) = self.float_classification()?;
+        Some(format.classify_bits(operand.closed_arithmetic_bits()?, classification))
     }
 
     pub(crate) fn float_comparison(

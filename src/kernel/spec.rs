@@ -5333,24 +5333,17 @@ fn lower_spec_float_classification_proposition_at_state_in(
                 _ => unreachable!("float value"),
             };
             StoredConditionTerm::from(native)
-        } else if let Some(bits) = operand.closed_arithmetic_bits() {
-            let native = match format {
-                KernelFloatType::Float32 => OldConditionTerm::float32_classification(
-                    OldMachineTerm::uint32_constant(bits as u32),
-                    classification,
-                ),
-                KernelFloatType::Float64 => OldConditionTerm::float64_classification(
-                    OldMachineTerm::uint64_constant(bits),
-                    classification,
-                ),
-            };
-            StoredConditionTerm::from_minted(native)
         } else {
-            StoredConditionTerm::from_root(
-                KernelTerm::float_classify(format, classification, path.value.common_operand())
-                    .expect("float classification operand"),
-            )
-            .expect("logical float classification")
+            let root = match operand.closed_arithmetic_bits() {
+                Some(bits) => {
+                    KernelTerm::boolean_literal(format.classify_bits(bits, classification))
+                }
+                None => {
+                    KernelTerm::float_classify(format, classification, path.value.common_operand())
+                        .expect("float classification operand")
+                }
+            };
+            StoredConditionTerm::from_root(root).expect("logical float classification")
         };
         Some(SpecPropositionPath {
             introductions: Vec::new(),
