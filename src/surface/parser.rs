@@ -12543,13 +12543,9 @@ impl Parser {
                 ProofTactic::Sorry
             }
             "normalize" => {
-                self.expect_empty_tactic_args(&name)?;
-                if self.peek_ident() == Some("using") {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::NormalizeUsing(premises));
-                }
-                ProofTactic::Normalize
+                return Err(self.error(
+                    "`normalize()` was removed. Use `close()` or `close() using { ... }`",
+                ));
             }
             "preserve" => {
                 self.expect(Token::LParen)?;
@@ -20043,6 +20039,24 @@ mod tactic_classification_tests {
         }
     }
 
+    #[test]
+    fn retired_normalize_forms_are_refused() {
+        for source in ["normalize();", "normalize() using { x == 0; };"] {
+            let error = Parser::new(source)
+                .unwrap()
+                .parse_proof_tactic()
+                .unwrap_err();
+            assert!(
+                error.message().contains("`normalize()` was removed"),
+                "{source}: {error}"
+            );
+            assert!(
+                error.message().contains("`close() using { ... }`"),
+                "{error}"
+            );
+        }
+    }
+
     /// One written instance of every public tactic form. The parser is given
     /// a contract `Contract`, a callee `f`, and a user tactic `name`, each
     /// declaring one supplied binder `cell`, and a held instance `c`.
@@ -20108,8 +20122,6 @@ mod tactic_classification_tests {
         ("witness", "witness(1);"),
         ("obtain", "let x = obtain(exists (k: Integer) { k == k });"),
         ("close", "close();"),
-        ("normalize", "normalize();"),
-        ("normalize-using", "normalize() using { x == 1; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),
         ("intro", "intro() { rewrite(x, 1); }"),
         ("intro-as", "intro(name) { rewrite(x, 1); }"),

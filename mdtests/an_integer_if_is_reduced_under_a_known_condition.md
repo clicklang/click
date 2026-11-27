@@ -2,7 +2,7 @@
 
 An Integer conditional is decided by the proof, as a machine one is
 (`mdtests/conditional_spec_branch_is_a_proof_step.md`,
-`mdtests/normalize_using_decides_conditions_without_substituting.md`):
+the retired normalization tactic):
 lowering keeps both branches, and a known condition selects one. The omitted proof
 reads `requires limit > 0` to select the first branch of a postcondition,
 `close() using` decides a cited guard, and bare `close()` can select the

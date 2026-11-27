@@ -130,8 +130,8 @@ The first link that fails becomes the new `G`; go back to step 2.
 For one recorded transition, write
 `preserve(B, region);` under a read-equality goal.
 The execution-produced footprint includes stores, call effects and releases;
-no free-specific rule is needed. Establish footprint separation with explicitly
-selected premises in `normalize() using`. Compose transitions with
+no free-specific rule is needed. Establish footprint separation from explicitly selected premises or the
+separation library. Compose transitions with
 `have`, `rewrite`, and `close()`. Spell out each transition in the proof. Read the limits in
 `docs/reference/tactics/index.md#preservation`; unsupported resource
 effects are not grounds for silently falling back to a history search.

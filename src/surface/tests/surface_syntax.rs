@@ -2240,28 +2240,9 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
     );
 }
 
-/// A quantifier is a proof step, not a normalization.
-///
-/// From the kernel-search cleanup: `normalize` no longer closes a
-/// `forall` or `exists` goal. A vacuous range is discharged by the explicit
-/// `enumerate`, which checks the quantifier's own named instances -- here,
-/// none.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_16")]
-fn normalize_does_not_close_quantified_contradictions() {
-    let opaque = r#"
-theorem impossible_interval() {
-    ensures forall (k: int32) {
-        0 <= k and k < 0 implies k == 7
-    } by {
-        normalize();
-    }
-}
-"#;
-    let error =
-        verify_c_sources(opaque, &[]).expect_err("normalize must not construct a quantified proof");
-    assert!(error.message().contains("normalize"), "{error:?}");
-
+fn explicit_enumeration_proves_a_vacuous_range() {
     let explicit = r#"
 theorem impossible_interval() {
     ensures forall (k: int32) {
@@ -2276,16 +2257,7 @@ theorem impossible_interval() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
-fn normalization_does_not_hide_context_free_conjunction_derivation() {
-    let opaque = r#"
-theorem reflexive_pair() {
-    ensures 1 == 1 and 2 == 2 by { normalize(); }
-}
-"#;
-    let error = verify_c_sources(opaque, &[])
-        .expect_err("normalize must not construct a conjunction proof");
-    assert!(error.message().contains("normalize"), "{error:?}");
-
+fn explicit_conjunction_closes_both_leaves() {
     let explicit = r#"
 theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by {
@@ -2294,30 +2266,11 @@ theorem reflexive_pair() {
 }
 "#;
     verify_c_sources(explicit, &[]).expect("the explicit conjunction proof should verify");
-
-    let opaque_using = r#"
-theorem cited_pair(x: int32) {
-    requires x == 0;
-    ensures x == 0 and x == x by { normalize() using { x == 0; } }
-}
-"#;
-    let error = verify_c_sources(opaque_using, &[])
-        .expect_err("normalize using must not construct a conjunction proof");
-    assert!(error.message().contains("normalize"), "{error:?}");
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
-fn normalization_does_not_hide_context_free_disjunction_derivation() {
-    let opaque = r#"
-theorem reflexive_choice() {
-    ensures 1 == 1 or 2 == 3 by { normalize(); }
-}
-"#;
-    let error = verify_c_sources(opaque, &[])
-        .expect_err("normalize must not construct a disjunction proof");
-    assert!(error.message().contains("normalize"), "{error:?}");
-
+fn explicit_disjunction_closes_either_leaf() {
     let explicit_left = r#"
 theorem reflexive_choice() {
     ensures 1 == 1 or 2 == 3 by {
@@ -2337,16 +2290,6 @@ theorem reflexive_choice() {
 }
 "#;
     verify_c_sources(explicit_right, &[]).expect("the explicit right-disjunct proof should verify");
-
-    let opaque_using = r#"
-theorem cited_choice(x: int32) {
-    requires x == 0;
-    ensures x == 1 or x == 0 by { normalize() using { x == 0; } }
-}
-"#;
-    let error = verify_c_sources(opaque_using, &[])
-        .expect_err("normalize using must not construct a disjunction proof");
-    assert!(error.message().contains("normalize"), "{error:?}");
 }
 
 #[test]
@@ -2377,16 +2320,7 @@ theorem choose_right() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
-fn normalization_does_not_hide_context_free_implication_derivation() {
-    let opaque = r#"
-theorem reflexive_implication(x: int32) {
-    ensures x == 0 implies x == 0 by { normalize(); }
-}
-"#;
-    let error = verify_c_sources(opaque, &[])
-        .expect_err("normalize must not construct an implication proof");
-    assert!(error.message().contains("normalize"), "{error:?}");
-
+fn explicit_implication_introduces_its_premise() {
     let explicit = r#"
 theorem reflexive_implication(x: int32) {
     ensures x == 0 implies x == 0 by {
@@ -2397,16 +2331,6 @@ theorem reflexive_implication(x: int32) {
 }
 "#;
     verify_c_sources(explicit, &[]).expect("the explicit implication proof should verify");
-
-    let opaque_using = r#"
-theorem cited_implication(x: int32) {
-    requires x == 0;
-    ensures x == 0 implies x == 0 by { normalize() using { x == 0; } }
-}
-"#;
-    let error = verify_c_sources(opaque_using, &[])
-        .expect_err("normalize using must not construct an implication proof");
-    assert!(error.message().contains("normalize"), "{error:?}");
 }
 
 #[test]
@@ -5529,13 +5453,13 @@ test_batches! {
         surface_synthesis_prefers_struct_field_places_to_typed_loads,
         proof_source_printing_preserves_proposition_precedence,
         proof_source_printing_preserves_long_sum_association_without_nested_prefixes,
-        normalize_does_not_close_quantified_contradictions,
+        explicit_enumeration_proves_a_vacuous_range,
     ],
     surface_syntax_batch_17: [
-        normalization_does_not_hide_context_free_conjunction_derivation,
-        normalization_does_not_hide_context_free_disjunction_derivation,
+        explicit_conjunction_closes_both_leaves,
+        explicit_disjunction_closes_either_leaf,
         smart_context_free_disjunction_retains_known_leaf,
-        normalization_does_not_hide_context_free_implication_derivation,
+        explicit_implication_introduces_its_premise,
     ],
     surface_syntax_batch_18: [
         smart_context_free_implication_retains_explicit_introduction,

@@ -79,7 +79,7 @@ void set(int32* data, int32 len, int32 x0{parameters}) {{
 
                 if size == 64 {
                     let expanded = expand_function_proof_source(&click, &sources, "set").unwrap();
-                    assert!(expanded.contains("normalize() using"), "{expanded}");
+                    assert!(!expanded.contains("normalize("), "{expanded}");
                     crate::surface::without_implicit_solve(|| {
                         verify_c_sources(&expanded, &sources)
                     })

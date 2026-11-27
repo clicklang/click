@@ -589,7 +589,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 // an available fact) asserts a closed judgment: a harmless
                 // no-op that emits no redundant certificate step. That is
                 // `known`, a bare `solve`, and the context-free `normalize`,
-                // in any position, so `unfold(f(x)); normalize();` means the
+                // in any position, so `unfold(f(x)); close();` means the
                 // same whether or not the unfold alone closed the goal. Any
                 // other suffix after closure is a declined shape, named with
                 // the tactic that closed the goal.
@@ -623,7 +623,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     tactic => tactic_name(tactic),
                 };
                 return Err(proof.step_error(format!(
-                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `close()` or `normalize()` may follow it",
+                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `close()` may follow it",
                 )));
             }
             // A step that adds a fact can close the goal before a written

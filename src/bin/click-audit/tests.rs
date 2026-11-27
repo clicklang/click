@@ -2344,6 +2344,7 @@ fn partial_claim_audit_keeps_solve_but_whole_claim_requires_its_certificate() {
     let directory = tempfile::tempdir().unwrap();
     let c_source = "int32 compare(uint8 bytes[]) { return memcmp(bytes, bytes, 2); }";
     let click_source = r#"verifying "compare.c";
+function truth() -> int32 { 1 }
 int32 compare(uint8 bytes[]) {
     views bytes[0..2];
     ensures 1 == 1 by {
@@ -2369,7 +2370,10 @@ int32 compare(uint8 bytes[]) {
     // Supply an incomplete expansion at the session boundary. It is valid
     // with implicit solve and has no smart sites, so only the whole-claim
     // cold check can detect the omitted evidence.
-    let incomplete = click_source.replace("close();", "have 1 == 1 by { normalize(); } close();");
+    let incomplete = click_source.replace(
+        "close();",
+        "have truth() == 1 by { unfold(truth()); } close();",
+    );
     verify_c_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
     // Even an unchanged candidate must fail if a bare step still relies on
     // implicit solving. Exercise both changed and byte-identical replies.

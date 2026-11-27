@@ -3961,19 +3961,21 @@ fn rejected_historical_fact_retains_store_prefix() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
-fn failed_normalize_using_retains_actual_wide_read_resolution() {
+fn failed_selected_close_retains_actual_wide_read_resolution() {
     let c = "void f(uint64 *p) { int32 y = 0; return; }";
     let source = r#"verifying "f.c";
         void f(uint64 *p) { owns p[0]; ensures true; } by {
             step();
-            have p[0] == 7u64 by { normalize() using {}; };
+            have p[0] == 7u64 by { close() using {}; };
             step_until(function.exit); close();
         }
     "#;
     with_proof_trace("f", || {
         let error = verify_c_sources(source, &[("f.c", c)])
             .expect_err("an unknown initial word need not be seven");
-        let message = error.message();
+        let trace = error
+            .trace_context_report()
+            .expect("the failed written check retains its diagnostic state");
         for expected in [
             "read-resolution check:",
             "read<Bits64>",
@@ -3984,14 +3986,9 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
             "checked read equality:",
             "equality check: not attempted",
         ] {
-            assert!(message.contains(expected), "missing {expected}: {message}");
+            assert!(trace.contains(expected), "missing {expected}: {trace}");
         }
-        let trace = error
-            .trace_context_report()
-            .expect("the failed written check retains its diagnostic state");
         assert!(trace.contains("steps through: declare y"), "{trace}");
-        assert!(trace.contains("read-resolution check:"), "{trace}");
-        assert!(trace.contains("equality check: not attempted"), "{trace}");
     });
 }
 
@@ -4531,7 +4528,7 @@ test_batches! {
         known_have_trace_retains_its_written_source_occurrence,
         a_trace_marks_searched_steps_and_their_chosen_arguments,
         rejected_historical_fact_retains_store_prefix,
-        failed_normalize_using_retains_actual_wide_read_resolution,
+        failed_selected_close_retains_actual_wide_read_resolution,
     ],
     diagnostic_batch_21: [
         rejected_wide_historical_fact_retains_store_prefix,

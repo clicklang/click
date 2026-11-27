@@ -1478,7 +1478,7 @@ bound in the forms the step reads, `to_integer(k) + 1 <=
 to_integer(bytes.len())` and `to_integer(k + 1u64) <= to_integer(bytes.len())`,
 and the invariant is carried by regrouping `(bytes + k) + 1u64` as
 `bytes + (k + 1u64)` from `to_integer(k) + 1 <= 18446744073709551615`
-([full-width pointer association](tactics/index.md#normalization-with-selected-premises)).
+([full-width pointer association](tactics/index.md#simplification-with-selected-premises)).
 A `maintain` script splits on `0u64 < iter.len()` with a proof `if`; the
 empty arm steps to the exit
 ([`examples/rust-iterators/sum.click`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.click)).
@@ -1641,7 +1641,7 @@ offset's bounds in the forms the step owes, `to_integer(k) + 4 <=
 to_integer(bytes.len())` and `to_integer(k + 4u64) <= to_integer(bytes.len())`,
 and regroups `(bytes + k) + 4u64` as `bytes + (k + 4u64)` from
 `to_integer(k) + 4 <= 18446744073709551615`
-([full-width pointer association](tactics/index.md#normalization-with-selected-premises),
+([full-width pointer association](tactics/index.md#simplification-with-selected-premises),
 [proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
 A read through the chunk, `chunk[3]`, is a read of `bytes` at `k + 3`.
 

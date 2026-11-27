@@ -454,7 +454,7 @@ congruence steps. Such a consumer must preserve the checked premises, branch,
 load interpretation, and memory state of the query. Cloning shares
 persistent storage while keeping subsequent additions branch-local.
 
-`normalize() using { ... }` queries this existing graph while reducing
+The internal equality checker queries this graph while reducing
 pointer and int32 equality conditions, including guards of conditional expressions.
 Successful queries replace equality conditions with true; unsuccessful queries
 leave them unknown. The same traversal handles equality leaves and nested
@@ -890,8 +890,8 @@ its two operands. A later query can therefore use a read hidden behind another
 class member without first comparing that read directly or searching the
 class for read forms.
 A registration generation distinguishes reasoning memo entries from earlier
-misses, without scanning or rebuilding the proof environment. `close()` can emit
-`normalize() using {}` to check an equality against this ambient graph.
+misses, without scanning or rebuilding the proof environment. The closer
+can query this graph to check an equality.
 The nonrecursive `mdtests/egraph_resource_pointer_load_alias.md` regression
 checks this after an unfold publishes integer address equality.
 

@@ -1,6 +1,3 @@
-#[path = "click-expand/migrate_normalize.rs"]
-mod migrate_normalize;
-
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -19,7 +16,7 @@ use click::surface::{
     tactic_source_position, verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--check-normalize-removal] [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>\n\n--migrate-normalize proposes checked substitutions for written normalize calls. The expanded proof is used as validation and the output keeps the short substitutions.\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with proof search disabled. --check-normalize-removal rejects written or generated normalization in the selected proof unit. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--check-normalize-removal] [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with proof search disabled. --check-normalize-removal rejects written or generated normalization in the selected proof unit. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -40,7 +37,6 @@ enum Selection {
         column: Option<usize>,
     },
     Claim(String),
-    MigrateNormalize(Option<String>),
 }
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
@@ -74,7 +70,6 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut output = None;
     let mut in_place = false;
     let mut claim = None;
-    let mut migrate = false;
     let mut check_normalize_removal = false;
     let mut parse_options = true;
     let mut arguments = arguments.into_iter();
@@ -111,8 +106,6 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             work_limit = Some(cli::parse_work_limit(&units)?);
         } else if argument == "--check-normalize-removal" {
             check_normalize_removal = true;
-        } else if argument == "--migrate-normalize" {
-            migrate = true;
         } else if argument == "--claim" {
             if claim.is_some() {
                 return Err("`--claim` may only be supplied once".to_string());
@@ -128,10 +121,9 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             positional.push(argument);
         }
     }
-    let (click_path, selection) = match (migrate, claim, positional.as_slice()) {
-        (true, claim, [path]) => (PathBuf::from(path), Selection::MigrateNormalize(claim)),
-        (false, Some(claim), [path]) => (PathBuf::from(path), Selection::Claim(claim)),
-        (false, None, [location]) => {
+    let (click_path, selection) = match (claim, positional.as_slice()) {
+        (Some(claim), [path]) => (PathBuf::from(path), Selection::Claim(claim)),
+        (None, [location]) => {
             let (path, line, column) = parse_source_line_location(location)?;
             (path, Selection::Tactic { line, column })
         }
@@ -179,16 +171,6 @@ fn run_bounded(arguments: &Arguments) -> Result<String, String> {
     let (project, inputs) = read_lone_sidecar_inputs(&arguments.click_path, &click_source)?;
     if let Some(output) = &arguments.output {
         check_sidecar_output(&arguments.click_path, output, &inputs)?;
-    }
-    if let Selection::MigrateNormalize(claim) = &arguments.selection {
-        return migrate_normalize::run(
-            Some(&project),
-            &click_source,
-            &inputs,
-            claim.as_deref(),
-            &arguments.click_path,
-            0,
-        );
     }
     let selected = generate_expansion(|| {
         expand_selection(
@@ -260,15 +242,6 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
         )
     })?;
     let mdtest = read_mdtest(&arguments.click_path)?;
-    if matches!(arguments.selection, Selection::MigrateNormalize(_))
-        && mdtest.expectation != Some(cli::MdTestExpectation::Pass)
-    {
-        eprintln!(
-            "{}: skipping mdtest without a passing expectation",
-            arguments.click_path.display()
-        );
-        return Ok(markdown);
-    }
     let click_source = mdtest.click_source.as_deref().ok_or_else(|| {
         format!(
             "mdtest `{}` has no ```click block",
@@ -277,21 +250,6 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
     })?;
     let inputs = prepare_mdtest_inputs(&mdtest)?;
     let project = read_mdtest_project_if_needed(&arguments.click_path, click_source, &inputs)?;
-    if let Selection::MigrateNormalize(claim) = &arguments.selection {
-        let migrated = migrate_normalize::run(
-            project.as_ref(),
-            click_source,
-            &inputs,
-            claim.as_deref(),
-            &arguments.click_path,
-            mdtest.click_start_line.saturating_sub(1),
-        )?;
-        return if migrated == click_source {
-            Ok(markdown)
-        } else {
-            mdtest.replace_click_source(&markdown, &migrated)
-        };
-    }
     let selected = generate_expansion(|| {
         let selection = match &arguments.selection {
             Selection::Tactic { line, column } => Selection::Tactic {
@@ -299,7 +257,6 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
                 column: *column,
             },
             Selection::Claim(claim) => Selection::Claim(claim.clone()),
-            Selection::MigrateNormalize(_) => unreachable!("migration handled above"),
         };
         let location = SelectionReport {
             path: &arguments.click_path,
@@ -404,7 +361,7 @@ fn expand_selection(
                 whole_claim: false,
             })
         }
-        Selection::MigrateNormalize(_) => unreachable!("migration handled before expansion"),
+
         Selection::Claim(requested) => {
             // `--claim FILE:LINE[:COLUMN]` names the claim covering that line.
             // Its position tells apart `loop` tactics proving one loop phase.
@@ -565,7 +522,6 @@ fn verified_expansion(
     .map_err(|error| {
         let path = arguments.click_path.display();
         let selection = match &arguments.selection {
-            Selection::MigrateNormalize(_) => unreachable!("migration checks directly"),
             Selection::Claim(label) => format!("`{label}` in `{path}`"),
             Selection::Tactic { line, column } => match column {
                 Some(column) => format!("`{path}:{line}:{column}` in `{claim}`"),
@@ -1008,10 +964,7 @@ int32 identity(int32 x) {
         )
         .unwrap();
         let written = check(&written_normalize, "written.ensures_0").unwrap_err();
-        assert!(
-            written.contains("Selected proof still contains normalize()"),
-            "{written}"
-        );
+        assert!(written.contains("`normalize()` was removed"), "{written}");
 
         let double_division = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/float64_division_by_literal.md");

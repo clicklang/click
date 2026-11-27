@@ -110,7 +110,7 @@ that every current implementation meets the checking-cost contract.
 | Reuse a fact or select a conjunct | [Available facts](../reference/tactics/index.md#available-facts), [intermediate facts](../reference/tactics/index.md#intermediate-facts) | The available proposition and selected component |
 | Introduce an assumption or binder, split cases, or instantiate a universal fact | [Introducing a binder or premise](../reference/tactics/index.md#introducing-a-binder-or-premise), [explicit cases](../reference/tactics/index.md#explicit-cases), [instantiation with selected premises](../reference/tactics/index.md#universal-instantiation) | The connective or quantified fact, witnesses, and branch obligations |
 | Replace an equal term | [Rewriting](../reference/tactics/index.md#rewriting) | The equality, direction, and expression being rewritten |
-| Evaluate a definition or computation | [Unfolding pure functions](../reference/tactics/index.md#unfolding-pure-functions), [context-free normalization](../reference/tactics/index.md#context-free-normalization) | The named definition/application or explicit expression |
+| Evaluate a definition or computation | [Unfolding pure functions](../reference/tactics/index.md#unfolding-pure-functions) | The named definition/application or explicit expression |
 | Apply a mathematical or separation law | [Theorem application](../reference/tactics/index.md#theorem-application), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Ordinary arithmetic proofs](../reference/tactics/index.md#ordinary-arithmetic-proofs) | Named laws, cited premises, and explicit intermediate facts |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
@@ -143,10 +143,9 @@ separation with explicitly supplied evidence. When a checked call publishes
 `contains(R, region.footprint)`, select it with `close()` and apply the
 named `separation::separate_restrict` law; `contains_refl` supplies reflexivity and
 `separate_star` combines separation of several input resources. This route
-does not unfold recursive resources or normalize a footprint. The older
-memory-range route uses `normalize() using` with listed separations and bounds.
+does not unfold recursive resources or normalize a footprint.
 For a region containing several transitions, write the individual preservation
-steps and compose their equalities: simple normalization does not walk a region.
+steps and compose their equalities.
 The observation rule covers complete pointer, byte, 32/64-bit integer and abstract
 typed cells, plus explicitly selected fields of named owned resources. For a
 resource field, separate the footprint from the instance and write the field

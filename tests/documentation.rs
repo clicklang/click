@@ -1421,8 +1421,6 @@ fn tactic_form_inventory_is_bidirectional() {
             "apply-fact" => surface == "`apply(fact)`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
             "arithmetic" => surface == "`close() using {}`",
-            "normalize" => surface == "`normalize()`",
-            "normalize-using" => surface == "`normalize() using { P; ... }`",
             "arithmetic-using" => surface == "`close() using { P; ... }`",
             "instantiate" => surface == format!("`{}`", form.syntax),
             "intro" => surface == "`intro() { ... }`",

@@ -2,8 +2,6 @@
 src/surface.rs	mixed	ProofTactic::class	Normalize	2
 src/surface/generics.rs	mixed	::instantiate_proof_tactic	CompatibilityNormalize	1
 src/surface/generics.rs	mixed	::instantiate_proof_tactic	NormalizeUsing	1
-src/surface/parser.rs	mixed	Parser::parse_named_proof_tactic	Normalize	1
-src/surface/parser.rs	mixed	Parser::parse_named_proof_tactic	NormalizeUsing	1
 src/surface/planning/solve.rs	search	::plan_context_free_closer	CompatibilityNormalize	1
 src/surface/planning/solve.rs	search	::plan_solve_certificate	Normalize	1
 src/surface/printing.rs	mixed	::write_tactic	Normalize	1

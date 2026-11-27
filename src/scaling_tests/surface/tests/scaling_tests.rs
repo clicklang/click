@@ -10994,7 +10994,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
             requirements.push_str(&format!(
                 "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
             ));
-            setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+            setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ close() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
             links.push_str(&written_preservation_links(1, &format!("*q{i}")));
         }
         let leaves = (0..size)

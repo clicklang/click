@@ -369,7 +369,7 @@ promise of arbitrary nonlinear automation.
 
 Private plans are search data. They are not a source tactic, serialized proof
 step, or kernel graph interpreter. Surface emits ordinary `have`, `apply ...
-using`, `rewrite`, `normalize() using`, and logical steps. Expansion prints
+using`, `rewrite`, and logical steps. Expansion prints
 those steps and fresh verification checks them without arithmetic discovery.
 No certificate fallback remains.
 
@@ -896,10 +896,10 @@ interning key is its condition and its arms' ids. Substitution, variable
 collectors, alpha keys, memory-load and resource-read collectors, narrow
 carrier and fold-read checks, and both printers walk the condition and the
 arms; the Surface form is `if c { a } else { b }`. A rewrite that decides
-the condition (a substitution, `normalize() using`, or the solver’s known
+the condition (a substitution, a selected premise, or the solver’s known
 conditions) leaves the selected arm, and arms a rewrite makes equal leave one,
 also under an exact Integer substitution, since that only deletes a node:
-`rewrite(x, y); normalize();` closes `(if c { x } else { y }) == x`, as for
+`rewrite(x, y); close();` closes `(if c { x } else { y }) == x`, as for
 a machine conditional. The affine fragment keeps an unresolved conditional as
 one opaque atom by its shared identity, as it keeps a product or quotient; a
 bound over its arms takes a case split
@@ -1062,7 +1062,7 @@ listed dividend and divisor ranges. Both evaluation and the mathematical law
 keep their guards: a nonzero divisor, the signed `MIN / -1` exception when
 applicable, and any source or destination range obligations.
 
-The planner can select these rules and emit `normalize() using { ... }`.
+The planner can select these rules for verification. Expansion requires an ordinary certificate.
 It does not publish an arithmetic graph node. Rewriting a relation through
 proved Integer equalities is ordinary congruence; every equality and bound
 it cites remains visible in the expanded proof. Missing guards, mismatched
@@ -1125,7 +1125,7 @@ premise controls.
 A native integral conversion preserves numeric value when its source lies
 in the destination range. After the explicit destination-range bounds are
 proved, `close()` checks the matching written observation identity using
-those exact bound keys. The authored `normalize() using` form remains supported. A
+those exact bound keys. A
 widening may need only its intrinsic source range; a narrowing needs the
 actual destination range. Signedness and conversion encoding remain part of
 the term.

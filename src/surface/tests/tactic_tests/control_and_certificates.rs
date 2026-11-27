@@ -713,7 +713,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
                 requires x == y;
                 ensures x == y by {
                     rewrite(x, y);
-                    normalize();
+                    rewrite(y, x);
                 }
             }
         "#;
@@ -729,7 +729,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     ));
     assert!(matches!(
         tactics[1].class(),
-        TacticClass::Simple(SimpleTactic::Normalize)
+        TacticClass::Simple(SimpleTactic::Rewrite)
     ));
     assert!(matches!(
         ProofTactic::Solve.class(),

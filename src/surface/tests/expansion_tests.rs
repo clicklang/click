@@ -58,19 +58,6 @@ fn shifted_one_replays_through_each_expansion_entry_point() {
         })
         .unwrap();
     }
-
-    // Writing the compatibility tactic explicitly keeps the proof replayable.
-    let written = source.replacen("close() using", "normalize() using", 1);
-    let expanded = expand_c_claim_source_by_label(&written, &sources, claim).unwrap();
-    assert_eq!(
-        expanded.matches("normalize() using").count(),
-        1,
-        "{expanded}"
-    );
-    without_implicit_solve_for_claim(claim, || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .unwrap();
 }
 
 #[test]
@@ -3101,10 +3088,7 @@ fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let position = expansion::position_at_offset(&source, source.find("close() using").unwrap());
     let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
     assert!(!expanded.contains("close() using"), "{expanded}");
-    assert!(
-        expanded.contains("normalize();") || expanded.contains("close();"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("close();"), "{expanded}");
     verify_click_theorems(&expanded).unwrap();
 }
 
@@ -3542,7 +3526,7 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
     let source_with_suffix = fixture.click_source.as_deref().unwrap().replace(
         "        close();",
-        "        close();\n        have 0 == 0 by { normalize(); }",
+        "        close();\n        have 0 == 0 by { close(); }",
     );
     let source = source_with_suffix.as_str();
     let sources = fixture
@@ -3551,12 +3535,15 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c_sources(source, &sources).unwrap();
-    let position = expansion::position_at_offset(source, source.rfind("close();").unwrap());
+    let position = expansion::position_at_offset(
+        source,
+        source.rfind("close();\n        have 0 == 0").unwrap(),
+    );
     let expanded =
         expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap();
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
-        expanded.contains("have 0 == 0 by { normalize(); }"),
+        expanded.contains("have 0 == 0 by { close(); }"),
         "the unselected suffix stays written"
     );
     assert_eq!(
@@ -5177,7 +5164,7 @@ fn targeted_termination_assumes_unselected_callees() {
 /// A `close()` in nested `intro` blocks after `step_until(function.exit)` closes a claim proof the
 /// `intro`s opened, and expands to only the steps it adds there. It used to
 /// expand to the whole claim's certificate, `have <claim> by { ... };
-/// close();`, and a deferred `normalize()` or `close()` ignored
+/// close();`, and a deferred `close()` ignored
 /// the opened proof, so neither form re-verified.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
@@ -7957,10 +7944,7 @@ fn selected_post_execution_solve_waits_for_its_surface_closer() {
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution solve should expand after finalization");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert!(
-        expanded.contains("close();") || expanded.contains("normalize();"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("close();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("selected post-execution solve expansion should check");
 }

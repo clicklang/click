@@ -8,20 +8,20 @@ fn cover(bytes: &[u8]) -> usize {
         0 <= k and k < ((bytes.len() as uint32) as int32) implies bytes[k] == old(bytes[k])
     };
 } by {
-    have bytes.len() % 4u64 <= bytes.len() by { normalize(); }
-    have bytes.len() - bytes.len() % 4u64 <= bytes.len() by { normalize() using { bytes.len() % 4u64 <= bytes.len(); } }
-    have bytes.len() - bytes.len() % 4u64 <= 1000u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 1000u64; } }
-    have bytes.len() - bytes.len() % 4u64 <= 2147483647u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 1000u64; } }
-    have 0 <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 2147483647u64; } }
+    have bytes.len() % 4u64 <= bytes.len() by { close(); }
+    have bytes.len() - bytes.len() % 4u64 <= bytes.len() by { close() using { bytes.len() % 4u64 <= bytes.len(); } }
+    have bytes.len() - bytes.len() % 4u64 <= 1000u64 by { close() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 1000u64; } }
+    have bytes.len() - bytes.len() % 4u64 <= 2147483647u64 by { close() using { bytes.len() - bytes.len() % 4u64 <= 1000u64; } }
+    have 0 <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by { close() using { bytes.len() - bytes.len() % 4u64 <= 2147483647u64; } }
     have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= 1000 by { close(); }
-    have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
-    have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= ((bytes.len() as uint32) as int32) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; } }
+    have bytes.len() <= 2147483647u64 by { close() using { bytes.len() <= 1000u64; } }
+    have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= ((bytes.len() as uint32) as int32) by { close() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; } }
     step_until(region(22).entry);
     have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
         close() using { at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])); };
     }
-    have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
-    have (((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) % 4) == 0 by { normalize() using { bytes.len() <= 2147483647u64; } }
+    have bytes.len() <= 2147483647u64 by { close() using { bytes.len() <= 1000u64; } }
+    have (((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) % 4) == 0 by { close() using { bytes.len() <= 2147483647u64; } }
     have chunks_remaining == (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by { close(); }
     have chunks_remaining % 4 == 0 by {
         rewrite(chunks_remaining, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32)); close();
@@ -61,7 +61,7 @@ fn cover(bytes: &[u8]) -> usize {
             }
             have chunks_remaining == at(iteration, chunks_remaining) - 4 by { close(); }
             have (at(iteration, chunks_remaining) - 4) % 4 == at(iteration, chunks_remaining % 4) by {
-                normalize() using { at(iteration, 4 <= chunks_remaining); }
+                close() using { at(iteration, 4 <= chunks_remaining); }
             }
             have chunks_remaining % 4 == 0 by {
                 rewrite(chunks_remaining, at(iteration, chunks_remaining) - 4);
@@ -115,7 +115,7 @@ fn cover(bytes: &[u8]) -> usize {
             not (4 <= chunks_remaining) => { close(); }
         }
     }
-    have chunks_remaining % 4 == chunks_remaining by { normalize() using { 0 <= chunks_remaining; chunks_remaining < 4; } }
+    have chunks_remaining % 4 == chunks_remaining by { close() using { 0 <= chunks_remaining; chunks_remaining < 4; } }
     have chunks_remaining == 0 by { close(); }
     have chunks_cursor == chunks_tail by { close(); }
     step_until(function.exit);
