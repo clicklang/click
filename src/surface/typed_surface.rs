@@ -139,9 +139,6 @@ pub(crate) enum SurfaceProposition<'s> {
     Or(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
     Implies(Box<SurfaceProposition<'s>>, Box<SurfaceProposition<'s>>),
     Not(Box<SurfaceProposition<'s>>),
-    // Built by `Elaborator::elaborate_clause`, which only tests call until
-    // contracts are elaborated before lowering.
-    #[cfg_attr(not(test), allow(dead_code))]
     /// `forall` or `exists` over `name` at its declared type, with the body
     /// elaborated where `name` has that type. `syntax` is the quantifier as
     /// written, which lowering reads until it lowers the Surface body.
@@ -152,7 +149,6 @@ pub(crate) enum SurfaceProposition<'s> {
         body: Box<SurfaceProposition<'s>>,
         syntax: &'s super::SyntaxProposition,
     },
-    #[cfg_attr(not(test), allow(dead_code))]
     /// A range form over `item`, which ranges over `item_type`, the type
     /// elaboration gives the range from its endpoints, with the body
     /// elaborated where `item` has that type. `syntax` is the range as
@@ -169,10 +165,62 @@ pub(crate) enum SurfaceProposition<'s> {
 
 /// Whether a binder form states its body for every value or for some value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum Quantifier {
     All,
     Some,
+}
+
+impl<'s> SurfaceProposition<'s> {
+    /// This proposition with each binder form read as written, as the
+    /// connective-only elaboration (`elaborate_proposition`) leaves it.
+    /// Iterative, so a long chain needs no deep stack.
+    #[cfg(debug_assertions)]
+    pub(crate) fn with_binder_forms_as_written(&self) -> SurfaceProposition<'s> {
+        enum Frame<'a, 's> {
+            Visit(&'a SurfaceProposition<'s>),
+            BuildAnd,
+            BuildOr,
+            BuildImplies,
+            BuildNot,
+        }
+        let mut frames = vec![Frame::Visit(self)];
+        let mut built = Vec::new();
+        while let Some(frame) = frames.pop() {
+            match frame {
+                Frame::Visit(SurfaceProposition::And(left, right)) => {
+                    frames.extend([Frame::BuildAnd, Frame::Visit(right), Frame::Visit(left)]);
+                }
+                Frame::Visit(SurfaceProposition::Or(left, right)) => {
+                    frames.extend([Frame::BuildOr, Frame::Visit(right), Frame::Visit(left)]);
+                }
+                Frame::Visit(SurfaceProposition::Implies(left, right)) => {
+                    frames.extend([Frame::BuildImplies, Frame::Visit(right), Frame::Visit(left)]);
+                }
+                Frame::Visit(SurfaceProposition::Not(body)) => {
+                    frames.extend([Frame::BuildNot, Frame::Visit(body)]);
+                }
+                Frame::Visit(
+                    SurfaceProposition::Quantified { syntax, .. }
+                    | SurfaceProposition::Range { syntax, .. },
+                ) => built.push(SurfaceProposition::Untyped(syntax)),
+                Frame::Visit(other) => built.push(other.clone()),
+                Frame::BuildNot => {
+                    let body = built.pop().expect("negation body");
+                    built.push(SurfaceProposition::Not(Box::new(body)));
+                }
+                frame => {
+                    let right = Box::new(built.pop().expect("right operand"));
+                    let left = Box::new(built.pop().expect("left operand"));
+                    built.push(match frame {
+                        Frame::BuildAnd => SurfaceProposition::And(left, right),
+                        Frame::BuildOr => SurfaceProposition::Or(left, right),
+                        _ => SurfaceProposition::Implies(left, right),
+                    });
+                }
+            }
+        }
+        built.pop().expect("one root")
+    }
 }
 
 /// Elaborate a proposition's connective structure: `&&`, `||`, `implies` and

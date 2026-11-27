@@ -262,13 +262,15 @@ impl AnnotationLowerer<'_> {
                 SurfaceProposition::Not(body) => {
                     frames.extend([Frame::BuildNot, Frame::Visit(body)]);
                 }
-                // A binder form is lowered from its Syntax, which elaborates
-                // its body in the context lowering binds the binder in.
-                SurfaceProposition::Untyped(syntax)
-                | SurfaceProposition::Quantified { syntax, .. }
-                | SurfaceProposition::Range { syntax, .. } => {
+                SurfaceProposition::Untyped(syntax) => {
                     lowered
                         .push(self.click_proposition_to_spec_proposition_one(syntax, environment)?);
+                }
+                // A binder form binds as written and lowers the body
+                // elaboration gave it.
+                SurfaceProposition::Quantified { syntax, body, .. }
+                | SurfaceProposition::Range { syntax, body, .. } => {
+                    lowered.push(self.lower_elaborated_binder(syntax, body, environment)?);
                 }
                 SurfaceProposition::Comparison {
                     kind,

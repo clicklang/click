@@ -333,10 +333,20 @@ binder declared in the `TypingEnvironment`, at its declared type or, for a
 range item, the type its endpoints give it (`range_bounds_are_uint64`). Debug
 builds check at every binder lowering binds that elaborating the body with
 the binder declared gives the Surface its lowered body context gives
-(`check_binder_body_elaboration`). Lowering still reads a binder form from
-its Syntax. Next, a contract's clauses are elaborated with `elaborate_clause`
-once, before lowering, and lowering reads the stored Surface, bodies
-included.
+(`check_binder_body_elaboration`).
+
+Function contracts are elaborated before they are lowered. For each
+requires, ensures and exceptional ensures clause, `function_contract_summary`
+elaborates the clause once with `Elaborator::of_function` and
+`elaborate_clause`, from the function's declarations alone, and lowers the
+stored Surface: a binder form binds as before and lowers the body
+elaboration gave it (`lower_elaborated_binder`), so no part of a contract
+clause is elaborated inside lowering. The type-inference failure the
+elaboration recorded is handed to lowering where in-place elaboration would
+have left it. Debug builds check, at each clause and each binder body, that
+the stored Surface is what elaborating that Syntax where it is lowered gives
+(`check_stored_elaboration`). Other clause kinds still elaborate inside
+lowering.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
 entry values, and the state that declares the clause's locals) for names that
