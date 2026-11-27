@@ -447,6 +447,8 @@ fn audit_whole_claim_failure_is_fatal() {
         (true, Some("100")),
     ] {
         let mut command = Command::new(env!("CARGO_BIN_EXE_click"));
+        // This child deliberately fails. The parent test reports its verdict.
+        command.env_remove(click::nightly_report::REPORT_DIR);
         command.args([
             "audit",
             "--claim",
