@@ -2957,14 +2957,14 @@ pub(in crate::languages::rust) fn moved_drop_operands(mir: &MirBody) -> BTreeMap
         .collect()
 }
 
-/// Pass an adjacent by-value copy directly to the call that takes it. The
-/// callee already gets its own copy, so no caller-side storage is needed.
-pub(super) fn bind_copied_call_arguments(
+/// Pass an adjacent by-value copy or move directly to the call that takes it.
+/// The call prepares the destination, so this temporary needs no storage.
+pub(super) fn bind_owned_call_arguments(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
     temporaries: &BTreeSet<MirLocalId>,
 ) {
-    let mut copies = Vec::new();
+    let mut transfers = Vec::new();
     for (block_index, block) in blocks.iter().enumerate() {
         let T::Call {
             owned_arguments,
@@ -2987,25 +2987,33 @@ pub(super) fn bind_copied_call_arguments(
         {
             continue;
         }
-        let Some((
-            position,
+        let Some((position, transfer)) =
+            block.statements.iter().enumerate().rev().find(|(_, code)| {
+                !matches!(
+                    code,
+                    S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+                )
+            })
+        else {
+            continue;
+        };
+        let (target, source, record, moved) = match transfer {
             S::Copy {
                 target,
                 source,
                 record,
-            },
-        )) = block.statements.iter().enumerate().rev().find(|(_, code)| {
-            !matches!(
-                code,
-                S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
-            )
-        })
-        else {
-            continue;
+            } => (target, source, record, false),
+            S::Move {
+                target,
+                source,
+                record,
+            } => (target, source, record, true),
+            _ => continue,
         };
         if target != local
             || record != &argument.record
             || target == source
+            || (moved && argument.index != 0)
             || !matches!(arguments.last(), Some(E::Local { name }) if name == target)
         {
             continue;
@@ -3015,23 +3023,24 @@ pub(super) fn bind_copied_call_arguments(
         }) {
             continue;
         }
-        // The call may prepare earlier arguments. Any nested call can write
-        // the source, so the copy needs to stay at its original point.
+        // A move stays ahead of all argument evaluation. A copy may move
+        // past earlier arguments that cannot change the source or use the
+        // temporary.
         if arguments[..argument.index]
             .iter()
             .any(|argument| contains_call(argument) || mentioned_in_expression(argument, target))
         {
             continue;
         }
-        copies.push((block_index, position, target.clone(), source.clone()));
+        transfers.push((block_index, position, target.clone(), source.clone(), moved));
     }
-    if copies.is_empty() {
+    if transfers.is_empty() {
         return;
     }
 
-    let mut mentions: BTreeMap<_, usize> = copies
+    let mut mentions: BTreeMap<_, usize> = transfers
         .iter()
-        .map(|(_, _, target, _)| (target.clone(), 0))
+        .map(|(_, _, target, _, _)| (target.clone(), 0))
         .collect();
     for block in blocks.iter() {
         for statement in &block.statements {
@@ -3054,7 +3063,7 @@ pub(super) fn bind_copied_call_arguments(
     }
 
     let mut removed = BTreeSet::new();
-    for (block, position, target, source) in copies {
+    for (block, position, target, source, moved) in transfers {
         if mentions[&target] != 2 {
             continue;
         }
@@ -3069,12 +3078,12 @@ pub(super) fn bind_copied_call_arguments(
         };
         let argument = owned_arguments
             .last_mut()
-            .expect("selected a copied argument");
-        *arguments.last_mut().expect("selected a copied argument") = E::Local {
+            .expect("selected an owned argument");
+        *arguments.last_mut().expect("selected an owned argument") = E::Local {
             name: source.clone(),
         };
         argument.local = Some(source);
-        argument.moved = false;
+        argument.moved = moved;
         block.statements.remove(position);
         removed.insert(target);
     }
