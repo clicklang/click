@@ -489,12 +489,11 @@ theorem adler_sum_concat(bytes: uint8[], prefix: int32, suffix: int32) {
    have to_integer(bytes[(prefix + suffix) - 1] as int32) == to_integer((bytes + prefix)[suffix - 1] as int32) by {
     rewrite(to_integer((prefix + suffix) - 1), to_integer(prefix + (suffix - 1))); rewrite(to_integer((bytes + prefix)[suffix - 1] as int32), to_integer(bytes[prefix + (suffix - 1)] as int32)); close();
    }
-   close() using {
-    adler_byte_sum(bytes, prefix + suffix) == adler_byte_sum(bytes, (prefix + suffix) - 1) + to_integer(bytes[(prefix + suffix) - 1] as int32);
-    adler_byte_sum(bytes + prefix, suffix) == adler_byte_sum(bytes + prefix, suffix - 1) + to_integer((bytes + prefix)[suffix - 1] as int32);
-    adler_byte_sum(bytes, (prefix + suffix) - 1) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix - 1);
-    to_integer(bytes[(prefix + suffix) - 1] as int32) == to_integer((bytes + prefix)[suffix - 1] as int32);
-   };
+   rewrite(adler_byte_sum(bytes, prefix + suffix), adler_byte_sum(bytes, (prefix + suffix) - 1) + to_integer(bytes[(prefix + suffix) - 1] as int32));
+   rewrite(adler_byte_sum(bytes + prefix, suffix), adler_byte_sum(bytes + prefix, suffix - 1) + to_integer((bytes + prefix)[suffix - 1] as int32));
+   rewrite(adler_byte_sum(bytes, (prefix + suffix) - 1), adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix - 1));
+   rewrite(to_integer(bytes[(prefix + suffix) - 1] as int32), to_integer((bytes + prefix)[suffix - 1] as int32));
+   close();
   }
  }
 }
