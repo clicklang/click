@@ -1,14 +1,14 @@
 # A library field function of a constructed value stays a call
 
-A library function whose body is `match s { V(.., x, ..) => x }`, as
-`slice::len` and `slice::as_ptr` are, lowers as the call that was written,
-like any other function: `slice::len(Slice<uint8>::Slice(p, m))` is a call,
-not `m`. `unfold` opens it to the constructor's field. The goal is therefore
-the same term whether the constructed value is written at the call or
-arrives by `rewrite`, and the same `unfold` opens it in both.
+A library function whose body is `match o { V(.., x, ..) => x, ... }`, as
+`option::unwrap_or` is, lowers as the call that was written, like any other
+function: `option::unwrap_or(Option<uint64>::Some(m), d)` is a call, not `m`.
+`unfold` opens it to the constructor's field. The goal is therefore the same
+term whether the constructed value is written at the call or arrives by
+`rewrite`, and the same `unfold` opens it in both.
 
 ```click
-import click::rust::slice;
+import click::rust::option;
 
 spec enum Pair {
     Pair(uint64, uint64),
@@ -27,30 +27,26 @@ theorem a_program_function_stays_a_call(a: uint64) {
     }
 }
 
-theorem from_its_parts(p: uint8*, m: uint64) {
-    ensures slice::len(Slice<uint8>::Slice(p, m)) == m by {
-        unfold(slice::len(Slice<uint8>::Slice(p, m)));
-        close();
-    }
-    ensures slice::as_ptr(Slice<uint8>::Slice(p, m)) == p by {
-        unfold(slice::as_ptr(Slice<uint8>::Slice(p, m)));
+theorem from_its_parts(m: uint64, d: uint64) {
+    ensures option::unwrap_or(Option<uint64>::Some(m), d) == m by {
+        unfold(option::unwrap_or(Option<uint64>::Some(m), d));
         close();
     }
 }
 
-theorem after_a_rewrite(s: Slice<uint8>, p: uint8*, n: uint64) {
-    requires s == Slice<uint8>::Slice(p, n);
-    ensures slice::len(s) == n by {
-        rewrite(s, Slice<uint8>::Slice(p, n));
-        unfold(slice::len(Slice<uint8>::Slice(p, n)));
+theorem after_a_rewrite(o: Option<uint64>, m: uint64, d: uint64) {
+    requires o == Option<uint64>::Some(m);
+    ensures option::unwrap_or(o, d) == m by {
+        rewrite(o, Option<uint64>::Some(m));
+        unfold(option::unwrap_or(Option<uint64>::Some(m), d));
         close();
     }
 }
 
-theorem an_opaque_slice(s: Slice<uint8>) {
-    requires s == Slice<uint8>::Slice(0, 3u64);
-    ensures slice::len(s) == 3u64 by {
-        unfold(slice::len(s));
+theorem an_opaque_option(o: Option<uint64>, d: uint64) {
+    requires o == Option<uint64>::Some(3u64);
+    ensures option::unwrap_or(o, d) == 3u64 by {
+        unfold(option::unwrap_or(o, d));
         close();
     }
 }

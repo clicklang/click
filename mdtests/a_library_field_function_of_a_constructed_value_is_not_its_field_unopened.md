@@ -1,14 +1,14 @@
 # A library field function of a constructed value is not its field unopened
 
-`slice::len(Slice<uint8>::Slice(p, m))` lowers as the call that was written.
-Proving `slice::len(Slice<uint8>::Slice(p, m)) == m` requires exposing the
-definition with `unfold`.
+`option::unwrap_or(Option<uint64>::Some(m), d)` lowers as the call that was
+written. Proving `option::unwrap_or(Option<uint64>::Some(m), d) == m`
+requires exposing the definition with `unfold`.
 
 ```click
-import click::rust::slice;
+import click::rust::option;
 
-theorem unopened(p: uint8*, m: uint64) {
-    ensures slice::len(Slice<uint8>::Slice(p, m)) == m by {
+theorem unopened(m: uint64, d: uint64) {
+    ensures option::unwrap_or(Option<uint64>::Some(m), d) == m by {
         close() using {};
     }
 }

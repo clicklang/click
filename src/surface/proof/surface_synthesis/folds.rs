@@ -13,6 +13,10 @@ struct FoldNames {
     active: bool,
     // Integer and program variables are separate namespaces even at the same ID.
     names: BTreeMap<(BinderCarrier, Variable), SurfaceBinder>,
+    /// The element type of each program binder in scope that names a slice
+    /// (`design/rust-slice-values.md`): its data pointer raises as
+    /// `s.as_ptr()`, never as `s`, which is the slice.
+    slices: BTreeMap<Variable, crate::kernel::SliceElement>,
 }
 
 thread_local! {
@@ -29,6 +33,41 @@ pub(in crate::surface::proof) fn binder_name(
         BinderCarrier::Program
     };
     scoped_binder_name(carrier, variable)
+}
+
+/// The element type of the slice the program binder `variable` names, when
+/// it names one.
+pub(in crate::surface::proof) fn slice_binder_element(
+    variable: Variable,
+) -> Option<crate::kernel::SliceElement> {
+    FOLD_NAMES.with(|slot| slot.borrow().slices.get(&variable).copied())
+}
+
+/// While it lives, the program binder `variable` names a slice of
+/// `element`.
+pub(in crate::surface::proof) struct SliceBinding {
+    variable: Variable,
+    previous: Option<crate::kernel::SliceElement>,
+}
+impl SliceBinding {
+    pub(in crate::surface::proof) fn enter(
+        variable: Variable,
+        element: crate::kernel::SliceElement,
+    ) -> Self {
+        let previous = FOLD_NAMES.with(|slot| slot.borrow_mut().slices.insert(variable, element));
+        Self { variable, previous }
+    }
+}
+impl Drop for SliceBinding {
+    fn drop(&mut self) {
+        FOLD_NAMES.with(|slot| {
+            let mut names = slot.borrow_mut();
+            match self.previous.take() {
+                Some(previous) => names.slices.insert(self.variable, previous),
+                None => names.slices.remove(&self.variable),
+            };
+        });
+    }
 }
 
 pub(in crate::surface::proof) fn scoped_binder_name(

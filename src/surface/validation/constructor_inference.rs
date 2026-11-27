@@ -473,7 +473,8 @@ impl ConstructorTypes {
     /// The method call `receiver.method(arguments)` as what it means for
     /// the receiver's type (`design/typed-method-resolution.md`): a slice's
     /// `len()` is `slice::len(receiver)`, its `[i]` a read through
-    /// `slice::as_ptr(receiver)`, and its `[a..b]` the subslice. A receiver
+    /// `slice::as_ptr(receiver)`, and its `[a..b]` `slice::subslice(receiver,
+    /// a, b)`. A receiver
     /// whose type has no such method is refused with the type and method.
     pub(super) fn resolve_method(
         &self,
@@ -482,18 +483,14 @@ impl ConstructorTypes {
         arguments: Vec<SyntaxTerm>,
     ) -> Result<SyntaxTerm, ClickError> {
         let receiver_type = self.known_type(&receiver);
-        let slice_type = match &receiver_type {
-            Some(ClickType::Algebraic(application)) if application.name == "Slice" => {
-                Some(Some(application))
-            }
-            // A slice built from its parts is a slice by its form, whether
-            // or not its element type is known here.
-            _ if slice_parts(&receiver).is_some() => Some(None),
-            _ => None,
-        };
-        if let Some(application) = slice_type
-            && let Some(resolved) =
-                slice_method(application, receiver.clone(), method, arguments.clone())
+        // A slice, or a slice built from its parts whether or not its element
+        // type is known here.
+        let slice_type = matches!(
+            &receiver_type,
+            Some(ClickType::Program(InterfaceType::Slice(_)))
+        ) || slice_parts(&receiver).is_some();
+        if slice_type
+            && let Some(resolved) = slice_method(receiver.clone(), method, arguments.clone())
         {
             return Ok(resolved);
         }
@@ -695,22 +692,13 @@ pub(in crate::surface) fn unapplied_constructor_message(
 }
 
 /// The data pointer and length a slice built from its parts was built
-/// with: a `Slice::Slice(p, n)` constructor or a `slice::from_raw_parts(p,
-/// n)` call.
+/// with: a `slice::from_raw_parts(p, n)` call.
 fn slice_parts(receiver: &SyntaxTerm) -> Option<(&SyntaxTerm, &SyntaxTerm)> {
     match receiver {
-        SyntaxTerm::AlgebraicConstructor {
-            algebraic_type,
-            variant,
-            arguments,
-        } if algebraic_type.name == "Slice" && variant == "Slice" => match arguments.as_slice() {
-            [pointer, length] => Some((pointer, length)),
-            _ => None,
-        },
         SyntaxTerm::Call { name, arguments }
             if matches!(
                 name.as_str(),
-                "slice::from_raw_parts" | "click::rust::slice::from_raw_parts"
+                "slice::from_raw_parts" | crate::surface::RUST_SLICE_FROM_RAW_PARTS
             ) =>
         {
             match arguments.as_slice() {
@@ -722,25 +710,26 @@ fn slice_parts(receiver: &SyntaxTerm) -> Option<(&SyntaxTerm, &SyntaxTerm)> {
     }
 }
 
-/// A slice method on `receiver`, a value of `application`, `Slice<T>`, or
-/// a slice built from its parts whose element type is not known here.
+/// A slice method on `receiver`, a slice (`design/rust-slice-values.md`):
+/// `len()` and `as_ptr()` are its components, `[i]` a read through its data
+/// pointer, and a range index the subslice `slice::subslice(receiver, a,
+/// b)`.
 fn slice_method(
-    application: Option<&AlgebraicTypeApplication>,
     receiver: SyntaxTerm,
     method: &str,
     arguments: Vec<SyntaxTerm>,
 ) -> Option<SyntaxTerm> {
     let call = |name: &str, arguments| SyntaxTerm::Call {
-        name: format!("click::rust::slice::{name}"),
+        name: name.to_string(),
         arguments,
     };
-    // A constructed slice's fields are its data and its length, by the
-    // library's definition, so they need no unfold.
+    // A constructed slice's components are its data and its length, so a
+    // method on one reads them as written.
     let (pointer, length) = match slice_parts(&receiver) {
         Some((pointer, length)) => (pointer.clone(), length.clone()),
         None => (
-            call("as_ptr", vec![receiver.clone()]),
-            call("len", vec![receiver.clone()]),
+            call(crate::surface::RUST_SLICE_AS_PTR, vec![receiver.clone()]),
+            call(crate::surface::RUST_SLICE_LEN, vec![receiver.clone()]),
         ),
     };
     // A bound is a `usize`, as in Rust.
@@ -760,13 +749,7 @@ fn slice_method(
     let (start, end) = match (method, arguments.as_slice()) {
         ("len", []) => return Some(length),
         ("as_ptr", []) => return Some(pointer),
-        // A read through a constructed slice, such as a subslice, keeps its
-        // spelling `bytes[1..3][1]`: it reads through `slice::as_ptr`.
         ("[]", [index]) => {
-            let pointer = match &receiver {
-                SyntaxTerm::AlgebraicConstructor { .. } => call("as_ptr", vec![receiver.clone()]),
-                _ => pointer,
-            };
             return Some(SyntaxTerm::Index(
                 Box::new(pointer),
                 Box::new(index.clone()),
@@ -784,20 +767,8 @@ fn slice_method(
     let zero = SyntaxTerm::ProgramExpression(ProgramExpression::Value(
         crate::kernel::ProgramValue::UInt64(crate::kernel::OldMachineTerm::uint64_constant(0)),
     ));
-    let data = match &start {
-        Some(start) => SyntaxTerm::Add(Box::new(pointer), Box::new(start.clone())),
-        None => pointer,
-    };
-    let end = end.unwrap_or_else(|| length.clone());
-    let count = call("subslice_len", vec![start.unwrap_or(zero), end, length]);
-    // The constructor, so its fields select at once; with no element type
-    // known here, the library's constructor call.
-    Some(match application {
-        Some(application) => SyntaxTerm::AlgebraicConstructor {
-            algebraic_type: application.clone(),
-            variant: "Slice".to_string(),
-            arguments: vec![data, count],
-        },
-        None => call("from_raw_parts", vec![data, count]),
-    })
+    Some(call(
+        crate::surface::RUST_SUBSLICE,
+        vec![receiver, start.unwrap_or(zero), end.unwrap_or(length)],
+    ))
 }

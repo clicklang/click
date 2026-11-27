@@ -633,21 +633,6 @@ impl Pointer {
         self.metadata() == other.metadata()
     }
 
-    /// Refuse a wide pointer where an operation reads only a thin one and has
-    /// no form for its metadata yet. This is an internal error, never a
-    /// fallback that drops the length (`design/rust-slice-values.md`, steps
-    /// 2b-ii and 2b-iii).
-    #[track_caller]
-    pub(crate) fn expect_thin(&self, operation: &str) -> &Self {
-        if self.is_wide() {
-            panic!(
-                "internal error: {operation} has no form for a wide pointer's metadata yet \
-                 (design/rust-slice-values.md, steps 2b-ii and 2b-iii)"
-            );
-        }
-        self
-    }
-
     /// Everything that is a thin value's identity: the address, its provenance,
     /// and the subobject it designates, plus its opaque local-reference
     /// custody. A lease key is a fresh scalar id, never a structural resource

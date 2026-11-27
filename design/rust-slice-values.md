@@ -1,15 +1,17 @@
 # Rust slices as wide pointers
 
 Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
-2a, 2b-i, 2b-ii-a, 2b-ii-b, 2b-iii-a, 2b-iii-b-i, 2b-iii-b-ii and
-2b-iii-c-i of the [plan](#plan) are done: the kernel has the wide pointer
-and its slice pointer type, every kernel consumer reads or refuses its
-count, a slice is stored and read back as one memory cell, a symbolic read
-of a slice cell names its data pointer and count, a slice named by one
-variable, such as a call's result or a binder, names its count from that
-variable, a slice-valued pure application names its count from the
-application, and the spec language reads a slice's components and builds
-one from raw parts, but no front end produces a wide pointer yet.
+2a, 2b-i, 2b-ii-a, 2b-ii-b, 2b-iii-a, 2b-iii-b-i, 2b-iii-b-ii,
+2b-iii-c-i and 2b-iii-c-ii of the [plan](#plan) are done: the kernel has
+the wide pointer and its slice pointer type, every kernel consumer reads or
+refuses its count, a slice is stored and read back as one memory cell, a
+symbolic read of a slice cell names its data pointer and count, a slice
+named by one variable, such as a call's result or a binder, names its count
+from that variable, a slice-valued pure application names its count from
+the application, the spec language reads a slice's components and builds
+one from raw parts, and the Surface `Slice<T>` is the built-in type, with
+every wide pointer raising to it. Rust `fn` slice parameters are still a
+pointer and a length (step 3).
 
 ## Requirements
 
@@ -680,39 +682,57 @@ construct.
      include them. Tests: `kernel::spec::slice_operation_tests`; scaling
      tests `slice_component_reads_ignore_unrelated_facts` and
      `nested_slice_rebuilds_grow_linearly`.
-   - **2b-iii-c-ii. Surface slice type and raising.** `spec enum Slice<T>`
-     is removed in the same step as the built-in type arrives: `Slice<T>`
-     lowers to `ProgramType::SlicePointer` and gets an interface type
-     (`interface_type_from_program_type` panics today);
-     `slice::from_raw_parts(p, n)`, `slice::len` and `slice::as_ptr` are
-     name-table entries for the constructor and the two components, not
-     functions with bodies; `s.len()`, `s.as_ptr()` and a recorded
-     `s[a..b]` lower to the components and a construction, and
-     `slice::subslice_len` and `Slice::Slice(p, n)` go. Raising replaces
-     every refusal: the `expect_thin` sites in `surface_synthesis.rs` and
-     `render/surface.rs`, `load_type_spelling` and the `SliceCount` read,
-     `SliceData`-based pointers, element-count variables and pure-application
-     counts, each lowering back to the same kernel term in the same
-     context. `rust_spelling` prints a slice directly rather than pairing a
-     pointer with a length. Slice-valued pure functions, `Option<&[u8]>`
-     contract payloads and slice-returning functions use the kernel forms of
-     2b-iii-a and 2b-iii-b. Rust slice parameters stay spread into a
-     pointer and a length until step 3, so a sidecar's bare slice argument
-     is the construction `slice::from_raw_parts(bytes, bytes.len())` of the
-     parameter's two bindings. The mdtests that use `Slice<T>` as the
-     example of a library enum (`library_field_accessors_*`,
-     `a_library_field_function_of_a_constructed_value_*`) change meaning:
-     `slice::len(slice::from_raw_parts(p, n))` is the component `n` with no
-     unfold, an intended change each explained in the PR. The Rust front
-     end's program values also carry the enum today: a chunk iterator's
-     `Option<&[u8]>` item is an `Option` whose payload is a `Slice<u8>`
-     enum value (`rust/lowering.rs`, `rust_enum_type_name` in
-     `verification.rs`), so its payload becomes a wide pointer field in the
-     same step (constructor injectivity already splits one, step 2a).
-     `s.len()`, `s.as_ptr()` and `slice::from_raw_parts` lower to the
-     2b-iii-c-i operations, and `s[a..b]` to
-     `Requires { a <= b <= s.len(), SliceFromRawParts(s.as_ptr() + a,
-     b - a) }`, recorded so it raises as `s[a..b]`.
+   - **2b-iii-c-ii. Surface slice type and raising.** Done. `spec enum
+     Slice<T>`, `slice::subslice_len` and `Slice::Slice(p, n)` are removed
+     in the same step as the built-in type arrives.
+     `InterfaceType::Slice(SliceElement)` is the Surface type of
+     `ProgramType::SlicePointer` (`interface_type_from_program_type` maps
+     it); `Slice<T>`, `Str`, and a Rust sidecar's `&[T]`, `&mut [T]` and
+     `&str` in a value position parse to it, and `Slice<T>` unifies and
+     instantiates its element like `T*`. `library/rust/slice.click` declares
+     `len`, `as_ptr`, `from_raw_parts` and `subslice` without bodies, for
+     their signatures; they are name-table entries
+     (`RUST_SLICE_LEN`, `RUST_SLICE_AS_PTR`, `RUST_SLICE_FROM_RAW_PARTS`,
+     `RUST_SUBSLICE` in `surface.rs`) that
+     `lower_slice_operation_to_spec` lowers to the 2b-iii-c-i operations,
+     and `s[a..b]` resolves to `slice::subslice(s, a, b)`, which lowers to
+     `Requires { a <= b <= s.len(), SliceFromRawParts(s.as_ptr() + a, b -
+     a) }` (from the start, `s[..b]`, to `Requires { b <= s.len(),
+     SliceFromRawParts(s.as_ptr(), b) }`); `s[a..b].len()` and
+     `s[a..b].as_ptr()` are that construction's components, `Requires { ..,
+     b - a }` and `Requires { .., s.as_ptr() + a }`, as `len` and `as_ptr`
+     of `from_raw_parts(p, n)` are `n` and `p`. The required-construction
+     registry keys the slice so built, so it prints as `s[a..b]`. A `let` or
+     match binder of slice type types by its slice element
+     (`SpecElaborationContext::slice_bindings`), and a match arm's
+     obligation closes over a slice binder with its count
+     (`guard_scalar_match_obligation`). Raising
+     (`surface_synthesis/slices.rs`) replaces every refusal: a wide pointer
+     raises as the one value that names it (a binder or parameter by its
+     counted variable, a slice-valued application, a slice cell's read),
+     else as `slice::from_raw_parts(p, n)`; a count as `s.len()` of that
+     value (counted variables, `PureApplicationCount`, `SliceCount` reads);
+     a data pointer based on a slice parameter, a slice read or a
+     slice-valued application as `s.as_ptr()` plus its element index. The
+     diagnostic renderer prints the same forms, and `Pointer::expect_thin`,
+     which those refusals used, is gone. `rust_spelling` prints
+     `x.len()`, `x.as_ptr()`, `x[a..b]` and
+     `click::rust::slice::from_raw_parts(p, n)`. Pure-function and theorem
+     slice parameters are one binder of the slice type; inside a body a
+     slice parameter is a binding whose methods resolve by its type. A Rust
+     `fn`'s slice parameter is still a pointer and a length (step 3), so a
+     bare slice parameter passed to a pure function is
+     `slice::from_raw_parts(bytes, bytes.len())`, printed back as `bytes`.
+     A Rust `Option` of a shared slice holds a wide pointer field
+     (`shared_slice_type` in `rust/lowering.rs`), named `Option<&[u8]>`.
+     The mdtests that used `Slice<T>` as the example of a library field
+     function now use `option::unwrap_or`; `slice::len(slice::from_raw_parts(p,
+     n))` is `n` with no unfold
+     (`mdtests/a_slice_built_from_its_parts_reads_them_in_place.md`).
+     Tests: `a_slice_application_and_its_count_raise_from_the_application`,
+     `an_unnamed_slice_raises_as_its_construction`; scaling test
+     `recording_and_spelling_a_subslice_ignore_unrelated_subslices` keys
+     wide pointers.
    - **2b-iii-d. Strings.** `str.interface.click` states `as_bytes` as
      `result == s` retyped (a cast between slice types keeps the count),
      mapped in the Rust front end's name table only. This finishes slice

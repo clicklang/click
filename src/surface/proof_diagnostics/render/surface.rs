@@ -296,6 +296,7 @@ fn printer(labels: &mut MemoryStateLabels, mode: Mode) -> Printer<'_> {
         bound: Vec::new(),
         before_return: false,
         spelled_load_type: None,
+        slice_bound: std::collections::BTreeMap::new(),
     }
 }
 
@@ -314,6 +315,11 @@ struct Printer<'a> {
     /// signedness of its own, so a context of the other signedness needs a
     /// conversion only this spelling can show.
     spelled_load_type: Option<crate::kernel::ProgramType>,
+    /// The element type of each bound variable that names a slice: its
+    /// data pointer is spelled `s.as_ptr()`, never `s`, which is the slice
+    /// (`design/rust-slice-values.md`). Binder variables are never reused,
+    /// so an entry outliving its scope names nothing else.
+    slice_bound: std::collections::BTreeMap<Variable, crate::kernel::SliceElement>,
 }
 
 impl Printer<'_> {
@@ -439,6 +445,23 @@ impl Printer<'_> {
         let mut bound = 0;
         for (index, binding) in bindings.iter().enumerate() {
             let variable = match binding {
+                // A slice binder names the slice, its thin part and its
+                // count (`design/rust-slice-values.md`, step 2b-iii-b-i).
+                V::Program(crate::kernel::ProgramValue::Pointer(pointer))
+                    if pointer.is_wide()
+                        && matches!(pointer.address().offset.view(), OffsetView::Constant(0)) =>
+                {
+                    match (&pointer.address().base, pointer.program_type()) {
+                        (
+                            crate::kernel::AddressBase::Symbolic(variable),
+                            crate::kernel::ProgramType::SlicePointer(element),
+                        ) => {
+                            self.slice_bound.insert(*variable, element);
+                            Some(*variable)
+                        }
+                        _ => None,
+                    }
+                }
                 V::Program(value) => match value.numeric_value() {
                     crate::kernel::ProgramValue::Parameter(term) => match term.node {
                         AlgebraicTermNode::Variable(variable) => Some(variable),
@@ -600,6 +623,10 @@ impl Printer<'_> {
                 body,
                 name,
             } => {
+                if let Some(crate::kernel::ProgramType::SlicePointer(element)) = sort.pointer_type()
+                {
+                    self.slice_bound.insert(**var, element);
+                }
                 let sort = self.sort(sort);
                 let name = self.written_binder(**var, name.as_str());
                 let body = self.proposition(body, depth);
@@ -615,6 +642,10 @@ impl Printer<'_> {
                 sort,
                 body,
             } => {
+                if let Some(crate::kernel::ProgramType::SlicePointer(element)) = sort.pointer_type()
+                {
+                    self.slice_bound.insert(**var, element);
+                }
                 let sort = self.sort(sort);
                 let binder = if name.is_empty() {
                     self.binder(**var)
@@ -852,9 +883,11 @@ impl Printer<'_> {
                 return Some(negate(name, polarity));
             }
             OldConditionTerm::PointerEqual(left, right) => {
-                left.expect_thin("rendering a pointer equality");
-                right.expect_thin("rendering a pointer equality");
-                if self.source_mode() && distinct_pointers_at_one_address(left, right) {
+                if self.source_mode()
+                    && !left.is_wide()
+                    && !right.is_wide()
+                    && distinct_pointers_at_one_address(left, right)
+                {
                     if let Some(naming) = &self.labels.naming
                         && let (Some(left), Some(right)) = (
                             self.exact_pointer_value(left, naming),
@@ -1585,6 +1618,13 @@ impl Printer<'_> {
             uint64_constant!(value) => {
                 return Some(atom(format!("{value}u64", value = constant_u64(*value))));
             }
+            B::Variable(variable) if variable.counted_slice().is_some() => {
+                return self.slice_count(value, depth);
+            }
+            B::PureApplicationCount(_) => return self.slice_count(value, depth),
+            B::MemoryLoad(_, _, crate::kernel::LoadKind::SliceCount) => {
+                return self.slice_count(value, depth);
+            }
             B::Variable(variable) => {
                 if self.mode == Mode::ExactIdentity && crate::kernel::is_load_variable(variable) {
                     return None;
@@ -2120,6 +2160,36 @@ impl Printer<'_> {
         if pointer == &Address::null() {
             return Some(atom("0"));
         }
+        // A slice binder's data pointer is `s.as_ptr()`, and an address past
+        // it that pointer plus an element offset.
+        if let crate::kernel::AddressBase::Symbolic(variable) = &pointer.base
+            && let Some(element) = self.slice_bound.get(variable).copied()
+            && let Some(name) = self.variable_name(*variable)
+        {
+            let data = atom(slice_component("as_ptr", &name));
+            let width = element
+                .thin_pointer_type()
+                .pointee_type()
+                .map(|element| i64::from(element.byte_width()))
+                .filter(|width| *width != 0)?;
+            return Some(match pointer.offset.view() {
+                OffsetView::Constant(0) => data,
+                OffsetView::Constant(bytes) if bytes % width == 0 => {
+                    spelled(format!("{} + {}", operand(data, ADD), bytes / width), ADD)
+                }
+                OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
+                    let index = self.bitvector(index.structural_value(), None, depth + 1)?;
+                    spelled(
+                        format!("{} + {}", operand(data, ADD), operand(index, MULTIPLY)),
+                        ADD,
+                    )
+                }
+                _ => {
+                    let offset = self.offset(&pointer.offset, depth + 1);
+                    atom(format!("byte_offset({}, {offset})", data.text))
+                }
+            });
+        }
         if let Some(name) = self.labels.pointer_sources.get(pointer) {
             // A reference parameter's carrier is spelled `&value`.
             let precedence = if name.starts_with('&') { UNARY } else { ATOM };
@@ -2153,6 +2223,14 @@ impl Printer<'_> {
         // offset from it.
         if let crate::kernel::AddressBase::PureFunctionApplication(application) = &pointer.base {
             let call = self.call(application.name(), application.arguments(), depth + 1)?;
+            // A slice-valued call is the slice; its data pointer is
+            // `f(x).as_ptr()`.
+            let slice_element =
+                crate::surface::diagnostics::slice_result_element(application.name());
+            let call = match slice_element {
+                Some(_) => atom(slice_component("as_ptr", &call.text)),
+                None => call,
+            };
             return Some(match pointer.offset.view() {
                 OffsetView::Constant(0) => call,
                 OffsetView::Int32Scaled { index, .. } | OffsetView::Int64Scaled { index, .. } => {
@@ -2163,7 +2241,11 @@ impl Printer<'_> {
                     )
                 }
                 OffsetView::Constant(bytes)
-                    if let Some(width) = instance_element_width(application.name())
+                    if let Some(width) = slice_element
+                        .and_then(|element| element.thin_pointer_type().pointee_type())
+                        .map(|element| i64::from(element.byte_width()))
+                        .filter(|width| *width != 0)
+                        .or_else(|| instance_element_width(application.name()))
                         && bytes % width == 0 =>
                 {
                     spelled(format!("{} + {}", operand(call, ADD), bytes / width), ADD)
@@ -2751,8 +2833,91 @@ impl Printer<'_> {
             ProgramValue::Float32(value) | ProgramValue::Float64(value) => {
                 self.bitvector(value, None, depth)
             }
+            ProgramValue::Pointer(pointer) if pointer.is_wide() => self.slice(pointer, depth),
             ProgramValue::Pointer(pointer) => self.pointer(pointer.address(), depth),
         }
+    }
+
+    /// A slice (`design/rust-slice-values.md`): the one value that names
+    /// it, where one does (a binder or parameter, a slice-valued pure call,
+    /// a slice cell's place), a subslice the kernel recorded where it was
+    /// built as written, `bytes[a..b]`, and any other slice as its
+    /// construction, `slice::from_raw_parts(p, n)`.
+    fn slice(&mut self, slice: &crate::kernel::Pointer, depth: usize) -> Option<Spelled> {
+        let count = slice.len()?;
+        let thin = slice.as_ptr();
+        let address = thin.address();
+        if matches!(address.offset.view(), OffsetView::Constant(0)) {
+            match (&address.base, count) {
+                (
+                    crate::kernel::AddressBase::Symbolic(variable),
+                    OldMachineTerm::Variable(counted),
+                ) if counted.counted_slice() == Some(*variable) => {
+                    return self.pointer(address, depth);
+                }
+                (
+                    crate::kernel::AddressBase::PureFunctionApplication(application),
+                    OldMachineTerm::PureApplicationCount(counted),
+                ) if application == counted => {
+                    return self.call(application.name(), application.arguments(), depth + 1);
+                }
+                (
+                    crate::kernel::AddressBase::SliceData(load),
+                    OldMachineTerm::MemoryLoad(_, read, crate::kernel::LoadKind::SliceCount),
+                ) if read.load() == load => {
+                    return Some(atom(self.place_at(load.cell(), depth)));
+                }
+                _ => {}
+            }
+        }
+        let data = self.slice_data(address, depth)?.text;
+        let count = self.bitvector(count, Some(Hint::UInt64), depth)?.text;
+        // A subslice the kernel recorded where it was built, whose bounds
+        // were owed there, is spelled as written.
+        if crate::surface::diagnostics::rust_spelling()
+            && crate::kernel::is_required_construction(slice)
+            && let Some(subslice) = crate::surface::diagnostics::subslice_spelling(&data, &count)
+        {
+            return Some(atom(subslice));
+        }
+        let name = if crate::surface::diagnostics::rust_spelling() {
+            crate::surface::RUST_SLICE_FROM_RAW_PARTS
+        } else {
+            "slice::from_raw_parts"
+        };
+        Some(atom(format!("{name}({data}, {count})")))
+    }
+
+    /// A slice's data pointer: `s.as_ptr()` of a slice cell's place, else
+    /// the thin pointer's own spelling.
+    fn slice_data(&mut self, address: &Address, depth: usize) -> Option<Spelled> {
+        if let crate::kernel::AddressBase::SliceData(load) = &address.base
+            && matches!(address.offset.view(), OffsetView::Constant(0))
+        {
+            let place = self.place_at(load.cell(), depth);
+            return Some(atom(slice_component("as_ptr", &place)));
+        }
+        self.pointer(address, depth)
+    }
+
+    /// A slice's count, `s.len()` of the slice that names it: a slice a
+    /// variable names, a slice-valued pure call, or a slice cell's place.
+    fn slice_count(&mut self, count: &OldMachineTerm, depth: usize) -> Option<Spelled> {
+        let slice = match count {
+            OldMachineTerm::Variable(counted) => {
+                let variable = counted.counted_slice()?;
+                self.pointer(&Address::symbolic(variable), depth)?.text
+            }
+            OldMachineTerm::PureApplicationCount(application) => {
+                self.call(application.name(), application.arguments(), depth + 1)?
+                    .text
+            }
+            OldMachineTerm::MemoryLoad(_, read, crate::kernel::LoadKind::SliceCount) => {
+                self.place_at(read.load().cell(), depth)
+            }
+            _ => return None,
+        };
+        Some(atom(slice_component("len", &slice)))
     }
 
     fn exact_pointer_value(
@@ -2893,18 +3058,6 @@ impl Printer<'_> {
                         .text,
                     );
                 }
-                // A subslice the kernel recorded where it was constructed,
-                // whose bounds were owed there, is spelled as written.
-                if value.algebraic_type.name == "Slice"
-                    && variant == "Slice"
-                    && crate::surface::diagnostics::rust_spelling()
-                    && crate::kernel::is_required_construction(value)
-                    && let [pointer, length] = spelled_fields.as_slice()
-                    && let Some(subslice) =
-                        crate::surface::diagnostics::subslice_spelling(pointer, length)
-                {
-                    return Some(atom(subslice));
-                }
                 // A struct's value, `*p` or a literal of its fields.
                 if value.algebraic_type.name == *variant
                     && value.algebraic_type.arguments.is_empty()
@@ -2915,16 +3068,7 @@ impl Printer<'_> {
                 {
                     return Some(atom(spelled));
                 }
-                let type_name = match value.algebraic_type.arguments.as_slice() {
-                    [crate::kernel::AlgebraicValueType::Program(element)]
-                        if value.algebraic_type.name == "Slice" =>
-                    {
-                        crate::surface::diagnostics::slice_type_spelling(element)
-                    }
-                    _ => None,
-                }
-                .unwrap_or_else(|| value.algebraic_type.name.clone());
-                let name = format!("{type_name}::{variant}");
+                let name = format!("{}::{variant}", value.algebraic_type.name);
                 Some(atom(if spelled_fields.is_empty() {
                     name
                 } else {
@@ -3142,12 +3286,21 @@ fn load_type_spelling(kind: crate::kernel::LoadKind) -> &'static str {
         K::UInt128 => "uint128",
         K::Float32 => "float",
         K::Float64 => "double",
-        // A slice's count is `s.len()`, spelled with 2b-iii's Surface slice
-        // type; it is never a typed read of a word of the cell.
-        K::SliceCount => panic!(
-            "internal error: rendering a slice's count has no Surface form yet \
-             (design/rust-slice-values.md, step 2b-iii)"
-        ),
+        // A slice's count is `s.len()` of the slice read
+        // (`Printer::slice_count`); it is never a typed read of a word of the
+        // cell, so no read spells this type.
+        K::SliceCount => "usize",
+    }
+}
+
+/// `s.len()` or `s.as_ptr()` of the slice spelled `slice`, in the Rust
+/// spelling where the function is written in Rust syntax and as the
+/// library call elsewhere.
+fn slice_component(component: &str, slice: &str) -> String {
+    if crate::surface::diagnostics::rust_spelling() {
+        format!("{slice}.{component}()")
+    } else {
+        format!("slice::{component}({slice})")
     }
 }
 

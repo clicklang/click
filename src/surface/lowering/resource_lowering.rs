@@ -271,6 +271,16 @@ fn input_arguments(
                     ),
                 ));
             }
+            // A slice parameter is one value named by its binder
+            // (`design/rust-slice-values.md`).
+            InterfaceType::Slice(element) => {
+                arguments.push(ProgramExpression::Value(
+                    crate::kernel::symbolic_call_result(
+                        crate::kernel::ProgramType::SlicePointer(element),
+                        Variable(arguments.len() as u64),
+                    ),
+                ));
+            }
             InterfaceType::Int128 => {
                 arguments.push(ProgramExpression::Value(ProgramValue::Int128(
                     OldMachineTerm::Variable(Variable(arguments.len() as u64)),

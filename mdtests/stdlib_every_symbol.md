@@ -2040,13 +2040,9 @@ theorem use_vec(v: Vec<uint32>, w: Vec<uint32>, x: uint32, i: uint64, j: uint64)
 
 theorem use_slice(p: uint8*, n: uint64) {
     ensures slice::len(slice::from_raw_parts(p, n)) == n by {
-        unfold(slice::from_raw_parts(p, n));
-        unfold(slice::len(Slice<uint8>::Slice(p, n)));
         close();
     }
     ensures slice::as_ptr(slice::from_raw_parts(p, n)) == p by {
-        unfold(slice::from_raw_parts(p, n));
-        unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
         close();
     }
 }
@@ -2067,10 +2063,10 @@ theorem viewed_address_is_not_null(p: uint8*, n: uint64, k: uint64) {
     }
 }
 
-theorem use_subslice_len(a: uint64, b: uint64, n: uint64) {
+theorem use_subslice(p: uint8*, a: uint64, b: uint64, n: uint64) {
     requires a <= b;
     requires b <= n;
-    ensures slice::subslice_len(a, b, n) == b - a by {
+    ensures slice::len(slice::subslice(slice::from_raw_parts(p, n), a, b)) == b - a by {
         close();
     }
 }

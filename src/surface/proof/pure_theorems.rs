@@ -905,6 +905,12 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     ProgramType::ParameterPointer(name),
                     Variable(index as u64),
                 ),
+                // A slice parameter is one value named by its binder
+                // (`design/rust-slice-values.md`).
+                InterfaceType::Slice(element) => crate::kernel::symbolic_call_result(
+                    ProgramType::SlicePointer(element),
+                    Variable(index as u64),
+                ),
                 InterfaceType::Void => unreachable!("pure theorem parameters cannot be void"),
                 // A `Bool` parameter is a binder of the kernel sort (Stage 5),
                 // carried as its cast to `uint8` (rule C1).

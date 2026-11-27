@@ -1,46 +1,12 @@
 use super::*;
 
-fn slice_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::Program(ProgramType::UInt8)];
-    let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
-        name: "Slice".to_string(),
-        fields: vec![
-            AlgebraicValueType::Program(ProgramType::UInt8Pointer),
-            AlgebraicValueType::Program(ProgramType::UInt64),
-        ],
-    }]
-    .into();
-    let value_type = AlgebraicValueType::Algebraic {
-        name: "Slice".to_string(),
-        arguments: arguments.clone(),
+fn subslice(length: u64) -> Pointer {
+    let ProgramValue::Pointer(data) =
+        ProgramValue::typed_pointer(Address::null(), ProgramType::UInt8Pointer)
+    else {
+        unreachable!("a typed pointer is a pointer")
     };
-    AlgebraicType {
-        rigid: false,
-        name: "Slice".to_string(),
-        arguments,
-        variants: variants.clone(),
-        schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
-            value_type, variants,
-        )]))),
-    }
-}
-
-fn subslice(length: u64) -> AlgebraicTerm {
-    AlgebraicTerm {
-        algebraic_type: slice_type(),
-        node: AlgebraicTermNode::Constructor {
-            variant: "Slice".to_string(),
-            fields: vec![
-                AlgebraicValue::Program(ProgramValue::typed_pointer(
-                    Address::null(),
-                    ProgramType::UInt8Pointer,
-                )),
-                AlgebraicValue::Program(ProgramValue::UInt64(OldMachineTerm::uint64_constant(
-                    length,
-                ))),
-            ],
-        },
-    }
+    data.with_element_count(OldMachineTerm::uint64_constant(length))
 }
 
 /// Naming a subslice where it is constructed, and spelling it, are one

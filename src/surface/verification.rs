@@ -9117,14 +9117,16 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
             crate::kernel::AlgebraicValueType::Program(crate::kernel::ProgramType::Parameter(
                 name,
             )) => name.name().to_string(),
-            // The library's `Slice<T>` is Rust's shared slice: the chunk of
+            // A shared slice, one wide pointer: the chunk of
             // `Option<&[u8]>`.
-            crate::kernel::AlgebraicValueType::Algebraic { name, arguments }
-                if name == "Slice"
-                    && let [crate::kernel::AlgebraicValueType::Program(element)] =
-                        arguments.as_slice() =>
-            {
-                let element = match element {
+            crate::kernel::AlgebraicValueType::Program(
+                crate::kernel::ProgramType::SlicePointer(slice),
+            ) => {
+                let element = match slice
+                    .thin_pointer_type()
+                    .pointee_type()
+                    .unwrap_or(crate::kernel::ProgramType::Void)
+                {
                     crate::kernel::ProgramType::Int8 => "i8",
                     crate::kernel::ProgramType::Int16 => "i16",
                     crate::kernel::ProgramType::Int32 => "i32",
@@ -9172,12 +9174,6 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
         return crate::languages::rust::names::vec_type_name(&spelling(element));
     }
     match algebraic_type.arguments.as_slice() {
-        // The library's `Slice<T>` is named `Slice<u8>`.
-        [element] if algebraic_type.name == "Slice" => {
-            let mut name = "Slice".to_string();
-            crate::languages::rust::names::push_type_argument(&mut name, &spelling(element));
-            name
-        }
         [argument] if algebraic_type.name == "Option" => {
             crate::languages::rust::names::option_type_name(&spelling(argument))
         }

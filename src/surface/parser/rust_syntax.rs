@@ -1639,12 +1639,11 @@ impl Parser {
         })
     }
 
-    /// `&[T]` or `&mut [T]` of a scalar `T` where a Rust sidecar writes a
-    /// value's type: a pure function's result, a theorem binder, an enum
-    /// field or a type argument such as `Option<&[u8]>`. It is the library's
-    /// `Slice<T>`, one value; the element type is returned. A pure
-    /// function's slice parameter is read before this, as its pointer and
-    /// its length.
+    /// `&[T]`, `&mut [T]` or `&str` of a scalar `T` where a Rust sidecar
+    /// writes a value's type: a pure function's parameter or result, a
+    /// theorem binder, an enum field or a type argument such as
+    /// `Option<&[u8]>`. It is the built-in slice type, `Slice<T>` or `Str`,
+    /// one value (`design/rust-slice-values.md`), which is returned.
     pub(super) fn take_rust_slice_value_type(
         &mut self,
     ) -> Result<Option<InterfaceType>, ClickError> {
@@ -1652,16 +1651,21 @@ impl Parser {
             return Ok(None);
         }
         let start = self.position;
+        let lifetime = usize::from(matches!(self.peek_next(), Some(Token::Lifetime(_))));
+        let string = self.tokens.get(start + 1 + lifetime) == Some(&Token::Ident("str".into()));
         let Some(parsed) = self.parse_rust_slice_type()? else {
             self.position = start;
             return Ok(None);
         };
-        let element = parsed
-            .interface_type
-            .pointee_type()
-            .ok_or_else(|| self.error("a slice's element type must be a scalar"))?;
         self.implied_library_modules.insert(super::SLICE_MODULE);
-        Ok(Some(element))
+        if string {
+            return Ok(Some(InterfaceType::Slice(crate::kernel::SliceElement::Str)));
+        }
+        let slice = crate::kernel::SliceElement::of_thin_pointer_type(
+            parsed.interface_type.to_kernel_type(),
+        )
+        .ok_or_else(|| self.error("a slice's element type must be a scalar"))?;
+        Ok(Some(InterfaceType::Slice(slice)))
     }
 
     /// The type of a Click binder in a Rust sidecar, spelled as Rust does:

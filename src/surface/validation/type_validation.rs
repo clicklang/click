@@ -1970,6 +1970,19 @@ pub(super) fn infer_scoped_spec_value_type(
                     _ => {}
                 }
             }
+            // A generic pointer or slice result, `T*` or `Slice<T>`, such as
+            // `slice::as_ptr`'s, has its type at the call's instance.
+            if !function.type_parameters.is_empty()
+                && matches!(
+                    function.return_type,
+                    ClickType::Program(
+                        InterfaceType::ParameterPointer(_)
+                            | InterfaceType::Slice(crate::kernel::SliceElement::Parameter(_))
+                    )
+                )
+            {
+                return infer_spec_value_type(expression, variables, click_functions, context);
+            }
             Ok(match &function.return_type {
                 ClickType::Proposition => SpecValueType::Proposition,
                 ClickType::Resource => {
@@ -2751,7 +2764,11 @@ fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
     match click_type {
         ClickType::Proposition => false,
         ClickType::Resource => false,
-        ClickType::Parameter(_) | ClickType::Program(InterfaceType::ParameterPointer(_)) => true,
+        ClickType::Parameter(_)
+        | ClickType::Program(
+            InterfaceType::ParameterPointer(_)
+            | InterfaceType::Slice(crate::kernel::SliceElement::Parameter(_)),
+        ) => true,
         ClickType::Function { parameters, result } => {
             parameters.iter().any(return_type_needs_instantiation)
                 || return_type_needs_instantiation(result)
@@ -3576,6 +3593,7 @@ pub(in crate::surface) fn describe_interface_type(interface_type: InterfaceType)
         InterfaceType::PointerArray(element, _, length) => {
             format!("{}[{length}]", element.decayed_type_spelling())
         }
+        InterfaceType::Slice(element) => element.slice_type_spelling().to_string(),
     }
 }
 
@@ -3775,6 +3793,14 @@ pub(in crate::surface) fn click_types_compatible(
         (actual, expected) if type_is_arithmetic(actual) && type_is_arithmetic(expected) => {
             implicitly_converts(actual, expected)
         }
+        // A generic slice, `Slice<T>`, takes a slice of any element, and a
+        // generic `T*` a pointer to any element; the call's type arguments
+        // are inferred, and checked, by unification.
+        (
+            InterfaceType::Slice(_),
+            InterfaceType::Slice(crate::kernel::SliceElement::Parameter(_)),
+        ) => true,
+        (actual, InterfaceType::ParameterPointer(_)) if actual.pointee_type().is_some() => true,
         _ => actual == expected,
     }
 }
@@ -4395,10 +4421,8 @@ fn interface_type_from_program_type(target_type: &ProgramType) -> Option<Interfa
         ProgramType::Int32PointerPointer => Some(InterfaceType::Int32PointerPointer),
         ProgramType::UInt8PointerPointer => Some(InterfaceType::UInt8PointerPointer),
         ProgramType::FunctionPointer(signature) => Some(InterfaceType::FunctionPointer(*signature)),
-        ProgramType::Void
-        | ProgramType::Int32Array(_)
-        | ProgramType::UInt8Array(_)
-        | ProgramType::SlicePointer(_) => None,
+        ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
+        ProgramType::SlicePointer(element) => Some(InterfaceType::Slice(*element)),
         ProgramType::Int64 => Some(InterfaceType::Int64(LongRank::Long)),
         ProgramType::UInt64 => Some(InterfaceType::UInt64(LongRank::Long)),
         ProgramType::Float32 => Some(InterfaceType::Float32),
@@ -4671,7 +4695,7 @@ pub(in crate::surface) fn infer_program_expression_type(
             ProgramType::PointerArray(element, length) => {
                 InterfaceType::PointerArray(*element, LongRank::Long, *length)
             }
-            ProgramType::SlicePointer(_) => return None,
+            ProgramType::SlicePointer(element) => InterfaceType::Slice(*element),
         }),
         ProgramExpression::Index(base, _) => {
             infer_program_expression_type(base, variables).and_then(pointer_element_type)

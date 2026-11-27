@@ -478,12 +478,13 @@ the same term: a written subslice as `bytes[1..3]` and its length as
 subslice prints as that subslice, `bytes[1..3]`: the kernel records it where
 it is constructed, the same place its bounds are owed, so the printed form owes
 nothing new when it is read back. A slice built any other way, such as the
-body of `half` unfolded, prints as its constructor at its element type,
-`Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
+body of `half` unfolded, prints as its construction,
+`click::rust::slice::from_raw_parts(&bytes[1], 2u64)`. In a theorem
 written in Click syntax, the library's calls print as calls,
-`slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
-constructed slice, such as a subslice, stay the calls written; `unfold`
-opens one to the constructor's field, and `close()` opens it itself. A subslice,
+`slice::len(slice::from_raw_parts(p, n))`. A slice is one built-in value,
+a wide pointer holding its data pointer and its length, so `.len()` and
+`.as_ptr()` of a constructed slice, such as a subslice, are its components
+read in place, with nothing to unfold. A subslice,
 `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
@@ -496,9 +497,9 @@ only where the guard holds: `forall (k: usize) { k <= 2 implies ... bytes[k..2]
 refused. A bound the facts in scope do not establish is refused with its
 condition, `not established: 5u64 <= bytes.len()`; establish it first, for
 example `have half(bytes).len() == 2u64;` before `half(bytes)[1..]`. A
-literal reversed range, `bytes[3..1]`, is refused as it is read. The length
-is `slice::subslice_len(a, b, bytes.len())` from the
-[slice library](library/index.md#slicesubslice_len). A method means what
+literal reversed range, `bytes[3..1]`, is refused as it is read. The
+subslice is `slice::subslice(bytes, a, b)` from the
+[slice library](library/index.md#slicesubslice). A method means what
 its receiver's type says, however the receiver was introduced, so a slice
 bound by a `match` arm, `Option::Some(s) => s.len()`, or by a `let`,
 `let s = half(bytes); s[..1]`, reads with the same methods; a method the

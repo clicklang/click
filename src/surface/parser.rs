@@ -1267,9 +1267,6 @@ struct Parser {
     /// its `name: &[T]` parameters. A call passes such a parameter a slice,
     /// which stands for its pointer and its length.
     pure_function_slices: BTreeMap<String, (usize, Vec<usize>)>,
-    /// The pure functions whose result is a slice, `-> &[T]`: a call's
-    /// `.len()`, `.as_ptr()` and `[i]` read the slice value.
-    slice_result_functions: BTreeSet<String>,
     /// Pure functions declared `-> Integer`, whose calls are Integer
     /// operands.
     integer_function_names: BTreeSet<String>,
@@ -1297,10 +1294,6 @@ struct Parser {
     /// is pointer arithmetic and keeps its C meaning, as it does on a C
     /// function's pointer parameter.
     theorem_pointer_params: BTreeSet<String>,
-    /// The slice parameters of the pure function whose parameter list is
-    /// being parsed; `None` in any other parameter list, where a slice is
-    /// not a parameter type.
-    pending_slice_params: Option<Vec<String>>,
     /// Set immediately before an `if`, `match` or `let` expression that is
     /// the value of a `bool` context, and taken by that expression's parser:
     /// its branches are then `bool` values too.
@@ -1421,15 +1414,6 @@ impl StructPointerCast {
 /// The module that specifies Rust slices, brought in where a sidecar
 /// declares a slice.
 pub(super) const SLICE_MODULE: &str = "library/rust/slice.click";
-
-/// Whether `name` is the library's `slice::from_raw_parts`, a slice made of
-/// a pointer and a length.
-fn is_slice_from_raw_parts(name: &str) -> bool {
-    matches!(
-        name,
-        "slice::from_raw_parts" | "click::rust::slice::from_raw_parts"
-    )
-}
 
 pub(super) fn is_c_type_keyword(name: &str) -> bool {
     matches!(
@@ -1804,6 +1788,20 @@ fn spec_parameter_types(parameters: &[FunctionParameter]) -> BinderMap<Interface
             }
             _ => None,
         })
+        .collect()
+}
+
+/// The parameters of the built-in slice type, by name.
+fn slice_value_parameters(parameters: &[FunctionParameter]) -> BTreeSet<String> {
+    parameters
+        .iter()
+        .filter(|parameter| {
+            matches!(
+                parameter.click_type(),
+                ClickType::Program(InterfaceType::Slice(_))
+            )
+        })
+        .map(|parameter| parameter.name().to_string())
         .collect()
 }
 
@@ -2370,7 +2368,6 @@ impl Parser {
             current_local_pointers: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
-            slice_result_functions: BTreeSet::new(),
             integer_function_names: BTreeSet::new(),
             proposition_function_names: BTreeSet::new(),
             pointer_result_functions: BTreeSet::new(),
@@ -2379,7 +2376,6 @@ impl Parser {
             spec_parameter_types: BinderMap::new(),
             address_casts: std::collections::HashSet::new(),
             theorem_pointer_params: BTreeSet::new(),
-            pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
             integer_arithmetic,
@@ -2483,9 +2479,6 @@ impl Parser {
                     if self.declares_named_result(parameters, "Prop") {
                         self.proposition_function_names.insert(name.clone());
                     }
-                    if self.declares_slice_result(parameters) {
-                        self.slice_result_functions.insert(name.clone());
-                    }
                     if names::declares_pointer_result(&self.tokens, parameters) {
                         self.pointer_result_functions.insert(name.clone());
                     }
@@ -2582,12 +2575,13 @@ impl Parser {
         }
     }
 
-    /// The arguments of a call to a pure function that takes a slice, with
-    /// each slice argument written as the pointer and the length it stands
-    /// for. A slice argument is one value: a slice parameter in scope, such
-    /// as `bytes`, or `slice::from_raw_parts(p, n)` for a pointer and a
-    /// length.
-    fn spread_slice_arguments(
+    /// The arguments of a call to a pure function that takes a slice. A
+    /// slice argument is one value: a slice, or a slice parameter in scope,
+    /// such as `bytes`, which stands for the slice
+    /// `slice::from_raw_parts(bytes, bytes.len())` of its pointer and its
+    /// length (`design/rust-slice-values.md`; a parameter becomes one value
+    /// at step 3).
+    fn slice_arguments(
         &self,
         name: &str,
         arguments: Vec<SyntaxTerm>,
@@ -2601,84 +2595,27 @@ impl Parser {
                 if *count == 1 { "" } else { "s" }
             )));
         }
-        let mut spread = Vec::with_capacity(count + slices.len());
-        for (index, argument) in arguments.into_iter().enumerate() {
-            if !slices.contains(&index) {
-                spread.push(argument);
-                continue;
-            }
-            match argument {
-                SyntaxTerm::Call {
-                    name: constructor,
-                    arguments: parts,
-                } if is_slice_from_raw_parts(&constructor) && parts.len() == 2 => {
-                    spread.extend(parts);
+        arguments
+            .into_iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                if !slices.contains(&index) {
+                    return Ok(argument);
                 }
-                // A subslice, `bytes[a..b]`, is its pointer and its length.
-                SyntaxTerm::AlgebraicConstructor {
-                    algebraic_type,
-                    variant,
-                    arguments: parts,
-                } if algebraic_type.name() == "Slice" && variant == "Slice" && parts.len() == 2 => {
-                    spread.extend(parts);
+                if let Some(slice) = self.slice_parameter_value(&argument) {
+                    return Ok(slice);
                 }
-                // A slice read at another point, as a printed proof writes
-                // it: its pointer at that point, and its length, which a
-                // shared slice parameter never changes.
-                argument @ (SyntaxTerm::Old(_) | SyntaxTerm::At { .. })
-                    if self.read_slice_parameter(&argument).is_some() =>
-                {
-                    let slice = self
-                        .read_slice_parameter(&argument)
-                        .expect("matched above")
-                        .to_string();
-                    spread.push(argument);
-                    spread.push(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                        crate::kernel::BindingName::slice_length(&slice),
-                    )));
-                }
-                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                    crate::kernel::BindingName::Named(slice),
-                )) if self.rust_slice_params.contains(&slice) => {
-                    let length = SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                        crate::kernel::BindingName::slice_length(&slice),
-                    ));
-                    spread.push(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                        slice.into(),
-                    )));
-                    spread.push(length);
-                }
-                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                    crate::kernel::BindingName::Named(slice),
-                )) => {
-                    return Err(self.error(format!(
+                match &argument {
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::Named(slice),
+                    )) => Err(self.error(format!(
                         "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or `slice::from_raw_parts(p, n)` for a pointer and a length",
                         index + 1
-                    )));
+                    ))),
+                    _ => Ok(argument),
                 }
-                // A slice value passes its pointer and its length, its
-                // methods `as_ptr()` and `len()`, resolved by its type.
-                argument
-                    if self.is_rust_slice_value(&argument)
-                        || self.is_click_valued_receiver(&argument) =>
-                {
-                    let method = |method: &str| SyntaxTerm::MethodCall {
-                        receiver: Box::new(argument.clone()),
-                        method: method.to_string(),
-                        arguments: vec![],
-                    };
-                    spread.push(method("as_ptr"));
-                    spread.push(method("len"));
-                }
-                _ => {
-                    return Err(self.error(format!(
-                        "argument {} of `{name}` is a slice; pass a slice parameter, such as `bytes`, or `slice::from_raw_parts(p, n)` for a pointer and a length",
-                        index + 1
-                    )));
-                }
-            }
-        }
-        Ok(spread)
+            })
+            .collect()
     }
 
     fn in_interface_file(&self) -> bool {
@@ -3598,14 +3535,14 @@ impl Parser {
         &mut self,
         type_parameters: &[String],
     ) -> Result<AlgebraicFieldType, ClickError> {
-        if let Some(element) = self.take_rust_slice_value_type()? {
-            return Ok(AlgebraicFieldType::Algebraic {
-                name: "Slice".to_string(),
-                arguments: vec![AlgebraicFieldType::C {
-                    interface_type: element,
-                    struct_name: None,
-                    object_class: None,
-                }],
+        if let Some(slice) = self
+            .take_rust_slice_value_type()?
+            .map_or_else(|| self.take_builtin_slice_type(), |slice| Ok(Some(slice)))?
+        {
+            return Ok(AlgebraicFieldType::C {
+                interface_type: slice,
+                struct_name: None,
+                object_class: None,
             });
         }
         let rust_type = if self
@@ -4021,6 +3958,10 @@ impl Parser {
             &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
+        let previous_slice_value_params = std::mem::replace(
+            &mut self.names.slice_value_params,
+            slice_value_parameters(&parsed_parameters.parameters),
+        );
         let body = self.parse_proposition()?;
         self.names.struct_params = previous_struct_params;
         self.names
@@ -4028,6 +3969,7 @@ impl Parser {
         self.names
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.names.algebraic_params = previous_algebraic_params;
+        self.names.slice_value_params = previous_slice_value_params;
         self.names
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.expect(Token::RBrace)?;
@@ -4050,18 +3992,14 @@ impl Parser {
             type_parameters.iter().cloned().collect(),
         );
         self.expect(Token::LParen)?;
-        self.pending_slice_params = Some(Vec::new());
         let parsed_parameters = self
             .parse_parameters_with_resources_and_functions(false, true)
-            .map(|(parameters, _)| parameters);
-        let slice_params = self.pending_slice_params.take().unwrap_or_default();
-        let parsed_parameters = parsed_parameters?;
+            .map(|(parameters, _)| parameters)?;
         self.expect(Token::RParen)?;
-        // A slice parameter reads as one: `bytes.len()` and `*bytes`.
-        let previous_slice_params = std::mem::replace(
-            &mut self.rust_slice_params,
-            slice_params.into_iter().collect(),
-        );
+        // A slice parameter is one value, a binder of the slice type
+        // (`design/rust-slice-values.md`): its methods, `bytes.len()` and
+        // `bytes[i]`, resolve by that type.
+        let previous_slice_params = std::mem::take(&mut self.rust_slice_params);
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
         if matches!(return_type, ClickType::Function { .. }) {
@@ -4131,6 +4069,10 @@ impl Parser {
             &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
+        let previous_slice_value_params = std::mem::replace(
+            &mut self.names.slice_value_params,
+            slice_value_parameters(&parsed_parameters.parameters),
+        );
         let previous_spec_parameter_types = std::mem::replace(
             &mut self.spec_parameter_types,
             spec_parameter_types(&parsed_parameters.parameters),
@@ -4164,6 +4106,7 @@ impl Parser {
         self.names
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.names.algebraic_params = previous_algebraic_params;
+        self.names.slice_value_params = previous_slice_value_params;
         self.names
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.rust_slice_params = previous_slice_params;
@@ -4256,6 +4199,10 @@ impl Parser {
             &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
+        let previous_slice_value_params = std::mem::replace(
+            &mut self.names.slice_value_params,
+            slice_value_parameters(&parsed_parameters.parameters),
+        );
         let previous_contract_bindings = self.names.take(NameKind::ContractBinding);
         let previous_definition = std::mem::replace(&mut self.in_resource_definition, true);
         let previous_hidden = std::mem::take(&mut self.names.hidden_child_fields);
@@ -4308,6 +4255,7 @@ impl Parser {
         self.names
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.names.algebraic_params = previous_algebraic_params;
+        self.names.slice_value_params = previous_slice_value_params;
         self.names.resource_bindings = previous_resource_bindings;
         self.names.resource_targets = previous_resource_targets;
         self.names
@@ -4910,21 +4858,7 @@ impl Parser {
                     ));
                 }
                 self.expect(Token::Colon)?;
-                if self.pending_slice_params.is_some()
-                    && self.verifies_rust()
-                    && let Some(element) = self.parse_rust_slice_type()?
                 {
-                    let length = FunctionParameter::rust_slice_length(&name);
-                    if let Some(slices) = &mut self.pending_slice_params {
-                        slices.push(name.clone());
-                    }
-                    if let Some(pointee) = element.interface_type.pointee_type() {
-                        self.rust_slice_elements.insert(name.clone(), pointee);
-                    }
-                    self.implied_library_modules.insert(SLICE_MODULE);
-                    parameters.push(self.parse_parameter_array_suffix(name, element)?.parameter);
-                    parameters.push(length);
-                } else {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
                     if click_type == ClickType::Proposition
                         || (!allow_functions && matches!(click_type, ClickType::Function { .. }))
@@ -5148,6 +5082,10 @@ impl Parser {
             &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
+        let previous_slice_value_params = std::mem::replace(
+            &mut self.names.slice_value_params,
+            slice_value_parameters(&parsed_parameters.parameters),
+        );
         let mut contract_lets = Vec::new();
         let mut contract_let_names = BTreeSet::new();
         let mut requires = Vec::new();
@@ -5342,6 +5280,7 @@ impl Parser {
         self.names
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.names.algebraic_params = previous_algebraic_params;
+        self.names.slice_value_params = previous_slice_value_params;
         self.names
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.names
@@ -7694,15 +7633,8 @@ impl Parser {
                 None,
             ));
         }
-        if let Some(element) = self.take_rust_slice_value_type()? {
-            return Ok((
-                ClickType::Algebraic(AlgebraicTypeApplication {
-                    rigid: false,
-                    name: "Slice".to_string(),
-                    arguments: vec![ClickType::Program(element)],
-                }),
-                None,
-            ));
+        if let Some(slice) = self.take_rust_slice_value_type()? {
+            return Ok((ClickType::Program(slice), None));
         }
         if let Some(parsed) = self.parse_rust_click_type()? {
             return Ok((ClickType::Program(parsed.interface_type), Some(parsed)));
@@ -7716,6 +7648,9 @@ impl Parser {
         if interface_type || self.at_cpp_record_type() {
             let parsed = self.parse_type()?;
             return Ok((ClickType::Program(parsed.interface_type), Some(parsed)));
+        }
+        if let Some(slice) = self.take_builtin_slice_type()? {
+            return Ok((ClickType::Program(slice), None));
         }
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
@@ -7744,6 +7679,40 @@ impl Parser {
         }
         let application = self.parse_algebraic_type_application()?;
         Ok((ClickType::Algebraic(application), None))
+    }
+
+    /// The built-in slice type spelled `Slice<T>`, a slice of the scalar or
+    /// type parameter `T`, or `Str`, a string slice
+    /// (`design/rust-slice-values.md`). Nothing is consumed otherwise.
+    fn take_builtin_slice_type(&mut self) -> Result<Option<InterfaceType>, ClickError> {
+        match self.peek_ident() {
+            Some("Str") if !self.names.contains(NameKind::TypeParameter, "Str") => {
+                self.position += 1;
+                Ok(Some(InterfaceType::Slice(crate::kernel::SliceElement::Str)))
+            }
+            Some("Slice")
+                if self.peek_next() == Some(&Token::LessThan)
+                    && !self.names.contains(NameKind::TypeParameter, "Slice") =>
+            {
+                self.position += 2;
+                let (element, _) = self.parse_click_type()?;
+                let slice =
+                    crate::surface::generics::slice_of_element(&element).ok_or_else(|| {
+                        self.error(format!(
+                            "a slice's element type must be a scalar or a type parameter, not `{}`",
+                            crate::surface::validation::describe_click_type(&element)
+                        ))
+                    })?;
+                match self.peek() {
+                    Some(Token::GreaterThan) => self.position += 1,
+                    // `>>` closes this list and the one around it.
+                    Some(Token::ShiftRight) => self.tokens[self.position] = Token::GreaterThan,
+                    _ => return Err(self.error("expected `>` after the slice's element type")),
+                }
+                Ok(Some(slice))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn parse_click_type_parameters(&mut self) -> Result<Vec<String>, ClickError> {
@@ -10525,7 +10494,7 @@ impl Parser {
         let name = self.expect_reference_name(expected_name)?;
         let arguments = self.parse_call_argument_list()?;
         let arguments = self.observe_integer_arguments(&name, arguments);
-        let arguments = self.spread_slice_arguments(&name, arguments)?;
+        let arguments = self.slice_arguments(&name, arguments)?;
         Ok((name, arguments))
     }
 
@@ -10591,29 +10560,6 @@ impl Parser {
         let right = self.parse_comparison_operand()?;
 
         Ok(self.specification_comparison(left, operator, right))
-    }
-
-    /// Whether the function header whose parameter list opens at `start`
-    /// declares `-> Integer`: the parenthesis is matched, then the result
-    /// type follows the arrow.
-    fn declares_slice_result(&self, start: usize) -> bool {
-        if self.tokens.get(start) != Some(&Token::LParen) {
-            return false;
-        }
-        let Some(close) = self.matching_parentheses.get(start).copied().flatten() else {
-            return false;
-        };
-        let mut at = close + 2;
-        if self.tokens.get(close + 1) != Some(&Token::Arrow)
-            || self.tokens.get(at) != Some(&Token::Amp)
-        {
-            return false;
-        }
-        at += 1;
-        if self.tokens.get(at) == Some(&Token::Ident("mut".into())) {
-            at += 1;
-        }
-        self.tokens.get(at) == Some(&Token::LBracket)
     }
 
     /// Whether `expression` is a value of a Click type whose methods the
@@ -10709,29 +10655,6 @@ impl Parser {
         Ok(arguments)
     }
 
-    /// Whether `expression` is a slice value a Rust sidecar reads with
-    /// Rust's slice methods: a call of a pure function whose result is a
-    /// slice, or a `Slice` binder.
-    fn is_rust_slice_value(&self, expression: &SyntaxTerm) -> bool {
-        if !self.verifies_rust() {
-            return false;
-        }
-        match expression {
-            SyntaxTerm::Call { name, .. } => {
-                self.slice_result_functions.contains(name) || is_slice_from_raw_parts(name)
-            }
-            SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
-            | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
-                algebraic_type.name() == "Slice"
-            }
-            SyntaxTerm::Old(inner)
-            | SyntaxTerm::At {
-                expression: inner, ..
-            } => self.is_rust_slice_value(inner),
-            _ => false,
-        }
-    }
-
     /// The slice parameter `expression` names: `bytes`, or `bytes` at another
     /// point, `old(bytes)` or `at(point, bytes)`.
     fn rust_slice_parameter_read<'a>(&self, expression: &'a SyntaxTerm) -> Option<&'a str> {
@@ -10744,18 +10667,15 @@ impl Parser {
     }
 
     /// The slice value a slice parameter read stands for, `bytes` or
-    /// `old(bytes)`: the constructor of its pointer, as written, and its
-    /// length, which a parameter never changes, at its element type.
+    /// `old(bytes)`: the slice built from its pointer, as written, and its
+    /// length, which a parameter never changes,
+    /// `slice::from_raw_parts(bytes, bytes.len())`. A slice parameter is a
+    /// pointer and a length until it is one value (`design/rust-slice-values.md`,
+    /// step 3).
     fn slice_parameter_value(&self, expression: &SyntaxTerm) -> Option<SyntaxTerm> {
         let parameter = self.rust_slice_parameter_read(expression)?;
-        let element = *self.rust_slice_elements.get(parameter)?;
-        Some(SyntaxTerm::AlgebraicConstructor {
-            algebraic_type: AlgebraicTypeApplication {
-                rigid: false,
-                name: "Slice".to_string(),
-                arguments: vec![ClickType::Program(element)],
-            },
-            variant: "Slice".to_string(),
+        Some(SyntaxTerm::Call {
+            name: crate::surface::RUST_SLICE_FROM_RAW_PARTS.to_string(),
             arguments: vec![
                 expression.clone(),
                 SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
@@ -17897,7 +17817,9 @@ impl Parser {
                 {
                     return Ok(expression);
                 }
-                if self.names.contains_any(NameKind::VALUES, &name) || self.specification_binding_kind(&name).is_some()
+                if self.names.contains_any(NameKind::VALUES, &name)
+                    || self.specification_binding_kind(&name).is_some()
+                    || self.names.slice_value_params.contains(&name)
                 {
                     Ok(SyntaxTerm::Binding(name))
                 } else {
@@ -18283,12 +18205,9 @@ impl Parser {
             && self.tokens.get(self.position + 3) == Some(&Token::RBracket)
         {
             let element = rust_syntax::rust_scalar_type(element)?;
+            let slice = crate::surface::generics::slice_of_element(&ClickType::Program(element))?;
             self.position += 4;
-            return Some(ClickType::Algebraic(AlgebraicTypeApplication {
-                rigid: false,
-                name: "Slice".into(),
-                arguments: vec![ClickType::Program(element)],
-            }));
+            return Some(ClickType::Program(slice));
         }
         let Some(Token::Ident(pointee)) = self.peek_next() else {
             return None;

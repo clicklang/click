@@ -4702,10 +4702,6 @@ id = "library.theorem.usize::multiply_to_integer"
 path = "reference/library/index.md#usizemultiply_to_integer"
 
 [[item]]
-id = "library.type.Slice"
-path = "reference/library/index.md#slice"
-
-[[item]]
 id = "library.function.slice::len"
 path = "reference/library/index.md#slicelen"
 
@@ -4718,8 +4714,8 @@ id = "library.function.slice::from_raw_parts"
 path = "reference/library/index.md#slicefrom_raw_parts"
 
 [[item]]
-id = "library.function.slice::subslice_len"
-path = "reference/library/index.md#slicesubslice_len"
+id = "library.function.slice::subslice"
+path = "reference/library/index.md#slicesubslice"
 
 [[item]]
 id = "library.type.Vec"

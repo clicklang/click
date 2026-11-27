@@ -4390,17 +4390,6 @@ fn evaluate_spec_algebraic_non_call_in(
                 })
                 .collect::<Vec<_>>();
             budget.check_path_width(paths.len())?;
-            // A value built with a field owed under a requirement, a Rust
-            // subslice, is named here as the form that built it.
-            if fields.iter().any(required_constructions::field_is_required) {
-                for path in &paths {
-                    required_constructions::record_required_construction(
-                        path.value
-                            .native_constructor()
-                            .expect("constructor producer"),
-                    );
-                }
-            }
             Ok(paths)
         }
         SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => {
@@ -4623,6 +4612,10 @@ fn guard_scalar_match_obligation(
                         Some(class) => Sort::ProgramObjectPointer(ty, class),
                         None => Sort::ProgramPointer(ty),
                     }
+                } else if ty.is_slice_pointer() {
+                    // A slice binder closes with its count
+                    // (`design/rust-slice-values.md`, step 2b-iii-b-i).
+                    Sort::ProgramPointer(ty)
                 } else {
                     return Err(ExecutionLimit::Paths);
                 }
@@ -9885,6 +9878,13 @@ fn evaluate_spec_requires_paths_in(
             &value_assumptions,
             budget,
         )? {
+            // A slice built under a requirement, a Rust subslice, is named
+            // here as the form that built it.
+            if matches!(value, SpecExpression::SliceFromRawParts { .. })
+                && let ProgramValue::Pointer(slice) = value_path.value.native().as_ref()
+            {
+                required_constructions::record_required_construction(slice);
+            }
             if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &requirement_path.facts,
                 &obligations,

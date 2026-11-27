@@ -925,7 +925,11 @@ impl Elaborator<'_> {
             ClickType::Algebraic(_) => self.algebraic_argument_click_type(argument, typing),
             // A `T*` parameter binds `T` from the argument's pointer type,
             // as a `T` parameter binds it from the argument's type.
-            ClickType::Program(InterfaceType::ParameterPointer(_)) | ClickType::Parameter(_) => {
+            ClickType::Program(
+                InterfaceType::ParameterPointer(_)
+                | InterfaceType::Slice(crate::kernel::SliceElement::Parameter(_)),
+            )
+            | ClickType::Parameter(_) => {
                 self.infer_unconstrained_call_argument_type(argument, typing)
             }
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
@@ -1017,17 +1021,31 @@ impl Elaborator<'_> {
             | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
                 Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
             }
+            // A binder whose value states no type, such as a match arm's
+            // slice binder, has the type its binding gives it.
             SyntaxTerm::Binding(name) => Ok(typing
                 .algebraic_binding_click_type(name)
-                .or_else(|| typing.program_binding_click_type(name))),
+                .or_else(|| typing.program_binding_click_type(name))
+                .or_else(|| self.contract_expression_click_type(argument, typing))),
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                 Ok(Some(generics::click_type_from_program_value(value)))
             }
+            // A program variable, such as a slice parameter's pointer passed
+            // to `slice::from_raw_parts`, has its declared type: the pointer
+            // to its element, which a slice parameter, one with a length,
+            // declares (`design/rust-slice-values.md`, until step 3).
             SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => Ok(typing
                 .algebraic_binding_click_type(name)
-                .or_else(|| typing.program_binding_click_type(name))),
+                .or_else(|| typing.program_binding_click_type(name))
+                .or_else(|| self.contract_expression_click_type(argument, typing))
+                .or_else(|| {
+                    if !self.declarations.is_rust_slice_parameter(name) {
+                        return None;
+                    }
+                    self.element_pointer_click_type(argument, typing)
+                })),
             SyntaxTerm::Call { name, arguments } => {
                 let definition = self
                     .definitions
@@ -1060,8 +1078,31 @@ impl Elaborator<'_> {
                 }
                 Ok(None)
             }
+            // An element's address, `&bytes[1]`, is a pointer to the element.
+            SyntaxTerm::ProgramExpression(
+                ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
+            )
+            | SyntaxTerm::CUnary {
+                lowered:
+                    ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
+                ..
+            } => Ok(self
+                .contract_expression_click_type(argument, typing)
+                .or_else(|| self.element_pointer_click_type(argument, typing))),
             _ => Ok(None),
         }
+    }
+
+    /// The pointer to the scalar element `pointer` declares, as a Click type.
+    fn element_pointer_click_type(
+        &self,
+        pointer: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<ClickType> {
+        self.contract_pointer_element_type(pointer, typing)
+            .filter(|element| !element.is_pointer())
+            .and_then(|element| generics::interface_type_from_program_type(element).pointer_type())
+            .map(ClickType::Program)
     }
 
     /// The element width a pure call's result steps by when the call

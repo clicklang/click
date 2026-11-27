@@ -1,14 +1,15 @@
 # A library field accessor needs its defining equation
 
-Like a locally defined pure function, `slice::len` stays folded even when
-its argument is a constructor. Expose the defining equation with
-`unfold(slice::len(Slice<uint8>::Slice(p, n)))` before closing the proof.
+Like a locally defined pure function, `option::unwrap_or` stays folded even
+when its argument is a constructor. Expose the defining equation with
+`unfold(option::unwrap_or(Option<uint64>::Some(m), d))` before closing the
+proof.
 
 ```click
-import click::rust::slice;
+import click::rust::option;
 
-theorem a_slice_length_stays_a_call(p: uint8*, n: uint64) {
-    ensures slice::len(Slice<uint8>::Slice(p, n)) == n by {
+theorem an_unwrapped_payload_stays_a_call(m: uint64, d: uint64) {
+    ensures option::unwrap_or(Option<uint64>::Some(m), d) == m by {
         close() using {};
     }
 }
