@@ -298,22 +298,25 @@ kernel. It reads outer names through the `TypeScope` trait
 specification definitions and recorded states. The lowerer delegates those
 queries to it. Comparison elaboration (`elaborate_proposition`,
 `elaborate_comparison` and the native operand forms) also runs on the
-`Elaborator`, reading names through a `TypingEnvironment`. It still asks
-lowering two questions through the `LoweringQueries` trait: whether a generic
-call's result is algebraic at its instantiation, and a call result's pointer
-element width. Each moves to the `Elaborator` once declared types answer it.
-Two have moved: the refusal of a step or access through an untyped pointer
-(`refuse_untyped_pointer_access`), and a pointer's element width
-(`contract_pointer_element_width`). They read the declared C types, the
-typing environment and the recorded region results. A pointer's element can
-still be known only from the value a name is bound to, a struct pointer's
-object class, so `TypeScope::bound_pointer_element` answers it from the
-lowering context, as a type (`PointerElement`), until the declaration scope
-records it. `annotations/elaboration_tests.rs` elaborates comparisons
-from declared types alone: Click binders declared in a `TypingEnvironment`
-over `NoOuterNames`, C parameters in the declarations, and a
-`LoweringQueries` that knows nothing, with no lowerer. The declarations
-still hold an (empty) entry state, a kernel value.
+`Elaborator`, reading names through a `TypingEnvironment`, and asks lowering
+nothing: the `LoweringQueries` bridge is gone. The untyped-pointer refusal,
+pointer element widths, call argument types and generic instantiation all run
+on the `Elaborator`, over the declared C types, the typing environment and
+the recorded region results. Two kinds of answer still come from the lowering
+context through `TypeScope`, transitionally, until the declaration scope
+records them: what a name's pointer steps by when only its bound value says,
+a struct pointer's object class (`bound_pointer_element`, a `PointerElement`
+type rather than a value); and the scope at another program point for
+`old(..)` and `at(..)` (`at_entry`, `at_point`), which the lowering context
+builds as it always has. A generic instantiation's type-inference failure,
+which lowering reads to classify an error, is handed back to the lowerer by
+`with_elaborator`.
+
+`annotations/elaboration_tests.rs` elaborates comparisons from declared types
+alone, with no lowerer: Click binders declared in a `TypingEnvironment` over
+`NoOuterNames`, and C parameters and their pointer elements in the
+declarations. The declarations still hold an (empty) entry state, a kernel
+value.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
 entry values, and the state that declares the clause's locals) for names that

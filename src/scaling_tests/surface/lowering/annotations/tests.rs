@@ -89,7 +89,7 @@ fn proposition_state_selection_matches_full_context_without_unrelated_bindings()
             .unwrap();
         let mut names = BTreeSet::new();
         collect_click_proposition_referenced_names(&proposition, &mut names);
-        lowerer.capture_referenced_names = Some(names);
+        lowerer.capture_referenced_names = Some(Arc::new(names));
         let ((selected, projected), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 let selected = lowerer
