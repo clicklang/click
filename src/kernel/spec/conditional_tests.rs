@@ -25,6 +25,48 @@ fn join(condition: &OldConditionTerm, left: &SpecValue, right: &SpecValue) -> Sp
 }
 
 #[test]
+fn retained_raw_bool_join_preserves_the_word_and_uses_a_shared_guard() {
+    let _session = VerificationSession::enter();
+    let raw = ProgramValue::Bool(OldMachineTerm::Variable(Variable(10993757)));
+    let word = SpecValue::Shared(
+        KernelTermImport::default().argument(&PureFunctionArgument::Value(raw.clone())),
+    );
+    let guard = KernelTerm::float_classify(
+        KernelFloatType::Float32,
+        FloatClassification::Zero,
+        KernelTerm::float_call(
+            KernelFloatType::Float32,
+            "raw_bool_join_guard".into(),
+            vec![],
+        ),
+    )
+    .unwrap();
+    let claim = Proposition::condition_is(
+        StoredConditionTerm::from_root(guard.clone()).unwrap(),
+        false,
+    );
+    let equal = SpecValue::conditional(&claim, &word, &raw.clone().into(), true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(equal.shared(), word.shared());
+    assert_eq!(equal.into_native(), raw);
+    let other = ProgramValue::bool_constant(false);
+    let joined = SpecValue::conditional(&claim, &word, &other.clone().into(), true)
+        .unwrap()
+        .unwrap();
+    let KernelTermNode::BoolIf { arguments } = joined.shared().unwrap().node() else {
+        panic!("expected a shared conditional")
+    };
+    assert_eq!(arguments[0], guard);
+    assert_eq!(arguments[1], KernelTerm::boolean_literal(false));
+    assert!(!guard.has_cached_native_argument());
+    assert_eq!(
+        joined.into_native(),
+        conditional_spec_value(&claim, raw, other).unwrap()
+    );
+}
+
+#[test]
 fn retained_conditional_joins_reuse_the_guard_in_both_polarities() {
     let _session = VerificationSession::enter();
     let format = KernelFloatType::Float64;
