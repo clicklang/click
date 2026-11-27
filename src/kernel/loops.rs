@@ -1787,7 +1787,8 @@ fn check_loop_guard_custody(
         .ok_or("Requires an initialized loop mutex")?;
     let expected = condition_is_decided(assumptions, held)
         .ok_or("Requires the loop resource condition to determine guard ownership")?;
-    if condition_is_decided(assumptions, &ledger.held_condition(mutex)) != Some(expected) {
+    if condition_is_decided(assumptions, ledger.held_condition(mutex).old_form()) != Some(expected)
+    {
         return Err("loop resource guard ownership does not match the mutex acquisition".into());
     }
     Ok(())

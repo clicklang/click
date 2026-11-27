@@ -413,3 +413,38 @@ fn conditional_guard_and_ledger_retain_one_logical_condition_root() {
     };
     assert_eq!(held.root(), Some(root));
 }
+
+#[test]
+fn negated_loop_guard_keeps_its_written_equality_and_ledger_root() {
+    let _session = VerificationSession::enter();
+    let base = spec();
+    let negated = SpecProposition::Not(Box::new(base.guard().unwrap().clone()));
+    let entry = entry().with_local("flag", int32(1));
+    let head = entry
+        .clone()
+        .with_local("flag", int32(OldMachineTerm::Variable(Variable(10998250))));
+    let (state, mutex, _) = prepare_direct_loop_guard(
+        &entry,
+        &head,
+        &base.with_guard(negated),
+        InstanceId::from_variable(Variable(10998251)),
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    let guard = carrier(&state);
+    let root = guard.held.root().unwrap();
+    let KernelTermNode::BoolEqual { arguments } = root.node() else {
+        panic!("negated guard must retain the written equality");
+    };
+    assert_eq!(arguments[1], KernelTerm::boolean_literal(false));
+    let Some(MutexEntry::ConditionalLoop { held, .. }) =
+        state.mutex_ledger.as_ref().unwrap().get(&mutex)
+    else {
+        panic!("conditional ledger");
+    };
+    assert_eq!(held.root(), Some(root));
+    let selected = select_direct_loop_guards(&state, vec![mutex]);
+    let (_, checked) =
+        normalize_direct_loop_guards(&selected, &selected, &PureFactContext::new()).unwrap();
+    assert!(checked.is_empty());
+}

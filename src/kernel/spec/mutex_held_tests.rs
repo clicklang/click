@@ -60,6 +60,30 @@ fn held_observes_protocol_without_creating_ownership() {
 }
 
 #[test]
+fn held_observes_the_conditional_ledger_root_without_export() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let initial = MutexContext::new(ExecutionState::new())
+        .initialize_empty(address(0), 40)
+        .unwrap();
+    let root = KernelTerm::boolean_equal_raw([
+        KernelTerm::variable(KernelType::Bool, Variable(10998253)),
+        KernelTerm::boolean_literal(false),
+    ]);
+    let head = crate::kernel::mutexes::abstract_loop_mutex(
+        initial.state(),
+        &address(0),
+        StoredConditionTerm::from_root(root.clone()).unwrap(),
+    )
+    .unwrap();
+    let Proposition::ConditionIs(held, true) = observe(&head, &PureFactContext::new()).proposition
+    else {
+        panic!("expected the ledger condition");
+    };
+    assert_eq!(held.root(), Some(&root));
+    assert!(!root.has_cached_native_argument());
+}
+
+#[test]
 fn held_is_a_resource_state_dependency() {
     let spec = SpecProposition::MutexHeld(Box::new(SpecExpression::Value(ProgramValue::pointer(
         address(0),

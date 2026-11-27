@@ -6243,7 +6243,7 @@ fn lower_mutex_held_at_state_in(
                     return SpecPropositionPath {
                         introductions: Vec::new(),
                         proposition: Proposition::condition_is(
-                            OldConditionTerm::Constant(true),
+                            StoredConditionTerm::constant(true),
                             true,
                         ),
                         facts: path.facts,
@@ -6256,12 +6256,10 @@ fn lower_mutex_held_at_state_in(
                     "held cannot inspect an opaque contract protocol",
                 );
             }
-            let held = state
-                .mutex_ledger
-                .as_ref()
-                .map_or(OldConditionTerm::Constant(false), |ledger| {
-                    ledger.held_condition(mutex.address())
-                });
+            let held = state.mutex_ledger.as_ref().map_or_else(
+                || StoredConditionTerm::constant(false),
+                |ledger| ledger.held_condition(mutex.address()),
+            );
             SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition: Proposition::condition_is(held, true),
@@ -10918,7 +10916,7 @@ fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, 
         Proposition::SequenceMembership { .. } => {
             conditional_guard(&sequence_membership_view(proposition)?)
         }
-        _ => single_condition(proposition).map(|(leaf, truth)| (leaf.into_stored(), truth)),
+        _ => proposition_as_stored_single_condition(proposition),
     }
 }
 
@@ -11078,7 +11076,7 @@ fn single_condition(proposition: &Proposition) -> Option<(SingleCondition, bool)
             let mut comparisons = sequence_member_comparisons(element.old_form(), sequence);
             match (comparisons.next(), comparisons.next()) {
                 (None, _) => Some((
-                    SingleCondition::Stored(OldConditionTerm::Constant(false).into()),
+                    SingleCondition::Stored(StoredConditionTerm::constant(false)),
                     true,
                 )),
                 (Some(comparison), None) => single_condition(&comparison),
@@ -11099,6 +11097,12 @@ fn single_condition(proposition: &Proposition) -> Option<(SingleCondition, bool)
 
 pub(crate) fn is_single_normalization_condition(proposition: &Proposition) -> bool {
     single_condition(proposition).is_some()
+}
+
+pub(super) fn proposition_as_stored_single_condition(
+    proposition: &Proposition,
+) -> Option<(StoredConditionTerm, bool)> {
+    single_condition(proposition).map(|(leaf, truth)| (leaf.into_stored(), truth))
 }
 
 pub(super) fn proposition_as_single_condition(

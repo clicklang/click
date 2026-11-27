@@ -72,7 +72,7 @@ fn source_condition(
     state: &ExecutionState,
     spec: &ResourceSpec,
     assumptions: &PureFactContext,
-) -> Result<OldConditionTerm, LoopResourceFailure> {
+) -> Result<StoredConditionTerm, LoopResourceFailure> {
     let guard = spec
         .guard()
         .ok_or("conditional loop resource has no condition")?;
@@ -103,15 +103,22 @@ fn source_condition(
         return Err("Requires the conditional loop resource expression to be defined".into());
     }
     let (condition, expected) =
-        crate::kernel::spec::proposition_as_single_condition(&path.proposition)
+        crate::kernel::spec::proposition_as_stored_single_condition(&path.proposition)
             .ok_or("conditional loop resources require one scalar condition")?;
+    let condition = if condition.root().is_some() {
+        condition
+    } else {
+        StoredConditionTerm::from_minted(condition.old_form().clone())
+    };
     Ok(if expected {
         condition
     } else {
-        OldConditionTerm::BoolEqual(
-            Box::new(condition),
-            Box::new(OldConditionTerm::Constant(false)),
-        )
+        // Preserve the written equality even for a constant guard.
+        let root = KernelTerm::boolean_equal_raw([
+            condition.kernel_operand(),
+            KernelTerm::boolean_literal(false),
+        ]);
+        StoredConditionTerm::from_root(root).expect("Boolean loop guard")
     })
 }
 
@@ -213,14 +220,17 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         return Err("conditional loop mutex must not change at the loop head".into());
     }
     let entry_condition = source_condition(entry, spec, assumptions)?;
-    let active = crate::kernel::loops::condition_is_decided(assumptions, &entry_condition)
-        .ok_or("Requires the conditional loop resource condition at entry")?;
+    let active =
+        crate::kernel::loops::condition_is_decided(assumptions, entry_condition.old_form())
+            .ok_or("Requires the conditional loop resource condition at entry")?;
     let ledger = entry
         .mutex_ledger
         .as_ref()
         .ok_or("Requires an initialized loop mutex")?;
-    if crate::kernel::loops::condition_is_decided(assumptions, &ledger.held_condition(&mutex))
-        != Some(active)
+    if crate::kernel::loops::condition_is_decided(
+        assumptions,
+        ledger.held_condition(&mutex).old_form(),
+    ) != Some(active)
     {
         return Err(LoopResourceFailure::Tactic(missing_guard(spec)));
     }
@@ -235,7 +245,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     {
         return Err(LoopResourceFailure::Tactic(missing_guard(spec)));
     }
-    let condition = StoredConditionTerm::from_minted(source_condition(head, spec, assumptions)?);
+    let condition = source_condition(head, spec, assumptions)?;
     let mut state = abstract_loop_mutex(head, &mutex, condition.clone())?;
     let ledger = state.mutex_ledger.as_ref().unwrap();
     let Resource::MutexGuard(guard) = ledger.guard_resource(&mutex).unwrap().resource().clone()
@@ -379,7 +389,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         if source_mutex(&state, &carrier.source, assumptions)? != *mutex {
             return Err("conditional loop guard changed its mutex".into());
         }
-        if carrier.head.condition() == &held
+        if carrier.head.held == held
             && owns_carrier(&state, carrier)
             && state.mutex_ledger.as_ref().is_some_and(|next| {
                 matches!(
@@ -392,7 +402,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         {
             continue;
         }
-        let active = crate::kernel::loops::condition_is_decided(assumptions, &held)
+        let active = crate::kernel::loops::condition_is_decided(assumptions, held.old_form())
             .ok_or("Requires the conditional loop resource condition at the backedge")?;
         let next_ledger = state
             .mutex_ledger
@@ -400,7 +410,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
             .ok_or("Requires an initialized loop mutex")?;
         if crate::kernel::loops::condition_is_decided(
             assumptions,
-            &next_ledger.held_condition(mutex),
+            next_ledger.held_condition(mutex).old_form(),
         ) != Some(active)
         {
             return Err(missing_guard(&carrier.source));

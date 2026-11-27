@@ -315,7 +315,7 @@ impl From<OldConditionTerm> for StoredConditionTerm {
     fn from(value: OldConditionTerm) -> Self {
         let root = match &value {
             OldConditionTerm::Constant(value) => {
-                return Self(StoredCondition::Shared(KernelTerm::boolean_literal(*value)));
+                return Self::constant(*value);
             }
             OldConditionTerm::Variable(variable) => {
                 return Self(StoredCondition::Shared(KernelTerm::variable(
@@ -352,6 +352,10 @@ impl From<OldConditionTerm> for StoredConditionTerm {
     }
 }
 impl StoredConditionTerm {
+    pub(crate) fn constant(value: bool) -> Self {
+        Self(StoredCondition::Shared(KernelTerm::boolean_literal(value)))
+    }
+
     pub(crate) fn kernel_operand(&self) -> KernelTerm {
         self.root()
             .cloned()
