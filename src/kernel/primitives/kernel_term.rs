@@ -207,6 +207,7 @@ pub enum KernelTermNode {
     /// Address observation retains its exact prepared address and object annotation.
     IntegerAddress {
         address: SharedAddress,
+        block_payload: Option<std::num::NonZeroUsize>,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     MachineObservation {

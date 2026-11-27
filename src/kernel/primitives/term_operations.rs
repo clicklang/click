@@ -3258,29 +3258,7 @@ impl OldConditionTerm {
             }
             _ => return None,
         };
-        let (MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, [left, right]) =
-            masked.binary()?
-        else {
-            return None;
-        };
-        fn address(word: V<'_>) -> Option<&Address> {
-            let native = match word {
-                V::Old(native) => Some(native),
-                V::Shared(root) => root.machine_conversion_leaf(),
-            }?;
-            if let OldMachineTerm::IntegerAddress(pointer, _) = native {
-                Some(pointer.as_ref())
-            } else {
-                None
-            }
-        }
-        let (pointer, mask) = if let Some(pointer) = address(left) {
-            (pointer, right)
-        } else {
-            (address(right)?, left)
-        };
-        let alignment = mask.uint64_constant()?.checked_add(1)?;
-        alignment.is_power_of_two().then_some((pointer, alignment))
+        masked.pointer_alignment()
     }
 
     pub(crate) fn int64_equal(left: OldMachineTerm, right: OldMachineTerm) -> Self {

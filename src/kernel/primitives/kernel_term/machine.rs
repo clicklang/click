@@ -87,6 +87,7 @@ impl KernelTerm {
         if let KernelTermNode::IntegerAddress {
             address,
             object_class,
+            ..
         } = self.node()
         {
             return Some(self.0.machine_leaf.get_or_init(|| {
@@ -964,6 +965,7 @@ impl KernelTermExport {
             Node::IntegerAddress {
                 address,
                 object_class,
+                ..
             } => Old::IntegerAddress(
                 Box::new(address.export()?),
                 AddressObjectClass::new(object_class.clone()),

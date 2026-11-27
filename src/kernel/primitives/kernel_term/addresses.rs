@@ -718,6 +718,7 @@ mod tests {
         .enumerate()
         {
             let other = Address::symbolic(Variable(999040));
+            let mut numeric_roots = Vec::new();
             let stored = declarations.map(|(name, ty)| {
                 let owner = LocalFunctionId::new(None, format!("address_equal_{order}"));
                 owner.record_declaration_spelling(name, false);
@@ -730,11 +731,29 @@ mod tests {
                     },
                     AddressOffset::constant(0),
                 );
+                // Converting to a numeric address is another interning boundary.
+                let numeric = KernelTerm::shared_pointer_address_observation(
+                    MachineIntegerType::UInt64,
+                    local.shared().clone(),
+                    AddressObjectClass::NONE,
+                );
+                let OldMachineTerm::IntegerAddress(exported, _) =
+                    KernelTermExport::machine(&numeric).unwrap()
+                else {
+                    panic!("expected numeric address")
+                };
+                let AddressBase::AutomaticLocal { binding, .. } = &exported.base else {
+                    panic!("expected local block")
+                };
+                assert_eq!(binding.spelling(), Some(name));
+                assert_eq!(binding.program_type(), Some(ty));
+                numeric_roots.push(numeric);
                 StoredConditionTerm::from(OldConditionTerm::AddressEqual(
                     Box::new(local),
                     Box::new(other.clone()),
                 ))
             });
+            assert_ne!(numeric_roots[0], numeric_roots[1]);
             let roots = stored.each_ref().map(|term| term.root().unwrap());
             assert_ne!(roots[0], roots[1]);
             assert_eq!(stored[0], stored[1]);
@@ -766,6 +785,23 @@ mod tests {
             let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
             let cell = Address::symbolic(Variable(999043));
             let address = Address::loaded_value(&memory, &cell);
+            let format = MachineIntegerType::UInt64;
+            let numeric = KernelTerm::shared_pointer_address_observation(
+                format,
+                address.shared().clone(),
+                AddressObjectClass::NONE,
+            );
+            let zero =
+                KernelTermImport::default().machine(format, &OldMachineTerm::uint64_constant(0));
+            let comparison =
+                KernelTerm::boolean_comparison(format, CompareRelation::Equal, [numeric, zero]);
+            assert_eq!(
+                comparison,
+                KernelTerm::address_equal_raw([
+                    address.shared().clone(),
+                    Address::null().into_shared()
+                ])
+            );
             let root = KernelTerm::address_equal_raw([address.into_shared(), cell.into_shared()]);
             (root, memory.arena_id())
         };

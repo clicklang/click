@@ -63,6 +63,7 @@ impl KernelTerm {
         Self::intern(
             KernelType::Program(format.program_type()),
             KernelTermNode::IntegerAddress {
+                block_payload: address.atom().block_payload(),
                 address,
                 object_class: object_class.class(),
             },
