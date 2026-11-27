@@ -4,7 +4,7 @@
 struct-pointer type the struct name its declaration spells, so `p->word` in a
 `have` resolves against the struct's layout instead of lowering to no path.
 The layouts travelled from the C parser keyed by the parsed function's *kernel*
-name, and an inline body's kernel name carries an `#inline:<source>` suffix
+name, and the inline body's identity includes its translation unit
 while the sidecar names the function by its source spelling. Every
 `static inline` function therefore looked like a function with no locals.
 

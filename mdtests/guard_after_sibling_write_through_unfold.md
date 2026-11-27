@@ -20,7 +20,7 @@ the cell's load identity, leaving the arm's fact about the old one and the guard
 undecided:
 
 ```text
-step() requires exactly one statement successor for `probe_ptr#inline:…`, got 2
+step() requires exactly one statement successor for `"unfold_sibling_write.c"::probe_ptr`, got 2
 undecided condition:
   successor 1: pointer-offset equality is true
   successor 2: pointer-offset equality is false

@@ -801,16 +801,6 @@ fn check_verification_deadline() -> Result<(), ClickError> {
     }
 }
 
-/// A callee's execution name as its sidecar spells it: a
-/// translation-unit-local function's `#inline:` or `#file-static:` suffix
-/// removed.
-pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
-    ["#inline:", "#file-static:"]
-        .iter()
-        .find_map(|suffix| callee.split_once(suffix).map(|(source, _)| source))
-        .unwrap_or(callee)
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ReferenceBindingContracts {
     conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,

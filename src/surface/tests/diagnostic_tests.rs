@@ -3714,7 +3714,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
             assert!(trace.contains("pointer read at state#"), "{trace}");
             assert!(trace.contains("label definitions"), "{trace}");
             assert!(
-                trace.contains("function `target#inline:callbacks.c`"),
+                trace.contains(r#"function `"callbacks.c"::target`"#),
                 "{trace}"
             );
             assert!(

@@ -950,7 +950,7 @@ fn c_plain_char_declaration_signatures_remain_distinct() {
 
 #[test]
 fn c_plain_char_inline_call_assignments_preserve_source_compatibility() {
-    // A mangled inline call keeps its source return type, so assigning its
+    // A translation-unit-local call keeps its source return type, so assigning its
     // `char *` result to an `unsigned char *` converts it as by a cast.
     for body in [
         "unsigned char *q = identity(p);",
@@ -966,7 +966,7 @@ fn c_plain_char_inline_call_assignments_preserve_source_compatibility() {
         "static inline char **identity(char **p) { return p; } void use(char **p) { unsigned char **q = identity(p); }",
         "inline.c",
     )
-    .expect_err("mangled inline calls must retain source return types");
+    .expect_err("translation-unit-local calls must retain source return types");
     assert!(
         error.message().contains("incompatible C pointer types"),
         "{}",
@@ -976,7 +976,7 @@ fn c_plain_char_inline_call_assignments_preserve_source_compatibility() {
         "static inline char *identity(char *p) { return p; } char *use(char *p) { char *q = identity(p); q = identity(p); return q; }",
         "inline.c",
     ).expect("matching inline call assignments should remain supported");
-    assert!(functions[0].name().contains("#inline:"));
+    assert_eq!(functions[0].name(), r#""inline.c"::identity"#);
 }
 
 #[test]
@@ -3820,7 +3820,7 @@ fn c_static_inline_prototypes_select_the_internal_body() {
     )
     .expect("matching static inline declarations should select the inline body");
 
-    assert_eq!(functions[0].name(), "helper#inline:inline-prototype.c");
+    assert_eq!(functions[0].name(), r#""inline-prototype.c"::helper"#);
     assert_eq!(functions[1].name(), "run");
 }
 
@@ -4028,7 +4028,7 @@ fn c_always_inline_header_helpers_parse_as_translation_unit_local_functions() {
     )
     .expect("GNU always-inline spelling should use the static inline body path");
 
-    assert_eq!(functions[0].name(), "add_one#inline:always-inline.c");
+    assert_eq!(functions[0].name(), r#""always-inline.c"::add_one"#);
     assert_eq!(functions[1].name(), "run");
 }
 
@@ -4055,7 +4055,7 @@ fn c_static_inline_header_helpers_are_translation_unit_local() {
             .iter()
             .map(crate::languages::interface::ImportedFunction::name)
             .collect::<Vec<_>>(),
-        vec!["add_one#inline:alpha.c", "run"]
+        vec![r#""alpha.c"::add_one"#, "run"]
     );
 
     let beta = syntax::parse_functions_for_source(
@@ -4077,7 +4077,7 @@ fn c_static_inline_header_helpers_are_translation_unit_local() {
         "beta.c",
     )
     .expect("second expanded static inline helper should parse");
-    assert_eq!(beta[0].name(), "add_one#inline:beta.c");
+    assert_eq!(beta[0].name(), r#""beta.c"::add_one"#);
     assert_ne!(functions[0].name(), beta[0].name());
 }
 

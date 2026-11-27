@@ -53,25 +53,30 @@ pub(super) fn link_c_units(
     // Check C source compatibility before kernel lowering erases distinctions
     // such as plain char versus unsigned char. Retain declarations once per
     // translation unit, including prototypes in files without a definition.
-    let mut function_declarations = BTreeMap::<&str, (&str, &syntax::CFunctionHeader)>::new();
+    use crate::languages::c::function_names::FunctionName;
+    let mut function_declarations =
+        BTreeMap::<&FunctionName, (&str, &syntax::CFunctionHeader)>::new();
     for (source_path, unit) in &units {
         for declaration in unit.function_declarations.values() {
-            let name = declaration.linkage_name();
-            if let Some((previous_source, previous)) = function_declarations.get(name) {
+            let identity = declaration.linkage_identity();
+            if let Some((previous_source, previous)) = function_declarations.get(identity) {
                 if !previous.compatible_with(declaration) {
+                    let name = declaration.linkage_name();
                     return Err(link_error(format!(
                         "conflicting C function declarations for `{name}` in `{previous_source}` and `{source_path}`"
                     )));
                 }
             } else {
-                function_declarations.insert(name, (source_path, declaration));
+                function_declarations.insert(identity, (source_path, declaration));
             }
         }
     }
     // A contract names a variadic function's variable arguments with its last
     // parameter, `...args`, exactly when C declares the function with `...`.
     for (name, variable_arguments) in external_functions {
-        let Some((source_path, declaration)) = function_declarations.get(name) else {
+        let Some((source_path, declaration)) =
+            function_declarations.get(&FunctionName::External((*name).to_owned()))
+        else {
             continue;
         };
         if declaration.is_variadic() && !variable_arguments {
@@ -1540,7 +1545,7 @@ pub(super) fn record_function_tables(
     // this function's contract exactly as a parameter is; the C
     // parser is the only place its struct name exists.
     // A sidecar names a function by its source spelling, and an
-    // inline body's kernel name carries an `#inline:<source>` suffix,
+    // internal-linkage function is indexed under its translation unit,
     // so keying this by the kernel name hid every inline function's
     // locals and read an eight-byte member as a four-byte one. Two
     // definitions sharing one source spelling leave no layouts rather

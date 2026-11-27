@@ -1091,7 +1091,7 @@ Supported C surface includes:
   or a compiler-preprocessed translation unit. `static` and `static inline`
   differ only in an optimization hint, so such a function is handled like a
   `static inline` helper: it is local to its translation unit, its kernel
-  identity is `{name}#inline:{translation-unit}`, and a call applies its
+  identity includes its translation unit, and a call applies its
   verified contract when it has one and executes its checked body otherwise. A non-inline `static` definition in a source-bundle header
   stays rejected. See `mdtests/c_static_function.md`.
 - unnamed parameters in a body-less prototype, such as
@@ -1122,10 +1122,9 @@ Supported C surface includes:
   only there; on any other declaration, including `extern inline`, it stays
   rejected. See `mdtests/c_kernel_inline_attributes.md`.
   Each verifying `.c` file gets its own instance of a shared header helper, a
-  translation-unit-local kernel identity named
-  `{helper}#inline:{translation-unit}` in diagnostics that carry the kernel
-  identity. A sidecar contract names an inline helper by its ordinary C
-  name. Parse diagnostics for bundle sources name the bundle file and
+  translation-unit-local identity. Diagnostics can qualify its name with the
+  file, as in `"main.c"::helper`. A sidecar contract names an inline helper by
+  its ordinary C name or by a declared source alias, as in `unit::helper`. Parse diagnostics for bundle sources name the bundle file and
   line behind the expanded text, so an error inside a header helper points at
   `header.h:line`.
   A helper without a contract executes at the call site, including concrete
