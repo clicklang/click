@@ -55,6 +55,23 @@ impl KernelTerm {
         )
     }
 
+    /// A written numeric address uses a shared observation when its indices
+    /// are admitted. Opaque indices keep the exact native leaf.
+    pub(super) fn numeric_address_term(
+        format: MachineIntegerType,
+        address: &Address,
+        object_class: AddressObjectClass,
+    ) -> Self {
+        if let Some(shared) = Self::scalar_read_address(address) {
+            Self::shared_pointer_address_observation(format, shared, object_class)
+        } else {
+            Self::imported_scalar(
+                format.program_type(),
+                &OldMachineTerm::IntegerAddress(Box::new(address.clone()), object_class),
+            )
+        }
+    }
+
     pub(crate) fn shared_pointer_address_observation(
         format: MachineIntegerType,
         address: SharedAddress,
