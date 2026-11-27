@@ -7854,6 +7854,20 @@ fn substitute_pointer_variable_in_spec_expression(
                 *target_type,
             )
         }
+        SpecExpression::SliceLength(slice) => SpecExpression::SliceLength(Box::new(
+            substitute_pointer_variable_in_spec_expression(slice, from, to),
+        )),
+        SpecExpression::SliceData(slice) => SpecExpression::SliceData(Box::new(
+            substitute_pointer_variable_in_spec_expression(slice, from, to),
+        )),
+        SpecExpression::SliceFromRawParts { data, count } => SpecExpression::SliceFromRawParts {
+            data: Box::new(substitute_pointer_variable_in_spec_expression(
+                data, from, to,
+            )),
+            count: Box::new(substitute_pointer_variable_in_spec_expression(
+                count, from, to,
+            )),
+        },
         SpecExpression::If {
             condition,
             then_branch,

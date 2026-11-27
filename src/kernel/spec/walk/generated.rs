@@ -141,7 +141,13 @@ impl Gen {
             return self.expr_leaf();
         }
         let d = depth - 1;
-        match self.pick(22) {
+        match self.pick(25) {
+            22 => SpecExpression::SliceLength(Box::new(self.expr(d))),
+            23 => SpecExpression::SliceData(Box::new(self.expr(d))),
+            24 => SpecExpression::SliceFromRawParts {
+                data: Box::new(self.pointer(d)),
+                count: Box::new(self.expr(d)),
+            },
             21 => SpecExpression::ObjectAddress(Box::new(SpecObjectAddress {
                 base: Box::new(self.pointer(d)),
                 steps: vec![

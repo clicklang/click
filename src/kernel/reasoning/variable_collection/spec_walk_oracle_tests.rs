@@ -48,8 +48,14 @@ fn old_collect_spec_expression_bitvector_variables(
         | SpecExpression::BitwiseNot(expression)
         | SpecExpression::Cast(expression, _)
         | SpecExpression::NarrowArithmetic(expression, _)
-        | SpecExpression::PointerCoercion(expression, _) => {
+        | SpecExpression::PointerCoercion(expression, _)
+        | SpecExpression::SliceLength(expression)
+        | SpecExpression::SliceData(expression) => {
             old_collect_spec_expression_bitvector_variables(expression, variables);
+        }
+        SpecExpression::SliceFromRawParts { data, count } => {
+            old_collect_spec_expression_bitvector_variables(data, variables);
+            old_collect_spec_expression_bitvector_variables(count, variables);
         }
         SpecExpression::If {
             condition,
@@ -442,8 +448,14 @@ fn old_collect_spec_integer_bound_expression(
         | SpecExpression::Cast(expression, _)
         | SpecExpression::NarrowArithmetic(expression, _)
         | SpecExpression::PointerCoercion(expression, _)
+        | SpecExpression::SliceLength(expression)
+        | SpecExpression::SliceData(expression)
         | SpecExpression::LoopEntryState(expression) => {
             old_collect_spec_integer_bound_expression(expression, variables, integer_seen);
+        }
+        SpecExpression::SliceFromRawParts { data, count } => {
+            old_collect_spec_integer_bound_expression(data, variables, integer_seen);
+            old_collect_spec_integer_bound_expression(count, variables, integer_seen);
         }
         SpecExpression::If {
             condition,

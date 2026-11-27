@@ -4488,6 +4488,22 @@ pub enum SpecExpression {
     NarrowArithmetic(Box<SpecExpression>, MachineIntegerType),
     /// An implicit pointer conversion retains the complete provenance.
     PointerCoercion(Box<SpecExpression>, ProgramType),
+    /// `s.len()`: the element count of the slice `s` evaluates to, its
+    /// metadata component, read in place with no unfold
+    /// (`design/rust-slice-values.md`, step 2b-iii-c-i). A thin operand is
+    /// a type mismatch.
+    SliceLength(Box<SpecExpression>),
+    /// `s.as_ptr()`: the thin data pointer of the slice `s` evaluates to,
+    /// the same address, provenance and array object with no metadata.
+    SliceData(Box<SpecExpression>),
+    /// `slice::from_raw_parts(data, count)`: the slice whose thin part is
+    /// `data` and whose element count is `count`, a `u64`. A wide `data` is
+    /// refused with [`RuntimeError::ThinPointerRequired`]. Construction owes
+    /// nothing; what a slice lets a program read is the resource it holds.
+    SliceFromRawParts {
+        data: Box<SpecExpression>,
+        count: Box<SpecExpression>,
+    },
     If {
         condition: Box<SpecProposition>,
         then_branch: Box<SpecExpression>,

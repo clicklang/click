@@ -337,8 +337,17 @@ fn collect_spec_expression_carriers(
         | SpecExpression::BitwiseNot(value)
         | SpecExpression::NarrowArithmetic(value, _)
         | SpecExpression::Cast(value, _)
-        | SpecExpression::PointerCoercion(value, _) => {
+        | SpecExpression::PointerCoercion(value, _)
+        | SpecExpression::SliceLength(value)
+        | SpecExpression::SliceData(value) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
+        }
+        SpecExpression::SliceFromRawParts { data, count } => {
+            collect_spec_expression_carriers(data, variables, integer_seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_spec_expression_carriers(count, variables, integer_seen);
         }
         SpecExpression::If {
             condition,
@@ -1234,6 +1243,18 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.rewrite_spec_expression(value)?),
                 *target_type,
             ),
+            SpecExpression::SliceLength(slice) => {
+                SpecExpression::SliceLength(Box::new(self.rewrite_spec_expression(slice)?))
+            }
+            SpecExpression::SliceData(slice) => {
+                SpecExpression::SliceData(Box::new(self.rewrite_spec_expression(slice)?))
+            }
+            SpecExpression::SliceFromRawParts { data, count } => {
+                SpecExpression::SliceFromRawParts {
+                    data: Box::new(self.rewrite_spec_expression(data)?),
+                    count: Box::new(self.rewrite_spec_expression(count)?),
+                }
+            }
             SpecExpression::If {
                 condition,
                 then_branch,

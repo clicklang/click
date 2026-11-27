@@ -466,6 +466,8 @@ impl<'a> Names<'a> {
             | NarrowArithmetic(e, _)
             | Cast(e, _)
             | PointerCoercion(e, _)
+            | SliceLength(e)
+            | SliceData(e)
             | LoopEntryState(e)
             | MemoryLoad { pointer: e, .. } => self.expression(e),
             PointerOffset {
@@ -473,6 +475,10 @@ impl<'a> Names<'a> {
             } => {
                 self.expression(pointer);
                 self.expression(elements);
+            }
+            SliceFromRawParts { data, count } => {
+                self.expression(data);
+                self.expression(count);
             }
             If {
                 condition,

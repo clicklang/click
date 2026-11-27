@@ -136,8 +136,14 @@ fn old_collect_speprogram_expression_program_variables(
         | SpecExpression::BitwiseNot(value)
         | SpecExpression::Cast(value, _)
         | SpecExpression::NarrowArithmetic(value, _)
-        | SpecExpression::PointerCoercion(value, _) => {
+        | SpecExpression::PointerCoercion(value, _)
+        | SpecExpression::SliceLength(value)
+        | SpecExpression::SliceData(value) => {
             old_collect_speprogram_expression_program_variables(value, reads)
+        }
+        SpecExpression::SliceFromRawParts { data, count } => {
+            old_collect_speprogram_expression_program_variables(data, reads)?;
+            old_collect_speprogram_expression_program_variables(count, reads)
         }
         SpecExpression::MemoryLoad { pointer, .. } => {
             reads.memory = true;

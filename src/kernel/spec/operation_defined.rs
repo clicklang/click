@@ -378,6 +378,8 @@ fn operands(expression: &SpecExpression) -> Vec<Operand<'_>> {
             pointer, elements, ..
         } => vec![Operand::Value(pointer), Operand::Value(elements)],
         E::Requires { value, .. } => vec![Operand::Value(value)],
+        E::SliceLength(slice) | E::SliceData(slice) => vec![Operand::Value(slice)],
+        E::SliceFromRawParts { data, count } => vec![Operand::Value(data), Operand::Value(count)],
         E::IntegerToMachine { value, .. } => vec![Operand::Integer(value)],
         E::CountedResourceCount { arguments, .. } => {
             arguments.iter().flatten().map(Operand::Value).collect()
@@ -691,6 +693,12 @@ fn replace_operands(
         E::BitwiseNot(_) => E::BitwiseNot(next()),
         E::Cast(_, target) => E::Cast(next(), *target),
         E::PointerCoercion(_, target) => E::PointerCoercion(next(), *target),
+        E::SliceLength(_) => E::SliceLength(next()),
+        E::SliceData(_) => E::SliceData(next()),
+        E::SliceFromRawParts { .. } => E::SliceFromRawParts {
+            data: next(),
+            count: next(),
+        },
         E::NarrowArithmetic(operator, format) => {
             E::NarrowArithmetic(Box::new(replace_operands(operator, replacements)), *format)
         }

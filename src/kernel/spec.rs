@@ -8095,6 +8095,43 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 },
             )?
         }
+        SpecExpression::SliceLength(slice) => evaluate_spec_scalar_unary_paths_in(
+            SpecScope { state, ..scope },
+            slice,
+            assumptions,
+            budget,
+            |value, facts, obligations| {
+                vec![ExpressionPath {
+                    outcome: slice_component(value, |slice| {
+                        ProgramValue::UInt64(slice.len().expect("a wide pointer").clone())
+                    }),
+                    facts,
+                    obligations,
+                }]
+            },
+        )?,
+        SpecExpression::SliceData(slice) => evaluate_spec_scalar_unary_paths_in(
+            SpecScope { state, ..scope },
+            slice,
+            assumptions,
+            budget,
+            |value, facts, obligations| {
+                vec![ExpressionPath {
+                    outcome: slice_component(value, |slice| ProgramValue::Pointer(slice.as_ptr())),
+                    facts,
+                    obligations,
+                }]
+            },
+        )?,
+        SpecExpression::SliceFromRawParts { data, count } => {
+            evaluate_spec_slice_from_raw_parts_paths_in(
+                SpecScope { state, ..scope },
+                data,
+                count,
+                assumptions,
+                budget,
+            )?
+        }
         SpecExpression::Cast(expression, target_type) => {
             let saved = budget.pointer_cast_operand;
             budget.pointer_cast_operand = target_type.is_pointer() || saved;
@@ -9729,6 +9766,86 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
             ));
         } else {
             paths.extend(spec_value_paths_in(results, budget));
+        }
+    }
+    Ok(paths)
+}
+
+/// A component of the slice `value`, read in place
+/// (`design/rust-slice-values.md`, step 2b-iii-c-i): `s.len()` or
+/// `s.as_ptr()` of any wide pointer, opaque or constructed, with no unfold.
+/// Anything but a wide pointer is a type mismatch.
+fn slice_component(
+    value: ProgramValue,
+    component: impl FnOnce(&Pointer) -> ProgramValue,
+) -> ExpressionOutcome {
+    match value {
+        ProgramValue::Pointer(slice) if slice.is_wide() => {
+            ExpressionOutcome::Value(component(&slice))
+        }
+        _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
+    }
+}
+
+/// `slice::from_raw_parts(data, count)`: the wide pointer with thin part
+/// `data` and element count `count` (`Pointer::with_element_count`), built
+/// directly; it owes nothing and adds no fact. The operands are evaluated in
+/// order, as a binary operator's are. A wide `data` is refused, naming
+/// `.as_ptr()`; a thin pointer no slice has, such as `void *`, or a count
+/// that is not a `u64`, is a type mismatch.
+fn evaluate_spec_slice_from_raw_parts_paths_in(
+    scope: SpecScope<'_>,
+    data: &SpecExpression,
+    count: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let mut paths = Vec::new();
+    for data_path in
+        evaluate_spec_expression_paths_with_algebraic_bindings_in(scope, data, assumptions, budget)?
+    {
+        let count_assumptions =
+            assumptions_with_path_context(assumptions, &data_path.facts, &data_path.obligations);
+        for count_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            scope,
+            count,
+            &count_assumptions,
+            budget,
+        )? {
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+                &data_path.facts,
+                &data_path.obligations,
+                &count_path.facts,
+                &count_path.obligations,
+                assumptions,
+                &count_assumptions,
+            ) else {
+                continue;
+            };
+            let outcome = match (
+                data_path.value.clone().into_native(),
+                count_path.value.into_native(),
+            ) {
+                (ProgramValue::Pointer(data), _) if data.is_wide() => {
+                    ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {
+                        operation: "`slice::from_raw_parts`",
+                    })
+                }
+                (ProgramValue::Pointer(data), ProgramValue::UInt64(count))
+                    if SliceElement::of_thin_pointer_type(data.program_type()).is_some() =>
+                {
+                    ExpressionOutcome::Value(ProgramValue::Pointer(data.with_element_count(count)))
+                }
+                _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
+            };
+            paths.extend(spec_value_paths_in(
+                vec![ExpressionPath {
+                    outcome,
+                    facts,
+                    obligations,
+                }],
+                budget,
+            ));
         }
     }
     Ok(paths)
@@ -11768,6 +11885,9 @@ mod float_comparison_tests;
 
 #[cfg(test)]
 mod slice_application_tests;
+
+#[cfg(test)]
+mod slice_operation_tests;
 
 #[cfg(test)]
 mod mutex_held_tests;
