@@ -5715,14 +5715,35 @@ theorem check_wrapped(lo: uint64, hi: uint64) {
         .replace("uint64", "int32")
         .replace("0u64", "0")
         .replace("2u64", "2");
-    // step_until does not split C branches. Prove each combination explicitly
-    // so the positive control still verifies the original two array reads.
+    // The four paths exercise both original array reads. Record how each
+    // Boolean indicator evaluates before closing the native count equality.
     let finish =
         "step_until(function.exit);\n        unfold(my_count(p, 0, 2, x));\n        close();";
-    let second = format!("if p[1] == x {{ {finish} }} else {{ {finish} }}");
+    let prove_count = |first, second| {
+        let total = first + second;
+        format!(
+            r#"step_until(function.exit);
+        have (if old(p[0]) == x {{ 1 }} else {{ 0 }}) == {first} by close();
+        have (if old(p[1]) == x {{ 1 }} else {{ 0 }}) == {second} by close();
+        have to_integer(my_count(p, 0, 2, x)) == {total} by {{
+            unfold(my_count(p, 0, 2, x));
+            rewrite((if old(p[0]) == x {{ 1 }} else {{ 0 }}), {first});
+            rewrite((if old(p[1]) == x {{ 1 }} else {{ 0 }}), {second});
+            close();
+        }}
+        close() using {{ to_integer(my_count(p, 0, 2, x)) == {total}; }};"#
+        )
+    };
+    let second = |first| {
+        format!(
+            "if p[1] == x {{ {} }} else {{ {} }}",
+            prove_count(first, 1),
+            prove_count(first, 0)
+        )
+    };
     let supported = supported.replace(
         finish,
-        &format!("if p[0] == x {{ {second} }} else {{ {second} }}"),
+        &format!("if p[0] == x {{ {} }} else {{ {} }}", second(1), second(0)),
     );
     let sources = [("g.c", c_source)];
     let verified_for_label =
