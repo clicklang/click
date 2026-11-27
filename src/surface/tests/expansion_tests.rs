@@ -29065,6 +29065,41 @@ fn an_unfold_can_refute_a_constructor_before_c_executes() {
 }
 
 #[test]
+fn instantiate_can_refute_an_execution_arm() {
+    let source = r#"
+        verifying "id.c";
+        spec enum Tag { A, B }
+        resource tag() { field model: Tag; }
+
+        int32 id(int32 x) {
+            owns r: tag();
+            requires forall (k: int32) { r.model != Tag::A };
+            ensures result == x;
+        } by {
+            if r.model == Tag::A {
+                instantiate(forall (k: int32) { r.model != Tag::A }, 0);
+                close();
+            } else { }
+            step();
+            close();
+        }
+    "#;
+    let sources = [("id.c", "int32 id(int32 x) { return x; }")];
+    let expanded = expand_function_proof_source(source, &sources, "id")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("instantiate("), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+
+    let reachable = source.replace("r.model != Tag::A", "r.model != Tag::B");
+    let error = verify_c_sources(&reachable, &sources).unwrap_err();
+    assert!(
+        error.report().contains("has not reached the function exit"),
+        "{error}"
+    );
+}
+
+#[test]
 fn if_and_cases_close_refuted_arms_before_c_executes() {
     let source = r#"
         verifying "id.c";
