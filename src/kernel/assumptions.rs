@@ -2378,6 +2378,9 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &OldMachineTerm, hash
         OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
             std::hash::Hash::hash(term, hasher)
         }
+        OldMachineTerm::PureApplicationCount(application) => {
+            std::hash::Hash::hash(application, hasher)
+        }
         OldMachineTerm::IntegerToMachine { value, destination } => {
             std::hash::Hash::hash(destination, hasher);
             std::hash::Hash::hash(value, hasher);
@@ -2542,8 +2545,9 @@ fn collect_bitvector_memory_load_keys(
                 collect_bitvector_memory_load_keys(argument, keys);
             }
         }
-        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
-        }
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
+        | OldMachineTerm::AlgebraicMatch { .. } => {}
         OldMachineTerm::IntegerToMachine { .. } => {}
         OldMachineTerm::BoolCast { value, .. } => collect_condition_memory_load_keys(value, keys),
         term => {
@@ -3041,7 +3045,8 @@ fn collect_bitvector_memory_loads_with_width(
             let _ = (arguments, width, seen_integers);
             Err("opaque pure function may hide a current memory load".into())
         }
-        OldMachineTerm::ClickFunctionApplication { .. } => {
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_) => {
             Err("opaque Click function may hide a current memory load".into())
         }
         OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {

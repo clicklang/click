@@ -5169,6 +5169,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &OldMachineTerm) -> boo
                     );
                 }
                 OldMachineTerm::ClickFunctionApplication { .. }
+                | OldMachineTerm::PureApplicationCount(_)
                 | OldMachineTerm::AlgebraicMatch { .. }
                 | OldMachineTerm::IntegerToMachine { .. } => {}
             },
@@ -5810,6 +5811,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                     }
                     // A `Bool`'s cast is kept as built, as the `Bool` forms are.
                     OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::PureApplicationCount(_)
                     | OldMachineTerm::AlgebraicMatch { .. }
                     | OldMachineTerm::BoolCast { .. }
                     | OldMachineTerm::IntegerToMachine { .. } => results.push(term.clone()),
@@ -6713,7 +6715,8 @@ fn collect_bitvector_memories(term: &OldMachineTerm, memories: &mut Vec<SharedMe
                 collect_bitvector_memories(argument, memories);
             }
         }
-        OldMachineTerm::ClickFunctionApplication { .. } => {}
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_) => {}
         OldMachineTerm::IntegerToMachine { .. } => {}
         OldMachineTerm::BoolCast { value, .. } => collect_condition_memories(value, memories),
         OldMachineTerm::AlgebraicMatch { arms, .. } => {
@@ -7175,6 +7178,7 @@ fn transport_framed_atomic_bitvector(
             )?),
         },
         OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
         | OldMachineTerm::AlgebraicMatch { .. }
         | OldMachineTerm::IntegerToMachine { .. } => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
@@ -7447,6 +7451,7 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                         }
                     }
                     OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::PureApplicationCount(_)
                     | OldMachineTerm::AlgebraicMatch { .. }
                     | OldMachineTerm::IntegerToMachine { .. } => results.push(term),
                     OldMachineTerm::IntegerAddress(_, _) => results.push(term),
@@ -9551,6 +9556,41 @@ mod common_boolean_transport_tests {
                 None
             ),
             Some(source)
+        );
+    }
+
+    /// A slice-valued pure application's count transports as its thin
+    /// part's application block does: unchanged, as a numeric child of the
+    /// slice (`design/rust-slice-values.md`, step 2b-iii-b-ii).
+    #[test]
+    fn framed_transport_carries_a_slice_application_count() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let application = crate::kernel::SharedPureApplication::intern(
+            "slice_of".into(),
+            vec![crate::kernel::PureFunctionArgument::Value(
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(972_020))),
+            )],
+        );
+        let slice = crate::kernel::spec::pure_slice_application_value(
+            &application,
+            crate::kernel::SliceElement::UInt8,
+            ProgramType::SlicePointer(crate::kernel::SliceElement::UInt8),
+        );
+        let other = Pointer::new(
+            Address::symbolic(Variable(972_021)),
+            ProgramType::UInt8Pointer,
+        )
+        .with_element_count(OldMachineTerm::Variable(Variable(972_022)));
+        let after = crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new());
+        let source = OldConditionTerm::PointerEqual(Box::new(slice.clone()), Box::new(other));
+        assert_eq!(
+            transport_framed_atomic_condition(&source, &after, None),
+            Some(source)
+        );
+        let count = slice.len().expect("a slice has a count");
+        assert_eq!(
+            transport_framed_atomic_bitvector(count, &after, None).as_ref(),
+            Some(count)
         );
     }
 

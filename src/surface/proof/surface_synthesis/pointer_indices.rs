@@ -123,6 +123,7 @@ pub(super) fn load_free(root: V<'_>) -> bool {
             },
             V::Old(term) => match term {
                 OldMachineTerm::ThreadHandle(_) => {}
+                OldMachineTerm::PureApplicationCount(_) => return false,
                 OldMachineTerm::MemoryLoad(..) => return false,
                 OldMachineTerm::IntegerAddress(pointer, _) => pending.extend(
                     pointer

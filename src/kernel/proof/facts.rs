@@ -337,6 +337,9 @@ enum BitvectorEqualityAtomKey {
         memory: (u32, u32),
         pointer_hash: u64,
     },
+    /// A slice application's count, by its application's identity; holding
+    /// the application keeps the identity alive as long as the indexed fact.
+    PureApplicationCount(crate::kernel::SharedPureApplication),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -3033,6 +3036,9 @@ fn bitvector_equality_atom_key(term: &OldMachineTerm) -> Option<BitvectorEqualit
                 pointer_hash: std::hash::Hasher::finish(&hasher),
             })
         }
+        OldMachineTerm::PureApplicationCount(application) => Some(
+            BitvectorEqualityAtomKey::PureApplicationCount(application.clone()),
+        ),
         _ => None,
     }
 }
@@ -3207,7 +3213,8 @@ fn collect_bitvector_atoms(term: &OldMachineTerm, atoms: &mut BTreeSet<Bitvector
                 collect_bitvector_atoms(argument, atoms);
             }
         }
-        OldMachineTerm::ClickFunctionApplication { .. } => {}
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_) => {}
         OldMachineTerm::AlgebraicMatch { arms, .. } => {
             for arm in arms {
                 collect_bitvector_atoms(&arm.body, atoms);

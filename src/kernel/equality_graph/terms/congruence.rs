@@ -26,6 +26,10 @@ pub(super) enum ArgumentTag {
     PointerCallProvenance,
     PointerCallBounds,
     Integer,
+    /// The element count of a slice-valued pure application, a projection
+    /// of its identity as provenance and bounds are
+    /// (`design/rust-slice-values.md`, step 2b-iii-b-ii).
+    PointerCallCount,
 }
 
 fn pointer_domain_read_key(read: &crate::kernel::LoadedPointerView) -> ReadKey {
@@ -101,7 +105,10 @@ pub(in crate::kernel::equality_graph) fn has_machine_operands(term: &T) -> bool 
             .is_some_and(|(op, _)| !matches!(op, U::Float32Negate | U::Float64Negate))
         || matches!(
             term,
-            T::ClickFunctionApplication { .. } | T::IntegerToMachine { .. } | T::MemoryLoad(..)
+            T::ClickFunctionApplication { .. }
+                | T::PureApplicationCount(_)
+                | T::IntegerToMachine { .. }
+                | T::MemoryLoad(..)
         )
         || matches!(term, T::Variable(variable) if crate::kernel::is_load_variable(variable))
 }
@@ -1228,6 +1235,13 @@ impl TermClasses {
                         values.push(cast);
                         continue;
                     }
+                    // A slice application's count is a projection of the
+                    // application's identity, so the counts of applications
+                    // to equal arguments are equal.
+                    if wide && let T::PureApplicationCount(application) = term {
+                        values.push(self.pure_application_count(application));
+                        continue;
+                    }
                     if let T::ClickFunctionApplication { name, arguments } = term {
                         let symbol = SharedPureApplication::intern(format!("click:{name}"), vec![]);
                         let head = self.intern_node(Node::Function(symbol, width, arguments.len()));
@@ -1997,6 +2011,16 @@ impl TermClasses {
         if !matches!(origin.offset.view(), OffsetView::Constant(0)) {
             return;
         }
+        let identity = self.pointer_call_identity(application);
+        let head = self.intern_node(Node::ArgumentTag(tag));
+        let projected = self.intern_node(Node::Apply(head, identity));
+        self.close_with_affine_definition(vec![(component, projected)], true);
+    }
+
+    /// The identity node of a pointer- or slice-valued application, keyed by
+    /// the application. Its first interning queues its definition from the
+    /// argument classes, so applications to equal arguments share it.
+    fn pointer_call_identity(&mut self, application: &SharedPureApplication) -> u64 {
         let key = Node::PointerFunctionIdentity(application.clone());
         let new = !self.nodes.contains_key(&key);
         let identity = self.intern_node(key);
@@ -2004,9 +2028,18 @@ impl TermClasses {
             self.pending_pointer_identities
                 .push((identity, application.clone()));
         }
-        let head = self.intern_node(Node::ArgumentTag(tag));
-        let projected = self.intern_node(Node::Apply(head, identity));
-        self.close_with_affine_definition(vec![(component, projected)], true);
+        identity
+    }
+
+    /// The class of `f(x).len()`, the element count of the slice a
+    /// slice-valued pure application returns (`design/rust-slice-values.md`,
+    /// step 2b-iii-b-ii): a projection of the application's identity beside
+    /// its provenance and bounds. One key lookup; the identity's definition
+    /// from the argument classes is queued once.
+    fn pure_application_count(&mut self, application: &SharedPureApplication) -> u64 {
+        let identity = self.pointer_call_identity(application);
+        let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerCallCount));
+        self.intern_node(Node::Apply(head, identity))
     }
 
     fn provenance_node_without_calls(&mut self, origin: &crate::kernel::Address) -> u64 {

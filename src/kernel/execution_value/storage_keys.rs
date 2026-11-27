@@ -108,6 +108,7 @@ fn native_machine_rank(value: &OldMachineTerm) -> u8 {
         OldMachineTerm::Float64Binary { .. } => FLOAT64_BINARY_RANK,
         OldMachineTerm::BoolCast { .. } => BOOL_CAST_RANK,
         OldMachineTerm::ThreadHandle(_) => 18,
+        OldMachineTerm::PureApplicationCount(_) => 19,
     }
 }
 

@@ -3483,6 +3483,9 @@ fn collect_bitvector_bound_variables(term: &OldMachineTerm, variables: &mut BTre
                 }
             }
         }
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_bound_variables(application.native_call(), variables)
+        }
         OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_bound_variables(scrutinee, variables);
             for arm in arms {
@@ -6177,6 +6180,14 @@ pub(crate) fn substitute_bitvector_variable(
                     })
                     .collect(),
             }
+        }
+        // A slice application's count is rewritten as its application is.
+        OldMachineTerm::PureApplicationCount(application) => {
+            OldMachineTerm::pure_application_count_of_call(substitute_bitvector_variable(
+                application.native_call(),
+                from,
+                to,
+            ))
         }
         OldMachineTerm::AlgebraicMatch { scrutinee, arms } => OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(substitute_bitvector_variable_in_algebraic_term(

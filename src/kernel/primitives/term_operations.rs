@@ -242,6 +242,26 @@ impl OldMachineTerm {
 }
 
 impl OldMachineTerm {
+    /// The element count of the slice `application` returns
+    /// (`design/rust-slice-values.md`, step 2b-iii-b-ii): `f(x).len()`.
+    pub(crate) fn pure_application_count(application: SharedPureApplication) -> Self {
+        Self::PureApplicationCount(application)
+    }
+
+    /// The count of the application `call` spells, as a pass that rewrites
+    /// a count's application rebuilds it: the pass rewrites the application's
+    /// call term, a `ClickFunctionApplication`, and this names the count of
+    /// the result. Interning the rewritten call is one key per argument, as
+    /// interning any application is.
+    pub(crate) fn pure_application_count_of_call(call: Self) -> Self {
+        let Self::ClickFunctionApplication { name, arguments } = call else {
+            unreachable!(
+                "internal error: a slice application's count is rewritten as its application"
+            )
+        };
+        Self::PureApplicationCount(SharedPureApplication::intern(name, arguments))
+    }
+
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
     pub(crate) fn integer_address(pointer: Address) -> Self {
@@ -366,6 +386,7 @@ impl OldMachineTerm {
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
             | Self::ClickFunctionApplication { .. }
+            | Self::PureApplicationCount(_)
             | Self::AlgebraicMatch { .. }
             | int64_constant!(_)
             | uint64_constant!(_)

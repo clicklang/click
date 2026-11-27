@@ -2717,6 +2717,10 @@ fn collect_bitvector_integer_variables_seen(
                 collect_bitvector_integer_variables_seen(argument, variables, seen);
             }
         }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_integer_variables_seen(application.native_call(), variables, seen)
+        }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -3589,6 +3593,10 @@ pub(crate) fn collect_bitvector_variables(
                 collect_bitvector_variables(argument, variables);
             }
         }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_variables(application.native_call(), variables)
+        }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             collect_application_connection_variables(arguments, variables);
         }
@@ -3705,6 +3713,14 @@ fn collect_bitvector_capture_variables_seen(
                 }
                 collect_bitvector_capture_variables_seen(argument, variables, integer_seen);
             }
+        }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_capture_variables_seen(
+                application.native_call(),
+                variables,
+                integer_seen,
+            )
         }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
@@ -4815,6 +4831,10 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_scope_summary(application.native_call(), summaries)
+        }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             let mut summary = IntegerScopeSummary::default();
             for argument in arguments {
@@ -5514,6 +5534,15 @@ fn collect_bitvector_binder_variables_seen(
                     integer_seen,
                 );
             }
+        }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_binder_variables_seen(
+                application.native_call(),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            )
         }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {

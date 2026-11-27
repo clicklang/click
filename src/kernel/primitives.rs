@@ -1230,6 +1230,15 @@ pub enum OldMachineTerm {
     },
     /// An opaque pthread word; never a symbolic variable or numeric literal.
     ThreadHandle(ThreadHandleId),
+    /// The element count, a `UInt64`, of the slice a slice-valued pure
+    /// application returns (`design/rust-slice-values.md`, step 2b-iii-b-ii):
+    /// `f(x).len()`. The slice's thin part is based on
+    /// `AddressBase::PureFunctionApplication` of the same application, so one
+    /// application names both components. It is keyed by the application's
+    /// identity and is never an integer application of the function's name,
+    /// which would be another function of that name. It follows the
+    /// preexisting variants, so their derived order is unchanged.
+    PureApplicationCount(SharedPureApplication),
 }
 
 /// The derived `Debug` spelling of every variant, except that a constant
@@ -1241,6 +1250,10 @@ impl std::fmt::Debug for OldMachineTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ThreadHandle(id) => f.debug_tuple("ThreadHandle").field(id).finish(),
+            Self::PureApplicationCount(application) => f
+                .debug_tuple("PureApplicationCount")
+                .field(application)
+                .finish(),
             int32_constant!(bits) => f
                 .debug_tuple("Constant")
                 .field(&constant_u32(*bits))

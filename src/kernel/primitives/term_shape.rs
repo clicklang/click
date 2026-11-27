@@ -61,7 +61,7 @@ impl OldMachineTerm {
     /// for every other variant.
     pub(crate) fn as_binary(&self) -> Option<(BitvectorBinaryOp, &Self, &Self)> {
         match self {
-            Self::ThreadHandle(_) => None,
+            Self::ThreadHandle(_) | Self::PureApplicationCount(_) => None,
             Self::Binary {
                 format,
                 op,
@@ -101,7 +101,7 @@ impl OldMachineTerm {
     /// conversion, or `None` for every other variant.
     pub(crate) fn as_unary(&self) -> Option<(BitvectorUnaryOp, &Self)> {
         match self {
-            Self::ThreadHandle(_) => None,
+            Self::ThreadHandle(_) | Self::PureApplicationCount(_) => None,
             Self::Unary {
                 format,
                 op,

@@ -972,6 +972,8 @@ enum AlphaBitvectorKey {
     Int64FromUInt32(Box<Self>),
     UInt64FromInt32(Box<Self>),
     UInt64FromInt64(Box<Self>),
+    /// A slice application's count, keyed by its application's call.
+    PureApplicationCount(Box<Self>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -2790,6 +2792,15 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                     })
                     .collect::<Option<Vec<_>>>()?,
             }
+        }
+        OldMachineTerm::PureApplicationCount(application) => {
+            AlphaBitvectorKey::PureApplicationCount(Box::new(alpha_bitvector_key_with_bindings::<
+                ALLOW_LOADS,
+            >(
+                application.native_call(),
+                bindings,
+                next_binder,
+            )?))
         }
         OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             match_keys::machine::<ALLOW_LOADS>(scrutinee, arms, bindings, next_binder)?

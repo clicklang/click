@@ -8639,6 +8639,9 @@ pub(super) fn describe_bitvector_with_context(
         OldMachineTerm::ClickFunctionApplication { name, .. } => {
             format!("{name}(<typed Click arguments>)")
         }
+        OldMachineTerm::PureApplicationCount(application) => {
+            format!("{}(<typed Click arguments>).len()", application.name())
+        }
         OldMachineTerm::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         OldMachineTerm::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
         OldMachineTerm::IntegerAddress(pointer, _) => {
