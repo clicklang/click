@@ -251,7 +251,7 @@ impl AliasCandidates {
         let intervals = match block {
             // A loaded pointer may hold any address but that of a heap
             // allocation made after its read.
-            AddressBase::Load(load) => {
+            AddressBase::Load(load) | AddressBase::SliceData(load) => {
                 if let Some(heap) = crate::kernel::eval::loaded_pointer_read_heap_identities(load) {
                     let mut intervals = vec![BlockInterval {
                         start: None,

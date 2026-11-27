@@ -66,6 +66,7 @@ fn is_inline_block(block: &AddressBase) -> bool {
             | AddressBase::ExternalArgument
             | AddressBase::ExternalObject(_)
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
             | AddressBase::Heap(_)
             | AddressBase::Temporary(_)
     )

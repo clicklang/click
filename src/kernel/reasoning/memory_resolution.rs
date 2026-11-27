@@ -3870,6 +3870,7 @@ fn source_holds_cells_observable_by(
         block,
         crate::kernel::primitives::AddressBase::Symbolic(_)
             | crate::kernel::primitives::AddressBase::Load(_)
+            | crate::kernel::primitives::AddressBase::SliceData(_)
     ) {
         let mut visited = 0usize;
         let found = memory
@@ -3982,6 +3983,7 @@ fn canonical_memory_for_pointer_load_uncached(
         pointer.base,
         AddressBase::Symbolic(_)
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
             | AddressBase::ExternalArgument
             | AddressBase::ExternalObject(_)
     );

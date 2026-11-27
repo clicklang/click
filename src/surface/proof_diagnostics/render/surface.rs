@@ -3142,6 +3142,12 @@ fn load_type_spelling(kind: crate::kernel::LoadKind) -> &'static str {
         K::UInt128 => "uint128",
         K::Float32 => "float",
         K::Float64 => "double",
+        // A slice's count is `s.len()`, spelled with 2b-iii's Surface slice
+        // type; it is never a typed read of a word of the cell.
+        K::SliceCount => panic!(
+            "internal error: rendering a slice's count has no Surface form yet \
+             (design/rust-slice-values.md, step 2b-iii)"
+        ),
     }
 }
 

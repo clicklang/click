@@ -2770,7 +2770,7 @@ fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     // application or registry DAG once for every fold obligation.
     matches!(
         pointer.base,
-        AddressBase::PureFunctionApplication(_) | AddressBase::Load(_)
+        AddressBase::PureFunctionApplication(_) | AddressBase::Load(_) | AddressBase::SliceData(_)
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 

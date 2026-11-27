@@ -53,6 +53,7 @@ fn address_base_payload(block: &AddressBase) -> Option<usize> {
         | AddressBase::ExternalObject(_)
         | AddressBase::Symbolic(_)
         | AddressBase::Load(_)
+        | AddressBase::SliceData(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => 1,
     };

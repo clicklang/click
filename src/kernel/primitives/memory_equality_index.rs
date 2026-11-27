@@ -1578,6 +1578,7 @@ impl ResourceContext {
                 range.base().base,
                 AddressBase::Symbolic(_)
                     | AddressBase::Load(_)
+                    | AddressBase::SliceData(_)
                     | AddressBase::FunctionSymbolic(_)
                     | AddressBase::ExternalArgument
                     | AddressBase::ExternalObject(_)
@@ -2055,8 +2056,10 @@ impl ResourceContext {
         // in the caller's structural lookup. Do not resolve an opaque pointer
         // read merely to discover whether its pointee might have a supplier.
         if self.flat_owned_memory_ranges().is_empty()
-            && (matches!(&pointer.base, AddressBase::Load(_))
-                || matches!(&pointer.base, AddressBase::Symbolic(variable)
+            && (matches!(
+                &pointer.base,
+                AddressBase::Load(_) | AddressBase::SliceData(_)
+            ) || matches!(&pointer.base, AddressBase::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable)))
         {
             return None;
@@ -2866,7 +2869,7 @@ impl ResourceContext {
         // fragment complete; a simple lookup must never register the entire
         // input itself.
         let load_block = match &pointer.base {
-            AddressBase::Load(_) => true,
+            AddressBase::Load(_) | AddressBase::SliceData(_) => true,
             AddressBase::Symbolic(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };

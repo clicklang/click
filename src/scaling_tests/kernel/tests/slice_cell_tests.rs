@@ -92,3 +92,79 @@ fn slice_cell_reads_stay_flat_as_a_block_of_slices_grows() {
         "slice cell read work grew with the block's slices: {samples:?}"
     );
 }
+
+/// A logical read of a stored slice, and the read-over-write of its whole
+/// read, data pointer and count (step 2b-ii-b), do work independent of
+/// unrelated memory: other blocks holding slices and pointers, and other
+/// cells of the slice's block, as the stores before the read grow.
+#[test]
+fn symbolic_slice_reads_ignore_unrelated_cells() {
+    let mut samples = Vec::new();
+    for size in [8_i64, 32, 128, 512] {
+        let _session = VerificationSession::enter();
+        let s = wide(964_900, 964_901);
+        let mut memory = SymbolicMemory::new().store(cell(0), ProgramValue::Pointer(s.clone()));
+        for index in 0..size {
+            let id = 964_000 + 4 * index as u64;
+            memory = memory
+                .store(
+                    Address::new(
+                        AddressBase::from(format!("global:other_slice{index}").as_str()),
+                        AddressOffset::constant(0),
+                    ),
+                    ProgramValue::Pointer(wide(id, id + 1)),
+                )
+                .store(
+                    Address::new(
+                        AddressBase::from(format!("global:other_thin{index}").as_str()),
+                        AddressOffset::constant(0),
+                    ),
+                    ProgramValue::Pointer(Pointer::new(
+                        Address::symbolic(Variable(id + 2)),
+                        ProgramType::UInt8Pointer,
+                    )),
+                )
+                .store(cell(16 + 8 * index), ProgramValue::UInt64(count(id + 3)));
+        }
+        let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let read = loaded_slice(&logical_load(&memory, 0, bytes()));
+            (
+                crate::kernel::eval::slice_read_over_write_value(&read),
+                crate::kernel::eval::read_over_write_value(read.len().unwrap()),
+                crate::kernel::eval::pointer_read_over_write_program_value(read.address()),
+            )
+        });
+        assert_eq!(
+            resolved,
+            (Some(s.clone()), s.len().cloned(), Some(s.as_ptr()))
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "symbolic slice read work grew with unrelated cells: {samples:?}"
+    );
+}
+
+/// Reads of unknown slice cells in a block of many such reads: naming one
+/// read is flat in the number of slice cells read before it.
+#[test]
+fn unknown_slice_cell_reads_stay_flat_as_reads_grow() {
+    let mut samples = Vec::new();
+    for size in [8_i64, 32, 128, 512] {
+        let _session = VerificationSession::enter();
+        let memory = SymbolicMemory::new();
+        for index in 0..size {
+            loaded_slice(&logical_load(&memory, 16 * (index + 1), bytes()));
+        }
+        let (read, work) = crate::instrumentation::measure_deterministic_work(|| {
+            loaded_slice(&logical_load(&memory, 0, bytes()))
+        });
+        assert!(matches!(read.address().base, AddressBase::SliceData(_)));
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "unknown slice cell read work grew with earlier reads: {samples:?}"
+    );
+}

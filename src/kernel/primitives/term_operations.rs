@@ -3803,7 +3803,7 @@ impl OldConditionTerm {
             if left.base == right.base
                 && let Self::Constant(value) =
                     Self::address_offset_equal(left.offset.clone(), right.offset.clone())
-                && !(value && matches!(left.base, AddressBase::Load(_)))
+                && !(value && matches!(left.base, AddressBase::Load(_) | AddressBase::SliceData(_)))
             {
                 return Self::Constant(value);
             }
@@ -5109,6 +5109,7 @@ impl Address {
             AddressBase::ExternalArgument
                 | AddressBase::Symbolic(_)
                 | AddressBase::Load(_)
+                | AddressBase::SliceData(_)
                 | AddressBase::PureFunctionApplication(_)
         )
     }

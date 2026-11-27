@@ -241,6 +241,7 @@ pub(super) use statements::{sync_retained_stack_local, sync_stack_local};
 
 pub(crate) use memory_loads::{
     pointer_read_over_immediate_store, pointer_read_over_write_program_value,
+    slice_read_over_write_value, stored_slice_of_load,
 };
 
 pub(crate) use memory_loads::loaded_pointer_stored_block;

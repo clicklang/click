@@ -534,6 +534,9 @@ impl PureFactContext {
             LoadKind::Int32 => Some(memory.symbolic_int32_load(point, pointer)),
             LoadKind::UInt32 => Some(memory.symbolic_uint32_load(point, pointer)),
             LoadKind::Bits64 => Some(memory.symbolic_int64_load(point, pointer)),
+            // A slice's count is read only with its slice
+            // (`Pointer::slice_read`), never as a scalar of its own.
+            LoadKind::SliceCount => None,
             // A value of algebraic type is its own decoding of the cell.
             LoadKind::Algebraic(parameter) => {
                 Some(memory.symbolic_algebraic_load(point, pointer, parameter))

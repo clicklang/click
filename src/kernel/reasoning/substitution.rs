@@ -3123,6 +3123,7 @@ fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<V
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
         | AddressBase::Load(_)
+        | AddressBase::SliceData(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }

@@ -742,20 +742,6 @@ fn evaluate_logical_memory_load_paths_unbridged(
         })
         .or_else(|| symbolic_value(&mut facts));
     facts.retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
-    // A slice cell names its version and a slice read has no symbolic form
-    // until step 2b-ii-b of `design/rust-slice-values.md`: the read is
-    // refused, never lowered to the stored slice nor left without a path.
-    if value.is_none() && value_type.is_slice_pointer() {
-        return vec![ExpressionPath {
-            outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
-                pointer,
-                value_type,
-                stored: None,
-            }),
-            facts,
-            obligations,
-        }];
-    }
     value
         .into_iter()
         .map(|value| ExpressionPath {
@@ -868,8 +854,7 @@ fn reads_inside_slice_cell(memory: &SymbolicMemory, pointer: &Address, bytes: u3
 /// cell's version rather than to a value the cell holds
 /// (`docs/internals/raise-lower-principle.md`). Integer, pointer and slice cells keep their
 /// read identities; abstract values still read their stored value. A slice
-/// read has no symbolic form until step 2b-ii-b of `design/rust-slice-values.md`,
-/// so a logical read of a slice cell refuses rather than lowering to the slice.
+/// cell's read is the slice its load decodes to ([`symbolic_slice_read`]).
 fn logical_read_names_its_version(value_type: ProgramType) -> bool {
     matches!(
         value_type,
@@ -2687,12 +2672,17 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<ExecutionValue> {
-    // A slice read has no symbolic form, and a read of its cell through
-    // another spelling would be related to the stored slice by a read
-    // equation it has no read for: it refuses until step 2b-ii-b of
-    // `design/rust-slice-values.md`.
+    // An optional site is placed explicitly until the shared pointer chain
+    // requires one.
+    let placed = || {
+        site.cloned()
+            .unwrap_or_else(|| ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(memory)))
+    };
+    // A slice read keeps the address it was written with and names the
+    // read, whatever slice the cell holds (`design/rust-slice-values.md`,
+    // step 2b-ii-b).
     if value_type.is_slice_pointer() {
-        return None;
+        return Some(symbolic_slice_read(memory, placed(), pointer, value_type, facts).into());
     }
     // A logical read keeps the address it was written with: lowering is
     // fact-stable (`docs/internals/raise-lower-principle.md`). The equality graph
@@ -2761,12 +2751,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         record_load_access_width(memory, &address, value_type.byte_width());
         memory.symbolic_pointer_version_load(site, &address, value_type)
     } else {
-        // An optional site is placed explicitly until the shared pointer
-        // chain requires one.
-        let site = site
-            .cloned()
-            .unwrap_or_else(|| ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(memory)));
-        symbolic_load_value(memory, &site, &address, value_type)?
+        symbolic_load_value(memory, &placed(), &address, value_type)?
     };
     // Ordinary scalar reads retain their selected memory and address directly.
     match &value {
@@ -3234,6 +3219,12 @@ pub(crate) fn read_over_write_value(term: &OldMachineTerm) -> Option<OldMachineT
     let OldMachineTerm::MemoryLoad(memory, pointer, kind) = viewed_as_memory_load(term)? else {
         return None;
     };
+    // A slice's count is the count of the slice memory shows stored in the
+    // whole cell, never a word of it.
+    if kind == LoadKind::SliceCount {
+        let count = stored_slice_of_load(pointer.load())?.len()?.clone();
+        return (count != *term).then_some(count);
+    }
     let stored = memory.shared_memory().known_value(&pointer).or_else(|| {
         memory
             .shared_memory()
@@ -3249,7 +3240,7 @@ pub(crate) fn read_over_write_value(term: &OldMachineTerm) -> Option<OldMachineT
 /// pointer at the read's address is that pointer, offset alike. Both steps
 /// read memory, never facts.
 fn stored_pointer_address(address: &Address) -> Option<Address> {
-    let AddressBase::Load(_) = &address.base else {
+    let (AddressBase::Load(_) | AddressBase::SliceData(_)) = &address.base else {
         return None;
     };
     let read = address.with_offset(AddressOffset::constant(0));
@@ -3466,11 +3457,12 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             // The whole stored value defines the unmodified read. An
             // explicitly selected subobject or changed domain is a different
             // value even when it carries that same numeric read address.
-            // A slice read has no symbolic form yet, so no read side is a
-            // slice; its read-over-write arrives with step 2b-ii-b of
-            // `design/rust-slice-values.md`.
-            if side.is_wide() || side != &Pointer::new(side.address().clone(), side.program_type())
-            {
+            // A slice read resolves to the whole slice stored in its cell,
+            // count included (`design/rust-slice-values.md`, step 2b-ii-b).
+            if side.is_wide() {
+                return slice_read_side_over_write_value(side);
+            }
+            if side != &Pointer::new(side.address().clone(), side.program_type()) {
                 return None;
             }
             pointer_read_over_write_decoded_value(
@@ -3485,6 +3477,10 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             let right = right_value.unwrap_or_else(|| right.as_ref().clone());
             let condition = match OldConditionTerm::pointer_equal(left, right) {
                 OldConditionTerm::AddressEqual(left, right) if left == right => {
+                    OldConditionTerm::Constant(true)
+                }
+                // Two reads of one stored slice, count included.
+                OldConditionTerm::PointerEqual(left, right) if left.is_wide() && left == right => {
                     OldConditionTerm::Constant(true)
                 }
                 condition => condition,
@@ -3610,6 +3606,99 @@ fn indexed_pointer_read_value(
     decodes_as(stored, category).then(|| stored.clone())
 }
 
+/// The slice memory alone shows stored in the whole cell `load` reads
+/// (`design/rust-slice-values.md`, step 2b-ii-b): the store the load's
+/// version point indexes, or the cell its state holds when the
+/// assumption-free version walk shows it standing. A store into either word
+/// ends both. One indexed lookup, or the memoized walk the pointer authority
+/// takes; never facts.
+pub(crate) fn stored_slice_of_load(load: &crate::kernel::Load) -> Option<Pointer> {
+    crate::instrumentation::record_deterministic_work(1);
+    let point = load.point();
+    let indexed = point
+        .read_version_id()
+        .and_then(|_| point.indexed_slice_version(load.cell()))
+        .and_then(|version| {
+            version
+                .indexed_stored_value()
+                .map(|stored| stored.native().clone())
+        });
+    let stored = match indexed {
+        Some(stored) => stored,
+        None => memory_shown_cell_value(
+            point.shared_memory(),
+            load.cell(),
+            crate::kernel::WIDE_POINTER_BYTE_WIDTH,
+        )?,
+    };
+    match stored {
+        ProgramValue::Pointer(stored) if stored.is_wide() => Some(stored),
+        _ => None,
+    }
+}
+
+/// The read-over-write authority for a slice read: the slice stored in the
+/// cell the read names, at the read's slice type, when memory alone shows
+/// one ([`stored_slice_of_load`]). Only the whole read resolves; a slice
+/// built from parts of reads is not a read.
+pub(crate) fn slice_read_over_write_value(slice: &Pointer) -> Option<Pointer> {
+    let load = slice.slice_read_load()?;
+    let stored = stored_slice_of_load(load)?.with_type(slice.program_type());
+    (stored != *slice).then_some(stored)
+}
+
+/// A slice read as one side of a comparison form, whose count the batch of
+/// scalar reads may already have replaced by the stored count: its data
+/// pointer, when it is the read's, becomes the stored slice's, and a count
+/// still read resolves as the scalar authority resolves it. A slice whose
+/// data pointer is not a read's resolves to nothing.
+fn slice_read_side_over_write_value(side: &Pointer) -> Option<Pointer> {
+    let AddressBase::SliceData(load) = &side.address().base else {
+        return None;
+    };
+    let read = Pointer::slice_read(load.point().clone(), load.cell(), side.program_type());
+    if side.as_ptr() != read.as_ptr() {
+        return None;
+    }
+    let stored = stored_slice_of_load(load)?;
+    let count = side.len()?;
+    let count = read_over_write_value(count).unwrap_or_else(|| count.clone());
+    Some(
+        stored
+            .as_ptr()
+            .with_element_count(count)
+            .with_type(side.program_type()),
+    )
+}
+
+/// A symbolic read of the slice cell at `address`
+/// (`design/rust-slice-values.md`, step 2b-ii-b): the slice the cell's load
+/// decodes to ([`Pointer::slice_read`]), whatever the cell holds, so a logical
+/// read keeps its name and a read of an unknown cell names the read. When
+/// memory alone shows a slice stored there, the read equation beside it
+/// relates the read to it; the read is never replaced by it.
+fn symbolic_slice_read(
+    memory: &SymbolicMemory,
+    point: ProgramPoint,
+    address: &Address,
+    value_type: ProgramType,
+    facts: &mut ExecutionFacts,
+) -> ProgramValue {
+    record_load_access_width(memory, address, crate::kernel::WIDE_POINTER_BYTE_WIDTH);
+    let read = Pointer::slice_read(
+        ProgramPoint::read_at(&crate::kernel::intern_memory_ref(memory), &point),
+        address,
+        value_type,
+    );
+    if let Some(stored) = slice_read_over_write_value(&read) {
+        facts.push(ExecutionPureFact::logical_pointer_value_equation(
+            stored,
+            read.clone(),
+        ));
+    }
+    ProgramValue::Pointer(read)
+}
+
 /// Whether a stored pointer is the value of a decoding of `category`: a
 /// function-pointer store answers no object-pointer decoding, nor the
 /// reverse (`design/loads.md`, "Pointers"). No category accepts either.
@@ -3640,6 +3729,15 @@ pub(crate) fn pointer_read_over_write_decoded_value(
     pointer: &Address,
     category: Option<PointerLoadCategory>,
 ) -> Option<Pointer> {
+    // A slice's data pointer is the data pointer of the slice stored in the
+    // whole cell (`design/rust-slice-values.md`, step 2b-ii-b).
+    if let AddressBase::SliceData(load) = &pointer.base {
+        if !matches!(pointer.offset.view(), OffsetView::Constant(0)) {
+            return None;
+        }
+        let data = stored_slice_of_load(load)?.as_ptr();
+        return decodes_as(&data, category).then_some(data);
+    }
     let read = pointer.as_loaded_value()?;
     if !matches!(read.displacement.view(), OffsetView::Constant(0)) {
         return None;
@@ -6187,6 +6285,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
                 LoadKind::Int128 => MachineIntegerType::Int128,
                 LoadKind::UInt128 => MachineIntegerType::UInt128,
                 LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => MachineIntegerType::Int32,
+                LoadKind::SliceCount => MachineIntegerType::UInt64,
             },
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(variable)),
@@ -6333,9 +6432,14 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | ProgramType::Float32Array(_)
         | ProgramType::Float64Array(_) => None,
         ProgramType::PointerArray(_, _) => None,
-        // A wide pointer's two-word cell has no symbolic load yet
-        // (`design/rust-slice-values.md`, step 2b-ii-b): the load refuses.
-        ProgramType::SlicePointer(_) => None,
+        // A slice cell's read names its data pointer and its count, each its
+        // own read of the one load (`design/rust-slice-values.md`, step
+        // 2b-ii-b).
+        ProgramType::SlicePointer(_) => Some(ProgramValue::Pointer(Pointer::slice_read(
+            ProgramPoint::read_at(&crate::kernel::intern_memory_ref(memory), site),
+            pointer,
+            value_type,
+        ))),
     }
 }
 
