@@ -788,6 +788,108 @@ impl<'a> Proof<'a> {
         )
     }
 
+    fn resolve_interface_assertions(
+        &self,
+        written_assertions: &[ProofAssertion],
+        context: &ExecutionProofContext<'_>,
+    ) -> Result<Vec<ProofAssertion>, ClickError> {
+        // The interface is written inside this frontier's proof scope: a
+        // proof `match` arm's fields, `let` names, call-result binders. Its
+        // entries name them as a `have` goal here would, so they are
+        // resolved before anything is lowered.
+        let proof_locals =
+            crate::surface::lowering::ContractSubstitutions::new(&self.state().locals().values);
+        written_assertions
+            .iter()
+            .map(|assertion| match assertion {
+                ProofAssertion::Fact(fact) => {
+                    crate::surface::lowering::substitute_click_proposition_in(fact, &proof_locals)
+                        .map(ProofAssertion::Fact)
+                        .map_err(|message| {
+                            self.step_error(format!(
+                                "could not resolve the names in an `ensuring` fact: {message}"
+                            ))
+                        })
+                }
+                ProofAssertion::Resource(resource) => {
+                    crate::surface::verification::substitute_resource_clause_for_summary_in(
+                        resource,
+                        &proof_locals,
+                    )
+                    .map_err(|message| {
+                        self.step_error(format!(
+                            "could not resolve the names in an `ensuring` resource: {message}"
+                        ))
+                    })
+                    .and_then(|resource| {
+                        crate::surface::lowering::loop_resource_with_field_schema(
+                            &resource,
+                            context.resource_environment,
+                        )
+                    })
+                    .map(ProofAssertion::Resource)
+                }
+            })
+            .collect()
+    }
+
+    /// A sole surviving arm already has one concrete state. Validate its
+    /// interface there, as for a decided C branch.
+    pub(in crate::surface::proof) fn check_sole_arm_interface(
+        &self,
+        written: &[ProofAssertion],
+    ) -> Result<Self, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("`ensuring` requires an execution proof"));
+        };
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("`ensuring` lost its execution state"))?;
+        let obligation = self
+            .focused_obligation()
+            .ok_or_else(|| self.step_error("`ensuring` requires an open execution path"))?;
+        let frontier_state = execution.core.state.clone();
+        let result = match obligation {
+            Obligation::FunctionOutcome(goal) => {
+                execution.core.state = goal.data.core.state.clone();
+                Some(goal.data.core.result.native())
+            }
+            Obligation::Frontier(_) if self.is_at_function_exit() => {
+                let written = Arc::from(written);
+                return self.defer_post_execution_source_tactic(
+                    context.tactic_index,
+                    usize::MAX,
+                    PostExecutionTactic::Ensuring(written),
+                    None,
+                );
+            }
+            _ => None,
+        };
+        let assertions = self.resolve_interface_assertions(written, context)?;
+        let facts = super::super::cursor_execution::check_concrete_branch_interface(
+            &assertions,
+            written,
+            &mut execution,
+            context,
+            self.facts(),
+            result.as_deref(),
+        )
+        .map_err(|error| self.attach_step_diagnostic(error))?;
+        execution.core.state = frontier_state;
+        let state = self
+            .state
+            .publish_checked_focused_transition(
+                obligation.clone(),
+                facts,
+                Some(Arc::new(execution)),
+                Vec::new(),
+                Vec::new(),
+            )
+            .map_err(|_| self.step_error("`ensuring` lost its open execution path"))?;
+        Ok(self.with_kernel_state(state))
+    }
+
     /// The merge law for a checked two-arm interface join: each arm is
     /// independently abstracted through the explicit `branch ensuring`
     /// interface before any result is selected, the join is accepted only
@@ -819,44 +921,7 @@ impl<'a> Proof<'a> {
         // lowered, as a loop binder does. The certificate keeps the
         // assertions as written.
         let written_assertions = assertions;
-        // The interface is written inside this frontier's proof scope: a
-        // proof `match` arm's fields, `let` names, call-result binders. Its
-        // entries name them as a `have` goal here would, so they are
-        // resolved before anything is lowered.
-        let proof_locals =
-            crate::surface::lowering::ContractSubstitutions::new(&self.state().locals().values);
-        let assertions = written_assertions
-            .iter()
-            .map(|assertion| match assertion {
-                ProofAssertion::Fact(fact) => {
-                    crate::surface::lowering::substitute_click_proposition_in(fact, &proof_locals)
-                        .map(ProofAssertion::Fact)
-                        .map_err(|message| {
-                            self.step_error(format!(
-                                "could not resolve the names in an `ensuring` fact: {message}"
-                            ))
-                        })
-                }
-                ProofAssertion::Resource(resource) => {
-                    crate::surface::verification::substitute_resource_clause_for_summary_in(
-                        resource,
-                        &proof_locals,
-                    )
-                    .map_err(|message| {
-                        self.step_error(format!(
-                            "could not resolve the names in an `ensuring` resource: {message}"
-                        ))
-                    })
-                    .and_then(|resource| {
-                        crate::surface::lowering::loop_resource_with_field_schema(
-                            &resource,
-                            context.resource_environment,
-                        )
-                    })
-                    .map(ProofAssertion::Resource)
-                }
-            })
-            .collect::<Result<Vec<_>, ClickError>>()?;
+        let assertions = self.resolve_interface_assertions(&written_assertions, context)?;
         // The cases of a proof `if` rejoin where they stand: at the program
         // point both arms reached, not after a C statement.
         let rejoins_cases = proof_case_condition.is_some();
@@ -1354,6 +1419,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn join_after_case_refutation(
         &self,
         record: &ExecutionProofCaseSplit<'a>,
+        ensuring: Option<Vec<ProofAssertion>>,
     ) -> Result<Self, ClickError> {
         let [then_steps, else_steps] =
             self.partition_steps_since(&record.marker, record.split, record.arm_branches)?;
@@ -1373,7 +1439,7 @@ impl<'a> Proof<'a> {
             facts: self.facts().clone(),
             common_added_facts: Vec::new(),
             step: record.case_condition.step(
-                None,
+                ensuring.clone(),
                 ProofCertificate::from_steps(then_steps)?,
                 ProofCertificate::from_steps(else_steps)?,
             ),
@@ -1384,13 +1450,18 @@ impl<'a> Proof<'a> {
         locals.next_choice_variable = locals
             .next_choice_variable
             .max(self.state.locals().next_choice_variable);
-        self.with_kernel_state(self.state.with_locals(locals))
+        let joined = self
+            .with_kernel_state(self.state.with_locals(locals))
             .resume_parent_after_sibling_join_from_marker(
                 &record.marker,
                 record.split,
                 record.arm_branches,
                 parts,
-            )
+            )?;
+        if let Some(assertions) = ensuring {
+            return joined.check_sole_arm_interface(&assertions);
+        }
+        Ok(joined)
     }
 
     /// Rejoins the two arms of a proof-level execution `if` through an
@@ -2152,6 +2223,7 @@ impl<'a> Proof<'a> {
                         condition: surface_condition.clone(),
                         disjunction: split_condition.is_cases(),
                         execution_route: terminal_route,
+                        ensuring: None,
                         then_tactics: Arc::new(then_post_execution),
                         else_tactics: Arc::new(else_post_execution),
                     }

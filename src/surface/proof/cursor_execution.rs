@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::CheckedCallEventScope;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::abstract_execution_state_for_interface_join_across;
+use crate::surface::lowering::lower_resource_clause_at_current_locals_with_assumptions;
 use std::sync::Arc;
 
 pub(super) struct BranchInterfaceJoinInputs<'a, 'proof> {
@@ -14,23 +15,15 @@ pub(super) struct BranchInterfaceJoinInputs<'a, 'proof> {
     pub(super) entry_facts: &'a PureFactStore,
 }
 
-/// Checks a branch interface directly against the structural join's
-/// persistent proof facts, without cloning or re-indexing unrelated facts.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn apply_branch_interface_with_proof_facts(
-    target: &ProgramPointRef,
+/// Checks the assertions on one concrete arm, including a returned state.
+pub(super) fn check_concrete_branch_interface(
     assertions: &[ProofAssertion],
     written_assertions: &[ProofAssertion],
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut PureFactStore,
-    join_inputs: Option<BranchInterfaceJoinInputs<'_, '_>>,
-    // `join_next_kernel_variable` is the counter every sibling arm abstracts
-    // from: the highest of the arms' own. The arms' abstractions are compared
-    // for equality, so they must count from one shared lower bound rather
-    // than each from its own.
-    join_next_kernel_variable: u64,
-) -> Result<(), ClickError> {
+    available_pure_facts: &PureFactStore,
+    result: Option<&ProgramValue>,
+) -> Result<PureFactStore, ClickError> {
     // Lower the resolved proof-local values, but retain their written names
     // for later certificates. Internal pointer values are not source syntax.
     assert_eq!(assertions.len(), written_assertions.len());
@@ -41,7 +34,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     let resource_environment = proof_context.resource_environment;
     let claim_label = proof_context.claim_label;
 
-    let state: &mut ExecutionState = &mut execution.core.state;
+    let state: &ExecutionState = &execution.core.state;
 
     let mut concrete_facts = available_pure_facts.clone();
     let mut established_interface_resources = Vec::new();
@@ -55,7 +48,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         surface_fact,
                         concrete_facts.assumptions(),
                         parameter_binding,
-                        FixedStateFrame::new(proof_context.old_reference_state(&execution.core.frontier, state), state, None, &execution.presentation.recorded_states),
+                        FixedStateFrame::new(proof_context.old_reference_state(&execution.core.frontier, state), state, result, &execution.presentation.recorded_states),
                         SpecDefinitions::new(predicate_environment, click_function_environment),
                     )
                     .map_err(|message| {
@@ -89,10 +82,11 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 }
             }
             ProofAssertion::Resource(resource) => {
-                let expected = lower_interface_resource_clause(
+                let expected = lower_resource_clause_at_current_locals_with_assumptions(
                     resource,
                     parameter_binding,
                     state,
+                    result,
                     concrete_facts.assumptions(),
                 )?;
                 let is_observed_core = resource_is_direct_observed_core(
@@ -122,6 +116,41 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             }
         }
     }
+    Ok(concrete_facts)
+}
+
+/// Checks a branch interface directly against the structural join's
+/// persistent proof facts, without cloning or re-indexing unrelated facts.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn apply_branch_interface_with_proof_facts(
+    target: &ProgramPointRef,
+    assertions: &[ProofAssertion],
+    written_assertions: &[ProofAssertion],
+    execution: &mut ExecutionProofState,
+    proof_context: &ExecutionProofContext<'_>,
+    available_pure_facts: &mut PureFactStore,
+    join_inputs: Option<BranchInterfaceJoinInputs<'_, '_>>,
+    // `join_next_kernel_variable` is the counter every sibling arm abstracts
+    // from: the highest of the arms' own. The arms' abstractions are compared
+    // for equality, so they must count from one shared lower bound rather
+    // than each from its own.
+    join_next_kernel_variable: u64,
+) -> Result<(), ClickError> {
+    let concrete_facts = check_concrete_branch_interface(
+        assertions,
+        written_assertions,
+        execution,
+        proof_context,
+        available_pure_facts,
+        None,
+    )?;
+    let tactic_index = proof_context.tactic_index;
+    let parameter_binding = proof_context.parameter_binding();
+    let predicate_environment = proof_context.spec_definitions.predicates;
+    let click_function_environment = proof_context.spec_definitions.functions;
+    let resource_environment = proof_context.resource_environment;
+    let claim_label = proof_context.claim_label;
+    let state: &mut ExecutionState = &mut execution.core.state;
     let Some(join_inputs) = join_inputs else {
         *available_pure_facts = concrete_facts;
         return Ok(());
