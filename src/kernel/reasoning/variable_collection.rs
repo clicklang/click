@@ -151,9 +151,7 @@ pub(in crate::kernel) fn collect_machine_bitvector_variables(
     machine: &SharedMachineIntegerTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
-    visit_machine_carrier_leaves(machine, |leaf| {
-        collect_operand_bitvector_variables(leaf, variables);
-    });
+    collect_machine_term_variables(machine.operand_view(), false, variables);
 }
 
 fn collect_machine_integer_variables(
@@ -886,6 +884,37 @@ fn collect_proposition_bitvector_variables_one(
     }
 }
 
+/// Plain arithmetic can reuse its syntax index across queries. Control terms,
+/// conversions, and reads need the current query's guard, binder and state rules.
+fn collect_machine_term_variables(
+    operand: MachineOperandView<'_>,
+    ceiling_only: bool,
+    variables: &mut BTreeSet<Variable>,
+) {
+    let root = match operand {
+        MachineOperandView::Old(word) => return collect_bitvector_variables(word, variables),
+        MachineOperandView::Shared(root) => root,
+    };
+    if !root.is_shared_machine_operand()
+        || root.has_machine_conversions()
+        || root.has_machine_reads()
+    {
+        variables.extend(
+            retained_folds::common_variables(
+                root,
+                retained_folds::FoldVariableRead::ExpressionFree,
+                &mut Default::default(),
+            )
+            .iter()
+            .copied(),
+        );
+        return;
+    }
+    visit_machine_operand_carrier_leaves_selected(operand, true, ceiling_only, |leaf| {
+        collect_operand_bitvector_variables(leaf, variables)
+    });
+}
+
 pub(in crate::kernel) fn collect_term_bitvector_variables(
     term: &Term,
     variables: &mut BTreeSet<Variable>,
@@ -894,7 +923,9 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::Condition(condition) => {
             collect_stored_condition_bitvector_variables(condition, variables)
         }
-        Term::Bitvector32(bits) => collect_bitvector_variables(bits.old_form(), variables),
+        Term::Bitvector32(bits) => {
+            collect_machine_term_variables(bits.operand_view(), false, variables)
+        }
         Term::Integer(integer) => {
             if !integer.root().is_some_and(|root| {
                 retained_folds::collect_integer_scope_variables(
@@ -926,6 +957,9 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
                     }
                 }
             });
+        }
+        Term::ProgramValue(value) if let Some((_, operand)) = value.value().machine() => {
+            collect_machine_term_variables(operand, false, variables);
         }
         Term::ProgramValue(value) => {
             collect_program_value_bitvector_variables(value.old_form(), variables);
@@ -3318,100 +3352,11 @@ fn collect_integer_variables_seen(
                 }
             }
         }
-        IntegerTerm::Machine(value) => match value.operand_view() {
-            MachineOperandView::Old(value) => collect_bitvector_variables(value, variables),
-            MachineOperandView::Shared(root) => {
-                if let Some(leaves) =
-                    shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
-                {
-                    for (_, leaf) in leaves.iter() {
-                        if let KernelTermNode::Match(fold) = leaf.node() {
-                            retained_matches::collect_match_variables(
-                                fold,
-                                retained_folds::FoldVariableRead::ExpressionFree,
-                                variables,
-                            );
-                        } else if let KernelTermNode::Fold(fold) = leaf.node() {
-                            retained_folds::collect_fold_variables(
-                                fold,
-                                retained_folds::FoldVariableRead::ExpressionFree,
-                                variables,
-                            );
-                        } else if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
-                            variables.extend(
-                                retained_folds::common_variables(
-                                    leaf,
-                                    retained_folds::FoldVariableRead::ExpressionFree,
-                                    &mut Default::default(),
-                                )
-                                .iter()
-                                .copied(),
-                            );
-                        } else {
-                            collect_bitvector_variables(
-                                leaf.machine_conversion_leaf().expect("conversion leaf"),
-                                variables,
-                            );
-                        }
-                    }
-                }
-                if let Some(reads) =
-                    shared_machine_read_leaves(root, || !checked_collection_checkpoint())
-                {
-                    for (_, read) in reads.iter() {
-                        collect_operand_bitvector_variables(
-                            MachineOperandView::Shared(read),
-                            variables,
-                        );
-                    }
-                }
-                if let Some(written) =
-                    shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
-                {
-                    if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
-                        // Only the maximum execution id is requested. The
-                        // persistent syntax summary answers that by key; walking
-                        // every prefix's variables would make admission quadratic.
-                        variables.extend(
-                            written
-                                .get_less_than(&Variable(
-                                    crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING,
-                                ))
-                                .copied(),
-                        );
-                        // Load names can hide execution ids in their live address
-                        // and state. Resolve just those names with the ordinary
-                        // leaf rule, never caching registry-dependent answers.
-                        let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
-                        let mut previous = Variable(range.start - 1);
-                        while let Some(variable) = written.get_greater_than(&previous) {
-                            if !crate::kernel::eval::is_load_variable(variable)
-                                || checked_collection_checkpoint()
-                            {
-                                break;
-                            }
-                            collect_bitvector_variables(
-                                &OldMachineTerm::Variable(*variable),
-                                variables,
-                            );
-                            previous = *variable;
-                        }
-                        return;
-                    }
-                    for variable in written.iter() {
-                        if checked_collection_checkpoint() {
-                            return;
-                        }
-                        // Preserve state deferral, connection and frame modes
-                        // by using the ordinary variable-leaf collector.
-                        collect_bitvector_variables(
-                            &OldMachineTerm::Variable(*variable),
-                            variables,
-                        );
-                    }
-                }
-            }
-        },
+        IntegerTerm::Machine(value) => collect_machine_term_variables(
+            value.operand_view(),
+            EXECUTION_CEILING_ONLY.with(std::cell::Cell::get),
+            variables,
+        ),
         IntegerTerm::If {
             condition,
             then_term,
@@ -7264,10 +7209,8 @@ fn collect_expression_value_bitvector_variables(
     value: &ExecutionValue,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if let Some((_, view @ MachineOperandView::Shared(_))) = value.machine() {
-        visit_machine_operand_carrier_leaves(view, |leaf| {
-            collect_operand_bitvector_variables(leaf, variables)
-        });
+    if let Some((_, operand)) = value.machine() {
+        collect_machine_term_variables(operand, false, variables);
     } else {
         collect_program_value_bitvector_variables(&value.native(), variables);
     }

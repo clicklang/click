@@ -415,3 +415,51 @@ fn condition_terms_and_mutex_guards_collect_variables_without_native_export() {
         assert!(!root.has_cached_native_argument());
     }
 }
+
+#[test]
+fn stored_machine_terms_collect_both_arms_and_respect_guard_scope() {
+    use crate::kernel::{ExecutionValue, StoredMachineTerm};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let selector = Variable(10999145);
+    let a = Variable(10999146);
+    let b = Variable(10999147);
+    let guard = KernelTerm::variable(KernelType::Bool, selector);
+    let word = |var| KernelTerm::variable(KernelType::Program(ProgramType::Int32), var);
+    for depth in [8, 32, 128, 512] {
+        let mut root = KernelTerm::machine_if_shared(format, [guard.clone(), word(a), word(b)]);
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let value = ExecutionValue::Shared(root.clone());
+        let bits = Term::Bitvector32(StoredMachineTerm::from_value(value.clone()).unwrap());
+        let program = Term::ProgramValue(value.into());
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+            let observation = Term::Integer(IntegerTerm::Machine(machine).into());
+            for term in [bits, program, observation] {
+                let mut ordinary = BTreeSet::new();
+                collect_term_bitvector_variables(&term, &mut ordinary);
+                assert_eq!(ordinary, BTreeSet::from([a, b]));
+                let mut connected = BTreeSet::new();
+                collect_proposition_connection_variables(
+                    &Proposition::Predicate {
+                        name: "uses_word".into(),
+                        arguments: vec![term],
+                    },
+                    &mut connected,
+                );
+                assert_eq!(connected, BTreeSet::from([a, b, selector]));
+            }
+        });
+        assert!(work <= 96 * (depth + 1), "depth={depth} work={work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+    }
+}
