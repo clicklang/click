@@ -360,3 +360,58 @@ fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn condition_terms_and_mutex_guards_collect_variables_without_native_export() {
+    use crate::kernel::{
+        CompareRelation, ConditionalMutexGuard, InstanceId, MutexIdentity, StoredConditionTerm,
+    };
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let machine = Variable(10998565);
+        let selector = Variable(10998566);
+        let guard = KernelTerm::variable(KernelType::Bool, selector);
+        let mut root = KernelTerm::boolean_comparison_raw(
+            MachineIntegerType::Int32,
+            CompareRelation::Equal,
+            [
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), machine),
+                KernelTerm::int32_literal(3),
+            ],
+        );
+        for _ in 0..depth {
+            root = KernelTerm::boolean_if_raw([
+                guard.clone(),
+                root,
+                KernelTerm::boolean_literal(false),
+            ]);
+        }
+        let held = StoredConditionTerm::from_root(root.clone()).unwrap();
+        let term = Term::Condition(held.clone());
+        let mutex = MutexIdentity {
+            mutex: Address::symbolic(Variable(10998567)),
+            epoch: Some(9),
+        };
+        let resource =
+            Resource::ConditionalMutexGuard(std::sync::Arc::new(ConditionalMutexGuard {
+                identity: InstanceId::from_variable(Variable(10998568)),
+                guard: mutex.clone(),
+                initialization: mutex,
+                held,
+            }));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut variables = BTreeSet::new();
+            collect_term_bitvector_variables(&term, &mut variables);
+            assert_eq!(variables, BTreeSet::from([machine]));
+            variables.clear();
+            collect_resource_bitvector_variables(&resource, &mut variables);
+            assert_eq!(variables, BTreeSet::from([machine]));
+            variables.clear();
+            let claim = Proposition::Equal(term.clone(), term.clone());
+            collect_proposition_connection_variables(&claim, &mut variables);
+            assert_eq!(variables, BTreeSet::from([machine, selector]));
+        });
+        assert!(work <= 96 * (depth + 1), "depth={depth} work={work}");
+        assert!(!root.has_cached_native_argument());
+    }
+}
