@@ -11098,7 +11098,11 @@ pub(super) fn proposition_as_single_condition(
 ) -> Option<(OldConditionTerm, bool)> {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Some(((condition.clone()).old_form().clone(), *value))
+            let condition = match condition.root().map(KernelTerm::node) {
+                Some(KernelTermNode::Variable(variable)) => OldConditionTerm::Variable(*variable),
+                _ => condition.old_form().clone(),
+            };
+            Some((condition, *value))
         }
         Proposition::SequenceMembership { element, sequence } => {
             let mut comparisons = sequence_member_comparisons(element.old_form(), sequence);

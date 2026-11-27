@@ -314,6 +314,15 @@ struct NativeConditionInput {
 impl From<OldConditionTerm> for StoredConditionTerm {
     fn from(value: OldConditionTerm) -> Self {
         let root = match &value {
+            OldConditionTerm::Constant(value) => {
+                return Self(StoredCondition::Shared(KernelTerm::boolean_literal(*value)));
+            }
+            OldConditionTerm::Variable(variable) => {
+                return Self(StoredCondition::Shared(KernelTerm::variable(
+                    KernelType::Bool,
+                    *variable,
+                )));
+            }
             OldConditionTerm::AddressEqual(left, right) => {
                 KernelTerm::address_equal_raw([left.shared().clone(), right.shared().clone()])
             }
@@ -330,7 +339,7 @@ impl From<OldConditionTerm> for StoredConditionTerm {
                 })));
             }
         };
-        // Old readers can borrow the already-produced comparison regardless
+        // Old readers can borrow the already-produced condition regardless
         // of whether another verification has requested it before.
         root.retain_old_condition_output(value);
         Self(StoredCondition::Shared(root))
@@ -772,6 +781,14 @@ mod protocol_value_tests {
                 StoredConditionTerm::from(value.clone()),
                 StoredConditionTerm::from_minted(value.clone()),
             ] {
+                if matches!(
+                    value,
+                    OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_)
+                ) {
+                    let root = KernelTermImport::default().condition(value);
+                    assert_eq!(stored.root(), Some(&root));
+                    assert_eq!(hash(&stored), hash(value));
+                }
                 assert_eq!(stored.old_form(), value);
                 assert_eq!(
                     hash(&stored),
