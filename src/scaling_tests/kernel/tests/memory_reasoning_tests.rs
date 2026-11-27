@@ -487,6 +487,7 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
         )
     };
     let source = |bytes: OldMachineTerm| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.clone(),
         bytes: (bytes).into(),

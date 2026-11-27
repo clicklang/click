@@ -5800,6 +5800,7 @@ void child_release(struct child* obj) {
                 .is_some()
         );
         let fact = Proposition::MemoryReadDefined {
+            point: observed.memory_point(),
             at: None,
             memory: observed.memory().clone(),
             pointer: range.base().offset_by_bytes(4),

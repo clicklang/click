@@ -169,6 +169,7 @@ fn native_view_prefix_retains_only_its_order_path() {
         let memory = SymbolicMemory::new();
         let base = Address::symbolic(Variable(9_340_002));
         let source = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: crate::kernel::StoredMachineTerm::new(
@@ -178,6 +179,7 @@ fn native_view_prefix_retains_only_its_order_path() {
             wide: true,
         };
         let goal = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base,
             bytes: crate::kernel::StoredMachineTerm::new(

@@ -512,6 +512,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let memory = SymbolicMemory::new().with_block("offset-view-rewrite", 8);
     let span = OldMachineTerm::Variable(Variable(192_922));
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: Address::new(
             AddressBase::ExternalArgument,

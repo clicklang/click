@@ -1198,6 +1198,8 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
                 &address,
                 ProgramType::Int64Pointer,
                 &[Proposition::MemoryMutatesOnly {
+                    before_point: Default::default(),
+                    after_point: Default::default(),
                     before: before.clone(),
                     after: memory.clone(),
                     writes: vec![(write, crate::kernel::AccessExtent::from(4))],
