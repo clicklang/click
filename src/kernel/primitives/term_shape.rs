@@ -420,6 +420,16 @@ impl OldConditionTerm {
 }
 
 impl CompareRelation {
+    pub(super) fn holds<T: Ord>(self, left: T, right: T) -> bool {
+        match self {
+            Self::LessThan => left < right,
+            Self::LessEqual => left <= right,
+            Self::GreaterThan => left > right,
+            Self::GreaterEqual => left >= right,
+            Self::Equal => left == right,
+        }
+    }
+
     /// The C spelling of the relation.
     pub(crate) fn program_symbol(self) -> &'static str {
         match self {

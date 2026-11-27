@@ -2632,7 +2632,6 @@ impl OldConditionTerm {
         left: OldMachineTerm,
         right: OldMachineTerm,
     ) -> Self {
-        use CompareRelation as R;
         crate::instrumentation::record_deterministic_work(1);
         let value = |term: &OldMachineTerm| {
             format
@@ -2640,13 +2639,7 @@ impl OldConditionTerm {
                 .and_then(crate::kernel::MachineIntegerConstant::to_i128)
         };
         if let (Some(a), Some(b)) = (value(&left), value(&right)) {
-            return Self::Constant(match relation {
-                R::LessThan => a < b,
-                R::LessEqual => a <= b,
-                R::GreaterThan => a > b,
-                R::GreaterEqual => a >= b,
-                R::Equal => a == b,
-            });
+            return Self::Constant(relation.holds(a, b));
         }
         // Two constants fold; a comparison of a term with itself keeps its
         // structure, as the 32-bit constructors keep it: a reflexive
@@ -2715,13 +2708,7 @@ impl OldConditionTerm {
                     machine_constant_value(format, &left),
                     machine_constant_value(format, &right),
                 ) {
-                    (Some(left), Some(right)) => Self::Constant(match relation {
-                        R::LessThan => left < right,
-                        R::LessEqual => left <= right,
-                        R::GreaterThan => left > right,
-                        R::GreaterEqual => left >= right,
-                        R::Equal => left == right,
-                    }),
+                    (Some(left), Some(right)) => Self::Constant(relation.holds(left, right)),
                     _ => Self::Compare {
                         format,
                         relation,
@@ -3498,13 +3485,7 @@ impl OldConditionTerm {
         right: OldMachineTerm,
     ) -> Self {
         match (left.as_const(), right.as_const()) {
-            (Some(left), Some(right)) => Self::Constant(match relation {
-                CompareRelation::LessThan => left < right,
-                CompareRelation::LessEqual => left <= right,
-                CompareRelation::GreaterThan => left > right,
-                CompareRelation::GreaterEqual => left >= right,
-                CompareRelation::Equal => left == right,
-            }),
+            (Some(left), Some(right)) => Self::Constant(relation.holds(left, right)),
             _ => Self::Compare {
                 format: MachineIntegerType::UInt32,
                 relation,

@@ -26,6 +26,14 @@ impl KernelTerm {
         use MachineIntegerType as T;
         let boolean = |value| Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value));
         let native = |value: OldConditionTerm| KernelTermImport::default().condition(&value);
+        if let [Some(left), Some(right)] =
+            arguments.each_ref().map(|argument| match argument.node() {
+                KernelTermNode::MachineLiteral(value) => value.constant_at(format),
+                _ => None,
+            })
+        {
+            return Self::boolean_literal(left.compare(relation, right));
+        }
         let views = arguments.each_ref().map(MachineOperandView::Shared);
         if let [Some(left), Some(right)] = views.map(|view| view.literal()) {
             return native(OldConditionTerm::machine_compare(
@@ -61,13 +69,7 @@ impl KernelTerm {
             && let Some(value) = crate::kernel::primitives::int64_signed_order_by_width_views(
                 views[0],
                 views[1],
-                |a, b| match relation {
-                    R::LessThan => a < b,
-                    R::LessEqual => a <= b,
-                    R::GreaterThan => a > b,
-                    R::GreaterEqual => a >= b,
-                    R::Equal => unreachable!(),
-                },
+                |a, b| relation.holds(a, b),
             )
         {
             return boolean(value);
@@ -170,6 +172,13 @@ mod tests {
                 variable.clone(),
                 constant(0),
                 constant(1),
+                OldMachineTerm::machine_constant(MachineIntegerConstant::from_term_bits(
+                    format.format(),
+                    format.format().mask(),
+                )),
+                // A differently tagged word may still be readable at this format.
+                OldMachineTerm::uint32_constant(u32::MAX),
+                OldMachineTerm::uint64_constant(u64::MAX),
                 OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::BitwiseAnd,
