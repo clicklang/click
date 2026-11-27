@@ -234,10 +234,10 @@ impl adler2::Adler32 {
      // Close the owned fields and the checked output equalities.
      close();
      close();
-     close();
-     close();
-     close();
-     close();
-     close();
+     close() using { to_integer(self.a) == to_integer((1u32 + old((bytes[0] as u32))) % 65521u32); };
+     close() using { bytes[0] == old(bytes[0]); };
+     close() using { to_integer(self.b) == to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32); };
+     close() using { to_integer(self.a) == old(adler_spec_a(bytes, 1, 1)); };
+     close() using { to_integer(self.b) == old(adler_spec_b(bytes, 1, 1, 0)); };
     }
 }
