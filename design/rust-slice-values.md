@@ -1,9 +1,10 @@
 # Rust slices as wide pointers
 
 Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
-2a and 2b-i of the [plan](#plan) are done: the kernel has the wide pointer
-and its slice pointer type, and every kernel consumer reads or refuses its
-count, but no front end produces a wide pointer yet.
+2a, 2b-i and 2b-ii-a of the [plan](#plan) are done: the kernel has the
+wide pointer and its slice pointer type, every kernel consumer reads or
+refuses its count, and a slice is stored and read back as one memory
+cell, but no front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -489,18 +490,46 @@ construct.
      wide pointer as `slice::from_raw_parts(p, n)`. Tests: `kernel::tests::
      slice_pointer_tests`, `a_slice_equality_is_described_with_its_count`;
      scaling test `wide_pointer_value_matches_stay_flat`.
-   - **2b-ii. Memory cells.** A wide pointer's 16-byte cell: stores (today
-     refused in `store_with_effective_type`), symbolic loads of a slice
-     type (today `None`), a loaded slice's count as a named load term with
-     its Surface form, read-over-write of a stored slice and the load
-     sites that retype a stored pointer (`stored.with_type(value_type)` in
-     `memory_loads.rs`) or rebuild a read at the stored value's type
-     (`logical_read_equation`, the stored-value equalities of
-     `register_logical_read_values`, `comparison_form_uncached`, which
-     skips a slice today), `register_logical_read_values` over a loaded
-     count, frame transport of the count (`transport_framed_atomic_pointer_value`),
-     and partial reads of the cell, which refuse until a layout fact
-     exists.
+   - **2b-ii. Memory cells**, in two parts: the stored cell, then
+     symbolic reads of it.
+   - **2b-ii-a. Slice cells.** Done. A wide pointer is stored as one
+     16-byte cell (`store_with_effective_type` no longer refuses it); a
+     program store of one ends every cell it overlaps, and a store into
+     either word ends it, as for any cell of its width. A program read of
+     the cell at its own slice type returns the stored slice, count
+     included. Every read that would take one word of the cell refuses
+     with `LoadTypeMismatch` until a layout fact exists: a thin pointer,
+     an integer, a byte, either word, or the cell at another slice type.
+     The thin read-over-write paths close to a stored slice at their
+     sources, so the load sites that retype a stored pointer
+     (`stored.with_type(value_type)` in `memory_loads.rs`) and those that
+     rebuild a read at the stored value's type (`logical_read_equation`,
+     the stored-value equalities of `register_logical_read_values`,
+     `comparison_form_uncached`) never receive one: no `LoadKind` reads a
+     slice (`LoadKind::of_value`), no pointer decoding answers with one
+     (`decodes_as`), and complete-pointer recovery
+     (`complete_pointer_carrier_read_retained_value`) recovers none. A
+     logical read of a slice cell names its version, as a pointer read
+     does (`logical_read_names_its_version`); with no symbolic slice read
+     yet, it refuses rather than lowering to the stored slice. Tests:
+     `kernel::tests::slice_cell_tests`; scaling test
+     `slice_cell_store_and_read_ignore_unrelated_cells`.
+   - **2b-ii-b. Symbolic slice reads.** Symbolic loads of a slice type
+     (`symbolic_load_value_unrecorded`, today `None`), so that logical
+     reads and reads of unknown cells name the read; the thin part and the
+     count of a loaded slice as named load terms, each its own read
+     identity, so that a slice read never equals a thin or integer read of
+     the cell's words without a layout fact (today a pointer read is named
+     by its point and address alone, `Address::loaded`, so this needs a
+     slice read kind beside it); read-over-write of a stored slice
+     (`pointer_read_over_write_decoded_value` at a slice decoding, the
+     logical read equation and `comparison_form_uncached`, which skips a
+     slice today); `register_logical_read_values` over a loaded count;
+     and frame transport of the count
+     (`transport_framed_atomic_pointer_value`, which refuses it with
+     `|_| None`). The count's Surface form, `(*p).len()`, is spelled by
+     2b-iii's `.len()` lowering; until then raising it refuses with an
+     internal error, as raising a wide pointer does.
    - **2b-iii. Surface type and raising.** An interface type for slice
      pointers; the library's `Slice<T>` becomes the built-in type and
      `slice::len`, `slice::as_ptr`, `slice::from_raw_parts` its components

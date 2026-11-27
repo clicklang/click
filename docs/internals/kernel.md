@@ -1364,6 +1364,15 @@ refuse a wide operand with `RuntimeError::ThinPointerRequired`, naming the
 operation; a cast between slice pointer types keeps the count. Importers read
 a slice's address and length through its components, never through the slice.
 
+A slice is stored as one 16-byte cell. A program read of the cell at its own
+slice type returns the stored slice, count included; a read that would take
+one of its words (a thin pointer, an integer, a byte, or the cell at another
+slice type) is a `LoadTypeMismatch`, since the kernel states no layout for the
+words. No `LoadKind` reads a stored slice and no pointer decoding answers with
+one, so read-over-write and complete-pointer recovery never hand a slice to a
+thin read. A logical read of a slice cell names its version and, with no
+symbolic slice read yet, refuses (`design/rust-slice-values.md`, step 2b-ii).
+
 ## Symbolic execution
 
 ### What stepping a statement means
