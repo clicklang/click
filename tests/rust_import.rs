@@ -420,6 +420,23 @@ fn charon_operator_project() -> Project {
     fs::write(p.root.join("borrow.click"), CHARON_OPERATOR_SIDECAR).unwrap();
     p
 }
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+fn charon_local_record_receiver_requirements_replay() {
+    let p = charon_operator_project();
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "local.ensures_0",
+            "--check-normalize-removal",
+            "--in-place",
+        ],
+    );
+}
+
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 39 s, over the gate's per-test budget (2026-10-06)"]
