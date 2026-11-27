@@ -1599,11 +1599,14 @@ fn collect_condition_operand_reads(
                 collect_operand_reads(operand, reads);
             }
         } else if let Some(values) = leaf.pointer_values() {
-            for value in values {
+            for value in &values {
                 for address in value.addresses() {
                     collect_address_base_reads(address.atom(), reads);
                     collect_shared_offset_reads(address.offset(), reads);
                 }
+            }
+            for count in values.iter().filter_map(|value| value.len()) {
+                collect_operand_reads(crate::kernel::MachineOperandView::Shared(count), reads);
             }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {

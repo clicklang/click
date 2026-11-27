@@ -6471,7 +6471,7 @@ fn collect_condition_operand_memories(
                 collect_operand_memories(operand, memories, &mut seen);
             }
         } else if let Some(values) = leaf.pointer_values() {
-            for value in values {
+            for value in &values {
                 for address in value.addresses() {
                     if let AddressBase::PureFunctionApplication(call) = address.atom()
                         && let Some(bits) = call.integer_address_bits()
@@ -6489,6 +6489,14 @@ fn collect_condition_operand_memories(
                         }
                     });
                 }
+            }
+            let mut seen = BTreeSet::new();
+            for count in values.iter().filter_map(|value| value.len()) {
+                collect_operand_memories(
+                    crate::kernel::MachineOperandView::Shared(count),
+                    memories,
+                    &mut seen,
+                );
             }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {

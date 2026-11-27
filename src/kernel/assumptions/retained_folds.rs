@@ -155,6 +155,14 @@ pub(super) fn collect_common_memory_loads(
                 push_offset_memory_loads(arguments.iter(), &mut pending)?;
             }
             KernelTermNode::PointerEqual(pair) => {
+                for count in pair
+                    .arguments()
+                    .iter()
+                    .rev()
+                    .filter_map(|value| value.len())
+                {
+                    pending.push((count, Some(MachineIntegerType::UInt64.carrier_bytes())));
+                }
                 push_offset_memory_loads(
                     pair.arguments()
                         .iter()

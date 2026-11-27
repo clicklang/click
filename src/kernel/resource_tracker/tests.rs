@@ -1668,7 +1668,15 @@ fn complete_pointer_conditions_keep_read_order() {
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.set_offset(offset("local:f:i"));
     let source = OldConditionTerm::PointerEqual(
-        Box::new(Pointer::new(left, ProgramType::Int32Pointer)),
+        Box::new(
+            Pointer::new(left, ProgramType::Int32Pointer).with_element_count(
+                OldMachineTerm::read_named(
+                    ProgramPoint::at(&memory),
+                    Box::new(at(block("local:f:count"), 0)),
+                    LoadKind::Bits64,
+                ),
+            ),
+        ),
         Box::new(Pointer::new(right, ProgramType::Int32Pointer)),
     );
     let root = KernelTermImport::default().condition(&source);
@@ -1676,7 +1684,7 @@ fn complete_pointer_conditions_keep_read_order() {
     let mut actual = Vec::new();
     collect_condition_reads(&source, &mut expected);
     collect_condition_operand_reads(BooleanOperandView::Shared(&root), &mut actual);
-    assert_eq!(expected.len(), 5);
+    assert_eq!(expected.len(), 6);
     assert_eq!(actual, expected);
 }
 
