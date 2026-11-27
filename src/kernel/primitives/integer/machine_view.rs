@@ -1295,6 +1295,43 @@ mod tests {
     }
 
     #[test]
+    fn wide_shifts_require_a_literal_count_that_fits_the_width() {
+        use MachineIntegerType::{Int64, UInt64};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [Int64, UInt64] {
+            for (count, expected) in [
+                (OldMachineTerm::constant(63), Some(1)),
+                (OldMachineTerm::uint64_constant(64), None),
+                (OldMachineTerm::int64_constant(-1), None),
+                (OldMachineTerm::uint64_constant(1 << 32), None),
+                (
+                    OldMachineTerm::Binary {
+                        format: UInt64,
+                        op: MachineBinaryOp::Add,
+                        left: Box::new(OldMachineTerm::uint64_constant(1)),
+                        right: Box::new(OldMachineTerm::uint64_constant(0)),
+                    },
+                    None,
+                ),
+            ] {
+                let term = OldMachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::ShiftRight,
+                    left: Box::new(OldMachineTerm::uint64_constant(u64::MAX)),
+                    right: Box::new(count),
+                };
+                let root = KernelTermImport::default().machine(format, &term);
+                let operand = MachineOperandView::Shared(&root);
+                if format == Int64 {
+                    assert_eq!(operand.int64_constant(), expected.map(|_| -1));
+                } else {
+                    assert_eq!(operand.uint64_constant(), expected);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn operand_views_preserve_legacy_operation_readings() {
         use crate::kernel::machine_integer::{Operation, bounds, identity, representation};
         let _session = crate::kernel::VerificationSession::enter();

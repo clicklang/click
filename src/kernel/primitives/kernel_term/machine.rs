@@ -417,27 +417,37 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
             operator,
             arguments: [left, right],
         } => {
-            // The legacy wide reader accepts only literal shift counts.
-            // Preserve that admission rule even if a count has a cached value.
-            if matches!(
-                format,
-                MachineIntegerType::Int64 | MachineIntegerType::UInt64
-            ) && matches!(
-                operator,
-                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
-            ) && !matches!(right.node(), KernelTermNode::MachineLiteral(_))
-            {
-                return None;
-            }
-            (
-                *format,
-                OldMachineTerm::Binary {
-                    format: *format,
-                    op: *operator,
-                    left: Box::new(left.machine_constant_reading()?.old_term()),
-                    right: Box::new(right.machine_constant_reading()?.old_term()),
-                },
-            )
+            let left = left.machine_constant_reading()?;
+            let rhs = right.machine_constant_reading()?;
+            // A wide shift requires a literal count, even if a computed
+            // operand has a known value. Counts may be 32- or 64-bit.
+            let shift_count = || {
+                if !matches!(right.node(), KernelTermNode::MachineLiteral(_)) {
+                    return None;
+                }
+                rhs.word32().or_else(|| u32::try_from(rhs.signed64()?).ok())
+            };
+            return Some(match format {
+                MachineIntegerType::Int64 => {
+                    let right = if operator.is_shift() {
+                        i64::from(shift_count()?)
+                    } else {
+                        rhs.signed64()?
+                    };
+                    KernelMachineLiteral::Int64(operator.evaluate_int64(left.signed64()?, right)?)
+                }
+                MachineIntegerType::UInt64 => {
+                    let right = if operator.is_shift() {
+                        u64::from(shift_count()?)
+                    } else {
+                        rhs.unsigned64()?
+                    };
+                    KernelMachineLiteral::UInt64(
+                        operator.evaluate_uint64(left.unsigned64()?, right)?,
+                    )
+                }
+                _ => return None,
+            });
         }
         KernelTermNode::MachineUnary {
             format,

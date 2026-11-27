@@ -70,6 +70,43 @@ fn checked_uint64_remainder_const(left: u64, right: u64) -> Option<u64> {
 }
 
 impl MachineBinaryOp {
+    pub(super) fn is_shift(self) -> bool {
+        matches!(self, Self::ShiftLeft | Self::ShiftRight)
+    }
+
+    pub(super) fn evaluate_int64(self, left: i64, right: i64) -> Option<i64> {
+        match self {
+            Self::Add => left.checked_add(right),
+            Self::Subtract => left.checked_sub(right),
+            Self::Multiply => left.checked_mul(right),
+            Self::Divide => checked_int64_divide_const(left, right),
+            Self::Remainder => checked_int64_remainder_const(left, right),
+            Self::ShiftLeft if left < 0 => None,
+            Self::ShiftLeft => left
+                .checked_shl(u32::try_from(right).ok()?)
+                .filter(|value| *value >= 0),
+            Self::ShiftRight => left.checked_shr(u32::try_from(right).ok()?),
+            Self::BitwiseAnd => Some(left & right),
+            Self::BitwiseOr => Some(left | right),
+            Self::BitwiseXor => Some(left ^ right),
+        }
+    }
+
+    pub(super) fn evaluate_uint64(self, left: u64, right: u64) -> Option<u64> {
+        match self {
+            Self::Add => Some(left.wrapping_add(right)),
+            Self::Subtract => Some(left.wrapping_sub(right)),
+            Self::Multiply => Some(left.wrapping_mul(right)),
+            Self::Divide => checked_uint64_divide_const(left, right),
+            Self::Remainder => checked_uint64_remainder_const(left, right),
+            Self::ShiftLeft => left.checked_shl(u32::try_from(right).ok()?),
+            Self::ShiftRight => left.checked_shr(u32::try_from(right).ok()?),
+            Self::BitwiseAnd => Some(left & right),
+            Self::BitwiseOr => Some(left | right),
+            Self::BitwiseXor => Some(left ^ right),
+        }
+    }
+
     /// Evaluate two 32-bit word patterns. Signed left-shift overflow is a
     /// separate language obligation; the term itself shifts the word.
     pub(super) fn evaluate_word32(
@@ -1070,28 +1107,12 @@ fn int64_constant(term: &OldMachineTerm) -> Option<i64> {
             right,
         } => {
             let left = int64_constant(left)?;
-            match op {
-                MachineBinaryOp::Add => left.checked_add(int64_constant(right)?),
-                MachineBinaryOp::Subtract => left.checked_sub(int64_constant(right)?),
-                MachineBinaryOp::Multiply => left.checked_mul(int64_constant(right)?),
-                MachineBinaryOp::Divide => checked_int64_divide_const(left, int64_constant(right)?),
-                MachineBinaryOp::Remainder => {
-                    checked_int64_remainder_const(left, int64_constant(right)?)
-                }
-                MachineBinaryOp::ShiftLeft => {
-                    let count = int64_shift_count_constant(right)?;
-                    (left >= 0 && count < 64)
-                        .then_some(left.checked_shl(count)?)
-                        .filter(|value| *value >= 0)
-                }
-                MachineBinaryOp::ShiftRight => {
-                    let count = int64_shift_count_constant(right)?;
-                    (count < 64).then(|| left >> count)
-                }
-                MachineBinaryOp::BitwiseAnd => Some(left & int64_constant(right)?),
-                MachineBinaryOp::BitwiseOr => Some(left | int64_constant(right)?),
-                MachineBinaryOp::BitwiseXor => Some(left ^ int64_constant(right)?),
-            }
+            let right = if op.is_shift() {
+                i64::from(int64_shift_count_constant(right)?)
+            } else {
+                int64_constant(right)?
+            };
+            op.evaluate_int64(left, right)
         }
         OldMachineTerm::Unary {
             format: MachineIntegerType::Int64,
@@ -1137,32 +1158,12 @@ fn uint64_constant(term: &OldMachineTerm) -> Option<u64> {
             right,
         } => {
             let left = uint64_constant(left)?;
-            match op {
-                MachineBinaryOp::Add => Some(left.wrapping_add(uint64_constant(right)?)),
-                MachineBinaryOp::Subtract => Some(left.wrapping_sub(uint64_constant(right)?)),
-                MachineBinaryOp::Multiply => Some(left.wrapping_mul(uint64_constant(right)?)),
-                MachineBinaryOp::Divide => {
-                    checked_uint64_divide_const(left, uint64_constant(right)?)
-                }
-                MachineBinaryOp::Remainder => {
-                    checked_uint64_remainder_const(left, uint64_constant(right)?)
-                }
-                MachineBinaryOp::ShiftLeft => {
-                    let count = int64_shift_count_constant(right)?;
-                    (count < 64).then_some(left.wrapping_shl(count))
-                }
-                MachineBinaryOp::ShiftRight => {
-                    let count = int64_shift_count_constant(right)?;
-                    if count >= 64 {
-                        None
-                    } else {
-                        Some(left >> count)
-                    }
-                }
-                MachineBinaryOp::BitwiseAnd => Some(left & uint64_constant(right)?),
-                MachineBinaryOp::BitwiseOr => Some(left | uint64_constant(right)?),
-                MachineBinaryOp::BitwiseXor => Some(left ^ uint64_constant(right)?),
-            }
+            let right = if op.is_shift() {
+                u64::from(int64_shift_count_constant(right)?)
+            } else {
+                uint64_constant(right)?
+            };
+            op.evaluate_uint64(left, right)
         }
         OldMachineTerm::Unary {
             format: MachineIntegerType::UInt64,
