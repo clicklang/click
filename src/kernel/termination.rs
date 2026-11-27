@@ -3735,6 +3735,7 @@ fn collect_loops_in_order<'a>(
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::CreateClosure { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
