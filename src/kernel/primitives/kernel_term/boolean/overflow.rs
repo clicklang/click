@@ -62,7 +62,7 @@ impl KernelTerm {
         operation: OverflowOperation,
         mut arguments: [Self; 2],
     ) -> Self {
-        let literals = arguments.each_ref().map(Self::guard_literal);
+        let literals = arguments.each_ref().map(Self::machine_literal);
         if let [Some(left), Some(right)] = &literals {
             if let Some(value) = literal_overflow(format, operation, left, right) {
                 return Self::boolean_literal(value);

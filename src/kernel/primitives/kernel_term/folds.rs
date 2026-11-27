@@ -74,9 +74,7 @@ impl KernelFold {
             KernelTermNode::Variable(variable) if *variable == self.item => {
                 Some(Int32FoldBody::Item)
             }
-            _ if MachineOperandView::Shared(body).literal().is_some() => {
-                Some(Int32FoldBody::Literal)
-            }
+            _ if body.machine_literal().is_some() => Some(Int32FoldBody::Literal),
             _ => None,
         }
     }
@@ -94,11 +92,9 @@ impl KernelFold {
             return None;
         }
         let [start, end, initial, body] = &self.arguments;
-        let constant =
-            |bound| Some(MachineOperandView::Shared(bound).literal()?.as_const()? as i32);
-        let end = match (constant(start), constant(end)) {
-            (Some(start), Some(end)) if end <= start => return Some(initial.clone()),
-            (Some(_), Some(end)) => end,
+        let end = match self.literal_machine_bounds() {
+            Some((start, end)) if end <= start => return Some(initial.clone()),
+            Some((_, end)) => end,
             _ if start == end || crate::kernel::shared_machine_syntax_equal(start, end) => {
                 return Some(initial.clone());
             }
@@ -106,10 +102,7 @@ impl KernelFold {
         };
         Some(match self.projection_or_literal_body()? {
             Int32FoldBody::Accumulator => initial.clone(),
-            Int32FoldBody::Item => KernelTermImport::default().machine(
-                MachineIntegerType::Int32,
-                &OldMachineTerm::constant((end - 1) as u32),
-            ),
+            Int32FoldBody::Item => KernelTerm::int32_literal((end - 1) as u32),
             Int32FoldBody::Literal => body.clone(),
         })
     }
@@ -160,7 +153,7 @@ impl KernelFold {
     }
 
     fn literal_machine_bounds(&self) -> Option<(i32, i32)> {
-        let bound = |root| Some(MachineOperandView::Shared(root).literal()?.as_const()? as i32);
+        let bound = |root: &KernelTerm| Some(root.machine_literal()?.word32()? as i32);
         Some((bound(&self.arguments[0])?, bound(&self.arguments[1])?))
     }
 
@@ -180,18 +173,24 @@ impl KernelFold {
         use crate::kernel::proof::term_rewrite::TermRewrite;
         let [_, _, initial, body] = &self.arguments;
         let mut value = initial.clone();
+        let ty = KernelFoldIndex::Int32.ty();
+        let accumulator = KernelTerm::variable(ty.clone(), self.accumulator);
+        let item = KernelTerm::variable(ty, self.item);
         for index in start..end {
             crate::instrumentation::record_deterministic_work(1);
-            let source = OldMachineTerm::Variable(self.accumulator);
-            let mut rewrite =
-                TermRewrite::for_machine_operand(&source, MachineOperandView::Shared(&value));
+            let mut rewrite = TermRewrite::for_machine_operands(
+                MachineOperandView::Shared(&accumulator),
+                MachineOperandView::Shared(&value),
+            );
             let step = rewrite.shared_machine_operand(body);
             let refusal = rewrite.refusal();
             drop(rewrite);
             let step = step.filter(|_| refusal.is_none())?;
-            let source = OldMachineTerm::Variable(self.item);
-            let item = OldMachineTerm::constant(index as u32);
-            let mut rewrite = TermRewrite::for_bits(&source, &item);
+            let index = KernelTerm::int32_literal(index as u32);
+            let mut rewrite = TermRewrite::for_machine_operands(
+                MachineOperandView::Shared(&item),
+                MachineOperandView::Shared(&index),
+            );
             let result = rewrite.shared_machine_operand(&step);
             let refusal = rewrite.refusal();
             let result = result.filter(|_| refusal.is_none())?;
@@ -586,7 +585,7 @@ mod producer_tests {
             OldMachineTerm::Variable(accumulator),
             OldMachineTerm::Variable(item),
         );
-        for (start, end) in [(0, 0), (0, 1), (0, 4), (4, 0)] {
+        for (start, end) in [(0, 0), (0, 1), (0, 4), (4, 0), ((-2_i32) as u32, 1)] {
             let native = OldMachineTerm::RangeFold {
                 start: Box::new(OldMachineTerm::constant(start)),
                 end: Box::new(OldMachineTerm::constant(end)),

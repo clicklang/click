@@ -2407,12 +2407,7 @@ impl<'a> TermRewrite<'a> {
     }
 
     pub(crate) fn for_bits(from: &'a OldMachineTerm, to: &'a OldMachineTerm) -> Self {
-        let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
-        Self::for_bits_with_budget(
-            MachineOperandView::Old(from),
-            MachineOperandView::Old(to),
-            false,
-        )
+        Self::for_machine_operands(MachineOperandView::Old(from), MachineOperandView::Old(to))
     }
 
     fn for_bits_with_budget(
@@ -2504,13 +2499,13 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    /// The ordinary substitution profile with a retained replacement.
-    pub(crate) fn for_machine_operand(
-        from: &'a OldMachineTerm,
+    /// Ordinary substitution accepts either written operands or shared roots.
+    pub(crate) fn for_machine_operands(
+        from: MachineOperandView<'a>,
         to: MachineOperandView<'a>,
     ) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
-        Self::for_bits_with_budget(MachineOperandView::Old(from), to, false)
+        Self::for_bits_with_budget(from, to, false)
     }
 
     /// Construct the checked machine rewrite used by range-fold laws. Setup
