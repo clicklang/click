@@ -961,24 +961,21 @@ impl<'a> MachineOperandView<'a> {
     pub(crate) fn word32_constant(self) -> Option<u32> {
         match self {
             Self::Old(value) => value.as_const(),
-            Self::Shared(term) => term.machine_constant_reading()?.old_term().as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.word32(),
         }
     }
 
     pub(crate) fn uint64_constant(self) -> Option<u64> {
         match self {
             Self::Old(value) => value.uint64_as_const(),
-            Self::Shared(term) => term
-                .machine_constant_reading()?
-                .old_term()
-                .uint64_as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.unsigned64(),
         }
     }
 
     pub(crate) fn int64_constant(self) -> Option<i64> {
         match self {
             Self::Old(value) => value.int64_as_const(),
-            Self::Shared(term) => term.machine_constant_reading()?.old_term().int64_as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.signed64(),
         }
     }
 
@@ -1227,19 +1224,11 @@ mod tests {
             };
             let check = |boxed: OldMachineTerm| {
                 let shared = KernelTermImport::default().machine(ty, &boxed);
-                let cached = shared.machine_constant_reading().map(|v| v.old_term());
+                let cached = MachineOperandView::Shared(&shared);
+                assert_eq!(cached.word32_constant(), boxed.as_const(), "{boxed:?}");
+                assert_eq!(cached.int64_constant(), boxed.int64_as_const(), "{boxed:?}");
                 assert_eq!(
-                    cached.as_ref().and_then(|v| v.as_const()),
-                    boxed.as_const(),
-                    "{boxed:?}"
-                );
-                assert_eq!(
-                    cached.as_ref().and_then(|v| v.int64_as_const()),
-                    boxed.int64_as_const(),
-                    "{boxed:?}"
-                );
-                assert_eq!(
-                    cached.as_ref().and_then(|v| v.uint64_as_const()),
+                    cached.uint64_constant(),
                     boxed.uint64_as_const(),
                     "{boxed:?}"
                 );
@@ -1248,6 +1237,19 @@ mod tests {
                     KernelTermNode::MachineBinary { .. } | KernelTermNode::MachineUnary { .. }
                 ));
             };
+            // A signed 64-bit operator may read an unsigned word's bits.
+            // The converse and cross-width operands retain their refusal.
+            for operand in [
+                OldMachineTerm::constant(u32::MAX),
+                OldMachineTerm::int64_constant(-1),
+                OldMachineTerm::uint64_constant(u64::MAX),
+            ] {
+                check(OldMachineTerm::Unary {
+                    format: ty,
+                    op: MachineUnaryOp::BitwiseNot,
+                    operand: Box::new(operand),
+                });
+            }
             for a in [
                 0,
                 1,

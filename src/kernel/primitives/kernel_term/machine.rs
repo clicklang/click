@@ -320,6 +320,35 @@ pub enum KernelMachineLiteral {
 }
 
 impl KernelMachineLiteral {
+    pub(crate) fn word32(&self) -> Option<u32> {
+        match self {
+            Self::Word32(bits) | Self::UInt32(bits) => Some(*bits),
+            Self::Wide(value) if value.format().bits() == 32 => Some(value.bits() as u32),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn unsigned64(&self) -> Option<u64> {
+        match self {
+            Self::UInt64(bits) => Some(*bits),
+            Self::Wide(value) if value.format() == MachineIntegerType::UInt64.format() => {
+                Some(value.bits() as u64)
+            }
+            _ => None,
+        }
+    }
+
+    /// The signed reader also accepts unsigned 64-bit words by their bits.
+    pub(crate) fn signed64(&self) -> Option<i64> {
+        match self {
+            Self::Int64(value) => Some(*value),
+            Self::Wide(value) if value.format() == MachineIntegerType::Int64.format() => {
+                Some(value.bits() as i64)
+            }
+            _ => self.unsigned64().map(|bits| bits as i64),
+        }
+    }
+
     /// An atomic literal output, preserving its written carrier exactly.
     pub(crate) fn value_at(&self, format: MachineIntegerType) -> ProgramValue {
         wrap_exact(format, self.old_term())
@@ -368,6 +397,22 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                 .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32));
         }
         KernelTermNode::MachineBinary {
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+            operator,
+            arguments: [left, right],
+        } => {
+            let bits = operator.evaluate_word32(
+                *format,
+                left.machine_constant_reading()?.word32()?,
+                right.machine_constant_reading()?.word32()?,
+            )?;
+            return Some(if *format == MachineIntegerType::Int32 {
+                KernelMachineLiteral::Word32(bits)
+            } else {
+                KernelMachineLiteral::UInt32(bits)
+            });
+        }
+        KernelTermNode::MachineBinary {
             format,
             operator,
             arguments: [left, right],
@@ -396,16 +441,18 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
         }
         KernelTermNode::MachineUnary {
             format,
-            operator,
+            operator: MachineUnaryOp::BitwiseNot,
             operand,
-        } => (
-            *format,
-            OldMachineTerm::Unary {
-                format: *format,
-                op: *operator,
-                operand: Box::new(operand.machine_constant_reading()?.old_term()),
-            },
-        ),
+        } => {
+            let literal = operand.machine_constant_reading()?;
+            return Some(match format {
+                MachineIntegerType::Int32 => KernelMachineLiteral::Word32(!literal.word32()?),
+                MachineIntegerType::UInt32 => KernelMachineLiteral::UInt32(!literal.word32()?),
+                MachineIntegerType::Int64 => KernelMachineLiteral::Int64(!literal.signed64()?),
+                MachineIntegerType::UInt64 => KernelMachineLiteral::UInt64(!literal.unsigned64()?),
+                _ => return None,
+            });
+        }
         KernelTermNode::MachineCast {
             encoding,
             source,

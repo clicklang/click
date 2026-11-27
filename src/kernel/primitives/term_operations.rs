@@ -69,6 +69,34 @@ fn checked_uint64_remainder_const(left: u64, right: u64) -> Option<u64> {
         .map(|(_, remainder)| remainder as u64)
 }
 
+impl MachineBinaryOp {
+    /// Evaluate two 32-bit word patterns. Signed left-shift overflow is a
+    /// separate language obligation; the term itself shifts the word.
+    pub(super) fn evaluate_word32(
+        self,
+        format: MachineIntegerType,
+        left: u32,
+        right: u32,
+    ) -> Option<u32> {
+        let signed = format == MachineIntegerType::Int32;
+        match self {
+            Self::Add => Some(left.wrapping_add(right)),
+            Self::Subtract => Some(left.wrapping_sub(right)),
+            Self::Multiply => Some(left.wrapping_mul(right)),
+            Self::Divide if signed => checked_signed_divide_const(left, right),
+            Self::Divide => checked_unsigned_divide_const(left, right),
+            Self::Remainder if signed => checked_signed_remainder_const(left, right),
+            Self::Remainder => checked_unsigned_remainder_const(left, right),
+            Self::ShiftLeft => Some(left.wrapping_shl(checked_shift_count_const(right)?)),
+            Self::ShiftRight if signed => checked_arithmetic_shift_right_const(left, right),
+            Self::ShiftRight => checked_logical_shift_right_const(left, right),
+            Self::BitwiseAnd => Some(left & right),
+            Self::BitwiseOr => Some(left | right),
+            Self::BitwiseXor => Some(left ^ right),
+        }
+    }
+}
+
 fn checked_shift_count_const(count: u32) -> Option<u32> {
     let count = count as i32;
     (0..32).contains(&count).then_some(count as u32)
@@ -402,50 +430,12 @@ impl OldMachineTerm {
             | Self::Float32Binary { .. }
             | Self::Float64Negate(_)
             | Self::Float64Binary { .. } => None,
-            binary_term!(Bits32, Add, left, right) => {
-                Some(left.as_const()?.wrapping_add(right.as_const()?))
-            }
-            binary_term!(Bits32, Subtract, left, right) => {
-                Some(left.as_const()?.wrapping_sub(right.as_const()?))
-            }
-            binary_term!(Bits32, Multiply, left, right) => {
-                Some(left.as_const()?.wrapping_mul(right.as_const()?))
-            }
-            binary_term!(Int32, Divide, left, right) => {
-                checked_signed_divide_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(UInt32, Divide, left, right) => {
-                checked_unsigned_divide_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(Int32, Remainder, left, right) => {
-                checked_signed_remainder_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(UInt32, Remainder, left, right) => {
-                checked_unsigned_remainder_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(Bits32, ShiftLeft, left, right) => {
-                // This untyped term denotes the shifted 32-bit pattern.
-                // Signed C overflow is a separate expression obligation.
-                Some(
-                    left.as_const()?
-                        .wrapping_shl(checked_shift_count_const(right.as_const()?)?),
-                )
-            }
-            binary_term!(Int32, ShiftRight, left, right) => {
-                checked_arithmetic_shift_right_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(UInt32, ShiftRight, left, right) => {
-                checked_logical_shift_right_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(Bits32, BitwiseAnd, left, right) => {
-                Some(left.as_const()? & right.as_const()?)
-            }
-            binary_term!(Bits32, BitwiseOr, left, right) => {
-                Some(left.as_const()? | right.as_const()?)
-            }
-            binary_term!(Bits32, BitwiseXor, left, right) => {
-                Some(left.as_const()? ^ right.as_const()?)
-            }
+            Self::Binary {
+                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                op,
+                left,
+                right,
+            } => op.evaluate_word32(*format, left.as_const()?, right.as_const()?),
             unary_term!(Bits32, BitwiseNot, value) => Some(!value.as_const()?),
             Self::If {
                 condition,
