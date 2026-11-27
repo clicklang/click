@@ -228,9 +228,8 @@ expansion output.
   locally instead of retaining a hidden search step.
 
 - `intro() { ... }` opens the focused universal or implication and proves
-  its body within the block. `contradiction(P)` accepts either structural
-  `not P` or the exact opposite polarity of the same lowered C condition.
-  Both work on pure goals, including inside `have ... by` and theorem proofs.
+  its body within the block. If an introduced assumption conflicts with a
+  known fact, the body holds `false` and `close()` can finish it.
 - `close();`: close the first open goal by smart contextual simplification.
   It runs no C.
 

@@ -248,7 +248,7 @@ int32 parent_read_payload(struct parent* p) {
 } by {
     match link.link {
         ParentLink::Empty => {
-            contradiction(link.link == ParentLink::Empty);
+            close();
         },
         ParentLink::Linked(linked_child) => {
             unfold(link);
@@ -274,7 +274,7 @@ void parent_detach(struct parent* p) {
 } by {
     match link.link {
         ParentLink::Empty => {
-            contradiction(link.link == ParentLink::Empty);
+            close();
         },
         ParentLink::Linked(linked_child) => {
             unfold(link);

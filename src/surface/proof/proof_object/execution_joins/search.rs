@@ -24,7 +24,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let prepared = search_input.prepare_execution_match(false, tactic_index)?;
         let marker = prepared.checkpoint();
-        let plan = prepared.plan_execution_match(split, |_| usize::MAX)?;
+        let plan = prepared.plan_execution_match(split)?;
         let live = plan.live_cases();
         let mut certificates = vec![None; split.arms.len()];
         let Some(proof) = Self::execute_enum_match_group(

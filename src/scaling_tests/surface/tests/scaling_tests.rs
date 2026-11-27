@@ -2802,7 +2802,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20       initialize by close();\n\
              \x20       maintain by {{\n\
              \x20           match c.model {{\n\
-             \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
+             \x20               Chain::Nil => {{ close(); }},\n\
              \x20               Chain::Link(rest_model) => {{\n\
              \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
              \x20                       rewrite(c.model, Chain::Link(rest_model));\n\

@@ -10,7 +10,7 @@ which the implicit closer follows into the definition to `false`. So the fact
 the one written by hand: `if v == x`, `known`; otherwise
 unfold both applications to show that the original call equals `false`.
 Use that equation to prove `not list::contains(..)`, then close with
-`contradiction`.
+`close()` once the branch holds `false`.
 
 The fact may name the list through a connected equation, and the goal may be
 a postcondition spelled over `result`.

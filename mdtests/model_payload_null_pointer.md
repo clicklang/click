@@ -65,7 +65,7 @@ void detach(struct node* n) {
     ensures is_root(u.model) == 1;
 } by {
     match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Empty => { close(); },
         Tree::Node(identity, node_parent, value) => {
             unfold(t);
             step_until(function.exit);

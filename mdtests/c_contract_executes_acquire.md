@@ -67,7 +67,7 @@ int32* read_acquired(int32* (*acquire)(), int32* value) {
         fold(Cell(result));
         fold(MaybeCell(result));
         have result == 0 implies value[0] == old(value[0]) by {
-            intro() { contradiction(result != 0); }
+            intro() { close(); }
         }
         close();
     } else {

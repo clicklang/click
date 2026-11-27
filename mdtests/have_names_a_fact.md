@@ -2,7 +2,7 @@
 
 A `have` may name its fact. Until the end of the enclosing block, the name
 stands for the proposition wherever a proposition is cited whole: in
-`using { name; }`, `have name by close();`, `contradiction(name)` and the like. The
+`using { name; }` and `have name by close();`. The
 name is read as `P` where it is cited, so a named fact proves exactly what
 restating `P` there proves. It is not visible inside its own proof, and a
 nested block or an `if` arm ends its names with the block.
@@ -33,7 +33,7 @@ theorem cite_in_contradiction(x: int32) {
     requires x != 5;
     ensures false by {
         have five: x == 5;
-        contradiction(five);
+        close();
     }
 }
 

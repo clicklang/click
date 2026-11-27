@@ -278,7 +278,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 rewrite(if old->__rb_parent_color == 0 { 1 } else { if old->__rb_parent_color == 1 { 1 } else { 0 } }, 0);
                                 close();
                             }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     rewrite(old->__rb_parent_color, 1); close();
@@ -316,7 +316,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
                                 close();
                             }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
@@ -360,7 +360,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
                                 close();
                             }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };

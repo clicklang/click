@@ -54,10 +54,10 @@ int32 same_node(struct node* a, struct node* b) {
     ensures result == 0;
 } by {
     match x.model {
-        Cell::Missing => { contradiction(x.model == Cell::Missing); },
+        Cell::Missing => { close(); },
         Cell::Present(xi) => {
             match y.model {
-                Cell::Missing => { contradiction(y.model == Cell::Missing); },
+                Cell::Missing => { close(); },
                 Cell::Present(yi) => {
                     unfold(x);
                     unfold(y);

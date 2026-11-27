@@ -1172,7 +1172,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   cases {
    len == 5552u64 => {
     have not (len < 5552u64) by close() using { len == 5552u64; };
-    contradiction(len < 5552u64);
+    close();
    }
    len == 0u64 => { close(); }
   }

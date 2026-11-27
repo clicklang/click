@@ -125,7 +125,7 @@ theorem unmarked_point_update(
         let ih = induct(hi);
         if hi <= lo {
             have j < lo by { close() using { j < hi; hi <= lo; }; }
-            contradiction(lo <= j);
+            close();
         } else {
             have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }

@@ -3691,50 +3691,28 @@ impl CheckedProofCasePartition {
             .map(|(case, _)| case)
     }
 
-    pub(crate) fn excluding_constructor_case(
-        &self,
-        index: usize,
-        fact: Proposition,
-    ) -> Option<Arc<Self>> {
-        self.witness_scope.as_ref()?;
-        if !self.facts_for_case(index)?.contradicts(&fact) {
-            return None;
-        }
-        let mut successor = self.clone();
-        // Coverage from the old partition must not discharge this new one.
-        successor.identity = Arc::new(());
-        successor.excluded[index] = Some(fact);
-        Some(Arc::new(successor))
-    }
-
     /// Excludes a constructor whose arm refutes itself after bridging steps.
     ///
     /// `arm_facts` are the facts the arm's own proof reached: this case's
     /// facts plus what the arm's `have`s established from them, each checked
-    /// by its own proof. The arm is refuted when they hold `false` or
-    /// contradict the cited `fact`. The facts must hold this case's fact, so a
+    /// by its own proof. The arm must hold `false` and its constructor fact, so a
     /// context from another arm, or from before the split, cannot exclude
     /// this one.
     pub(crate) fn excluding_constructor_case_in(
         &self,
         index: usize,
         arm_facts: &PureFactStore,
-        fact: Option<Proposition>,
     ) -> Option<Arc<Self>> {
         self.witness_scope.as_ref()?;
-        if !arm_facts.contains(self.case_fact(index)?) {
+        if !arm_facts.contains(self.case_fact(index)?) || !arm_facts.holds_false() {
             return None;
         }
-        let fact = match fact {
-            Some(fact) if arm_facts.contradicts(&fact) => fact,
-            None if arm_facts.holds_false() => {
-                Proposition::condition_is(OldConditionTerm::Constant(false), true)
-            }
-            _ => return None,
-        };
         let mut successor = self.clone();
         successor.identity = Arc::new(());
-        successor.excluded[index] = Some(fact);
+        successor.excluded[index] = Some(Proposition::condition_is(
+            OldConditionTerm::Constant(false),
+            true,
+        ));
         Some(Arc::new(successor))
     }
 
@@ -10251,6 +10229,12 @@ impl ExecutionProofCore {
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
+                if super::facts::is_constructor_clash(case) {
+                    arm_facts = arm_facts.with_fact(Proposition::condition_is(
+                        OldConditionTerm::Constant(false),
+                        true,
+                    ));
+                }
                 // A term an exact premise equates with the scrutinee is the
                 // same constructor in this arm: a local holding a call's
                 // result `c = a` matched at `c == None` gives `a == None`.

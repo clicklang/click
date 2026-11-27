@@ -258,7 +258,7 @@ tactic prepare_sized_focus(p: struct rb_node*) {
     ensures sized_value(sized_left(prepared.model)) <= 2147483646 - sized_value(sized_right(prepared.model));
 } by {
     match tree.model {
-        SizedTree::Empty => { unfold(tree); contradiction(p == 0); },
+        SizedTree::Empty => { unfold(tree); close(); },
         SizedTree::Node(node, parent, color, value, left_model, right_model) => {
             let { metadata: metadata, left: left, right: right } = unfold(tree);
             let { checked: left } = certify_size(p->rb_left, { tree: left });
@@ -382,7 +382,7 @@ tactic finish_sized_walk(rb: struct rb_node*, stop: struct rb_node*) {
             have not (sized_walk_pending(walk.model) == 0) by {
                 rewrite(sized_walk_pending(walk.model), 1); close();
             }
-            contradiction(sized_walk_pending(walk.model) == 0);
+            close();
         },
         SizedWalk::Done(result_model) => {
             let { whole: result } = unfold(walk);

@@ -187,11 +187,6 @@ pub(crate) enum PropositionCloseError {
     UnavailableSide(Proposition),
     ExpectedFiniteUniversal,
     MissingFiniteInstance,
-    /// `contradiction(fact)` found no refutation; `fact_held` says whether
-    /// the fact itself was available, so the missing half can be named.
-    ContradictionUnavailable {
-        fact_held: bool,
-    },
     /// An explicit premise of a guarded induction application is not held.
     InductionPremiseUnavailable(Proposition),
     InstantiateQuantifiedUnavailable,
@@ -1611,24 +1606,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         (matches!(branch.obligation, ProofObligation::Frontier(_))
             && branch.state.facts.holds_false())
         .then(|| self.closed_focused())
-    }
-
-    pub(crate) fn apply_contradiction(
-        &self,
-        fact: &Proposition,
-    ) -> Result<Self, PropositionCloseError> {
-        let branch = self
-            .state
-            .open_branches
-            .get(self.focused_branch)
-            .ok_or(PropositionCloseError::Unavailable)?;
-        let facts = &branch.state.facts;
-        facts
-            .contradicts(fact)
-            .then(|| self.closed_focused())
-            .ok_or_else(|| PropositionCloseError::ContradictionUnavailable {
-                fact_held: facts.holds_contradiction_fact(fact),
-            })
     }
 
     /// Modus ponens with an explicitly selected implication and evidence.

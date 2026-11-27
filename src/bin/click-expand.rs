@@ -1079,9 +1079,8 @@ theorem signed_nonzero(x: int64) {
         .unwrap();
         for claim in ["unsigned_nonzero.ensures_0", "signed_nonzero.ensures_0"] {
             let expanded = check(&nonzero, claim).unwrap();
-            for step in ["rewrite(", "contradiction("] {
-                assert!(expanded.contains(step), "{claim}: {expanded}");
-            }
+            assert!(expanded.contains("rewrite("), "{claim}: {expanded}");
+            assert!(!expanded.contains("contradiction("), "{claim}: {expanded}");
         }
 
         let strict_scale = directory.path().join("strict_scale.click");

@@ -31,7 +31,7 @@ theorem checked_strict_lower(n: Integer, d: Integer, bound: Integer) {
                 have not (bound * d < n) by { close() using {
                     n == bound * d + truncating_remainder(n, d); truncating_remainder(n, d) <= 0;
                 }; }
-                contradiction(bound * d < n);
+                close();
             } else {
                 have 0 <= n by { close() using { not (n <= 0); }; }
                 have 0 * d <= n by { close() using { 0 <= n; }; }
@@ -39,7 +39,7 @@ theorem checked_strict_lower(n: Integer, d: Integer, bound: Integer) {
                 have not (bound < 0) by { close() using {
                     0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
                 }; }
-                contradiction(bound < 0);
+                close();
             }
         }
     }
@@ -70,7 +70,7 @@ theorem checked_strict_upper(n: Integer, d: Integer, bound: Integer) {
                 have not (n < bound * d) by { close() using {
                     n == bound * d + truncating_remainder(n, d); 0 <= truncating_remainder(n, d);
                 }; }
-                contradiction(n < bound * d);
+                close();
             } else {
                 have n <= 0 by { close() using { not (0 <= n); }; }
                 have n <= 0 * d by { close() using { n <= 0; }; }
@@ -78,7 +78,7 @@ theorem checked_strict_upper(n: Integer, d: Integer, bound: Integer) {
                 have not (0 < bound) by { close() using {
                     truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
                 }; }
-                contradiction(0 < bound);
+                close();
             }
         }
     }

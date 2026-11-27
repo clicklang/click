@@ -5,7 +5,7 @@ and those paths are never joined: each reaches the loop's own boundary on its
 own. A `break` is one of the ways to reach it. The live arm here leaves the
 loop immediately, so it closes no invariant and hands its binder to nobody; it
 becomes an exit of the loop at the state it left in, holding the loop's
-declared instance, and the excluded arm is closed by `contradiction` as in
+declared instance, and the excluded arm is closed from `false` as in
 [`loop_body_proof_match.md`](loop_body_proof_match.md).
 
 The exit therefore keeps the resource the loop declared, which is what lets
@@ -57,7 +57,7 @@ int32 spin(struct cell* node, int32 n) {
         initialize by close();
         maintain by {
             match c.model {
-                Maybe::None => { contradiction(c.model == Maybe::None); },
+                Maybe::None => { close(); },
                 Maybe::Some(value) => {
                     step();
                 },

@@ -55,7 +55,7 @@ int32 spin(struct cell* node, int32 n) {
         initialize by close();
         maintain by {
             match c.model {
-                Maybe::None => { contradiction(c.model == Maybe::None); },
+                Maybe::None => { close(); },
                 Maybe::Some(value) => {
                     have Maybe::Some(value) == old(c.model) by {
                         close() using { c.model == Maybe::Some(value); c.model == old(c.model); };

@@ -61,7 +61,6 @@ impl SourceContext {
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
                     | ProofTactic::Enumerate
-                    | ProofTactic::Contradiction(_)
                     | ProofTactic::Rewrite(_)
                     | ProofTactic::Instantiate { .. }
             ),

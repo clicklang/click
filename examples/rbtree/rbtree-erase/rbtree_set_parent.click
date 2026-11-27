@@ -13,7 +13,7 @@ void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
     match before.model {
         RbTree::Empty => {
             unfold(before);
-            contradiction(rb != 0);
+            close();
         },
         RbTree::Node(node, parent, color, lm, rm) => {
             let { left: left, right: right } = unfold(before);

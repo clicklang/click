@@ -19,11 +19,10 @@ int id(int x) {
     ensures r.model == old(r.model);
 } by {
     step_until(function.exit);
-    match r.model ensuring { fact result == x; } {
-        Tag::A => { have x == x + 1 by close(); contradiction(r.model == Tag::A); },
-        Tag::B => { },
+    match r.model {
+        Tag::A => { have x == x + 1 by close(); close(); },
+        Tag::B => { close(); },
     }
-    close();
 }
 ```
 

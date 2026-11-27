@@ -70,7 +70,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
         } else {
             have old(right.value) == 0 by {
  cases {
- node->rb.rb_right != 0 => { contradiction(node->rb.rb_right == 0); }
+ node->rb.rb_right != 0 => { close(); }
  right.value == 0 => { close(); }
  }
  }
@@ -110,7 +110,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
     } else {
         have old(left.value) == 0 by {
  cases {
- node->rb.rb_left != 0 => { contradiction(node->rb.rb_left == 0); }
+ node->rb.rb_left != 0 => { close(); }
  left.value == 0 => { close(); }
  }
  }
@@ -150,7 +150,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
         } else {
             have old(right.value) == 0 by {
  cases {
- node->rb.rb_right != 0 => { contradiction(node->rb.rb_right == 0); }
+ node->rb.rb_right != 0 => { close(); }
  right.value == 0 => { close(); }
  }
  }
@@ -243,25 +243,25 @@ theorem compute_size_has_size_contract()
             if node->rb.rb_right != 0 {
                 have separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
+                        node->rb.rb_left == 0 => { close(); }
                         separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
+                        node->rb.rb_left == 0 => { close(); }
                         separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
+                        node->rb.rb_right == 0 => { close(); }
                         separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
+                        node->rb.rb_right == 0 => { close(); }
                         separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
@@ -274,13 +274,13 @@ theorem compute_size_has_size_contract()
             } else {
                 have separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
+                        node->rb.rb_left == 0 => { close(); }
                         separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_left == 0 => { contradiction(node->rb.rb_left == 0); }
+                        node->rb.rb_left == 0 => { close(); }
                         separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
@@ -293,13 +293,13 @@ theorem compute_size_has_size_contract()
             if node->rb.rb_right != 0 {
                 have separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
+                        node->rb.rb_right == 0 => { close(); }
                         separate(memory(node->rb.rb_left), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        node->rb.rb_right == 0 => { contradiction(node->rb.rb_right == 0); }
+                        node->rb.rb_right == 0 => { close(); }
                         separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }

@@ -57,7 +57,7 @@ int32 shared_for(int32 n) {
                                 (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) == 0;
                             };
                         }
-                        contradiction(statement(0).call(again, 0).result == 0);
+                        close();
                     }
                 }
             } else {
@@ -82,7 +82,7 @@ int32 shared_for(int32 n) {
                                 to_integer(statement(0).call(again, 0).result) == 1;
                             };
                         }
-                        contradiction(0 == 1);
+                        close();
                     } else {
                         close() using { n >= 0; not(n > 0); };
                     }
@@ -123,7 +123,7 @@ int32 shared_do(int32 n) {
                                 (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) == 0;
                             };
                         }
-                        contradiction(statement(0).call(again, 0).result == 0);
+                        close();
                     }
                 }
             } else {
@@ -148,7 +148,7 @@ int32 shared_do(int32 n) {
                                 to_integer(statement(0).call(again, 0).result) == 1;
                             };
                         }
-                        contradiction(0 == 1);
+                        close();
                     } else {
                         close() using { n >= 0; not(n > 0); };
                     }

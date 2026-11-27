@@ -1284,7 +1284,6 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        ProofTactic::Contradiction(value) => ProofTactic::Contradiction(proposition(value)?),
         ProofTactic::Rewrite(value) => ProofTactic::Rewrite(proposition(value)?),
         ProofTactic::Instantiate {
             quantified,

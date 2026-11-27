@@ -51,7 +51,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                     rb == old(rb) => { close(); }
                     rb == stop => {
                         have address(rb) == address(stop) by { rewrite(rb, stop); close(); }
-                        contradiction(address(rb) == address(stop));
+                        close();
                     }
                 }
             }

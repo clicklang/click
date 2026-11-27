@@ -46,7 +46,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     match state.model {
-        SizedTree::Empty => { unfold(state); contradiction(0 == 1); },
+        SizedTree::Empty => { unfold(state); close(); },
         SizedTree::Node(identity, ancestor, original_shade, value, left_model, right_model) => {
             let { tree: tree, path: path } = unfold(state);
             have path.model == old(state.context) by { close(); }
@@ -57,7 +57,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(path.model, SizedContext::Top);
                         unfold(sized_stop_parent_black(SizedContext::Top)); close();
                     }
-                    contradiction(sized_stop_parent_black(path.model) == 1);
+                    close();
                 },
                 SizedContext::Left(a, above, shade, count, sibling_model, up_model) => {
                     have sized_context_parent(path.model, 0) == a by {

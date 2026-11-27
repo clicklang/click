@@ -55,7 +55,7 @@ struct Node* walk(struct Node* p, int32* marker) {
         initialize by close();
         maintain by {
             match t.model {
-                Chain::Empty => { unfold(t); contradiction(p == 0); },
+                Chain::Empty => { unfold(t); close(); },
                 Chain::Node(identity, rest) => {
                     let { tail: remaining } = unfold(t);
                     let whole = fold(path(p->next), { model: Path::Step(identity, c.model), up: c });

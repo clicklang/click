@@ -169,7 +169,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         close();
     }
     have start < 0 by {
-        contradiction(occupied[start] == 1);
+        close();
     }
 }
 ```

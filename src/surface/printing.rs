@@ -1348,16 +1348,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
-        ProofTactic::Contradiction(SyntaxProposition::Value(value))
-            if bool_literal_value(value) == Some(false) =>
-        {
-            line(output, &prefix, "contradiction();")
-        }
-        ProofTactic::Contradiction(fact) => line(
-            output,
-            &prefix,
-            &format!("contradiction({});", source_click_proposition(fact)),
-        ),
         ProofTactic::SolveUsing(solve) => {
             write_using_premises(output, "close()", &solve.premises, indent)
         }

@@ -40,7 +40,7 @@ int32 read_after_step(struct cell* node) {
 } by {
     step();
     match c.model {
-        Maybe::None => { contradiction(c.model == Maybe::None); },
+        Maybe::None => { close(); },
         Maybe::Some(value) => {
             unfold(c);
             step_until(function.exit);

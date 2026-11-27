@@ -87,7 +87,7 @@ void parent_detach(struct parent* p) {
 } by {
     match link.link {
         ParentLink::Empty => {
-            contradiction(link.link == ParentLink::Empty);
+            close();
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);

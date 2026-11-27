@@ -56,7 +56,7 @@ void graft(int32* p) {
         == Shape::Node(Shape::Node(shape_left(old(t.model)), Shape::Empty), Shape::Empty);
 } by {
     match t.model {
-        Shape::Empty => { contradiction(t.model == Shape::Empty); },
+        Shape::Empty => { close(); },
         Shape::Node(left, right) => {
             have shape_left(old(t.model)) == left by {
                 rewrite(old(t.model), Shape::Node(left, right));

@@ -796,7 +796,7 @@ impl adler2::Adler32 {
      } else {
       have __rust_mir_77 <= 4294967295u32 / __rust_mir_80 by {
        cases {
-        __rust_mir_80 == 0u32 => { contradiction(not (__rust_mir_80 == 0u32)); }
+        __rust_mir_80 == 0u32 => { close(); }
         __rust_mir_77 <= 4294967295u32 / __rust_mir_80 => { close(); }
        }
       }

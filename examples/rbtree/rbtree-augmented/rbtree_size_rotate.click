@@ -45,25 +45,25 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         if (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 {
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
@@ -190,13 +190,13 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         } else {
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
@@ -310,13 +310,13 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         if (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 {
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
             have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                 cases {
-                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                    (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                     separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                 }
             }
@@ -566,25 +566,25 @@ theorem sized_rotate_has_size_contract()
             if (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 {
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
@@ -613,13 +613,13 @@ theorem sized_rotate_has_size_contract()
             } else {
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
@@ -649,13 +649,13 @@ theorem sized_rotate_has_size_contract()
             if (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right != 0 {
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_left), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }
                 have separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) by {
                     cases {
-                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { contradiction((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0); }
+                        (rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right == 0 => { close(); }
                         separate(memory((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right), memory(((rb_old as (uint8 *) as (struct sized_node *))->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { close(); }
                     }
                 }

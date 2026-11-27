@@ -37,7 +37,7 @@ contract void Migrated(int32* p) {
 theorem migrate() executes noop(int32* p) {
     ensures Migrated(&noop) as { input: input, output: output } by {
         match input.model {
-            Model::Empty => { unfold(input); contradiction(p == 0); },
+            Model::Empty => { unfold(input); close(); },
             Model::Node(value) => {
                 let { child: child } = unfold(input);
                 unfold(child);

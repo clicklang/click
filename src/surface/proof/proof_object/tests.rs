@@ -202,8 +202,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             | ProofStep::CompatibilityNormalize(None)
             | ProofStep::Rewrite(_)
             | ProofStep::Intro
-            | ProofStep::CloseUnreachable
-            | ProofStep::Contradiction(_) => {}
+            | ProofStep::CloseUnreachable => {}
             _ => {
                 eprintln!("nonordinary arithmetic step: {step:?}");
                 return None;

@@ -2,7 +2,7 @@
 
 The loop body's C `if` tests `a[i] == 0`, which the precondition refutes, so
 the kernel decides the branch: only the `else` arm is feasible. The proof
-spells that with `branch { true => { contradiction(...) } false => { step(); } }`.
+spells that with `branch { true => { close(); } false => { step(); } }`.
 The checked certificate records a decided branch as a logical `if` over the
 C condition whose infeasible arm is empty, and whole-claim expansion prints
 it that way.
@@ -59,7 +59,7 @@ int32 count_zero_run(int32* a, int32 n) {
             }
             have to_integer(i + 1) <= to_integer(n);
             branch {
-                true => { contradiction(a[i] == 0); }
+                true => { close(); }
                 false => {
                     step();
                 }

@@ -2475,7 +2475,7 @@ fn leading_universal_contradiction_scope_stays_on_proof() {
             ensures result == x;
         } by {
             have forall (k: int32) { k == k } by {
-                contradiction(x == 0);
+                close();
             }
             step_until(function.exit);
             close();

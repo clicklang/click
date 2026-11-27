@@ -119,7 +119,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertContextThreePhase::After(g, p, above));
                 unfold(sized_context_three_pending(SizedInsertContextThreePhase::After(g, p, above))); close();
             }
-            contradiction(sized_context_three_pending(state.phase) == 1);
+            close();
         },
         SizedInsertContextThreePhase::Before(g, p, above) => {
             let { tree: tree, link: link } = unfold(state);

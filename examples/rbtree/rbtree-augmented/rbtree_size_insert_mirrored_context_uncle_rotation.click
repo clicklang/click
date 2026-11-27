@@ -113,7 +113,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertMirroredContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right));
                 unfold(sized_mirrored_context_uncle_pending(SizedInsertMirroredContextUnclePhase::After(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right))); close();
             }
-            contradiction(sized_mirrored_context_uncle_pending(state.phase) == 1);
+            close();
         },
         SizedInsertMirroredContextUnclePhase::Before(g, p, m, u, above, nv, pv, gv, mv, uv, left, right, middle_left, middle_right, uncle_left, uncle_right) => {
             let { tree: tree, link: link } = unfold(state);

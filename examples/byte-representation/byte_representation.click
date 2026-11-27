@@ -71,7 +71,7 @@ int use_copy() {
         have copied == -1 by {
             cases {
                 copied == 18 => {
-                    contradiction(copied == 18);
+                    close();
                 }
                 copied == -1 => {
                     close();

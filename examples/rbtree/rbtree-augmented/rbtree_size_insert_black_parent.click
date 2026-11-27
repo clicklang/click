@@ -38,7 +38,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
     match state.model {
         SizedTree::Empty => {
             unfold(state);
-            contradiction(0 == 1);
+            close();
         },
         SizedTree::Node(identity, ancestor, shade, value, left_model, right_model) => {
             let { tree: tree, parent_tag: parent_tag } = unfold(state);

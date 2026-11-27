@@ -2739,7 +2739,7 @@ void f(struct node* p) {
     ensures t.model == old(t.model);
 } by {
     match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Empty => { close(); },
         Tree::Node(id, link, lm, rm) => {
             let { left: l, right: r } = unfold(t);
             mark before_store;

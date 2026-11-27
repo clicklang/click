@@ -53,7 +53,7 @@ int32 read_value(struct cell* p) {
     ensures result >= 0;
 } by {
     match c.model {
-        Shape::Top => { contradiction(c.model == Shape::Top); },
+        Shape::Top => { close(); },
         Shape::Left(value) => {
             unfold(c);
             step_until(function.exit);

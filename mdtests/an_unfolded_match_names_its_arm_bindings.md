@@ -20,7 +20,7 @@ function d(c: Ctx) -> Integer decreases c {
 theorem t(c: Ctx) {
     ensures d(c) >= 0 by {
         unfold(d(c));
-        contradiction(1 == 5);
+        close();
     }
 }
 ```

@@ -2362,8 +2362,7 @@ contract with resource handles are in
 [Automatic formation at `&f`](index.md#automatic-formation-at-f).
 
 A refinement outside that route is stated as a closed pure theorem, whose proof
-spells the step with `all`, `close()`, `intro`, `have`, `rewrite`, or
-`contradiction`, and `click expand` prints the spelling. `apply` the theorem
+spells the step with `all`, `close()`, `intro`, `have`, or `rewrite`. `apply` the theorem
 before the call that needs the contract.
 
 When refinement depends on a conditional footprint, state it as a closed pure

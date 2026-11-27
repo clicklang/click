@@ -233,7 +233,7 @@ theorem outer_nonblack_node_color(node: struct rb_node*, parent: struct rb_node*
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)));
                     close();
                 }
-                contradiction(rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)) == 1);
+                close();
             }
         }
     }
@@ -250,7 +250,7 @@ theorem outer_black_node_color(node: struct rb_node*, parent: struct rb_node*, c
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)));
                     close();
                 }
-                contradiction(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)) == 1);
+                close();
             }
         }
     }
@@ -556,8 +556,7 @@ p: struct rb_node*) {
                 rewrite((if p == cid { 1 } else { 0 }), 0);
                 close();
             }
-            contradiction(ctx_node_is(
-            Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
+            close();
         }
     }
 }
@@ -584,8 +583,7 @@ p: struct rb_node*) {
                 rewrite((if p == cid { 1 } else { 0 }), 0);
                 close();
             }
-            contradiction(ctx_node_is(
-            Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
+            close();
         }
     }
 }
@@ -626,8 +624,7 @@ color: Color, left: RbTree, right: RbTree) {
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)));
                     close();
                 }
-                contradiction(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right))
-                == 1);
+                close();
             }
             Color::Black => {
                 unfold(color_bit(Color::Black));
@@ -722,7 +719,7 @@ struct rb_root* root, int32 color) {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
                                 close();
                             }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     rewrite(old->__rb_parent_color, 1); close();
@@ -765,7 +762,7 @@ struct rb_root* root, int32 color) {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
                                 close();
                             }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
@@ -814,7 +811,7 @@ struct rb_root* root, int32 color) {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
                                 close();
                             }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
@@ -857,7 +854,7 @@ theorem color_bit_nonzero_is_one(color: Color) {
                     unfold(color_bit(Color::Red));
                     close();
                 }
-                contradiction(color_bit(Color::Red) == 0);
+                close();
             }
             Color::Black => { unfold(color_bit(Color::Black)); close(); }
         }
@@ -979,7 +976,7 @@ theorem erase_color_not_black(c: Color) {
             }
             Color::Black => {
                 have Color::Black == Color::Black by close();
-                contradiction(Color::Black == Color::Black);
+                close();
             }
         }
     }
@@ -993,7 +990,7 @@ theorem erase_red_near_left(id: struct rb_node*, above: struct rb_node*, pc: Col
         match near {
             RbTree::Empty => {
                 have Nat::Zero == Nat::Succ(height);
-                contradiction(Nat::Zero == Nat::Succ(height));
+                close();
             }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -1017,7 +1014,7 @@ theorem erase_frame_left(id: struct rb_node*, above: struct rb_node*, pc: Color,
                     rewrite(Nat::Zero, black_height(RbTree::Empty));
                     close();
                 }
-                contradiction(Nat::Zero == Nat::Succ(height));
+                close();
             }
             RbTree::Node(sid, sp, sc, l, r) => {
                 if sc == Color::Black {
@@ -1113,7 +1110,7 @@ theorem erase_red_near_right(id: struct rb_node*, above: struct rb_node*, pc: Co
         match near {
             RbTree::Empty => {
                 have Nat::Zero == Nat::Succ(height);
-                contradiction(Nat::Zero == Nat::Succ(height));
+                close();
             }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
@@ -1133,7 +1130,7 @@ theorem erase_frame_right(id: struct rb_node*, above: struct rb_node*, pc: Color
         match sibling {
             RbTree::Empty => {
                 have Nat::Zero == Nat::Succ(height);
-                contradiction(Nat::Zero == Nat::Succ(height));
+                close();
             }
             RbTree::Node(sid, sp, sc, l, r) => {
                 if sc == Color::Black {
@@ -1354,7 +1351,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
         maintain by {
             mark iteration;
             match c.model {
-                Context::Top => { contradiction(c.model == Context::Top); },
+                Context::Top => { close(); },
                 Context::Right(id, above, pc, sm, um) => {
                     have ctx_node_is(Context::Right(id, above, pc, sm, um), parent) == 1 by {
                         rewrite(Context::Right(id, above, pc, sm, um), c.model); close();
@@ -1370,7 +1367,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                 unfold(erase_flips_red_all(Context::Right(id, above, pc, RbTree::Empty, um))); close();
                             }
                             have not(erase_flips_red_all(c.model) == 1) by { rewrite(erase_flips_red_all(c.model), 0); close(); }
-                            contradiction(erase_flips_red_all(c.model) == 1);
+                            close();
                         },
                         RbTree::Node(sid, sp, sc, srm, slm) => {
                             match sc {
@@ -1694,14 +1691,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have parent == uid by { apply(ctx_node_is_right_identity(uid, ugp, uc, usm, uum, parent)); close(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); close(); }
-                                                                contradiction(parent == 0);
+                                                                close();
                                                             },
                                                             Context::Left(uid, ugp, uc, usm, uum) => {
                                                                 have ctx_node_is(Context::Left(uid, ugp, uc, usm, uum), parent) == 1 by { rewrite(Context::Left(uid, ugp, uc, usm, uum), u.model); close(); }
                                                                 have parent == uid by { apply(ctx_node_is_left_identity(uid, ugp, uc, usm, uum, parent)); close(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); close(); }
-                                                                contradiction(parent == 0);
+                                                                close();
                                                             },
                                                         }
                                                     } else {
@@ -1709,7 +1706,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             if u.model == Context::Top {
                                                                 have ctx_node_is(Context::Top, parent) == 1 by { rewrite(Context::Top, u.model); close(); }
                                                                 apply(ctx_node_is_top_null(parent));
-                                                                contradiction(parent == 0);
+                                                                close();
                                                             } else { close(); }
                                                         }
                                                         step(); step(); // A live parent continues with the strict child context.
@@ -1747,7 +1744,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 RbTree::Empty => {
                                                     have slm == RbTree::Empty by { rewrite(slm, sl.model); close(); }
                                                     have rb_root_black(slm) == 1 by { rewrite(slm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                    contradiction(rb_root_black(slm) == 1);
+                                                    close();
                                                 },
                                                 RbTree::Node(iid, ip, ic, ilm, irm) => {
                                                     have slm == RbTree::Node(iid, ip, ic, ilm, irm) by { rewrite(slm, sl.model); close(); }
@@ -2114,7 +2111,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             RbTree::Empty => {
                                                 have srm == RbTree::Empty by { rewrite(srm, sr.model); close(); }
                                                 have rb_root_black(srm) == 1 by { rewrite(srm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                contradiction(rb_root_black(srm) == 1);
+                                                close();
                                             },
                                             RbTree::Node(rid, rp, rc, rlm, rrm) => {
                                                 have srm == RbTree::Node(rid, rp, rc, rlm, rrm);
@@ -2371,7 +2368,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have slm == RbTree::Empty by { rewrite(slm, sl.model); close(); }
                                             have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, slm), um)); rewrite(slm, RbTree::Empty); unfold(erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, RbTree::Empty), um))); close(); }
                                             have not(erase_flips_red_all(at(iteration, c.model)) == 1) by { rewrite(erase_flips_red_all(at(iteration, c.model)), 0); close(); }
-                                            contradiction(erase_flips_red_all(at(iteration, c.model)) == 1);
+                                            close();
                                         },
                                         RbTree::Node(zid, zp, zc, zlm, zrm) => {
                                             have slm == RbTree::Node(zid, zp, zc, zlm, zrm) by { rewrite(slm, sl.model); close(); }
@@ -2379,7 +2376,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 if zc == Color::Black { close(); } else {
                                                     have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, slm), um)); rewrite(slm, RbTree::Node(zid, zp, zc, zlm, zrm)); unfold(erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, RbTree::Node(zid, zp, zc, zlm, zrm)), um))); close(); }
                                                     have not(erase_flips_red_all(at(iteration, c.model)) == 1) by { rewrite(erase_flips_red_all(at(iteration, c.model)), 0); close(); }
-                                                    contradiction(erase_flips_red_all(at(iteration, c.model)) == 1);
+                                                    close();
                                                 }
                                             }
                                             have rb_parent_is(RbTree::Node(zid, zp, zc, zlm, zrm), sid) == 1 by { rewrite(RbTree::Node(zid, zp, zc, zlm, zrm), slm); rewrite(sid, parent->rb_left); close(); }
@@ -2748,7 +2745,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         RbTree::Empty => {
                                                             have zrm == RbTree::Empty by { rewrite(zrm, zr.model); close(); }
                                                             have rb_root_black(zrm) == 1 by { rewrite(zrm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                            contradiction(rb_root_black(zrm) == 1);
+                                                            close();
                                                         },
                                                         RbTree::Node(iid, ip, ic, ilm, irm) => {
                                                             have zrm == RbTree::Node(iid, ip, ic, ilm, irm) by { rewrite(zrm, zr.model); close(); }
@@ -3102,7 +3099,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     RbTree::Empty => {
                                                         have zlm == RbTree::Empty by { rewrite(zlm, zl.model); close(); }
                                                         have rb_root_black(zlm) == 1 by { rewrite(zlm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                        contradiction(rb_root_black(zlm) == 1);
+                                                        close();
                                                     },
                                                     RbTree::Node(rid, rp, rc, rlm, rrm) => {
                                                         have zlm == RbTree::Node(rid, rp, rc, rlm, rrm) by { rewrite(zlm, zl.model); close(); }
@@ -3275,7 +3272,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                 unfold(erase_flips_red_all(Context::Left(id, above, pc, RbTree::Empty, um))); close();
                             }
                             have not(erase_flips_red_all(c.model) == 1) by { rewrite(erase_flips_red_all(c.model), 0); close(); }
-                            contradiction(erase_flips_red_all(c.model) == 1);
+                            close();
                         },
                         RbTree::Node(sid, sp, sc, slm, srm) => {
                             match sc {
@@ -3598,14 +3595,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have parent == uid by { apply(ctx_node_is_left_identity(uid, ugp, uc, usm, uum, parent)); close(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); close(); }
-                                                                contradiction(parent == 0);
+                                                                close();
                                                             },
                                                             Context::Right(uid, ugp, uc, usm, uum) => {
                                                                 have ctx_node_is(Context::Right(uid, ugp, uc, usm, uum), parent) == 1 by { rewrite(Context::Right(uid, ugp, uc, usm, uum), u.model); close(); }
                                                                 have parent == uid by { apply(ctx_node_is_right_identity(uid, ugp, uc, usm, uum, parent)); close(); }
                                                                 let { sibling: us, up: uu } = unfold(u);
                                                                 have parent != 0 by { rewrite(parent, uid); close(); }
-                                                                contradiction(parent == 0);
+                                                                close();
                                                             },
                                                         }
                                                     } else {
@@ -3613,7 +3610,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             if u.model == Context::Top {
                                                                 have ctx_node_is(Context::Top, parent) == 1 by { rewrite(Context::Top, u.model); close(); }
                                                                 apply(ctx_node_is_top_null(parent));
-                                                                contradiction(parent == 0);
+                                                                close();
                                                             } else { close(); }
                                                         }
                                                         step(); step(); // A live parent continues with the strict child context.
@@ -3651,7 +3648,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 RbTree::Empty => {
                                                     have slm == RbTree::Empty by { rewrite(slm, sl.model); close(); }
                                                     have rb_root_black(slm) == 1 by { rewrite(slm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                    contradiction(rb_root_black(slm) == 1);
+                                                    close();
                                                 },
                                                 RbTree::Node(iid, ip, ic, ilm, irm) => {
                                                     have slm == RbTree::Node(iid, ip, ic, ilm, irm) by { rewrite(slm, sl.model); close(); }
@@ -4020,7 +4017,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             RbTree::Empty => {
                                                 have srm == RbTree::Empty by { rewrite(srm, sr.model); close(); }
                                                 have rb_root_black(srm) == 1 by { rewrite(srm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                contradiction(rb_root_black(srm) == 1);
+                                                close();
                                             },
                                             RbTree::Node(rid, rp, rc, rlm, rrm) => {
                                                 have srm == RbTree::Node(rid, rp, rc, rlm, rrm);
@@ -4276,7 +4273,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have slm == RbTree::Empty by { rewrite(slm, sl.model); close(); }
                                             have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, slm, srm), um)); rewrite(slm, RbTree::Empty); unfold(erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, RbTree::Empty, srm), um))); close(); }
                                             have not(erase_flips_red_all(at(iteration, c.model)) == 1) by { rewrite(erase_flips_red_all(at(iteration, c.model)), 0); close(); }
-                                            contradiction(erase_flips_red_all(at(iteration, c.model)) == 1);
+                                            close();
                                         },
                                         RbTree::Node(zid, zp, zc, zlm, zrm) => {
                                             have slm == RbTree::Node(zid, zp, zc, zlm, zrm) by { rewrite(slm, sl.model); close(); }
@@ -4284,7 +4281,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 if zc == Color::Black { close(); } else {
                                                     have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, slm, srm), um)); rewrite(slm, RbTree::Node(zid, zp, zc, zlm, zrm)); unfold(erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, RbTree::Node(zid, zp, zc, zlm, zrm), srm), um))); close(); }
                                                     have not(erase_flips_red_all(at(iteration, c.model)) == 1) by { rewrite(erase_flips_red_all(at(iteration, c.model)), 0); close(); }
-                                                    contradiction(erase_flips_red_all(at(iteration, c.model)) == 1);
+                                                    close();
                                                 }
                                             }
                                             have rb_parent_is(RbTree::Node(zid, zp, zc, zlm, zrm), sid) == 1 by { rewrite(RbTree::Node(zid, zp, zc, zlm, zrm), slm); rewrite(sid, parent->rb_right); close(); }
@@ -4651,7 +4648,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         RbTree::Empty => {
                                                             have zlm == RbTree::Empty by { rewrite(zlm, zl.model); close(); }
                                                             have rb_root_black(zlm) == 1 by { rewrite(zlm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                            contradiction(rb_root_black(zlm) == 1);
+                                                            close();
                                                         },
                                                         RbTree::Node(iid, ip, ic, ilm, irm) => {
                                                             have zlm == RbTree::Node(iid, ip, ic, ilm, irm) by { rewrite(zlm, zl.model); close(); }
@@ -5005,7 +5002,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     RbTree::Empty => {
                                                         have zrm == RbTree::Empty by { rewrite(zrm, zr.model); close(); }
                                                         have rb_root_black(zrm) == 1 by { rewrite(zrm, RbTree::Empty); unfold(rb_root_black(RbTree::Empty)); close(); }
-                                                        contradiction(rb_root_black(zrm) == 1);
+                                                        close();
                                                     },
                                                     RbTree::Node(rid, rp, rc, rlm, rrm) => {
                                                         have zrm == RbTree::Node(rid, rp, rc, rlm, rrm) by { rewrite(zrm, zr.model); close(); }

@@ -90,7 +90,7 @@ int spin(struct node* p, int n) {
     ensures t.model == old(t.model);
 } by {
     match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Empty => { close(); },
         Tree::Node(id, value, left_model) => {
             step();
             step();
@@ -136,7 +136,7 @@ int spin_ranked(struct node* p, int n) {
     ensures n >= 0;
 } by {
     match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Empty => { close(); },
         Tree::Node(id, value, left_model) => {
             step();
             step();

@@ -74,7 +74,7 @@ void destroy(Node* p) {
         initialize by close();
         maintain by {
             match list.items {
-                List::Nil => { contradiction(list.items == List<int32>::Nil); },
+                List::Nil => { close(); },
                 List::Cons(value, rest) => {
                     let { tail: tail } = unfold(list);
                     unfold(length(List::Cons(value, rest)));

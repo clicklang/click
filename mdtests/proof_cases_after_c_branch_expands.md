@@ -61,7 +61,7 @@ int use_pick(int x) {
                 have result < 0 by {
                     close();
                 }
-                contradiction(result < 0);
+                close();
             }
         }
     }

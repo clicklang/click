@@ -1,6 +1,6 @@
-# User tactic match refutation
+# A user tactic must prove a constructor arm is impossible
 
-A terminal contradiction must still prove the negation of its fact. The helper has no premise excluding Empty.
+The tactic is checked against its own preconditions. A caller’s stronger requirement cannot prove `false` in the tactic’s reachable constructor arm.
 
 ```c filename=user_tactic_match_requires_valid_refutation.c
 void user(int32 *p) {}
@@ -16,7 +16,7 @@ tactic keep(p: int32*) {
     ensures b.model == old(a.model);
 } by {
     match a.model {
-        Model::Empty => { contradiction(a.model == Model::Empty); },
+        Model::Empty => { have false by close(); close(); },
         Model::Full => {
             unfold(a);
             let b = fold(cell(p), { model: Model::Full });
@@ -35,5 +35,5 @@ void user(int32* p) {
 ```
 
 ```expect
-fail: requires an exact fact and its negation in that arm
+fail: could not establish `false`
 ```

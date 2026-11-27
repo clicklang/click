@@ -1647,7 +1647,6 @@ fn expand_declared_resource_tactic(
             expand_declared_resource_tactic_with_expressions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::ArithmeticUsing(_)
-        | ProofTactic::Contradiction(_)
         | ProofTactic::ApplyFact(_)
         | ProofTactic::ApplyFactUsing { .. }
         | ProofTactic::Preserve(_)
@@ -1960,9 +1959,6 @@ fn expand_declared_resource_tactic_with_propositions(
                 .into_iter()
                 .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
                 .collect::<Result<_, _>>()?,
-        )),
-        ProofTactic::Contradiction(proposition) => Ok(ProofTactic::Contradiction(
-            expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
         ProofTactic::ApplyFact(fact) => Ok(ProofTactic::ApplyFact(
             expand_declared_resource_proposition(fact, resource_definitions)?,

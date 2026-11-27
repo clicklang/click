@@ -31,7 +31,7 @@ int read(int* p) {
     ensures c.model == old(c.model);
 } by {
     match c.model {
-        Quad::Zero => { contradiction(c.model == Quad::Zero); },
+        Quad::Zero => { close(); },
         Quad::One(value) => { unfold(c); step_until(function.exit); fold(c); close(); },
         Quad::Two(value) => { unfold(c); step_until(function.exit); fold(c); close(); },
         Quad::Three(value) => { unfold(c); step_until(function.exit); fold(c); close(); },

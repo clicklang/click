@@ -259,7 +259,8 @@ theorem step_le_lt(a: Integer, b: Integer) {
             have a + 1 + b <= b + a by {
                 apply(integer::add_le(a + 1, b, b, a));
             }
-            contradiction(a + 1 + b <= b + a);
+            have not (a + 1 + b <= b + a) by close();
+            close();
         }
     }
 }
@@ -275,7 +276,7 @@ theorem le_ne_lt(a: Integer, b: Integer) {
             have a == b by {
                 apply(integer::le_antisymmetric(a, b));
             }
-            contradiction(a == b);
+            close();
         }
     }
 }
@@ -1656,7 +1657,7 @@ theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: In
                 have not (bound * d < n) by { close() using {
                     n == bound * d + truncating_remainder(n, d); truncating_remainder(n, d) <= 0;
                 }; }
-                contradiction(bound * d < n);
+                close();
             } else {
                 have 0 <= n by { close() using { not (n <= 0); }; }
                 have 0 * d <= n by { close() using { 0 <= n; }; }
@@ -1664,7 +1665,7 @@ theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: In
                 have not (bound < 0) by { close() using {
                     0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
                 }; }
-                contradiction(bound < 0);
+                close();
             }
         }
     }
@@ -1695,7 +1696,7 @@ theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: In
                 have not (n < bound * d) by { close() using {
                     n == bound * d + truncating_remainder(n, d); 0 <= truncating_remainder(n, d);
                 }; }
-                contradiction(n < bound * d);
+                close();
             } else {
                 have n <= 0 by { close() using { not (0 <= n); }; }
                 have n <= 0 * d by { close() using { n <= 0; }; }
@@ -1703,7 +1704,7 @@ theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: In
                 have not (0 < bound) by { close() using {
                     truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
                 }; }
-                contradiction(0 < bound);
+                close();
             }
         }
     }
@@ -1724,7 +1725,7 @@ theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, l
                 close();
             }
             have not (r < 0) by { close() using { lower * d <= n; n == lower * d + r; }; }
-            contradiction(r < 0);
+            close();
         }
     }
 }
@@ -1744,7 +1745,7 @@ theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, u
                 close();
             }
             have not (0 < r) by { close() using { n <= upper * d; n == upper * d + r; }; }
-            contradiction(0 < r);
+            close();
         }
     }
 }
@@ -2016,7 +2017,7 @@ theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
             have to_integer(right) != 0 by close();
             have to_integer(left) <= to_integer(4294967295u32 / right) by {
                 cases {
-                    right == 0u32 => { contradiction(right == 0u32); }
+                    right == 0u32 => { close(); }
                     to_integer(left) <= to_integer(4294967295u32 / right) => { close(); }
                 }
             }
@@ -2776,7 +2777,7 @@ theorem nonzero_from_one(d: Integer) {
             have one <= 0 by {
                 apply(integer::le_substitute(one, d, one, 0));
             }
-            contradiction(one <= 0);
+            close();
         } else { close(); }
     }
 }
@@ -2788,7 +2789,7 @@ theorem nonzero_from_negative_one(d: Integer) {
             have zero <= -1 by {
                 apply(integer::le_substitute(d, -1, zero, -1));
             }
-            contradiction(zero <= -1);
+            close();
         } else { close(); }
     }
 }
@@ -2882,7 +2883,7 @@ theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divis
                 close();
             }
             have 0 <= to_integer(value) by close();
-            contradiction(to_integer(value) < 0);
+            close();
         }
     }
 }

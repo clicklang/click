@@ -37,7 +37,7 @@ void bump(struct cell* node) {
     ensures c.model == Maybe::Some(2);
 } by {
     match c.model {
-        Maybe::None => { contradiction(c.model == Maybe::None); },
+        Maybe::None => { close(); },
         Maybe::Some(value) => {
             unfold(c);
             step();

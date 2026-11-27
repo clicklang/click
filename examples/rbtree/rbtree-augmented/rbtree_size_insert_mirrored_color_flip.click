@@ -93,14 +93,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedMirroredFlipPhase::After(g, p, u));
                 unfold(sized_mirrored_flip_pending(SizedMirroredFlipPhase::After(g, p, u))); close();
             }
-            contradiction(sized_mirrored_flip_pending(state.phase) == 1);
+            close();
         },
         SizedMirroredFlipPhase::Done(g, p, u) => {
             have sized_mirrored_flip_pending(state.phase) != 1 by {
                 rewrite(state.phase, SizedMirroredFlipPhase::Done(g, p, u));
                 unfold(sized_mirrored_flip_pending(SizedMirroredFlipPhase::Done(g, p, u))); close();
             }
-            contradiction(sized_mirrored_flip_pending(state.phase) == 1);
+            close();
         },
         SizedMirroredFlipPhase::Before(g, p, u) => {
             let { focus: focus, path: path } = unfold(state);
@@ -134,7 +134,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(state.phase, SizedMirroredFlipPhase::Done(x, y, z));
                                 unfold(sized_mirrored_flip_running(SizedMirroredFlipPhase::Done(x, y, z))); close();
                             }
-                            contradiction(sized_mirrored_flip_running(state.phase) == 1);
+                            close();
                         },
                         SizedMirroredFlipPhase::After(x, y, z) => {
                             have parent == 0 by {

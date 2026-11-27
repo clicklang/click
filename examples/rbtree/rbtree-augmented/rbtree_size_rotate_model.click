@@ -71,7 +71,7 @@ theorem sized_rotate_restores_subtree_size_left()
 executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures RotateTreeLeft(&sized_rotate) as { tree: tree, checked: checked } by {
         match tree.model {
-            SizedTree::Empty => { unfold(tree); contradiction(rb_new == 0); },
+            SizedTree::Empty => { unfold(tree); close(); },
             SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right) => {
                 let { metadata: promoted_metadata, demoted: demoted, other: other } = unfold(tree);
                 let { checked: other } = certify_size(rb_new->rb_right, { tree: other });
@@ -81,7 +81,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                     SizedTree::Empty => {
                         unfold(demoted);
                         have rb_old == 0 by { close(); }
-                        contradiction(rb_old == 0);
+                        close();
                     },
                     SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
                         have promoted_left == SizedTree::Node(identity, parent, color, value, left_model, right_model) by { close(); }
@@ -994,7 +994,7 @@ theorem sized_rotate_restores_subtree_size_right()
 executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures RotateTreeRight(&sized_rotate) as { tree: tree, checked: checked } by {
         match tree.model {
-            SizedTree::Empty => { unfold(tree); contradiction(rb_new == 0); },
+            SizedTree::Empty => { unfold(tree); close(); },
             SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right) => {
                 let { metadata: promoted_metadata, demoted: demoted, other: other } = unfold(tree);
                 let { checked: other } = certify_size(rb_new->rb_left, { tree: other });
@@ -1004,7 +1004,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                     SizedTree::Empty => {
                         unfold(demoted);
                         have rb_old == 0 by { close(); }
-                        contradiction(rb_old == 0);
+                        close();
                     },
                     SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
                         have promoted_right == SizedTree::Node(identity, parent, color, value, left_model, right_model) by { close(); }

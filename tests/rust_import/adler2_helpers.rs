@@ -2249,7 +2249,7 @@ const STORED_GUARD_LEMMAS: &str = r#"theorem adler_outer_nonempty_remaining(rema
     rewrite(to_integer(remaining), 0);
     close();
    }
-   contradiction(0 < to_integer(remaining));
+   close();
   } else {
    close();
   }
@@ -2320,7 +2320,7 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
      apply(adler_outer_nonempty_remaining(remaining));
      have size as uint32 as int32 == 22208 by { rewrite(size, 22208u64); close(); }
      have size as uint32 as int32 <= remaining by { rewrite(size as uint32 as int32, 22208); close(); }
-     contradiction(size as uint32 as int32 <= remaining);
+     close();
     } else {
      have remaining <= 0;
      close() using { 0 <= remaining; remaining <= 0; };

@@ -59,8 +59,8 @@ fn decline_region_depth<T>() -> Driven<T> {
 }
 
 /// Whether a tactic only relates facts and resources at the frontier where it
-/// stands, without running C: what an arm may do before the `contradiction`
-/// that refutes it.
+/// stands, without running C. These tactics can establish falsehood before
+/// an arm closes.
 fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,
@@ -1061,9 +1061,8 @@ fn deferred_region_with_obtains(
 }
 
 /// A proof `match` after execution, deferred so that each outcome path
-/// takes the arm its constructor case selects. An arm closed by a lone
-/// `contradiction` excludes its constructor at the frontier, and a match
-/// `ensuring` rejoins there; both stay with the frontier match.
+/// takes the arm its constructor case selects. A match with `ensuring`
+/// rejoins at the frontier and stays with the frontier driver.
 fn deferred_post_execution_match(
     tactic_index: usize,
     source_index: usize,
@@ -1071,12 +1070,7 @@ fn deferred_post_execution_match(
     arms: &[InternalProofNode],
     obtains: &PersistentBinderMap<()>,
 ) -> Result<DeferredPostExecutionTactic, Decline> {
-    if proof_match.ensuring.is_some()
-        || proof_match
-            .arms
-            .iter()
-            .any(|arm| matches!(arm.tactics.as_slice(), [ProofTactic::Contradiction(_)]))
-    {
+    if proof_match.ensuring.is_some() {
         return Err(Decline::Shape);
     }
     Ok(DeferredPostExecutionTactic {
@@ -2669,10 +2663,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                         *capture = saved;
                     }
                 }
-                let plan = proof.plan_execution_match(proof_match, |index| {
-                    execution_region_leading_tactic(&arms[index])
-                        .map_or(usize::MAX, |tactic| tactic.source_index)
-                })?;
+                let plan = proof.plan_execution_match(proof_match)?;
                 // Otherwise every arm continues into the region's own
                 // continuation as its own path, closes the invariants and
                 // reaches the loop's boundary with its own resource state.
@@ -2790,9 +2781,6 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             Some(ProofStep::CloseUnreachable)
                         }
                         ProofTactic::CloseUnreachable => Some(ProofStep::CloseUnreachable),
-                        ProofTactic::Contradiction(surface) => {
-                            Some(ProofStep::Contradiction(surface.clone()))
-                        }
                         _ => None,
                     };
                     if let Some(step) = refutation {
@@ -3710,10 +3698,7 @@ fn advance_prepared_execution_match<'a>(
     // completes the function proof on its own.
     let rejoins = source.ensuring.is_some() || !matches!(continuation, InternalProofNode::Done);
     let marker = proof.checkpoint();
-    let mut plan = proof.plan_execution_match(source, |index| {
-        execution_region_leading_tactic(&arms[index])
-            .map_or(usize::MAX, |tactic| tactic.source_index)
-    })?;
+    let mut plan = proof.plan_execution_match(source)?;
     // A terminal closer can exclude a constructor before executing C.
     // Run the arm's fact-only prefix so it can establish the refutation in
     // the arm's own state. Publish its capture only if the arm is excluded.
@@ -3733,15 +3718,18 @@ fn advance_prepared_execution_match<'a>(
         };
         if !matches!(
             last.tactic,
-            ProofTactic::Contradiction(_) | ProofTactic::Close | ProofTactic::CloseUnreachable
-        ) || (matches!(last.tactic, ProofTactic::Close)
-            && proof.is_at_function_exit()
-            && !plan.arm_holds_false(index))
-            || !matches!(continuation.as_ref(), InternalProofNode::Done)
+            ProofTactic::Close | ProofTactic::CloseUnreachable
+        ) || !matches!(continuation.as_ref(), InternalProofNode::Done)
             || !bridge
                 .iter()
                 .all(|indexed| bridges_without_executing(&indexed.tactic))
         {
+            continue;
+        }
+        let probe = matches!(last.tactic, ProofTactic::Close)
+            && proof.is_at_function_exit()
+            && !plan.arm_holds_false(index);
+        if probe && bridge.is_empty() {
             continue;
         }
         let scoped = proof.enter_execution_match_arm(&plan, index)?;
@@ -3750,34 +3738,33 @@ fn advance_prepared_execution_match<'a>(
         // that fails leaves the arm to the live driver below, which runs the
         // same tactics again and must find the capture as it was.
         let mut bridge_capture = expansion_capture.as_deref().cloned();
-        let Ok(scoped) = advance_refuting_bridge(
+        let advanced = advance_refuting_bridge(
             scoped,
             bridge,
             bridge_capture.as_mut(),
             proof_site,
             owning_source_index,
-        )?
-        else {
+        );
+        // At function exit a live arm can depend on the outcome. If its
+        // frontier bridge fails, keep it for the normal outcome driver.
+        let advanced = if probe {
+            attempt::candidate_outcome(advanced)?
+        } else {
+            Some(advanced?)
+        };
+        let Some(Ok(scoped)) = advanced else {
             continue;
         };
         let scoped = scoped.at_source_tactic(last.source_index);
-        let (step, partition) = match &last.tactic {
-            ProofTactic::Close | ProofTactic::CloseUnreachable => {
-                let Some(partition) = scoped.execution_match_arm_unreachable(&plan, index) else {
-                    continue;
-                };
-                (ProofStep::CloseUnreachable, partition)
-            }
-            ProofTactic::Contradiction(surface) => (
-                ProofStep::Contradiction(surface.clone()),
-                scoped.prepare_execution_match_arm_exclusion(&plan, index, surface)?,
-            ),
-            _ => unreachable!("expected a terminal refutation tactic"),
+        let Some(partition) = scoped.execution_match_arm_unreachable(&plan, index) else {
+            continue;
         };
         if let (Some(capture), Some(bridged)) = (expansion_capture.as_deref_mut(), bridge_capture) {
             *capture = bridged;
         }
-        let closed = scoped.driver().apply_step_at(step, last.source_index)?;
+        let closed = scoped
+            .driver()
+            .apply_step_at(ProofStep::CloseUnreachable, last.source_index)?;
         closed.finish_execution_match_arm_exclusion(&mut plan, index, &entered, partition)?;
     }
     if plan.live_cases().is_empty() {
@@ -3785,7 +3772,7 @@ fn advance_prepared_execution_match<'a>(
             "proof match with every constructor excluded is not yet supported",
         ));
     }
-    // A checked contradiction covers its dead constructor without a C outcome,
+    // A checked refutation covers its dead constructor without a C outcome,
     // so only the live arms are executed and joined. Certificates are placed by
     // constructor index, not by the order the live arms are visited.
     let mut certificates: Vec<Option<ProofCertificate>> = (0..arms.len())

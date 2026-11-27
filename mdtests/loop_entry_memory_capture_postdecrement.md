@@ -34,7 +34,7 @@ uint64 post(const uint8* p, uint64 n) {
      if 0u64 < n { close(); } else {
       have 0u64 == n;
       have n == 0u64 by { rewrite(0u64, n); close(); }
-      contradiction(n == 0u64);
+      close();
      }
     }
    have 0 <= to_integer(n);

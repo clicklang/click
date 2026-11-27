@@ -94,7 +94,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 intro() {
                     instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur);
                     apply(0 <= cur and cur < n implies old(visited[cur]) == 0);
-                    contradiction(visited[cur] != 0);
+                    close();
                 }
             }
 
@@ -105,7 +105,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 intro() {
                     intro() {
                         have old(visited[k]) == 0; have visited[k] != 0;
-                        contradiction(visited[k] != 0);
+                        close();
                     }
                 }
             }
@@ -485,7 +485,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                     0 <= k and k < n and old(visited[k]) != 0 implies at(before_right, visited[k]) != 0
                 }, to);
                 apply(0 <= to and to < n and old(visited[to]) != 0 implies at(before_right, visited[to]) != 0);
-                contradiction(at(before_right, visited[to]) == 0);
+                close();
             } else { close(); }
         }
 

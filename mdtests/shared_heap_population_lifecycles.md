@@ -245,7 +245,7 @@ int32 parent_read_payload(struct parent* p) {
 } by {
     match link.link {
         ParentLink::Empty => {
-            contradiction(link.link == ParentLink::Empty);
+            close();
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
@@ -274,7 +274,7 @@ void parent_detach(struct parent* p) {
 } by {
     match link.link {
         ParentLink::Empty => {
-            contradiction(link.link == ParentLink::Empty);
+            close();
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
@@ -317,7 +317,7 @@ void parent_detach(struct parent* p) {
                 step_until(function.exit);
                 have to_integer(old(count(child_ref(p->kid)))) > 1 implies old(p->kid)->payload == old(p->kid->payload) by {
                     intro() {
-                        contradiction(to_integer(old(count(child_ref(p->kid)))) <= 1);
+                        close();
                     }
                 }
                 close();

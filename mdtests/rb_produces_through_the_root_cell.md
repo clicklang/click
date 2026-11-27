@@ -101,7 +101,7 @@ void rb_set_root(struct rb_node* node, struct rb_root* root) {
     ensures u.model == old(t.model);
 } by {
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             // State the owned cells' frame across the root-pointer store.

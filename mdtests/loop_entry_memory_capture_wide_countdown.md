@@ -32,7 +32,7 @@ uint64 inspect(const uint8* p, uint64 n) {
      have 0u64 == n;
      have n == 0u64 by { rewrite(0u64, n); close(); }
      have not (n > 0u64) by { rewrite(n, 0u64); close(); }
-     contradiction(n > 0u64);
+     close();
     }
    }
    have 0 <= to_integer(n);

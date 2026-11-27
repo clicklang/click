@@ -190,7 +190,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
         )
         .replace(
             "Maybe::None => { unfold(c); step_until(function.exit); fold(c); close(); },",
-            "Maybe::None => { contradiction(c.model == Maybe::None); },",
+            "Maybe::None => { close(); },",
         );
     let sources = [("read.c", C)];
     for good in [
@@ -199,22 +199,29 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             "enum Maybe { None, Some(int) }",
             "enum Maybe { Some(int), None }",
         ),
-        source.replace("        Maybe::None => { contradiction(c.model == Maybe::None); },\n", "")
-            .replace("        },\n    }\n}\n", "        },\n        Maybe::None => { contradiction(c.model == Maybe::None); },\n    }\n}\n"),
+        source
+            .replace("        Maybe::None => { close(); },\n", "")
+            .replace(
+                "        },\n    }\n}\n",
+                "        },\n        Maybe::None => { close(); },\n    }\n}\n",
+            ),
     ] {
-        verify_c_sources(&good, &sources)
-            .expect("excluded arm has no memory and does not execute");
+        verify_c_sources(&good, &sources).expect("excluded arm has no memory and does not execute");
         let expanded =
             expand_c_claim_source(&good, &sources, "read", ContractProofClaim::Grouped).unwrap();
         verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
-        assert!(expanded.contains("contradiction("));
+        let (_, excluded) = expanded.split_once("Maybe::None => {").unwrap();
+        assert!(excluded.trim_start().starts_with("close();"), "{expanded}");
         // `have` is one selectable C-proof tactic, including its nested proof.
-        for offset in [good.find("step_until(function.exit);").unwrap(), good.find("have result").unwrap(), good.rfind("close();").unwrap()] {
+        for offset in [
+            good.find("step_until(function.exit);").unwrap(),
+            good.find("have result").unwrap(),
+            good.rfind("close();").unwrap(),
+        ] {
             let position = expansion::position_at_offset(&good, offset);
             let selected =
-                expand_c_tactic_source_at(&good, &sources, position.line, position.column)
-                    .unwrap();
+                expand_c_tactic_source_at(&good, &sources, position.line, position.column).unwrap();
             verify_c_sources(&selected, &sources).expect("selected live arm expansion");
         }
     }
@@ -223,18 +230,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
         .expect("the live arm may refold implicitly");
     for bad in [
         source.replace("    requires c.model != Maybe::None;", ""),
-        source.replace(
-            "contradiction(c.model == Maybe::None)",
-            "contradiction(p == 0)",
-        ),
-        source.replace(
-            "contradiction(c.model == Maybe::None)",
-            "contradiction(c.model == Maybe::Some(7))",
-        ),
-        source.replace(
-            "Maybe::None => { contradiction(c.model == Maybe::None); },",
-            "",
-        ),
+        source.replace("Maybe::None => { close(); },", ""),
         source.replace(
             "            fold(c);",
             "            let c = fold(cell(p), { model: Maybe::None });",
@@ -263,11 +259,11 @@ int id(int x) {
     ensures r.model == old(r.model);
 } by {
     match r.model {
-        Tag::A => { contradiction(r.model == Tag::A); },
+        Tag::A => { close(); },
         Tag::B => {
             match r.model {
                 Tag::B => { step_until(function.exit); close(); },
-                Tag::A => { contradiction(r.model == Tag::A); },
+                Tag::A => { close(); },
             }
         },
     }

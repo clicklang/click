@@ -2240,7 +2240,7 @@ fn short_circuit_return_expands_after_an_early_return() {
                     have 2 <= size implies (first as int32) == 67 implies
                         (second as int32) == 75 implies result by {
                         intro() {
-                            contradiction(size < 2);
+                            close();
                         }
                     }
                     close();
@@ -2621,20 +2621,10 @@ fn established_false_expands_to_checked_close() {
     })
     .unwrap();
 
-    let empty =
-        "theorem impossible(x: int32) { requires false; ensures x == 7 by { contradiction(); } }";
-    without_implicit_solve(|| verify_click_theorems(empty)).unwrap();
-    let explicit = empty.replace("contradiction()", "contradiction(false)");
-    without_implicit_solve(|| verify_click_theorems(&explicit)).unwrap();
-    let missing = empty.replace("requires false;", "");
-    let error = verify_click_theorems(&missing).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("requires an established `false` fact"),
-        "{}",
-        error.report()
-    );
+    let source = "theorem impossible(x: int32) { requires false; ensures x == 7 by { close(); } }";
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
+    let missing = source.replace("requires false;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }
 
 #[test]
@@ -8818,6 +8808,16 @@ fn symbolic_false_antecedent_expands_into_an_explicit_negation() {
     without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     let reachable = source.replace("+ 1", "- 1");
     assert!(verify_c_sources(&reachable, &[]).is_err());
+
+    let premise = r#"
+        theorem refuted(x: Integer) {
+            requires -2 * x + 2 * x + 1 <= 0;
+            ensures x == 7 by close();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(premise, &[], "refuted.ensures_0").unwrap();
+    assert!(expanded.contains("have not "), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
 }
 
 #[test]
@@ -23629,7 +23629,7 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
             ensures t.model == old(t.model);
         } by {
             match t.model {
-                Tree::Empty => { contradiction(t.model == Tree::Empty); },
+                Tree::Empty => { close(); },
                 Tree::Node(id) => {
                     loop {
                         decreases n;
@@ -28857,6 +28857,49 @@ fn instantiation_expansion_proves_weakened_guards_with_ordinary_haves() {
     assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
     let changed = expanded.replace("0 <= i implies", "1 < i implies");
     assert!(without_implicit_solve(|| verify_click_theorems(&changed)).is_err());
+}
+
+#[test]
+fn match_arm_can_establish_false_in_its_bridge_at_function_exit() {
+    let source = r#"
+        verifying "id.c";
+
+        spec enum Tag { A, B }
+        resource tag() { field model: Tag; }
+        function tag_code(value: Tag) -> Integer {
+            match value {
+                Tag::A => 0,
+                Tag::B => 1,
+            }
+        }
+
+        int id(int x) {
+            owns r: tag();
+            requires tag_code(r.model) != 0;
+            ensures result == x;
+            ensures r.model == old(r.model);
+        } by {
+            step_until(function.exit);
+            match r.model ensuring { fact result == x; } {
+                Tag::A => {
+                    have tag_code(r.model) == 0 by {
+                        rewrite(r.model, Tag::A);
+                        unfold(tag_code(Tag::A));
+                        close();
+                    }
+                    close();
+                },
+                Tag::B => { },
+            }
+            close();
+        }
+    "#;
+    let sources = [("id.c", "int id(int x) { return x; }")];
+    let expanded = expand_function_proof_source(source, &sources, "id").unwrap();
+    assert!(expanded.contains("unfold(tag_code(Tag::A())"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    let reachable = source.replace("requires tag_code(r.model) != 0;", "");
+    assert!(verify_c_sources(&reachable, &sources).is_err());
 }
 
 #[test]

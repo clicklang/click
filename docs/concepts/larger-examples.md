@@ -348,7 +348,7 @@ One iteration is five steps, and each is an ordinary tactic:
 1. `match t.model` inside `maintain` supplies the constructor. The binder's
    model at an arbitrary loop head is a fresh symbolic value, so nothing can
    `unfold` it until a proof `match` names the arm; the `HeapTree::Empty` arm
-   closes by `contradiction` on the first invariant.
+   closes by `close()` on the first invariant.
 2. `let { left: l, right: rt } = unfold(t)` takes the node apart into its three
    cells and its two child instances.
 3. `fold(ctx_at(root->left), { model: Context::Left(...), sibling: rt, up:

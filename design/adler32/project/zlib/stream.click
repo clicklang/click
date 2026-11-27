@@ -2357,7 +2357,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
       if 0u64 < len { close(); } else {
        have 0u64 == len;
        have len == 0u64 by { rewrite(0u64, len); close(); }
-       contradiction(len == 0u64);
+       close();
       }
      }
      have to_integer(0u64) < to_integer(len);

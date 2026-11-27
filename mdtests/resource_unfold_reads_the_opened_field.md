@@ -74,7 +74,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                         rewrite(occupied[i], 0);
                         close();
                     }
-                    contradiction(occupied[i] == 1);
+                    close();
                 }
             }
             have i + 1 <= p;
@@ -104,9 +104,9 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 instantiate(forall (k: int32) {
                     0 <= k and k < p implies occupied[k] == 1
                 }, i);
-                contradiction(0 <= i and i < p);
+                close();
             }
-            contradiction(occupied[i] == 1);
+            close();
         } else {
             have i == p;
             close();
