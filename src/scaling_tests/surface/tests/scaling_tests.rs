@@ -7110,6 +7110,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         )
     };
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base,
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -7178,6 +7179,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                             false,
                         ))
                         .assume_proposition(Proposition::MemoryLoadable {
+                            point: Default::default(),
                             memory: memory.clone(),
                             base: Address::new(
                                 format!("other{index}").as_str().into(),
@@ -7420,6 +7422,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     true,
                 ))
                 .assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: Address::new(
                         format!("other{index}").as_str().into(),
@@ -7499,6 +7502,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         true,
                     ))
                     .assume_proposition(Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: memory.clone(),
                         base: Address::new(
                             format!("extension{step}").as_str().into(),

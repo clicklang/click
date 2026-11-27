@@ -260,8 +260,6 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             &selected,
             ProgramType::Int32Pointer,
             &[Proposition::MemoryEffectSummary {
-                before_point: Default::default(),
-                after_point: Default::default(),
                 before: before.memory().clone(),
                 before_point: Default::default(),
                 after: after.clone(),
