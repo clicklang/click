@@ -582,7 +582,6 @@ impl Pointer {
     /// term (`design/rust-slice-values.md`, "Construction"). Its type is the
     /// slice pointer type whose thin part has this pointer's type
     /// ([`widened_type`]): a `T *` becomes a pointer to `[T]`.
-    #[allow(dead_code)] // Built by step 2b-iii's front ends; kernel tests build it today.
     pub(crate) fn with_element_count(mut self, count: OldMachineTerm) -> Self {
         assert!(
             !self.is_wide(),
