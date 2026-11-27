@@ -2,10 +2,6 @@
 //! separate: a uint32 value can contain a sign-free int32 word operation.
 use super::*;
 use crate::kernel::MachineCastSpelling;
-use crate::kernel::{
-    constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, native_constant,
-    uint32_constant, uint64_constant,
-};
 
 fn retained_machine_input(node: &KernelTermNode) -> Option<&OldMachineTerm> {
     match node {
@@ -21,18 +17,20 @@ impl KernelTerm {
         let KernelTermNode::MachineLiteral(value) = self.node() else {
             return None;
         };
-        value
-            .word32()
-            .or_else(|| u32::try_from(value.signed64()?).ok())
+        value.shift_count()
     }
 
-    pub(super) fn literal_constant_at(
-        &self,
-        format: MachineIntegerType,
-    ) -> Option<MachineIntegerConstant> {
+    /// Read only literal roots, including a selected native compatibility input.
+    pub(super) fn guard_literal(&self) -> Option<KernelMachineLiteral> {
         match self.node() {
-            KernelTermNode::MachineLiteral(literal) => literal.constant_at(format),
-            _ => None,
+            KernelTermNode::MachineLiteral(value) => Some(value.clone()),
+            _ => {
+                let OldMachineTerm::Constant { format, bits } = self.retained_machine_input()?
+                else {
+                    return None;
+                };
+                Some(KernelMachineLiteral::from_term_bits(*format, *bits))
+            }
         }
     }
 
@@ -366,15 +364,26 @@ impl KernelMachineLiteral {
         Some(Self::constant_term(value))
     }
 
-    fn from_constant(value: MachineIntegerConstant) -> Self {
-        let bits = value.bits();
-        match MachineIntegerType::of_format(value.format()) {
+    pub(super) fn shift_count(&self) -> Option<u32> {
+        self.word32()
+            .or_else(|| u32::try_from(self.signed64()?).ok())
+    }
+
+    fn from_term_bits(format: MachineIntegerType, bits: u128) -> Self {
+        match format {
             MachineIntegerType::Int32 => Self::Word32(bits as u32),
             MachineIntegerType::UInt32 => Self::UInt32(bits as u32),
             MachineIntegerType::Int64 => Self::Int64(bits as i64),
             MachineIntegerType::UInt64 => Self::UInt64(bits as u64),
-            _ => Self::Wide(value),
+            _ => Self::Wide(MachineIntegerConstant::from_term_bits(
+                format.format(),
+                bits,
+            )),
         }
+    }
+
+    fn from_constant(value: MachineIntegerConstant) -> Self {
+        Self::from_term_bits(MachineIntegerType::of_format(value.format()), value.bits())
     }
 
     pub(super) fn constant_term(value: MachineIntegerConstant) -> KernelTerm {
@@ -728,20 +737,8 @@ impl KernelTermImport {
             }
             Old::ThreadHandle(id) => KernelTermNode::ThreadHandle(*id),
             Old::Variable(value) => KernelTermNode::Variable(*value),
-            int32_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::Word32(constant_u32(*value)))
-            }
-            uint32_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::UInt32(constant_u32(*value)))
-            }
-            int64_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::Int64(constant_i64(*value)))
-            }
-            uint64_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::UInt64(constant_u64(*value)))
-            }
-            native_constant!(_, _) => {
-                KernelTermNode::MachineLiteral(Literal::Wide(term.as_machine_constant()?))
+            Old::Constant { format, bits } => {
+                KernelTermNode::MachineLiteral(Literal::from_term_bits(*format, *bits))
             }
             _ => return None,
         };
@@ -861,14 +858,9 @@ impl KernelTermImport {
                     self.machine(result, else_term),
                 ],
             },
-            int32_constant!(bits) => Node::MachineLiteral(Literal::Word32(constant_u32(*bits))),
-            uint32_constant!(bits) => Node::MachineLiteral(Literal::UInt32(constant_u32(*bits))),
-            int64_constant!(value) => Node::MachineLiteral(Literal::Int64(constant_i64(*value))),
-            uint64_constant!(value) => Node::MachineLiteral(Literal::UInt64(constant_u64(*value))),
-            native_constant!(_, _) => Node::MachineLiteral(Literal::Wide(
-                term.as_machine_constant()
-                    .expect("a constant term names its constant"),
-            )),
+            Old::Constant { format, bits } => {
+                Node::MachineLiteral(Literal::from_term_bits(*format, *bits))
+            }
             Old::Variable(variable) => Node::Variable(*variable),
             Old::BoolCast { to, value } => Node::BoolCast {
                 destination: *to,

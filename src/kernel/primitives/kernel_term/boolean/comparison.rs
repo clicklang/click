@@ -31,11 +31,8 @@ impl KernelTerm {
             (R::Equal, T::UInt128) => T::Int128,
             _ => format,
         };
-        if let [
-            KernelTermNode::MachineLiteral(left),
-            KernelTermNode::MachineLiteral(right),
-        ] = arguments.each_ref().map(Self::node)
-        {
+        let literals = arguments.each_ref().map(Self::guard_literal);
+        if let [Some(left), Some(right)] = &literals {
             if let (Some(a), Some(b)) = (left.constant_at(format), right.constant_at(format)) {
                 return Self::boolean_literal(a.compare(relation, b));
             }
@@ -52,19 +49,10 @@ impl KernelTerm {
                 left.guard_operand(stored_format),
                 right.guard_operand(stored_format),
             ];
-        } else if let [Some(left), Some(right)] = arguments
-            .each_ref()
-            .map(|term| MachineOperandView::Shared(term).literal())
-        {
-            return native(OldConditionTerm::machine_compare(
-                format, relation, left, right,
-            ));
         } else if format.format().bits() == 32 {
-            for argument in &mut arguments {
-                if let KernelTermNode::MachineLiteral(value) = argument.node() {
+            for (argument, literal) in arguments.iter_mut().zip(literals) {
+                if let Some(value) = literal {
                     *argument = value.guard_operand(format);
-                } else if let Some(value) = MachineOperandView::Shared(argument).literal() {
-                    *argument = KernelTermImport::default().machine(format, &value.into_word32());
                 }
             }
         }

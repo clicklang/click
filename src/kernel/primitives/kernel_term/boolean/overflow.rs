@@ -1,5 +1,47 @@
 //! Overflow conditions retain their written format and numeric operands.
 use super::*;
+fn literal_overflow(
+    format: MachineIntegerType,
+    operation: OverflowOperation,
+    left: &KernelMachineLiteral,
+    right: &KernelMachineLiteral,
+) -> Option<bool> {
+    use MachineIntegerType as Ty;
+    use OverflowOperation as Op;
+    if let Some(arithmetic) = crate::kernel::machine_integer::Operation::from_overflow(operation) {
+        if format == Ty::Int32 && operation == Op::Subtract && right.word32() == Some(0) {
+            return Some(false);
+        }
+        // Signed 64-bit arithmetic also accepts an unsigned literal's bits.
+        let (a, b) = if format == Ty::Int64 {
+            (left.signed64()?.into(), right.signed64()?.into())
+        } else {
+            (
+                left.constant_at(format)?.to_integer(),
+                right.constant_at(format)?.to_integer(),
+            )
+        };
+        return Some(arithmetic.overflows(format, a, b));
+    }
+    match (format, operation) {
+        (Ty::Int32, Op::Divide) => {
+            Some((left.word32()?, right.word32()?) == (i32::MIN as u32, u32::MAX))
+        }
+        (Ty::Int64, Op::Divide) => Some(left.signed64()?.checked_div(right.signed64()?).is_none()),
+        (Ty::Int32, Op::ShiftLeft) => {
+            crate::kernel::primitives::term_operations::signed_shift_left_overflows_const(
+                left.word32()?,
+                right.word32()?,
+            )
+        }
+        (Ty::Int64, Op::ShiftLeft) => Some(
+            MachineBinaryOp::ShiftLeft
+                .evaluate_int64(left.signed64()?, i64::from(right.shift_count()?))
+                .is_none(),
+        ),
+        _ => None,
+    }
+}
 impl KernelTerm {
     pub(crate) fn boolean_overflow_raw(
         format: MachineIntegerType,
@@ -20,57 +62,18 @@ impl KernelTerm {
         operation: OverflowOperation,
         mut arguments: [Self; 2],
     ) -> Self {
-        if let Some(arithmetic) =
-            crate::kernel::machine_integer::Operation::from_overflow(operation)
-            && let [Some(a), Some(b)] = arguments
-                .each_ref()
-                .map(|argument| argument.literal_constant_at(format))
-        {
-            return Self::boolean_literal(arithmetic.overflows(
-                format,
-                a.to_integer(),
-                b.to_integer(),
-            ));
-        }
-        if matches!(
-            operation,
-            OverflowOperation::Divide | OverflowOperation::ShiftLeft
-        ) && let [
-            KernelTermNode::MachineLiteral(left),
-            KernelTermNode::MachineLiteral(right),
-        ] = arguments.each_ref().map(Self::node)
-        {
-            use MachineIntegerType as Ty;
-            use OverflowOperation as Op;
-            let folded = match (format, operation) {
-                (Ty::Int32, Op::Divide) => left.word32().zip(right.word32())
-                    .map(|(a, b)| a == i32::MIN as u32 && b == u32::MAX),
-                (Ty::Int64, Op::Divide) => left.signed64().zip(right.signed64())
-                    .map(|(a, b)| a.checked_div(b).is_none()),
-                (Ty::Int32, Op::ShiftLeft) => left.word32().zip(right.word32())
-                    .and_then(|(a, b)| crate::kernel::primitives::term_operations::signed_shift_left_overflows_const(a, b)),
-                (Ty::Int64, Op::ShiftLeft) => left.signed64().zip(arguments[1].literal_shift_count())
-                    .map(|(a, count)| MachineBinaryOp::ShiftLeft.evaluate_int64(a, i64::from(count)).is_none()),
-                _ => None,
-            };
-            if let Some(value) = folded {
+        let literals = arguments.each_ref().map(Self::guard_literal);
+        if let [Some(left), Some(right)] = &literals {
+            if let Some(value) = literal_overflow(format, operation, left, right) {
                 return Self::boolean_literal(value);
             }
             let operands = [left, right].map(|literal| literal.guard_operand(format));
             return Self::boolean_overflow_raw(format, operation, operands);
         }
-        let views = arguments.each_ref().map(MachineOperandView::Shared);
-        if let [Some(a), Some(b)] = views.map(|view| view.literal()) {
-            return KernelTermImport::default().condition(&OldConditionTerm::machine_overflows(
-                format, operation, a, b,
-            ));
-        }
         if format.format().bits() == 32 {
-            for argument in &mut arguments {
-                if let KernelTermNode::MachineLiteral(value) = argument.node() {
+            for (argument, literal) in arguments.iter_mut().zip(literals) {
+                if let Some(value) = literal {
                     *argument = value.guard_operand(format);
-                } else if let Some(value) = MachineOperandView::Shared(argument).literal() {
-                    *argument = KernelTermImport::default().machine(format, &value.into_word32());
                 }
             }
         }
@@ -182,6 +185,50 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn retained_literal_guards_match_imported_guards() {
+        use MachineIntegerType as Ty;
+        let _session = crate::kernel::VerificationSession::enter();
+        for (format, a, b) in [
+            (
+                Ty::Int64,
+                OldMachineTerm::uint64_constant(i64::MAX as u64),
+                OldMachineTerm::int64_constant(1),
+            ),
+            (
+                Ty::Int32,
+                OldMachineTerm::uint64_constant(2),
+                OldMachineTerm::uint32_constant(0),
+            ),
+            (
+                Ty::UInt128,
+                OldMachineTerm::int64_constant(-1),
+                OldMachineTerm::uint64_constant(u64::MAX),
+            ),
+        ] {
+            let retained = KernelTerm::intern(
+                KernelType::Program(format.program_type()),
+                KernelTermNode::WrittenMachine(KernelWrittenMachine::expression(format, &a)),
+            );
+            let args = [retained, KernelTermImport::default().machine(format, &b)];
+            for op in operations() {
+                let expected =
+                    OldConditionTerm::machine_overflows(format, op, a.clone(), b.clone());
+                assert_eq!(
+                    KernelTerm::boolean_overflow(format, op, args.clone()),
+                    KernelTermImport::default().condition(&expected),
+                    "{format:?} {op:?}"
+                );
+            }
+            let expected = OldConditionTerm::machine_compare(format, CompareRelation::Equal, a, b);
+            assert_eq!(
+                KernelTerm::boolean_comparison(format, CompareRelation::Equal, args),
+                KernelTermImport::default().condition(&expected),
+                "{format:?}"
+            );
+        }
+    }
+
     #[test]
     fn overflow_conditions_preserve_distinct_substitution_policies() {
         let _session = crate::kernel::VerificationSession::enter();
