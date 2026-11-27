@@ -7110,7 +7110,7 @@ impl SymbolicMemory {
         assert!(
             !wide,
             "internal error: storing a wide pointer has no memory cell yet \
-             (design/rust-slice-values.md, step 2b)"
+             (design/rust-slice-values.md, step 2b-ii)"
         );
         let base = intern_derivation_base(&mut self);
         // Cache invalidation is internal to this store, not a memory event.

@@ -227,6 +227,7 @@ pub(crate) fn program_type_spelling(program_type: ProgramType) -> &'static str {
         ProgramType::Float32Array(_) => "float32*",
         ProgramType::Float64Array(_) => "float64*",
         ProgramType::PointerArray(element, _) => element.decayed_type_spelling(),
+        ProgramType::SlicePointer(element) => element.slice_type_spelling(),
     }
 }
 

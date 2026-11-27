@@ -553,6 +553,12 @@ pub(crate) fn interface_type_from_program_type(interface_type: ProgramType) -> I
         ProgramType::PointerArray(element, length) => {
             InterfaceType::PointerArray(element, LongRank::Long, length)
         }
+        // Only a kernel test builds a slice pointer until the Surface type
+        // arrives (`design/rust-slice-values.md`, step 2b-iii).
+        ProgramType::SlicePointer(_) => unreachable!(
+            "internal error: a slice pointer type has no interface type yet \
+             (design/rust-slice-values.md, step 2b-iii)"
+        ),
     }
 }
 

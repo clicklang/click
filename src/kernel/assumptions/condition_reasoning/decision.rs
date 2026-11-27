@@ -421,11 +421,9 @@ impl PureFactContext {
                 return Some(false);
             }
             // Below, equal addresses decide the equality only for values
-            // whose metadata already agrees; a wide pair's counts are
-            // decided by the classes above.
-            let same_metadata = left.same_metadata_as(right);
-            if same_metadata
-                && self.pointer_provenance_match(left, right)
+            // whose metadata is known equal, which the provenance match
+            // includes (`pointer_metadata_known_equal`).
+            if self.pointer_provenance_match(left, right)
                 && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     left.address(),
                     right.address(),
@@ -444,9 +442,7 @@ impl PureFactContext {
             ));
             return match address {
                 Some(false) => Some(false),
-                Some(true) if same_metadata && self.pointer_provenance_match(left, right) => {
-                    Some(true)
-                }
+                Some(true) if self.pointer_provenance_match(left, right) => Some(true),
                 _ => None,
             };
         }

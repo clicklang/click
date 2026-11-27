@@ -39,6 +39,26 @@ fn program_type_mismatch_expression_path(
     }
 }
 
+/// Whether an operand is a wide pointer, which no thin-pointer operator
+/// reads (`design/rust-slice-values.md`): its address and count are read
+/// as `s.as_ptr()` and `s.len()`, never through the slice itself.
+fn is_wide_pointer_value(value: &ProgramValue) -> bool {
+    matches!(value, ProgramValue::Pointer(pointer) if pointer.is_wide())
+}
+
+/// The refusal of a thin-pointer operator given a wide pointer.
+fn thin_pointer_required_path(
+    operation: &'static str,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+) -> ExpressionPath {
+    ExpressionPath {
+        outcome: ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired { operation }),
+        facts,
+        obligations,
+    }
+}
+
 /// Splits an operation on `undefined`, the condition under which it has
 /// `behavior`. A decided condition keeps one side. An undecided one
 /// continues `defined` under the condition's negation, followed by the
@@ -511,6 +531,13 @@ pub(in crate::kernel) fn apply_program_add(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    if is_wide_pointer_value(&left) || is_wide_pointer_value(&right) {
+        return vec![thin_pointer_required_path(
+            "pointer arithmetic",
+            facts,
+            obligations,
+        )];
+    }
     if let Some((left, right, target_type, obligations)) =
         coerce_program_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -1713,6 +1740,13 @@ pub(in crate::kernel) fn apply_program_bitwise_binary(
     assumptions: &PureFactContext,
     operation: BitwiseOperation,
 ) -> Vec<ExpressionPath> {
+    if is_wide_pointer_value(&left) || is_wide_pointer_value(&right) {
+        return vec![thin_pointer_required_path(
+            "a bitwise operation",
+            facts,
+            obligations,
+        )];
+    }
     let tag_source = |value: &ProgramValue, mask: &ProgramValue| match value {
         ProgramValue::PointerInteger(record) => {
             let mask = promote_program_path_value(mask.clone(), MachineIntegerType::UInt64)
@@ -1852,6 +1886,13 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> Vec<ExpressionPath> {
+    if is_wide_pointer_value(&value) {
+        return vec![thin_pointer_required_path(
+            "a bitwise operation",
+            facts,
+            obligations,
+        )];
+    }
     match value.numeric_value().clone() {
         // Rule C1: C promotes a `Bool` to its cast at `int32` first.
         ProgramValue::Bool(value) => vec![ExpressionPath {
@@ -2551,6 +2592,13 @@ pub(super) fn apply_program_comparison(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    if is_wide_pointer_value(&left) || is_wide_pointer_value(&right) {
+        return vec![thin_pointer_required_path(
+            "an ordered pointer comparison",
+            facts,
+            obligations,
+        )];
+    }
     if matches!(left, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
         || matches!(right, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
     {
@@ -2692,6 +2740,13 @@ pub(in crate::kernel) fn apply_program_subtract(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    if is_wide_pointer_value(&left) || is_wide_pointer_value(&right) {
+        return vec![thin_pointer_required_path(
+            "pointer arithmetic",
+            facts,
+            obligations,
+        )];
+    }
     if let Some((left, right, target_type, obligations)) =
         coerce_program_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -2954,6 +3009,13 @@ fn pointer_offset_by_elements_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    if pointer.is_wide() {
+        return vec![thin_pointer_required_path(
+            "pointer arithmetic",
+            facts,
+            obligations,
+        )];
+    }
     let value = pointer;
     let pointer = value.address().clone();
 
@@ -3200,6 +3262,13 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    if pointer.is_wide() {
+        return vec![thin_pointer_required_path(
+            "a member offset",
+            facts,
+            obligations,
+        )];
+    }
     let bytes = bytes.into();
     let value = pointer;
     let pointer = value.address().clone();
@@ -5683,6 +5752,13 @@ fn apply_program_equality(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    if is_wide_pointer_value(&left) || is_wide_pointer_value(&right) {
+        return vec![thin_pointer_required_path(
+            "a pointer comparison",
+            facts,
+            obligations,
+        )];
+    }
     let negated = operator == ComparisonOperator::NotEqual;
     // Two values of one abstract type are equal exactly when the values of
     // that rigid type they are are; a value of an abstract type compares
@@ -6626,6 +6702,13 @@ pub(in crate::kernel) fn subobject_paths(
     assumptions: &PureFactContext,
     resources: &ResourceContext,
 ) -> Vec<ExpressionPath> {
+    if pointer.is_wide() {
+        return vec![thin_pointer_required_path(
+            "a member selection",
+            facts,
+            obligations,
+        )];
+    }
     // A pointer type alone does not establish the bounds of an enclosing
     // object. Entry clauses establish their selected member's full bounds;
     // subsequent selections consume that evidence or a matching held range.

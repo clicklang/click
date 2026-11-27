@@ -4046,6 +4046,8 @@ impl ProgramType {
                     | ProgramType::Float64Array(_)
                     | ProgramType::PointerArray(_, _)
                     | ProgramType::VoidPointerPointer
+                    // No C callback passes a wide pointer.
+                    | ProgramType::SlicePointer(_)
                     // Click's untyped pointer is a specification type; no
                     // callback signature names it.
                     | ProgramType::Pointer => {
@@ -4162,7 +4164,15 @@ impl ProgramType {
             | Self::Float32Array(_)
             | Self::Float64Array(_) => None,
             Self::PointerArray(_, _) => None,
+            // No pointer-to-slice-pointer type exists yet.
+            Self::SlicePointer(_) => None,
         }
+    }
+
+    /// Whether this is a wide pointer type, whose values carry an element
+    /// count ([`ProgramType::SlicePointer`]).
+    pub(crate) fn is_slice_pointer(self) -> bool {
+        matches!(self, Self::SlicePointer(_))
     }
 
     /// `unsigned char *` or `signed char *` (plain `char *` is one of them).
@@ -4286,6 +4296,12 @@ impl ProgramType {
             | (Self::Float32, ProgramValue::Float32(_))
             | (Self::Float64, ProgramValue::Float64(_))
             | (Self::UInt32, ProgramValue::UInt32(_)) => true,
+            // A wide pointer is a value of its own slice pointer type only:
+            // a thin pointer is never one, and a slice pointer never
+            // converts implicitly to another type.
+            (Self::SlicePointer(_), ProgramValue::Pointer(pointer)) => {
+                pointer.is_wide() && pointer.program_type() == self
+            }
             (target, ProgramValue::Pointer(pointer)) if target.is_pointer() => {
                 pointer.is_null()
                     || (pointer.program_type().pointer_types_compatible(target)
@@ -4373,6 +4389,7 @@ impl ProgramType {
             Self::Float64Array(length) => length.saturating_mul(8),
             Self::Int128Array(length) | Self::UInt128Array(length) => length.saturating_mul(16),
             Self::PointerArray(_, length) => length.saturating_mul(C_POINTER_BYTE_WIDTH),
+            Self::SlicePointer(_) => WIDE_POINTER_BYTE_WIDTH,
         }
     }
 
@@ -4594,6 +4611,7 @@ impl ProgramValue {
             Self::Int128(_) | Self::UInt128(_) => 16,
             Self::Float32(_) => 4,
             Self::Float64(_) => 8,
+            Self::Pointer(pointer) if pointer.is_wide() => WIDE_POINTER_BYTE_WIDTH,
             Self::Pointer(_) => C_POINTER_BYTE_WIDTH,
         }
     }

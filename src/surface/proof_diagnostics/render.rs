@@ -2169,9 +2169,14 @@ impl Renderer<'_> {
                 self.push(" = ");
                 self.offset(b, 0);
             }
+            // A wide pointer is the slice of its address and element count,
+            // as Rust spells an unrecorded construction.
+            OldConditionTerm::PointerEqual(a, b) if a.is_wide() || b.is_wide() => {
+                self.pointer_value(a);
+                self.push(" == ");
+                self.pointer_value(b);
+            }
             OldConditionTerm::PointerEqual(a, b) => {
-                a.expect_thin("rendering a pointer equality");
-                b.expect_thin("rendering a pointer equality");
                 if distinct_pointers_at_one_address(a, b) {
                     self.push("pointer equality at ");
                     self.pointer(a.address());
@@ -2393,6 +2398,21 @@ impl Renderer<'_> {
         self.integer_shared(right);
         self.push(")");
     }
+    /// A pointer value: its address, or for a wide pointer
+    /// `slice::from_raw_parts(address, count)`.
+    fn pointer_value(&mut self, value: &crate::kernel::Pointer) {
+        match value.len() {
+            Some(count) => {
+                self.push("slice::from_raw_parts(");
+                self.pointer(value.address());
+                self.push(", ");
+                self.bitvector(count);
+                self.push(")");
+            }
+            None => self.pointer(value.address()),
+        }
+    }
+
     fn bitvector(&mut self, v: &OldMachineTerm) {
         if self.truncated || !self.visit() || self.depth >= MAX_DEPTH {
             self.truncated = true;

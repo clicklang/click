@@ -2608,6 +2608,11 @@ impl SubobjectBounds {
 impl Pointer {
     pub(crate) fn new(pointer: Address, program_type: ProgramType) -> Self {
         assert!(
+            !program_type.is_slice_pointer(),
+            "internal error: a slice pointer is built with its element count \
+             (`Pointer::with_element_count`), not as a thin pointer"
+        );
+        assert!(
             program_type.is_pointer(),
             "C pointer values require a pointer type"
         );
@@ -2880,7 +2885,7 @@ impl Pointer {
             .with_provenance(provenance)
             .with_array_object(array);
         Some(match count {
-            Some(count) => result.as_ptr().with_element_count(count),
+            Some(count) => result.with_replaced_element_count(count),
             None => result,
         })
     }
@@ -2895,7 +2900,7 @@ impl Pointer {
         if &mapped == source {
             return self;
         }
-        self.as_ptr().with_element_count(mapped)
+        self.with_replaced_element_count(mapped)
     }
 
     /// Every numeric term a wide pointer's metadata holds, for variable
@@ -2905,10 +2910,17 @@ impl Pointer {
     }
 
     /// Re-spell physical addresses without changing the value's origin.
-    /// The origin includes a wide pointer's metadata, which this keeps as it
-    /// keeps the provenance: respelling an address does not change a count.
-    pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Address) -> Address) -> Self {
-        let mapped = self.map_pointers(map, OldMachineTerm::clone);
+    /// A wide pointer's element count is a numeric component, not an origin:
+    /// `count` respells it as the caller respells the machine terms beside
+    /// the value (canonicalizing its embedded reads, or rewriting them by an
+    /// address equality), so a count that reads memory is respelled with the
+    /// scalars stored or compared with it. A thin pointer never calls it.
+    pub(in crate::kernel) fn map_addresses(
+        &self,
+        map: impl FnMut(&Address) -> Address,
+        count: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+    ) -> Self {
+        let mapped = self.map_pointers(map, count);
         let array = mapped
             .array_object()
             .with_owner(self.array_object().owner().cloned());
@@ -3630,6 +3642,109 @@ pub enum ProgramType {
     /// an incomplete struct tag is tracked by the C frontend, not erased to
     /// integer storage.
     PointerArray(PointerArrayElement, u32),
+    /// A wide pointer to `[T]` or `str` (`design/rust-slice-values.md`): a
+    /// thin pointer of [`SliceElement::thin_pointer_type`] plus its element
+    /// count. Every value of this type carries the count
+    /// ([`Pointer::len`]) and no thin pointer has it. Rust's `&[T]`, `&mut
+    /// [T]`, `*const [T]`, `*mut [T]` and `Box<[T]>` are this one type, told
+    /// apart, as thin `&T`, `&mut T` and `*const T` are, by the declaration's
+    /// qualifiers and contract. It has no pointee type, so no thin pointer
+    /// operation (arithmetic, ordering, dereference, integer casts) takes
+    /// it: those read [`Pointer::as_ptr`].
+    SlicePointer(SliceElement),
+}
+
+/// The bytes a wide pointer's cell holds: its data word and its metadata
+/// word.
+pub(crate) const WIDE_POINTER_BYTE_WIDTH: u32 = 2 * C_POINTER_BYTE_WIDTH;
+
+/// The element type of a [`ProgramType::SlicePointer`]: `[T]` for a scalar
+/// or abstract `T`, or `str`, whose elements are UTF-8 bytes. `str` is its
+/// own element so the UTF-8 invariant attaches to strings and never to
+/// arbitrary bytes (`design/rust-slice-values.md`, "String slices").
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum SliceElement {
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Int128,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    Float32,
+    Float64,
+    /// `str`: a byte sequence whose thin part is a `u8` pointer.
+    Str,
+    /// An abstract element type, a generic `[T]`.
+    Parameter(TypeParameterName),
+}
+
+impl SliceElement {
+    /// The `[T]` whose thin part has this type, `T *`; `None` for a type
+    /// that is no slice's thin part. A `u8` pointer gives `[u8]`, never
+    /// `str`, which is reached only by retyping a wide pointer.
+    pub fn of_thin_pointer_type(program_type: ProgramType) -> Option<Self> {
+        Some(match program_type {
+            ProgramType::Int8Pointer => Self::Int8,
+            ProgramType::Int16Pointer => Self::Int16,
+            ProgramType::Int32Pointer => Self::Int32,
+            ProgramType::Int64Pointer => Self::Int64,
+            ProgramType::Int128Pointer => Self::Int128,
+            ProgramType::UInt8Pointer => Self::UInt8,
+            ProgramType::UInt16Pointer => Self::UInt16,
+            ProgramType::UInt32Pointer => Self::UInt32,
+            ProgramType::UInt64Pointer => Self::UInt64,
+            ProgramType::UInt128Pointer => Self::UInt128,
+            ProgramType::Float32Pointer => Self::Float32,
+            ProgramType::Float64Pointer => Self::Float64,
+            ProgramType::ParameterPointer(parameter) => Self::Parameter(parameter),
+            _ => return None,
+        })
+    }
+
+    /// The Click specification spelling of the slice pointer type:
+    /// `Slice<T>` for `&[T]`, `Str` for `&str`.
+    pub fn slice_type_spelling(self) -> &'static str {
+        let element = match self {
+            Self::Str => return "Str",
+            Self::Parameter(parameter) => parameter.name(),
+            Self::Int8 => "int8",
+            Self::Int16 => "int16",
+            Self::Int32 => "int32",
+            Self::Int64 => "int64",
+            Self::Int128 => "int128",
+            Self::UInt8 => "uint8",
+            Self::UInt16 => "uint16",
+            Self::UInt32 => "uint32",
+            Self::UInt64 => "uint64",
+            Self::UInt128 => "uint128",
+            Self::Float32 => "float32",
+            Self::Float64 => "float64",
+        };
+        TypeParameterName::intern(&format!("Slice<{element}>")).name()
+    }
+
+    /// The type of the thin part, `s.as_ptr()`.
+    pub fn thin_pointer_type(self) -> ProgramType {
+        match self {
+            Self::Int8 => ProgramType::Int8Pointer,
+            Self::Int16 => ProgramType::Int16Pointer,
+            Self::Int32 => ProgramType::Int32Pointer,
+            Self::Int64 => ProgramType::Int64Pointer,
+            Self::Int128 => ProgramType::Int128Pointer,
+            Self::UInt8 | Self::Str => ProgramType::UInt8Pointer,
+            Self::UInt16 => ProgramType::UInt16Pointer,
+            Self::UInt32 => ProgramType::UInt32Pointer,
+            Self::UInt64 => ProgramType::UInt64Pointer,
+            Self::UInt128 => ProgramType::UInt128Pointer,
+            Self::Float32 => ProgramType::Float32Pointer,
+            Self::Float64 => ProgramType::Float64Pointer,
+            Self::Parameter(parameter) => ProgramType::ParameterPointer(parameter),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8253,6 +8368,13 @@ pub enum RuntimeError {
     /// read of a variant the value is not known to have, or a constructor
     /// whose fields do not fit its variant. The message says which.
     EnumVariant(String),
+    /// A thin-pointer operation (arithmetic, ordering, comparison, a cast,
+    /// a truth test) given a wide pointer, or a cast that would add or remove
+    /// a slice's element count. `operation` names it; the operation reads a
+    /// slice's thin part, `s.as_ptr()` (`design/rust-slice-values.md`).
+    ThinPointerRequired {
+        operation: &'static str,
+    },
     IndeterminatePointeeType,
     UnsupportedPointerSubtractionOffsets,
     UnsupportedPointerComparisonOffsets,
@@ -8638,6 +8760,14 @@ impl RuntimeError {
     /// Why an unsigned 32-bit heap allocation size was refused
     /// ([`Self::HeapAllocationSizeAboveInt32`]).
     pub const HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE: &'static str = "heap allocation size must be known to fit the signed 32-bit allocation size: Click models a heap block with a checked 32-bit size of at most 2147483647 bytes, and accepts a `uint32` size, or element count, only where the facts bound it to that size";
+
+    /// The sentence a [`Self::ThinPointerRequired`] refusal says.
+    pub fn thin_pointer_required_message(operation: &str) -> String {
+        format!(
+            "{operation} takes a thin pointer, not a slice: use the slice's data pointer \
+             `.as_ptr()`, or its length `.len()`"
+        )
+    }
 
     pub fn kernel_summary(&self) -> String {
         match self {

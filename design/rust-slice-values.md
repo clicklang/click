@@ -1,8 +1,9 @@
 # Rust slices as wide pointers
 
-Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1
-and 2a of the [plan](#plan) are done: the kernel pointer has its metadata
-component, but no front end produces a wide pointer yet.
+Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
+2a and 2b-i of the [plan](#plan) are done: the kernel has the wide pointer
+and its slice pointer type, and every kernel consumer reads or refuses its
+count, but no front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -193,11 +194,13 @@ change.
 bitwise tag operations, pointer-to-integer and integer-to-pointer casts
 (`expression.rs:980-1129`), and the retyping builders `with_type`,
 `retag_pointer` and `with_binding_type` (thin to wide must carry a length).
-All of these are reached through the type: `is_pointer` derives from
-`pointee_type()` (`term_operations.rs:4185`, `:4508`), so a slice pointer
-type whose `pointee_type` is `None` refuses them without per-site edits,
-and the ~100 `PointerInteger` sites are only reachable after a cast that
-refuses.
+The type alone does not refuse them: `is_pointer` derives from
+`pointee_type()`, but the operators take their step width from the
+expression, not the value's type, and default to 4 without one, so a
+slice would be stepped as an `int *`. Step 2b-i therefore refuses a wide
+operand explicitly at each operator's entry (`RuntimeError::
+ThinPointerRequired`), and the ~100 `PointerInteger` sites are only
+reachable after a cast that refuses.
 
 **Sites that take the thin part (T):** ranges, resources, aliases,
 mutexes and borrows match on `AddressBase` only; the range base at
@@ -453,21 +456,61 @@ construct.
      `wide_pointer_equality_chains_grow_linearly`,
      `wide_pointer_components_ignore_unrelated_facts` and
      `wide_pointer_component_reads_stay_flat`.
-   - **2b. Types, cells and raising.** Slice pointer types in
-     `ProgramType`, memory cells of twice the word size, Surface forms
-     `s.len()` and `s.as_ptr()`, and raising in place of each
-     `expect_thin` refusal. The library's `Slice<T>` becomes the built-in
-     type, so slice-valued pure functions, `Option<&[u8]>` contract
-     payloads and slice-returning functions use it. This finishes slice
-     returns and `as_bytes`. Before a front end produces a wide pointer,
-     audit the remaining consumers that read a complete pointer through
-     its address only: the 51 callers of `pointer_provenance_match` that
-     go on to compare addresses, the `PointerEqual` arms that walk
-     `pointers()` without `metadata_terms()`, the diagnostic and
-     `rust_spelling` printers, `map_addresses` callers (which keep the
-     count as they keep the provenance), and the refusal consumers listed
-     [above](#inventory-of-pointer-consumers), which the slice type is to
-     refuse.
+   - **2b. Types, cells and raising**, in three parts. Raising cannot
+     land before the Surface type: a raised `s.len()` or
+     `slice::from_raw_parts(p, n)` must lower back to the wide pointer,
+     and today the Surface `Slice<T>` is the library's enum. Memory cells
+     are their own subsystem, with their own scaling tests. So:
+   - **2b-i. Slice pointer types and consumers.** Done.
+     `ProgramType::SlicePointer(SliceElement)` is the type of every wide
+     pointer and of no thin one: `with_element_count` widens `T *` to
+     `[T]` (or `str`, by retyping), `as_ptr` narrows it back, and
+     `Pointer::new` at a slice type, or a `with_type`/`with_binding_type`
+     between a thin and a slice type, is an internal error. `&`/`&mut`,
+     raw and `Box` slices are one kernel type, told apart by the
+     declaration's qualifiers and contract as thin `&T`/`&mut T` are. It is
+     16 bytes, 8-aligned, and has no pointee type. Arithmetic, ordering,
+     equality, bitwise operations, member offsets and selections,
+     dereferences (`Load`, `TypedLoad`, spec `MemoryLoad`), spec
+     `PointerOffset`, coercions, truth tests and every cast that would add
+     or drop a count refuse a wide operand with `ThinPointerRequired`,
+     naming the operation and `.as_ptr()`; a cast between slice types keeps
+     the count. `pointer_provenance_match`, which its address-comparing
+     callers read as "equal in all but the address", now requires
+     known-equal metadata (`pointer_metadata_known_equal`: the same count
+     term or one `UInt64` class), so each of its callers is complete for
+     wide pointers; the 2a guards beside `decide` and the condition
+     matchers fold into it. `map_addresses` takes a count map: load
+     canonicalization and the address-equality rewrite respell a count's
+     reads as they respell the scalars beside it, rather than keeping it.
+     Condition preparation registers a count's machine operands. Rebasing a
+     pending allocation keeps a slice's count, as it keeps a bounds width.
+     Diagnostic text (`describe_condition`, the proof renderer) prints a
+     wide pointer as `slice::from_raw_parts(p, n)`. Tests: `kernel::tests::
+     slice_pointer_tests`, `a_slice_equality_is_described_with_its_count`;
+     scaling test `wide_pointer_value_matches_stay_flat`.
+   - **2b-ii. Memory cells.** A wide pointer's 16-byte cell: stores (today
+     refused in `store_with_effective_type`), symbolic loads of a slice
+     type (today `None`), a loaded slice's count as a named load term with
+     its Surface form, read-over-write of a stored slice and the load
+     sites that retype a stored pointer (`stored.with_type(value_type)` in
+     `memory_loads.rs`) or rebuild a read at the stored value's type
+     (`logical_read_equation`, the stored-value equalities of
+     `register_logical_read_values`, `comparison_form_uncached`, which
+     skips a slice today), `register_logical_read_values` over a loaded
+     count, frame transport of the count (`transport_framed_atomic_pointer_value`),
+     and partial reads of the cell, which refuse until a layout fact
+     exists.
+   - **2b-iii. Surface type and raising.** An interface type for slice
+     pointers; the library's `Slice<T>` becomes the built-in type and
+     `slice::len`, `slice::as_ptr`, `slice::from_raw_parts` its components
+     and constructor; lowering of `s.len()`, `s.as_ptr()`, a recorded
+     `s[a..b]`; raising in place of the `expect_thin` refusals in
+     `surface_synthesis.rs` and `render/surface.rs`; slice-valued pure
+     functions, `Option<&[u8]>` contract payloads, slice-returning
+     functions (a call result names its count, today an internal error in
+     `symbolic_call_result`), `as_bytes`, and the `rust_spelling` pairing.
+     This finishes slice returns and `as_bytes`.
 3. **Parameters and locals.** Slice parameters enter as one wide pointer;
    locals, assignments, reborrows, call arguments and returns carry it.
    Remove `spread_slice_arguments` and the paired-local paths. Migrate

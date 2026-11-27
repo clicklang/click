@@ -8067,6 +8067,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 budget,
                 |value, facts, obligations| {
                     let outcome = match value {
+                        // A coercion keeps the value; a slice's count is
+                        // never dropped by one.
+                        ProgramValue::Pointer(pointer) if pointer.is_wide() => {
+                            ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {
+                                operation: "a pointer coercion",
+                            })
+                        }
                         ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
                                 && (!matches!(
@@ -8378,6 +8385,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let ProgramValue::Pointer(pointer) = pointer_path.value.into_native() else {
                     continue;
                 };
+                // A read through a slice reads its thin part, `s.as_ptr()`.
+                if pointer.is_wide() {
+                    budget
+                        .dropped_runtime_error
+                        .get_or_insert(RuntimeError::ThinPointerRequired {
+                            operation: "a dereference",
+                        });
+                    continue;
+                }
                 let pointer = pointer.into_pointer();
                 let (memory_view, selected_state) = match memory {
                     SpecPoint::Current => (state.memory(), Some(state)),
@@ -9154,6 +9170,14 @@ fn evaluate_spec_pointer_offset_paths_in(
         let ProgramValue::Pointer(pointer) = pointer_path.value.into_native() else {
             continue;
         };
+        if pointer.is_wide() {
+            budget
+                .dropped_runtime_error
+                .get_or_insert(RuntimeError::ThinPointerRequired {
+                    operation: "pointer arithmetic",
+                });
+            continue;
+        }
         let element_assumptions = assumptions_with_path_context(
             assumptions,
             &pointer_path.facts,

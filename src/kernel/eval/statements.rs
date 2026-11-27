@@ -6498,6 +6498,7 @@ pub(in crate::kernel) fn declare_local(
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer
         | ProgramType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
+        ProgramType::SlicePointer(_) => crate::kernel::WIDE_POINTER_BYTE_WIDTH,
         ProgramType::Int32Array(length) => {
             state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
@@ -7036,10 +7037,10 @@ pub(in crate::kernel) fn rebase_resolved_allocation(
     base: &Address,
     resolved: &Address,
 ) -> Pointer {
-    // An allocation's rebase names its block in addresses only; a wide
-    // pointer's count has no rebase yet.
+    // An allocation's rebase respells its block in addresses only. A wide
+    // pointer's count is a length, not an address in the block: it is kept,
+    // as the bounds width is.
     let resolved_value = value
-        .expect_thin("rebasing a resolved allocation")
         .map_pointers(
             |address| {
                 if address == base {

@@ -4028,6 +4028,12 @@ impl PureFactContext {
                 })
     }
 
+    /// Whether two pointer values agree in every component but their
+    /// address: provenance, array object and bounds, and a wide pointer's
+    /// metadata ([`Self::pointer_metadata_known_equal`]). A caller that then
+    /// proves the addresses equal has proved the values equal, so a wide
+    /// pointer never matches a thin one, nor one of an unproven count. A
+    /// thin pointer's match is unchanged.
     pub(in crate::kernel) fn pointer_provenance_match(
         &self,
         left: &Pointer,
@@ -4060,6 +4066,9 @@ impl PureFactContext {
         left: &Pointer,
         right: &Pointer,
     ) -> bool {
+        if !self.pointer_metadata_known_equal(left, right) {
+            return false;
+        }
         // Null is one pointer value, with no allocation or selected object.
         // Establishing its zero address therefore does not transfer authority.
         ((left.is_null() || self.pointers_known_equal(left.address(), &Address::null()))
@@ -4078,6 +4087,25 @@ impl PureFactContext {
                 pointer_checks::Origins::native(right),
                 self,
             )
+    }
+
+    /// Whether two pointer values carry known-equal metadata: both thin, or
+    /// both wide with element counts that are one term or one `UInt64`
+    /// class. One indexed class lookup of the two counts, read in place
+    /// from the values; nothing else is consulted
+    /// (`design/rust-slice-values.md`, "Equality").
+    pub(in crate::kernel) fn pointer_metadata_known_equal(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+    ) -> bool {
+        match (left.len(), right.len()) {
+            (None, None) => true,
+            (Some(left), Some(right)) => {
+                left == right || self.uint64_values_known_equal(left, right)
+            }
+            _ => false,
+        }
     }
 
     /// `same_allocation(p, q)`: the two pointers were derived from one
