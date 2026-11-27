@@ -53,6 +53,9 @@ pub(super) trait TypeScope {
         &self,
         name: &dyn crate::surface::binders::BinderKey,
     ) -> Option<ClickType>;
+    /// What the pointer a C name is directly bound to steps by: a resolved
+    /// local's current pointer, or a pointer value the name is bound to.
+    fn bound_pointer_element(&self, name: &crate::kernel::BindingName) -> Option<PointerElement>;
     /// The call whose result `result` and region results name here.
     fn call_result_point(&self) -> Option<&ProgramPointSelector>;
     /// Whether bare `result` names the contract's return value here.
@@ -103,6 +106,19 @@ impl TypeScope for SpecElaborationContext {
         name: &dyn crate::surface::binders::BinderKey,
     ) -> Option<ClickType> {
         Self::program_binding_click_type(self, name)
+    }
+    fn bound_pointer_element(&self, name: &crate::kernel::BindingName) -> Option<PointerElement> {
+        if name.local_id().is_some()
+            && let Some(state) = self.reference_state.as_ref()
+        {
+            return state.locals().get(name)?.pointer().map(PointerElement::of);
+        }
+        match name.named_in(&self.values) {
+            Some(SpecExpression::Value(ProgramValue::Pointer(pointer))) => {
+                Some(PointerElement::of(pointer))
+            }
+            _ => None,
+        }
     }
     fn call_result_point(&self) -> Option<&ProgramPointSelector> {
         self.call_result_point.as_ref()
@@ -159,6 +175,9 @@ impl TypeScope for NoOuterNames {
     ) -> Option<ClickType> {
         None
     }
+    fn bound_pointer_element(&self, _: &crate::kernel::BindingName) -> Option<PointerElement> {
+        None
+    }
     fn call_result_point(&self) -> Option<&ProgramPointSelector> {
         None
     }
@@ -170,6 +189,9 @@ impl TypeScope for NoOuterNames {
 pub(super) struct TypingEnvironment<'a> {
     outer: &'a dyn TypeScope,
     binders: PersistentBinderMap<ClickType>,
+    /// The call `at(call, ..)` names inside the term being typed, in place
+    /// of the outer scope's.
+    call_result_point: Option<&'a ProgramPointSelector>,
 }
 
 impl<'a> TypingEnvironment<'a> {
@@ -184,6 +206,20 @@ impl<'a> TypingEnvironment<'a> {
         Self {
             outer,
             binders: PersistentBinderMap::default(),
+            call_result_point: None,
+        }
+    }
+
+    /// This environment inside `at(selector, ..)`: `result` and region
+    /// results name `selector`'s call.
+    pub(super) fn at_call<'b>(&self, selector: &'b ProgramPointSelector) -> TypingEnvironment<'b>
+    where
+        'a: 'b,
+    {
+        TypingEnvironment {
+            outer: self.outer,
+            binders: self.binders.clone(),
+            call_result_point: Some(selector),
         }
     }
 
@@ -292,7 +328,30 @@ impl<'a> TypingEnvironment<'a> {
 
     /// The call whose result `result` and region results name here.
     pub(super) fn call_result_point(&self) -> Option<&'a ProgramPointSelector> {
-        self.outer.call_result_point()
+        self.call_result_point
+            .or_else(|| self.outer.call_result_point())
+    }
+
+    /// What the pointer a C name is directly bound to steps by. Lowering
+    /// binds a pointer binder to a pointer of its declared type, carrying
+    /// its struct when it declares one (as `ClickType::from_object_pointer_class`
+    /// reads it back), so the declared type answers.
+    pub(super) fn bound_pointer_element(
+        &self,
+        name: &crate::kernel::BindingName,
+    ) -> Option<PointerElement> {
+        match self.binders.get(name) {
+            Some(ClickType::CObjectPointer {
+                interface_type: InterfaceType::Int32Pointer,
+                struct_name,
+            }) => Some(PointerElement::Struct(struct_name.clone())),
+            Some(click_type) => click_type
+                .interface_type()
+                .map(InterfaceType::to_kernel_type)
+                .filter(|ty| ty.is_pointer())
+                .map(|ty| PointerElement::Pointee(ty.pointee_type())),
+            None => self.outer.bound_pointer_element(name),
+        }
     }
 
     /// Whether bare `result` names the contract's return value here.
@@ -330,7 +389,16 @@ pub(super) fn check_declared_binder(
     let by_value = TypingEnvironment::of(lowered);
     let mut by_type = TypingEnvironment::of(lowered);
     by_type.declare(name, declared.clone());
-    let pairs: [(&str, String, String); 7] = [
+    let binding_name = match name {
+        SurfaceBinder::Written(written) => crate::kernel::BindingName::Named(written.clone()),
+        SurfaceBinder::Generated(id) => crate::kernel::BindingName::Generated(*id),
+    };
+    let pairs: [(&str, String, String); 8] = [
+        (
+            "bound_pointer_element",
+            format!("{:?}", by_type.bound_pointer_element(&binding_name)),
+            format!("{:?}", by_value.bound_pointer_element(&binding_name)),
+        ),
         (
             "binding_click_type",
             format!("{:?}", by_type.binding_click_type(name)),

@@ -619,4 +619,163 @@ impl Elaborator<'_> {
             None => Ok(()),
         }
     }
+
+    /// Physical element widths take precedence over scalar resource carriers.
+    pub(super) fn contract_pointer_element_width(
+        &self,
+        expression: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<u32> {
+        match expression {
+            SyntaxTerm::RegionResult(region) => {
+                let ProgramValue::Pointer(pointer) = self
+                    .retained_states?
+                    .region_result_value_at(region, typing.call_result_point())
+                    .ok()?
+                else {
+                    return None;
+                };
+                self.definitions.pointer_element_width(&pointer).ok()
+            }
+            SyntaxTerm::ProgramBinding(name) => self.program_expression_array_element_width(
+                &ProgramExpression::Variable((name.clone()).into()),
+                typing,
+            ),
+            SyntaxTerm::CUnary { lowered, .. }
+            | SyntaxTerm::QualifiedC { lowered, .. }
+            | SyntaxTerm::ProgramExpression(lowered)
+            | SyntaxTerm::Field { lowered, .. } => {
+                self.program_expression_array_element_width(lowered, typing)
+            }
+            SyntaxTerm::Old(inner) | SyntaxTerm::Exact(inner) => {
+                self.contract_pointer_element_width(inner, typing)
+            }
+            SyntaxTerm::At {
+                selector,
+                expression,
+            } => self.contract_pointer_element_width(expression, &typing.at_call(selector)),
+            SyntaxTerm::Add(left, right) => self
+                .contract_pointer_element_width(left, typing)
+                .or_else(|| self.contract_pointer_element_width(right, typing)),
+            SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_width(left, typing),
+            _ => self
+                .contract_pointer_element_type(expression, typing)
+                .map(ProgramType::byte_width),
+        }
+    }
+
+    /// The physical width used by C pointer arithmetic.  A pointer to a
+    /// struct has the nominal compatible `int32*` kernel carrier, so its
+    /// pointee layout must be consulted before falling back to `ProgramType`.
+    pub(super) fn program_expression_array_element_width(
+        &self,
+        expression: &ProgramExpression,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<u32> {
+        if let ProgramExpression::Variable(name) = expression
+            && let Some(width) =
+                name.metadata_in(self.declarations.parameter_pointer_element_widths.as_ref())
+        {
+            return Some(*width);
+        }
+        if let Some(element) = self.direct_pointer_element(expression, typing) {
+            return self.definitions.element_width(&element).ok();
+        }
+        if matches!(expression, ProgramExpression::Variable(name) if name.is_named("result"))
+            && typing.contract_result_in_scope()
+        {
+            return self.program_expression_array_element_width(
+                &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
+                typing,
+            );
+        }
+        match expression {
+            ProgramExpression::AddressOf(target)
+            | ProgramExpression::CheckedObjectAddress(target)
+                if matches!(target.as_ref(), ProgramExpression::Index(..)) =>
+            {
+                let ProgramExpression::Index(base, _) = target.as_ref() else {
+                    unreachable!()
+                };
+                self.program_expression_array_element_width(base, typing)
+            }
+            ProgramExpression::AddressOf(target)
+            | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
+                ProgramExpression::TypedLoad { value_type, .. } => Some(value_type.byte_width()),
+                ProgramExpression::Variable(name) => self
+                    .declarations
+                    .c_variable_type(name)
+                    .map(ProgramType::byte_width),
+                _ => None,
+            },
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer
+                .program_type()
+                .pointee_type()
+                .map(ProgramType::byte_width),
+            ProgramExpression::Cast { target_type, .. } => {
+                target_type.pointee_type().map(ProgramType::byte_width)
+            }
+            ProgramExpression::Variable(name) => name
+                .metadata_in(self.declarations.parameter_pointer_element_widths.as_ref())
+                .copied()
+                .or_else(|| {
+                    name.named()
+                        .and_then(|name| typing.bound_array_element_type(name))
+                        .map(ProgramType::byte_width)
+                })
+                .or_else(|| {
+                    self.declarations
+                        .declared_pointer_element_type(name)
+                        .map(|ty| ty.byte_width())
+                })
+                .or_else(|| {
+                    (name == &crate::kernel::CONTRACT_RESULT)
+                        .then(|| self.declarations.result_type.pointee_type())
+                        .flatten()
+                        .map(ProgramType::byte_width)
+                })
+                .or_else(|| {
+                    self.declarations
+                        .entry_state
+                        .global_array_element_type(name)
+                        .map(ProgramType::byte_width)
+                }),
+            ProgramExpression::TypedLoad { value_type, .. } => match value_type {
+                ProgramType::Int32Array(_) => Some(4),
+                ProgramType::Int64Array(_) | ProgramType::UInt64Array(_) => Some(8),
+                ProgramType::Int128Array(_) | ProgramType::UInt128Array(_) => Some(16),
+                ProgramType::UInt8Array(_) => Some(1),
+                value_type => value_type.pointee_type().map(ProgramType::byte_width),
+            },
+            ProgramExpression::PointerOffsetBytes { pointer, .. }
+            | ProgramExpression::Subobject { pointer, .. } => {
+                self.program_expression_array_element_width(pointer, typing)
+            }
+            ProgramExpression::Add(left, right) => self
+                .program_expression_array_element_width(left, typing)
+                .or_else(|| self.program_expression_array_element_width(right, typing)),
+            ProgramExpression::Subtract(left, _) => {
+                self.program_expression_array_element_width(left, typing)
+            }
+            _ => None,
+        }
+    }
+
+    /// The pointer `expression` directly is, by what it steps by: a pointer
+    /// value, or a C name bound to one. A name bound to a pointer value never
+    /// reaches the declared-type lookups after it, so the lookup that read
+    /// such a value's pointee there was never reached and is not kept.
+    fn direct_pointer_element(
+        &self,
+        expression: &ProgramExpression,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<crate::surface::PointerElement> {
+        match expression {
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                Some(crate::surface::PointerElement::of(pointer))
+            }
+            ProgramExpression::Variable(name) => typing.bound_pointer_element(name),
+            _ => None,
+        }
+    }
 }

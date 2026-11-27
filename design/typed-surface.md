@@ -299,13 +299,17 @@ specification definitions and recorded states. The lowerer delegates those
 queries to it. Comparison elaboration (`elaborate_proposition`,
 `elaborate_comparison` and the native operand forms) also runs on the
 `Elaborator`, reading names through a `TypingEnvironment`. It still asks
-lowering three questions through the `LoweringQueries` trait: whether a
-generic call's result is algebraic at its instantiation, a pointer's element
-width, and a call result's pointer element width. Each moves to the
-`Elaborator` once declared types answer it. The refusal of a step or access
-through an untyped pointer (`refuse_untyped_pointer_access`) already has: it
-reads the declared C types, the typing environment and the recorded region
-results. `annotations/elaboration_tests.rs` elaborates comparisons
+lowering two questions through the `LoweringQueries` trait: whether a generic
+call's result is algebraic at its instantiation, and a call result's pointer
+element width. Each moves to the `Elaborator` once declared types answer it.
+Two have moved: the refusal of a step or access through an untyped pointer
+(`refuse_untyped_pointer_access`), and a pointer's element width
+(`contract_pointer_element_width`). They read the declared C types, the
+typing environment and the recorded region results. A pointer's element can
+still be known only from the value a name is bound to, a struct pointer's
+object class, so `TypeScope::bound_pointer_element` answers it from the
+lowering context, as a type (`PointerElement`), until the declaration scope
+records it. `annotations/elaboration_tests.rs` elaborates comparisons
 from declared types alone: Click binders declared in a `TypingEnvironment`
 over `NoOuterNames`, C parameters in the declarations, and a
 `LoweringQueries` that knows nothing, with no lowerer. The declarations
