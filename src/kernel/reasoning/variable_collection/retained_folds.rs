@@ -324,6 +324,10 @@ pub(super) fn common_variables(
             }
             KernelTermNode::PointerEqual(pair) => {
                 for value in pair.arguments() {
+                    if let Some(count) = value.len() {
+                        leaf_variables
+                            .extend(common_variables(count, mode, summaries).iter().copied());
+                    }
                     for address in value.addresses() {
                         super::retained_pointers::collect_address_variables_with_summaries(
                             address,
@@ -1351,7 +1355,8 @@ mod tests {
                     .with_bounds(Some(SubobjectBounds::new(
                         Address::symbolic(Variable(970_011)),
                         OldMachineTerm::Variable(Variable(970_012)),
-                    ))),
+                    )))
+                    .with_element_count(OldMachineTerm::Variable(Variable(970_013))),
                 ),
                 Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),

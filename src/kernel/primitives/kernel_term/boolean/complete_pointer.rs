@@ -307,6 +307,13 @@ mod tests {
                 let native =
                     OldConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone()));
                 let root = KernelTermImport::default().condition(&native);
+                let stored = StoredConditionTerm::from(native.clone());
+                assert_eq!(stored.root(), Some(&root));
+                let OldConditionTerm::PointerEqual(left, right) = stored.old_form() else {
+                    panic!("expected complete pointer equality");
+                };
+                assert_eq!(left.shared(), a.shared());
+                assert_eq!(right.shared(), b.shared());
                 assert!(matches!(root.node(), KernelTermNode::PointerEqual(_)));
                 assert_eq!(
                     format!("{:?}", KernelTermExport::condition(&root).unwrap()),

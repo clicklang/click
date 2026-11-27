@@ -224,7 +224,7 @@ impl TermRewrite<'_> {
             .into_shared();
         let selected = |address: &A| matches!(address.atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
-            .then(|| Pointer::new(to.clone(), p.program_type).into_shared());
+            .then(|| Pointer::new(to.clone(), source.as_ptr().node().program_type).into_shared());
         let target_identity = to.object_identity().into_shared();
         let provenance = if let Some(target) = &replacement {
             target.node().provenance.clone()

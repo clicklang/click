@@ -323,6 +323,9 @@ impl From<OldConditionTerm> for StoredConditionTerm {
                     *variable,
                 )));
             }
+            OldConditionTerm::PointerEqual(left, right) => {
+                KernelTerm::pointer_equal_raw([left.shared().clone(), right.shared().clone()])
+            }
             OldConditionTerm::AddressEqual(left, right) => {
                 KernelTerm::address_equal_raw([left.shared().clone(), right.shared().clone()])
             }
