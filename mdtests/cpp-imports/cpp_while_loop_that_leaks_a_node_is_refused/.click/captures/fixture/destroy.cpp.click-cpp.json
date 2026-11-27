@@ -215,6 +215,9 @@
         "kind": "free"
       },
       "name": "destroy",
+      "parameter_type_spellings": [
+        "Node *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:destroy.cpp@62@F@destroy#*$@S@Node#@p",

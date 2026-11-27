@@ -104,6 +104,10 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "Stack<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:containers.cpp@769@F@caller#&$@S@Stack>#I#I#@stack",
@@ -417,6 +421,10 @@
         "kind": "free"
       },
       "name": "round_trip",
+      "parameter_type_spellings": [
+        "Container<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:containers.cpp@631@F@round_trip#&$@S@Container>#I#I#@container",
@@ -497,6 +505,9 @@
         }
       },
       "name": "Container__int_push",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#I@F@push#I#@this",
@@ -591,6 +602,9 @@
         }
       },
       "name": "Container__int_pop",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#I@F@pop#&I#@this",
@@ -679,6 +693,9 @@
         "record_name": "Container__param_T"
       },
       "name": "Container__param_T_push",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#$@S@__click_T@F@push#S0_#@this",
@@ -771,6 +788,9 @@
         }
       },
       "name": "Stack__int_push",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@push#I#@this",
@@ -854,6 +874,9 @@
         "record_name": "Container__param_T"
       },
       "name": "Container__param_T_pop",
+      "parameter_type_spellings": [
+        "T &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#$@S@__click_T@F@pop#&S0_#@this",
@@ -951,6 +974,9 @@
         }
       },
       "name": "Stack__int_pop",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@pop#&I#@this",
@@ -1193,6 +1219,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_push",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
@@ -1702,6 +1731,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_pop",
+      "parameter_type_spellings": [
+        "T &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@pop#&S0_#@this",

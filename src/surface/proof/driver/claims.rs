@@ -3230,28 +3230,25 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             };
             // Keep the checked authority for the original claims,
             // but close the rewritten goals in the expanded proof.
-            // Prefer `known` for the residuals, keeping the legacy normalizer
-            // only when a goal needs its broader rules. With
-            // resource claims, keep the ordinary `known` closers: they
-            // follow contract order, whose next goal may be ownership.
+            // Use bare `known` closers when they also close the rewritten
+            // goals. Otherwise keep the certificate with the checked claim
+            // closers in contract order, including any ownership claims.
             if proof_context.constants.grouped_contract
                 && direct_resource_claims.is_empty()
                 && !direct_claims.is_empty()
-                && let Some(closer) = [ProofStep::Known, ProofStep::CompatibilityNormalize(None)]
-                    .into_iter()
-                    .find(|closer| direct_claims.iter().all(|(index, _, _)| {
+                && direct_claims.iter().all(|(index, _, _)| {
                         rewritten_claim_proofs[*index]
                             .as_ref()
                             .is_some_and(|(proof, _)| {
-                                proof.driver().apply_step(closer.clone()).is_ok()
+                                proof.driver().apply_step(ProofStep::Known).is_ok()
                             })
-                    }))
+                    })
             {
                 let mut tactics = direct_proof
                     .certificate_since(&direct_base)?
                     .to_proof_tactics();
                 // Each written closer discharges only the next claim.
-                tactics.extend(std::iter::repeat_n(closer.to_proof_tactic(), direct_claims.len()));
+                tactics.extend(std::iter::repeat_n(ProofTactic::Known, direct_claims.len()));
                 let certificate = ProofCertificate::from_proof_tactics(&tactics)
                     .map_err(|error| ClickError::new(format!(
                         "checked residual closure is not simple: {error}"

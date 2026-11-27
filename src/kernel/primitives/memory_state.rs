@@ -5596,7 +5596,15 @@ impl SymbolicMemory {
         mutable_ranges: &[MemoryRange],
         assumptions: &PureFactContext,
     ) -> Self {
-        self.with_memory_havoc(variable, mutable_ranges, assumptions, None, false, None)
+        self.with_memory_havoc(
+            variable,
+            mutable_ranges,
+            assumptions,
+            None,
+            false,
+            None,
+            None,
+        )
     }
 
     pub(in crate::kernel) fn with_call_memory_havoc(
@@ -5617,9 +5625,32 @@ impl SymbolicMemory {
         kept: Option<&CallKeptOwnership>,
         copy: Option<&RepresentationCopyRange>,
     ) -> Self {
-        self.with_memory_havoc(variable, mutable_ranges, assumptions, kept, true, copy)
+        self.with_bounded_call_memory_havoc(variable, mutable_ranges, assumptions, kept, copy, None)
     }
 
+    /// [`Self::with_call_memory_havoc_with_copy`] for a call whose writes all
+    /// lie inside `resource_bound`, which its step records.
+    pub(in crate::kernel) fn with_bounded_call_memory_havoc(
+        self,
+        variable: Variable,
+        mutable_ranges: &[MemoryRange],
+        assumptions: &PureFactContext,
+        kept: Option<&CallKeptOwnership>,
+        copy: Option<&RepresentationCopyRange>,
+        resource_bound: Option<std::sync::Arc<Resource>>,
+    ) -> Self {
+        self.with_memory_havoc(
+            variable,
+            mutable_ranges,
+            assumptions,
+            kept,
+            true,
+            copy,
+            resource_bound,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn with_memory_havoc(
         mut self,
         variable: Variable,
@@ -5628,6 +5659,7 @@ impl SymbolicMemory {
         kept: Option<&CallKeptOwnership>,
         preserve_local_slots: bool,
         copy: Option<&RepresentationCopyRange>,
+        resource_bound: Option<std::sync::Arc<Resource>>,
     ) -> Self {
         let base = Some(intern_derivation_base(&mut self));
         let candidates = call_havoc_candidates(mutable_ranges);
@@ -5709,6 +5741,7 @@ impl SymbolicMemory {
                     variable,
                     mutable_ranges: mutable_ranges.to_vec(),
                     kept_by_caller: kept_ranges,
+                    resource_bound,
                 },
             );
         }

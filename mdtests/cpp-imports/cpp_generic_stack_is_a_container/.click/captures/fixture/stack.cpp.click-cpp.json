@@ -219,6 +219,10 @@
         "kind": "free"
       },
       "name": "round_trip_virtual",
+      "parameter_type_spellings": [
+        "Container<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@1053@F@round_trip_virtual#&$@S@Container>#I#I#@container",
@@ -605,6 +609,9 @@
         "kind": "free"
       },
       "name": "through",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@1193@F@through#I#@x",
@@ -704,6 +711,9 @@
         }
       },
       "name": "Container__int_put",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#I@F@put#I#@this",
@@ -798,6 +808,9 @@
         }
       },
       "name": "Container__int_take",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#I@F@take#&I#@this",
@@ -896,6 +909,7 @@
         }
       },
       "name": "Stack__int_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@~Stack#@this",
@@ -944,6 +958,9 @@
         "record_name": "Container__param_T"
       },
       "name": "Container__param_T_put",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#$@S@__click_T@F@put#S0_#@this",
@@ -1036,6 +1053,9 @@
         }
       },
       "name": "Stack__int_put",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@put#I#@this",
@@ -1119,6 +1139,9 @@
         "record_name": "Container__param_T"
       },
       "name": "Container__param_T_take",
+      "parameter_type_spellings": [
+        "T &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Container>#$@S@__click_T@F@take#&S0_#@this",
@@ -1216,6 +1239,9 @@
         }
       },
       "name": "Stack__int_take",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@take#&I#@this",
@@ -1583,6 +1609,7 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
@@ -1698,6 +1725,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_put",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@put#S0_#@this",
@@ -1837,6 +1867,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_take",
+      "parameter_type_spellings": [
+        "T &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@take#&S0_#@this",
@@ -2203,6 +2236,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_push",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
@@ -2821,6 +2857,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_pop",
+      "parameter_type_spellings": [
+        "T &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@pop#&S0_#@this",

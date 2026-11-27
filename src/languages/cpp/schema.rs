@@ -455,6 +455,9 @@ pub struct CppFunction {
     pub return_type: CppType,
     pub parameters: Vec<CppPlace>,
     pub declared_noexcept: bool,
+    /// Canonical C++ parameter types, retaining overload distinctions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_type_spellings: Option<Vec<String>>,
     /// A lambda's call operator's leading parameters that are its by-copy
     /// captures; zero for any other function.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -8503,6 +8506,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters: vec![],
             declared_noexcept: true,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: span.clone(),
             body: vec![CppStatement::If {
@@ -8672,6 +8676,7 @@ mod tests {
                 span: cleanup_span(),
             }],
             declared_noexcept: true,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: cleanup_span(),
             body: vec![CppStatement::Return {
@@ -8992,6 +8997,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters,
             declared_noexcept: true,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: cleanup_span(),
             body,
@@ -9073,6 +9079,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters,
             declared_noexcept: true,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: cleanup_span(),
             body,
@@ -9187,6 +9194,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters: vec![],
             declared_noexcept: true,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: cleanup_span(),
             body,
@@ -9344,6 +9352,7 @@ mod tests {
             return_type: CppType::Void,
             parameters: vec![receiver.clone()],
             declared_noexcept: true,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: cleanup_span(),
             body: vec![store],
@@ -9477,6 +9486,7 @@ mod tests {
             return_type: signed_integer(64, false),
             parameters: vec![],
             declared_noexcept: true,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: cleanup_span(),
             body: vec![CppStatement::Return {
@@ -9864,6 +9874,7 @@ mod tests {
             return_type: signed_integer(32, false),
             parameters: vec![place("parameter")],
             declared_noexcept: false,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: cleanup_span(),
             body: vec![

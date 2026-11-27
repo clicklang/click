@@ -27,13 +27,14 @@ fn termination_function_source(function: &str) -> String {
         let mut slot = slot.borrow_mut();
         if let Some(spelling) = slot.as_mut() {
             match spelling.names.spelling(function) {
-                Ok(written) => return written.to_owned(),
+                Ok(Some(written)) => return written.to_owned(),
+                Ok(None) => {}
                 Err(path) => {
                     spelling.missing.get_or_insert(path);
                 }
             }
         }
-        function.to_owned()
+        format!("{function:?}")
     })
 }
 
@@ -60,7 +61,7 @@ pub(super) fn format_termination_certificate(
             .and_then(|spelling| spelling.missing.take())
     }) {
         return Err(ClickError::new(format!(
-            "cannot expand termination for `{path}` (no Surface form: report this as a bug)"
+            "cannot expand termination for `{path}` without a unique C++ declaration signature. Refresh older captures with `click capture`"
         )));
     }
     Ok(output)
@@ -657,7 +658,7 @@ pub(super) fn print_proposition(
                     let SyntaxTerm::Binding(name) = argument else {
                         unreachable!("termination labels are quoted names")
                     };
-                    format!("{:?}", termination_function_source(name))
+                    termination_function_source(name)
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -1363,7 +1364,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             output,
             &prefix,
             &format!(
-                "check_termination_local({:?});",
+                "check_termination_local({});",
                 termination_function_source(function)
             ),
         ),
@@ -1371,7 +1372,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             output,
             &prefix,
             &format!(
-                "check_termination_component({:?}, {});",
+                "check_termination_component({}, {});",
                 termination_function_source(function),
                 if *strict { "strict" } else { "normal" }
             ),

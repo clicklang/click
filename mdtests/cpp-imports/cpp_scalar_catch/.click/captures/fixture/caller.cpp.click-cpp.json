@@ -164,6 +164,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:caller.cpp@95@F@caller#b#@should_throw",
@@ -344,6 +347,9 @@
         "kind": "free"
       },
       "name": "helper",
+      "parameter_type_spellings": [
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:caller.cpp@11@F@helper#b#@should_throw",

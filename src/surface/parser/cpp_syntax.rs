@@ -4,6 +4,125 @@
 
 use super::*;
 
+/// A declaration signature uses the same path as a contract head and the
+/// canonical C++ parameter types. The lookup never relies on execution widths.
+#[derive(Clone, Default)]
+pub(in crate::surface) struct DeclarationSignatures(
+    BTreeMap<SignatureKey, Option<DeclarationTarget>>,
+);
+
+#[derive(Clone)]
+struct DeclarationTarget {
+    key: String,
+    written: String,
+    addressable: bool,
+}
+
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+struct SignatureKey {
+    path: String,
+    parameters: Vec<String>,
+    constant: bool,
+}
+
+fn declaration_path_at(tokens: &[Token], start: usize) -> Option<(String, usize)> {
+    let (segments, end) = cpp_path_at(tokens, start)?;
+    lambda_path_at(tokens, end, &segments)
+        .or_else(|| Some((crate::languages::cpp::names::path_name(&segments), end)))
+}
+
+fn signature_at(tokens: &[Token], start: usize) -> Option<(SignatureKey, usize)> {
+    let (path, open) = declaration_path_at(tokens, start)?;
+    if tokens.get(open) != Some(&Token::LParen) {
+        return None;
+    }
+    let mut depth = 1;
+    let first = open + 1;
+    let close = tokens[first..].iter().position(|token| {
+        match token {
+            Token::LParen => depth += 1,
+            Token::RParen => depth -= 1,
+            _ => {}
+        }
+        depth == 0
+    })? + first;
+    let constant = matches!(tokens.get(close + 1), Some(Token::Ident(name)) if name == "const");
+    let parameters = tokens[first..close].iter().map(Token::describe).collect();
+    Some((
+        SignatureKey {
+            path,
+            parameters,
+            constant,
+        },
+        close + 1 + usize::from(constant),
+    ))
+}
+
+impl DeclarationSignatures {
+    pub(in crate::surface) fn insert(&mut self, signature: &str, key: &str, addressable: bool) {
+        let Ok((tokens, _)) = super::tokenizer::tokenize(signature, None) else {
+            return;
+        };
+        if let Some((reference, end)) = signature_at(&tokens, 0)
+            && end == tokens.len()
+        {
+            self.0
+                .entry(reference)
+                .and_modify(|entry| *entry = None)
+                .or_insert_with(|| {
+                    Some(DeclarationTarget {
+                        key: key.to_owned(),
+                        written: signature.to_owned(),
+                        addressable,
+                    })
+                });
+        }
+    }
+}
+
+impl Parser {
+    pub(super) fn parse_termination_function_reference(&mut self) -> Result<String, ClickError> {
+        if !self.verifies_cpp() || matches!(self.peek(), Some(Token::String(_))) {
+            return self.expect_string("function name");
+        }
+        let (path, end) = declaration_path_at(&self.tokens, self.position)
+            .ok_or_else(|| self.error("expected a C++ function reference"))?;
+        if self.tokens.get(end) == Some(&Token::LParen) {
+            return self
+                .parse_cpp_signature_reference(false)
+                .map(|(key, _)| key);
+        }
+        self.position = end;
+        Ok(path)
+    }
+
+    pub(super) fn has_cpp_overloaded_address(&self) -> bool {
+        declaration_path_at(&self.tokens, self.position + 1).is_some_and(|(path, end)| {
+            self.cpp_overloads.contains_key(&path) && self.tokens.get(end) == Some(&Token::LParen)
+        })
+    }
+
+    pub(super) fn parse_cpp_signature_reference(
+        &mut self,
+        address: bool,
+    ) -> Result<(String, String), ClickError> {
+        let Some((reference, end)) = signature_at(&self.tokens, self.position) else {
+            return Err(self.error("expected a C++ function signature"));
+        };
+        let Some(Some(function)) = self.cpp_signatures.0.get(&reference) else {
+            return Err(self.error(format!(
+                "no unique C++ declaration for this signature of `{}`",
+                crate::languages::display_source_names(&reference.path)
+            )));
+        };
+        if address && !function.addressable {
+            return Err(self.error("this C++ member function has no ordinary function pointer"));
+        }
+        self.position = end;
+        Ok((function.key.clone(), function.written.clone()))
+    }
+}
+
 /// A C++ head's declarator, resolved to the name the C++ importer gives the
 /// declaration at its path: `Rec::m`, `Rec::Rec`, `Rec::~Rec`,
 /// `Rec::operator+=`, `ns::f`, `Stored<long long>::Read`, `choose<true>`, and

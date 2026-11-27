@@ -56,11 +56,11 @@
         "sources": {
           "lambda.cpp": {
             "artifact": {
-              "bytes": 13135,
+              "bytes": 13345,
               "path": ".click/captures/fixture/lambda.cpp.click-cpp.json",
-              "sha256": "3da04b6028a44384bd21f5107ddb79fa0a98fb78b2ebf65a236ce335c4c4973a"
+              "sha256": "42d15278a744639c1cd622d55524a00d422ab0cce41cd6f9801ef1b8c8c6aefc"
             },
-            "identity": "584793c9f24ea4336813c6f41a776ad68c36c89a7a156971f3953d3c8839732a",
+            "identity": "13f2a005dffcdd16a647952555204f02a0d44be1a14def3d6e7589d749d7ae0d",
             "inputs": {
               "$unit/lambda.cpp": "1129b76ec4f8b0447230f65c5fe798dd1e541862dc8dd0a1600e9ec8f4c61b38"
             }

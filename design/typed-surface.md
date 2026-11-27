@@ -345,8 +345,12 @@ clause is elaborated inside lowering. The type-inference failure the
 elaboration recorded is handed to lowering where in-place elaboration would
 have left it. Debug builds check, at each clause and each binder body, that
 the stored Surface is what elaborating that Syntax where it is lowered gives
-(`check_stored_elaboration`). Other clause kinds still elaborate inside
-lowering.
+(`check_stored_elaboration`). A requirement checked at a call site or as a
+contract guard (`elaborate_requirement_proposition`) is elaborated the same
+way, once and before it is lowered, from the callee's parameters; its
+elaborator still reads a global from the entry state when the call site has
+no global declarations, since call sites do not yet carry the callee's.
+Other clause kinds still elaborate inside lowering.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
 entry values, and the state that declares the clause's locals) for names that

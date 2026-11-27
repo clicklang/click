@@ -184,6 +184,10 @@
         "kind": "free"
       },
       "name": "store",
+      "parameter_type_spellings": [
+        "Holder<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:holders.cpp@294@F@store#&$@S@Holder>#I#I#@holder",
@@ -402,6 +406,10 @@
         "kind": "free"
       },
       "name": "through",
+      "parameter_type_spellings": [
+        "Wrap<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:holders.cpp@411@F@through#&$@S@Wrap>#I#I#@wrap",
@@ -573,6 +581,9 @@
         "kind": "free"
       },
       "name": "peek",
+      "parameter_type_spellings": [
+        "const Holder<unsigned int> &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:holders.cpp@513@F@peek#&1$@S@Holder>#i#@holder",
@@ -743,6 +754,9 @@
         "kind": "free"
       },
       "name": "through_peek",
+      "parameter_type_spellings": [
+        "const Wrap<unsigned int> &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:holders.cpp@642@F@through_peek#&1$@S@Wrap>#i#@wrap",
@@ -844,6 +858,9 @@
         }
       },
       "name": "Holder__int_put",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Holder>#I@F@put#I#@this",
@@ -938,6 +955,7 @@
         }
       },
       "name": "Holder__int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Holder>#I@F@get#1@this",
@@ -1018,6 +1036,7 @@
         }
       },
       "name": "Holder__unsigned_int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Holder>#i@F@get#1@this",
@@ -1087,6 +1106,9 @@
         "record_name": "Holder__param_T"
       },
       "name": "Holder__param_T_put",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Holder>#$@S@__click_T@F@put#S0_#@this",
@@ -1179,6 +1201,9 @@
         }
       },
       "name": "Wrap__int_put",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Wrap>#I@F@put#I#@this",
@@ -1262,6 +1287,7 @@
         "record_name": "Holder__param_T"
       },
       "name": "Holder__param_T_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Holder>#$@S@__click_T@F@get#1@this",
@@ -1340,6 +1366,7 @@
         }
       },
       "name": "Wrap__int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Wrap>#I@F@get#1@this",
@@ -1420,6 +1447,7 @@
         }
       },
       "name": "Wrap__unsigned_int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Wrap>#i@F@get#1@this",
@@ -1549,6 +1577,9 @@
         "record_name": "Wrap__param_T"
       },
       "name": "Wrap__param_T_put",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@put#S0_#@this",
@@ -1680,6 +1711,7 @@
         "record_name": "Wrap__param_T"
       },
       "name": "Wrap__param_T_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@get#1@this",

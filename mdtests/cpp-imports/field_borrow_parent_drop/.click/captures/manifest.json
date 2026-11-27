@@ -56,11 +56,11 @@
         "sources": {
           "field_drop.cpp": {
             "artifact": {
-              "bytes": 19165,
+              "bytes": 19325,
               "path": ".click/captures/fixture/field_drop.cpp.click-cpp.json",
-              "sha256": "be6463b24da42dd2def7c233e76da13d53b2d78ad7b846d5c7deb085f051ff3b"
+              "sha256": "dd42a2c31c7c9d6c8f854e85966ed585ec664014412e7afe8fd3ae4c08325338"
             },
-            "identity": "1b1938a33841572f634e3405f58a1b636a33ae093e7cd44ce5423f569673f036",
+            "identity": "b77ecfca7596bbec944a187dc5d6bdb8b22098a855c0646e66f62a44e685149b",
             "inputs": {
               "$unit/field_drop.cpp": "06ff84357ed52897d0699d93a68cdee16c6e20c3ef8648a5b9407c54ed8f6274"
             }

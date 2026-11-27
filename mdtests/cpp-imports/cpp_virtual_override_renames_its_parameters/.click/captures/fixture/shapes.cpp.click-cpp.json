@@ -105,6 +105,10 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "const Square &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@443@F@caller#&1$@S@Square#I#@square",
@@ -287,6 +291,10 @@
         "kind": "free"
       },
       "name": "total",
+      "parameter_type_spellings": [
+        "const Shape &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@357@F@total#&1$@S@Shape#I#@shape",
@@ -536,6 +544,9 @@
         "record_name": "Shape"
       },
       "name": "Shape_twice",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@twice#I#1@this",
@@ -606,6 +617,9 @@
         "record_name": "Shape"
       },
       "name": "Shape_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@area#I#1@this",
@@ -769,6 +783,9 @@
         "record_name": "Square"
       },
       "name": "Square_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@area#I#1@this",
@@ -944,6 +961,9 @@
         "record_name": "Tile"
       },
       "name": "Tile_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Tile@F@area#I#1@this",

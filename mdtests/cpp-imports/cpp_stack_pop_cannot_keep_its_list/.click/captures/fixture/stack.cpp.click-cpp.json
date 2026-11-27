@@ -354,6 +354,9 @@
         "kind": "free"
       },
       "name": "round_trip",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@609@F@round_trip#I#@x",
@@ -724,6 +727,9 @@
         "record_name": "Stack__int"
       },
       "name": "Stack__int_push",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@push#I#@this",
@@ -1346,6 +1352,9 @@
         "record_name": "Stack__int"
       },
       "name": "Stack__int_pop",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@pop#&I#@this",

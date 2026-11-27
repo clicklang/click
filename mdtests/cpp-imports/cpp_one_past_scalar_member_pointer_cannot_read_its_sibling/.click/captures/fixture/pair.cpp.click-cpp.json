@@ -124,6 +124,9 @@
         "kind": "free"
       },
       "name": "probe",
+      "parameter_type_spellings": [
+        "Pair &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:pair.cpp@50@F@probe#&$@S@Pair#@pair",

@@ -80,6 +80,10 @@
         "kind": "free"
       },
       "name": "store",
+      "parameter_type_spellings": [
+        "Holder<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:holders.cpp@212@F@store#&$@S@Holder>#I#I#@holder",
@@ -195,6 +199,9 @@
         }
       },
       "name": "Holder__int_put",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Holder>#I@F@put#I#@this",
@@ -266,6 +273,9 @@
         "record_name": "Holder__param_T"
       },
       "name": "Holder__param_T_put",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Holder>#$@S@__click_T@F@put#S0_#@this",
@@ -407,6 +417,9 @@
         "record_name": "Wrap__param_T"
       },
       "name": "Wrap__param_T_put",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Wrap>#$@S@__click_T@F@put#S0_#@this",

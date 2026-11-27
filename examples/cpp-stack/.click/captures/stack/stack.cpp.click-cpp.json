@@ -387,6 +387,9 @@
         "kind": "free"
       },
       "name": "round_trip",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@774@F@round_trip#I#@x",
@@ -783,6 +786,9 @@
         "kind": "free"
       },
       "name": "pushed_size",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@915@F@pushed_size#I#@x",
@@ -1150,6 +1156,7 @@
         "record_name": "Stack__int"
       },
       "name": "Stack__int_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@~Stack#@this",
@@ -1480,6 +1487,9 @@
         "record_name": "Stack__int"
       },
       "name": "Stack__int_push",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@push#I#@this",
@@ -2102,6 +2112,9 @@
         "record_name": "Stack__int"
       },
       "name": "Stack__int_pop",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@pop#&I#@this",
@@ -2225,6 +2238,7 @@
         "record_name": "Stack__int"
       },
       "name": "Stack__int_size",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@size#1@this",

@@ -136,6 +136,7 @@ mod tests {
             return_type: CppType::Void,
             parameters: vec![],
             declared_noexcept: false,
+            parameter_type_spellings: None,
             closure_captures: 0,
             span: CppSpan {
                 file: "fixture.cpp".into(),

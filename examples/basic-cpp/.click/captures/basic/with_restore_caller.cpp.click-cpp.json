@@ -145,6 +145,10 @@
         "kind": "free"
       },
       "name": "call_with_restore",
+      "parameter_type_spellings": [
+        "bool",
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:with_restore_caller.cpp@373@F@call_with_restore#b#&I#@early",
@@ -557,6 +561,10 @@
         "kind": "free"
       },
       "name": "with_restore",
+      "parameter_type_spellings": [
+        "bool",
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:with_restore_caller.cpp@208@F@with_restore#b#&I#@early",
@@ -718,6 +726,7 @@
         "record_name": "Restore"
       },
       "name": "Restore_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Restore@F@~Restore#@this",
@@ -982,6 +991,9 @@
         "record_name": "Restore"
       },
       "name": "Restore_constructor",
+      "parameter_type_spellings": [
+        "int *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Restore@F@Restore#*I#@this",

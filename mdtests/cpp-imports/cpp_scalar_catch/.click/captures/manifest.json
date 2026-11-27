@@ -56,11 +56,11 @@
         "sources": {
           "caller.cpp": {
             "artifact": {
-              "bytes": 10201,
+              "bytes": 10321,
               "path": ".click/captures/fixture/caller.cpp.click-cpp.json",
-              "sha256": "cce9354041763cb04167f4a5f9d795ce95039a871f5a4ed2227d75d052de7ca7"
+              "sha256": "3f9d33d76da20f9d11428f4b1a6f2f79f7c3c555a7aaec5303bc35f14b98c2a1"
             },
-            "identity": "a46f4d3fbb5f3cbbfa131a24a51344b7b61134ce45fbe1894a050a1a7787dadb",
+            "identity": "11dddbf849f4b33bfe9d90b294b13c8734ed13bf2fe7a67ae4abf6b897f8f01e",
             "inputs": {
               "$unit/caller.cpp": "2d56132b738c7c4a4780b9f0c4cb7c80421d50b1ba992566345d252059effb98"
             }

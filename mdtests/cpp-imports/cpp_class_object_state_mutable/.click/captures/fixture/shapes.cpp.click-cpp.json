@@ -231,6 +231,11 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "Square &",
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@435@F@caller#&$@S@Square#I#I#@square",
@@ -423,6 +428,10 @@
         "kind": "free"
       },
       "name": "bump",
+      "parameter_type_spellings": [
+        "Shape &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@294@F@bump#&$@S@Shape#I#@shape",
@@ -554,6 +563,10 @@
         "kind": "free"
       },
       "name": "reset",
+      "parameter_type_spellings": [
+        "Shape &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@366@F@reset#&$@S@Shape#I#@shape",
@@ -619,6 +632,9 @@
         "record_name": "Shape"
       },
       "name": "Shape_grow",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@grow#I#@this",
@@ -702,6 +718,9 @@
         "record_name": "Shape"
       },
       "name": "Shape_set",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@set#I#@this",
@@ -905,6 +924,9 @@
         "record_name": "Square"
       },
       "name": "Square_grow",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@grow#I#@this",
@@ -1096,6 +1118,9 @@
         "record_name": "Square"
       },
       "name": "Square_set",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@set#I#@this",

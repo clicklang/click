@@ -88,6 +88,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "Square &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@293@F@caller#&$@S@Square#@sq",
@@ -293,6 +296,10 @@
         "kind": "free"
       },
       "name": "peek_then_poke",
+      "parameter_type_spellings": [
+        "const Shape &",
+        "Square &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@203@F@peek_then_poke#&1$@S@Shape#&$@S@Square#@a",
@@ -364,6 +371,9 @@
         "record_name": "Shape"
       },
       "name": "Shape_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@area#I#1@this",
@@ -549,6 +559,9 @@
         "record_name": "Square"
       },
       "name": "Square_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@area#I#1@this",

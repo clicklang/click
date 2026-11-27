@@ -282,6 +282,9 @@
         "record_name": "FeeFrac"
       },
       "name": "FeeFrac_operator_add_assign",
+      "parameter_type_spellings": [
+        "const FeeFrac &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@FeeFrac@F@operator+=#&1$@S@FeeFrac#@this",
@@ -613,6 +616,9 @@
         "record_name": "FeeFrac"
       },
       "name": "FeeFrac_operator_subtract_assign",
+      "parameter_type_spellings": [
+        "const FeeFrac &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@FeeFrac@F@operator-=#&1$@S@FeeFrac#@this",
@@ -767,6 +773,7 @@
         "record_name": "FeeFrac"
       },
       "name": "FeeFrac_IsEmpty",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@FeeFrac@F@IsEmpty#1@this",
@@ -936,6 +943,10 @@
         "record_name": "FeeFrac"
       },
       "name": "FeeFrac_Mul",
+      "parameter_type_spellings": [
+        "long",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:feefrac.h@3736@S@FeeFrac@F@Mul#L#I#S@a",
@@ -1705,6 +1716,11 @@
         "record_name": "FeeFrac"
       },
       "name": "FeeFrac_Div",
+      "parameter_type_spellings": [
+        "__int128",
+        "int",
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:feefrac.h@4132@S@FeeFrac@F@Div#J#I#b#S@n",

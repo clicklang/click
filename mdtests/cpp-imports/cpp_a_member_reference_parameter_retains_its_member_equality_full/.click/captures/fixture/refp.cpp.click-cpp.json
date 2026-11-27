@@ -85,6 +85,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "Pair &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:refp.cpp@112@F@caller#&$@S@Pair#@pair",
@@ -271,6 +274,10 @@
         "kind": "free"
       },
       "name": "reach",
+      "parameter_type_spellings": [
+        "Pair &",
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:refp.cpp@50@F@reach#&$@S@Pair#&I#@pair",

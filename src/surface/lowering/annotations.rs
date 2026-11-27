@@ -3010,10 +3010,16 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         retained_states: None,
         loop_records: None,
     };
-    lowerer.click_proposition_to_spec_proposition(
-        proposition,
-        &SpecElaborationContext::for_function_contract(),
-    )
+    // The requirement is elaborated once, binder bodies included, before
+    // it is lowered. Its elaborator reads the callee's parameters, and a
+    // global from the entry state when the call site has no declarations.
+    let context = SpecElaborationContext::for_function_contract();
+    let (surface, _elaboration_failure) = lowerer
+        .elaborator()
+        .elaborate_contract_clause(proposition, &context);
+    #[cfg(debug_assertions)]
+    elaborator::check_stored_elaboration(&lowerer, &surface, proposition, &context);
+    lowerer.lower_surface_proposition(&surface, &context)
 }
 
 /// The block with each frontier loop clause resolved through the proof scope
@@ -6701,6 +6707,13 @@ impl AnnotationLowerer<'_> {
                 value_type: *value_type,
                 exact: false,
             }),
+            SyntaxTerm::CUnary {
+                lowered: lowered @ ProgramExpression::FunctionAddress(_),
+                ..
+            } => self.lower_contract_expression_to_spec(
+                &SyntaxTerm::ProgramExpression(lowered.clone()),
+                environment,
+            ),
             SyntaxTerm::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {

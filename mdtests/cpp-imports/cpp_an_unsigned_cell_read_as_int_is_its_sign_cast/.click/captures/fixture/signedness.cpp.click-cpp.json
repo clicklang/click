@@ -68,6 +68,9 @@
         "kind": "free"
       },
       "name": "read_signed",
+      "parameter_type_spellings": [
+        "const unsigned int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:signedness.cpp@16@F@read_signed#&1i#@u",
@@ -157,6 +160,9 @@
         "kind": "free"
       },
       "name": "read_unsigned",
+      "parameter_type_spellings": [
+        "const unsigned int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:signedness.cpp@107@F@read_unsigned#&1i#@u",
@@ -302,6 +308,9 @@
         "kind": "free"
       },
       "name": "store_and_read_signed",
+      "parameter_type_spellings": [
+        "unsigned int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:signedness.cpp@179@F@store_and_read_signed#&i#@u",

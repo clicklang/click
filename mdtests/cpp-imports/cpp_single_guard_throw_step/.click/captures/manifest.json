@@ -56,11 +56,11 @@
         "sources": {
           "single_guard_step.cpp": {
             "artifact": {
-              "bytes": 30872,
+              "bytes": 31108,
               "path": ".click/captures/fixture/single_guard_step.cpp.click-cpp.json",
-              "sha256": "436bf35fbb1fe7230755b6ee53e198c614e4c40444ec6333f103c8cff6c49ea8"
+              "sha256": "012361d395a99281a6258c65f056e443470efb22a8dc5199a0e8b13117f141bd"
             },
-            "identity": "a5a6c9536fed616d098e2a615c39f36630771c6b56d1ca6d34b939581728736e",
+            "identity": "c6b0b1f72c50a46fe142ee358472641a01738992d288336ecccac6d7ee471f4c",
             "inputs": {
               "$unit/single_guard_step.cpp": "2757971b4a589bcbed041a8d1dfa661512efa25e0e6f9d65ee36d303f3561c85"
             }

@@ -208,6 +208,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "Cell *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:cleanup.cpp@156@F@caller#*$@S@Cell#@cell",
@@ -349,6 +352,7 @@
         "record_name": "Guard"
       },
       "name": "Guard_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Guard@F@~Guard#@this",
@@ -446,6 +450,9 @@
         "kind": "free"
       },
       "name": "set",
+      "parameter_type_spellings": [
+        "Cell *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:cleanup.cpp@103@F@set#*$@S@Cell#@cell",

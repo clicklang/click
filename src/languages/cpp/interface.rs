@@ -593,7 +593,33 @@ fn function_interface(
     )
     .with_return_reference(return_reference)
     .with_return_pointee_constant(return_constant);
-    interface.cpp_declaration_site = Some(std::sync::Arc::new(source.span.clone()));
+    let parameter_count = source.parameters.len() - usize::from(source.receiver().is_some());
+    let explicit = parameter_count
+        .checked_sub(source.closure_captures)
+        .ok_or("C++ closure has more captures than parameters")?;
+    let types = source.parameter_type_spellings.as_deref();
+    if types.is_some_and(|types| types.len() != explicit) {
+        return Err(format!(
+            "C++ declaration `{}` has inconsistent parameter spellings",
+            source.name
+        ));
+    }
+    // Frozen captures can supply a complete zero-parameter signature without
+    // this metadata. Other overloads need a capture with exact native types.
+    if let Some(types) = types.or_else(|| (explicit == 0).then_some(&[])) {
+        let path = super::names::cpp_display_name(lowered.name())
+            .unwrap_or_else(|| lowered.name().to_owned());
+        let qualification = if matches!(
+            source.function_kind,
+            super::CppFunctionKind::Method { is_const: true, .. }
+        ) {
+            " const"
+        } else {
+            ""
+        };
+        interface.cpp_source_signature =
+            Some(format!("{path}({}){qualification}", types.join(", ")).into());
+    }
     // An axiom keeps no body: its calls are checked against a contract.
     // A pure virtual method is only its interface.
     // A generic method's instance is verified as that method, once.

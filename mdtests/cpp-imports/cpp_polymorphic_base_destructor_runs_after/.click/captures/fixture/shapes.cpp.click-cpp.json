@@ -220,6 +220,10 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "int &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@426@F@caller#&I#I#@out",
@@ -400,6 +404,7 @@
         "record_name": "Shape"
       },
       "name": "Shape_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@~Shape#@this",
@@ -601,6 +606,7 @@
         "record_name": "Square"
       },
       "name": "Square_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@~Square#@this",
@@ -770,6 +776,10 @@
         "record_name": "Square"
       },
       "name": "Square_constructor",
+      "parameter_type_spellings": [
+        "int &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@Square#&I#I#@this",
@@ -921,6 +931,9 @@
         "record_name": "Shape"
       },
       "name": "Shape_constructor",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@Shape#&I#@this",

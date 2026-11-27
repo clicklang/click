@@ -6,9 +6,8 @@ use crate::kernel::{
 };
 use crate::persistent::PersistentMap;
 
-/// The source spellings of resolved C++ functions, prepared before checking
-/// a termination proof. A shared path needs the written declaration location
-/// as well. Including the path keeps different template instances distinct.
+/// Bidirectional source spellings for termination proofs. Overloads use
+/// the same native signature reference that the parser resolves elsewhere.
 #[derive(Default)]
 pub(in crate::surface) struct TerminationSourceNames {
     cpp: bool,
@@ -28,29 +27,29 @@ impl TerminationSourceNames {
                 continue;
             }
             names.cpp = true;
-            let Some(path) = function.cpp_call_path(key) else {
-                continue;
-            };
+            let path = function
+                .cpp_call_path(key)
+                .unwrap_or_else(|| key.to_owned());
             crate::instrumentation::record_deterministic_work(1);
             let source = if is_declaration_key(key) {
-                let Some(site) = &function.cpp_declaration_site else {
+                let Some(signature) = &function.cpp_source_signature else {
                     continue;
                 };
-                format!(
-                    "{path} at {}:{}:{}",
-                    site.file, site.start_line, site.start_column
-                )
+                signature.to_string()
             } else {
                 path
             };
             names.by_key.insert(key.to_owned(), source.clone());
-            names
-                .by_spelling
-                .entry(source)
-                .and_modify(|target| *target = None)
-                .or_insert_with(|| Some(key.to_owned()));
+            names.register_spelling(source, key);
         }
         names
+    }
+
+    fn register_spelling(&mut self, source: String, key: &str) {
+        self.by_spelling
+            .entry(source)
+            .and_modify(|target| *target = None)
+            .or_insert_with(|| Some(key.to_owned()));
     }
 
     /// Compatibility for already-written certificates uses their exact
@@ -62,18 +61,22 @@ impl TerminationSourceNames {
         })
     }
 
-    pub(in crate::surface) fn spelling<'s>(&'s self, key: &'s str) -> Result<&'s str, String> {
+    pub(in crate::surface) fn spelling<'s>(
+        &'s self,
+        key: &'s str,
+    ) -> Result<Option<&'s str>, String> {
+        let key = self.resolve(key)?;
         if let Some(written) = self.by_key.get(key)
             && self.resolve(written).ok() == Some(key)
         {
-            return Ok(written);
+            return Ok(Some(written));
         }
         if self.cpp
             && let Some(path) = crate::languages::cpp::names::cpp_display_name(key)
         {
             return Err(path);
         }
-        Ok(key)
+        Ok(None)
     }
 }
 
