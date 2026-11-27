@@ -5482,6 +5482,7 @@ impl AnnotationLowerer<'_> {
                         }
                         _ => return Err(format!("invalid arguments to `{name}`")),
                     };
+                    let function = self.spec_definitions.termination_function_key(function)?;
                     let Proposition::Predicate { name, arguments } = scope.atom(kind, function)?
                     else {
                         unreachable!()

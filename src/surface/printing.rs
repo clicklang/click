@@ -10,6 +10,62 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+use super::proof::program_termination::TerminationSourceNames;
+
+struct TerminationSpelling {
+    names: std::sync::Arc<TerminationSourceNames>,
+    missing: Option<String>,
+}
+
+thread_local! {
+    static TERMINATION_SPELLING: std::cell::RefCell<Option<TerminationSpelling>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn termination_function_source(function: &str) -> String {
+    TERMINATION_SPELLING.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Some(spelling) = slot.as_mut() {
+            match spelling.names.spelling(function) {
+                Ok(written) => return written.to_owned(),
+                Err(path) => {
+                    spelling.missing.get_or_insert(path);
+                }
+            }
+        }
+        function.to_owned()
+    })
+}
+
+pub(super) fn format_termination_certificate(
+    certificate: &ProofCertificate,
+    names: std::sync::Arc<TerminationSourceNames>,
+) -> Result<String, ClickError> {
+    struct Restore(Option<TerminationSpelling>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TERMINATION_SPELLING.with(|slot| slot.replace(self.0.take()));
+        }
+    }
+    let _restore = Restore(TERMINATION_SPELLING.with(|slot| {
+        slot.replace(Some(TerminationSpelling {
+            names,
+            missing: None,
+        }))
+    }));
+    let output = format_proof_certificate(certificate);
+    if let Some(path) = TERMINATION_SPELLING.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .and_then(|spelling| spelling.missing.take())
+    }) {
+        return Err(ClickError::new(format!(
+            "cannot expand termination for `{path}` (no Surface form: report this as a bug)"
+        )));
+    }
+    Ok(output)
+}
+
 pub(super) const CLOSE_CALL: &str = "close();";
 
 /// The contract declaration names available while writing a checked proof.
@@ -601,7 +657,7 @@ pub(super) fn print_proposition(
                     let SyntaxTerm::Binding(name) = argument else {
                         unreachable!("termination labels are quoted names")
                     };
-                    format!("{name:?}")
+                    format!("{:?}", termination_function_source(name))
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -1306,13 +1362,17 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CheckTerminationLocal(function) => line(
             output,
             &prefix,
-            &format!("check_termination_local({function:?});"),
+            &format!(
+                "check_termination_local({:?});",
+                termination_function_source(function)
+            ),
         ),
         ProofTactic::CheckTerminationComponent { function, strict } => line(
             output,
             &prefix,
             &format!(
-                "check_termination_component({function:?}, {});",
+                "check_termination_component({:?}, {});",
+                termination_function_source(function),
                 if *strict { "strict" } else { "normal" }
             ),
         ),

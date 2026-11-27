@@ -4062,6 +4062,9 @@ lower-callee classifications as available facts. Strict mode refuses indirect
 calls; normal mode uses the established callback classification when necessary.
 `check_termination_callbacks()` needs strict classifications for the generated
 callback targets. Each needed classification may be positive or negative.
+In a C++ termination proof, an overload is named by its path and declaration
+location, as in `check_termination_local("Cell<int>::get at cell.cpp:6:5")`.
+A qualified path without a location identifies a declaration with a unique path.
 
 **Guarantee:** the step publishes the corresponding checked classifications,
 including negations for refused descent or dependencies. It does not search for

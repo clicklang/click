@@ -6,6 +6,77 @@ use crate::kernel::{
 };
 use crate::persistent::PersistentMap;
 
+/// The source spellings of resolved C++ functions, prepared before checking
+/// a termination proof. A shared path needs the written declaration location
+/// as well. Including the path keeps different template instances distinct.
+#[derive(Default)]
+pub(in crate::surface) struct TerminationSourceNames {
+    cpp: bool,
+    by_key: BTreeMap<String, String>,
+    by_spelling: BTreeMap<String, Option<String>>,
+}
+
+impl TerminationSourceNames {
+    pub(in crate::surface) fn new<'a>(
+        functions: impl Iterator<Item = &'a crate::languages::interface::ImportedFunction>,
+    ) -> Self {
+        use crate::languages::cpp::names::is_declaration_key;
+        let mut names = Self::default();
+        for function in functions {
+            let key = function.name();
+            if !function.has_cpp_call_paths() {
+                continue;
+            }
+            names.cpp = true;
+            let Some(path) = function.cpp_call_path(key) else {
+                continue;
+            };
+            crate::instrumentation::record_deterministic_work(1);
+            let source = if is_declaration_key(key) {
+                let Some(site) = &function.cpp_declaration_site else {
+                    continue;
+                };
+                format!(
+                    "{path} at {}:{}:{}",
+                    site.file, site.start_line, site.start_column
+                )
+            } else {
+                path
+            };
+            names.by_key.insert(key.to_owned(), source.clone());
+            names
+                .by_spelling
+                .entry(source)
+                .and_modify(|target| *target = None)
+                .or_insert_with(|| Some(key.to_owned()));
+        }
+        names
+    }
+
+    /// Compatibility for already-written certificates uses their exact
+    /// verifier key. A source spelling must identify one function.
+    pub(in crate::surface) fn resolve<'s>(&'s self, written: &'s str) -> Result<&'s str, String> {
+        self.by_spelling.get(written).map_or(Ok(written), |key| {
+            key.as_deref()
+                .ok_or_else(|| format!("ambiguous termination function `{written}`"))
+        })
+    }
+
+    pub(in crate::surface) fn spelling<'s>(&'s self, key: &'s str) -> Result<&'s str, String> {
+        if let Some(written) = self.by_key.get(key)
+            && self.resolve(written).ok() == Some(key)
+        {
+            return Ok(written);
+        }
+        if self.cpp
+            && let Some(path) = crate::languages::cpp::names::cpp_display_name(key)
+        {
+            return Err(path);
+        }
+        Ok(key)
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct TerminationDiagnostics {
     local: PersistentMap<String, Option<TerminationRefusal>>,
@@ -158,6 +229,7 @@ pub(in crate::surface) fn prove(
     definitions: SpecDefinitions<'_>,
     theorems: &TheoremEnvironment,
     tactic_names: &BTreeSet<String>,
+    source_names: &TerminationSourceNames,
 ) -> Result<(crate::kernel::ProvedProgramContracts, ProofCertificate), ClickError> {
     let scope = generated.into_ordinary_scope();
     let surface_goal = spelling(&scope, scope.goal());
@@ -171,7 +243,7 @@ pub(in crate::surface) fn prove(
         requires: vec![],
         surface_requirements: Default::default(),
     };
-    let definitions = definitions.with_termination_scope(&scope, tactic_names);
+    let definitions = definitions.with_termination_scope(&scope, tactic_names, source_names);
     let root =
         Proof::for_program_termination(&scope, &surface_goal, &context, definitions, theorems);
     let _claim = implicit_solve_scope::ClaimScope::enter("program.termination");

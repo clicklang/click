@@ -32,8 +32,23 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_termination_check(
         &self,
-        step: TerminationCheck,
+        mut step: TerminationCheck,
     ) -> Result<KernelProofHandle, ClickError> {
+        if let ProofContext::Pure(context) = self.context.as_ref() {
+            match &mut step {
+                TerminationCheck::Local(function)
+                | TerminationCheck::Component { function, .. } => {
+                    let key = context
+                        .spec_definitions
+                        .termination_function_key(function)
+                        .map_err(|error| self.step_error(error))?;
+                    if key != function.as_str() {
+                        *function = key.to_owned();
+                    }
+                }
+                TerminationCheck::Callbacks => {}
+            }
+        }
         let (state, report) = self
             .state
             .check_termination(&step)

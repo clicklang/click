@@ -773,11 +773,11 @@ pub fn expand_claim_by_label(
             )
         });
         result?;
-        let certificate =
+        let (certificate, names) =
             certificate.expect("successful program verification publishes its proof certificate");
         let replacement = require_surface_expansion(format!(
             "termination {}\n",
-            printing::format_proof_certificate(&certificate)
+            printing::format_termination_certificate(&certificate, names)?
         ))?;
         let source = if let Some((start, end)) = &file.termination_span {
             let first = offset_at_position(click_source, start.line, start.column)?;
@@ -5985,22 +5985,31 @@ mod loop_entry_capture_scaling_tests {
     include!("../scaling_tests/surface/expansion/loop_entry_captures.rs");
 }
 
+type TerminationCertificate = (
+    ProofCertificate,
+    std::sync::Arc<super::proof::program_termination::TerminationSourceNames>,
+);
+
 thread_local! {
-    static TERMINATION_CERTIFICATE: std::cell::RefCell<Option<Option<ProofCertificate>>> = const { std::cell::RefCell::new(None) };
+    static TERMINATION_CERTIFICATE: std::cell::RefCell<Option<Option<TerminationCertificate>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
-pub(in crate::surface) fn record_termination_certificate(certificate: &ProofCertificate) {
+pub(in crate::surface) fn record_termination_certificate(
+    certificate: &ProofCertificate,
+    names: &std::sync::Arc<super::proof::program_termination::TerminationSourceNames>,
+) {
     TERMINATION_CERTIFICATE.with(|slot| {
         if let Some(output) = slot.borrow_mut().as_mut() {
-            *output = Some(certificate.clone());
+            *output = Some((certificate.clone(), names.clone()));
         }
     });
 }
 
 fn capture_termination_certificate<T>(
     operation: impl FnOnce() -> T,
-) -> (T, Option<ProofCertificate>) {
-    struct Restore(Option<Option<ProofCertificate>>);
+) -> (T, Option<TerminationCertificate>) {
+    struct Restore(Option<Option<TerminationCertificate>>);
     impl Drop for Restore {
         fn drop(&mut self) {
             TERMINATION_CERTIFICATE.with(|slot| *slot.borrow_mut() = self.0.take());
