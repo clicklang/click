@@ -114,7 +114,10 @@ memory: `before_point` and `after_point` on `MemoryEffectSummary`,
 no reasoning. A fact built from a state takes `ExecutionState::memory_point`;
 a rewrite of a fact keeps its point.
 
-Every memory a fact quotes is the state at a point. No fact quotes a staged
+Every memory a fact quotes is the state at a point, and every state a fact is
+built from stands at one: a proof's entry, bound from a state on no path,
+starts at a function-entry point (`bind_program_function_arguments_impl`), as
+does a scratch state that evaluates a requirement segment's bounds. No fact quotes a staged
 state: `ExecutionState::memory_point` panics on one, as `program_point` does.
 A call's exit region records its frees in one `HeapAllocationFreed` from its
 effect point to its exit, whose `mutable_ranges` hold the region's other
