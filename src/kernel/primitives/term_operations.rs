@@ -3258,7 +3258,16 @@ impl OldConditionTerm {
             }
             _ => return None,
         };
-        masked.pointer_alignment()
+        masked.pointer_alignment(|word| {
+            let native = match word {
+                V::Old(native) => native,
+                V::Shared(root) => root.machine_conversion_leaf()?,
+            };
+            match native {
+                OldMachineTerm::IntegerAddress(pointer, _) => Some(pointer.as_ref()),
+                _ => None,
+            }
+        })
     }
 
     pub(crate) fn int64_equal(left: OldMachineTerm, right: OldMachineTerm) -> Self {

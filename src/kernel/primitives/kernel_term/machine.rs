@@ -815,13 +815,8 @@ impl KernelTermImport {
             result,
             MachineIntegerType::Int64 | MachineIntegerType::UInt64
         ) && let Old::IntegerAddress(address, object_class) = term
-            && let Some(address) = KernelTerm::scalar_read_address(address)
         {
-            return KernelTerm::shared_pointer_address_observation(
-                result,
-                address,
-                object_class.clone(),
-            );
+            return KernelTerm::numeric_address_term(result, address, object_class.clone());
         }
         if let Some(read) = self.scalar_read(result, term) {
             return read;

@@ -510,25 +510,31 @@ pub(crate) struct MachineMatchArmView<'a> {
 }
 
 impl<'a> MachineOperandView<'a> {
+    /// The exact address supplied by a numeric pointer observation.
+    pub(crate) fn integer_address(self) -> Option<&'a SharedAddress> {
+        let native = match self {
+            Self::Old(value) => value,
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::IntegerAddress { address, .. } => return Some(address),
+                _ => root.retained_machine_input()?,
+            },
+        };
+        match native {
+            OldMachineTerm::IntegerAddress(pointer, _) => Some(pointer.shared()),
+            _ => None,
+        }
+    }
+
     /// An unsigned address masked by one less than a power-of-two alignment.
-    pub(crate) fn pointer_alignment(self) -> Option<(&'a Address, u64)> {
-        use MachineOperandView as V;
+    pub(crate) fn pointer_alignment<A>(
+        self,
+        address: impl Fn(Self) -> Option<A>,
+    ) -> Option<(A, u64)> {
         let (MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, [left, right]) =
             self.binary()?
         else {
             return None;
         };
-        fn address(word: V<'_>) -> Option<&Address> {
-            let native = match word {
-                V::Old(native) => Some(native),
-                V::Shared(root) => root.machine_conversion_leaf(),
-            }?;
-            if let OldMachineTerm::IntegerAddress(pointer, _) = native {
-                Some(pointer.as_ref())
-            } else {
-                None
-            }
-        }
         let (pointer, mask) = if let Some(pointer) = address(left) {
             (pointer, right)
         } else {

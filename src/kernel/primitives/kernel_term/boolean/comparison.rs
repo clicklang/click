@@ -110,34 +110,27 @@ impl KernelTerm {
                 return boolean(true);
             }
             if format.format().bits() == 64 {
-                for (address, other) in [(&arguments[0], views[1]), (&arguments[1], views[0])] {
-                    if other.uint64_constant() != Some(0) {
-                        continue;
+                for (address, other) in [(views[0], views[1]), (views[1], views[0])] {
+                    if other.uint64_constant() == Some(0)
+                        && let Some(pointer) = address.integer_address()
+                    {
+                        return Self::address_equal([
+                            pointer.clone(),
+                            Address::null().into_shared(),
+                        ]);
                     }
-                    let pointer = match address.node() {
-                        KernelTermNode::IntegerAddress { address, .. } => address,
-                        _ => {
-                            let Some(OldMachineTerm::IntegerAddress(pointer, _)) =
-                                address.retained_machine_input()
-                            else {
-                                continue;
-                            };
-                            pointer.shared()
-                        }
-                    };
-                    return Self::address_equal([pointer.clone(), Address::null().into_shared()]);
                 }
                 for (word, zero) in [(views[0], &arguments[1]), (views[1], &arguments[0])] {
                     if zero.guard_literal().and_then(|literal| literal.signed64()) != Some(0) {
                         continue;
                     }
-                    if let Some((pointer, alignment)) = word.pointer_alignment() {
-                        let pointer = KernelTermImport::default().machine(
+                    if let Some((pointer, alignment)) =
+                        word.pointer_alignment(MachineOperandView::integer_address)
+                    {
+                        let pointer = Self::numeric_address_term(
                             T::UInt64,
-                            &OldMachineTerm::IntegerAddress(
-                                Box::new(pointer.clone()),
-                                AddressObjectClass::NONE,
-                            ),
+                            &pointer.export().expect("written alignment address"),
+                            AddressObjectClass::NONE,
                         );
                         let literal = |result: T, bits: u64| {
                             KernelMachineLiteral::UInt64(bits).guard_operand(result)
@@ -232,6 +225,29 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn alignment_mask_borrows_its_address_in_either_order() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Address::symbolic(Variable(971_104)).into_shared();
+        let format = MachineIntegerType::UInt64;
+        let numeric = KernelTerm::shared_pointer_address_observation(
+            format,
+            address.clone(),
+            AddressObjectClass::NONE,
+        );
+        let mask = KernelMachineLiteral::UInt64(7).guard_operand(format);
+        for args in [[numeric.clone(), mask.clone()], [mask, numeric.clone()]] {
+            let masked =
+                KernelTerm::machine_binary_shared(format, MachineBinaryOp::BitwiseAnd, args);
+            let (pointer, alignment) = MachineOperandView::Shared(&masked)
+                .pointer_alignment(MachineOperandView::integer_address)
+                .unwrap();
+            assert!(pointer.same_handle(&address));
+            assert_eq!(alignment, 8);
+            assert!(numeric.0.machine_leaf.0.get().is_none());
         }
     }
 
