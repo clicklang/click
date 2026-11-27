@@ -25,7 +25,6 @@ impl KernelTerm {
         use CompareRelation as R;
         use MachineIntegerType as T;
         let boolean = |value| Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value));
-        let native = |value: OldConditionTerm| KernelTermImport::default().condition(&value);
         let stored_format = match (relation, format) {
             (R::Equal, T::UInt64) => T::Int64,
             (R::Equal, T::UInt128) => T::Int128,
@@ -128,31 +127,32 @@ impl KernelTerm {
                     };
                     return Self::address_equal([pointer.clone(), Address::null().into_shared()]);
                 }
-                // Reuse the existing bounded alignment classifier. Observing
-                // the selected operand retains it; it does not export it.
-                for (word, zero) in [(views[0], views[1]), (views[1], views[0])] {
-                    if zero.literal().and_then(|v| v.bitvector64_as_const()) != Some(0) {
+                for (word, zero) in [(views[0], &arguments[1]), (views[1], &arguments[0])] {
+                    if zero.guard_literal().and_then(|literal| literal.signed64()) != Some(0) {
                         continue;
                     }
-                    let observed = OldConditionTerm::IntegerEqual(
-                        IntegerTerm::Machine(word.retain(format)).into(),
-                        IntegerTerm::constant_i64(0).into(),
-                    );
-                    if let Some((pointer, alignment)) = observed.as_pointer_alignment() {
-                        return native(OldConditionTerm::Compare {
-                            format: T::Int64,
-                            relation,
-                            left: Box::new(OldMachineTerm::Binary {
-                                format: T::UInt64,
-                                op: MachineBinaryOp::BitwiseAnd,
-                                left: Box::new(OldMachineTerm::IntegerAddress(
-                                    Box::new(pointer.clone()),
-                                    crate::kernel::AddressObjectClass::NONE,
-                                )),
-                                right: Box::new(OldMachineTerm::uint64_constant(alignment - 1)),
-                            }),
-                            right: Box::new(OldMachineTerm::uint64_constant(0)),
-                        });
+                    if let Some((pointer, alignment)) = word.pointer_alignment() {
+                        let pointer = KernelTermImport::default().machine(
+                            T::UInt64,
+                            &OldMachineTerm::IntegerAddress(
+                                Box::new(pointer.clone()),
+                                AddressObjectClass::NONE,
+                            ),
+                        );
+                        let literal = |result: T, bits: u64| {
+                            KernelMachineLiteral::UInt64(bits).guard_operand(result)
+                        };
+                        let masked = Self::machine_binary_shared_as(
+                            T::Int64,
+                            T::UInt64,
+                            MachineBinaryOp::BitwiseAnd,
+                            [pointer, literal(T::UInt64, alignment - 1)],
+                        );
+                        return Self::boolean_comparison_raw(
+                            T::Int64,
+                            R::Equal,
+                            [masked, literal(T::Int64, 0)],
+                        );
                     }
                 }
             }
@@ -273,6 +273,9 @@ mod tests {
                         let arguments =
                             [import.machine(format, left), import.machine(format, right)];
                         let result = KernelTerm::boolean_comparison(format, relation, arguments);
+                        if expected.as_pointer_alignment().is_some() {
+                            assert_eq!(result, import.condition(&expected));
+                        }
                         let actual = KernelTermExport::condition(&result).unwrap();
                         assert_eq!(
                             format!("{actual:?}"),

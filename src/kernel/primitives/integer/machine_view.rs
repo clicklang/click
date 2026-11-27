@@ -510,6 +510,34 @@ pub(crate) struct MachineMatchArmView<'a> {
 }
 
 impl<'a> MachineOperandView<'a> {
+    /// An unsigned address masked by one less than a power-of-two alignment.
+    pub(crate) fn pointer_alignment(self) -> Option<(&'a Address, u64)> {
+        use MachineOperandView as V;
+        let (MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        fn address(word: V<'_>) -> Option<&Address> {
+            let native = match word {
+                V::Old(native) => Some(native),
+                V::Shared(root) => root.machine_conversion_leaf(),
+            }?;
+            if let OldMachineTerm::IntegerAddress(pointer, _) = native {
+                Some(pointer.as_ref())
+            } else {
+                None
+            }
+        }
+        let (pointer, mask) = if let Some(pointer) = address(left) {
+            (pointer, right)
+        } else {
+            (address(right)?, left)
+        };
+        let alignment = mask.uint64_constant()?.checked_add(1)?;
+        alignment.is_power_of_two().then_some((pointer, alignment))
+    }
+
     /// The selected scrutinee alone; equality-premise selection does not need arms.
     pub(crate) fn match_scrutinee(self) -> Option<std::borrow::Cow<'a, AlgebraicTerm>> {
         use std::borrow::Cow;
