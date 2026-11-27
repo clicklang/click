@@ -1576,14 +1576,15 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
 
 /// Proof-object operations with a canonical name but no surface spelling:
 /// the implicit tail's closer, the loop back edge's closer
-/// (`close_invariants`), `choose`, and the arithmetic engine that
-/// `close() using` runs last.
+/// (`close_invariants`), `choose`, the arithmetic engine behind
+/// `close() using`, and verification-only normalization.
 const INTERNAL_TACTICS: &[&str] = &[
     "arithmetic",
     "choose",
     "close_invariants",
     "implicit tail",
     "known",
+    "normalize",
     "solve",
 ];
 
