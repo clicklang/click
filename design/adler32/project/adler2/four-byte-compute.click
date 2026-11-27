@@ -203,9 +203,7 @@ impl adler2::Adler32 {
      apply(adler_four_byte_lane_below_modulus(at(reduce_b, b_vec.0[3])));
      step_until(statement(14).entry);
      have statement(13).call(0).result == 65521u32;
-     have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result by {
-      close() using { statement(13).call(0).result == 65521u32; };
-     }
+     have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result by { close(); }
      apply(integer::uint32_less_than_divisor_implies_remainder_is_value(at(reduce_b, b_vec.0[0]), 65521u32));
      have b_vec.0[0] == old((bytes[0] as u32));
      have b_vec.0[1] == at(reduce_b, b_vec.0[1]) % statement(13).call(0).result;
