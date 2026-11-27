@@ -416,6 +416,9 @@
         "kind": "free"
       },
       "name": "MoneyRange",
+      "parameter_type_spellings": [
+        "const long &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:amount.h@1094@F@MoneyRange#&1L#@nValue",

@@ -284,6 +284,9 @@
         "kind": "free"
       },
       "name": "round_trip",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@242@F@round_trip#I#@value",
@@ -592,6 +595,10 @@
         "kind": "free"
       },
       "name": "push",
+      "parameter_type_spellings": [
+        "Node *",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@60@F@push#*$@S@Node#I#@head",
@@ -701,6 +708,9 @@
         "kind": "free"
       },
       "name": "drop",
+      "parameter_type_spellings": [
+        "Node *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@184@F@drop#*$@S@Node#@node",

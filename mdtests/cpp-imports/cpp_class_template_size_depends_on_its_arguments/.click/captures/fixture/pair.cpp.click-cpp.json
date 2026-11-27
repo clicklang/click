@@ -49,6 +49,9 @@
         "kind": "free"
       },
       "name": "swap_ints",
+      "parameter_type_spellings": [
+        "Pair<int> &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:pair.cpp@190@F@swap_ints#&$@S@Pair>#I#@pair",
@@ -146,6 +149,7 @@
         }
       },
       "name": "Pair__int_swap",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Pair>#I@F@swap#@this",
@@ -392,6 +396,7 @@
         "record_name": "Pair__param_T"
       },
       "name": "Pair__param_T_swap",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Pair>#$@S@__click_T@F@swap#@this",

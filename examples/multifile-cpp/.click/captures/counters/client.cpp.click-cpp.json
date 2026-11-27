@@ -272,6 +272,9 @@
         "kind": "free"
       },
       "name": "bump_then_double",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:client.cpp@43@F@bump_then_double#&I#@counter",
@@ -364,6 +367,10 @@
         "kind": "free"
       },
       "name": "counter_add",
+      "parameter_type_spellings": [
+        "int &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:counter.h@53@F@counter_add#&I#I#@counter",
@@ -461,6 +468,7 @@
         "kind": "free"
       },
       "name": "counter_limit",
+      "parameter_type_spellings": [],
       "parameters": [],
       "path": [
         "counter_limit"
@@ -489,6 +497,9 @@
         "kind": "free"
       },
       "name": "counter_double",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:counter.h@108@F@counter_double#&I#@counter",

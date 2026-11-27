@@ -58,6 +58,7 @@
         "kind": "free"
       },
       "name": "byte_size",
+      "parameter_type_spellings": [],
       "parameters": [],
       "path": [
         "byte_size"

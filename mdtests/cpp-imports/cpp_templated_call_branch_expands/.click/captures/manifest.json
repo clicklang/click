@@ -56,11 +56,11 @@
         "sources": {
           "templated_call_branch.cpp": {
             "artifact": {
-              "bytes": 11903,
+              "bytes": 12051,
               "path": ".click/captures/fixture/templated_call_branch.cpp.click-cpp.json",
-              "sha256": "fc082ec01db125d887f7b0fae62300cac44857c673f78cf569da15b3bbf4383a"
+              "sha256": "12f137e48701d027adfa8b9dafd10286a452146ad4c7867a8aa57ca7ebee079f"
             },
-            "identity": "6a5554b14e916343c82102f9a75d585617e3f320b9997e124c978fdfdbd153f6",
+            "identity": "5be640fdda76bf38b7840a368a974cfccd7dc1c59dff13d62594285d84496220",
             "inputs": {
               "$unit/templated_call_branch.cpp": "bfe4c79c9fc34c29e2d2f14c708acc06ced88d884f3c2de1fb10a1ca36187c10"
             }

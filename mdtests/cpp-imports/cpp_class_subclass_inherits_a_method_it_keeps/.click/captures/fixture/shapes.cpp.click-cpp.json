@@ -235,6 +235,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "BigSquare &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@490@F@caller#&$@S@BigSquare#@big",
@@ -368,6 +371,9 @@
         "kind": "free"
       },
       "name": "through_shape",
+      "parameter_type_spellings": [
+        "const Shape &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@339@F@through_shape#&1$@S@Shape#@shape",
@@ -462,6 +468,9 @@
         "kind": "free"
       },
       "name": "through_square",
+      "parameter_type_spellings": [
+        "const Square &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@417@F@through_square#&1$@S@Square#@square",
@@ -575,6 +584,7 @@
         "record_name": "BigSquare"
       },
       "name": "BigSquare_brighter",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@BigSquare@F@brighter#1@this",
@@ -627,6 +637,7 @@
         "record_name": "Shape"
       },
       "name": "Shape_shade",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@shade#1@this",
@@ -748,6 +759,7 @@
         "record_name": "Square"
       },
       "name": "Square_shade",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@shade#1@this",
@@ -869,6 +881,7 @@
         "record_name": "Square"
       },
       "name": "Square_hue",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@hue#1@this",

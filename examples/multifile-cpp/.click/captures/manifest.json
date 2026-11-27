@@ -96,11 +96,11 @@
         "sources": {
           "client.cpp": {
             "artifact": {
-              "bytes": 14010,
+              "bytes": 14246,
               "path": ".click/captures/counters/client.cpp.click-cpp.json",
-              "sha256": "8ca812a8e0cf1590989a58be7aa855f09f93e9d6df217c325aac56ce302aae2a"
+              "sha256": "a60b73079dd575d698c25293ea6824b012367c0c60d7f5d3e17a5c3e62558b91"
             },
-            "identity": "2fab163e003c1cc97ca768fa772eb361d0daf68f5f8a7ea6b1d27e99e1a4de51",
+            "identity": "b7919cf2c078b2b2d48d718b7261578f5620dbbc83c101e775bdc9313aa069e1",
             "inputs": {
               "$unit/client.cpp": "a98afac98f7d33fc31594f3f8abb45b9e4c0b82c0b9f31d73ae54c63cec4bea7",
               "$unit/counter.h": "7ae072b831f19b16d5b488847c887671eee0f823236a5aca2b1c8ca070a3eddb"
@@ -108,11 +108,11 @@
           },
           "counter.cpp": {
             "artifact": {
-              "bytes": 11775,
+              "bytes": 11912,
               "path": ".click/captures/counters/counter.cpp.click-cpp.json",
-              "sha256": "806d22a2e1d58071957c5a31eeb0a2223455ecb824c873bd6faa357fc2b2d101"
+              "sha256": "f8f840224d98278a1cdda2ec8ad6c19c5ecc63e0bc335839f25183a713164657"
             },
-            "identity": "2dc390b28298827e664a0f5ed869eb588538f31172249ff697aa60e8d8e89a5b",
+            "identity": "591e05185e8a3f024913dd60a9f58630ceb0c269db2206b0002681a70ef9ddb1",
             "inputs": {
               "$unit/counter.cpp": "63e57aa316b5fd310b416f4be6d5e515a9a24f6303f167d768d6fbcb8980e4bd",
               "$unit/counter.h": "7ae072b831f19b16d5b488847c887671eee0f823236a5aca2b1c8ca070a3eddb"

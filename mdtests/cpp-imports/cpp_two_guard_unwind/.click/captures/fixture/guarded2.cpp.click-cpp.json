@@ -420,6 +420,11 @@
         "kind": "free"
       },
       "name": "guarded2",
+      "parameter_type_spellings": [
+        "int &",
+        "int &",
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:guarded2.cpp@300@F@guarded2#&I#S0_#b#@first_cell",
@@ -641,6 +646,7 @@
         "record_name": "Restore"
       },
       "name": "Restore_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Restore@F@~Restore#@this",
@@ -905,6 +911,9 @@
         "record_name": "Restore"
       },
       "name": "Restore_constructor",
+      "parameter_type_spellings": [
+        "int *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Restore@F@Restore#*I#@this",
@@ -1068,6 +1077,9 @@
         "kind": "free"
       },
       "name": "helper",
+      "parameter_type_spellings": [
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:guarded2.cpp@214@F@helper#b#@should_throw",

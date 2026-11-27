@@ -56,11 +56,11 @@
         "sources": {
           "containers_refused.cpp": {
             "artifact": {
-              "bytes": 59020,
+              "bytes": 59662,
               "path": ".click/captures/fixture/containers_refused.cpp.click-cpp.json",
-              "sha256": "26700ae37399ce1aafaa9d05071880fbad9b1b2d30231b28dc8991b8ec192e9d"
+              "sha256": "2198d3b01b1e865333960effe899467d11d537f9726ef5100e87f5f7658cbade"
             },
-            "identity": "b00969033380591cd60b3b5dd32c32cf910e84f966c948636eb5279d8699f021",
+            "identity": "1b7e7d1c85b3c0487d4304e4b8d5ebd6d611f5f907fbd71cc6daa3402b2288d8",
             "inputs": {
               "$unit/containers_refused.cpp": "2e48f4161619172b898e71c8ba71b4df84ce6597f283c0191c17445880854e29"
             }

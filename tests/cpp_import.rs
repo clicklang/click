@@ -11309,6 +11309,15 @@ fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types()
         );
     }
     sidecar.push_str("int32 relay(int64 x, int64 y, int32 z) { ensures result == 76; }\n");
+    sidecar.push_str(
+        r#"
+contract int32 Echo9(int64 x) { ensures result == 9; }
+theorem long_long_echo() {
+    ensures Echo9(&echo(long long))
+        by { unfold(Echo9(&echo(long long))); close(); }
+}
+"#,
+    );
     check_selected_claim_certificate(&project, &import, &sidecar);
     let expansion = click::surface::expand_claim_by_label(
         None,
@@ -11319,17 +11328,14 @@ fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types()
     )
     .unwrap();
     let (_, termination) = expansion.source.rsplit_once("\ntermination ").unwrap();
-    for helper in helpers.iter().filter(|helper| helper.path == ["echo"]) {
-        let span = &helper.span;
-        let written = format!(
-            "echo at {}:{}:{}",
-            span.file, span.start_line, span.start_column
-        );
-        assert!(
-            termination.contains(&format!("check_termination_local({written:?})")),
-            "{termination}"
-        );
-    }
+    assert!(
+        termination.contains("check_termination_local(echo(long));"),
+        "{termination}"
+    );
+    assert!(
+        termination.contains("check_termination_local(echo(long long));"),
+        "{termination}"
+    );
     assert!(!termination.contains("__cpp_q"), "{termination}");
     let expanded_path = project.directory.join("expanded.click");
     fs::write(&expanded_path, &expansion.source).unwrap();

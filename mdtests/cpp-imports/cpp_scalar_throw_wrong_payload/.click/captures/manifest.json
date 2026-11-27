@@ -56,11 +56,11 @@
         "sources": {
           "throw_seven.cpp": {
             "artifact": {
-              "bytes": 2366,
+              "bytes": 2404,
               "path": ".click/captures/fixture/throw_seven.cpp.click-cpp.json",
-              "sha256": "3eed0270eaebe30c7ff0ecd06abe247da5827c92af5ea2a28608f60adef3f880"
+              "sha256": "43191a6b4e25d3dd9fa735f3f8bf2f6dbcbb32bb5c76fcebd97ea5040c53cab8"
             },
-            "identity": "2c26d93686d1863f6f8153a2ad89cc81b7ee6ae65e7547812279e76c5335ce85",
+            "identity": "d9c062be4e198aa5ce58a90ecf96a89d951ff529dc1cb5015390a839b2730be2",
             "inputs": {
               "$unit/throw_seven.cpp": "03d569d016dd5142b431a0ca41f39c7dc70118d2dba928d4b64a246ae5add425"
             }

@@ -56,11 +56,11 @@
         "sources": {
           "signedness.cpp": {
             "artifact": {
-              "bytes": 10016,
+              "bytes": 10238,
               "path": ".click/captures/fixture/signedness.cpp.click-cpp.json",
-              "sha256": "459e7468ea99381641c01514f30ab21c3147e2bfa822d1eab9b6255e7871afac"
+              "sha256": "8b36bde7500153d37e925749ebdbcde7f363ccacf7a88b956cba4d9e22882f8a"
             },
-            "identity": "ab04f160fe283c2f6f0ba46340c6ccd381aee63386ab733fda4a848fcf5de103",
+            "identity": "61e13b39baf8dbbae15f0f8d48b4418191fadc179adc93614ce6b8b4176d4866",
             "inputs": {
               "$unit/signedness.cpp": "c044f21702be516d05f4c3cd1dec808f6348c72ffa5d125f04644287918d2e88"
             }

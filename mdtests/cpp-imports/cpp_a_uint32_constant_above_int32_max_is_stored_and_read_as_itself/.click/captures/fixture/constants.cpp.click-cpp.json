@@ -41,6 +41,7 @@
         "kind": "free"
       },
       "name": "literal",
+      "parameter_type_spellings": [],
       "parameters": [],
       "path": [
         "literal"
@@ -147,6 +148,9 @@
         "kind": "free"
       },
       "name": "stored",
+      "parameter_type_spellings": [
+        "unsigned int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:constants.cpp@76@F@stored#&i#@u",
@@ -236,6 +240,9 @@
         "kind": "free"
       },
       "name": "stated",
+      "parameter_type_spellings": [
+        "const unsigned int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:constants.cpp@161@F@stated#&1i#@u",

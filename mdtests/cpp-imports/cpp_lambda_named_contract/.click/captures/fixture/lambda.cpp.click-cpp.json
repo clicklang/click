@@ -128,6 +128,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:lambda.cpp@78@F@caller#I#@x",
@@ -299,6 +302,9 @@
         "kind": "free"
       },
       "name": "caller__lambda_0",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:lambda.cpp@116@F@caller#I#@Sa@F@operator()#I#1@y",
@@ -410,6 +416,10 @@
         "kind": "free"
       },
       "name": "apply",
+      "parameter_type_spellings": [
+        "int (*)(int) noexcept",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:lambda.cpp@10@F@apply#*FI(#I)#I#@f",

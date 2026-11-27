@@ -387,6 +387,9 @@
         "kind": "free"
       },
       "name": "round_trip",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@774@F@round_trip#I#@x",
@@ -783,6 +786,9 @@
         "kind": "free"
       },
       "name": "pushed_size",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@915@F@pushed_size#I#@x",
@@ -881,6 +887,7 @@
         }
       },
       "name": "Stack__int_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@~Stack#@this",
@@ -940,6 +947,9 @@
         }
       },
       "name": "Stack__int_push",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@push#I#@this",
@@ -1017,6 +1027,9 @@
         }
       },
       "name": "Stack__int_pop",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@pop#&I#@this",
@@ -1099,6 +1112,7 @@
         }
       },
       "name": "Stack__int_size",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@size#1@this",
@@ -1430,6 +1444,7 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@~Stack#@this",
@@ -1758,6 +1773,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_push",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
@@ -2376,6 +2394,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_pop",
+      "parameter_type_spellings": [
+        "T &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@pop#&S0_#@this",
@@ -2497,6 +2518,7 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_size",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1@this",

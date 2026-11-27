@@ -6701,6 +6701,13 @@ impl AnnotationLowerer<'_> {
                 value_type: *value_type,
                 exact: false,
             }),
+            SyntaxTerm::CUnary {
+                lowered: lowered @ ProgramExpression::FunctionAddress(_),
+                ..
+            } => self.lower_contract_expression_to_spec(
+                &SyntaxTerm::ProgramExpression(lowered.clone()),
+                environment,
+            ),
             SyntaxTerm::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {

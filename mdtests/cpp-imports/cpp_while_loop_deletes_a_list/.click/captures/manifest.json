@@ -56,11 +56,11 @@
         "sources": {
           "destroy.cpp": {
             "artifact": {
-              "bytes": 11269,
+              "bytes": 11331,
               "path": ".click/captures/fixture/destroy.cpp.click-cpp.json",
-              "sha256": "d7418f96c30d951546691ce996f2f5be387eb939b7fadc050a93d90456ac736b"
+              "sha256": "1c01a0514e39efa2315bdb3936ee018a409e3152c20709b14cc1791b94c3fe8d"
             },
-            "identity": "22b574c92a8afc6b0a43abd552e85404e311f15a271113e8a62593c349c49f0a",
+            "identity": "e5a32f2e12607f3a56630df9e34085f864f4db12c8f6a089123e49c672a5cde9",
             "inputs": {
               "$unit/destroy.cpp": "2b557c60217d0152793fd4759107226dfa31ea340dd1b61a276df3982138b16f"
             }

@@ -170,6 +170,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:initializer.cpp@92@F@caller#i#@value",
@@ -325,6 +328,10 @@
         "kind": "free"
       },
       "name": "init",
+      "parameter_type_spellings": [
+        "unsigned int *",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:initializer.cpp@10@F@init#*i#i#@p",

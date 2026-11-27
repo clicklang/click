@@ -49,7 +49,11 @@ use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &SyntaxTerm) -> Option<&str> {
     match expression {
-        SyntaxTerm::ProgramExpression(ProgramExpression::FunctionAddress(name)) => Some(name),
+        SyntaxTerm::ProgramExpression(ProgramExpression::FunctionAddress(name))
+        | SyntaxTerm::CUnary {
+            lowered: ProgramExpression::FunctionAddress(name),
+            ..
+        } => Some(name),
         SyntaxTerm::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
             match expression.as_ref() {
                 ProgramExpression::Variable(name) => name.named(),

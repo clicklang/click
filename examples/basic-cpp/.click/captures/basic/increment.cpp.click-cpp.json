@@ -136,6 +136,9 @@
         "kind": "free"
       },
       "name": "increment",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:increment.cpp@14@F@increment#&I#@value",

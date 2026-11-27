@@ -56,11 +56,11 @@
         "sources": {
           "wide_reads.cpp": {
             "artifact": {
-              "bytes": 17005,
+              "bytes": 17142,
               "path": ".click/captures/fixture/wide_reads.cpp.click-cpp.json",
-              "sha256": "e549df0a939bc866f37dd1abeb5d277e5a5d1b3bf1ef40e3c04849810b6e0d91"
+              "sha256": "ca7e46fabb668a397937a4d69c94c4d8b8d3e57d82294f298328e105b474693c"
             },
-            "identity": "d04ef0c233459907b9c1b8ef6b092c179040a79bc50ffa7199b0a67e10699d5a",
+            "identity": "e164dd6d7ce79853b329ea56daea9d93372713245c7242d76e33ff02534c670d",
             "inputs": {
               "$unit/wide_reads.cpp": "589c8000dca7339ed7284ec7a7eca45a21444e7d960901dfe81bdd183d3a2dc8"
             }

@@ -88,6 +88,10 @@
         "kind": "free"
       },
       "name": "through_square",
+      "parameter_type_spellings": [
+        "const Square &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:shapes.cpp@349@F@through_square#&1$@S@Square#I#@square",
@@ -294,6 +298,9 @@
         "record_name": "Square"
       },
       "name": "Square_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Square@F@area#I#1@this",
@@ -393,6 +400,9 @@
         "record_name": "Shape"
       },
       "name": "Shape_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Shape@F@area#I#1@this",
@@ -688,6 +698,9 @@
         "record_name": "BigSquare"
       },
       "name": "BigSquare_area",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@BigSquare@F@area#I#1@this",

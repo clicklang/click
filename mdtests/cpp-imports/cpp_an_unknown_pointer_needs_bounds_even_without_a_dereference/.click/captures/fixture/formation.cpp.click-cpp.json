@@ -93,6 +93,9 @@
         "kind": "free"
       },
       "name": "probe",
+      "parameter_type_spellings": [
+        "int *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:formation.cpp@11@F@probe#*I#@p",

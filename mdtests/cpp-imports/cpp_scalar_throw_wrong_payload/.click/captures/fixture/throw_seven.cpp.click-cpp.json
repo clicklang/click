@@ -40,6 +40,7 @@
         "kind": "free"
       },
       "name": "throw_seven",
+      "parameter_type_spellings": [],
       "parameters": [],
       "path": [
         "throw_seven"
