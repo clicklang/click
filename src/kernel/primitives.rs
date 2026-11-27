@@ -230,7 +230,12 @@ pub(crate) const HEAP_ALLOCATION_ALIGNMENT: u64 = 16;
 /// cannot capture it. Names in source text are separate from this identity.
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Variable {
-    // The origin comes first, so variables order by producer: ordinary
+    // Whether this is the element count of the slice its base variable names
+    // ([`Variable::element_count`]). It comes first, so every count orders
+    // after every other variable and ordinary variables stay ahead of
+    // `Variable::FIRST_NON_ORDINARY`.
+    element_count: bool,
+    // The origin comes next, so variables order by producer: ordinary
     // variables keep their numeric order ahead of every other origin, and
     // each other origin is one contiguous run after them. A query for the
     // greatest ordinary variable must bound itself by
@@ -329,11 +334,18 @@ impl std::hash::Hash for Variable {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.number.hash(state);
         self.origin.hash(state);
+        // A count hashes one more word; every other variable hashes as before.
+        if self.element_count {
+            true.hash(state);
+        }
     }
 }
 
 impl std::fmt::Debug for Variable {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(slice) = self.counted_slice() {
+            return formatter.debug_tuple("ElementCount").field(&slice).finish();
+        }
         match self.origin {
             VariableOrigin::Ordinary => formatter.debug_tuple("Variable").field(&self.0).finish(),
             VariableOrigin::KernelFresh => formatter
@@ -364,6 +376,7 @@ impl std::fmt::Debug for Variable {
 #[allow(non_snake_case)]
 pub const fn Variable(number: u64) -> Variable {
     Variable {
+        element_count: false,
         number: (number,),
         origin: VariableOrigin::Ordinary,
     }
@@ -381,6 +394,7 @@ impl Variable {
     /// The bound variable of a quantifier of height `height`.
     pub(in crate::kernel) const fn bound(height: u64) -> Self {
         Self {
+            element_count: false,
             number: (height,),
             origin: VariableOrigin::Bound,
         }
@@ -389,6 +403,7 @@ impl Variable {
     /// The `number`th variable a session opened a quantifier at.
     pub(in crate::kernel) const fn opening(number: u64) -> Self {
         Self {
+            element_count: false,
             number: (number,),
             origin: VariableOrigin::Opening,
         }
@@ -398,23 +413,25 @@ impl Variable {
     /// ordinary variable orders before it and every other variable at or
     /// after it.
     pub(crate) const FIRST_NON_ORDINARY: Self = Self {
+        element_count: false,
         number: (0,),
         origin: VariableOrigin::KernelFresh,
     };
 
     /// Whether this is an ordinary numbered variable, `Variable(n)`.
     pub(crate) fn is_ordinary(&self) -> bool {
-        self.origin == VariableOrigin::Ordinary
+        !self.element_count && self.origin == VariableOrigin::Ordinary
     }
 
     /// Whether this is a quantifier's bound variable.
     pub(crate) fn is_bound(&self) -> bool {
-        self.origin == VariableOrigin::Bound
+        !self.element_count && self.origin == VariableOrigin::Bound
     }
 
     /// The `number`th match-arm binder a lowering budget allocated.
     pub(in crate::kernel) const fn match_binder(number: u64) -> Self {
         Self {
+            element_count: false,
             number: (number,),
             origin: VariableOrigin::MatchBinder,
         }
@@ -423,6 +440,7 @@ impl Variable {
     /// The `number`th specification fold binder.
     pub(in crate::kernel) const fn spec_fold_binder(number: u64) -> Self {
         Self {
+            element_count: false,
             number: (number,),
             origin: VariableOrigin::SpecFoldBinder,
         }
@@ -431,12 +449,13 @@ impl Variable {
     /// Whether this is a specification fold's binder.
     #[cfg(test)]
     pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
-        self.origin == VariableOrigin::SpecFoldBinder
+        !self.element_count && self.origin == VariableOrigin::SpecFoldBinder
     }
 
     /// The `number`th variable `producer` minted.
     pub(crate) const fn produced(producer: Producer, number: u64) -> Self {
         Self {
+            element_count: false,
             number: (number,),
             origin: VariableOrigin::Produced(producer),
         }
@@ -445,20 +464,21 @@ impl Variable {
     /// The producer that minted this variable, if a named one did.
     pub(crate) fn producer(&self) -> Option<Producer> {
         match self.origin {
-            VariableOrigin::Produced(producer) => Some(producer),
+            VariableOrigin::Produced(producer) if !self.element_count => Some(producer),
             _ => None,
         }
     }
 
     /// The Surface binder index of an algebraic binder variable.
     pub(crate) fn algebraic_binder_index(&self) -> Option<u64> {
-        (self.origin == VariableOrigin::Produced(Producer::AlgebraicBinder))
+        (!self.element_count && self.origin == VariableOrigin::Produced(Producer::AlgebraicBinder))
             .then_some(self.number.0)
     }
 
     /// The `number`th universal-introduction or choice witness.
     pub(in crate::kernel) const fn witness(number: u64) -> Self {
         Self {
+            element_count: false,
             number: (number,),
             origin: VariableOrigin::Witness,
         }
@@ -466,12 +486,40 @@ impl Variable {
 
     /// Whether this is a universal-introduction or choice witness.
     pub(in crate::kernel) fn is_witness(&self) -> bool {
-        self.origin == VariableOrigin::Witness
+        !self.element_count && self.origin == VariableOrigin::Witness
     }
 
     /// Whether this is a match arm's binder.
     pub(in crate::kernel) fn is_match_binder(&self) -> bool {
-        self.origin == VariableOrigin::MatchBinder
+        !self.element_count && self.origin == VariableOrigin::MatchBinder
+    }
+
+    /// The element count of the slice this variable names
+    /// (`design/rust-slice-values.md`, step 2b-iii-a): a `UInt64` variable
+    /// whose identity is this variable's plus the component, so a value named
+    /// by one variable, such as a slice-returning call's result, names its
+    /// count with no second allocation, and the count raises from the name of
+    /// the slice. It is no binder, witness or producer's variable of its own,
+    /// and orders after every variable that is not a count. A count has no
+    /// count of its own.
+    pub(crate) const fn element_count(self) -> Self {
+        assert!(
+            !self.element_count,
+            "internal error: an element count names no slice"
+        );
+        Self {
+            element_count: true,
+            ..self
+        }
+    }
+
+    /// The variable whose slice this is the element count of, or `None` for
+    /// a variable that is not a count.
+    pub(crate) fn counted_slice(&self) -> Option<Self> {
+        self.element_count.then_some(Self {
+            element_count: false,
+            ..*self
+        })
     }
 
     /// Mint a free symbolic identity. This stream is process-wide so nested
@@ -487,6 +535,7 @@ impl Variable {
             })
             .ok()?;
         Some(Self {
+            element_count: false,
             number: (number,),
             origin: VariableOrigin::KernelFresh,
         })

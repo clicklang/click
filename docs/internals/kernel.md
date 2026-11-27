@@ -1378,6 +1378,16 @@ memoized version walk) resolves the whole read, its data pointer and its
 count to the stored slice's, and frame transport carries a count as a numeric
 child (`design/rust-slice-values.md`, step 2b-ii).
 
+A slice named by one variable `v`, which is every slice-typed value
+`symbolic_call_result` builds (a call's result, an exception payload, a
+termination parameter, a case binder's payload), has thin part
+`Address::symbolic(v)` and count `Variable(v.element_count())`. The count is
+a `UInt64` variable whose identity is `v`'s plus the component
+(`Variable::counted_slice` reads `v` back): it is no ordinary, bound, witness
+or produced variable, orders after every variable that is not a count, and
+hashes as `v` plus one word. Raising a count refuses with an internal error
+until the Surface slice type exists (step 2b-iii-c).
+
 ## Symbolic execution
 
 ### What stepping a statement means

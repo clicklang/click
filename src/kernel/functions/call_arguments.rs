@@ -571,11 +571,14 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         ProgramType::FunctionPointer(_) => {
             ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
         }
-        // A slice-returning call names its result's element count beside its
-        // address; that name arrives with slice returns.
-        ProgramType::SlicePointer(_) => unreachable!(
-            "internal error: a slice-pointer call result has no named element count yet \
-             (design/rust-slice-values.md, step 2b-iii)"
+        // A slice named by one variable names its element count from it
+        // (`design/rust-slice-values.md`, step 2b-iii-a): the thin part is the
+        // variable's address, as for a thin pointer, and the count is the
+        // variable's count, so the one name gives both components.
+        ProgramType::SlicePointer(element) => ProgramValue::Pointer(
+            Pointer::new(Address::symbolic(variable), element.thin_pointer_type())
+                .with_element_count(OldMachineTerm::Variable(variable.element_count()))
+                .with_type(program_type),
         ),
         ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")

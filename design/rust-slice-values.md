@@ -1,11 +1,12 @@
 # Rust slices as wide pointers
 
 Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
-2a, 2b-i, 2b-ii-a and 2b-ii-b of the [plan](#plan) are done: the kernel
-has the wide pointer and its slice pointer type, every kernel consumer
-reads or refuses its count, a slice is stored and read back as one memory
-cell, and a symbolic read of a slice cell names its data pointer and count,
-but no front end produces a wide pointer yet.
+2a, 2b-i, 2b-ii-a, 2b-ii-b and 2b-iii-a of the [plan](#plan) are done: the
+kernel has the wide pointer and its slice pointer type, every kernel
+consumer reads or refuses its count, a slice is stored and read back as one
+memory cell, a symbolic read of a slice cell names its data pointer and
+count, and a slice named by one variable, such as a call's result, names its
+count from that variable, but no front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -553,16 +554,75 @@ construct.
      stored slice through the read equation, not as that read; and the
      state-aware alpha key of a slice read's data pointer is its load's
      identity alone, so two reads at alpha-equivalent states key apart.
-   - **2b-iii. Surface type and raising.** An interface type for slice
-     pointers; the library's `Slice<T>` becomes the built-in type and
-     `slice::len`, `slice::as_ptr`, `slice::from_raw_parts` its components
-     and constructor; lowering of `s.len()`, `s.as_ptr()`, a recorded
-     `s[a..b]`; raising in place of the `expect_thin` refusals in
-     `surface_synthesis.rs` and `render/surface.rs`; slice-valued pure
-     functions, `Option<&[u8]>` contract payloads, slice-returning
-     functions (a call result names its count, today an internal error in
-     `symbolic_call_result`), `as_bytes`, and the `rust_spelling` pairing.
-     This finishes slice returns and `as_bytes`.
+   - **2b-iii. Opaque slices, Surface type and raising**, in four parts.
+     The Surface `Slice<T>` cannot become the built-in type while a slice
+     the Surface already writes has no kernel value: a theorem's or pure
+     function's slice parameter, a slice-valued pure function's result, a
+     quantified or matched slice. And the enum cannot stay beside the
+     built-in type, which would be two representations of one slice. So
+     the kernel names every opaque slice's count first (2b-iii-a, 2b-iii-b),
+     then the Surface type replaces the enum in one step with its raising
+     (2b-iii-c), then strings (2b-iii-d).
+   - **2b-iii-a. Slices named by a variable.** Done. A slice named by one
+     variable `v` has thin part `Address::symbolic(v)` and count
+     `Variable(v.element_count())`: a `UInt64` variable whose identity is
+     `v`'s plus the component, so one name gives both components with no
+     second allocation, and the count raises from the slice's name
+     (`Variable::counted_slice`). A count is no ordinary, bound, witness,
+     match or produced variable (every origin predicate is false for it),
+     orders after every variable that is not one, so
+     `Variable::FIRST_NON_ORDINARY` still bounds the ordinary ones, and
+     hashes as `v` plus one word, so every other variable hashes as before.
+     `symbolic_call_result` builds such a slice for a slice type, in place
+     of its internal error: a slice-returning call's result, an exception
+     payload, a termination parameter and a case binder's payload. A count
+     is an independent variable to the logic, so a pass that renames or
+     closes over `v` alone leaves a valid fact about a fixed count; only the
+     naming link is lost, which 2b-iii-b closes for binders. Raising a count
+     refuses with an internal error until 2b-iii-c. Tests:
+     `kernel::tests::slice_call_result_tests`; scaling test
+     `a_named_slice_ignores_unrelated_slices_and_facts`.
+   - **2b-iii-b. Slice-valued pure applications and slice binders.**
+     Kernel only. A pure application of slice type is a wide pointer whose
+     thin part is based on `AddressBase::PureFunctionApplication(app)` and
+     whose count is a pure-application component of the same `app` (never
+     an integer application of the same name), so `f(x).len()` names it; a
+     definitional unfolding joins both components with the body's slice
+     (`add_pointer_equality`). A slice binder (a quantifier's sort, a
+     `match` arm's payload, a pure function's or theorem's parameter) is a
+     variable-named slice, and closing, opening, renaming and substituting
+     it carry `v` and `v.element_count()` together: a substitution of `v`
+     by a wide value maps the count to the value's count, and a rename or
+     closing maps the count to the new binder's count. Scaling tests for
+     both as unrelated applications, binders and facts grow.
+   - **2b-iii-c. Surface slice type and raising.** `spec enum Slice<T>`
+     is removed in the same step as the built-in type arrives: `Slice<T>`
+     lowers to `ProgramType::SlicePointer` and gets an interface type
+     (`interface_type_from_program_type` panics today);
+     `slice::from_raw_parts(p, n)`, `slice::len` and `slice::as_ptr` are
+     name-table entries for the constructor and the two components, not
+     functions with bodies; `s.len()`, `s.as_ptr()` and a recorded
+     `s[a..b]` lower to the components and a construction, and
+     `slice::subslice_len` and `Slice::Slice(p, n)` go. Raising replaces
+     every refusal: the `expect_thin` sites in `surface_synthesis.rs` and
+     `render/surface.rs`, `load_type_spelling` and the `SliceCount` read,
+     `SliceData`-based pointers, element-count variables and pure-application
+     counts, each lowering back to the same kernel term in the same
+     context. `rust_spelling` prints a slice directly rather than pairing a
+     pointer with a length. Slice-valued pure functions, `Option<&[u8]>`
+     contract payloads and slice-returning functions use the kernel forms of
+     2b-iii-a and 2b-iii-b. Rust slice parameters stay spread into a
+     pointer and a length until step 3, so a sidecar's bare slice argument
+     is the construction `slice::from_raw_parts(bytes, bytes.len())` of the
+     parameter's two bindings. The mdtests that use `Slice<T>` as the
+     example of a library enum (`library_field_accessors_*`,
+     `a_library_field_function_of_a_constructed_value_*`) change meaning:
+     `slice::len(slice::from_raw_parts(p, n))` is the component `n` with no
+     unfold, an intended change each explained in the PR.
+   - **2b-iii-d. Strings.** `str.interface.click` states `as_bytes` as
+     `result == s` retyped (a cast between slice types keeps the count),
+     mapped in the Rust front end's name table only. This finishes slice
+     returns and `as_bytes`.
 3. **Parameters and locals.** Slice parameters enter as one wide pointer;
    locals, assignments, reborrows, call arguments and returns carry it.
    Remove `spread_slice_arguments` and the paired-local paths. Migrate

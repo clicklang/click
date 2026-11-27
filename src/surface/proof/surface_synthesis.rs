@@ -6924,6 +6924,13 @@ fn synthesize_surface_bitvector(
         // lies in the same epoch; the kernel's own naming law decides that,
         // so the spelling lowers back to exactly this variable there.
         OldMachineTerm::Variable(variable) => {
+            // A slice's count raises as `s.len()` from the name of its slice,
+            // with the Surface slice type, never as a variable of its own.
+            assert!(
+                variable.counted_slice().is_none(),
+                "internal error: raising a slice's count to Surface has no form yet \
+                 (design/rust-slice-values.md, step 2b-iii-c)"
+            );
             // A recorded load already supplies the address to inspect. Avoid
             // searching unrelated locals when ordinary certificates name it.
             if let Some((_, pointer)) = crate::kernel::registered_load_for_variable(variable)
