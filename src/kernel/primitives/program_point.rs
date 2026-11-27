@@ -760,13 +760,6 @@ impl PathLink {
         self
     }
 
-    /// The point of a memory a fact quotes that no point holds yet: a
-    /// memory made between the points of an atomic region. A migration
-    /// marker; each use is a fact to be given a point.
-    pub(crate) fn not_yet_a_point() -> Self {
-        Self::default()
-    }
-
     /// The point of a proposition built only to look a fact up by its
     /// memory: lookups compare no point, so it needs none. It goes when
     /// fact indexes are keyed by point.
