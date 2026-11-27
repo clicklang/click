@@ -862,6 +862,10 @@ impl LoadKind {
             ProgramValue::UInt128(_) => Self::UInt128,
             ProgramValue::Float32(_) => Self::Float32,
             ProgramValue::Float64(_) => Self::Float64,
+            // A slice's two-word cell is no scalar or pointer-word read: no
+            // kind reads it, so no scalar read is answered by a stored slice
+            // (`design/rust-slice-values.md`, step 2b-ii-a).
+            ProgramValue::Pointer(pointer) if pointer.is_wide() => return None,
             ProgramValue::Pointer(_) => Self::Int32,
         })
     }

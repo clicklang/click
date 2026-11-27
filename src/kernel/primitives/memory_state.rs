@@ -7098,20 +7098,6 @@ impl SymbolicMemory {
             || crate::kernel::value_mismatch(value.native()),
             value.value(),
         );
-        // A pointer cell is one machine word; a wide pointer's two-word cell
-        // is not modeled yet. Read the payload in place: O(1), no export.
-        let wide = match value.value() {
-            ExecutionValue::Native(ProgramValue::Pointer(pointer)) => pointer.is_wide(),
-            ExecutionValue::Shared(root) => root
-                .pointer_payload()
-                .is_some_and(|pointer| pointer.len().is_some()),
-            ExecutionValue::Native(_) => false,
-        };
-        assert!(
-            !wide,
-            "internal error: storing a wide pointer has no memory cell yet \
-             (design/rust-slice-values.md, step 2b-ii)"
-        );
         let base = intern_derivation_base(&mut self);
         // Cache invalidation is internal to this store, not a memory event.
         // Retain its original input, and never intern the intermediate cache.

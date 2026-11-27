@@ -3280,7 +3280,7 @@ pub(in crate::kernel) fn complete_pointer_carrier_read_retained_value(
 ) -> Option<ExecutionValue> {
     let read = origin.as_loaded_value()?;
     if let Some(stored) = read.point.indexed_stored_value() {
-        return Some(stored.value().clone());
+        return (!stored_slice(stored.native())).then(|| stored.value().clone());
     }
     // A copied value uses the same whole-byte frame premises as a read
     // retained in place. In particular, an explicit separation of the
@@ -3312,11 +3312,19 @@ pub(in crate::kernel) fn complete_pointer_carrier_read_retained_value(
             value.clone()
         }
     };
-    matches!(
-        value.native(),
+    let native = value.native();
+    (matches!(
+        native,
         ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_)
-    )
+    ) && !stored_slice(&native))
     .then(|| value.into_value())
+}
+
+/// Whether a stored value is a slice: a two-word cell that carries no single
+/// pointer, so no thin pointer read recovers it (`design/rust-slice-values.md`,
+/// step 2b-ii-a). Reads the value in place.
+fn stored_slice(value: &ProgramValue) -> bool {
+    matches!(value, ProgramValue::Pointer(pointer) if pointer.is_wide())
 }
 
 /// Explicit pointer read-value normalization follows at most 64 recorded
@@ -6932,7 +6940,7 @@ fn transport_framed_atomic_pointer_value(
             }
             transport_framed_atomic_pointer(pointer, after, assumptions)
         },
-        // A wide pointer's count has no frame transport yet (step 2b-ii of
+        // A wide pointer's count has no frame transport yet (step 2b-ii-b of
         // `design/rust-slice-values.md`): the transport refuses it.
         |_| None,
     )

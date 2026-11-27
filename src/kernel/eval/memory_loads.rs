@@ -742,6 +742,20 @@ fn evaluate_logical_memory_load_paths_unbridged(
         })
         .or_else(|| symbolic_value(&mut facts));
     facts.retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
+    // A slice cell names its version and a slice read has no symbolic form
+    // until step 2b-ii-b of `design/rust-slice-values.md`: the read is
+    // refused, never lowered to the stored slice nor left without a path.
+    if value.is_none() && value_type.is_slice_pointer() {
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
+                pointer,
+                value_type,
+                stored: None,
+            }),
+            facts,
+            obligations,
+        }];
+    }
     value
         .into_iter()
         .map(|value| ExpressionPath {
@@ -807,10 +821,55 @@ fn retained_cell_holds_its_own_read(value: &ExecutionValue, pointer: &Address) -
     }
 }
 
+/// Whether a `bytes`-wide read at `pointer` overlaps a stored slice's cell
+/// that starts elsewhere: a cell at an 8-aligned constant offset in the
+/// read's own block (a slice's ABI alignment) whose 16 bytes meet the read's.
+/// The read's own address is the exact lookup's. At most three exact lookups
+/// by address, whatever the memory holds. A read at a symbolic offset, or
+/// beside a misaligned slice cell, is a symbolic read of its own bytes, which
+/// states nothing about the slice's words.
+fn reads_inside_slice_cell(memory: &SymbolicMemory, pointer: &Address, bytes: u32) -> bool {
+    let OffsetView::Constant(offset) = pointer.offset.view() else {
+        return false;
+    };
+    let reach = i64::from(crate::kernel::WIDE_POINTER_BYTE_WIDTH);
+    let alignment = i64::from(crate::kernel::C_POINTER_BYTE_WIDTH);
+    let (Some(lowest), Some(end)) = (
+        offset.checked_sub(reach - 1),
+        offset.checked_add(i64::from(bytes.max(1))),
+    ) else {
+        return false;
+    };
+    // Constant work, independent of the memory, charges nothing: a load
+    // that finds no slice cell is charged what it was before.
+    let first = lowest.div_euclid(alignment) * alignment;
+    let first = if first < lowest {
+        first + alignment
+    } else {
+        first
+    };
+    (first..end)
+        .step_by(alignment as usize)
+        .filter(|start| *start != offset)
+        .any(|start| {
+            // A run holds scalar slots only, so the concrete cells suffice.
+            matches!(
+                memory
+                    .cells
+                    .concrete()
+                    .get(&pointer.with_offset(AddressOffset::constant(start)))
+                    .map(StoredMemoryValue::native),
+                Some(ProgramValue::Pointer(stored)) if stored.is_wide()
+            )
+        })
+}
+
 /// Whether a logical read of a `value_type` cell lowers to the read at the
 /// cell's version rather than to a value the cell holds
-/// (`docs/internals/raise-lower-principle.md`). Integer and pointer cells keep their
-/// read identities; abstract values still read their stored value.
+/// (`docs/internals/raise-lower-principle.md`). Integer, pointer and slice cells keep their
+/// read identities; abstract values still read their stored value. A slice
+/// read has no symbolic form until step 2b-ii-b of `design/rust-slice-values.md`,
+/// so a logical read of a slice cell refuses rather than lowering to the slice.
 fn logical_read_names_its_version(value_type: ProgramType) -> bool {
     matches!(
         value_type,
@@ -824,6 +883,7 @@ fn logical_read_names_its_version(value_type: ProgramType) -> bool {
             | ProgramType::Int64
             | ProgramType::UInt64
     ) || value_type.is_pointer()
+        || value_type.is_slice_pointer()
 }
 
 /// A selected footprint supplies an equal address, not a replacement read
@@ -1313,6 +1373,20 @@ fn evaluate_retained_memory_load_case(
             .flatten()
             .and_then(|address| memory.known_retained_value(&address))
     });
+    // A read of part of a stored slice's cell takes one of its words, which
+    // the kernel has no layout for: it refuses, as a thin read of the whole
+    // cell does (`design/rust-slice-values.md`, step 2b-ii-a).
+    if known.is_none() && reads_inside_slice_cell(memory, &pointer, value_type.byte_width()) {
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
+                pointer: pointer.clone(),
+                value_type,
+                stored: None,
+            }),
+            facts,
+            obligations,
+        }];
+    }
     if let Some(value) =
         known.filter(|value| !names_version || retained_cell_holds_its_own_read(value, &pointer))
     {
@@ -2613,6 +2687,13 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<ExecutionValue> {
+    // A slice read has no symbolic form, and a read of its cell through
+    // another spelling would be related to the stored slice by a read
+    // equation it has no read for: it refuses until step 2b-ii-b of
+    // `design/rust-slice-values.md`.
+    if value_type.is_slice_pointer() {
+        return None;
+    }
     // A logical read keeps the address it was written with: lowering is
     // fact-stable (`docs/internals/raise-lower-principle.md`). The equality graph
     // relates it to a read of the same cell through another alias. A C read
@@ -3385,8 +3466,8 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             // The whole stored value defines the unmodified read. An
             // explicitly selected subobject or changed domain is a different
             // value even when it carries that same numeric read address.
-            // A slice is never a stored cell's whole value yet: a wide
-            // pointer's cell arrives with step 2b-ii of
+            // A slice read has no symbolic form yet, so no read side is a
+            // slice; its read-over-write arrives with step 2b-ii-b of
             // `design/rust-slice-values.md`.
             if side.is_wide() || side != &Pointer::new(side.address().clone(), side.program_type())
             {
@@ -3533,9 +3614,13 @@ fn indexed_pointer_read_value(
 /// function-pointer store answers no object-pointer decoding, nor the
 /// reverse (`design/loads.md`, "Pointers"). No category accepts either.
 fn decodes_as(stored: &Pointer, category: Option<PointerLoadCategory>) -> bool {
-    category.is_none_or(|category| {
-        PointerLoadCategory::of_type(stored.program_type()) == Some(category)
-    })
+    // A stored slice is a two-word cell, never one pointer word: no
+    // decoding of a pointer read, nor the bytes as an address, reads it
+    // until a layout fact states its words (`design/rust-slice-values.md`).
+    !stored.is_wide()
+        && category.is_none_or(|category| {
+            PointerLoadCategory::of_type(stored.program_type()) == Some(category)
+        })
 }
 
 /// The complete pointer stored at this read's address, when the state's
@@ -6249,7 +6334,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | ProgramType::Float64Array(_) => None,
         ProgramType::PointerArray(_, _) => None,
         // A wide pointer's two-word cell has no symbolic load yet
-        // (`design/rust-slice-values.md`, step 2b-ii): the load refuses.
+        // (`design/rust-slice-values.md`, step 2b-ii-b): the load refuses.
         ProgramType::SlicePointer(_) => None,
     }
 }
