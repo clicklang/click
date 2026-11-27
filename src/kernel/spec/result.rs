@@ -6,6 +6,23 @@ use super::*;
 pub(in crate::kernel) use crate::kernel::execution_value::ExecutionValue as SpecValue;
 
 impl SpecValue {
+    pub(super) fn program_truth_claim(&self) -> ExecutionResult<Proposition> {
+        let float = match self {
+            Self::Native(value) => FloatOperandView::from_value(value.numeric_value()),
+            Self::Shared(root) => FloatOperandView::from_shared(root),
+        };
+        if let Some(float) = float {
+            let zero = StoredConditionTerm::from_root(float.program_zero_test())
+                .expect("logical float classification");
+            return Ok(Proposition::condition_is(zero, false));
+        }
+        Ok(
+            OldConditionTerm::nonzero_test(self.native().numeric_value())
+                .ok_or(ExecutionLimit::Paths)?
+                .truth_claim(true),
+        )
+    }
+
     pub(super) fn conditional(
         proposition: &Proposition,
         then_value: &Self,

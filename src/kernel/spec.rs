@@ -9856,23 +9856,8 @@ fn evaluate_spec_program_expression_paths_in(
         let condition_paths = evaluate_operand(condition, assumptions, budget)?
             .into_iter()
             .map(|path| {
-                let condition = match path.value.native().numeric_value() {
-                    ProgramValue::Float32(bits) => OldConditionTerm::float32_classification(
-                        bits.clone(),
-                        FloatClassification::Zero,
-                    )
-                    .truth_claim(false),
-                    ProgramValue::Float64(bits) => OldConditionTerm::float64_classification(
-                        bits.clone(),
-                        FloatClassification::Zero,
-                    )
-                    .truth_claim(false),
-                    value => OldConditionTerm::nonzero_test(value)
-                        .ok_or(ExecutionLimit::Paths)?
-                        .truth_claim(true),
-                };
                 Ok(SpecPropositionPath {
-                    proposition: condition,
+                    proposition: path.value.program_truth_claim()?,
                     facts: path.facts,
                     obligations: path.obligations,
                     introductions: Vec::new(),

@@ -206,8 +206,21 @@ impl FloatOperandView<'_> {
         self,
         classification: FloatClassification,
     ) -> KernelTerm {
+        self.classification_with_bits(classification, self.evaluated_bits())
+    }
+
+    /// Executable truth tests also read a selected native If carried by a shared input.
+    pub(crate) fn program_zero_test(self) -> KernelTerm {
+        self.classification_with_bits(FloatClassification::Zero, self.constant_bits())
+    }
+
+    fn classification_with_bits(
+        self,
+        classification: FloatClassification,
+        bits: Option<u64>,
+    ) -> KernelTerm {
         let format = self.format();
-        if let Some(bits) = self.evaluated_bits() {
+        if let Some(bits) = bits {
             return KernelTerm::boolean_literal(format.classify_bits(bits, classification));
         }
         KernelTerm::float_classify(format, classification, self.predicate_operand())

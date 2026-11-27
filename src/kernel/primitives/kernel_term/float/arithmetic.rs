@@ -36,6 +36,18 @@ impl<'a> FloatOperandView<'a> {
     /// The native conversion producer's literal reading, without exporting a
     /// shared arithmetic prefix. Numeric operations reuse the same bit helpers.
     pub(crate) fn constant_bits(self) -> Option<u64> {
+        if let Self::Shared(root) = self
+            && matches!(
+                root.node(),
+                KernelTermNode::FloatBinary { .. } | KernelTermNode::FloatNegate { .. }
+            )
+        {
+            return self.closed_arithmetic_bits();
+        }
+        self.leaf_constant_bits()
+    }
+
+    fn leaf_constant_bits(self) -> Option<u64> {
         crate::instrumentation::record_deterministic_work(1);
         let format = self.format();
         if let Some((carrier, bits)) = self.literal() {
@@ -47,25 +59,11 @@ impl<'a> FloatOperandView<'a> {
         {
             return None;
         }
-        if let Some(native) = self.old_form() {
-            return match format {
-                KernelFloatType::Float32 => native.float32_as_const().map(u64::from),
-                KernelFloatType::Float64 => native.float64_as_const(),
-            };
+        let native = self.old_form()?;
+        match format {
+            KernelFloatType::Float32 => native.float32_as_const().map(u64::from),
+            KernelFloatType::Float64 => native.float64_as_const(),
         }
-        if let Some(operand) = self.negate() {
-            let bits = operand.constant_bits()?;
-            return Some(
-                bits ^ match format {
-                    KernelFloatType::Float32 => 0x8000_0000,
-                    KernelFloatType::Float64 => 0x8000_0000_0000_0000,
-                },
-            );
-        }
-        let (operator, [left, right]) = self.binary()?;
-        let left = left.constant_bits()?;
-        let right = right.constant_bits()?;
-        Some(float_binary_bits_at(format, left, right, operator))
     }
 
     /// Compute a closed arithmetic operand without unfolding a shared DAG.
@@ -113,8 +111,10 @@ impl<'a> FloatOperandView<'a> {
                             pending.push(Task::Enter(&arguments[0]));
                         }
                         _ => {
-                            values
-                                .insert(root.id(), FloatOperandView::Shared(root).constant_bits());
+                            values.insert(
+                                root.id(),
+                                FloatOperandView::Shared(root).leaf_constant_bits(),
+                            );
                         }
                     }
                 }
