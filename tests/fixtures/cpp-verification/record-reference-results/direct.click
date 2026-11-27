@@ -35,4 +35,17 @@ int32 probe(Outer& outer) {
         rewrite(call(0).result, &outer.child);
         close();
     }
+
+    have separate(region(2).footprint, memory((&outer.first)[0..1]));
+    have separate(region(2).footprint, memory((&outer.child.sibling)[0..1]));
+    have outer.first == at(region(2).entry, outer.first) by {
+        preserve(memory((&outer.first)[0..1]), region(2));
+    }
+    have outer.child.sibling == at(region(2).entry, outer.child.sibling) by {
+        preserve(memory((&outer.child.sibling)[0..1]), region(2));
+    }
+    step_until(function.exit);
+    have result == outer.child.value;
+    have region(0).result == old(outer.first);
+    close();
 }
