@@ -64,6 +64,41 @@ the proof `if` or `branch` to write there. The tactic reference classifies it
 as smart. The parser refuses the removed `execute()`; write
 `step_until(function.exit)` or leave the C to the implicit tail.
 
+## State tactics and logical tactics
+
+A second classification is by what a tactic may change. A proof state has
+three parts:
+
+- The **program state** is the state of the C program: the memory history,
+  the local bindings, and the current program point. The memory history holds
+  the program points a path reached and what each step between them did, and
+  answers questions about memory by point.
+- The **resource context** is what the proof owns and views. It is a proof
+  construct with no counterpart in the C program.
+- The **fact context** is the pure facts known about the states, with the
+  e-graph that indexes their equalities.
+
+**State tactics** change the program state or the resource context: the
+execution tactics (`step`, `step_until`, `branch`, `loop`) and the resource
+tactics (`fold`, `unfold`, `observe`, `with`). `mark` only names the current
+point. Only stepping changes
+the memory history; a resource tactic moves ownership, and at most names more
+cells of the state at the current point. **Logical tactics** change only the
+fact context (`have`, `apply`, `close()`, `intro`, `witness`, `obtain`, and the
+other proposition tactics). They may read the program state and resource
+context but never change them.
+
+Expansion relies on this. A logical tactic expands only into logical tactics,
+so replacing a smart tactic with its expansion leaves the program state and
+resource context exactly as they were, and every later tactic sees the same
+state. A query a logical tactic makes of the program state takes the fact
+context as input (whether a written address aliases a cell, for example), but
+its answer never changes the program state.
+
+This is independent of the smart, simple, and control classes: `close()` is a
+smart logical tactic, `step()` a simple state tactic, and `step_until` a smart
+state tactic.
+
 ## Fact transport
 
 To establish a proposition in the current state, state it with `have`.
