@@ -7868,9 +7868,37 @@ fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
         (i64::MAX, i32::MAX, false, 4294967299),
         (i64::MIN, i32::MAX, true, -4294967299),
     ] {
+        let divisor = i64::from(d);
+        let quotient = n / divisor;
+        let remainder = n % divisor;
+        let correction = i64::from(remainder > 0) - i64::from(remainder != 0 && down);
         let source = format!(
-            "verifying \"arithmetic.cpp\";\nint64 rounded_divide(int64 n, int32 d, bool round_down) {{\nrequires n == {n}i64;\nrequires d == {d};\nrequires round_down == {};\nensures result == {result}i64;\n}}\n",
-            down
+            r#"verifying "arithmetic.cpp";
+int64 rounded_divide(int64 n, int32 d, bool round_down) {{
+ requires n == {n}i64;
+ requires d == {d};
+ requires round_down == {down};
+ ensures result == {result}i64;
+}} by {{
+ step();
+ step();
+ have quot == n / (d as int64);
+ have (d as int64) == {d}i64 by close() using {{ d == {d}; }};
+ have quot == {quotient}i64 by {{
+  rewrite(quot, n / (d as int64));
+  rewrite(n, {n}i64);
+  rewrite((d as int64), {d}i64);
+  close() using {{}};
+ }}
+ mark before_return;
+ step();
+ have result == at(before_return, quot) + ({correction}i64);
+ close() using {{
+  result == at(before_return, quot) + ({correction}i64);
+  at(before_return, quot) == {quotient}i64;
+ }};
+}}
+"#
         );
         check_selected_claim_certificate(&project, &import, &source);
     }
@@ -18840,7 +18868,8 @@ int& probe(View& view, unsigned long n) noexcept {
         import.export().functions[0].body[1],
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
-    let proof = r#"verifying "construct-assignment.cpp";
+    let proof = r#"import click::separation;
+verifying "construct-assignment.cpp";
 int32* identity(int32* p) { ensures result == p; }
 View::View(int32* p, uint64 n) {
  owns this->data;
@@ -18862,7 +18891,18 @@ int32& probe(struct View& view, uint64 n) {
  ensures result == old(view.data[0]);
  ensures view.data == old(view.data);
  ensures view.size == n;
-
+} by {
+ step_until(region(5).entry);
+ have separate(memory((&view as (int32 *))[0..2]), memory(old(view.data)[0..1]));
+ have separate(memory((&view as (uint64 *))[1..2]), memory(old(view.data)[0..1]));
+ have separate(memory((&view as (uint8 *))[0..8]), memory(old(view.data)[0..1])) by close() using { separate(memory((&view as (int32 *))[0..2]), memory(old(view.data)[0..1])); };
+ have separate(memory((&view as (uint8 *))[8..16]), memory(old(view.data)[0..1])) by close() using { separate(memory((&view as (uint64 *))[1..2]), memory(old(view.data)[0..1])); };
+ apply(separation::separate_star(memory((&view as (uint8 *))[0..8]), memory((&view as (uint8 *))[8..16]), memory(old(view.data)[0..1])));
+ apply(separation::contains_joined_ranges((&view as (uint8 *)), 0, 8, 16));
+ apply(separation::contains_refl(memory(old(view.data)[0..1])));
+ apply(separation::separate_restrict(memory((&view as (uint8 *))[0..8]) * memory((&view as (uint8 *))[8..16]), memory(old(view.data)[0..1]), memory((&view as (uint8 *))[0..16]), memory(old(view.data)[0..1])));
+ step_until(function.exit);
+ close();
 }
 "#;
     check_first_claim_certificate(&project, &import, proof);
