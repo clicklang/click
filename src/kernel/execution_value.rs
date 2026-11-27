@@ -194,9 +194,9 @@ impl ExecutionValue {
     pub(in crate::kernel) fn boolean(&self) -> Option<KernelTerm> {
         match self {
             Self::Shared(root) if root.ty() == &KernelType::Bool => Some(root.clone()),
-            Self::Native(ProgramValue::Bool(word)) => Some(
-                KernelTermImport::default().condition(&OldConditionTerm::truth_of_bool_word(word)),
-            ),
+            Self::Native(ProgramValue::Bool(word)) => {
+                Some(KernelTermImport::default().truth_of_bool_word(word))
+            }
             _ => None,
         }
     }

@@ -343,6 +343,11 @@ impl KernelMachineLiteral {
         let value = self
             .constant_at(source)?
             .convert_modulo(destination.format());
+        Some(Self::constant_term(value))
+    }
+
+    pub(super) fn constant_term(value: MachineIntegerConstant) -> KernelTerm {
+        let destination = MachineIntegerType::of_format(value.format());
         let bits = value.bits();
         let literal = match destination {
             MachineIntegerType::Int32 => Self::Word32(bits as u32),
@@ -351,10 +356,10 @@ impl KernelMachineLiteral {
             MachineIntegerType::UInt64 => Self::UInt64(bits as u64),
             _ => Self::Wide(value),
         };
-        Some(KernelTerm::intern(
+        KernelTerm::intern(
             KernelType::Program(destination.program_type()),
             KernelTermNode::MachineLiteral(literal),
-        ))
+        )
     }
 
     pub(crate) fn word32(&self) -> Option<u32> {

@@ -1829,7 +1829,7 @@ impl KernelTermImport {
                     OldMachineTerm::Constant {
                         format: MachineIntegerType::UInt8,
                         bits,
-                    } if *bits <= 1 => self.condition(&OldConditionTerm::Constant(*bits != 0)),
+                    } if *bits <= 1 => KernelTerm::boolean_literal(*bits != 0),
                     OldMachineTerm::Variable(variable) => {
                         KernelTerm::variable(KernelType::Program(ProgramType::Bool), *variable)
                     }
