@@ -1682,6 +1682,43 @@ mod cast_tests {
             BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt64),
         ] {
             let (encoding, source, destination) = E::of_unary(op).unwrap();
+            for (format, literal) in [
+                (
+                    MachineIntegerType::Int32,
+                    OldMachineTerm::constant(u32::MAX),
+                ),
+                (
+                    MachineIntegerType::UInt32,
+                    OldMachineTerm::uint32_constant(u32::MAX),
+                ),
+                (
+                    MachineIntegerType::Int64,
+                    OldMachineTerm::int64_constant(-1),
+                ),
+                (
+                    MachineIntegerType::UInt64,
+                    OldMachineTerm::uint64_constant(u64::MAX),
+                ),
+            ] {
+                let computed = OldMachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::BitwiseOr,
+                    left: Box::new(literal.clone()),
+                    right: Box::new(literal.clone()),
+                };
+                for operand in [literal, computed] {
+                    let boxed = op.build_raw(operand);
+                    let root = KernelTermImport::default().machine(destination, &boxed);
+                    let cached = MachineOperandView::Shared(&root);
+                    assert_eq!(cached.word32_constant(), boxed.as_const(), "{boxed:?}");
+                    assert_eq!(cached.int64_constant(), boxed.int64_as_const(), "{boxed:?}");
+                    assert_eq!(
+                        cached.uint64_constant(),
+                        boxed.uint64_as_const(),
+                        "{boxed:?}"
+                    );
+                }
+            }
             let boxed = op.build_raw(base.clone());
             let root = KernelTermImport::default()
                 .machine_arithmetic(destination, &boxed)

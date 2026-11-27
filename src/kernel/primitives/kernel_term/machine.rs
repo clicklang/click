@@ -369,13 +369,13 @@ impl KernelMachineLiteral {
 /// Apply the existing constant readers to one operator over literal children;
 /// signed overflow and undefined division/shift readings remain absent.
 pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
-    let (format, root) = match node {
-        KernelTermNode::MachineLiteral(value) => return Some(value.clone()),
+    match node {
+        KernelTermNode::MachineLiteral(value) => Some(value.clone()),
         KernelTermNode::MachineIf { arguments } => {
             let KernelTermNode::BoolLiteral(value) = arguments[0].node() else {
                 return None;
             };
-            return arguments[if *value { 1 } else { 2 }]
+            arguments[if *value { 1 } else { 2 }]
                 .machine_constant_reading()
                 .and_then(|value| match value {
                     KernelMachineLiteral::UInt32(bits) => Some(KernelMachineLiteral::Word32(*bits)),
@@ -383,18 +383,18 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     | KernelMachineLiteral::Int64(_)
                     | KernelMachineLiteral::UInt64(_) => Some(value.clone()),
                     _ => None,
-                });
+                })
         }
         KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
             // native `If`, instead of exporting the enclosing DAG to read it.
             let operand = retained_machine_input(node)?;
-            return operand
+            operand
                 .uint64_as_const()
                 .map(KernelMachineLiteral::UInt64)
                 .or_else(|| operand.int64_as_const().map(KernelMachineLiteral::Int64))
-                .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32));
+                .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32))
         }
         KernelTermNode::MachineBinary {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
@@ -406,11 +406,11 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                 left.machine_constant_reading()?.word32()?,
                 right.machine_constant_reading()?.word32()?,
             )?;
-            return Some(if *format == MachineIntegerType::Int32 {
+            Some(if *format == MachineIntegerType::Int32 {
                 KernelMachineLiteral::Word32(bits)
             } else {
                 KernelMachineLiteral::UInt32(bits)
-            });
+            })
         }
         KernelTermNode::MachineBinary {
             format,
@@ -427,7 +427,7 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                 }
                 rhs.word32().or_else(|| u32::try_from(rhs.signed64()?).ok())
             };
-            return Some(match format {
+            Some(match format {
                 MachineIntegerType::Int64 => {
                     let right = if operator.is_shift() {
                         i64::from(shift_count()?)
@@ -447,7 +447,7 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     )
                 }
                 _ => return None,
-            });
+            })
         }
         KernelTermNode::MachineUnary {
             format,
@@ -455,56 +455,61 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
             operand,
         } => {
             let literal = operand.machine_constant_reading()?;
-            return Some(match format {
+            Some(match format {
                 MachineIntegerType::Int32 => KernelMachineLiteral::Word32(!literal.word32()?),
                 MachineIntegerType::UInt32 => KernelMachineLiteral::UInt32(!literal.word32()?),
                 MachineIntegerType::Int64 => KernelMachineLiteral::Int64(!literal.signed64()?),
                 MachineIntegerType::UInt64 => KernelMachineLiteral::UInt64(!literal.unsigned64()?),
                 _ => return None,
-            });
+            })
         }
         KernelTermNode::MachineCast {
             encoding,
-            source,
             destination,
             operand,
+            ..
         } => {
+            use MachineCastSpelling as Cast;
             let reading = operand.machine_constant_reading()?;
-            // Native extension readers accept a literal of the source width,
-            // then recurse only through their wide constant family. Replacing
-            // a computed narrow child with its cached literal would broaden
-            // that rule and change checking-constructor output shapes.
-            if !matches!(operand.node(), KernelTermNode::MachineLiteral(_))
-                && matches!(
-                    (encoding, reading),
-                    (
-                        MachineCastSpelling::Int64From32
-                            | MachineCastSpelling::Int64FromUInt32
-                            | MachineCastSpelling::UInt64From32
-                            | MachineCastSpelling::UInt64FromInt32,
-                        KernelMachineLiteral::Word32(_) | KernelMachineLiteral::UInt32(_),
-                    ) | (
-                        MachineCastSpelling::UInt64FromInt64,
-                        KernelMachineLiteral::Int64(_),
-                    )
-                )
-            {
-                return None;
+            // Extensions accept narrow constants only at a literal root.
+            // Computed operands must already have a readable wide value.
+            let literal = matches!(operand.node(), KernelTermNode::MachineLiteral(_));
+            let word = if literal { reading.word32() } else { None };
+            let result = match encoding {
+                Cast::Generic | Cast::UInt32From64 => return None,
+                Cast::Int64From32 | Cast::Int64FromUInt32 => {
+                    let value = match word {
+                        Some(bits) if *encoding == Cast::Int64From32 => i64::from(bits as i32),
+                        Some(bits) => i64::from(bits),
+                        None => reading.signed64()?,
+                    };
+                    KernelMachineLiteral::Int64(value)
+                }
+                Cast::UInt64From32 | Cast::UInt64FromInt32 => {
+                    let bits = match word {
+                        Some(bits) if *encoding == Cast::UInt64FromInt32 => {
+                            i64::from(bits as i32) as u64
+                        }
+                        Some(bits) => u64::from(bits),
+                        None => reading.unsigned64()?,
+                    };
+                    KernelMachineLiteral::UInt64(bits)
+                }
+                Cast::UInt64FromInt64 => {
+                    let bits = if literal {
+                        reading.signed64()? as u64
+                    } else {
+                        reading.unsigned64()?
+                    };
+                    KernelMachineLiteral::UInt64(bits)
+                }
+            };
+            match destination {
+                MachineIntegerType::Int64 => result.signed64().map(KernelMachineLiteral::Int64),
+                MachineIntegerType::UInt64 => result.unsigned64().map(KernelMachineLiteral::UInt64),
+                _ => None,
             }
-            (
-                *destination,
-                encoding
-                    .unary(*source, *destination)
-                    .build_raw(reading.old_term()),
-            )
         }
-        _ => return None,
-    };
-    match format {
-        MachineIntegerType::Int32 => root.as_const().map(KernelMachineLiteral::Word32),
-        MachineIntegerType::UInt32 => root.as_const().map(KernelMachineLiteral::UInt32),
-        MachineIntegerType::Int64 => root.int64_as_const().map(KernelMachineLiteral::Int64),
-        MachineIntegerType::UInt64 => root.uint64_as_const().map(KernelMachineLiteral::UInt64),
         _ => None,
     }
 }
