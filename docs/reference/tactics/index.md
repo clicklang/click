@@ -20,7 +20,11 @@ language. A tactic is either **smart**, **simple**, or **control**:
   the container itself, determine whether an expanded proof is simple.
 
 [Smart and simple tactics](../../concepts/smart-and-simple-tactics.md) is the
-canonical definition of these classes.
+canonical definition of these classes. It also defines a second, independent
+classification: [state tactics](../../concepts/smart-and-simple-tactics.md#state-tactics-and-logical-tactics),
+which change the program state or the resource context (the tactics under
+Execution and Resources and transport), and logical tactics, which change only
+the fact context (the rest).
 
 Each simple tactic's section states what it **accepts**, a guarantee, and what
 is **outside it**, with what to write instead. A simple tactic that refuses a

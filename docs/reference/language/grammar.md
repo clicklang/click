@@ -146,8 +146,8 @@ documentation inventory keep the following accepted words synchronized.
 | `is_a` | Type-evidence proposition `is_a<T>(p)`: the object `p` points to is a `T`, a struct type `struct S` or a pointer to one `struct S*`. It holds where the proof has that evidence, such as an opened resource body's typed call. See [Type evidence](#type-evidence). |
 | `load` | Typed memory read `load<T>(p)`: reads the object at `p` as `T`, a scalar, data pointer, or function pointer `R (*)(A, ...)`; `volatile T` makes the access volatile and `const T*` reads a pointer to `const T`. Expansion writes it for a read with no C place to name it. See [Typed loads](#typed-loads). |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
-| `mark`, `step`, `step_until` | Execution tactics. |
-| `unfold`, `fold`, `observe`, `with` | Predicate and resource tactics. |
+| `mark`, `step`, `step_until` | Execution tactics. `step` and `step_until` are [state tactics](../../concepts/smart-and-simple-tactics.md#state-tactics-and-logical-tactics) that change the program state; `mark` names the current point. |
+| `unfold`, `fold`, `observe`, `with` | Predicate and resource tactics: state tactics that change the resource context. |
 | `unfold` and `fold` with `[i]` or `[..]` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `all`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `both` | Retired conjunction tactic. Use `all { P => { ... } Q => { ... } }`. |
