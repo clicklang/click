@@ -148,7 +148,6 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     let parameter_binding = proof_context.parameter_binding();
     let predicate_environment = proof_context.spec_definitions.predicates;
     let click_function_environment = proof_context.spec_definitions.functions;
-    let resource_environment = proof_context.resource_environment;
     let claim_label = proof_context.claim_label;
     let state: &mut ExecutionState = &mut execution.core.state;
     let Some(join_inputs) = join_inputs else {
