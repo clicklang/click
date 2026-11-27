@@ -407,7 +407,7 @@ pub(super) fn shared_value_reading(
                 continue;
             }
             if let KernelTermNode::MachineLiteral(value) = term.node()
-                && ty.constant_from_term(&value.old_term()).is_none()
+                && value.constant_at(ty).is_none()
             {
                 break None;
             }
@@ -1099,7 +1099,7 @@ impl<'a> MachineOperandView<'a> {
                 };
                 if let KernelTermNode::MachineLiteral(value) = read.node() {
                     return Some(IntegerTerm::constant(
-                        read_ty.constant_from_term(&value.old_term())?.to_integer(),
+                        value.constant_at(read_ty)?.to_integer(),
                     ));
                 }
                 let observed_ty = match term.node() {
@@ -1201,6 +1201,39 @@ mod tests {
                     assert_eq!(
                         *result.value(),
                         OldMachineTerm::machine_integer_cast(source, destination, value)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn checking_literal_casts_preserve_the_destination_carrier() {
+        use crate::kernel::machine_integer::FORMATS;
+        let _session = crate::kernel::VerificationSession::enter();
+        for written in FORMATS {
+            let constant =
+                MachineIntegerConstant::from_bits(written.format(), written.format().mask())
+                    .unwrap();
+            let literal = written.constant_term(constant).unwrap();
+            for source in FORMATS {
+                let root = KernelTermImport::default().machine(source, &literal);
+                let KernelTermNode::MachineLiteral(value) = root.node() else {
+                    panic!("expected literal")
+                };
+                assert_eq!(
+                    value.constant_at(source),
+                    source.constant_from_term(&literal)
+                );
+                if value.constant_at(source).is_none() {
+                    continue;
+                }
+                for destination in FORMATS {
+                    let cast = root.checking_machine_cast(source, destination);
+                    assert_eq!(
+                        KernelTermExport::machine(&cast).unwrap(),
+                        OldMachineTerm::machine_integer_cast(source, destination, literal.clone()),
+                        "{written:?} read as {source:?} converted to {destination:?}"
                     );
                 }
             }

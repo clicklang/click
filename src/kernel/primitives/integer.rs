@@ -1088,9 +1088,7 @@ impl SharedMachineIntegerTerm {
                 if let Some((root, reading)) = shared_reading {
                     let (ty, read) = reading?;
                     if let KernelTermNode::MachineLiteral(value) = read.node() {
-                        return Some(IntegerTerm::constant(
-                            ty.constant_from_term(&value.old_term())?.to_integer(),
-                        ));
+                        return Some(IntegerTerm::constant(value.constant_at(ty)?.to_integer()));
                     }
                     if ty == self.ty() && read.id() == root.id() {
                         return None;

@@ -320,6 +320,43 @@ pub enum KernelMachineLiteral {
 }
 
 impl KernelMachineLiteral {
+    /// A typed literal reading admits either 32-bit carrier at either
+    /// 32-bit format. Every other width retains its written signedness.
+    pub(crate) fn constant_at(&self, ty: MachineIntegerType) -> Option<MachineIntegerConstant> {
+        let bits = match (self, ty) {
+            (_, MachineIntegerType::Int32 | MachineIntegerType::UInt32) => {
+                u128::from(self.word32()?)
+            }
+            (Self::Int64(value), MachineIntegerType::Int64) => u128::from(*value as u64),
+            (Self::UInt64(value), MachineIntegerType::UInt64) => u128::from(*value),
+            (Self::Wide(value), _) if value.format() == ty.format() => return Some(*value),
+            _ => return None,
+        };
+        Some(MachineIntegerConstant::from_term_bits(ty.format(), bits))
+    }
+
+    fn converted_term(
+        &self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    ) -> Option<KernelTerm> {
+        let value = self
+            .constant_at(source)?
+            .convert_modulo(destination.format());
+        let bits = value.bits();
+        let literal = match destination {
+            MachineIntegerType::Int32 => Self::Word32(bits as u32),
+            MachineIntegerType::UInt32 => Self::UInt32(bits as u32),
+            MachineIntegerType::Int64 => Self::Int64(bits as i64),
+            MachineIntegerType::UInt64 => Self::UInt64(bits as u64),
+            _ => Self::Wide(value),
+        };
+        Some(KernelTerm::intern(
+            KernelType::Program(destination.program_type()),
+            KernelTermNode::MachineLiteral(literal),
+        ))
+    }
+
     pub(crate) fn word32(&self) -> Option<u32> {
         match self {
             Self::Word32(bits) | Self::UInt32(bits) => Some(*bits),
@@ -1210,12 +1247,9 @@ impl KernelTerm {
                     break term.with_machine_observation_type(destination);
                 }
                 if let KernelTermNode::MachineLiteral(literal) = term.node()
-                    && let Some(constant) = source.constant_from_term(&literal.old_term())
+                    && let Some(result) = literal.converted_term(source, destination)
                 {
-                    let value = destination
-                        .constant_term(constant.convert_modulo(destination.format()))
-                        .expect("matching format");
-                    break KernelTermImport::default().machine(destination, &value);
+                    break result;
                 }
                 if let KernelTermNode::MachineCast {
                     encoding: MachineCastSpelling::Generic,
@@ -1270,8 +1304,12 @@ impl KernelTerm {
         assert!(self.is_shared_machine_operand());
         use KernelMachineLiteral as L;
         use MachineIntegerType as Ty;
-        let literal =
-            |bits| KernelTermImport::default().machine(Ty::Int32, &OldMachineTerm::constant(bits));
+        let literal = |bits| {
+            Self::intern(
+                KernelType::Program(Ty::Int32.program_type()),
+                KernelTermNode::MachineLiteral(L::Word32(bits)),
+            )
+        };
         let root = |value: &Self| match value.node() {
             KernelTermNode::MachineLiteral(L::Int64(bits)) => literal(*bits as u32),
             KernelTermNode::MachineLiteral(L::UInt64(bits)) => literal(*bits as u32),
@@ -1351,6 +1389,11 @@ impl KernelTerm {
         use MachineCastSpelling as E;
         assert!(self.is_shared_machine_operand());
         if let KernelTermNode::MachineLiteral(literal) = self.node() {
+            if let Some(result) = literal.converted_term(source, destination) {
+                return result;
+            }
+            // A literal can be observed through a different carrier. Lower
+            // those conversions with the existing wrapper normalization.
             let value = convert_value(source.value_from_term(literal.old_term()), destination)
                 .expect("integer conversion");
             return KernelTermImport::default().argument(&PureFunctionArgument::Value(value));
