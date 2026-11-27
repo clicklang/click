@@ -21,7 +21,6 @@ the same premise, including inside address casts and `at(...)` expressions.
 ```text
 usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]
        click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--check-normalize-removal] [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>
-       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>
 ```
 
 Replace the following:
@@ -187,7 +186,6 @@ selected type instance; expansion preserves the generic declaration.
 | --- | --- |
 | `--claim LABEL` | Expand all smart tactics in one named claim, including one loop phase, instead of selecting a tactic by location. `--claim PATH:LINE[:COLUMN]` names the innermost claim whose clause or proof covers that line of the target. |
 | `--check-normalize-removal` | Require `--claim` and reject `normalize()` or `normalize() using` in the selected proof or its expansion. Expansion also fails if the selected proof needs a verification-only normalization fallback. A passing rewrite still has to replay with proof search disabled. |
-| `--migrate-normalize` | Try replacing written normalization in each indexed proof unit, or in the proof unit named by `--claim LABEL`. Emit the substitutions that verify and whose expansions replay without implicit solving or normalization. Skip expected-failure mdtests and report proof units that still need work. Use `scripts/migrate-normalize.py` to generate a patch for multiple files. |
 | `--work-limit UNITS` | Set the deterministic work budget of the whole command, generating the expansion and checking it. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound of the whole command. The default is `10m`. It stops a hung or CPU-starved run and is not a verdict about the proof; smart search inside the expansion is bounded by its deterministic smart work budget, not by a clock. |
 | `--output PATH` | Write the complete verified rewrite in the input's directory. |
@@ -223,8 +221,7 @@ Arithmetic expansion writes each intermediate derivation once as an ordinary
 `have`, then reuses the established fact through explicit premises. A grouped closure proves each open claim in a `have` and
 then closes each goal in contract order.
 
-Expansion retains handwritten `normalize()` calls that occur in the checked
-source proof. If verification uses legacy normalization internally and has
+If verification uses legacy normalization internally and has
 no ordinary certificate for a selected proof, expansion reports that
 limitation without rewriting the source.
 

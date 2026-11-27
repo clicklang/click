@@ -450,20 +450,7 @@ mod tests {
 
     #[test]
     fn a_tactic_entry_lists_every_form_with_its_class() {
-        let normalize = lookup("normalize").unwrap();
-        assert!(
-            normalize.contains("- `normalize()`: simple;"),
-            "{normalize}"
-        );
-        assert!(
-            normalize.contains("- `normalize() using { P; ... }`: simple;"),
-            "{normalize}"
-        );
-        assert!(
-            normalize.contains("### Context-free normalization"),
-            "{normalize}"
-        );
-        assert!(normalize.contains("### Normalization with selected premises"));
+        assert!(lookup("normalize").is_err());
         let apply = lookup("apply").unwrap();
         assert!(
             apply.contains("- `apply(theorem(args))`: simple;"),
@@ -475,7 +462,6 @@ mod tests {
             "{step}"
         );
         assert!(lookup("auto").unwrap().contains("## Automation and search"));
-        assert!(!normalize.contains("verified-example"), "{normalize}");
     }
 
     #[test]
@@ -505,18 +491,18 @@ mod tests {
 
     #[test]
     fn an_unknown_name_suggests_close_ones() {
-        let error = lookup("normalise").unwrap_err();
+        let error = lookup("rewrit").unwrap_err();
         assert!(
-            error.starts_with("no docs for `normalise`; did you mean"),
+            error.starts_with("no docs for `rewrit`; did you mean"),
             "{error}"
         );
-        assert!(error.contains("`normalize`"), "{error}");
+        assert!(error.contains("`rewrite`"), "{error}");
     }
 
     #[test]
     fn a_written_tactic_selects_its_class() {
         let class = |written| written_tactic_class(written).map(|(_, class)| class);
-        assert_eq!(class("normalize();"), Some(TacticClass::Simple));
+        assert_eq!(class("normalize();"), None);
         assert_eq!(class("close();"), Some(TacticClass::Smart));
         assert_eq!(class("apply(t(x));"), Some(TacticClass::Simple));
         assert_eq!(
@@ -549,7 +535,7 @@ mod tests {
         let tactics = index.find("tactics:").unwrap();
         let topics = index.find("topics:").unwrap();
         assert!(tactics < topics);
-        assert!(index[tactics..topics].contains("  normalize "), "{index}");
+        assert!(index[tactics..topics].contains("  rewrite "), "{index}");
         assert!(index[topics..].contains("  tracing "), "{index}");
         assert!(index[topics..].contains("  cli/audit "), "{index}");
     }

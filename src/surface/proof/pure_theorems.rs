@@ -3414,10 +3414,9 @@ mod tests {
     #[test]
     fn ordinary_pure_scripts_retain_completion_without_compatibility() {
         for body in [
-            "normalize();",
             "close();",
             "have x == x by { close(); } close();",
-            "if x == 0 { normalize(); } else { normalize(); }",
+            "if x == 0 { close(); } else { close(); }",
         ] {
             let source = format!("theorem ordinary(x: int32) {{ ensures x == x by {{ {body} }} }}");
             let result = verify_instantiation_theorem(&source);
@@ -3429,13 +3428,11 @@ mod tests {
             assert!(!verified.proof_certificate().unwrap().steps().is_empty());
         }
         let error = verify_instantiation_theorem(
-            "theorem bad(x: int32) { ensures x == 0 by { normalize(); close(); } }",
+            "theorem bad(x: int32) { ensures x == 0 by { close() using {}; close(); } }",
         )
         .unwrap_err();
         assert!(
-            error
-                .message()
-                .contains("`normalize` goal did not normalize"),
+            error.message().contains("`close() using` could not prove"),
             "{}",
             error.message()
         );

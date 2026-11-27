@@ -30,16 +30,16 @@
     "diagnostic": "local `i` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click",
     "frozen_sidecar": "design/charon-trial/loop-headers/sum.click",
-    "frozen_sha256": "732e55a5db408c794bdd495fcdf30802f7c415859429e9c2e0c1ec0384b0b90c",
+    "frozen_sha256": "8ce34530fd9b66a26e66a6f2b4584302b7fc47a7959c486d5353a933fca7639f",
     "original_sha256": "1afb6f97d57a035f80f0ec44493ad3494592af572349068f500c05d76e740149"
   },
   {
     "sidecar": "examples/rust-chunks-exact/chunks.click",
     "outcome": "proof-gap",
-    "diagnostic": "tactic 1 > have body tactic 1: `normalize using` goal did not normalize to true using the listed conditions",
+    "diagnostic": "`close() using` could not prove the current goal from only its listed premises",
     "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click",
     "frozen_sidecar": "design/charon-trial/chunk-proof/frozen.click",
-    "frozen_sha256": "73428e5d20f461c019ac2593e737ad3f0ddadf4e2d192ce6760151baa2fc676b",
+    "frozen_sha256": "f12e4b9c5c64aad09d128a8be7c187b3cce97934db4ae9d9f047fdacc1074a41",
     "original_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {

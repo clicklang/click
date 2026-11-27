@@ -124,7 +124,10 @@ signatures, specification functions and contracts were preserved.
 The archived proofs received their initial syntax respelling on 2026-10-26.
 The 2026-11-15 `rewrite` migration changed equality arguments to two expression
 arguments and refreshed affected `frozen_sha256` digests. `original_sha256`
-continues to identify the originals in history; recorded outcomes are unchanged. Literal archived-sidecar compatibility was 11/16. That is a
+continues to identify the originals in history. The `normalize()` retirement
+respells the two remaining archived proofs and refreshes their frozen digests.
+The chunk archive now reaches a later cast bound before its proof gap. Literal
+archived-sidecar compatibility was 11/16. That is a
 historical compatibility measure, not current Rust coverage or an unfinished
 backend switch. The live tests check frozen outcomes separately from current
 canonical proofs; an old failure is not counted as a current passing proof.

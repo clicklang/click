@@ -102,9 +102,9 @@ use checking::*;
 pub(crate) use expansion::click_import_sites_in_container;
 pub use expansion::{
     ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite, ContractProofClaim,
-    NormalizeSourceSite, ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate,
-    SmartTacticSelectionError, SmartTacticSourceSite, SourceClaim, SourcePosition,
-    c_select_smart_tactic, c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
+    ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate, SmartTacticSelectionError,
+    SmartTacticSourceSite, SourceClaim, SourcePosition, c_select_smart_tactic,
+    c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
     click_declaration_source_position, click_import_sites, expand_c_claim_source,
     expand_c_claim_source_by_label, expand_c_prepared_claim_source_by_label,
     expand_c_prepared_tactic_source_at, expand_c_tactic_source_at, expand_c_tactics_source_at,
@@ -112,11 +112,10 @@ pub use expansion::{
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
     expand_verified_function_claim_source_by_label, first_normalize_in_claim,
-    normalize_source_sites, project_select_smart_tactic, project_smart_tactic_source_sites,
-    project_tactic_source_position, project_tactic_source_positions, select_smart_tactic,
-    selected_c_target, selected_project_c_target, selected_project_thread_runtime,
-    selected_thread_runtime, smart_tactic_source_sites, tactic_source_position,
-    verifying_source_paths,
+    project_select_smart_tactic, project_smart_tactic_source_sites, project_tactic_source_position,
+    project_tactic_source_positions, select_smart_tactic, selected_c_target,
+    selected_project_c_target, selected_project_thread_runtime, selected_thread_runtime,
+    smart_tactic_source_sites, tactic_source_position, verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -6824,16 +6823,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         id: "close",
         syntax: "close()",
         class: "smart",
-    },
-    PublicTacticForm {
-        id: "normalize",
-        syntax: "normalize()",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "normalize-using",
-        syntax: "normalize() using",
-        class: "simple",
     },
     PublicTacticForm {
         id: "preserve",

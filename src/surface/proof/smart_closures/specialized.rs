@@ -482,8 +482,8 @@ mod tests {
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn specialized_normalization_refuses_missing_evidence_and_false_identities() {
         for source in [
-            "theorem bad(a: Integer,b: Integer,f: Integer) { requires a <= b; ensures b*f <= a*f by { normalize() using { a <= b; }; } }",
-            "theorem bad(x: Integer,k: Integer) { requires 0 <= k; ensures truncating_quotient(x + 3*k,3) == truncating_quotient(x,3)+k by { normalize() using { 0 <= k; }; } }",
+            "theorem bad(a: Integer,b: Integer,f: Integer) { requires a <= b; ensures b*f <= a*f by { close() using { a <= b; }; } }",
+            "theorem bad(x: Integer,k: Integer) { requires 0 <= k; ensures truncating_quotient(x + 3*k,3) == truncating_quotient(x,3)+k by { close() using { 0 <= k; }; } }",
             "theorem bad(a: Integer,b: Integer) { ensures (a+b)*(a-b) == a*a+b*b by { close(); } }",
             "theorem bad(p: int32*, q: int32*, r: int32*) { requires p == q; requires q == r; ensures p == r by { close() using { p == q; }; } }",
         ] {

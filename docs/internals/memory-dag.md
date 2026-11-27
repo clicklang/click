@@ -379,7 +379,7 @@ still distinguishes other fields, and the value check still requires the
 store and read to have the same width. It does not scan unrelated facts or
 infer an alias from matching offsets in different blocks.
 
-Explicit `normalize() using { ... }` can recover the value of a recorded
+The internal memory-resolution check can recover the value of a recorded
 full-width pointer read. The query follows its exact retained canonical
 projection source, when present, then at most 64 derivation edges in either
 equality orientation. It uses the cited conditions to justify crossings and

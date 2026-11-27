@@ -1421,8 +1421,6 @@ fn tactic_form_inventory_is_bidirectional() {
             "apply-fact" => surface == "`apply(fact)`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
             "arithmetic" => surface == "`close() using {}`",
-            "normalize" => surface == "`normalize()`",
-            "normalize-using" => surface == "`normalize() using { P; ... }`",
             "arithmetic-using" => surface == "`close() using { P; ... }`",
             "instantiate" => surface == format!("`{}`", form.syntax),
             "intro" => surface == "`intro() { ... }`",
@@ -1578,14 +1576,15 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
 
 /// Proof-object operations with a canonical name but no surface spelling:
 /// the implicit tail's closer, the loop back edge's closer
-/// (`close_invariants`), `choose`, and the arithmetic engine that
-/// `close() using` runs last.
+/// (`close_invariants`), `choose`, the arithmetic engine behind
+/// `close() using`, and verification-only normalization.
 const INTERNAL_TACTICS: &[&str] = &[
     "arithmetic",
     "choose",
     "close_invariants",
     "implicit tail",
     "known",
+    "normalize",
     "solve",
 ];
 

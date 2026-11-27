@@ -713,7 +713,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
                 requires x == y;
                 ensures x == y by {
                     rewrite(x, y);
-                    normalize();
+                    rewrite(y, x);
                 }
             }
         "#;
@@ -729,7 +729,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     ));
     assert!(matches!(
         tactics[1].class(),
-        TacticClass::Simple(SimpleTactic::Normalize)
+        TacticClass::Simple(SimpleTactic::Rewrite)
     ));
     assert!(matches!(
         ProofTactic::Solve.class(),
@@ -834,7 +834,7 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
                 proposition: nonnegative.clone(),
                 proof: SourceProof::Script(vec![ProofTactic::Known]),
             })],
-            else_tactics: vec![ProofTactic::Normalize],
+            else_tactics: vec![ProofTactic::Known],
         }),
     ];
     let certificate = ProofCertificate::from_proof_tactics(&tactics)

@@ -102,8 +102,11 @@ fn return_known_views_scale_with_resources_and_claims() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
-fn return_normalization_views_scale_with_resources_and_claims() {
-    check_return_claim_preparation_scaling("normalize();", [1, 2, 4, 8].map(|size| (size, size)));
+fn return_selected_close_views_scale_with_resources_and_claims() {
+    check_return_claim_preparation_scaling(
+        "close() using {};",
+        [1, 2, 4, 8].map(|size| (size, size)),
+    );
 }
 
 #[test]
@@ -113,7 +116,7 @@ fn exact_return_closers_share_preparation_beside_unrelated_resources() {
     // Keep all 24 combinations, both closers, the empty-resource case,
     // and all claim counts. A tighter resource allowance above also
     // rejects an added quadratic scan at the smaller largest input.
-    for closer in ["close();", "normalize();"] {
+    for closer in ["close();", "close() using {};"] {
         check_return_claim_preparation_scaling(
             closer,
             [0, 4, 16, 32]

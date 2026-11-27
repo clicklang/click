@@ -158,16 +158,6 @@ path = "tests/cpp_import.rs"
 needle = "outcomes {"
 
 [[form]]
-id = "normalize"
-path = "mdtests/normalize_using_decides_conditions_without_substituting.md"
-needle = "normalize();"
-
-[[form]]
-id = "normalize-using"
-path = "mdtests/normalize_using_decides_conditions_without_substituting.md"
-needle = "normalize() using { x == 7; };"
-
-[[form]]
 id = "intro"
 path = "mdtests/copy_n_segment_invariant.md"
 needle = "intro() {"

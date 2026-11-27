@@ -1156,56 +1156,6 @@ pub struct SmartTacticSourceSite {
     pub position: SourcePosition,
 }
 
-/// A written legacy normalization tactic, addressed in the entry source.
-pub struct NormalizeSourceSite {
-    pub claim: String,
-    pub position: SourcePosition,
-    pub offset: usize,
-    pub using: bool,
-}
-
-pub fn normalize_source_sites(
-    project: Option<&ClickProject>,
-    source: &str,
-    inputs: &ProgramInputs<'_>,
-) -> Result<Vec<NormalizeSourceSite>, ClickError> {
-    let file = normalize_source_file(project, source, inputs)?;
-    let tokens = proof_source_tokens(source, &file.source_spans().implicit_proofs)?;
-    let entries = source_tactic_entries_with_tokens(&file, &ProofTokens::new(&file, &tokens))?;
-    // Use the flat written tactic index for identity. The token after the
-    // empty arguments distinguishes the premise-list form without rewriting it.
-    let mut sites = std::collections::BTreeMap::new();
-    for entry in entries
-        .into_iter()
-        .filter(|entry| entry.tactic_name == "normalize")
-    {
-        let index = tokens.partition_point(|token| token.span.start < entry.anchor);
-        let mut call = tokens[index..]
-            .iter()
-            .filter(|token| !token.span.is_empty());
-        let prefix = [call.next(), call.next(), call.next()];
-        if !prefix
-            .iter()
-            .zip(["normalize", "(", ")"])
-            .all(|(token, text)| token.is_some_and(|token| token.text == text))
-        {
-            return Err(ClickError::new(
-                "could not locate the written normalize tactic",
-            ));
-        }
-        let using = call.next().is_some_and(|token| token.text == "using");
-        sites
-            .entry(entry.anchor)
-            .or_insert_with(|| NormalizeSourceSite {
-                claim: entry.claim_label,
-                position: position_at_offset(source, entry.anchor),
-                offset: entry.anchor,
-                using,
-            });
-    }
-    Ok(sites.into_values().collect())
-}
-
 /// Find a legacy call anywhere in the proof unit's source, including
 /// generated proof bodies whose tactics are not individually indexed.
 pub fn first_normalize_in_claim(

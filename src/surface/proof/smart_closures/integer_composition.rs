@@ -2088,18 +2088,16 @@ mod tests {
     }
 
     #[test]
-    fn explicit_integer_scaling_normalization_keeps_known_and_multi_step_expansion_opaque() {
-        let source = "theorem identity(x: Integer, y: Integer) { ensures 3 * (x - y) == x + x + x - 3 * y by { normalize(); } }";
-        without_implicit_solve(|| verify_c_sources(source, &[])).unwrap();
-        let close = source.replace("normalize();", "close();");
+    fn integer_scaling_requires_an_explicit_certificate_for_checked_replay() {
+        let source = "theorem identity(x: Integer, y: Integer) { ensures 3 * (x - y) == x + x + x - 3 * y by { close(); } }";
+        verify_c_sources(source, &[]).unwrap();
         crate::surface::without_proof_search_for_claim("identity.ensures_0", || {
-            verify_c_sources(&close, &[]).map_err(|error| error.report())
+            verify_c_sources(source, &[]).map_err(|error| error.report())
         })
-        .expect_err("the identity needs normalization when search is disabled");
+        .expect_err("the unexpanded proof needs search");
         for source in [
-            "theorem nonlinear(x: Integer, y: Integer, z: Integer, w: Integer) { ensures (x + y) * (z + w) == x * z + x * w + y * z + y * w by { normalize(); } }",
-            "theorem wrong(x: Integer) { ensures 2 * x == x + x + 1 by { normalize(); } }",
-            "theorem ignores_facts(x: Integer) { requires x == 0; ensures 2 * x == 3 * x by { normalize(); } }",
+            "theorem wrong(x: Integer) { ensures 2 * x == x + x + 1 by { close(); } }",
+            "theorem ignores_facts(x: Integer) { requires x == 0; ensures 2 * x == 3 * x by { close() using {}; } }",
         ] {
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");
         }

@@ -1327,14 +1327,12 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Close | ProofTactic::CloseUnreachable | ProofTactic::Known => {
             line(output, &prefix, CLOSE_CALL)
         }
-        ProofTactic::CompatibilityNormalize(_) => {
+        ProofTactic::Normalize
+        | ProofTactic::NormalizeUsing(_)
+        | ProofTactic::CompatibilityNormalize(_) => {
             line(output, &prefix, COMPATIBILITY_NORMALIZATION)
         }
         ProofTactic::CloseBounds(premises) => write_selected_bounds(output, premises, indent),
-        ProofTactic::Normalize => line(output, &prefix, "normalize();"),
-        ProofTactic::NormalizeUsing(premises) => {
-            write_using_premises(output, "normalize()", premises, indent)
-        }
         ProofTactic::ArithmeticUsing(premises) => {
             write_using_premises(output, "close()", premises, indent)
         }

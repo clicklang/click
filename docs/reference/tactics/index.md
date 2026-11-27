@@ -632,7 +632,7 @@ When execution reaches function exit, the path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
 instance. `views` and `consumes` clauses make no claim. A closer (`close()`,
-`normalize`, `all`, `close() using`) acts on the first
+`all` and `close() using`) acts on the first
 open goal, and a refusal names that goal; it does not look further down the
 list for a claim it could close
 (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
@@ -1091,6 +1091,10 @@ checked steps. Like the `by` form, it is checked in a `branch` arm.
 
 ## Proposition reasoning
 
+The former `normalize()` and `normalize() using` forms are retired. Use
+`close()` for goal closure and `close() using { P; ... }` to select premises.
+Write intermediate rewrites or facts when a goal needs several steps.
+
 Checked equality closure also records a contradiction when one typed scalar
 class contains unequal 32-bit or 64-bit constants, including classes connected
 through model getters, or when one model class contains two different
@@ -1114,7 +1118,7 @@ and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/b
 A simple tactic that adds a fact (`instantiate(...)`,
 `apply` and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
-`close()` or `normalize()` follows it. An added order fact closes
+`close()` follows it. An added order fact closes
 the goal under either form of the same claim: `0 <= e` closes the goal
 `e >= 0`, and `a < b` closes `b > a`, for machine and `Integer` operands
 alike. A written theorem application also closes the mirrored goal when
@@ -1132,8 +1136,6 @@ step is still checked.
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `close()` | smart | Core | Try the direct goal check, then search if it fails. | [Reference](#closing-a-goal) |
-| `normalize()` | simple | Compatibility | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
-| `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro() { ... }` | control | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1178,9 +1180,8 @@ with the frontier it stands at; the end of a body is one `step()` of its own
 
 Inside a `have` body, a tactic that already closed the goal (an `unfold`
 whose refreshed goal is an available fact or a theorem application whose
-conclusion is the goal) may be followed only by `close()`
-or `normalize()`, which then assert the closed judgment and emit
-nothing. So `unfold(f(x)); normalize();` means the same whether or not the
+conclusion is the goal) may be followed only by `close()`, which asserts the closed judgment
+without emitting a step. So `unfold(f(x)); close();` means the same whether or not the
 unfold alone closed the goal
 (`mdtests/closer_after_unfold_closed_goal.md`); any other tactic after the
 closure is refused by naming the tactic that closed it
@@ -1268,7 +1269,7 @@ Two displacements of one pointer by full-width unsigned indices regroup:
 `(p + a) + b == p + (a + b)` for `uint64` (or `usize`) `a` and `b` at one
 stride, when the sum does not wrap. The one fact read is
 `to_integer(a) + to_integer(b) <= 18446744073709551615`, found by exact
-lookup, and `normalize() using { ... }` can cite it. A loop that moves a
+lookup, and `close() using { ... }` can cite it. A loop that moves a
 cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
 ([`full_width_pointer_cursor_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_cursor_loop.md),
 [`full_width_pointer_association.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_association.md),
@@ -1276,10 +1277,7 @@ cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
 
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
-preservation steps, rewrites, intermediate facts, or named theorem applications. A
-context-free-looking result such as a normalized equality is not emitted as
-bare `normalize()` if checking still needs those premises to interpret an
-indexed load. A `close() using` equality may be selected through a bounded chain
+preservation steps, rewrites, intermediate facts, or named theorem applications. A `close() using` equality may be selected through a bounded chain
 of exact equality facts whose intermediate load variables are kernel-internal
 names for the same user-level loads. When frame evidence is needed to relate an
 earlier load origin to the current one, the expanded proof first establishes
@@ -1845,8 +1843,7 @@ live partition rule: an owned unit is separate from another owned unit or a
 view. Two views alone do not establish separation. The rule uses exact resource
 lookups; it does not enumerate aliases or compositions, and supported cached
 projections do not count as independent entries. It also applies to separation
-leaves in a conjunction. Constant disjoint intervals of the same base can
-instead be proved by `normalize()`.
+leaves in a conjunction.
 
 An explicit `have separate(...)` can use the live ownership partition
 immediately after `unfold`, including fixed-size fields fully contained in
@@ -1862,318 +1859,6 @@ Exact propagated consequences are already available facts. Expansion leaves
 this step unchanged, and profiling charges one simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
-
-### Context-free normalization
-
-**Form:** `normalize()`
-
-**Compatibility.** For new proofs, use `close()` after any needed `unfold`
-or `rewrite`. For an existing proof, use
-[`click expand --migrate-normalize`](../cli/expand.md#options) to try a
-replacement and check that the expanded proof replays without normalization.
-
-`normalize()` reads no facts, so it proves the same goal in every context.
-
-**Accepts** a goal that is not itself a conjunction, disjunction, implication,
-or quantifier, when evaluation makes it true:
-
-- Every operation whose operands are all constants is evaluated: C machine
-  arithmetic, bitwise operations, shifts, and division or remainder by a
-  nonzero constant, all at the operand type's width; width and sign
-  conversions, including `(uint64)` of an `int32` constant that `unfold` or
-  `rewrite` substituted; exact `Integer` arithmetic and `to_integer` of a
-  constant; and comparisons of constants.
-- On symbolic terms, `x + 0`, `x - 0`, `x * 1`, and `x * 0` reduce, at C
-  widths and for `Integer`.
-- An equality, `<=`, or `>=` whose two sides are then the same term, up to
-  renaming of bound variables, is true; so is `!=` between different
-  constants.
-- A `match` on a constructor selects its arm, and an equality between two
-  applications of one algebraic constructor reduces to its fields.
-- An equality or `!=` between sums and differences of C machine values, at
-  32 and at 64 bits, compares the two sides' affine forms modulo 2^width:
-  each side's terms are reordered, regrouped, and cancelled, and its
-  constants combined. `x + y == y + x`, `x + (y + z) == (x + y) + z`,
-  `x + y - y == x`, and `x - x == 0` are true, and `x + 1 != x` is true, for
-  `int32`, `uint32`, `int64`, and `uint64` alike.
-- A comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) between sums, differences,
-  negations, and constant-coefficient products of exact `Integer` terms compares their affine forms over the
-  integers, with no modulus: when every term cancels, the constant difference
-  decides it. `1 + to_integer(x) == to_integer(x) + 1`,
-  `to_integer(x) - to_integer(x) == 0`, `a + b == b + a` for `Integer`
-  parameters, `to_integer(x) + 1 != to_integer(x)`, and
-  `to_integer(x) + 1 > to_integer(x)` are true. C machine order claims are not
-  compared this way, since `x + 1 > x` is false at a type's maximum.
-
-For explicit Integer normalization, `2 * x == x + x`,
-`3 * (x - y) == 3 * x - 3 * y`, and `(2 + 3) * x == 5 * x` also hold.
-Products also normalize association and factor order within each monomial.
-One explicit symbolic distribution, `(a + b) * c == a * c + b * c`
-(or subtraction, or distribution on the other side), is a local primitive
-with opaque operands. Full polynomial expansion is search: `close()` writes
-individual distribution equalities and rewrites before normalization. Calls,
-reads, and folds remain opaque. Checking reads no facts. The computational `close()` leaf
-retains its narrower sum/difference rules. C machine multiplication also
-remains opaque; these exact Integer identities introduce no machine overflow
-or definedness facts.
-
-**Outside it**, with what to write instead:
-
-- A top-level `and`, `or`, implication, or quantifier: use `all`, prove one
-  disjunct with `have` and close with `close()`, or `intro`.
-- A goal that needs a fact, including a premise of the theorem: use
-  `normalize() using { P; ... }`, `rewrite`, or `close()`.
-- A pure function call: `unfold` it first; `normalize` leaves calls symbolic.
-- Distributing a symbolic product, such as `(x + y) * z == x * z + y * z`;
-  an order claim between C machine sums, such as `x + 1 > x`; or an `Integer` order claim whose terms
-  do not cancel, such as `to_integer(x) < to_integer(x) + to_integer(y)`: use
-  `close() using { ... }` or an ordinary arithmetic proof.
-
-**Failure, checking, and tools:**
-
-A refusal prints the goal after substitution. Click runs the deterministic
-leaf check; expansion is unchanged, and profiling charges the normalized
-expression. Smart tactics retain the corresponding `all`, disjunct proof and
-`close()`, or `intro` proof.
-
-Intrinsic Integer bounds on a machine quotient, right shift, or remainder
-by a positive constant also normalize without facts, in the bound's written
-shape: `c * to_integer(x / c) <= to_integer(x)` for unsigned division, its
-upper bound with slack `c - 1`, and the corresponding signed slack bounds.
-The divisor and shift count retain the native operation's type and domain.
-No operand history or ambient facts are read.
-
-**Checked examples:** [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md)
-
-### Normalization with selected premises
-
-**Form:** `normalize() using { P; ... }`
-
-This compatibility form checks a goal under its named premises. For new proofs
-with selected facts, use `close() using { P; ... }` or cite them in explicit
-proof steps. Expansion retains written calls. The tactic decides conditions in
-the goal from the cited premises and the equality graph, then applies
-the [context-free normalization check](#context-free-normalization) to the
-result.
-
-For a signed `int32` order goal, the cited comparisons can form a chain in
-list order from the goal's lower endpoint to its upper endpoint. A strict
-goal needs at least one strict link. Replay checks the listed links directly.
-For a machine-integer disequality against a literal, one cited order bound
-can establish that the word excludes the literal.
-
-A true `float` or `double` comparison against a literal can cite one stronger
-bound. Exact widening from `float` to `double` widens the endpoint and preserves
-the direction. Narrowing from `double` to `float` rounds the endpoint and
-gives a non-strict bound in the original direction. Unary float negation negates the endpoint and reverses the
-direction. Adding or subtracting a finite literal, subtracting from a finite
-literal, and multiplying or dividing by a finite nonzero literal transform
-and round the endpoint at the same width. Subtraction from a literal and
-multiplication or division by a negative literal reverse the direction.
-The rounded endpoint gives a non-strict bound because
-distinct inputs can round to the same result. An unchanged or exact endpoint
-requires a strict premise for a strict goal with that endpoint. A negated comparison can hold for NaN and cannot
-supply an ordered bound. A sum or difference of two float operands can
-cite one ordered bound per operand with finite literal endpoints. A sum
-uses two bounds in the goal's direction. For a difference the right
-operand's bound points in the opposite direction. The rule combines and
-rounds the endpoints at the operation's width.
-For a finite nonzero literal divided by an operand bounded away from zero,
-cite the divisor's endpoint nearest zero. The two quotient bounds are zero
-and the rounded quotient at that endpoint. A strict bound can use the next
-representable value on its admitted side, such as the smallest positive
-`float` for `x > 0`.
-For a product or quotient with two finite operand ranges, cite the lower
-and upper endpoints of both ranges. The rule checks the four corners at
-the operation's width. A quotient's divisor range must exclude zero.
-A square can cite just the two endpoints of its operand's range. Its
-lower bound is zero if that range crosses zero.
-A product's lower bound can instead cite two strictly positive lower
-endpoints. Multiplication by a literal signed zero can cite a finite
-operand or its two finite bounds. `close()` accepts the exact
-`isfinite` premise for the zero product. Negation and exact widening
-from `float` to `double` preserve finiteness. A finiteness goal
-can cite two ordered bounds that exclude both infinities. An integer
-of up to 64 bits always converts to a finite `float` or `double`.
-For an integer converted to `float` or `double`, `close()` can check
-the rounded limits of the source type. A tighter bound can cite a constant
-integer endpoint. The check rounds that endpoint at the destination precision.
-`close()` prefers named library laws when they cover the selected bounds.
-Expansion requires a checked proof for the shape of the selected bounds.
-
-
-For a positive signed divisor `y`, cite `y > 0` and `x <= MAX / y`
-to bound `x * y` above by `MAX`. Cite `y > 0` and `x >= MIN / y`
-to bound it below by `MIN`. Either bound applies to any sign of `x`.
-
-For two negative signed operands, `x < 0`, `y < 0`, and
-`x >= MAX / y` bound their product by `MAX`. This guard permits
-`y == -1` because `MAX / -1` is defined. A lower product bound
-using `MIN / y` with a negative divisor still needs `y < -1`.
-
-For an unsigned left shift of one, citing the count bound proves the result
-is nonzero. For example, `normalize() using { d < 32u32; }` proves
-`(1u32 << d) != 0u32`. This also discharges the divisor obligation for
-C division and remainder. An odd literal multiplier also preserves nonzero
-in a wrapping unsigned word. For example,
-`normalize() using { x != 0u32; }` proves `((x * 3u32) as uint32) != 0u32`.
-The cast names the wrapping multiplication used by C.
-
-An in-range operation or cast identity also accepts exactly two ordered
-Integer bounds on its exact result: the lower bound, then the upper bound.
-Both must lie within the operation or destination format. A bound on one
-Integer product accepts exactly four bounds, the lower and upper range of
-the left operand, then those of the right operand; all four corner products
-must imply the stated bound. These are fixed intrinsic checks over the
-written goal and citations. They do not plan arithmetic or construct an
-ordinary arithmetic proof. See
-[`integer_machine_bridge_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_machine_bridge_normalization.md)
-and its wrapping and false-corner refusal controls.
-
-The specialized selected rules also accept exact Integer division/remainder
-bounds from four ordered constant endpoints, multiplication order from an
-ordered pair and its factor's sign, quotient bounds from a scaled bound and
-a positive divisor, and a constant-divisor quotient shift from the two
-nonnegative operands. Pointer translation names its equality first and scalar
-bounds after it; tagged-word rules name their word equality first (when used)
-and then the alignment facts. One finite classification proves the matching
-reflexive IEEE comparison. These are fixed local rules over explicit inputs;
-none selects premises or expands a polynomial.
-
-For a reflexive `float` or `double` comparison, `close()` expands to
-`close()` when the exact `isfinite(x)` fact is available for the common
-operand. Restricted `close() using` must select that fact. For example,
-`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`. An ordered
-bound on an exact float widening or sign negation also closes with
-`close()` from the corresponding input comparison at the same endpoint.
-Negation reverses the order and flips the endpoint's sign. The widening
-check requires the endpoint to be exactly representable in the input width.
-For a weaker result bound, `close()` records the transported comparison in
-a `have` and applies the corresponding `click::float_order` transitivity law.
-
-For supported native unsigned address words, `close()` emits ordinary `have`
-goals, `apply(click::integer::...)`, rewrites, and `close()`: alignment
-weakening, scalar element offsets, low-tag projections and high-mask recovery
-name their local laws and retain the unsigned width explicitly. Remaining
-legacy forms still use the compatibility normalization path.
-
-**Accepts** a goal that `normalize()` accepts after this reduction, when every
-cited premise is accepted:
-
-- A premise is accepted when it is available in the sense of `close()`'s
-  atomic rules, or in its other polarity or direction, or holds without facts
-  (`0 <= 0`), and it is a single condition or its negation: a comparison, an
-  equality including an algebraic one, or its `not`. The list may be empty.
-- Each condition in the goal, at any depth outside binders, including the goal
-  itself, a conditional-expression guard, and a condition inside a
-  pure-function argument, becomes `true` or `false` when a cited premise
-  states it in any form: as written, at the other polarity (`x >= y` is
-  `false` for a cited `x < y`), or mirrored (`y > x` for a cited `x < y`,
-  `y != x` for a cited `x != y`), in every family (`int32`, the 64-bit
-  machine types, and `Integer`).
-- A condition is also decided when the equality graph built from the cited
-  premises alone settles it: cited equalities are symmetric, transitive and
-  congruent, so `x == y` decides `x + 1 == y + 1`, and `x < y` with `y == z`
-  decides `x < z`.
-- An equality condition between C machine values of either width, pointers,
-  or pointer offsets becomes `true` when the ambient equality graph of all
-  checked facts proves it, whether or not it is cited: `x == y` as a fact
-  closes the goal `x + 1 == y + 1` under `normalize() using { }`. The graph
-  supplies program values, such as loads, that a proof cannot always name;
-  specification values (`Integer` and algebraic) are cited instead.
-- A goal that compares a term with a constant closes when the cited
-  conditions on that term decide it, in every family, the 8- and 16-bit
-  types included: `a <= 5` or `a < 5` gives `a <= 10`, and `n == 0` gives
-  `n != 1`.
-- A signed `int32` operation's constant interval follows from the cited
-  endpoints of its opaque operands: addition, subtraction, multiplication,
-  constant remainder and shifts, a nonnegative constant bit mask, and an
-  in-range cast. Exact addition/subtraction over bounded machine observations
-  uses the same endpoint calculation without machine wrapping. Nested
-  operations need explicit intermediate bounds. A bounded nonnegative
-  remainder also transports through a stated constant addition when its
-  translated interval crosses no divisor boundary. No operand interval is
-  recursively searched. A separately stated exact domain can intersect an
-  operation's result with its signed type range
-  ([`signed_interval_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_interval_normalization.md)).
-- Two addresses in one block whose offsets differ, after their shared
-  addends cancel, by two element indices on one side and one on the other at
-  one element width are equal when a cited premise states the one index's
-  exact `Integer` value as the sum of the other two, in either order or
-  orientation: `(bytes + prefix) + suffix == bytes + total` from
-  `to_integer(total) == to_integer(prefix) + to_integer(suffix)`, for every
-  index type. One of the two may be a constant offset, a whole number of
-  elements: `(bytes + prefix) + 3 == bytes + total` from
-  `to_integer(total) == to_integer(prefix) + 3`. A native sum
-  (`total == prefix + suffix`) does not, because it may wrap
-  ([`element_offsets_from_exact_index_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/element_offsets_from_exact_index_sum.md),
-  [`close_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/close_using_refuses_a_wrapping_index_sum_for_an_address.md)).
-- For a top-level read equality of any width, a pointer read equality, or a
-  pointer-offset equality, the cited conditions can justify the read's
-  recorded stored value or the offsets' equality directly, and for
-  `defined(...)` of a read, that a store wrote its bytes; see the paragraph
-  below.
-
-**Outside it**, with what to write instead:
-
-- A premise that is a conjunction, disjunction, implication, or quantifier:
-  `have` the single condition and cite it. Two premises stating opposite
-  values of one condition are refused as inconsistent.
-- A goal that needs a cited equality's value substituted into a term, such as
-  `x * 2 < 15` from `x == 7`: `rewrite(x, 7)` then `normalize()`
-  ([`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md)).
-- A goal between two symbolic terms that follows from a cited premise without
-  being one of its forms, such as `x <= y` from `x < y`:
-  `close() using`.
-- An unlisted ambient order condition, or an ambient `Integer` or algebraic
-  equality: cite it.
-- A top-level conjunction, disjunction, or implication remaining after
-  reduction: `all`, a disjunct `have`, or `intro`, as for `normalize()`.
-- A condition inside a quantified body, a `match`-arm body, or a range-fold
-  binder: `intro` or `unfold` it first. Pure calls stay symbolic.
-
-**Failure, checking, and tools:**
-
-A refusal names the first unavailable or unsupported premise by index, or
-reports that the reduced goal did not normalize. Every cited premise is
-validated, even if the graph already establishes the goal. An unsuccessful
-graph query leaves equality unknown, never false.
-
-Ambient equalities in the kernel graph include symbolic-pointer transitivity
-and supported same-version-point load congruence, plus explicit pointer-offset
-equality and addition congruence (including equal displacements of ordinary C
-pointer parameters); explicit int32 equality, transitivity, and addition
-congruence are also available, including propagation into same-width int32
-scaled offsets. Registered four-byte int32 reads also have congruence at equal
-offsets at the same version point and storage block.
-
-A read of at most four bytes, and `defined(...)` of a read of any width, are
-justified the same way: the walk, reading the cited conditions only, must end
-at a store that writes the read's whole width, so `t[j + 1] = 0` under a
-cited `j == 2` gives `t[3u64] == 0u8` and `defined(t[3u64])`.
-An ordinary proof can establish the exact address equality first, then
-rewrite the read to the store's address
-([`normalize_using_reads_a_narrow_stored_value.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_reads_a_narrow_stored_value.md)).
-A different byte still needs its own store
-([`normalize_using_refuses_a_narrow_value_the_store_did_not_write.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_narrow_value_the_store_did_not_write.md)).
-
-For a top-level 64-bit read equality, the cited conditions can also justify
-its recorded stored value: the typed memory-history walk checks each effect,
-including the caller-owned ranges recorded by a call, and requires a complete
-eight-byte value. The walk crosses at most 64 history edges; a longer frame
-needs an explicit intervening proof step. An overwritten or partially
-overwritten read cannot reuse the old value. This adds no ambient frame search
-or read permission. Explicitly cited equality between the exact Integer
-observations of a `uint64` index and an `int32` index also establishes equal
-pointer offsets at one common element width, including common base
-displacements. A low-word equality is insufficient, and equality does not
-establish C signed definedness.
-
-Expansion retains the normalization step and cited evidence; checking
-reconstructs the graph from the surrounding checked proof context. Work
-follows the selected expression and premises.
-
-**Checked examples:** [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
 
 ### Arithmetic search
 
@@ -2528,7 +2213,7 @@ constructor-match reduction are unavailable to expansion.
 See [the explicit arm proofs](https://github.com/clicklang/click/blob/master/mdtests/non_numeric_conditional_arm_equations.md).
 
 Scalar signed interval claims, operation bounds, and narrowed casts expand
-through selected Integer and machine-observation proofs, without `normalize()`.
+through selected Integer and machine-observation proofs.
 Their intermediate facts replay with implicit solving disabled. Widened unsigned
 sums such as `(a as int64) + (b as int64) <= 30i64`, from selected
 `a <= 10u32` and `b <= 20u32`, also expand through exact operation ranges,
@@ -2626,7 +2311,7 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
 - Rewriting the word inside an integer-derived pointer rebuilds the pointer
   in the cast's canonical form. If the rewritten address is constant zero,
   it becomes null, with any byte displacement preserved. Thus rewriting a
-  stored tagged word to `1` lets `normalize()` close its cleared pointer's
+  stored tagged word to `1` lets `close()` close its cleared pointer's
   equality to null
   ([`a_rewritten_tagged_null_pointer_normalizes.md`](https://github.com/clicklang/click/blob/master/mdtests/a_rewritten_tagged_null_pointer_normalizes.md)).
 - When the equality's left side contains a read, the occurrence in the
@@ -2636,7 +2321,7 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
 **Outside it**, with what to write instead:
 
 - A proposition that is not an equality (`x != y`, `x <= y`): there is no
-  substitution by order; use `close() using` or `normalize() using`.
+  substitution by order; use `close() using`.
 - An equality available only as an implication's consequent: establish it
   with `have` or `apply(fact)` first.
 - A goal without an occurrence of `L`, including a different association or
@@ -2702,7 +2387,7 @@ access in a proof; it is not parsed as the shadowed-binder qualifier.
 - A conjunction: `all`. A disjunction: prove one disjunct with `have` and
   close with `close()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
-- A comparison or other leaf: `normalize()`, `close()`, or `close() using`.
+- A comparison or other leaf: `close()` or `close() using`.
 
 **Failure, checking, and tools:**
 
@@ -2774,7 +2459,7 @@ with constant `lo` and `hi` is one), when:
   structurally with no search: an instance that is an available fact as
   written; a conjunction, conjunct by conjunct; an implication whose guard
   folds to false (vacuous) or to true with its conclusion discharged; or a
-  leaf that evaluates to true with no facts, as `normalize()` would close it.
+  leaf that evaluates to true without citing facts.
 - A range with no member (`k < 0`, `k < 0u64`) has no instance to check.
 
 **Outside it**, with what to write instead:
@@ -2946,8 +2631,7 @@ names are in scope, and:
   conversions of constants fold, so `(uint64)` of an `int32` constant becomes
   a `uint64` constant. Nothing else is normalized.
 - Closes the goal when the refreshed goal is an available fact, such as the
-  equation just added. After that only `close()` or `normalize()`
-  may follow.
+  equation just added. After that only `close()` may follow.
 - At a C execution frontier, adds the equation and leaves the frontier.
 - With `at(point, ...)`, adds `at(point, function(args)) == at(point, body)`:
   the defining equation with the arguments' array contents read at `point`,
@@ -2973,7 +2657,7 @@ names are in scope, and:
 **Outside it**, with what to write instead:
 
 - A refreshed goal that became `true` or reflexive, such as `x + 1 == x + 1`:
-  it stays open; close it with `normalize()`.
+  it stays open; close it with `close()`.
 - A call whose arguments mention a quantifier's binder before it is
   introduced: `intro()` first.
 - More than one layer: `unfold` again at the exposed call.
@@ -2982,8 +2666,7 @@ names are in scope, and:
 
 The refreshed goal can also come out further simplified, as the lowering of
 the rewritten goal does: `n + k - k` over `int32` reduced to `n` in one probe.
-That is not guaranteed; follow with `normalize()` or `close() using { ... }` when the
-goal needs it.
+Use `close()` or cite needed facts with `close() using { ... }`.
 
 **Failure, checking, and tools:**
 
@@ -3509,9 +3192,9 @@ Negative divisor intervals use the two explicit divisor-sign laws.
 Remainder proofs retain both the dividend and divisor envelopes and the case
 where the dividend's magnitude is smaller than every divisor's magnitude.
 
-These expansions and their derived library proofs contain no `normalize()`
-or implicit solving. Selection runs under the existing proof search budgets;
-replay checks only the written arguments and premises. Missing bounds, a
+These expansions and their derived library proofs replay with proof search
+disabled. Selection runs under the existing proof search budgets, and replay
+checks the written arguments and premises. Missing bounds, a
 zero-crossing divisor interval, and false result bounds do not justify the
 interval route. Native machine definedness remains a separate obligation.
 
@@ -3523,16 +3206,9 @@ and the result bound must be constant, with ordered interval endpoints.
 Expansion writes four numerical corner checks with `close()`, followed by
 `apply(integer::product_lower_bound(...))` or
 `apply(integer::product_upper_bound(...))`. The library proofs
-split on signs and apply multiplication order and transitivity explicitly;
-their dependencies contain no `normalize()`. The theorem applications
-reuse the established corner bounds. The same proof construction supplies
+split on signs and apply multiplication order and transitivity explicitly.
+The theorem applications reuse the established corner bounds. The same proof construction supplies
 product bounds from machine operands' stated type ranges.
-
-The authored `normalize() using` compatibility form still checks this rule.
-Its checker computes `L*M`, `L*N`, `U*M`, and `U*N` using exact integers.
-For an upper bound, all four must be at most `T`; for the result `T <= x * y`,
-all four must be at least `T`. The rule accepts negative, zero, and crossing
-intervals and bounds weaker than the exact endpoints. It reads the four selected facts and does no premise search or implicit machine-range inference.
 
 The result must contain an Integer multiplication at its root. Products
 already reduced to a constant or a single operand, such as `x * 0` or `x * 1`,
@@ -4024,7 +3700,7 @@ aggregate search cost is significant even though each smart tactic is prompt.
 `click profile` reports smart and simple work under the same concepts:
 statement transitions are `step`, checked loop transitions are `loop`,
 and atomic
-reasoning uses rules such as `close()`, `normalize`, `rewrite`, and named
+reasoning uses rules such as `close()`, `rewrite`, and named
 theorem applications. A slow simple leaf is a Click performance bug. A
 successful slow smart tactic is an expansion candidate. An unsuccessful smart
 tactic has nothing to expand; decompose that proof unless its search failed to

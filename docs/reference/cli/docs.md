@@ -41,8 +41,8 @@ A tactic refusal from [`click verify`](verify.md) that Click can attribute to a
 written tactic ends with what refused it and the entry that documents it:
 
 ```text
-refused by: `normalize` (simple: a refusal within its documented behavior is a bug)
-see: click docs normalize
+refused by: `rewrite` (simple: a refusal within its documented behavior is a bug)
+see: click docs rewrite
 ```
 
 The class comes from the written tactic's form in the tactic table: written

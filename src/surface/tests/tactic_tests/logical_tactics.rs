@@ -335,7 +335,7 @@ fn defined_rejects_concrete_undefined_expression() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
-fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
+fn failed_fixed_state_close_does_not_dump_internal_memory() {
     let c_source = r#"
         int32 read(int32* data) {
             return data[0];
@@ -350,16 +350,18 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
         } by {
             step();
             have result == 1 by {
-                normalize();
+                close() using {};
             }
             close();
         }
     "#;
 
     let error = verify_c_sources(click_source, &[("read.c", c_source)])
-        .expect_err("an unknown loaded value must not normalize to one");
+        .expect_err("an unknown loaded value need not be one");
     assert!(
-        error.message().contains("goal did not normalize to true"),
+        error
+            .message()
+            .contains("could not prove the current goal from only its listed premises"),
         "{}",
         error.message()
     );
@@ -3555,7 +3557,7 @@ test_batches! {
         defined_rejects_concrete_undefined_expression,
     ],
     logical_tactics_batch_02: [
-        failed_fixed_state_normalize_does_not_dump_internal_memory,
+        failed_fixed_state_close_does_not_dump_internal_memory,
         known_computes_leaves_and_uses_exact_propagation,
         parses_local_have_proof_tactic,
         contract_lets_do_not_capture_later_quantifier_binders,

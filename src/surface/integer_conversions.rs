@@ -796,7 +796,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn forward_conversion_requires_symbolic_argument_definedness() {
-        for proof in ["normalize()", "close()"] {
+        for proof in ["close()", "close() using {}"] {
             let source = format!(
                 "theorem forward(x: int32) {{ ensures to_integer(x + 1) == to_integer(x + 1) by {{ {proof}; }} }}"
             );
@@ -1036,7 +1036,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.9s in the parallel gate"]
     fn deferred_integer_function_argument_domains_cover_division_and_branches() {
-        for proof in ["close()", "normalize()"] {
+        for proof in ["close()", "close() using {}"] {
             let division = format!(
                 "function f(x: int32) -> Integer {{ to_integer(x) }}\n\
                  theorem call(x: int32) {{ ensures f(-2147483648 / x) == f(-2147483648 / x) by {{ {proof}; }} }}"
@@ -1239,8 +1239,6 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     fn wrapped_symbolic_conversions_keep_bounds_through_proofs_and_expansion() {
         let bounded = "theorem wrapped(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; ensures to_int32(z) + 0 == to_int32(z) by close(); }";
         verify_c_sources(bounded, &[]).unwrap();
-        let normalized = bounded.replace("by close(); }", "by { normalize(); } }");
-        verify_c_sources(&normalized, &[]).unwrap();
         let expanded = expand_c_claim_source_by_label(bounded, &[], "wrapped.ensures_0").unwrap();
         verify_c_sources(&expanded, &[]).unwrap();
 

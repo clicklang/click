@@ -686,7 +686,7 @@ its format, and its range is its format's: no range fact is filed for it.
   A premise that holds by that range alone (`0 <= x` for a `uint8` `x`, or
   `widen(x) >= -128` for an `int8` `x`) is available to every `using` list
   (`holds_by_format_range`, one match at the root); a goal that holds by
-  it is closed by `normalize()`.
+  an internal normalization check closes it.
 - Every narrow load is its own load at its own type: the read's variable is
   registered at its kind, the equality graph names it by its exact cell,
   and it is a load application of its state, address and kind

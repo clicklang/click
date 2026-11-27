@@ -226,7 +226,7 @@ they preserve checked identities; its typed memory operands include their read
 width, memory label (`state#N`), and address, with shared labels and a
 construction legend.
 
-A failed `normalize() using { ... }` that checks a recorded 64-bit read prints
+The trace for a failed `close() using { ... }` on a recorded 64-bit read includes
 `read-resolution check:` with the exact checked equality, the selected
 producer's memory label, and the memory walk's stopping memory and reason. If it recovered a
 complete word, the report prints that word's comparison with the requested value

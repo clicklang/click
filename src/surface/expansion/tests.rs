@@ -1163,15 +1163,15 @@ fn conditional_normalization_roundtrips_and_rejects_tampering() {
 theorem client(xs: List<int32>, ys: List<int32>) {
     requires not(xs == ys);
     ensures (if xs == ys { 1 } else { 0 }) == 0 by {
-        normalize() using { not(xs == ys); }
+        close() using { not(xs == ys); }
     }
 }
 "#;
     verify_c_sources(source, &[]).expect("conditional client verifies before expansion");
     let position = c_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
-        .expect("simple conditional normalization roundtrips");
-    assert!(expanded.contains("normalize() using"));
+        .expect("selected conditional proof expands");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("conditional certificate rechecks");
     for tampered in [
         expanded.replace("requires not(xs == ys);", "requires xs == ys;"),

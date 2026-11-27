@@ -1314,10 +1314,6 @@ id = "tactic.outcomes"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.normalize"
-path = "reference/tactics/index.md#proposition-reasoning"
-
-[[item]]
 id = "tactic.rewrite"
 path = "reference/tactics/index.md#proposition-reasoning"
 
@@ -1515,12 +1511,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.outcomes"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.normalize"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.normalize-using"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
 id = "tactic-form.intro"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
@@ -1672,10 +1662,6 @@ path = "reference/cli/expand.md#options"
 
 [[item]]
 id = "cli.expand.--check-normalize-removal"
-path = "reference/cli/expand.md#options"
-
-[[item]]
-id = "cli.expand.--migrate-normalize"
 path = "reference/cli/expand.md#options"
 
 [[item]]

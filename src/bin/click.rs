@@ -872,19 +872,6 @@ int32 f(int32 n) {
         );
         assert!(!tail_miss.contains("refused by: `unfold`"), "{tail_miss}");
 
-        // `normalize()` evaluates without context, so a goal that needs the
-        // premise is outside what it does.
-        let closer = run(
-            "theorem needs_its_premise(x: int32) {\n    requires x == 1;\n    ensures x == 1 by {\n        normalize();\n    }\n}\n",
-            &[],
-        );
-        assert!(
-            closer.contains(
-                "\nrefused by: `normalize` (simple: a refusal within its documented behavior is a bug)\nsee: click docs normalize\n"
-            ),
-            "{closer}"
-        );
-
         let resource = run(
             "void set(int32 *p) {\n    owns p[0..1];\n}\nvoid lend_twice(int32 *p) {\n    owns p[0..1];\n}\n",
             &[],

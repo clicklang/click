@@ -108,7 +108,7 @@ function rb_parent_consistent(t: RbTree, p: struct rb_node*) -> int32
 pointer test the recursive predicate uses. Two other spellings of the same
 body do not work. A raw `if parent == p` as the **outermost** test leaves the
 unfolded body one opaque bitvector operation, so
-`normalize() using { parent == p; ... }` cannot select a branch; and a bare
+conditional reduction cannot select a branch from the pointer premise. A bare
 `rb_node_is(parent, p)` as the arm's **value** rather than as a condition
 leaves a destructor's goal an opaque operation that the premise does not
 match. Every test is therefore an `if <int32 test> == 1` with constant
@@ -370,12 +370,8 @@ The predicate carries the focused subtree instead of naming the focus's parent
 as a separate argument. Both spellings state the same thing, but the
 parent-as-argument form needs to move `rb_parent_consistent(sub, focus_parent)`
 to `rb_parent_consistent(sub, identity)` across a proved pointer equality, and
-no simple tactic derives that step: with `a == b` and `b == c` as premises,
-`normalize() using { a == b; b == c; }` on the goal `a == c` reports "goal did
-not normalize to true using the listed conditions" over the kernel goal
-`v100000*4 = v100002*4`, `rewrite` refuses a bare pointer variable with
-"`rewrite` equality does not occur in the current goal", and only the smart
-`close()` closes it. Carrying the subtree avoids the step entirely, and it is
+the goal needs pointer equality reasoning. With `a == b` and `b == c` as
+premises, `close()` derives `a == c`. Carrying the subtree avoids the step entirely, and it is
 also the shape a C loop invariant wants, since the loop already holds both the
 frame and the focused subtree while no C local names the focus's parent.
 
@@ -418,8 +414,7 @@ constructor has already fixed:
   `node_color_ok_weaken_left` and `_weaken_right` replace one child's color by
   `Black`, which is the weakening the insert cursor needs.
 
-Two shape rules govern these bodies, both consequences of what
-`normalize() using` will reduce.
+Two shape rules govern how conditional reduction handles these bodies.
 
 First, the flags are `Color`-typed rather than `int32`. A test `if flag == 1`
 on a bare `int32` parameter unfolds to a single opaque bitvector operation that

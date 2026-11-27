@@ -293,7 +293,7 @@ is an algebraic value, `if list::contains(xs, x) { xs } else { List<T>::Cons(x,
 xs) }`, in definitions and contract clauses alike; branches of two datatypes, or
 one algebraic branch and one that is not, are refused. The kernel term keeps
 the condition and both branches; a constant condition or two equal branches
-leave one branch, so `unfold` followed by `normalize() using` the condition or
+leave one branch, so `unfold` followed by `close() using` the condition or
 its negation selects a branch
 ([`algebraic_conditional_inserts_into_a_generic_list.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_conditional_inserts_into_a_generic_list.md),
 [`algebraic_conditional_call_results_select_a_branch.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_conditional_call_results_select_a_branch.md),

@@ -135,7 +135,6 @@ fn expansion_closes_each_rewritten_postcondition() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn proposition_closers_name_the_pending_closing_goal() {
     for closer in [
-        "normalize();",
         "close() using {};",
         "all { true => { close(); } true => { close(); } }",
     ] {

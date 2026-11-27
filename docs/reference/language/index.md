@@ -2420,7 +2420,7 @@ cannot shadow resource parameters or fields.
 
 A pointer-typed payload is an ordinary C pointer value, so a proposition may
 compare it with any C pointer expression, in `requires`, `ensures`, `have`,
-`rewrite`, and `normalize() using`. A resource arm that records the owner's
+`rewrite`, and `close() using`. A resource arm that records the owner's
 own address, `fact p == identity`, is what connects the two: the C tests an
 address, the model tests its payload, and that fact is the bridge. Pointers
 stay pointers; there is no conversion to an integer and the payload carries no
