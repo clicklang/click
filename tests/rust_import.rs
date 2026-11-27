@@ -4093,6 +4093,24 @@ fn charon_bool_flag_claims_meet_their_tests() {
     assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
 }
 
+#[test]
+fn charon_expansion_names_shadowed_slice_parameter_length_at_entry() {
+    let project =
+        Project::from_fixture("tests/fixtures/rust-verification/shadowed-slice-separation");
+    let source = fs::read_to_string(project.root.join("borrow.click")).unwrap();
+    let prepared = project.prepared().unwrap();
+    let claim = "use_scalar.contract";
+    verify_rust_function(&source, &prepared, "use_scalar").unwrap();
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(&source, &prepared, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("at(function.entry, memory("));
+    click::surface::without_proof_search_for_claim(claim, || {
+        verify_rust_function(&expanded, &prepared, "use_scalar").map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
 const PROGRAM_BINDING_SIDECAR: &str =
     include_str!("../design/charon-trial/program-bindings/bindings.click");
 

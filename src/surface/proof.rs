@@ -2893,15 +2893,13 @@ fn evaluate_entry_resource_context(
     // not separate from its own owner. Contract certification derives the
     // same facts from the same clause list, so the two entry contexts agree.
     separation_sources.facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
-    if !separation_sources.facts.is_empty() {
-        for clause in &entry_clauses {
-            if let Resource::Memory(range) = clause.fact.resource()
-                && let Some(source) = clause
-                    .section_index
-                    .and_then(|index| range_sources.remove(&index))
-            {
-                separation_sources.ranges.insert(range.clone(), source);
-            }
+    for clause in &entry_clauses {
+        if let Resource::Memory(range) = clause.fact.resource()
+            && let Some(source) = clause
+                .section_index
+                .and_then(|index| range_sources.remove(&index))
+        {
+            separation_sources.ranges.insert(range.clone(), source);
         }
     }
     // Quantity guards are implicit requirements, just as they are in the

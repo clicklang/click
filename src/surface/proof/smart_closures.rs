@@ -3470,18 +3470,17 @@ impl<'a> Proof<'a> {
             None
         };
         if let Some(surface) = recorded {
+            let surface = self.anchor_shadowed_entry_slice_ranges(surface.clone(), requirement);
             let lowered = self
-                .lower_surface_goal(surface, "recorded tactic requirement")
+                .lower_surface_goal(&surface, "recorded tactic requirement")
                 .map_err(|error| error.with_kind(crate::surface::ClickErrorKind::Internal))?;
             if !lowered_covers_recorded_requirement(&lowered, requirement) {
                 return Err(self.step_error(format!(
                     "a recorded tactic requirement does not round-trip (report this as a bug)\nSurface form `{}`",
-                    crate::surface::printing::source_click_proposition(surface),
+                    crate::surface::printing::source_click_proposition(&surface),
                 )).with_kind(crate::surface::ClickErrorKind::Internal));
             }
-            return Ok(Some(RequirementSpelling {
-                surface: surface.clone(),
-            }));
+            return Ok(Some(RequirementSpelling { surface }));
         }
         if requirement.call_site.is_none()
             && let Some(spelling) = literal_requirement_spelling(requirement)
@@ -3566,6 +3565,7 @@ impl<'a> Proof<'a> {
             execution_view.surface_propositions,
         );
         let admit = |candidate: SyntaxProposition| {
+            let candidate = self.anchor_shadowed_entry_slice_ranges(candidate, requirement);
             let lowered = self.lower_surface_goal(&candidate, "step obligation");
             match lowered {
                 Ok(lowered) if lowered_states_requirement(&lowered, requirement) => Some(candidate),
@@ -3633,6 +3633,64 @@ impl<'a> Proof<'a> {
             admit(surface).or_else(|| conjuncts.into_iter().find_map(admit))
         })
         .map(|surface| RequirementSpelling { surface }))
+    }
+
+    /// Keep an incoming slice descriptor at function entry when a local
+    /// shadows its name. Both the base and bounds belong to that scope.
+    fn anchor_shadowed_entry_slice_ranges(
+        &self,
+        mut surface: SyntaxProposition,
+        requirement: &UnresolvedRequirement,
+    ) -> SyntaxProposition {
+        let (
+            SyntaxProposition::Separate { left, right },
+            Proposition::ResourceSeparate {
+                left: required_left,
+                right: required_right,
+            },
+            Some(execution),
+        ) = (&mut surface, &requirement.proposition, self.execution())
+        else {
+            return surface;
+        };
+        let Some((_, entry)) = &execution
+            .presentation
+            .recorded_states
+            .entry_separation_sources
+        else {
+            return surface;
+        };
+        let source_at_entry = |resource: &Resource| {
+            let Resource::Memory(range) = resource else {
+                return None;
+            };
+            let segment = entry.ranges.get(range)?;
+            let ContractSegmentSurface::Range {
+                end: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(length)),
+                ..
+            } = &segment.surface
+            else {
+                return None;
+            };
+            let slice = length.slice_length_of()?;
+            let name = crate::kernel::BindingName::scoped_slice_length(slice, true);
+            (execution.core.state.locals().resolve_binding(&name) != *length).then(|| {
+                ResourceSubject::At {
+                    selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: CodeRegionRef::Function,
+                        kind: ProgramPointKind::Entry,
+                    }),
+                    resource: Box::new(ResourceSubject::Memory(segment.clone())),
+                }
+            })
+        };
+        if let Some(source) = source_at_entry(required_left) {
+            *left = source;
+        }
+        if let Some(source) = source_at_entry(required_right) {
+            *right = source;
+        }
+        surface
     }
 }
 
