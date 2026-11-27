@@ -269,7 +269,10 @@ impl adler2::Adler32 {
      step(); step();
      step_until(loop(3).statement(0).entry);
      have av == a_vec.0[3];
-     have av == old((bytes[3] as u32)) by { rewrite(av, a_vec.0[3]); close(); }
+     have av == old((bytes[3] as u32)) by {
+      rewrite(av, a_vec.0[3]);
+      close() using { a_vec.0[3] == old((bytes[3] as u32)); };
+     }
      have to_integer(av) <= 255;
      have to_integer(a) + to_integer(av) <= 4294967295 by close() using { to_integer(a) <= 766; to_integer(av) <= 255; };
      mark sum_a_3;
@@ -395,13 +398,24 @@ impl adler2::Adler32 {
      have to_integer(self.b) == old(adler_spec_b(bytes, 4, 1, 0)) by {
       rewrite(to_integer(self.b), to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32)); close();
      }
-     // Close the owned fields and the checked output equalities.
-     close();
-     close(); close(); close(); close();
+     // Return the two owned fields and the proved postconditions.
      close();
      close();
-     close();
-     close();
-     close();
+     close() using {
+      to_integer(self.a) == to_integer((((((1u32 + (old((bytes[0] as u32)))) + (old((bytes[1] as u32)))) + (old((bytes[2] as u32)))) + (old((bytes[3] as u32))))) % 65521u32);
+     };
+     close() using {
+      to_integer(self.b) == to_integer((((((4u32 + (old((bytes[0] as u32)) * 4u32)) + (old((bytes[1] as u32)) * 4u32 + (65521u32 - old((bytes[1] as u32))))) + (old((bytes[2] as u32)) * 4u32 + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + (old((bytes[3] as u32)) * 4u32 + ((65521u32 - old((bytes[3] as u32))) * 3u32)))) % 65521u32);
+     };
+     close() using { bytes[0] == old(bytes[0]); };
+     close() using { bytes[1] == old(bytes[1]); };
+     close() using { bytes[2] == old(bytes[2]); };
+     close() using { bytes[3] == old(bytes[3]); };
+     close() using {
+      to_integer(self.a) == old(adler_spec_a(bytes, 4, 1));
+     };
+     close() using {
+      to_integer(self.b) == old(adler_spec_b(bytes, 4, 1, 0));
+     };
     }
 }
