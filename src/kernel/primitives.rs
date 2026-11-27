@@ -7580,19 +7580,11 @@ pub struct CallBinderTransport {
 }
 
 impl CallBinderTransport {
-    /// Whether a call statement's target is the callee the step named. A
-    /// sidecar names a header-provided `static inline` helper by its source
-    /// spelling, while the call carries the helper's translation-unit-local
-    /// execution name `name#inline:unit`, so that suffix is not part of the
-    /// comparison for a bare name. A file-qualified contract instead supplies
-    /// the exact execution name; it must match that translation unit. The call
-    /// at the frontier is one call to one body either way.
+    /// The surface has already resolved the written callee against the
+    /// call at the frontier. Transport is valid only for that exact target.
     pub(crate) fn names_call_to(&self, function_name: &str) -> bool {
-        let source_spelling = function_name
-            .split_once("#inline:")
-            .map_or(function_name, |(source, _)| source);
         matches!(&self.target, CallBinderTarget::Function(name)
-            if function_name == name.as_ref() || source_spelling == name.as_ref())
+            if function_name == name.as_ref())
     }
 }
 

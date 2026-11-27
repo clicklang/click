@@ -7884,12 +7884,7 @@ fn call_value_arguments(
         // unqualified spelling of a translation-unit-local helper.
         let written = crate::languages::c::formatted_output::function_format(function)
             .map(|(output, _)| output.source_name())
-            .unwrap_or_else(|| {
-                ["#inline:", "#file-static:"]
-                    .iter()
-                    .find_map(|suffix| function.split_once(suffix).map(|(source, _)| source))
-                    .unwrap_or(function)
-            });
+            .unwrap_or_else(|| crate::languages::c::function_names::source_spelling(function));
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {

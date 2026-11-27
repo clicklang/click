@@ -1057,7 +1057,8 @@ impl SourceExecutionLayout {
                     {
                         layout.call_targets.insert(
                             statement_index,
-                            crate::surface::call_source_spelling(function_name).to_string(),
+                            crate::languages::c::function_names::source_spelling(function_name)
+                                .to_string(),
                         );
                     }
                     if let ProgramStatement::Assign {
@@ -1476,7 +1477,7 @@ impl SourceExecutionLayout {
             {
                 layout.call_targets.insert(
                     index,
-                    crate::surface::call_source_spelling(function_name).to_string(),
+                    crate::languages::c::function_names::source_spelling(function_name).to_string(),
                 );
             }
             if let syntax::CStatement::HeapAllocate { target, .. } = statement {

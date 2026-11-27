@@ -1325,7 +1325,7 @@ impl<'a> Proof<'a> {
         let names_written = |callee: &str| {
             callee == written
                 || source_target == Some(written)
-                || crate::surface::call_source_spelling(callee) == written
+                || crate::languages::c::function_names::source_spelling(callee) == written
                 || context
                     .spec_definitions
                     .predicates

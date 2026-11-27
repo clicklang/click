@@ -24,6 +24,10 @@ impl LocalFunctionId {
             spellings: std::sync::Mutex::new(BTreeMap::new()),
         }))
     }
+    pub(crate) fn source_and_name(&self) -> (Option<&str>, &str) {
+        (self.0.source.as_deref(), &self.0.function)
+    }
+
     /// Records a declaration's source spelling as the C parser declares it.
     /// A spelling is unique when one declaration of the function uses it and
     /// that declaration shadows no visible name, local or file-scope.

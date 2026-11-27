@@ -4427,8 +4427,8 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
 }
 
 /// Maps each Click-visible C spelling to the name its body executes under.
-/// Only a header-provided `static inline` helper has two names; every other
-/// function maps to itself and is left out of the map.
+/// Internal-linkage functions use a translation-unit-qualified key.
+/// Functions whose execution key matches their source name need no entry.
 pub(in crate::surface) fn executing_function_names(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     file: &ClickFile,

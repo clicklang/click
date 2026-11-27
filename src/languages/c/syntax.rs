@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::source::{SourcePosition, SourcePositionCursor};
 
+use super::function_names::{FunctionName, translation_unit_spelling};
 use super::source::ExpandedLineMap;
 use super::source_map::CSourceMap;
 pub use super::target::{LongRank, PlainChar};
@@ -7667,10 +7668,9 @@ pub(crate) struct CFunctionHeader {
     /// The C spelling used to resolve declarations and calls in this
     /// translation unit.
     source_name: String,
-    /// The kernel identity. Internal-linkage inline definitions are qualified
-    /// by the including translation unit so separate TUs get separate
-    /// instances of a shared header helper.
-    name: String,
+    /// The linkage identity. Each translation unit gets its own instance of
+    /// a shared header helper.
+    name: FunctionName,
     internal_linkage: bool,
     weak_linkage: bool,
     returns_twice: bool,
@@ -7708,6 +7708,10 @@ impl CFunctionHeader {
     }
 
     pub(crate) fn linkage_name(&self) -> &str {
+        self.name.execution_key()
+    }
+
+    pub(crate) fn linkage_identity(&self) -> &FunctionName {
         &self.name
     }
 
@@ -7845,7 +7849,7 @@ pub(crate) fn library_interface_contract(
     let standard = !header.internal_linkage
         && header.variadic
         && header.return_type == InterfaceType::Int32
-        && header.name == header.source_name;
+        && header.linkage_name() == header.source_name;
     match (header.source_name.as_str(), header.parameters.as_slice()) {
         ("printf", [format]) if standard && hosted_stdout && is_format(format) => {
             Some(include_str!("../../../library/c/printf.interface.click"))
@@ -7854,7 +7858,7 @@ pub(crate) fn library_interface_contract(
             if !header.internal_linkage
                 && header.variadic
                 && header.return_type == InterfaceType::Int32
-                && header.name == header.source_name
+                && header.linkage_name() == header.source_name
                 && file.interface_type == InterfaceType::Int32Pointer
                 && file.struct_name() == Some(STDIO_FILE_TAG)
                 && !file.pointee_constant
@@ -7901,9 +7905,10 @@ fn library_function_prototype(
     if header.internal_linkage {
         return None;
     }
-    let (name, prototype, return_type, parameters) = LIBRARY_PROTOTYPES
-        .iter()
-        .find(|(name, ..)| *name == header.name.as_str() || *name == header.source_name.as_str())?;
+    let (name, prototype, return_type, parameters) =
+        LIBRARY_PROTOTYPES.iter().find(|(name, ..)| {
+            *name == header.linkage_name() || *name == header.source_name.as_str()
+        })?;
     let compatible = !header.variadic
         && !header.opaque_signature
         && return_type.matches(
@@ -8275,7 +8280,7 @@ impl Parser {
                 .pop()
                 .expect("the last entry was just inspected");
             if let Some(header) = self.function_declarations.remove(&source_name) {
-                self.function_source_names.remove(&header.name);
+                self.function_source_names.remove(header.linkage_name());
             }
         }
         for binding in self.scopes.pop().unwrap_or_default().into_iter().rev() {
@@ -9001,16 +9006,8 @@ impl Parser {
             .into()
     }
 
-    fn inline_function_kernel_name(&self, source_name: &str) -> String {
-        format!(
-            "{source_name}#inline:{}",
-            self.source_identity.as_deref().unwrap_or("source")
-        )
-    }
-
-    /// The declaration behind a call target. Calls carry the kernel name,
-    /// which for a `static inline` header function is the mangled
-    /// internal-linkage name rather than the declaration's source name.
+    /// The declaration behind a call target, looked up by its linked
+    /// symbol or its translation-unit-qualified key.
     fn function_declaration_for_call(&self, function_name: &str) -> Option<&CFunctionHeader> {
         self.function_declarations.get(function_name).or_else(|| {
             self.function_source_names
@@ -9022,7 +9019,7 @@ impl Parser {
     fn resolve_function_name(&self, source_name: &str) -> String {
         self.function_declarations
             .get(source_name)
-            .map(|function| function.name.clone())
+            .map(|function| function.linkage_name().to_owned())
             .unwrap_or_else(|| source_name.to_string())
     }
 
@@ -9784,7 +9781,7 @@ impl Parser {
             InterfaceType::Int32
                 if self.target == super::target::CTarget::X86_64LinuxUserspace
                     && !header.internal_linkage
-                    && header.name == "main"
+                    && header.linkage_name() == "main"
                     && header.source_name == "main"
                     && header.parameters.is_empty() =>
             {
@@ -9834,7 +9831,7 @@ impl Parser {
             .filter_map(|(name, pointer)| pointer.then_some(name))
             .collect();
         let string_literals = std::mem::take(&mut self.string_literals);
-        let inline_body = header.name != header.source_name;
+        let inline_body = header.linkage_name() != header.source_name;
         Ok(ImportedFunction {
             source_sites: None,
             return_type: header.return_type,
@@ -9844,7 +9841,7 @@ impl Parser {
             aggregate_return_mode: crate::kernel::AggregateReturnMode::Copy,
             return_pointer_struct_name: header.return_pointer_struct_name,
             source_name: header.source_name,
-            name: header.name,
+            name: header.name.into_string(),
             inline_body,
             requires_read_only_contract: false,
             requires_nonthrowing_contract: false,
@@ -9995,10 +9992,9 @@ impl Parser {
         self.expect(Token::LParen)?;
         self.push_scope();
         let empty_parameter_list = self.peek() == Some(&Token::RParen);
-        self.binding_function = Some(LocalFunctionId::new(
-            self.source_identity.clone(),
-            source_name.clone(),
-        ));
+        let local_function =
+            LocalFunctionId::new(self.source_identity.clone(), source_name.clone());
+        self.binding_function = Some(local_function.clone());
         self.parsing_binding_parameters = true;
         self.next_parameter_binding = 0;
         self.next_local_binding = 0;
@@ -10013,9 +10009,9 @@ impl Parser {
         }
         self.expect(Token::RParen)?;
         let name = if internal_linkage {
-            self.inline_function_kernel_name(&source_name)
+            FunctionName::translation_unit(local_function)
         } else {
-            source_name.clone()
+            FunctionName::External(source_name.clone())
         };
         self.parsing_function_header = false;
         let opaque_signature = std::mem::take(&mut self.opaque_function_signature);
@@ -10243,8 +10239,14 @@ impl Parser {
             return Err(self.error_here("GNU function asm label needs a nonempty string"));
         }
         self.expect(Token::RParen)?;
-        header.name = String::from_utf8(bytes)
+        let symbol = String::from_utf8(bytes)
             .map_err(|_| self.error_here("GNU function asm label must be UTF-8"))?;
+        if translation_unit_spelling(&symbol).is_some() {
+            return Err(self.error_here(
+                "GNU function asm label conflicts with C translation-unit qualification",
+            ));
+        }
+        header.name = FunctionName::External(symbol);
         Ok(())
     }
 
@@ -10371,12 +10373,13 @@ impl Parser {
                 )));
             }
         }
-        if let Some(previous_source) = self.function_source_names.get(&header.name)
+        if let Some(previous_source) = self.function_source_names.get(header.linkage_name())
             && previous_source != &header.source_name
         {
             return Err(self.error_here(format!(
                 "functions `{previous_source}` and `{}` have the same linked symbol `{}`",
-                header.source_name, header.name
+                header.source_name,
+                header.linkage_name()
             )));
         }
         self.function_declaration_lines
@@ -10412,7 +10415,7 @@ impl Parser {
             self.function_declarations
                 .insert(header.source_name.clone(), header.clone());
             self.function_source_names
-                .insert(header.name.clone(), header.source_name.clone());
+                .insert(header.linkage_name().to_owned(), header.source_name.clone());
         }
         if definition && !self.defined_functions.insert(header.source_name.clone()) {
             let mut message = format!("duplicate function definition `{}`", header.source_name);
@@ -17982,7 +17985,7 @@ impl Parser {
                 return_struct_name: None,
                 return_pointer_struct_name: None,
                 source_name: name.clone(),
-                name: name.clone(),
+                name: FunctionName::External(name.clone()),
                 internal_linkage: false,
                 weak_linkage: false,
                 returns_twice: false,

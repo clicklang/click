@@ -5,8 +5,8 @@ contract, like any other function. A call step's binder map,
 `step(fill, { x: x })`, is how a proof selects a callee contract's instance
 binders, and on such a helper it selects the helper's `consumes x` exactly as
 it would for an ordinary function. The call carries the helper's
-translation-unit-local execution name `fill#inline:…`, and the step still
-matches it by the spelling the proof wrote.
+translation-unit-local identity, and the step matches it by the spelling the
+proof wrote.
 
 A helper with no contract still runs its body at the call site, so a binder
 map on it binds nothing and is refused

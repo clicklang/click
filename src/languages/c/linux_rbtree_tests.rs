@@ -33,32 +33,32 @@ const FIRST_REJECTION: &str =
 /// defines: every function in `lib/rbtree.c` and every inline helper they
 /// reach, by kernel identity.
 const PROJECTED_FUNCTIONS: &[&str] = &[
-    "____rb_erase_color#inline:lib/rbtree.c",
-    "__rb_change_child#inline:lib/rbtree.c",
-    "__rb_change_child_rcu#inline:lib/rbtree.c",
-    "__rb_erase_augmented#inline:lib/rbtree.c",
+    r#""lib/rbtree.c"::____rb_erase_color"#,
+    r#""lib/rbtree.c"::__rb_change_child"#,
+    r#""lib/rbtree.c"::__rb_change_child_rcu"#,
+    r#""lib/rbtree.c"::__rb_erase_augmented"#,
     "__rb_erase_color",
-    "__rb_insert#inline:lib/rbtree.c",
+    r#""lib/rbtree.c"::__rb_insert"#,
     "__rb_insert_augmented",
-    "__rb_rotate_set_parents#inline:lib/rbtree.c",
-    "dummy_copy#inline:lib/rbtree.c",
-    "dummy_propagate#inline:lib/rbtree.c",
-    "dummy_rotate#inline:lib/rbtree.c",
+    r#""lib/rbtree.c"::__rb_rotate_set_parents"#,
+    r#""lib/rbtree.c"::dummy_copy"#,
+    r#""lib/rbtree.c"::dummy_propagate"#,
+    r#""lib/rbtree.c"::dummy_rotate"#,
     "rb_erase",
     "rb_first",
     "rb_first_postorder",
     "rb_insert_color",
     "rb_last",
-    "rb_left_deepest_node#inline:lib/rbtree.c",
+    r#""lib/rbtree.c"::rb_left_deepest_node"#,
     "rb_next",
     "rb_next_postorder",
     "rb_prev",
-    "rb_red_parent#inline:lib/rbtree.c",
+    r#""lib/rbtree.c"::rb_red_parent"#,
     "rb_replace_node",
     "rb_replace_node_rcu",
-    "rb_set_black#inline:lib/rbtree.c",
-    "rb_set_parent#inline:lib/rbtree.c",
-    "rb_set_parent_color#inline:lib/rbtree.c",
+    r#""lib/rbtree.c"::rb_set_black"#,
+    r#""lib/rbtree.c"::rb_set_parent"#,
+    r#""lib/rbtree.c"::rb_set_parent_color"#,
 ];
 
 /// File-scope items the projection keeps and omits.
@@ -576,7 +576,7 @@ fn linux_rbtree_locked_import_loads_offline() {
         functions,
         PROJECTED_FUNCTIONS
             .iter()
-            .map(|name| name.replace("#inline:lib/", "#inline:inputs/lib/"))
+            .map(|name| name.replace(r#""lib/"#, r#""inputs/lib/"#))
             .collect::<BTreeSet<_>>()
     );
 
