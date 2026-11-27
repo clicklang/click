@@ -10976,6 +10976,20 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(OldCondit
     ))
 }
 
+/// The only mixed integer arms admitted by a specification conditional are
+/// the two 32-bit carriers. Their result carries the unsigned word.
+fn conditional_machine_format(
+    left: MachineIntegerType,
+    right: MachineIntegerType,
+) -> Option<MachineIntegerType> {
+    use MachineIntegerType::{Int32, UInt32};
+    match (left, right) {
+        (Int32, UInt32) | (UInt32, Int32) => Some(UInt32),
+        _ if left == right => Some(left),
+        _ => None,
+    }
+}
+
 pub(super) fn conditional_spec_value(
     proposition: &Proposition,
     then_value: ProgramValue,
@@ -10984,76 +10998,42 @@ pub(super) fn conditional_spec_value(
     if then_value == else_value {
         return Some(then_value);
     }
-    let (condition, expected) = proposition_as_single_condition(proposition)
-        .or_else(|| compound_spec_value_condition(proposition))?;
-    // A `bool` conditional of two `bool` values selects one of them, so its
-    // leaves stay exactly `0` or `1`.
-    let (then_term, else_term, rebuild): (_, _, fn(OldMachineTerm) -> ProgramValue) =
-        match (then_value, else_value) {
-            (ProgramValue::Int32(then_term), ProgramValue::Int32(else_term)) => {
-                (then_term, else_term, ProgramValue::Int32)
-            }
-            // A `Bool` conditional is the kernel sort's `if` (rule L-If).
-            (ProgramValue::Bool(then_term), ProgramValue::Bool(else_term)) => {
-                let (then_term, else_term) = if expected {
-                    (then_term, else_term)
-                } else {
-                    (else_term, then_term)
-                };
-                return Some(ProgramValue::Bool(OldMachineTerm::bool_cast(
-                    MachineIntegerType::UInt8,
-                    OldConditionTerm::bool_if(
-                        condition,
-                        OldConditionTerm::truth_of_bool_word(&then_term),
-                        OldConditionTerm::truth_of_bool_word(&else_term),
-                    ),
-                )));
-            }
-            // Two arms of one integer type: each leaf is already in that
-            // type's range, so the selection is too.
-            (ProgramValue::Int8(then_term), ProgramValue::Int8(else_term)) => {
-                (then_term, else_term, ProgramValue::Int8)
-            }
-            (ProgramValue::Int16(then_term), ProgramValue::Int16(else_term)) => {
-                (then_term, else_term, ProgramValue::Int16)
-            }
-            (ProgramValue::UInt8(then_term), ProgramValue::UInt8(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt8)
-            }
-            (ProgramValue::UInt16(then_term), ProgramValue::UInt16(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt16)
-            }
-            (ProgramValue::UInt32(then_term), ProgramValue::UInt32(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt32)
-            }
-            // An `int` arm beside an `unsigned int` one converts to
-            // `unsigned int`, which keeps its 32 bits.
-            (ProgramValue::UInt32(then_term), ProgramValue::Int32(else_term))
-            | (ProgramValue::Int32(then_term), ProgramValue::UInt32(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt32)
-            }
-            (ProgramValue::Int64(then_term), ProgramValue::Int64(else_term)) => {
-                (then_term, else_term, ProgramValue::Int64)
-            }
-            (ProgramValue::UInt64(then_term), ProgramValue::UInt64(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt64)
-            }
-            (ProgramValue::Int128(then_term), ProgramValue::Int128(else_term)) => {
-                (then_term, else_term, ProgramValue::Int128)
-            }
-            (ProgramValue::UInt128(then_term), ProgramValue::UInt128(else_term)) => {
-                (then_term, else_term, ProgramValue::UInt128)
-            }
-            _ => return None,
-        };
-    let (then_term, else_term) = if expected {
-        (then_term, else_term)
-    } else {
-        (else_term, then_term)
+    let guard = || {
+        proposition_as_single_condition(proposition)
+            .or_else(|| compound_spec_value_condition(proposition))
     };
-    Some(rebuild(OldMachineTerm::if_then_else(
-        condition, then_term, else_term,
-    )))
+    let integer_arm = |value: ProgramValue| {
+        let format = MachineIntegerType::from_program_type(value.program_type())?;
+        let crate::kernel::integer_c_value!(term) = value else {
+            return None;
+        };
+        Some((format, term))
+    };
+    match (then_value, else_value) {
+        (ProgramValue::Bool(yes), ProgramValue::Bool(no)) => {
+            let (condition, expected) = guard()?;
+            let (yes, no) = if expected { (yes, no) } else { (no, yes) };
+            Some(ProgramValue::Bool(OldMachineTerm::bool_cast(
+                MachineIntegerType::UInt8,
+                OldConditionTerm::bool_if(
+                    condition,
+                    OldConditionTerm::truth_of_bool_word(&yes),
+                    OldConditionTerm::truth_of_bool_word(&no),
+                ),
+            )))
+        }
+        (left, right) => {
+            let (left_format, yes) = integer_arm(left)?;
+            let (right_format, no) = integer_arm(right)?;
+            let format = conditional_machine_format(left_format, right_format)?;
+            let (condition, expected) = guard()?;
+            let (yes, no) = if expected { (yes, no) } else { (no, yes) };
+            Some(crate::kernel::wrap_exact_machine_value(
+                format,
+                OldMachineTerm::if_then_else(condition, yes, no),
+            ))
+        }
+    }
 }
 
 pub(super) fn proposition_as_single_condition(

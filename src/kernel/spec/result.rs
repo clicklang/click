@@ -64,26 +64,55 @@ impl SpecValue {
             )
             .map(Self::Native));
         }
-        if let (Some(left), Some(right)) = (then_value.boolean(), else_value.boolean()) {
+        // Native equality selects the complete left payload, including pointer
+        // declaration metadata omitted from equality.
+        let same_native_value = || {
+            use crate::kernel::execution_value::storage_keys::ProgramStorageKey;
+            ProgramStorageKey::for_value(then_value) == ProgramStorageKey::for_value(else_value)
+        };
+        if is_bool(then_value) && is_bool(else_value) {
+            let logical_value = |value: &Self| match value {
+                Self::Native(value) => matches!(value, ProgramValue::Bool(_)),
+                Self::Shared(root) => root.ty() == &KernelType::Bool,
+            };
+            let logical_arms = logical_value(then_value) && logical_value(else_value);
+            if !logical_arms && same_native_value() {
+                return Ok(Some(then_value.clone()));
+            }
             let Some((condition, expected)) = conditional_guard(proposition) else {
                 return Ok(
                     (then_value == else_value).then(|| then_value.clone().retain_boolean_result())
                 );
             };
-            let (left, right) = if expected {
+            let truth = |value: &Self| {
+                if logical_arms
+                    || matches!(value, Self::Shared(root) if root.ty() == &KernelType::Bool)
+                {
+                    return value.boolean();
+                }
+                let native = value.native();
+                let ProgramValue::Bool(word) = native.as_ref() else {
+                    return None;
+                };
+                Some(KernelTermImport::for_exact_field_inputs().truth_of_bool_word(word))
+            };
+            let (Some(left), Some(right)) = (truth(then_value), truth(else_value)) else {
+                return Ok(None);
+            };
+            let (yes, no) = if expected {
                 (left, right)
             } else {
                 (right, left)
             };
-            // Exact rewrites can make the arms equal while retaining the if.
-            return Ok(Some(
-                KernelTerm::boolean_if_preserving_equal_arms([
-                    condition.kernel_operand(),
-                    left,
-                    right,
-                ])
-                .into(),
-            ));
+            let arms = [condition.kernel_operand(), yes, no];
+            // Exact rewrites retain equal logical arms. A C word join folds
+            // equal truths after reading the words at their byte carrier.
+            let root = if logical_arms {
+                KernelTerm::boolean_if_preserving_equal_arms(arms)
+            } else {
+                KernelTerm::boolean_if(arms)
+            };
+            return Ok(Some(root.into()));
         }
         if let (Some(left), Some(right)) = (then_value.float(), else_value.float()) {
             // Native float specification arms join only when their exact values
@@ -95,15 +124,7 @@ impl SpecValue {
         if let (Some((left_format, left)), Some((right_format, right))) =
             (then_value.machine(), else_value.machine())
         {
-            let format = if left_format == right_format {
-                left_format
-            } else if matches!(
-                (left_format, right_format),
-                (MachineIntegerType::Int32, MachineIntegerType::UInt32)
-                    | (MachineIntegerType::UInt32, MachineIntegerType::Int32)
-            ) {
-                MachineIntegerType::UInt32
-            } else {
+            let Some(format) = conditional_machine_format(left_format, right_format) else {
                 return Ok(None);
             };
             let Some((condition, expected)) = conditional_guard(proposition) else {
@@ -129,22 +150,11 @@ impl SpecValue {
             };
             return Ok(Some(Self::Shared(result)));
         }
-        Ok(conditional_spec_value(
-            proposition,
-            then_value.clone().into_native(),
-            else_value.clone().into_native(),
-        )
-        .map(|value| {
-            if value.program_type().is_pointer() {
-                // The native constructor accepts pointer arms only when equal,
-                // selecting the complete left payload. Keep its original root.
-                then_value.clone().retain_pointer_result()
-            } else if matches!(value, ProgramValue::Parameter(_)) {
-                // Program-carried algebraic arms join only when equal.
-                then_value.clone().retain_algebraic_result()
-            } else {
-                Self::Native(value)
-            }
+        Ok(same_native_value().then(|| {
+            then_value
+                .clone()
+                .retain_pointer_result()
+                .retain_algebraic_result()
         }))
     }
 
