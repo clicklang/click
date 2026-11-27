@@ -151,6 +151,43 @@ when two recorded states have equal memory. A region footprint retains its
 before and after points, so `preserve` constructs the two definedness facts
 at the recorded endpoints of the region.
 
+## Memory history and resource context
+
+A proof state keeps what memory did apart from who may use it
+([state tactics and logical tactics](smart-and-simple-tactics.md#state-tactics-and-logical-tactics)).
+
+The **memory history**, part of the program state, records what happened to
+memory, independent of ownership: the program points a path reached and, for
+each step between them, what it may have written, freed, allocated, or
+initialized, and which block lifetimes ended. A step's write footprint is
+given as address ranges, as a resource that bounds it, or both. The history
+answers questions about memory between points: whether a cell can have
+changed from `p` to `q`, what a step or a run of steps may have written, and
+whether a block stays live from one point to another.
+
+The **resource context** records who may do what at a point: the resources
+the proof owns or views and their quantities, under the definitions of their
+families. It answers whether a read or write is permitted here and what a
+resource such as `list(child)` covers at this point.
+
+A resource can name a set of addresses in the history. A call whose contract
+says `consumes list(child)` may write anywhere in the list's nodes, which no
+finite set of ranges lists, so its step records the consumed and borrowed
+inputs as a bound: every write lies inside their footprint. That bound is a
+fact about the step, so it belongs to the history, not to the resource
+context, even though answering a question about it consults the resource
+context for what `list(child)` covers. (The kernel still carries it on the
+call's `MemoryEffectSummary` fact, as `resource_effect_bound`; it is moving
+to the call's `CallHavoc` step.) This is how a later
+`preserve(memory(*slot), statement(0))` carries a separate cell across such a
+call (`mdtests/a_call_that_consumes_a_recursive_resource_bounds_its_footprint_by_it.md`).
+
+Each structure changes only through its own tactics. Stepping extends the
+memory history and may change the resource context through a callee's
+contract; `fold`, `unfold`, `observe`, and `with` change only the resource
+context. Logical tactics change neither: they ask both questions and record
+the answers as facts.
+
 ## Blocks and pointers
 
 Kernel memory is a map of named byte-sized blocks plus known cells. A

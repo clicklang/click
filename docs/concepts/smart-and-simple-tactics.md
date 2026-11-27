@@ -74,7 +74,9 @@ three parts:
   the program points a path reached and what each step between them did, and
   answers questions about memory by point.
 - The **resource context** is what the proof owns and views. It is a proof
-  construct with no counterpart in the C program.
+  construct with no counterpart in the C program. [Memory history and
+  resource context](memory-model.md#memory-history-and-resource-context)
+  divides what each records.
 - The **fact context** is the pure facts known about the states, with the
   e-graph that indexes their equalities.
 
