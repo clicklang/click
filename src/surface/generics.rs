@@ -196,12 +196,16 @@ pub(super) fn unify_click_type(
                 substitution,
             )
         }
-        // `Slice<T>` fixes `T` from the slice's element type. A string's
-        // elements are its bytes, so `Str` gives `uint8`.
+        // `Slice<T>` fixes `T` from the slice's element type. A string
+        // slice, `Str`, is no `Slice<T>`, as `&str` is no `&[T]` in Rust:
+        // `str::as_bytes` gives its bytes as one.
         ClickType::Program(InterfaceType::Slice(crate::kernel::SliceElement::Parameter(name)))
             if allowed.contains(name.name()) =>
         {
-            let Some(InterfaceType::Slice(element)) = actual.interface_type() else {
+            let Some(InterfaceType::Slice(element)) = actual
+                .interface_type()
+                .filter(|actual| *actual != InterfaceType::Slice(crate::kernel::SliceElement::Str))
+            else {
                 return Err(format!(
                     "expected {}, got {}",
                     validation::describe_click_type(pattern),
@@ -369,8 +373,8 @@ pub(super) fn instantiate_click_type(
 }
 
 /// The Click type of the elements of a slice of `element`: its scalar, or
-/// the enclosing declaration's type parameter. A string's elements are its
-/// bytes.
+/// the enclosing declaration's type parameter. Never a string slice's, which
+/// unification refuses first.
 pub(in crate::surface) fn slice_element_click_type(
     element: crate::kernel::SliceElement,
 ) -> ClickType {

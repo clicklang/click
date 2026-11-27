@@ -84,3 +84,76 @@ fn a_slice_argument_must_be_a_slice_parameter() {
         "{error:?}"
     );
 }
+
+/// A string slice is the wide pointer at its own type, `Str`
+/// (`design/rust-slice-values.md`, "String slices"). Its methods are
+/// `str`'s: `len()` and `as_ptr()` read its components, and `as_bytes()`
+/// is the same data pointer and length as a byte slice, which
+/// `str::from_utf8_unchecked` retypes back, all with no unfold.
+#[test]
+fn a_string_slice_reads_its_bytes_in_place() {
+    prove(
+        "import click::rust::slice;
+        import click::rust::str;
+        theorem bytes_of(s: &str) {
+            ensures s.as_bytes().len() == s.len() by { close(); }
+        }
+        theorem data_of(s: &str) {
+            ensures s.as_bytes().as_ptr() == s.as_ptr() by { close(); }
+        }
+        theorem round_trip(s: &str) {
+            ensures str::from_utf8_unchecked(s.as_bytes()) == s by { close(); }
+        }
+        theorem built(p: *const u8, n: usize) {
+            ensures str::from_utf8_unchecked(slice::from_raw_parts(p, n)).len() == n by { close(); }
+        }",
+    )
+    .unwrap();
+}
+
+/// A string slice is no byte slice: a slice method it has not, a generic
+/// `Slice<T>` parameter and a comparison with a byte slice each refuse it,
+/// naming its type.
+#[test]
+fn a_string_slice_is_not_a_byte_slice() {
+    for (claim, printed) in [
+        ("s[0] == 0u8", "`Str` has no method `[]`"),
+        ("s[0..1].len() == 1u64", "`Str` has no method"),
+        ("slice::len(s) == 0u64", "Str"),
+        ("s == s.as_bytes()", "Str"),
+    ] {
+        let error = prove(&format!(
+            "import click::rust::slice;
+            theorem claim(s: &str) {{
+                ensures {claim} by {{ close(); }}
+            }}"
+        ))
+        .err()
+        .unwrap_or_else(|| panic!("`{claim}` must be refused"));
+        assert!(
+            error.message().contains(printed),
+            "`{claim}` names `{printed}`: {error:?}"
+        );
+    }
+}
+
+/// A failed claim about a string slice states its goal with `str`'s own
+/// operations.
+#[test]
+fn a_string_slice_failure_names_its_operations() {
+    let error = prove(
+        "import click::rust::slice;
+        theorem claim(s: &str) {
+            ensures s.as_bytes() == slice::from_raw_parts(s.as_ptr(), 1u64) by { close(); }
+        }",
+    )
+    .unwrap_err();
+    let message = format!("{error:?}");
+    assert!(
+        message.contains(
+            "click::rust::str::as_bytes(s) == \
+             click::rust::slice::from_raw_parts(click::rust::str::as_ptr(s), 1u64)"
+        ),
+        "{message}"
+    );
+}

@@ -401,6 +401,16 @@ pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<St
         return None;
     }
     let base = name.split("::<").next().unwrap_or(name);
+    // A string slice's operations are `str`'s methods.
+    if let Some(method) = base.strip_prefix("click::rust::str::") {
+        return match (method, arguments) {
+            ("len" | "as_ptr" | "as_bytes", [string]) => Some(format!("{string}.{method}()")),
+            ("from_utf8_unchecked", [bytes]) => {
+                Some(format!("click::rust::str::from_utf8_unchecked({bytes})"))
+            }
+            _ => None,
+        };
+    }
     let method = base
         .strip_prefix("click::rust::slice::")
         .or_else(|| base.strip_prefix("slice::"))?;

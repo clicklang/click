@@ -2444,6 +2444,21 @@ fn validate_comparison_expression_types_without_lambda(
             Ok(())
         }
         (SpecValueType::Scalar(left_type), SpecValueType::Scalar(right_type)) => {
+            // A string slice is no byte slice: `str::as_bytes` gives its
+            // bytes as one (`design/rust-slice-values.md`, "String slices").
+            let string = |ty: Option<InterfaceType>| {
+                ty == Some(InterfaceType::Slice(crate::kernel::SliceElement::Str))
+            };
+            if let (Some(InterfaceType::Slice(_)), Some(InterfaceType::Slice(_))) =
+                (left_type, right_type)
+                && string(left_type) != string(right_type)
+            {
+                return Err(ClickError::new(format!(
+                    "a string slice is compared with a byte slice in {context}: {} and {}; compare `s.as_bytes()`",
+                    describe_interface_type(left_type.unwrap()),
+                    describe_interface_type(right_type.unwrap())
+                )));
+            }
             if let (Some(left_type), Some(right_type)) = (left_type, right_type)
                 && left_type.to_kernel_type().is_pointer()
                 && right_type.to_kernel_type().is_pointer()
@@ -3793,13 +3808,13 @@ pub(in crate::surface) fn click_types_compatible(
         (actual, expected) if type_is_arithmetic(actual) && type_is_arithmetic(expected) => {
             implicitly_converts(actual, expected)
         }
-        // A generic slice, `Slice<T>`, takes a slice of any element, and a
-        // generic `T*` a pointer to any element; the call's type arguments
-        // are inferred, and checked, by unification.
+        // A generic slice, `Slice<T>`, takes a slice of any element, but not
+        // a string slice, and a generic `T*` a pointer to any element; the
+        // call's type arguments are inferred, and checked, by unification.
         (
-            InterfaceType::Slice(_),
+            InterfaceType::Slice(element),
             InterfaceType::Slice(crate::kernel::SliceElement::Parameter(_)),
-        ) => true,
+        ) => element != crate::kernel::SliceElement::Str,
         (actual, InterfaceType::ParameterPointer(_)) if actual.pointee_type().is_some() => true,
         _ => actual == expected,
     }

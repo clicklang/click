@@ -1223,9 +1223,21 @@ fn str_views::width(s: &str) -> usize {
 }
 ```
 
-`&mut str`, `String`, string literals, `as_bytes`, `==` and the other `str`
-methods are refused with their names. The UTF-8 validity of a `&str`'s bytes
-is not modeled.
+A `&str` in a value position, a pure function's parameter or result or a
+theorem binder, is one string slice value of the type `Str`
+([`click::rust::str`](library/index.md#clickruststr)): the same data pointer
+and byte length as a byte slice, at its own type. Its methods are `str`'s:
+`s.len()`, `s.as_ptr()` and `s.as_bytes()`, the same bytes as a `&[u8]`, all
+read in place with no `unfold`. `click::rust::str::from_utf8_unchecked(v)`
+makes a string slice of a byte slice `v`. A string slice is no byte slice:
+`s[i]`, `s[a..b]`, a `&[T]` parameter and `s == bytes` refuse it, naming its
+type. Failures print a string slice in these spellings.
+
+In imported Rust code, `&mut str`, `String`, string literals, `as_bytes`,
+`==` and the other `str` methods are refused with their names: a call that
+returns a slice needs the slice locals of
+[step 3](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan).
+The UTF-8 validity of a `&str`'s bytes is not modeled.
 
 ## Shared slice splitting
 

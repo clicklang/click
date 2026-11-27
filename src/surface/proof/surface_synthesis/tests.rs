@@ -10437,3 +10437,78 @@ fn an_unnamed_slice_raises_as_its_construction() {
     assert_eq!(name, crate::surface::RUST_SLICE_FROM_RAW_PARTS);
     assert_eq!(arguments.len(), 2);
 }
+
+/// A string slice raises with `str`'s own operations
+/// (`design/rust-slice-values.md`, "String slices"): the slice as its name,
+/// its count as `str::len` and its data pointer as `str::as_ptr` of that
+/// name, the same slice at the byte slice type as `str::as_bytes` of it,
+/// and an unnamed string slice as `str::from_utf8_unchecked` of its
+/// construction. Each spelling lowers back to the same type.
+#[test]
+fn a_string_slice_raises_with_its_own_operations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let string = ProgramType::SlicePointer(crate::kernel::SliceElement::Str);
+    let variable = Variable(961_000);
+    let ProgramValue::Pointer(text) = crate::kernel::symbolic_call_result(string, variable) else {
+        unreachable!("a slice result is a pointer")
+    };
+    let _name = folds::Binding::enter(
+        (folds::BinderCarrier::Program, variable),
+        SurfaceBinder::Written("s".into()),
+    );
+    let _slice = folds::SliceBinding::enter(variable, crate::kernel::SliceElement::Str);
+    let raise = |slice: &crate::kernel::Pointer| {
+        slices::raise_slice(
+            slice,
+            ParameterBinding::default(),
+            &ExecutionState::new(),
+            &BTreeMap::new(),
+        )
+    };
+    let name = SyntaxTerm::ProgramExpression(ProgramExpression::Variable("s".into()));
+    let call = |name: &str, arguments: Vec<SyntaxTerm>| SyntaxTerm::Call {
+        name: name.to_string(),
+        arguments,
+    };
+    assert_eq!(raise(&text), Some(name.clone()));
+    assert_eq!(
+        raise(&text.clone().with_type(ProgramType::SlicePointer(
+            crate::kernel::SliceElement::UInt8
+        ))),
+        Some(call(crate::surface::RUST_STR_AS_BYTES, vec![name.clone()]))
+    );
+    assert_eq!(
+        synthesize_surface_bitvector(
+            text.len().unwrap(),
+            ParameterBinding::default(),
+            &ExecutionState::new(),
+            &BTreeMap::new(),
+        ),
+        Some(call(crate::surface::RUST_STR_LEN, vec![name.clone()]))
+    );
+    assert_eq!(
+        slices::raise_slice_data(
+            text.as_ptr().address(),
+            ParameterBinding::default(),
+            &ExecutionState::new(),
+            &BTreeMap::new(),
+        ),
+        Some(call(crate::surface::RUST_STR_AS_PTR, vec![name]))
+    );
+    let ProgramValue::Pointer(data) =
+        ProgramValue::typed_pointer(crate::kernel::Address::null(), ProgramType::UInt8Pointer)
+    else {
+        unreachable!("a typed pointer is a pointer")
+    };
+    let unnamed = data
+        .with_element_count(OldMachineTerm::uint64_constant(4))
+        .with_type(string);
+    let Some(SyntaxTerm::Call { name, arguments }) = raise(&unnamed) else {
+        panic!("an unnamed string slice raises as a call");
+    };
+    assert_eq!(name, crate::surface::RUST_STR_FROM_UTF8_UNCHECKED);
+    assert!(
+        matches!(arguments.as_slice(), [SyntaxTerm::Call { name, .. }] if name == crate::surface::RUST_SLICE_FROM_RAW_PARTS),
+        "{arguments:?}"
+    );
+}

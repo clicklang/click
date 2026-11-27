@@ -55,6 +55,7 @@ how far it is trusted:
 | [`click::rust::result`](#clickrustresult) | `import click::rust::result;` | specification |
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
+| [`click::rust::str`](#clickruststr) | `import click::rust::str;`, or with a Rust sidecar's `&str` value | specification |
 | [Rust core interfaces](#rust-core-interfaces), `library/rust/core.interface.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
 | [Rust string slice methods](#rust-string-slice-methods), `library/rust/str.interface.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
 | [`click::separation`](#clickseparation) | `import click::separation;` | specification |
@@ -8006,6 +8007,67 @@ length `end - start`. A call owes `start <= end` and `end <= s.len()` where
 it is evaluated, guarded as every evaluation condition is, where Rust panics
 otherwise. A Rust sidecar's subslice `s[a..b]` is `slice::subslice(s, a,
 b)`, and prints as `s[a..b]`.
+
+## `click::rust::str`
+
+Source: `library/rust/str.click`, `import click::rust::str;`, implied by a
+Rust sidecar's `&str` in a value position.
+
+### Rust string slices
+
+`Str` is the built-in type of a Rust string slice, `&str`: the same wide
+pointer as a byte slice, its data pointer and its length in bytes, at its
+own type. A `Str` is no `Slice<T>`: a generic `Slice<T>` parameter, a slice
+method other than `len` and `as_ptr`, an index and a comparison with a byte
+slice each refuse it, and `str::as_bytes` gives its bytes as a
+`Slice<uint8>`. `==` on string slices is identity. A string slice grants no
+access. The UTF-8 validity Rust's `str` holds is not modeled: no function
+here states or requires it, and nothing proved about a string's bytes
+depends on it. None has a body: `len` and `as_ptr` read the component in
+place, and `as_bytes` and `from_utf8_unchecked` are casts between the two
+slice types, which keep the data pointer and the length, so
+`str::as_bytes(s).len()` is `s.len()` and
+`str::from_utf8_unchecked(s.as_bytes())` is `s` with no `unfold`. A Rust
+sidecar writes `s.len()`, `s.as_ptr()` and `s.as_bytes()`, and a failure
+prints a string slice, and one built from bytes, in those spellings and
+`click::rust::str::from_utf8_unchecked(v)`. A `&str` parameter of a `fn` is
+still its pointer and its length ([string slices](../rust.md#string-slices)).
+
+### `str::len`
+
+```click
+function len(s: Str) -> uint64;
+```
+
+The length in bytes, Rust's `s.len()`.
+
+### `str::as_ptr`
+
+```click
+function as_ptr(s: Str) -> uint8*;
+```
+
+The data pointer, Rust's `s.as_ptr()`.
+
+### `str::as_bytes`
+
+```click
+function as_bytes(s: Str) -> Slice<uint8>;
+```
+
+The same bytes as a byte slice, Rust's `s.as_bytes()`: the same data
+pointer and length at the type `Slice<uint8>`.
+
+### `str::from_utf8_unchecked`
+
+```click
+function from_utf8_unchecked(v: Slice<uint8>) -> Str;
+```
+
+The byte slice `v` as a string slice, Rust's
+`core::str::from_utf8_unchecked(v)`: the same data pointer and length at the
+type `Str`. Rust requires `v` to be valid UTF-8; the requirement is not
+modeled, so building one owes nothing.
 
 
 ## Rust core interfaces
