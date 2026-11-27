@@ -333,6 +333,11 @@ pub(super) fn recorded_value(pointer: &SharedPointer) -> MemoryErasedPointerKey 
             )
         }),
         bounds_known: known,
+        count: crate::kernel::PointerMetadataKey(
+            pointer
+                .len()
+                .map(|count| memory_operands::operand(V::Shared(count))),
+        ),
     }
 }
 
@@ -359,6 +364,14 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
             )),
             None => None,
         },
+        count: crate::kernel::PointerMetadataKey(match pointer.len() {
+            Some(count) => Some(alpha_machine_key::<ALLOW_LOADS>(
+                V::Shared(count),
+                bindings,
+                next,
+            )?),
+            None => None,
+        }),
     })
 }
 

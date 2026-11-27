@@ -184,7 +184,24 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
                 bounds = Some(KernelSubobjectBounds::new(start, width));
             }
         }
-        if address == source.address && provenance == source.provenance && !array_changed {
+        // A wide pointer's element count is a numeric component: it is
+        // substituted as the bounds width is.
+        let mut metadata = source.metadata.clone();
+        if let Some(selected) = source.metadata.as_deref() {
+            let count = self.numeric(selected.count())?;
+            if count != *selected.count() {
+                metadata = Some(Arc::new(KernelPointerMetadata::element_count(count)));
+            }
+        }
+        let metadata_changed = match (&metadata, &source.metadata) {
+            (Some(a), Some(b)) => !Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        if address == source.address
+            && provenance == source.provenance
+            && !array_changed
+            && !metadata_changed
+        {
             return Ok(value.clone());
         }
         Ok(SharedPointer::new(KernelPointer {
@@ -193,6 +210,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
             array: KernelArrayObject::from_parts(source.array.is_known(), bounds, owner),
             program_type: source.program_type,
             qualifiers: source.qualifiers.clone(),
+            metadata,
         }))
     }
 }

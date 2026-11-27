@@ -1,8 +1,8 @@
 # Rust slices as wide pointers
 
-Status: direction agreed with the maintainer on 2026-11-25. Steps 0 and 1
-of the [plan](#plan) are done; the wide pointer itself is not
-implemented.
+Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1
+and 2a of the [plan](#plan) are done: the kernel pointer has its metadata
+component, but no front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -426,12 +426,48 @@ construct.
 1. **Inventory** of every `Pointer` consumer, classified as takes the thin
    part, refuses a wide pointer, or handles metadata. Done; recorded
    [above](#inventory-of-pointer-consumers).
-2. **Kernel wide pointer.** The metadata component, slice pointer types,
-   identity, e-graph, substitution, memory cells, raising, with unit tests
-   and the scaling tests above. The library's `Slice<T>` becomes the
-   built-in type, so slice-valued pure functions, `Option<&[u8]>` contract
-   payloads and slice-returning functions use it. This finishes slice
-   returns and `as_bytes`.
+2. **Kernel wide pointer**, in two parts.
+   - **2a. Metadata component.** Done. `KernelPointer.metadata` is
+     `Option<Arc<KernelPointerMetadata>>`, whose one kind is
+     `ElementCount` (a `UInt64` term; a `dyn` vtable would be a second
+     kind). `Pointer::with_element_count`/`SharedPointer::with_element_count`
+     build one from a thin pointer and a count; `as_ptr` and `len` read the
+     components in place. Identity (`written.rs`), storage keys and fact
+     keys add the count after the thin identity and hash nothing for a thin
+     pointer, so thin hash streams, order and equality are unchanged.
+     `map_pointers`/`try_map_pointers` take a count map, the kernel rewrite
+     maps it as a numeric child, and variable, load, read and memory
+     collectors visit it (`Pointer::metadata_terms`). The e-graph interns
+     the count as one more `Apply` operand, and `add_pointer_equality`,
+     `join_pointer_components` (constructor injectivity) and class merges
+     join the count pair. `pointer_equal` keeps the complete `PointerEqual`
+     for a wide operand instead of reducing to `AddressEqual`; deciders that
+     reduce a complete equality to addresses (`pointer_offset_sides`,
+     `decide`, the state-modulo condition matchers, pointer translation and
+     the rewrite's graph check) require equal metadata first. Raising to
+     Surface, diagnostics rendering, memory stores, allocation rebasing and
+     frame transport refuse a wide pointer with an internal error naming
+     step 2b (`Pointer::expect_thin`). Tests: `kernel_term::pointers`,
+     `equality_graph::wide_pointer_tests` and
+     `constructor_injectivity_splits_wide_pointer_counts`; scaling tests
+     `wide_pointer_equality_chains_grow_linearly`,
+     `wide_pointer_components_ignore_unrelated_facts` and
+     `wide_pointer_component_reads_stay_flat`.
+   - **2b. Types, cells and raising.** Slice pointer types in
+     `ProgramType`, memory cells of twice the word size, Surface forms
+     `s.len()` and `s.as_ptr()`, and raising in place of each
+     `expect_thin` refusal. The library's `Slice<T>` becomes the built-in
+     type, so slice-valued pure functions, `Option<&[u8]>` contract
+     payloads and slice-returning functions use it. This finishes slice
+     returns and `as_bytes`. Before a front end produces a wide pointer,
+     audit the remaining consumers that read a complete pointer through
+     its address only: the 51 callers of `pointer_provenance_match` that
+     go on to compare addresses, the `PointerEqual` arms that walk
+     `pointers()` without `metadata_terms()`, the diagnostic and
+     `rust_spelling` printers, `map_addresses` callers (which keep the
+     count as they keep the provenance), and the refusal consumers listed
+     [above](#inventory-of-pointer-consumers), which the slice type is to
+     refuse.
 3. **Parameters and locals.** Slice parameters enter as one wide pointer;
    locals, assignments, reborrows, call arguments and returns carry it.
    Remove `spread_slice_arguments` and the paired-local paths. Migrate

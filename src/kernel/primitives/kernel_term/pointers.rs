@@ -6,7 +6,7 @@ mod rewrite;
 mod written;
 pub(crate) use rewrite::{PointerRewrite, PointerRewriteError};
 pub(in crate::kernel) use written::ArrayObject;
-use written::SubobjectWidth;
+use written::MachineComponent;
 pub use written::{Pointer, SubobjectBounds};
 
 /// A pointer's bounds as the kernel reads them: the start address and the
@@ -14,13 +14,13 @@ pub use written::{Pointer, SubobjectBounds};
 #[derive(Clone, Debug)]
 pub(crate) struct KernelSubobjectBounds {
     pub(crate) start: SharedAddress,
-    width: SubobjectWidth,
+    width: MachineComponent,
 }
 impl KernelSubobjectBounds {
     pub(crate) fn new(start: SharedAddress, width: KernelTerm) -> Self {
         Self {
             start,
-            width: SubobjectWidth::kernel(width),
+            width: MachineComponent::kernel(MachineIntegerType::Int32, width),
         }
     }
     /// The width term. A written width is imported when first read.
@@ -103,6 +103,52 @@ impl KernelArrayObject {
             }
     }
 }
+/// A wide pointer's metadata (`design/rust-slice-values.md`, MiniRust's
+/// `PointerMeta`): the component a pointer to an unsized type carries beside
+/// its thin part. A thin pointer has none. A `dyn` vtable would be a second
+/// kind; only the element count of a pointer to `[T]` or `str` exists.
+#[derive(Clone, Debug)]
+pub(crate) enum KernelPointerMetadata {
+    /// The element count, a `UInt64` (`usize`) term.
+    ElementCount(MachineComponent),
+}
+impl KernelPointerMetadata {
+    pub(crate) fn element_count(term: KernelTerm) -> Self {
+        assert_eq!(
+            term.ty(),
+            &KernelType::Program(ProgramType::UInt64),
+            "a wide pointer's element count is a usize term"
+        );
+        Self::ElementCount(MachineComponent::kernel(MachineIntegerType::UInt64, term))
+    }
+    /// The element count term. Every metadata kind today is a count.
+    pub(crate) fn count(&self) -> &KernelTerm {
+        match self {
+            Self::ElementCount(count) => count.kernel_term(),
+        }
+    }
+    /// Exact payload equality: retained children by identity.
+    fn same_payload(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::ElementCount(a), Self::ElementCount(b)) => a.kernel_term() == b.kernel_term(),
+        }
+    }
+}
+
+/// A wide pointer's metadata as one field of a derived pointer key. It
+/// compares as an `Option` (thin first) and hashes nothing when thin, so a
+/// thin pointer's key keeps the hash stream it had before metadata existed.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct PointerMetadataKey<K>(pub(crate) Option<K>);
+impl<K: Hash> Hash for PointerMetadataKey<K> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        if let Some(key) = &self.0 {
+            true.hash(state);
+            key.hash(state);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct KernelPointer {
     pub(crate) address: SharedAddress,
@@ -110,6 +156,17 @@ pub(crate) struct KernelPointer {
     pub(crate) array: KernelArrayObject,
     pub(crate) program_type: ProgramType,
     pub(crate) qualifiers: Option<Arc<KernelPointerQualifiers>>,
+    /// `None` for a thin pointer. Shared so a thin pointer pays one word.
+    pub(crate) metadata: Option<Arc<KernelPointerMetadata>>,
+}
+impl KernelPointer {
+    fn same_metadata_payload(&self, other: &Self) -> bool {
+        match (&self.metadata, &other.metadata) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a.same_payload(b),
+            _ => false,
+        }
+    }
 }
 
 /// Exact producer handle. Logical equality is a separate checker operation;
@@ -177,6 +234,7 @@ impl SharedPointer {
             || a.provenance != b.provenance
             || !a.array.same_payload(&b.array)
             || a.program_type != b.program_type
+            || !a.same_metadata_payload(b)
         {
             return false;
         }
@@ -197,6 +255,41 @@ impl SharedPointer {
         };
         a.object_class == b.object_class && evidence_matches
     }
+    /// A wide pointer's element count (`s.len()`), read from the value
+    /// itself: no fact, state or class is consulted. `None` when thin.
+    pub(crate) fn len(&self) -> Option<&KernelTerm> {
+        self.node()
+            .metadata
+            .as_deref()
+            .map(KernelPointerMetadata::count)
+    }
+
+    /// The wide pointer with this thin part and element count
+    /// (`slice::from_raw_parts(p, n)` as a value).
+    #[allow(dead_code)] // Built by step 2b's front ends (`design/rust-slice-values.md`). The thin part keeps its
+    /// address, provenance, array object, type and qualifiers.
+    pub(crate) fn with_element_count(&self, count: KernelTerm) -> Self {
+        assert!(
+            self.node().metadata.is_none(),
+            "internal error: a wide pointer is built from a thin pointer"
+        );
+        let mut value = self.node().clone();
+        value.metadata = Some(Arc::new(KernelPointerMetadata::element_count(count)));
+        Self::new(value)
+    }
+
+    /// The thin part (`s.as_ptr()`): the same address, provenance and array
+    /// object with no metadata. A thin pointer is its own thin part.
+    #[allow(dead_code)] // Read by step 2b's `s.as_ptr()` (`design/rust-slice-values.md`).
+    pub(crate) fn as_ptr(&self) -> Self {
+        if self.node().metadata.is_none() {
+            return self.clone();
+        }
+        let mut value = self.node().clone();
+        value.metadata = None;
+        Self::new(value)
+    }
+
     /// Same address roles as Pointer::pointers. Widths remain separate
     /// numeric payloads; each reader retains its existing metadata policy.
     pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedAddress> {
@@ -364,6 +457,7 @@ impl KernelTerm {
 
 #[cfg(test)]
 mod tests {
+    use super::written::PointerMetadata;
     use super::*;
     use crate::kernel::effective_type::{CAccessClass, CScalarClass};
     pub(super) fn complete_source() -> Pointer {
@@ -500,6 +594,190 @@ mod tests {
                 .unwrap()
                 .object_class
                 .is_some()
+        );
+    }
+
+    fn count(id: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(id))
+    }
+    fn hash_of(value: &impl Hash) -> u64 {
+        let mut state = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut state);
+        state.finish()
+    }
+
+    /// Fact-set treap priorities are content hashes, so a thin pointer's
+    /// hash stream, order and equality are the identity tuple's as before
+    /// metadata existed.
+    #[test]
+    fn thin_pointer_identity_stream_is_unchanged() {
+        let thin = complete_source();
+        let array = thin.array_object();
+        let tuple = (
+            thin.address(),
+            thin.provenance(),
+            array.is_known(),
+            array.opaque_owner(),
+            array.bounds(),
+        );
+        assert_eq!(hash_of(&thin), hash_of(&tuple));
+        assert!(thin.metadata().is_none() && thin.len().is_none());
+        assert!(!format!("{thin:?}").contains("metadata"));
+        let other = thin
+            .clone()
+            .with_address(Address::symbolic(Variable(1000101)));
+        let other_tuple = (
+            other.address(),
+            other.provenance(),
+            array.is_known(),
+            array.opaque_owner(),
+            array.bounds(),
+        );
+        assert_eq!(thin.cmp(&other), tuple.cmp(&other_tuple));
+        assert_eq!(thin.as_ptr(), thin);
+        assert!(thin.as_ptr().shared() == thin.shared());
+    }
+
+    #[test]
+    fn wide_pointer_identity_adds_the_element_count() {
+        let thin = complete_source();
+        let wide = |id| thin.clone().with_element_count(count(id));
+        let (a, same, b) = (wide(1000102), wide(1000102), wide(1000103));
+        assert_eq!(a, same);
+        assert_eq!(hash_of(&a), hash_of(&same));
+        assert_ne!(a, b);
+        assert_ne!(a, thin);
+        assert_ne!(hash_of(&a), hash_of(&thin));
+        assert_ne!(hash_of(&a), hash_of(&b));
+        assert_eq!(thin.cmp(&a), std::cmp::Ordering::Less);
+        assert_eq!(a.cmp(&b), count(1000102).cmp(&count(1000103)));
+        // The provenance is unchanged; only the metadata tells them apart.
+        assert!(a.same_provenance_as(&b) && !a.same_metadata_as(&b));
+        assert!(format!("{a:?}").contains("metadata"));
+    }
+
+    /// `s.as_ptr()` and `s.len()` are components of the value: read from it
+    /// without any fact, and the thin part is the pointer it was built from.
+    #[test]
+    fn wide_pointer_components_read_in_place() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let thin = complete_source();
+        let wide = thin.clone().with_element_count(count(1000104));
+        assert_eq!(wide.len(), Some(&count(1000104)));
+        assert_eq!(
+            wide.metadata(),
+            Some(PointerMetadata::ElementCount(&count(1000104)))
+        );
+        assert_eq!(wide.as_ptr(), thin);
+        assert_eq!(wide.address(), thin.address());
+        assert_eq!(wide.provenance(), thin.provenance());
+        assert_eq!(wide.array_object(), thin.array_object());
+        assert!(wide.qualifiers().is_some());
+        // Kernel construction from the thin handle and a usize term.
+        let n = KernelTerm::retained_machine_operand(
+            MachineIntegerType::UInt64,
+            MachineOperandView::Old(&count(1000104)),
+        );
+        let built = thin.shared().with_element_count(n.clone());
+        assert_eq!(built.len(), Some(&n));
+        assert_eq!(wide.shared().len(), Some(&n));
+        assert!(built.as_ptr().len().is_none());
+        assert!(built.as_ptr().same_source_payload(thin.shared()));
+        let exported = built.export().unwrap();
+        assert_eq!(exported, wide);
+        assert!(built.same_source_payload(wide.shared()));
+        let other = thin
+            .shared()
+            .with_element_count(KernelTerm::retained_machine_operand(
+                MachineIntegerType::UInt64,
+                MachineOperandView::Old(&count(1000105)),
+            ));
+        assert!(!built.same_source_payload(&other));
+        assert!(!built.same_source_payload(thin.shared()));
+    }
+
+    #[test]
+    #[should_panic(expected = "a wide pointer is built from a thin pointer")]
+    fn a_wide_pointer_is_not_widened_again() {
+        let wide = complete_source().with_element_count(count(1000106));
+        let _ = wide.with_element_count(count(1000107));
+    }
+
+    #[test]
+    #[should_panic(expected = "has no form for a wide pointer's metadata yet")]
+    fn thin_only_operations_refuse_a_wide_pointer() {
+        let wide = complete_source().with_element_count(count(1000108));
+        complete_source().expect_thin("a thin consumer");
+        wide.expect_thin("a thin consumer");
+    }
+
+    /// Substitution and variable collection reach the count term, through
+    /// the written view and the kernel rewrite alike.
+    #[test]
+    fn substitution_and_collection_reach_the_element_count() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (from, to) = (Variable(1000110), Variable(1000111));
+        let wide = complete_source().with_element_count(count(from.0));
+        let substituted = wide.map_pointers(Address::clone, |term| {
+            crate::kernel::reasoning::substitute_bitvector_variable(
+                term,
+                from,
+                &OldMachineTerm::Variable(to),
+            )
+        });
+        assert_eq!(substituted.len(), Some(&count(to.0)));
+        assert_eq!(substituted.as_ptr(), wide.as_ptr());
+        let mut thin_calls = 0;
+        let thin = complete_source().map_pointers(Address::clone, |term| {
+            thin_calls += 1;
+            term.clone()
+        });
+        assert_eq!((thin_calls, thin), (0, complete_source()));
+        assert!(
+            wide.try_map_pointers(|address| Some(address.clone()), |_| None)
+                .is_none(),
+            "a refused count refuses the value"
+        );
+        // Respelling physical addresses keeps the count, as it keeps the
+        // provenance.
+        assert_eq!(wide.map_addresses(Address::clone), wide);
+        let mut variables = std::collections::BTreeSet::new();
+        crate::kernel::reasoning::collect_program_value_bitvector_variables(
+            &ProgramValue::Pointer(wide.clone()),
+            &mut variables,
+        );
+        assert!(variables.contains(&from), "{variables:?}");
+        struct Numeric(KernelTerm, KernelTerm);
+        impl PointerRewrite for Numeric {
+            type Error = ();
+            fn numeric(&mut self, value: &KernelTerm) -> Result<KernelTerm, ()> {
+                Ok(if value == &self.0 {
+                    self.1.clone()
+                } else {
+                    value.clone()
+                })
+            }
+        }
+        let kernel = |id: u64| {
+            KernelTerm::retained_machine_operand(
+                MachineIntegerType::UInt64,
+                MachineOperandView::Old(&count(id)),
+            )
+        };
+        let rewritten = wide
+            .shared()
+            .try_rewrite(&mut Numeric(kernel(from.0), kernel(to.0)))
+            .unwrap();
+        assert_eq!(rewritten.len(), Some(&kernel(to.0)));
+        assert_eq!(rewritten.export().unwrap(), substituted);
+        let unchanged = wide
+            .shared()
+            .try_rewrite(&mut Numeric(kernel(to.0), kernel(from.0)))
+            .unwrap();
+        assert_eq!(
+            &unchanged,
+            wide.shared(),
+            "an unchanged count keeps the handle"
         );
     }
 

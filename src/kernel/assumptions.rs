@@ -2398,6 +2398,9 @@ fn collect_condition_memory_load_keys(
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_memory_load_keys(count, keys);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -2709,6 +2712,10 @@ fn collect_condition_memory_loads(
                     loads,
                     seen_integers,
                 )?;
+            }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                let width = Some(MachineIntegerType::UInt64.carrier_bytes());
+                collect_bitvector_memory_loads(count, current_memory, loads, width, seen_integers)?;
             }
             Ok(())
         }

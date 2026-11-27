@@ -117,8 +117,8 @@ pub(crate) use kernel_term::{
     AddressBlock, KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
 };
 pub(crate) use kernel_term::{
-    KernelAddressOffset, KernelArrayObject, KernelMatchArm, OffsetTree, OffsetView, SharedAddress,
-    SharedAddressOffset, SharedPointer,
+    KernelAddressOffset, KernelArrayObject, KernelMatchArm, OffsetTree, OffsetView,
+    PointerMetadataKey, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 mod machine_integer;
 pub use machine_integer::{
@@ -2844,8 +2844,14 @@ impl Pointer {
 
     /// Applies a substitution to every address the value mentions: its own
     /// address and its bounds' start. Use it where the rewrite maps
-    /// variables, not where it only respells the address.
-    pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
+    /// variables, not where it only respells the address. A wide pointer's
+    /// element count is a numeric component and is mapped by `count`, the
+    /// same substitution on machine terms; a thin pointer never calls it.
+    pub(crate) fn map_pointers(
+        &self,
+        mut map: impl FnMut(&Address) -> Address,
+        count: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+    ) -> Self {
         let address = map(self.address());
         let provenance = map(self.provenance());
         let array = self.array_object().map(map);
@@ -2853,27 +2859,56 @@ impl Pointer {
         if provenance != *self.provenance() {
             result = result.with_provenance(provenance);
         }
-        result.with_array_object(array)
+        result.with_array_object(array).map_element_count(count)
     }
 
     pub(in crate::kernel) fn try_map_pointers(
         &self,
         mut map: impl FnMut(&Address) -> Option<Address>,
+        count: impl FnOnce(&OldMachineTerm) -> Option<OldMachineTerm>,
     ) -> Option<Self> {
         let pointer = map(self.address())?;
         let provenance = map(self.provenance())?;
         let array = self.array_object().try_map(map)?;
-        Some(
-            self.clone()
-                .with_address(pointer)
-                .with_provenance(provenance)
-                .with_array_object(array),
-        )
+        let count = match self.len() {
+            Some(source) => Some(count(source)?),
+            None => None,
+        };
+        let result = self
+            .clone()
+            .with_address(pointer)
+            .with_provenance(provenance)
+            .with_array_object(array);
+        Some(match count {
+            Some(count) => result.as_ptr().with_element_count(count),
+            None => result,
+        })
+    }
+
+    /// The same value with its element count mapped; a thin pointer is
+    /// returned unchanged without calling `count`.
+    fn map_element_count(self, count: impl FnOnce(&OldMachineTerm) -> OldMachineTerm) -> Self {
+        let Some(source) = self.len() else {
+            return self;
+        };
+        let mapped = count(source);
+        if &mapped == source {
+            return self;
+        }
+        self.as_ptr().with_element_count(mapped)
+    }
+
+    /// Every numeric term a wide pointer's metadata holds, for variable
+    /// collection beside [`Self::pointers`]: empty for a thin pointer.
+    pub(crate) fn metadata_terms(&self) -> impl Iterator<Item = &OldMachineTerm> {
+        self.len().into_iter()
     }
 
     /// Re-spell physical addresses without changing the value's origin.
+    /// The origin includes a wide pointer's metadata, which this keeps as it
+    /// keeps the provenance: respelling an address does not change a count.
     pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Address) -> Address) -> Self {
-        let mapped = self.map_pointers(map);
+        let mapped = self.map_pointers(map, OldMachineTerm::clone);
         let array = mapped
             .array_object()
             .with_owner(self.array_object().owner().cloned());

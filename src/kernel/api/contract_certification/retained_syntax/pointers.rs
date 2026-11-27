@@ -165,6 +165,12 @@ impl<'a> Value<'a> {
             Self::Shared(value) => value.node().array.owner().map(BorrowedAddress::Shared),
         }
     }
+    fn count(self) -> Option<Operand<'a>> {
+        match self {
+            Self::Native(value) => value.len().map(Operand::Old),
+            Self::Shared(value) => value.len().map(Operand::Shared),
+        }
+    }
     fn bounds(self) -> Option<(BorrowedAddress<'a>, Operand<'a>)> {
         match self {
             Self::Native(value) => value.bounds().map(|bounds| {
@@ -259,6 +265,13 @@ impl Comparison {
         }
         match (a.bounds_owner(), b.bounds_owner()) {
             (Some(a), Some(b)) if self.addresses(a, b) => {}
+            (None, None) => {}
+            _ => return false,
+        }
+        // A wide pointer's element count is compared as written syntax, as
+        // any machine operand is.
+        match (a.count(), b.count()) {
+            (Some(a), Some(b)) if self.machine(a, b) => {}
             (None, None) => {}
             _ => return false,
         }

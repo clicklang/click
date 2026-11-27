@@ -5236,7 +5236,10 @@ fn condition_mentions_a_memory_load(condition: &OldConditionTerm) -> bool {
                 p.offset.any_scaled_operand(|value| {
                     operand_mentions_a_memory_load(value.operand_view())
                 })
-            })
+            }) || left
+                .metadata_terms()
+                .chain(right.metadata_terms())
+                .any(term_mentions_a_memory_load)
         }
 
         // Until memory canonicalization traverses ADTs, conservatively disable

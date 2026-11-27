@@ -3005,10 +3005,15 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &OldConditionTerm, variable: Variable) -> bool {
         match condition {
-            OldConditionTerm::PointerEqual(left, right) => left
-                .pointers()
-                .chain(right.pointers())
-                .any(|p| integer_carrier_in_pointer(p, variable)),
+            OldConditionTerm::PointerEqual(left, right) => {
+                left.pointers()
+                    .chain(right.pointers())
+                    .any(|p| integer_carrier_in_pointer(p, variable))
+                    || left
+                        .metadata_terms()
+                        .chain(right.metadata_terms())
+                        .any(|count| integer_carrier_in_bitvector(count, variable))
+            }
 
             crate::kernel::integer_comparison_condition!(left, right) => {
                 integer_carrier_in_integer(left.as_ref(), variable)

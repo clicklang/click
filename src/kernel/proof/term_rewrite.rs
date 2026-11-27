@@ -556,13 +556,18 @@ fn replace_binding_variable(
                     AddressBase::FunctionSymbolic(_) => AddressBase::FunctionSymbolic(variable),
                     _ => AddressBase::Symbolic(variable),
                 };
-                *pointer = pointer.map_pointers(|address| {
-                    let mut renamed = address.clone();
-                    if renamed.base == old {
-                        renamed.set_base(new.clone());
-                    }
-                    renamed
-                });
+                // A pointer binder names a block; an element count is not
+                // an address and keeps its own binders.
+                *pointer = pointer.map_pointers(
+                    |address| {
+                        let mut renamed = address.clone();
+                        if renamed.base == old {
+                            renamed.set_base(new.clone());
+                        }
+                        renamed
+                    },
+                    OldMachineTerm::clone,
+                );
             }
             _ => {}
         },
@@ -838,6 +843,9 @@ fn collect_program_value_carriers(value: &ProgramValue, variables: &mut CarrierV
         ProgramValue::Pointer(pointer) => {
             for component in pointer.pointers() {
                 collect_pointer_carriers(component, variables);
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_carriers(count, variables);
             }
         }
     }
@@ -4470,8 +4478,12 @@ impl<'a> TermRewrite<'a> {
                 if self.pointer_value_exact.is_some() {
                     self.resolve_registered_loads = true;
                 }
+                let count = v.len().map(|count| self.bits(count));
                 let mut mapped = v
-                    .map_pointers(|address| self.pointer(address))
+                    .map_pointers(
+                        |address| self.pointer(address),
+                        |_| count.expect("a wide pointer's rewritten count"),
+                    )
                     .with_provenance(provenance)
                     .with_bounds_owner(bounds_owner);
                 if retain_view && let Some((from, _)) = shifted_source {
@@ -5451,6 +5463,9 @@ impl<'a> TermRewrite<'a> {
                     TypedProgramValueReplacement::Pointer(pointer) => {
                         for address in pointer.pointers() {
                             collect_pointer_carriers(address, &mut variables);
+                        }
+                        for count in pointer.metadata_terms() {
+                            collect_bitvector_carriers(count, &mut variables);
                         }
                     }
                 }
@@ -6449,7 +6464,11 @@ impl<'a> TermRewrite<'a> {
                     || left.same_provenance_as(right),
                     |context| context.pointer_provenance_match(left, right),
                 );
-                matches && graph.are_equal(left.address(), right.address())
+                // Address equality decides only pointers whose metadata
+                // already agrees; a wide pair needs its counts too.
+                matches
+                    && left.same_metadata_as(right)
+                    && graph.are_equal(left.address(), right.address())
             }
             OldConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
             OldConditionTerm::AddressOffsetEqual(left, right) => {

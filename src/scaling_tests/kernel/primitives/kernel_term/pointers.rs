@@ -130,3 +130,42 @@ fn pointer_storage_keys_hash_the_shared_bounds_width_once() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+/// A wide pointer's components are read from the value itself: `len` and
+/// `as_ptr` stay flat as unrelated wide pointers and as the count's own
+/// term DAG grow (`design/rust-slice-values.md`, "Design check").
+#[test]
+fn wide_pointer_component_reads_stay_flat() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let costs = [8u64, 32, 128].map(|size| {
+        let unrelated = (0..size)
+            .map(|index| {
+                complete_source()
+                    .with_element_count(OldMachineTerm::Variable(Variable(1000200 + index)))
+            })
+            .collect::<Vec<_>>();
+        let mut count =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(1000199));
+        for _ in 0..size {
+            count = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                [count.clone(), count],
+            );
+        }
+        let thin = complete_source().into_shared();
+        let exports = KernelTermExport::machine_export_count();
+        let (wide, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let wide = thin.with_element_count(count.clone());
+            assert_eq!(wide.len(), Some(&count));
+            assert!(wide.as_ptr().same_source_payload(&thin));
+            wide
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(unrelated.len() as u64, size);
+        assert!(wide.len().is_some());
+        work
+    });
+    assert_eq!(costs[0], costs[1], "{costs:?}");
+    assert_eq!(costs[1], costs[2], "{costs:?}");
+}
