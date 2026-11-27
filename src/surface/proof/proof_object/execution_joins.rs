@@ -1339,6 +1339,60 @@ impl<'a> Proof<'a> {
         self.resume_parent_after_sibling_join(record, ids, parts)
     }
 
+    pub(in crate::surface::proof) fn retain_case_after_sibling_refutation(
+        &self,
+        record: &ExecutionProofCaseSplit<'a>,
+        refuted: &Self,
+    ) -> Result<Self, ClickError> {
+        let state = self
+            .state
+            .retain_frontier_after_case_refutation(&record.parent_execution.core, &refuted.state)
+            .map_err(|message| self.step_error(message))?;
+        Ok(self.with_kernel_state(state))
+    }
+
+    pub(in crate::surface::proof) fn join_after_case_refutation(
+        &self,
+        record: &ExecutionProofCaseSplit<'a>,
+    ) -> Result<Self, ClickError> {
+        let [then_steps, else_steps] =
+            self.partition_steps_since(&record.marker, record.split, record.arm_branches)?;
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("the surviving case lost its execution state"))?;
+        if !self.is_at_function_exit() {
+            execution.presentation.case_assumptions = record
+                .parent_execution
+                .presentation
+                .case_assumptions
+                .clone();
+        }
+        let parts = CheckedExecutionJoinParts {
+            execution,
+            facts: self.facts().clone(),
+            common_added_facts: Vec::new(),
+            step: record.case_condition.step(
+                None,
+                ProofCertificate::from_steps(then_steps)?,
+                ProofCertificate::from_steps(else_steps)?,
+            ),
+            trace_arm_paths: None,
+        };
+        // Restore the split's lexical scope before continuing on the parent.
+        let mut locals = record.parent_locals.clone();
+        locals.next_choice_variable = locals
+            .next_choice_variable
+            .max(self.state.locals().next_choice_variable);
+        self.with_kernel_state(self.state.with_locals(locals))
+            .resume_parent_after_sibling_join_from_marker(
+                &record.marker,
+                record.split,
+                record.arm_branches,
+                parts,
+            )
+    }
+
     /// Rejoins the two arms of a proof-level execution `if` through an
     /// explicit interface: the arms end at one program point in different
     /// states, and the proof continues once from the abstraction of both

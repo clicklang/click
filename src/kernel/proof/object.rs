@@ -2380,6 +2380,40 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         Ok((branch, execution))
     }
 
+    pub(crate) fn retain_frontier_after_case_refutation(
+        &self,
+        parent: &super::ExecutionProofCore,
+        refuted: &Self,
+    ) -> Result<Self, &'static str> {
+        let (live, execution) = self
+            .focused_frontier_execution()
+            .map_err(|_| "the surviving case lost its frontier")?;
+        let (dead, refuted_execution) = refuted
+            .focused_frontier_execution()
+            .map_err(|_| "the refutation lost its frontier")?;
+        let mut updated = execution.clone();
+        updated.core.exclude_refuted_case_sibling(
+            parent,
+            &refuted_execution.core,
+            &dead.state.facts,
+        )?;
+        Ok(Self::new(
+            ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
+                locals: self.state.locals.clone(),
+                open_branches: self.state.open_branches.replace_frontier_at(
+                    self.focused_branch,
+                    live.state.facts.clone(),
+                    updated,
+                ),
+                added_facts: self.state.added_facts.clone(),
+                checked_facts: self.state.checked_facts.clone(),
+            },
+            self.focused_branch,
+        ))
+    }
+
     pub(crate) fn replace_frontier_presentation(
         &self,
         presentation: S,

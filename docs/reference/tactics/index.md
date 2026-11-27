@@ -130,8 +130,10 @@ and then closes every open claim on every path with the implicit closer, per
 claim or once for a grouped proof. A written `close()` closes the first open goal and runs no C, so
 `by close();` restates the omitted proof only where no C is left to run, as
 for a pure theorem or a `have`; with C left it is refused, since its goals
-exist only at function exit. An execution `match` arm or loop `maintain`
-path holding `false` can end with `close()` at its current point.
+exist only at function exit. An execution `match`, plain proof `if`, or
+`cases` arm can end with `close()` when its proof prefix establishes `false`
+at the split's program point. A loop `maintain` path holding `false` can
+also end at its current point with `close()`.
 The implicit closer tries direct logical closure on each open claim,
 then bounded proof search. On a returned path that holds the body of a resource
 the contract produces, it first tries to fold the body, as `fold(R(...))` after the C
