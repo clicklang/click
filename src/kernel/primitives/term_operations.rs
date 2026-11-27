@@ -69,6 +69,71 @@ fn checked_uint64_remainder_const(left: u64, right: u64) -> Option<u64> {
         .map(|(_, remainder)| remainder as u64)
 }
 
+impl MachineBinaryOp {
+    pub(super) fn is_shift(self) -> bool {
+        matches!(self, Self::ShiftLeft | Self::ShiftRight)
+    }
+
+    pub(super) fn evaluate_int64(self, left: i64, right: i64) -> Option<i64> {
+        match self {
+            Self::Add => left.checked_add(right),
+            Self::Subtract => left.checked_sub(right),
+            Self::Multiply => left.checked_mul(right),
+            Self::Divide => checked_int64_divide_const(left, right),
+            Self::Remainder => checked_int64_remainder_const(left, right),
+            Self::ShiftLeft if left < 0 => None,
+            Self::ShiftLeft => left
+                .checked_shl(u32::try_from(right).ok()?)
+                .filter(|value| *value >= 0),
+            Self::ShiftRight => left.checked_shr(u32::try_from(right).ok()?),
+            Self::BitwiseAnd => Some(left & right),
+            Self::BitwiseOr => Some(left | right),
+            Self::BitwiseXor => Some(left ^ right),
+        }
+    }
+
+    pub(super) fn evaluate_uint64(self, left: u64, right: u64) -> Option<u64> {
+        match self {
+            Self::Add => Some(left.wrapping_add(right)),
+            Self::Subtract => Some(left.wrapping_sub(right)),
+            Self::Multiply => Some(left.wrapping_mul(right)),
+            Self::Divide => checked_uint64_divide_const(left, right),
+            Self::Remainder => checked_uint64_remainder_const(left, right),
+            Self::ShiftLeft => left.checked_shl(u32::try_from(right).ok()?),
+            Self::ShiftRight => left.checked_shr(u32::try_from(right).ok()?),
+            Self::BitwiseAnd => Some(left & right),
+            Self::BitwiseOr => Some(left | right),
+            Self::BitwiseXor => Some(left ^ right),
+        }
+    }
+
+    /// Evaluate two 32-bit word patterns. Signed left-shift overflow is a
+    /// separate language obligation; the term itself shifts the word.
+    pub(super) fn evaluate_word32(
+        self,
+        format: MachineIntegerType,
+        left: u32,
+        right: u32,
+    ) -> Option<u32> {
+        let signed = format == MachineIntegerType::Int32;
+        match self {
+            Self::Add => Some(left.wrapping_add(right)),
+            Self::Subtract => Some(left.wrapping_sub(right)),
+            Self::Multiply => Some(left.wrapping_mul(right)),
+            Self::Divide if signed => checked_signed_divide_const(left, right),
+            Self::Divide => checked_unsigned_divide_const(left, right),
+            Self::Remainder if signed => checked_signed_remainder_const(left, right),
+            Self::Remainder => checked_unsigned_remainder_const(left, right),
+            Self::ShiftLeft => Some(left.wrapping_shl(checked_shift_count_const(right)?)),
+            Self::ShiftRight if signed => checked_arithmetic_shift_right_const(left, right),
+            Self::ShiftRight => checked_logical_shift_right_const(left, right),
+            Self::BitwiseAnd => Some(left & right),
+            Self::BitwiseOr => Some(left | right),
+            Self::BitwiseXor => Some(left ^ right),
+        }
+    }
+}
+
 fn checked_shift_count_const(count: u32) -> Option<u32> {
     let count = count as i32;
     (0..32).contains(&count).then_some(count as u32)
@@ -94,7 +159,7 @@ fn checked_logical_shift_right_const(left: u32, right: u32) -> Option<u32> {
     Some(left >> count)
 }
 
-fn signed_shift_left_overflows_const(left: u32, right: u32) -> Option<bool> {
+pub(super) fn signed_shift_left_overflows_const(left: u32, right: u32) -> Option<bool> {
     let count = checked_shift_count_const(right)?;
     let left = left as i32;
     if left < 0 {
@@ -402,50 +467,12 @@ impl OldMachineTerm {
             | Self::Float32Binary { .. }
             | Self::Float64Negate(_)
             | Self::Float64Binary { .. } => None,
-            binary_term!(Bits32, Add, left, right) => {
-                Some(left.as_const()?.wrapping_add(right.as_const()?))
-            }
-            binary_term!(Bits32, Subtract, left, right) => {
-                Some(left.as_const()?.wrapping_sub(right.as_const()?))
-            }
-            binary_term!(Bits32, Multiply, left, right) => {
-                Some(left.as_const()?.wrapping_mul(right.as_const()?))
-            }
-            binary_term!(Int32, Divide, left, right) => {
-                checked_signed_divide_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(UInt32, Divide, left, right) => {
-                checked_unsigned_divide_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(Int32, Remainder, left, right) => {
-                checked_signed_remainder_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(UInt32, Remainder, left, right) => {
-                checked_unsigned_remainder_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(Bits32, ShiftLeft, left, right) => {
-                // This untyped term denotes the shifted 32-bit pattern.
-                // Signed C overflow is a separate expression obligation.
-                Some(
-                    left.as_const()?
-                        .wrapping_shl(checked_shift_count_const(right.as_const()?)?),
-                )
-            }
-            binary_term!(Int32, ShiftRight, left, right) => {
-                checked_arithmetic_shift_right_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(UInt32, ShiftRight, left, right) => {
-                checked_logical_shift_right_const(left.as_const()?, right.as_const()?)
-            }
-            binary_term!(Bits32, BitwiseAnd, left, right) => {
-                Some(left.as_const()? & right.as_const()?)
-            }
-            binary_term!(Bits32, BitwiseOr, left, right) => {
-                Some(left.as_const()? | right.as_const()?)
-            }
-            binary_term!(Bits32, BitwiseXor, left, right) => {
-                Some(left.as_const()? ^ right.as_const()?)
-            }
+            Self::Binary {
+                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                op,
+                left,
+                right,
+            } => op.evaluate_word32(*format, left.as_const()?, right.as_const()?),
             unary_term!(Bits32, BitwiseNot, value) => Some(!value.as_const()?),
             Self::If {
                 condition,
@@ -1080,28 +1107,12 @@ fn int64_constant(term: &OldMachineTerm) -> Option<i64> {
             right,
         } => {
             let left = int64_constant(left)?;
-            match op {
-                MachineBinaryOp::Add => left.checked_add(int64_constant(right)?),
-                MachineBinaryOp::Subtract => left.checked_sub(int64_constant(right)?),
-                MachineBinaryOp::Multiply => left.checked_mul(int64_constant(right)?),
-                MachineBinaryOp::Divide => checked_int64_divide_const(left, int64_constant(right)?),
-                MachineBinaryOp::Remainder => {
-                    checked_int64_remainder_const(left, int64_constant(right)?)
-                }
-                MachineBinaryOp::ShiftLeft => {
-                    let count = int64_shift_count_constant(right)?;
-                    (left >= 0 && count < 64)
-                        .then_some(left.checked_shl(count)?)
-                        .filter(|value| *value >= 0)
-                }
-                MachineBinaryOp::ShiftRight => {
-                    let count = int64_shift_count_constant(right)?;
-                    (count < 64).then(|| left >> count)
-                }
-                MachineBinaryOp::BitwiseAnd => Some(left & int64_constant(right)?),
-                MachineBinaryOp::BitwiseOr => Some(left | int64_constant(right)?),
-                MachineBinaryOp::BitwiseXor => Some(left ^ int64_constant(right)?),
-            }
+            let right = if op.is_shift() {
+                i64::from(int64_shift_count_constant(right)?)
+            } else {
+                int64_constant(right)?
+            };
+            op.evaluate_int64(left, right)
         }
         OldMachineTerm::Unary {
             format: MachineIntegerType::Int64,
@@ -1147,32 +1158,12 @@ fn uint64_constant(term: &OldMachineTerm) -> Option<u64> {
             right,
         } => {
             let left = uint64_constant(left)?;
-            match op {
-                MachineBinaryOp::Add => Some(left.wrapping_add(uint64_constant(right)?)),
-                MachineBinaryOp::Subtract => Some(left.wrapping_sub(uint64_constant(right)?)),
-                MachineBinaryOp::Multiply => Some(left.wrapping_mul(uint64_constant(right)?)),
-                MachineBinaryOp::Divide => {
-                    checked_uint64_divide_const(left, uint64_constant(right)?)
-                }
-                MachineBinaryOp::Remainder => {
-                    checked_uint64_remainder_const(left, uint64_constant(right)?)
-                }
-                MachineBinaryOp::ShiftLeft => {
-                    let count = int64_shift_count_constant(right)?;
-                    (count < 64).then_some(left.wrapping_shl(count))
-                }
-                MachineBinaryOp::ShiftRight => {
-                    let count = int64_shift_count_constant(right)?;
-                    if count >= 64 {
-                        None
-                    } else {
-                        Some(left >> count)
-                    }
-                }
-                MachineBinaryOp::BitwiseAnd => Some(left & uint64_constant(right)?),
-                MachineBinaryOp::BitwiseOr => Some(left | uint64_constant(right)?),
-                MachineBinaryOp::BitwiseXor => Some(left ^ uint64_constant(right)?),
-            }
+            let right = if op.is_shift() {
+                u64::from(int64_shift_count_constant(right)?)
+            } else {
+                uint64_constant(right)?
+            };
+            op.evaluate_uint64(left, right)
         }
         OldMachineTerm::Unary {
             format: MachineIntegerType::UInt64,
@@ -2641,7 +2632,6 @@ impl OldConditionTerm {
         left: OldMachineTerm,
         right: OldMachineTerm,
     ) -> Self {
-        use CompareRelation as R;
         crate::instrumentation::record_deterministic_work(1);
         let value = |term: &OldMachineTerm| {
             format
@@ -2649,13 +2639,7 @@ impl OldConditionTerm {
                 .and_then(crate::kernel::MachineIntegerConstant::to_i128)
         };
         if let (Some(a), Some(b)) = (value(&left), value(&right)) {
-            return Self::Constant(match relation {
-                R::LessThan => a < b,
-                R::LessEqual => a <= b,
-                R::GreaterThan => a > b,
-                R::GreaterEqual => a >= b,
-                R::Equal => a == b,
-            });
+            return Self::Constant(relation.holds(a, b));
         }
         // Two constants fold; a comparison of a term with itself keeps its
         // structure, as the 32-bit constructors keep it: a reflexive
@@ -2724,13 +2708,7 @@ impl OldConditionTerm {
                     machine_constant_value(format, &left),
                     machine_constant_value(format, &right),
                 ) {
-                    (Some(left), Some(right)) => Self::Constant(match relation {
-                        R::LessThan => left < right,
-                        R::LessEqual => left <= right,
-                        R::GreaterThan => left > right,
-                        R::GreaterEqual => left >= right,
-                        R::Equal => left == right,
-                    }),
+                    (Some(left), Some(right)) => Self::Constant(relation.holds(left, right)),
                     _ => Self::Compare {
                         format,
                         relation,
@@ -2772,35 +2750,23 @@ impl OldConditionTerm {
             // Every other format folds constant operands by the exact
             // result's range: an unsigned overflow is a wrap, a narrow one
             // leaves the narrow range.
-            (format, op @ (O::Add | O::Subtract | O::Multiply)) => {
-                match (
-                    machine_constant_value(format, &left),
-                    machine_constant_value(format, &right),
-                ) {
-                    (Some(a), Some(b)) => {
-                        let exact = match op {
-                            O::Add => a + b,
-                            O::Subtract => a - b,
-                            _ => a * b,
-                        };
-                        let (minimum, maximum) =
-                            crate::kernel::machine_integer::range::range(format);
-                        Self::Constant(exact < minimum || exact > maximum)
-                    }
-                    _ => Self::Overflows {
-                        format,
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
+            (format, op) => {
+                if let Some(operation) =
+                    crate::kernel::machine_integer::Operation::from_overflow(op)
+                    && let (Some(a), Some(b)) = (
+                        machine_constant_value(format, &left),
+                        machine_constant_value(format, &right),
+                    )
+                {
+                    return Self::Constant(operation.overflows(format, a, b));
+                }
+                Self::Overflows {
+                    format,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
                 }
             }
-            (format, op) => Self::Overflows {
-                format,
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            },
         }
     }
 
@@ -3428,9 +3394,7 @@ impl OldConditionTerm {
         right: OldMachineTerm,
     ) -> Self {
         match (left.int64_as_const(), right.int64_as_const()) {
-            (Some(left), Some(right)) => {
-                Self::Constant(right == 0 || (left == i64::MIN && right == -1))
-            }
+            (Some(left), Some(right)) => Self::Constant(left.checked_div(right).is_none()),
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::Divide,
@@ -3446,7 +3410,9 @@ impl OldConditionTerm {
     ) -> Self {
         match (left.int64_as_const(), int64_shift_count_constant(&right)) {
             (Some(left), Some(count)) => Self::Constant(
-                count >= 64 || left < 0 || left.checked_shl(count).is_none_or(|result| result < 0),
+                MachineBinaryOp::ShiftLeft
+                    .evaluate_int64(left, i64::from(count))
+                    .is_none(),
             ),
             _ => Self::Overflows {
                 format: MachineIntegerType::Int64,
@@ -3507,13 +3473,7 @@ impl OldConditionTerm {
         right: OldMachineTerm,
     ) -> Self {
         match (left.as_const(), right.as_const()) {
-            (Some(left), Some(right)) => Self::Constant(match relation {
-                CompareRelation::LessThan => left < right,
-                CompareRelation::LessEqual => left <= right,
-                CompareRelation::GreaterThan => left > right,
-                CompareRelation::GreaterEqual => left >= right,
-                CompareRelation::Equal => left == right,
-            }),
+            (Some(left), Some(right)) => Self::Constant(relation.holds(left, right)),
             _ => Self::Compare {
                 format: MachineIntegerType::UInt32,
                 relation,

@@ -105,8 +105,7 @@ pub(in crate::kernel) fn map_index_with_fold_and_cache(
             Some(if mapped == guard {
                 condition.clone()
             } else {
-                crate::kernel::KernelTermImport::default()
-                    .condition(&OldConditionTerm::truth_of_bool_word(&mapped))
+                crate::kernel::KernelTermImport::default().truth_of_bool_word(&mapped)
             })
         },
         results,

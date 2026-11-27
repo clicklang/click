@@ -540,8 +540,7 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
                 let guard = if rewritten == guard {
                     arguments[0].clone()
                 } else {
-                    KernelTermImport::default()
-                        .condition(&OldConditionTerm::truth_of_bool_word(&rewritten))
+                    KernelTermImport::default().truth_of_bool_word(&rewritten)
                 };
                 KernelTerm::machine_if_shared(
                     format(term),
@@ -786,8 +785,7 @@ pub(super) fn rewrite(
                 let guard = if rewritten == guard {
                     arguments[0].clone()
                 } else {
-                    KernelTermImport::default()
-                        .condition(&OldConditionTerm::truth_of_bool_word(&rewritten))
+                    KernelTermImport::default().truth_of_bool_word(&rewritten)
                 };
                 KernelTerm::machine_if_shared(
                     ty,

@@ -407,7 +407,7 @@ pub(super) fn shared_value_reading(
                 continue;
             }
             if let KernelTermNode::MachineLiteral(value) = term.node()
-                && ty.constant_from_term(&value.old_term()).is_none()
+                && value.constant_at(ty).is_none()
             {
                 break None;
             }
@@ -961,24 +961,21 @@ impl<'a> MachineOperandView<'a> {
     pub(crate) fn word32_constant(self) -> Option<u32> {
         match self {
             Self::Old(value) => value.as_const(),
-            Self::Shared(term) => term.machine_constant_reading()?.old_term().as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.word32(),
         }
     }
 
     pub(crate) fn uint64_constant(self) -> Option<u64> {
         match self {
             Self::Old(value) => value.uint64_as_const(),
-            Self::Shared(term) => term
-                .machine_constant_reading()?
-                .old_term()
-                .uint64_as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.unsigned64(),
         }
     }
 
     pub(crate) fn int64_constant(self) -> Option<i64> {
         match self {
             Self::Old(value) => value.int64_as_const(),
-            Self::Shared(term) => term.machine_constant_reading()?.old_term().int64_as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.signed64(),
         }
     }
 
@@ -1102,7 +1099,7 @@ impl<'a> MachineOperandView<'a> {
                 };
                 if let KernelTermNode::MachineLiteral(value) = read.node() {
                     return Some(IntegerTerm::constant(
-                        read_ty.constant_from_term(&value.old_term())?.to_integer(),
+                        value.constant_at(read_ty)?.to_integer(),
                     ));
                 }
                 let observed_ty = match term.node() {
@@ -1211,6 +1208,39 @@ mod tests {
     }
 
     #[test]
+    fn checking_literal_casts_preserve_the_destination_carrier() {
+        use crate::kernel::machine_integer::FORMATS;
+        let _session = crate::kernel::VerificationSession::enter();
+        for written in FORMATS {
+            let constant =
+                MachineIntegerConstant::from_bits(written.format(), written.format().mask())
+                    .unwrap();
+            let literal = written.constant_term(constant).unwrap();
+            for source in FORMATS {
+                let root = KernelTermImport::default().machine(source, &literal);
+                let KernelTermNode::MachineLiteral(value) = root.node() else {
+                    panic!("expected literal")
+                };
+                assert_eq!(
+                    value.constant_at(source),
+                    source.constant_from_term(&literal)
+                );
+                if value.constant_at(source).is_none() {
+                    continue;
+                }
+                for destination in FORMATS {
+                    let cast = root.checking_machine_cast(source, destination);
+                    assert_eq!(
+                        KernelTermExport::machine(&cast).unwrap(),
+                        OldMachineTerm::machine_integer_cast(source, destination, literal.clone()),
+                        "{written:?} read as {source:?} converted to {destination:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn cached_machine_constants_match_legacy_readings() {
         let _session = crate::kernel::VerificationSession::enter();
         use MachineBinaryOp::*;
@@ -1227,19 +1257,11 @@ mod tests {
             };
             let check = |boxed: OldMachineTerm| {
                 let shared = KernelTermImport::default().machine(ty, &boxed);
-                let cached = shared.machine_constant_reading().map(|v| v.old_term());
+                let cached = MachineOperandView::Shared(&shared);
+                assert_eq!(cached.word32_constant(), boxed.as_const(), "{boxed:?}");
+                assert_eq!(cached.int64_constant(), boxed.int64_as_const(), "{boxed:?}");
                 assert_eq!(
-                    cached.as_ref().and_then(|v| v.as_const()),
-                    boxed.as_const(),
-                    "{boxed:?}"
-                );
-                assert_eq!(
-                    cached.as_ref().and_then(|v| v.int64_as_const()),
-                    boxed.int64_as_const(),
-                    "{boxed:?}"
-                );
-                assert_eq!(
-                    cached.as_ref().and_then(|v| v.uint64_as_const()),
+                    cached.uint64_constant(),
                     boxed.uint64_as_const(),
                     "{boxed:?}"
                 );
@@ -1248,6 +1270,19 @@ mod tests {
                     KernelTermNode::MachineBinary { .. } | KernelTermNode::MachineUnary { .. }
                 ));
             };
+            // A signed 64-bit operator may read an unsigned word's bits.
+            // The converse and cross-width operands retain their refusal.
+            for operand in [
+                OldMachineTerm::constant(u32::MAX),
+                OldMachineTerm::int64_constant(-1),
+                OldMachineTerm::uint64_constant(u64::MAX),
+            ] {
+                check(OldMachineTerm::Unary {
+                    format: ty,
+                    op: MachineUnaryOp::BitwiseNot,
+                    operand: Box::new(operand),
+                });
+            }
             for a in [
                 0,
                 1,
@@ -1287,6 +1322,43 @@ mod tests {
                             right: Box::new(literal(1)),
                         });
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wide_shifts_require_a_literal_count_that_fits_the_width() {
+        use MachineIntegerType::{Int64, UInt64};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [Int64, UInt64] {
+            for (count, expected) in [
+                (OldMachineTerm::constant(63), Some(1)),
+                (OldMachineTerm::uint64_constant(64), None),
+                (OldMachineTerm::int64_constant(-1), None),
+                (OldMachineTerm::uint64_constant(1 << 32), None),
+                (
+                    OldMachineTerm::Binary {
+                        format: UInt64,
+                        op: MachineBinaryOp::Add,
+                        left: Box::new(OldMachineTerm::uint64_constant(1)),
+                        right: Box::new(OldMachineTerm::uint64_constant(0)),
+                    },
+                    None,
+                ),
+            ] {
+                let term = OldMachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::ShiftRight,
+                    left: Box::new(OldMachineTerm::uint64_constant(u64::MAX)),
+                    right: Box::new(count),
+                };
+                let root = KernelTermImport::default().machine(format, &term);
+                let operand = MachineOperandView::Shared(&root);
+                if format == Int64 {
+                    assert_eq!(operand.int64_constant(), expected.map(|_| -1));
+                } else {
+                    assert_eq!(operand.uint64_constant(), expected);
                 }
             }
         }
@@ -1643,6 +1715,43 @@ mod cast_tests {
             BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt64),
         ] {
             let (encoding, source, destination) = E::of_unary(op).unwrap();
+            for (format, literal) in [
+                (
+                    MachineIntegerType::Int32,
+                    OldMachineTerm::constant(u32::MAX),
+                ),
+                (
+                    MachineIntegerType::UInt32,
+                    OldMachineTerm::uint32_constant(u32::MAX),
+                ),
+                (
+                    MachineIntegerType::Int64,
+                    OldMachineTerm::int64_constant(-1),
+                ),
+                (
+                    MachineIntegerType::UInt64,
+                    OldMachineTerm::uint64_constant(u64::MAX),
+                ),
+            ] {
+                let computed = OldMachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::BitwiseOr,
+                    left: Box::new(literal.clone()),
+                    right: Box::new(literal.clone()),
+                };
+                for operand in [literal, computed] {
+                    let boxed = op.build_raw(operand);
+                    let root = KernelTermImport::default().machine(destination, &boxed);
+                    let cached = MachineOperandView::Shared(&root);
+                    assert_eq!(cached.word32_constant(), boxed.as_const(), "{boxed:?}");
+                    assert_eq!(cached.int64_constant(), boxed.int64_as_const(), "{boxed:?}");
+                    assert_eq!(
+                        cached.uint64_constant(),
+                        boxed.uint64_as_const(),
+                        "{boxed:?}"
+                    );
+                }
+            }
             let boxed = op.build_raw(base.clone());
             let root = KernelTermImport::default()
                 .machine_arithmetic(destination, &boxed)

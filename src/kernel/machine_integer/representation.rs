@@ -357,12 +357,7 @@ pub(crate) fn overflow_operation(
     else {
         return None;
     };
-    let operation = match op {
-        OverflowOperation::Add => Operation::Add,
-        OverflowOperation::Subtract => Operation::Subtract,
-        OverflowOperation::Multiply => Operation::Multiply,
-        OverflowOperation::Divide | OverflowOperation::ShiftLeft => return None,
-    };
+    let operation = Operation::from_overflow(*op)?;
     has_overflow_test(*format).then_some((*format, operation, &**left, &**right))
 }
 

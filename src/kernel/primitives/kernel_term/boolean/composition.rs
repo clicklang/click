@@ -1,7 +1,39 @@
 //! Logical constructors retain children and apply only the native root rules.
 use super::*;
 
+impl KernelTermImport {
+    /// Logical truth of a C Bool carrier. Only an unsigned byte literal
+    /// folds here. Every other plain word keeps the written byte test.
+    pub(crate) fn truth_of_bool_word(&mut self, word: &OldMachineTerm) -> KernelTerm {
+        let byte = MachineIntegerType::UInt8;
+        if let Some(condition) = word.bool_cast_operand() {
+            return self.condition(condition);
+        }
+        if let Some(value) = byte.constant_from_term(word) {
+            return KernelTerm::boolean_literal(value.bits() != 0);
+        }
+        let zero = KernelMachineLiteral::constant_term(MachineIntegerConstant::from_term_bits(
+            byte.format(),
+            0,
+        ));
+        let equal = KernelTerm::boolean_comparison_raw(
+            byte,
+            CompareRelation::Equal,
+            [self.machine(byte, word), zero],
+        );
+        KernelTerm::boolean_if_raw([
+            equal,
+            KernelTerm::boolean_literal(false),
+            KernelTerm::boolean_literal(true),
+        ])
+    }
+}
+
 impl KernelTerm {
+    pub(crate) fn boolean_literal(value: bool) -> Self {
+        Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value))
+    }
+
     pub(crate) fn boolean_if(arguments: [Self; 3]) -> Self {
         Self::boolean_if_in(arguments, false)
     }
@@ -31,10 +63,10 @@ impl KernelTerm {
     }
     pub(crate) fn boolean_cast(destination: MachineIntegerType, operand: Self) -> Self {
         if let Some(value) = BooleanOperandView::Shared(&operand).constant() {
-            KernelTermImport::default().machine(
-                destination,
-                &OldMachineTerm::bool_cast(destination, OldConditionTerm::Constant(value)),
-            )
+            KernelMachineLiteral::constant_term(MachineIntegerConstant::from_term_bits(
+                destination.format(),
+                u128::from(value),
+            ))
         } else {
             Self::bool_cast(destination, operand).expect("Boolean conversion")
         }
@@ -44,6 +76,33 @@ impl KernelTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bool_word_truth_preserves_the_written_byte_test() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for word in [
+            OldMachineTerm::bool_cast(MachineIntegerType::UInt8, OldConditionTerm::Constant(false)),
+            OldMachineTerm::bool_cast(MachineIntegerType::UInt8, OldConditionTerm::Constant(true)),
+            OldMachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 255,
+            },
+            OldMachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(999421)),
+            OldMachineTerm::bool_cast(
+                MachineIntegerType::Int64,
+                OldConditionTerm::Variable(Variable(999421)),
+            ),
+        ] {
+            let root = KernelTermImport::default().truth_of_bool_word(&word);
+            let old = OldConditionTerm::truth_of_bool_word(&word);
+            assert_eq!(
+                root,
+                KernelTermImport::default().condition(&old),
+                "{word:?}"
+            );
+        }
+    }
+
     #[test]
     fn boolean_cast_observation_preserves_native_argument_identity() {
         let _session = crate::kernel::VerificationSession::enter();

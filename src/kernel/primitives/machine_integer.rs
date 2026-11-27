@@ -235,6 +235,16 @@ impl MachineIntegerConstant {
         }
     }
 
+    /// Compare two literals already read at the same machine format.
+    pub(super) fn compare(self, relation: super::CompareRelation, right: Self) -> bool {
+        debug_assert_eq!(self.format, right.format);
+        if self.format.signed {
+            relation.holds(self.signed_value(), right.signed_value())
+        } else {
+            relation.holds(self.bits, right.bits)
+        }
+    }
+
     fn signed_value(self) -> i128 {
         if self.format.bits() == 128 {
             self.bits as i128

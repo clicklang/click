@@ -2,10 +2,6 @@
 //! separate: a uint32 value can contain a sign-free int32 word operation.
 use super::*;
 use crate::kernel::MachineCastSpelling;
-use crate::kernel::{
-    constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, native_constant,
-    uint32_constant, uint64_constant,
-};
 
 fn retained_machine_input(node: &KernelTermNode) -> Option<&OldMachineTerm> {
     match node {
@@ -16,6 +12,28 @@ fn retained_machine_input(node: &KernelTermNode) -> Option<&OldMachineTerm> {
 }
 
 impl KernelTerm {
+    /// Wide shifts accept a literal count at either word width.
+    pub(super) fn literal_shift_count(&self) -> Option<u32> {
+        let KernelTermNode::MachineLiteral(value) = self.node() else {
+            return None;
+        };
+        value.shift_count()
+    }
+
+    /// Read only literal roots, including a selected native compatibility input.
+    pub(super) fn guard_literal(&self) -> Option<KernelMachineLiteral> {
+        match self.node() {
+            KernelTermNode::MachineLiteral(value) => Some(value.clone()),
+            _ => {
+                let OldMachineTerm::Constant { format, bits } = self.retained_machine_input()?
+                else {
+                    return None;
+                };
+                Some(KernelMachineLiteral::from_term_bits(*format, *bits))
+            }
+        }
+    }
+
     /// Borrow a selected operand already owned by its machine input.
     pub(crate) fn retained_machine_input(&self) -> Option<&OldMachineTerm> {
         retained_machine_input(self.node())
@@ -320,6 +338,108 @@ pub enum KernelMachineLiteral {
 }
 
 impl KernelMachineLiteral {
+    /// A typed literal reading admits either 32-bit carrier at either
+    /// 32-bit format. Every other width retains its written signedness.
+    pub(crate) fn constant_at(&self, ty: MachineIntegerType) -> Option<MachineIntegerConstant> {
+        let bits = match (self, ty) {
+            (_, MachineIntegerType::Int32 | MachineIntegerType::UInt32) => {
+                u128::from(self.word32()?)
+            }
+            (Self::Int64(value), MachineIntegerType::Int64) => u128::from(*value as u64),
+            (Self::UInt64(value), MachineIntegerType::UInt64) => u128::from(*value),
+            (Self::Wide(value), _) if value.format() == ty.format() => return Some(*value),
+            _ => return None,
+        };
+        Some(MachineIntegerConstant::from_term_bits(ty.format(), bits))
+    }
+
+    fn converted_term(
+        &self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    ) -> Option<KernelTerm> {
+        let value = self
+            .constant_at(source)?
+            .convert_modulo(destination.format());
+        Some(Self::constant_term(value))
+    }
+
+    pub(super) fn shift_count(&self) -> Option<u32> {
+        self.word32()
+            .or_else(|| u32::try_from(self.signed64()?).ok())
+    }
+
+    fn from_term_bits(format: MachineIntegerType, bits: u128) -> Self {
+        match format {
+            MachineIntegerType::Int32 => Self::Word32(bits as u32),
+            MachineIntegerType::UInt32 => Self::UInt32(bits as u32),
+            MachineIntegerType::Int64 => Self::Int64(bits as i64),
+            MachineIntegerType::UInt64 => Self::UInt64(bits as u64),
+            _ => Self::Wide(MachineIntegerConstant::from_term_bits(
+                format.format(),
+                bits,
+            )),
+        }
+    }
+
+    fn from_constant(value: MachineIntegerConstant) -> Self {
+        Self::from_term_bits(MachineIntegerType::of_format(value.format()), value.bits())
+    }
+
+    pub(super) fn constant_term(value: MachineIntegerConstant) -> KernelTerm {
+        let destination = MachineIntegerType::of_format(value.format());
+        KernelTerm::intern(
+            KernelType::Program(destination.program_type()),
+            KernelTermNode::MachineLiteral(Self::from_constant(value)),
+        )
+    }
+
+    /// Comparison and overflow constructors read a 32-bit literal as its word.
+    pub(super) fn guard_operand(&self, format: MachineIntegerType) -> KernelTerm {
+        let literal = if format.format().bits() == 32
+            && let Some(bits) = self.word32()
+        {
+            Self::Word32(bits)
+        } else if let Self::Wide(value) = self {
+            Self::from_constant(*value)
+        } else {
+            self.clone()
+        };
+        KernelTerm::intern(
+            KernelType::Program(format.program_type()),
+            KernelTermNode::MachineLiteral(literal),
+        )
+    }
+
+    pub(crate) fn word32(&self) -> Option<u32> {
+        match self {
+            Self::Word32(bits) | Self::UInt32(bits) => Some(*bits),
+            Self::Wide(value) if value.format().bits() == 32 => Some(value.bits() as u32),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn unsigned64(&self) -> Option<u64> {
+        match self {
+            Self::UInt64(bits) => Some(*bits),
+            Self::Wide(value) if value.format() == MachineIntegerType::UInt64.format() => {
+                Some(value.bits() as u64)
+            }
+            _ => None,
+        }
+    }
+
+    /// The signed reader also accepts unsigned 64-bit words by their bits.
+    pub(crate) fn signed64(&self) -> Option<i64> {
+        match self {
+            Self::Int64(value) => Some(*value),
+            Self::Wide(value) if value.format() == MachineIntegerType::Int64.format() => {
+                Some(value.bits() as i64)
+            }
+            _ => self.unsigned64().map(|bits| bits as i64),
+        }
+    }
+
     /// An atomic literal output, preserving its written carrier exactly.
     pub(crate) fn value_at(&self, format: MachineIntegerType) -> ProgramValue {
         wrap_exact(format, self.old_term())
@@ -340,13 +460,13 @@ impl KernelMachineLiteral {
 /// Apply the existing constant readers to one operator over literal children;
 /// signed overflow and undefined division/shift readings remain absent.
 pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
-    let (format, root) = match node {
-        KernelTermNode::MachineLiteral(value) => return Some(value.clone()),
+    match node {
+        KernelTermNode::MachineLiteral(value) => Some(value.clone()),
         KernelTermNode::MachineIf { arguments } => {
             let KernelTermNode::BoolLiteral(value) = arguments[0].node() else {
                 return None;
             };
-            return arguments[if *value { 1 } else { 2 }]
+            arguments[if *value { 1 } else { 2 }]
                 .machine_constant_reading()
                 .and_then(|value| match value {
                     KernelMachineLiteral::UInt32(bits) => Some(KernelMachineLiteral::Word32(*bits)),
@@ -354,100 +474,125 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     | KernelMachineLiteral::Int64(_)
                     | KernelMachineLiteral::UInt64(_) => Some(value.clone()),
                     _ => None,
-                });
+                })
         }
         KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
             // native `If`, instead of exporting the enclosing DAG to read it.
             let operand = retained_machine_input(node)?;
-            return operand
+            operand
                 .uint64_as_const()
                 .map(KernelMachineLiteral::UInt64)
                 .or_else(|| operand.int64_as_const().map(KernelMachineLiteral::Int64))
-                .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32));
+                .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32))
+        }
+        KernelTermNode::MachineBinary {
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+            operator,
+            arguments: [left, right],
+        } => {
+            let bits = operator.evaluate_word32(
+                *format,
+                left.machine_constant_reading()?.word32()?,
+                right.machine_constant_reading()?.word32()?,
+            )?;
+            Some(if *format == MachineIntegerType::Int32 {
+                KernelMachineLiteral::Word32(bits)
+            } else {
+                KernelMachineLiteral::UInt32(bits)
+            })
         }
         KernelTermNode::MachineBinary {
             format,
             operator,
             arguments: [left, right],
         } => {
-            // The legacy wide reader accepts only literal shift counts.
-            // Preserve that admission rule even if a count has a cached value.
-            if matches!(
-                format,
-                MachineIntegerType::Int64 | MachineIntegerType::UInt64
-            ) && matches!(
-                operator,
-                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
-            ) && !matches!(right.node(), KernelTermNode::MachineLiteral(_))
-            {
-                return None;
-            }
-            (
-                *format,
-                OldMachineTerm::Binary {
-                    format: *format,
-                    op: *operator,
-                    left: Box::new(left.machine_constant_reading()?.old_term()),
-                    right: Box::new(right.machine_constant_reading()?.old_term()),
-                },
-            )
+            let left = left.machine_constant_reading()?;
+            let rhs = right.machine_constant_reading()?;
+            Some(match format {
+                MachineIntegerType::Int64 => {
+                    let right = if operator.is_shift() {
+                        i64::from(right.literal_shift_count()?)
+                    } else {
+                        rhs.signed64()?
+                    };
+                    KernelMachineLiteral::Int64(operator.evaluate_int64(left.signed64()?, right)?)
+                }
+                MachineIntegerType::UInt64 => {
+                    let right = if operator.is_shift() {
+                        u64::from(right.literal_shift_count()?)
+                    } else {
+                        rhs.unsigned64()?
+                    };
+                    KernelMachineLiteral::UInt64(
+                        operator.evaluate_uint64(left.unsigned64()?, right)?,
+                    )
+                }
+                _ => return None,
+            })
         }
         KernelTermNode::MachineUnary {
             format,
-            operator,
-            operand,
-        } => (
-            *format,
-            OldMachineTerm::Unary {
-                format: *format,
-                op: *operator,
-                operand: Box::new(operand.machine_constant_reading()?.old_term()),
-            },
-        ),
-        KernelTermNode::MachineCast {
-            encoding,
-            source,
-            destination,
+            operator: MachineUnaryOp::BitwiseNot,
             operand,
         } => {
-            let reading = operand.machine_constant_reading()?;
-            // Native extension readers accept a literal of the source width,
-            // then recurse only through their wide constant family. Replacing
-            // a computed narrow child with its cached literal would broaden
-            // that rule and change checking-constructor output shapes.
-            if !matches!(operand.node(), KernelTermNode::MachineLiteral(_))
-                && matches!(
-                    (encoding, reading),
-                    (
-                        MachineCastSpelling::Int64From32
-                            | MachineCastSpelling::Int64FromUInt32
-                            | MachineCastSpelling::UInt64From32
-                            | MachineCastSpelling::UInt64FromInt32,
-                        KernelMachineLiteral::Word32(_) | KernelMachineLiteral::UInt32(_),
-                    ) | (
-                        MachineCastSpelling::UInt64FromInt64,
-                        KernelMachineLiteral::Int64(_),
-                    )
-                )
-            {
-                return None;
-            }
-            (
-                *destination,
-                encoding
-                    .unary(*source, *destination)
-                    .build_raw(reading.old_term()),
-            )
+            let literal = operand.machine_constant_reading()?;
+            Some(match format {
+                MachineIntegerType::Int32 => KernelMachineLiteral::Word32(!literal.word32()?),
+                MachineIntegerType::UInt32 => KernelMachineLiteral::UInt32(!literal.word32()?),
+                MachineIntegerType::Int64 => KernelMachineLiteral::Int64(!literal.signed64()?),
+                MachineIntegerType::UInt64 => KernelMachineLiteral::UInt64(!literal.unsigned64()?),
+                _ => return None,
+            })
         }
-        _ => return None,
-    };
-    match format {
-        MachineIntegerType::Int32 => root.as_const().map(KernelMachineLiteral::Word32),
-        MachineIntegerType::UInt32 => root.as_const().map(KernelMachineLiteral::UInt32),
-        MachineIntegerType::Int64 => root.int64_as_const().map(KernelMachineLiteral::Int64),
-        MachineIntegerType::UInt64 => root.uint64_as_const().map(KernelMachineLiteral::UInt64),
+        KernelTermNode::MachineCast {
+            encoding,
+            destination,
+            operand,
+            ..
+        } => {
+            use MachineCastSpelling as Cast;
+            let reading = operand.machine_constant_reading()?;
+            // Extensions accept narrow constants only at a literal root.
+            // Computed operands must already have a readable wide value.
+            let literal = matches!(operand.node(), KernelTermNode::MachineLiteral(_));
+            let word = if literal { reading.word32() } else { None };
+            let result = match encoding {
+                Cast::Generic | Cast::UInt32From64 => return None,
+                Cast::Int64From32 | Cast::Int64FromUInt32 => {
+                    let value = match word {
+                        Some(bits) if *encoding == Cast::Int64From32 => i64::from(bits as i32),
+                        Some(bits) => i64::from(bits),
+                        None => reading.signed64()?,
+                    };
+                    KernelMachineLiteral::Int64(value)
+                }
+                Cast::UInt64From32 | Cast::UInt64FromInt32 => {
+                    let bits = match word {
+                        Some(bits) if *encoding == Cast::UInt64FromInt32 => {
+                            i64::from(bits as i32) as u64
+                        }
+                        Some(bits) => u64::from(bits),
+                        None => reading.unsigned64()?,
+                    };
+                    KernelMachineLiteral::UInt64(bits)
+                }
+                Cast::UInt64FromInt64 => {
+                    let bits = if literal {
+                        reading.signed64()? as u64
+                    } else {
+                        reading.unsigned64()?
+                    };
+                    KernelMachineLiteral::UInt64(bits)
+                }
+            };
+            match destination {
+                MachineIntegerType::Int64 => result.signed64().map(KernelMachineLiteral::Int64),
+                MachineIntegerType::UInt64 => result.unsigned64().map(KernelMachineLiteral::UInt64),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -592,20 +737,8 @@ impl KernelTermImport {
             }
             Old::ThreadHandle(id) => KernelTermNode::ThreadHandle(*id),
             Old::Variable(value) => KernelTermNode::Variable(*value),
-            int32_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::Word32(constant_u32(*value)))
-            }
-            uint32_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::UInt32(constant_u32(*value)))
-            }
-            int64_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::Int64(constant_i64(*value)))
-            }
-            uint64_constant!(value) => {
-                KernelTermNode::MachineLiteral(Literal::UInt64(constant_u64(*value)))
-            }
-            native_constant!(_, _) => {
-                KernelTermNode::MachineLiteral(Literal::Wide(term.as_machine_constant()?))
+            Old::Constant { format, bits } => {
+                KernelTermNode::MachineLiteral(Literal::from_term_bits(*format, *bits))
             }
             _ => return None,
         };
@@ -725,14 +858,9 @@ impl KernelTermImport {
                     self.machine(result, else_term),
                 ],
             },
-            int32_constant!(bits) => Node::MachineLiteral(Literal::Word32(constant_u32(*bits))),
-            uint32_constant!(bits) => Node::MachineLiteral(Literal::UInt32(constant_u32(*bits))),
-            int64_constant!(value) => Node::MachineLiteral(Literal::Int64(constant_i64(*value))),
-            uint64_constant!(value) => Node::MachineLiteral(Literal::UInt64(constant_u64(*value))),
-            native_constant!(_, _) => Node::MachineLiteral(Literal::Wide(
-                term.as_machine_constant()
-                    .expect("a constant term names its constant"),
-            )),
+            Old::Constant { format, bits } => {
+                Node::MachineLiteral(Literal::from_term_bits(*format, *bits))
+            }
             Old::Variable(variable) => Node::Variable(*variable),
             Old::BoolCast { to, value } => Node::BoolCast {
                 destination: *to,
@@ -1148,12 +1276,9 @@ impl KernelTerm {
                     break term.with_machine_observation_type(destination);
                 }
                 if let KernelTermNode::MachineLiteral(literal) = term.node()
-                    && let Some(constant) = source.constant_from_term(&literal.old_term())
+                    && let Some(result) = literal.converted_term(source, destination)
                 {
-                    let value = destination
-                        .constant_term(constant.convert_modulo(destination.format()))
-                        .expect("matching format");
-                    break KernelTermImport::default().machine(destination, &value);
+                    break result;
                 }
                 if let KernelTermNode::MachineCast {
                     encoding: MachineCastSpelling::Generic,
@@ -1208,8 +1333,12 @@ impl KernelTerm {
         assert!(self.is_shared_machine_operand());
         use KernelMachineLiteral as L;
         use MachineIntegerType as Ty;
-        let literal =
-            |bits| KernelTermImport::default().machine(Ty::Int32, &OldMachineTerm::constant(bits));
+        let literal = |bits| {
+            Self::intern(
+                KernelType::Program(Ty::Int32.program_type()),
+                KernelTermNode::MachineLiteral(L::Word32(bits)),
+            )
+        };
         let root = |value: &Self| match value.node() {
             KernelTermNode::MachineLiteral(L::Int64(bits)) => literal(*bits as u32),
             KernelTermNode::MachineLiteral(L::UInt64(bits)) => literal(*bits as u32),
@@ -1289,6 +1418,11 @@ impl KernelTerm {
         use MachineCastSpelling as E;
         assert!(self.is_shared_machine_operand());
         if let KernelTermNode::MachineLiteral(literal) = self.node() {
+            if let Some(result) = literal.converted_term(source, destination) {
+                return result;
+            }
+            // A literal can be observed through a different carrier. Lower
+            // those conversions with the existing wrapper normalization.
             let value = convert_value(source.value_from_term(literal.old_term()), destination)
                 .expect("integer conversion");
             return KernelTermImport::default().argument(&PureFunctionArgument::Value(value));

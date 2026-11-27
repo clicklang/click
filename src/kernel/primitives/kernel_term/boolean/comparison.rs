@@ -18,7 +18,7 @@ impl KernelTerm {
     }
 
     pub(crate) fn boolean_comparison(
-        mut format: MachineIntegerType,
+        format: MachineIntegerType,
         relation: CompareRelation,
         mut arguments: [Self; 2],
     ) -> Self {
@@ -26,16 +26,33 @@ impl KernelTerm {
         use MachineIntegerType as T;
         let boolean = |value| Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value));
         let native = |value: OldConditionTerm| KernelTermImport::default().condition(&value);
-        let views = arguments.each_ref().map(MachineOperandView::Shared);
-        if let [Some(left), Some(right)] = views.map(|view| view.literal()) {
-            return native(OldConditionTerm::machine_compare(
-                format, relation, left, right,
-            ));
-        }
-        if format.format().bits() == 32 {
-            for argument in &mut arguments {
-                if let Some(value) = MachineOperandView::Shared(argument).literal() {
-                    *argument = KernelTermImport::default().machine(format, &value.into_word32());
+        let stored_format = match (relation, format) {
+            (R::Equal, T::UInt64) => T::Int64,
+            (R::Equal, T::UInt128) => T::Int128,
+            _ => format,
+        };
+        let literals = arguments.each_ref().map(Self::guard_literal);
+        if let [Some(left), Some(right)] = &literals {
+            if let (Some(a), Some(b)) = (left.constant_at(format), right.constant_at(format)) {
+                return Self::boolean_literal(a.compare(relation, b));
+            }
+            // Equality reads any pair of 64-bit patterns at either signedness.
+            if relation == R::Equal
+                && format.format().bits() == 64
+                && let (Some(a), Some(b)) = (left.signed64(), right.signed64())
+            {
+                return Self::boolean_literal(a == b);
+            }
+            // Keep the written carriers when a typed read fails. The raw
+            // comparison observes both operands at its stored format.
+            arguments = [
+                left.guard_operand(stored_format),
+                right.guard_operand(stored_format),
+            ];
+        } else if format.format().bits() == 32 {
+            for (argument, literal) in arguments.iter_mut().zip(literals) {
+                if let Some(value) = literal {
+                    *argument = value.guard_operand(format);
                 }
             }
         }
@@ -61,13 +78,7 @@ impl KernelTerm {
             && let Some(value) = crate::kernel::primitives::int64_signed_order_by_width_views(
                 views[0],
                 views[1],
-                |a, b| match relation {
-                    R::LessThan => a < b,
-                    R::LessEqual => a <= b,
-                    R::GreaterThan => a > b,
-                    R::GreaterEqual => a >= b,
-                    R::Equal => unreachable!(),
-                },
+                |a, b| relation.holds(a, b),
             )
         {
             return boolean(value);
@@ -141,14 +152,7 @@ impl KernelTerm {
                 }
             }
         }
-        if relation == R::Equal {
-            format = match format {
-                T::UInt64 => T::Int64,
-                T::UInt128 => T::Int128,
-                _ => format,
-            };
-        }
-        Self::boolean_comparison_raw(format, relation, arguments)
+        Self::boolean_comparison_raw(stored_format, relation, arguments)
     }
 }
 
@@ -170,6 +174,15 @@ mod tests {
                 variable.clone(),
                 constant(0),
                 constant(1),
+                OldMachineTerm::machine_constant(MachineIntegerConstant::from_term_bits(
+                    format.format(),
+                    format.format().mask(),
+                )),
+                // A differently tagged word may still be readable at this format.
+                OldMachineTerm::int64_constant(-1),
+                OldMachineTerm::int64_constant(i64::MIN),
+                OldMachineTerm::uint32_constant(u32::MAX),
+                OldMachineTerm::uint64_constant(u64::MAX),
                 OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::BitwiseAnd,
@@ -196,6 +209,15 @@ mod tests {
                         let arguments =
                             [import.machine(format, left), import.machine(format, right)];
                         let actual = KernelTerm::boolean_comparison(format, relation, arguments);
+                        if matches!(left, OldMachineTerm::Constant { .. })
+                            && matches!(right, OldMachineTerm::Constant { .. })
+                        {
+                            assert_eq!(
+                                actual,
+                                import.condition(&expected),
+                                "{format:?} {relation:?} {left:?} {right:?}"
+                            );
+                        }
                         let restored = KernelTermExport::condition(&actual).unwrap();
                         assert_eq!(
                             format!("{restored:?}"),
