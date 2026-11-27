@@ -103,7 +103,10 @@ fn return_known_views_scale_with_resources_and_claims() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn return_selected_close_views_scale_with_resources_and_claims() {
-    check_return_claim_preparation_scaling("close() using {};", [1, 2, 4, 8].map(|size| (size, size)));
+    check_return_claim_preparation_scaling(
+        "close() using {};",
+        [1, 2, 4, 8].map(|size| (size, size)),
+    );
 }
 
 #[test]
