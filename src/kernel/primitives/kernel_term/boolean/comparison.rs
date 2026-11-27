@@ -111,17 +111,22 @@ impl KernelTerm {
                 return boolean(true);
             }
             if format.format().bits() == 64 {
-                for (address, other) in [(views[0], views[1]), (views[1], views[0])] {
-                    if other.uint64_constant() == Some(0)
-                        && let MachineOperandView::Shared(root) = address
-                        && let Some(OldMachineTerm::IntegerAddress(pointer, _)) =
-                            root.machine_conversion_leaf()
-                    {
-                        return native(OldConditionTerm::address_equal(
-                            pointer.as_ref().clone(),
-                            Address::null(),
-                        ));
+                for (address, other) in [(&arguments[0], views[1]), (&arguments[1], views[0])] {
+                    if other.uint64_constant() != Some(0) {
+                        continue;
                     }
+                    let pointer = match address.node() {
+                        KernelTermNode::IntegerAddress { address, .. } => address,
+                        _ => {
+                            let Some(OldMachineTerm::IntegerAddress(pointer, _)) =
+                                address.retained_machine_input()
+                            else {
+                                continue;
+                            };
+                            pointer.shared()
+                        }
+                    };
+                    return Self::address_equal([pointer.clone(), Address::null().into_shared()]);
                 }
                 // Reuse the existing bounded alignment classifier. Observing
                 // the selected operand retains it; it does not export it.
