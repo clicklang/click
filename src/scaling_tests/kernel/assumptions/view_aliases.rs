@@ -193,8 +193,18 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
-                assert!(context.proves_memory_loadable(&memory, &query, &4.into()));
-                assert!(!context.proves_memory_loadable(&memory, &query, &2048.into()));
+                assert!(context.proves_memory_loadable(
+                    &memory,
+                    &Default::default(),
+                    &query,
+                    &4.into()
+                ));
+                assert!(!context.proves_memory_loadable(
+                    &memory,
+                    &Default::default(),
+                    &query,
+                    &2048.into()
+                ));
             }
         });
         samples.push(work);
@@ -222,7 +232,7 @@ fn selected_alias_view_cannot_cross_distinct_allocations() {
         wide: false,
     });
     context.equality_graph.add_equality(&source, &other);
-    assert!(!context.proves_memory_loadable(&memory, &other, &8.into()));
+    assert!(!context.proves_memory_loadable(&memory, &Default::default(), &other, &8.into()));
 }
 
 #[test]

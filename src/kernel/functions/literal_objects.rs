@@ -45,23 +45,38 @@ fn a_literal_span_is_checked_in_the_selected_memory() {
             OldConditionTerm::signed_less_equal(bytes.clone(), 3u32.into()),
             true,
         );
-    assert!(facts.proves_memory_loadable(&memory, &pointer, &bytes));
-    assert!(!facts.proves_memory_loadable(&SymbolicMemory::new(), &pointer, &bytes));
-    assert!(!facts.proves_memory_loadable(&memory, &pointer.offset_by_bytes(3), &1u32.into()));
+    assert!(facts.proves_memory_loadable(&memory, &Default::default(), &pointer, &bytes));
+    assert!(!facts.proves_memory_loadable(
+        &SymbolicMemory::new(),
+        &Default::default(),
+        &pointer,
+        &bytes
+    ));
+    assert!(!facts.proves_memory_loadable(
+        &memory,
+        &Default::default(),
+        &pointer.offset_by_bytes(3),
+        &1u32.into()
+    ));
     let alias = Address::symbolic(Variable(92_002));
     let facts = facts.assume_condition(
         OldConditionTerm::address_equal(alias.clone(), pointer.clone()),
         true,
     );
-    assert!(facts.proves_memory_loadable(&memory, &alias, &bytes));
+    assert!(facts.proves_memory_loadable(&memory, &Default::default(), &alias, &bytes));
 
     let wide = OldMachineTerm::Variable(Variable(92_003));
     let facts = facts.assume_condition(
         OldConditionTerm::uint64_less_equal(wide.clone(), OldMachineTerm::uint64_constant(3)),
         true,
     );
-    assert!(facts.proves_native_memory_loadable(&memory, &pointer, &wide));
-    assert!(!facts.proves_native_memory_loadable(&SymbolicMemory::new(), &pointer, &wide));
+    assert!(facts.proves_native_memory_loadable(&memory, &Default::default(), &pointer, &wide));
+    assert!(!facts.proves_native_memory_loadable(
+        &SymbolicMemory::new(),
+        &Default::default(),
+        &pointer,
+        &wide
+    ));
 }
 
 mod scaling_tests {

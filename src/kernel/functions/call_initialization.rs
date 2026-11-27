@@ -63,6 +63,7 @@ pub(super) fn call_input_initialization<'a>(
         }
         if memory_range_is_initialized(
             state.memory(),
+            &state.memory_point(),
             range,
             segment.and_then(MemorySegment::value_runs),
             assumptions,
@@ -113,11 +114,12 @@ fn root_parameter(expression: &ProgramExpression) -> Option<&BindingName> {
 /// `memory`; see the module comment.
 pub(crate) fn memory_range_is_initialized(
     memory: &SymbolicMemory,
+    point: &crate::kernel::program_point::PathLink,
     range: &MemoryRange,
     value_runs: Option<&[(u32, u32)]>,
     assumptions: &PureFactContext,
 ) -> bool {
-    check_range_initialization(memory, range, value_runs, assumptions, false)
+    check_range_initialization(memory, point, range, value_runs, assumptions, false)
 }
 
 /// A copy can turn previously written bytes into unwritten bytes. Before
@@ -125,14 +127,16 @@ pub(crate) fn memory_range_is_initialized(
 /// markers anywhere the copied span can reach, not just at its opening byte.
 pub(super) fn representation_copy_source_is_initialized(
     memory: &SymbolicMemory,
+    point: &crate::kernel::program_point::PathLink,
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    check_range_initialization(memory, range, None, assumptions, true)
+    check_range_initialization(memory, point, range, None, assumptions, true)
 }
 
 fn check_range_initialization(
     memory: &SymbolicMemory,
+    point: &crate::kernel::program_point::PathLink,
     range: &MemoryRange,
     value_runs: Option<&[(u32, u32)]>,
     assumptions: &PureFactContext,
@@ -164,13 +168,16 @@ fn check_range_initialization(
             offset.checked_add(length).is_none_or(|end| end > bytes)
                 || bytes_are_initialized(
                     memory,
+                    point,
                     &start.offset_by_bytes(offset),
                     length,
                     length,
                     assumptions,
                 )
         }),
-        (Some(bytes), None) => bytes_are_initialized(memory, &start, bytes, width, assumptions),
+        (Some(bytes), None) => {
+            bytes_are_initialized(memory, point, &start, bytes, width, assumptions)
+        }
         // A length known only at the call: every byte from the start to the
         // end of a constant-size object covers it.
         (None, _) => match (start.offset.as_const(), memory.block_size(&start.base)) {
@@ -189,13 +196,14 @@ fn check_range_initialization(
 /// `defined` by a fact such as a callee's `ensures defined(p[k])`.
 fn bytes_are_initialized(
     memory: &SymbolicMemory,
+    point: &crate::kernel::program_point::PathLink,
     start: &Address,
     bytes: u32,
     width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
     written(memory, start, bytes, assumptions)
-        || elements_are_initialized(memory, start, bytes, width, assumptions)
+        || elements_are_initialized(memory, point, start, bytes, width, assumptions)
 }
 
 /// The initialization record covers the bytes, or a cell cached at exactly
@@ -216,6 +224,7 @@ fn written(
 /// `ensures defined(p[k])`.
 fn elements_are_initialized(
     memory: &SymbolicMemory,
+    point: &crate::kernel::program_point::PathLink,
     start: &Address,
     bytes: u32,
     width: u32,
@@ -229,7 +238,7 @@ fn elements_are_initialized(
         let element = start.offset_by_bytes(index * width);
         written(memory, &element, width, assumptions)
             || element_types_of_width(width).iter().any(|value_type| {
-                assumptions.has_memory_read_defined_evidence(memory, &element, *value_type)
+                assumptions.has_memory_read_defined_evidence(memory, point, &element, *value_type)
             })
     })
 }

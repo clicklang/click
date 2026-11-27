@@ -37,12 +37,18 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
         }
         let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.has_memory_read_defined_evidence(&memory, &field_alias, ProgramType::Int32)
+            assumptions.has_memory_read_defined_evidence(
+                &memory,
+                &Default::default(),
+                &field_alias,
+                ProgramType::Int32,
+            )
         });
         assert!(proved);
         samples.push(work);
         assert!(!unrelated.has_memory_read_defined_evidence(
             &memory,
+            &Default::default(),
             &field_alias,
             ProgramType::Int32
         ));
@@ -81,11 +87,21 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         }
         let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.has_memory_read_defined_evidence(&memory, &pointer, ProgramType::Int32)
+            assumptions.has_memory_read_defined_evidence(
+                &memory,
+                &Default::default(),
+                &pointer,
+                ProgramType::Int32,
+            )
         });
         assert!(proved);
         samples.push(work);
-        assert!(!unrelated.has_memory_read_defined_evidence(&memory, &pointer, ProgramType::Int32));
+        assert!(!unrelated.has_memory_read_defined_evidence(
+            &memory,
+            &Default::default(),
+            &pointer,
+            ProgramType::Int32
+        ));
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
@@ -112,7 +128,12 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
             );
         }
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            PureFactContext::new().proves_memory_read_defined(&memory, &target, ProgramType::Int32)
+            PureFactContext::new().proves_memory_read_defined(
+                &memory,
+                &Default::default(),
+                &target,
+                ProgramType::Int32,
+            )
         });
         assert!(!proved);
         samples.push(work);
@@ -191,6 +212,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         );
         assert!(!assumptions.has_memory_read_defined_evidence(
             &changed,
+            &Default::default(),
             &address,
             ProgramType::Int32
         ));
@@ -676,12 +698,18 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
             wide: false,
         });
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            facts.proves_memory_read_defined(&memory, &query.offset_by_bytes(4), ProgramType::Int32)
+            facts.proves_memory_read_defined(
+                &memory,
+                &Default::default(),
+                &query.offset_by_bytes(4),
+                ProgramType::Int32,
+            )
         });
         assert!(proved);
         samples.push(work);
         assert!(!facts.proves_memory_read_defined(
             &memory,
+            &Default::default(),
             &query.offset_by_bytes(8),
             ProgramType::Int32,
         ));

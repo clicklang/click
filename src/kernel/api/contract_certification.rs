@@ -457,10 +457,11 @@ pub fn execution_state_justifies_loadability_obligation(
                 && assumptions
                     .clone()
                     .assume_proposition(loadable)
-                    .proves_memory_read_defined(memory, pointer, *value_type)
+                    .proves_memory_read_defined(memory, point, pointer, *value_type)
         }
         Proposition::MemoryLoadable {
             memory,
+            point,
             base,
             bytes,
             wide: false,
@@ -484,6 +485,7 @@ pub fn execution_state_justifies_loadability_obligation(
                 }
                 || assumptions.proves_memory_loadable_for_memory_resolution(
                     memory,
+                    point,
                     base,
                     bytes.old_form(),
                 )

@@ -276,30 +276,34 @@ impl super::ProofSearch<PureFactContext> {
             }
             Proposition::MemoryReadDefined {
                 memory,
+                point,
                 pointer,
                 value_type,
                 ..
-            } => context.proves_memory_read_defined(memory, pointer, *value_type),
+            } => context.proves_memory_read_defined(memory, point, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: true,
                 ..
-            } => context.proves_native_memory_loadable(memory, base, bytes.old_form()),
+            } => context.proves_native_memory_loadable(memory, point, base, bytes.old_form()),
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: false,
                 ..
-            } => context.proves_memory_loadable(memory, base, bytes.old_form()),
+            } => context.proves_memory_loadable(memory, point, base, bytes.old_form()),
             Proposition::MemoryCanStore {
                 memory,
+                point,
                 pointer,
                 byte_width,
                 ..
-            } => context.proves_memory_access(memory, pointer, *byte_width),
+            } => context.proves_memory_access(memory, point, pointer, *byte_width),
             Proposition::ResourceSeparate { left, right } => {
                 context.contains_proposition_fact(proposition)
                     || context.proves_resource_separate(left, right)

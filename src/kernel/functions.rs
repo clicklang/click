@@ -3098,6 +3098,7 @@ fn constant_representation_copy_count(bytes: &ProgramValue) -> Option<i64> {
 /// the exact copied span. Unknown placement cannot establish either rule.
 fn representation_copy_initialization(
     memory: &SymbolicMemory,
+    point: &crate::kernel::program_point::PathLink,
     values: &[ProgramValue],
     effect: RepresentationCopyEffect,
     inputs: &[CheckedResourceFact],
@@ -3119,6 +3120,7 @@ fn representation_copy_initialization(
         .ok_or(refusal)?;
     if call_initialization::representation_copy_source_is_initialized(
         memory,
+        point,
         source_view,
         assumptions,
     ) {
@@ -3726,6 +3728,7 @@ fn execute_verified_function_applications_with_suspension(
         {
             match representation_copy_initialization(
                 &entry_state.memory,
+                &entry_state.memory_point(),
                 argument_values
                     .native_values()
                     .expect("representation copy arguments"),

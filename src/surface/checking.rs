@@ -124,6 +124,7 @@ fn produced_range_left_uninitialized(
             .flatten();
         (!crate::kernel::memory_range_is_initialized(
             post_state.memory(),
+            &post_state.memory_point(),
             range,
             runs.as_deref(),
             assumptions,

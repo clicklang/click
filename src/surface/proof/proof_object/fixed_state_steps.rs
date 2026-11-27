@@ -3311,12 +3311,14 @@ impl<'a> Proof<'a> {
         let accepted = match self.goal()? {
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: true,
                 ..
             } => self.facts().assumptions().proves_native_memory_loadable(
                 memory,
+                point,
                 base,
                 bytes.old_form(),
             ),

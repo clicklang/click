@@ -29,6 +29,7 @@ fn direct_loadable_span_graph_queries_scale_without_fact_index() {
                 let goal_bytes = span(var(index));
                 assert!(context.proves_memory_loadable_for_memory_resolution(
                     &memory,
+                    &Default::default(),
                     &base,
                     &goal_bytes,
                 ));

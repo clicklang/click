@@ -65,6 +65,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
             for _ in 0..4 {
                 assert!(!context.proves_memory_loadable(
                     &memory,
+                    &Default::default(),
                     &pointer(730_000),
                     &OldMachineTerm::constant(4)
                 ));
@@ -223,10 +224,15 @@ fn memory_view_miss_does_not_scan_same_address_spans() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
-                assert!(!context.proves_memory_loadable(&memory, &base, &4096.into()));
+                assert!(!context.proves_memory_loadable(
+                    &memory,
+                    &Default::default(),
+                    &base,
+                    &4096.into()
+                ));
             }
         });
-        assert!(context.proves_memory_loadable(&memory, &base, &size.into()));
+        assert!(context.proves_memory_loadable(&memory, &Default::default(), &base, &size.into()));
         samples.push(work);
     }
     eprintln!("same address view miss work: {samples:?}");
@@ -287,9 +293,14 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 let selected = selected.unwrap();
                 let proves = |context: &PureFactContext, bytes: &OldMachineTerm| {
                     if wide {
-                        context.proves_native_memory_loadable(&memory, &base, bytes)
+                        context.proves_native_memory_loadable(
+                            &memory,
+                            &Default::default(),
+                            &base,
+                            bytes,
+                        )
                     } else {
-                        context.proves_memory_loadable(&memory, &base, bytes)
+                        context.proves_memory_loadable(&memory, &Default::default(), &base, bytes)
                     }
                 };
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -304,9 +315,19 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                             unreachable!()
                         };
                         assert!(if wide {
-                            context.proves_native_memory_loadable(memory, &base, bytes.old_form())
+                            context.proves_native_memory_loadable(
+                                memory,
+                                &Default::default(),
+                                &base,
+                                bytes.old_form(),
+                            )
                         } else {
-                            context.proves_memory_loadable(memory, &base, bytes.old_form())
+                            context.proves_memory_loadable(
+                                memory,
+                                &Default::default(),
+                                &base,
+                                bytes.old_form(),
+                            )
                         });
                     }
                 });

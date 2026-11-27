@@ -5789,6 +5789,7 @@ impl PureFactContext {
     fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition) {
         if let Proposition::MemoryReadDefined {
             memory,
+            point,
             pointer,
             value_type,
             ..
@@ -5808,7 +5809,7 @@ impl PureFactContext {
             let validity = Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
-                point: crate::kernel::program_point::PathLink::lookup_key(),
+                point: point.clone(),
                 pointer: pointer.clone(),
                 value_type: *value_type,
             };
@@ -7516,6 +7517,7 @@ impl PureFactContext {
         match proposition {
             Proposition::MemoryReadDefined {
                 memory,
+                point,
                 pointer,
                 value_type,
                 ..
@@ -7533,7 +7535,7 @@ impl PureFactContext {
                         facts.contains_key(&Proposition::MemoryReadDefined {
                             at: None,
                             memory: memory.clone(),
-                            point: crate::kernel::program_point::PathLink::lookup_key(),
+                            point: point.clone(),
                             pointer: pointer.clone(),
                             value_type: *value_type,
                         })

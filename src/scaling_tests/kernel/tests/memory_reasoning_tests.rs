@@ -59,7 +59,12 @@ fn checked_loadability_ignores_unrelated_free_history() {
                     wide: false,
                 });
             let proves = |memory: &SymbolicMemory| {
-                facts.proves_memory_loadable_for_memory_resolution(memory, &target, &4u32.into())
+                facts.proves_memory_loadable_for_memory_resolution(
+                    memory,
+                    &Default::default(),
+                    &target,
+                    &4u32.into(),
+                )
             };
             SymbolicMemory::take_heap_containment_checks();
             let (valid, work) =
@@ -511,7 +516,12 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
                 );
             }
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.proves_memory_loadable(&memory, &base, &OldMachineTerm::constant(4 * width))
+                context.proves_memory_loadable(
+                    &memory,
+                    &Default::default(),
+                    &base,
+                    &OldMachineTerm::constant(4 * width),
+                )
             });
             assert!(proved);
             costs.push(work);
@@ -520,17 +530,20 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
         let context = PureFactContext::new().assume_proposition(source(bytes));
         assert!(!context.proves_memory_loadable(
             &memory,
+            &Default::default(),
             &base,
             &OldMachineTerm::constant(4 * width + 1),
         ));
         assert!(!context.proves_memory_loadable(
             &memory,
+            &Default::default(),
             &Address::symbolic(Variable(9_319_002)),
             &OldMachineTerm::constant(4 * width),
         ));
     }
     assert!(!PureFactContext::new().proves_memory_loadable(
         &memory,
+        &Default::default(),
         &base,
         &OldMachineTerm::constant(4),
     ));
@@ -543,7 +556,12 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
     assert!(
         !PureFactContext::new()
             .assume_proposition(source(wrapped))
-            .proves_memory_loadable(&memory, &base, &OldMachineTerm::constant(4))
+            .proves_memory_loadable(
+                &memory,
+                &Default::default(),
+                &base,
+                &OldMachineTerm::constant(4)
+            )
     );
 }
 

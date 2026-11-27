@@ -1528,6 +1528,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
         // Construct the address index once before measuring hot queries.
         assert!(context.proves_native_memory_loadable(
             &memory,
+            &Default::default(),
             &root,
             &OldMachineTerm::uint64_constant(16)
         ));
@@ -1535,11 +1536,13 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
             (
                 context.proves_native_memory_loadable(
                     &memory,
+                    &Default::default(),
                     &target,
                     &OldMachineTerm::uint64_constant(15),
                 ),
                 context.proves_native_memory_loadable(
                     &memory,
+                    &Default::default(),
                     &target,
                     &OldMachineTerm::uint64_constant(16),
                 ),
@@ -1594,9 +1597,15 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
             ));
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
-                context.proves_native_memory_loadable(&memory, &base, &requested),
                 context.proves_native_memory_loadable(
                     &memory,
+                    &Default::default(),
+                    &base,
+                    &requested,
+                ),
+                context.proves_native_memory_loadable(
+                    &memory,
+                    &Default::default(),
                     &base,
                     &OldMachineTerm::uint64_constant(17),
                 ),
@@ -1645,12 +1654,14 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
         // stay independent of the other addresses, even on a refusal.
         assert!(context.proves_native_memory_loadable(
             &memory,
+            &Default::default(),
             &base,
             &OldMachineTerm::uint64_constant(8)
         ));
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.proves_native_memory_loadable(
                 &memory,
+                &Default::default(),
                 &base,
                 &OldMachineTerm::uint64_constant(9),
             )
