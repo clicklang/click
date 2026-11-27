@@ -10878,7 +10878,6 @@ pub(super) fn symbolic_spec_range_fold_value(
 fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, bool)> {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
-        Proposition::ConditionIs(condition, expected) => Some((condition.clone(), *expected)),
         Proposition::Not(body) => {
             let (condition, expected) = conditional_guard(body)?;
             Some((condition, !expected))
@@ -10919,19 +10918,7 @@ fn conditional_guard(proposition: &Proposition) -> Option<(StoredConditionTerm, 
         Proposition::SequenceMembership { .. } => {
             conditional_guard(&sequence_membership_view(proposition)?)
         }
-        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            let operand = |value: &StoredAlgebraicTerm| {
-                value.root().cloned().unwrap_or_else(|| {
-                    KernelTermImport::for_exact_field_inputs().algebraic(value.old_form())
-                })
-            };
-            let root = KernelTerm::algebraic_equal_raw([operand(left), operand(right)]);
-            Some((
-                StoredConditionTerm::from_root(root).expect("algebraic equality"),
-                true,
-            ))
-        }
-        _ => None,
+        _ => single_condition(proposition).map(|(leaf, truth)| (leaf.into_stored(), truth)),
     }
 }
 
@@ -11045,38 +11032,79 @@ pub(super) fn conditional_spec_value(
     }
 }
 
-pub(super) fn proposition_as_single_condition(
-    proposition: &Proposition,
-) -> Option<(OldConditionTerm, bool)> {
-    match proposition {
-        Proposition::ConditionIs(condition, value) => {
-            let condition = match condition.root().map(KernelTerm::node) {
+// A single-condition probe retains the producer handles. Only consumers that
+// need the native spelling pay for the operand trees.
+enum SingleCondition {
+    Stored(StoredConditionTerm),
+    AlgebraicEqual(StoredAlgebraicTerm, StoredAlgebraicTerm),
+}
+
+impl SingleCondition {
+    fn into_stored(self) -> StoredConditionTerm {
+        match self {
+            Self::Stored(condition) => condition,
+            Self::AlgebraicEqual(left, right) => {
+                let operand = |value: StoredAlgebraicTerm| {
+                    value.root().cloned().unwrap_or_else(|| {
+                        KernelTermImport::for_exact_field_inputs().algebraic(value.old_form())
+                    })
+                };
+                let root = KernelTerm::algebraic_equal_raw([operand(left), operand(right)]);
+                StoredConditionTerm::from_root(root).expect("algebraic equality")
+            }
+        }
+    }
+
+    fn into_native(self) -> OldConditionTerm {
+        match self {
+            Self::Stored(condition) => match condition.root().map(KernelTerm::node) {
                 Some(KernelTermNode::Variable(variable)) => OldConditionTerm::Variable(*variable),
                 _ => condition.old_form().clone(),
-            };
-            Some((condition, *value))
+            },
+            Self::AlgebraicEqual(left, right) => OldConditionTerm::AlgebraicEqual(
+                Box::new(left.old_form().clone()),
+                Box::new(right.old_form().clone()),
+            ),
+        }
+    }
+}
+
+fn single_condition(proposition: &Proposition) -> Option<(SingleCondition, bool)> {
+    match proposition {
+        Proposition::ConditionIs(condition, truth) => {
+            Some((SingleCondition::Stored(condition.clone()), *truth))
         }
         Proposition::SequenceMembership { element, sequence } => {
             let mut comparisons = sequence_member_comparisons(element.old_form(), sequence);
             match (comparisons.next(), comparisons.next()) {
-                (None, _) => Some((OldConditionTerm::Constant(false), true)),
-                (Some(comparison), None) => proposition_as_single_condition(&comparison),
+                (None, _) => Some((
+                    SingleCondition::Stored(OldConditionTerm::Constant(false).into()),
+                    true,
+                )),
+                (Some(comparison), None) => single_condition(&comparison),
                 (_, Some(_)) => None,
             }
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
-            OldConditionTerm::AlgebraicEqual(
-                Box::new(left.old_form().clone()),
-                Box::new(right.old_form().clone()),
-            ),
+            SingleCondition::AlgebraicEqual(left.clone(), right.clone()),
             true,
         )),
         Proposition::Not(body) => {
-            let (condition, value) = proposition_as_single_condition(body)?;
+            let (condition, value) = single_condition(body)?;
             Some((condition, !value))
         }
         _ => None,
     }
+}
+
+pub(crate) fn is_single_normalization_condition(proposition: &Proposition) -> bool {
+    single_condition(proposition).is_some()
+}
+
+pub(super) fn proposition_as_single_condition(
+    proposition: &Proposition,
+) -> Option<(OldConditionTerm, bool)> {
+    single_condition(proposition).map(|(leaf, truth)| (leaf.into_native(), truth))
 }
 
 /// The truth value a lowered specification condition establishes on its own,

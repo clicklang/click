@@ -39,3 +39,30 @@ fn compound_guard_construction_and_native_output_scale_linearly() {
         previous = Some((size, work));
     }
 }
+
+#[test]
+fn recognizing_a_single_condition_does_not_visit_the_operand_tree() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let yes = KernelTerm::boolean_literal(true);
+    let no = KernelTerm::boolean_literal(false);
+    let mut previous_work = None;
+    for size in [8, 32, 128, 512] {
+        let mut root = KernelTerm::variable(KernelType::Bool, Variable(10997351));
+        for _ in 0..size {
+            root = KernelTerm::boolean_if_raw([root, yes.clone(), no.clone()]);
+        }
+        let claim = Proposition::Not(Box::new(Proposition::condition_is(
+            StoredConditionTerm::from_root(root.clone()).unwrap(),
+            true,
+        )));
+        let (recognized, work) = crate::instrumentation::measure_deterministic_work(|| {
+            is_single_normalization_condition(&claim)
+        });
+        assert!(recognized);
+        assert!(!root.has_cached_native_argument());
+        if let Some(previous) = previous_work {
+            assert_eq!(work, previous);
+        }
+        previous_work = Some(work);
+    }
+}

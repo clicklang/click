@@ -230,9 +230,7 @@ pub(crate) fn instance_guard_folds_to_false(guard: &Proposition) -> bool {
     }
 }
 
-pub(crate) fn is_single_normalization_condition(proposition: &Proposition) -> bool {
-    crate::kernel::spec::proposition_as_single_condition(proposition).is_some()
-}
+pub(crate) use crate::kernel::spec::is_single_normalization_condition;
 
 /// Reduce checked, explicitly cited conditions and equalities established by
 /// the current trusted graph, then normalize the resulting leaf.
@@ -410,11 +408,11 @@ fn normalize_condition_selection(
     // bucket instead of scanning all cited conditions.  Only a top-level
     // atomic goal is admitted here; compound goals still follow the ordinary
     // explicit structural normalizer below.
-    if let Some((condition, goal_value)) =
-        crate::kernel::spec::proposition_as_single_condition(goal)
-        && goal_value
-        && let OldConditionTerm::IntegerEqual(_, _) = &condition
-        && !conditions.contains_key(&condition)
+    let goal_condition = crate::kernel::spec::proposition_as_single_condition(goal);
+    if let Some((condition, goal_value)) = goal_condition.as_ref()
+        && *goal_value
+        && let OldConditionTerm::IntegerEqual(_, _) = condition
+        && !conditions.contains_key(condition)
     {
         let proposition = Proposition::condition_is(condition.clone(), true);
         if let Some(key) = super::fact_keys::integer_equality_alpha_key(&proposition)
@@ -512,10 +510,10 @@ fn normalize_condition_selection(
     // recorded above, is decided by it. This is the only route for an
     // algebraic equality goal, which is an equality of terms rather than a
     // condition the reduction below visits.
-    if let Some((condition, value)) = crate::kernel::spec::proposition_as_single_condition(goal)
-        && let Some(cited) = conditions.get(&condition)
+    if let Some((condition, value)) = goal_condition.as_ref()
+        && let Some(cited) = conditions.get(condition)
     {
-        return if *cited == value {
+        return if cited == value {
             Ok(())
         } else {
             Err(ConditionalNormalizationError::DoesNotNormalize)
@@ -524,11 +522,9 @@ fn normalize_condition_selection(
     // Legacy callers can still ask the private overflow question. Its
     // ordinary bounds must both be among the cited conditions; never rebuild
     // an overflow predicate from shared arithmetic in a premise.
-    if let Some((condition @ OldConditionTerm::Overflows { .. }, false)) =
-        crate::kernel::spec::proposition_as_single_condition(goal)
-    {
+    if let Some((condition @ OldConditionTerm::Overflows { .. }, false)) = goal_condition.as_ref() {
         let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
-            &Proposition::condition_is(condition, false),
+            &Proposition::condition_is(condition.clone(), false),
         );
         if !bounds.is_empty()
             && bounds.iter().all(|bound| {
@@ -561,8 +557,8 @@ fn normalize_condition_selection(
             right,
         },
         true,
-    )) = crate::kernel::spec::proposition_as_single_condition(goal)
-        && crate::kernel::memory_history::wide_read_has_recorded_value(&left, &right, &selected)
+    )) = goal_condition.as_ref()
+        && crate::kernel::memory_history::wide_read_has_recorded_value(left, right, &selected)
     {
         return Ok(());
     }
@@ -580,8 +576,8 @@ fn normalize_condition_selection(
             right,
         },
         true,
-    )) = crate::kernel::spec::proposition_as_single_condition(goal)
-        && crate::kernel::memory_history::narrow_read_has_recorded_value(&left, &right, &selected)
+    )) = goal_condition.as_ref()
+        && crate::kernel::memory_history::narrow_read_has_recorded_value(left, right, &selected)
     {
         return Ok(());
     }
@@ -600,9 +596,8 @@ fn normalize_condition_selection(
     {
         return Ok(());
     }
-    if let Some((OldConditionTerm::AddressEqual(left, right), true)) =
-        crate::kernel::spec::proposition_as_single_condition(goal)
-        && crate::kernel::memory_history::pointer_read_has_recorded_value(&left, &right, &selected)
+    if let Some((OldConditionTerm::AddressEqual(left, right), true)) = goal_condition.as_ref()
+        && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, &selected)
     {
         return Ok(());
     }
@@ -611,7 +606,7 @@ fn normalize_condition_selection(
     if let Some((
         condition @ (OldConditionTerm::AddressEqual(..) | OldConditionTerm::AddressOffsetEqual(..)),
         true,
-    )) = crate::kernel::spec::proposition_as_single_condition(goal)
+    )) = goal_condition.as_ref()
         && let Some((left, right)) = condition.pointer_offset_sides()
         && (crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
             left, right, &selected,
