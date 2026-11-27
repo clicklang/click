@@ -778,7 +778,9 @@ impl Sort {
 
     pub(crate) fn symbolic_pointer_value(&self, variable: Variable) -> Option<ProgramValue> {
         let ty = self.pointer_type()?;
-        if !ty.is_pointer() {
+        // A slice sort's binder names a wide pointer, thin part and count
+        // (`design/rust-slice-values.md`, step 2b-iii-b-i).
+        if !ty.is_pointer() && !ty.is_slice_pointer() {
             return None;
         }
         Some(

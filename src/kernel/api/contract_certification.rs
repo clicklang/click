@@ -2955,6 +2955,12 @@ fn fresh_alpha_comparison_variable(
     crate::kernel::reasoning::collect_proposition_bound_variables(right_body, &mut reserved);
     reserved.insert(left_binder);
     reserved.insert(right_binder);
+    // A slice's count names its slice: a fresh binder's count must be fresh too.
+    let counted = reserved
+        .iter()
+        .filter_map(Variable::counted_slice)
+        .collect::<Vec<_>>();
+    reserved.extend(counted);
     KernelVariableGenerator::fresh_for(0, reserved).next()
 }
 
@@ -2977,9 +2983,13 @@ fn freshen_proposition_bodies(
             Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Address::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
+        let left_body =
+            crate::kernel::quantifiers::rename_slice_count(left_body, left_binder, fresh, sort);
+        let right_body =
+            crate::kernel::quantifiers::rename_slice_count(right_body, right_binder, fresh, sort);
         (
-            substitute_pointer_variable_in_proposition(left_body, left_binder, &pointer),
-            substitute_pointer_variable_in_proposition(right_body, right_binder, &pointer),
+            substitute_pointer_variable_in_proposition(&left_body, left_binder, &pointer),
+            substitute_pointer_variable_in_proposition(&right_body, right_binder, &pointer),
         )
     } else {
         (
@@ -3018,7 +3028,13 @@ pub(crate) fn substitute_quantified_body_capture_free(
     target: Variable,
     sort: &Sort,
 ) -> Option<Proposition> {
-    if binder != target && proposition_variables(body).contains(&target) {
+    if binder != target
+        && crate::kernel::quantifiers::binder_variables_mention(
+            &proposition_variables(body),
+            target,
+            sort,
+        )
+    {
         return None;
     }
     Some(
@@ -3035,7 +3051,8 @@ pub(crate) fn substitute_quantified_body_capture_free(
                 }
                 _ => unreachable!("pointer substitution only handles pointer sorts"),
             };
-            substitute_pointer_variable_in_proposition(body, binder, &pointer)
+            let body = crate::kernel::quantifiers::rename_slice_count(body, binder, target, sort);
+            substitute_pointer_variable_in_proposition(&body, binder, &pointer)
         } else {
             substitute_bitvector_variable_in_proposition(
                 body,

@@ -560,7 +560,8 @@ construct.
      function's slice parameter, a slice-valued pure function's result, a
      quantified or matched slice. And the enum cannot stay beside the
      built-in type, which would be two representations of one slice. So
-     the kernel names every opaque slice's count first (2b-iii-a, 2b-iii-b),
+     the kernel names every opaque slice's count first (2b-iii-a,
+     2b-iii-b-i, 2b-iii-b-ii),
      then the Surface type replaces the enum in one step with its raising
      (2b-iii-c), then strings (2b-iii-d).
    - **2b-iii-a. Slices named by a variable.** Done. A slice named by one
@@ -578,23 +579,54 @@ construct.
      payload, a termination parameter and a case binder's payload. A count
      is an independent variable to the logic, so a pass that renames or
      closes over `v` alone leaves a valid fact about a fixed count; only the
-     naming link is lost, which 2b-iii-b closes for binders. Raising a count
+     naming link is lost, which 2b-iii-b-i closes for binders. Raising a count
      refuses with an internal error until 2b-iii-c. Tests:
      `kernel::tests::slice_call_result_tests`; scaling test
      `a_named_slice_ignores_unrelated_slices_and_facts`.
-   - **2b-iii-b. Slice-valued pure applications and slice binders.**
-     Kernel only. A pure application of slice type is a wide pointer whose
-     thin part is based on `AddressBase::PureFunctionApplication(app)` and
-     whose count is a pure-application component of the same `app` (never
-     an integer application of the same name), so `f(x).len()` names it; a
-     definitional unfolding joins both components with the body's slice
-     (`add_pointer_equality`). A slice binder (a quantifier's sort, a
-     `match` arm's payload, a pure function's or theorem's parameter) is a
-     variable-named slice, and closing, opening, renaming and substituting
-     it carry `v` and `v.element_count()` together: a substitution of `v`
-     by a wide value maps the count to the value's count, and a rename or
-     closing maps the count to the new binder's count. Scaling tests for
-     both as unrelated applications, binders and facts grow.
+   - **2b-iii-b. Slice binders and slice-valued pure applications**, in
+     two parts: binders, whose count is already named (2b-iii-a), then
+     pure applications, which need a count term of their own.
+   - **2b-iii-b-i. Slice binders.** Done. A slice binder (a quantifier's
+     sort, a choice witness, a `match` arm's payload) is a variable-named
+     slice (`Sort::symbolic_pointer_value`, which refused a slice sort
+     before), and closing, opening, renaming
+     and substituting it carry `v` and `v.element_count()` together.
+     `quantifiers::rename_slice_count` renames the count beside every
+     rename of `v`: `rename_quantified_variable` (so `close_forall`,
+     `close_exists`, `open_quantifier` and `canonical_binders`), choice
+     opening in the proof object, and the alpha comparison and capture-free
+     alignment of `contract_certification`, whose freshness and capture
+     checks read a free count as naming its slice. The typed rewrite
+     (`TermRewrite::for_typed_variables`, behind instantiation and `match`
+     reduction) maps the count of a binder replaced by a slice value to the
+     value's count and the count of a scope-renamed binder to the new
+     binder's count, one lookup of the counted slice per count leaf; a
+     replacement that mentions a count mentions its slice for capture. A
+     substitution of `v` by a thin address
+     (`substitute_pointer_variable_in_proposition`) leaves the count alone,
+     a valid fact about a fixed count; the rewrite's whole-formal
+     replacement of a slice keeps the thin type for the thin part and
+     rewrites the count as a numeric child. Thin binders are unchanged. Theorem
+     and pure-function parameters reach the kernel as quantifiers and
+     lowering environments; no front end gives one a slice sort until
+     2b-iii-c. Tests: `kernel::tests::slice_binder_tests`; scaling tests
+     `closing_a_slice_binder_grows_linearly_with_unrelated_slices` and
+     `instantiating_a_slice_binder_ignores_unrelated_binders`.
+   - **2b-iii-b-ii. Slice-valued pure applications.** Kernel only. A pure
+     application of slice type (`spec.rs`'s pointer-result branch, which
+     today builds `Pointer::new` at the result type and so cannot take a
+     slice type) is a wide pointer whose thin part is based on
+     `AddressBase::PureFunctionApplication(app)` and whose count is a
+     pure-application component of the same `app` (never an integer
+     application of the same name), so `f(x).len()` names it. That count
+     is a new machine-term form keyed by the application's identity, with
+     its own e-graph node beside the pointer call (`intern_pointer_call`),
+     its import into `KernelTermNode::PointerCall`, transport and rewrite
+     as a numeric child, and a raising refusal naming 2b-iii-c. A
+     definitional unfolding, `f(x) == body` at slice type, is a complete
+     pointer equality and joins both components with the body's slice
+     (`add_pointer_equality`). Scaling tests as unrelated applications and
+     facts grow.
    - **2b-iii-c. Surface slice type and raising.** `spec enum Slice<T>`
      is removed in the same step as the built-in type arrives: `Slice<T>`
      lowers to `ProgramType::SlicePointer` and gets an interface type

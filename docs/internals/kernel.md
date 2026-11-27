@@ -1388,6 +1388,20 @@ or produced variable, orders after every variable that is not a count, and
 hashes as `v` plus one word. Raising a count refuses with an internal error
 until the Surface slice type exists (step 2b-iii-c).
 
+A binder of slice sort (`Sort::ProgramPointer(SlicePointer(_))`: a
+quantifier's, a choice witness's, a `match` payload's) is such a variable, and
+every pass over it carries the count with it (step 2b-iii-b-i).
+`quantifiers::rename_slice_count` renames `v.element_count()` beside each
+rename of `v` (`rename_quantified_variable`, so closing, opening and
+canonical heights; choice opening; alpha comparison and capture-free
+alignment, whose freshness and capture checks read a free count as its
+slice). The typed rewrite (`TermRewrite::for_typed_variables`, used by
+instantiation and `match` reduction) replaces the count of a binder replaced
+by a slice value with that value's count, and the count of a scope-renamed
+binder with the new binder's count; a replacement that mentions a count
+mentions its slice for capture. A substitution of `v` by a thin address
+(`substitute_pointer_variable_in_proposition`) leaves the count alone.
+
 ## Symbolic execution
 
 ### What stepping a statement means
