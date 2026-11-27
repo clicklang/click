@@ -627,6 +627,8 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// call postconditions keep the relation lazy so source expansion retains
     /// their anchored rewrites.
     pub(in crate::surface::proof) resource_unfolded: bool,
+    /// This temporary exit-match arm can retain only a checked refutation.
+    pub(in crate::surface::proof) refuting_exit_match_arm: bool,
     /// Where a source tactic's expansion is being captured on this path.
     pub(in crate::surface::proof) expansion: ExpansionCursor,
     pub(in crate::surface::proof) branch_path: PersistentSequence<String>,
@@ -878,6 +880,7 @@ impl ExecutionProofState {
                 invariant_closer_step: Default::default(),
                 region_solve: None,
                 resource_unfolded: false,
+                refuting_exit_match_arm: false,
                 expansion: ExpansionCursor::default(),
                 branch_path,
                 branch_surface_facts: PersistentOrderedSet::default(),
