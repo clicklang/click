@@ -350,7 +350,15 @@ contract guard (`elaborate_requirement_proposition`) is elaborated the same
 way, once and before it is lowered, from the callee's parameters; its
 elaborator still reads a global from the entry state when the call site has
 no global declarations, since call sites do not yet carry the callee's.
-Other clause kinds still elaborate inside lowering.
+
+Every other clause lowered from Syntax, proof clauses, loop invariants and
+statement annotations among them, is elaborated whole before any of it is
+lowered: `click_proposition_to_spec_proposition` elaborates the clause with
+`elaborate_clause` and lowers the stored Surface, and binder bodies lower
+from theirs. Its scope is still the lowering context the clause is lowered
+in. Next, a proof clause's scope comes from the front end's declarations
+for its position: the function's, and the locals the C front end records
+as in scope at that statement.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
 entry values, and the state that declares the clause's locals) for names that
