@@ -3,7 +3,7 @@
 use super::*;
 
 /// Negate a total integer/boolean comparison without hiding its ordering fact.
-pub(super) fn negate_condition(condition: E) -> E {
+fn negate_condition(condition: E) -> E {
     match condition {
         E::Not { value } => *value,
         E::Boolean { value } => E::Boolean { value: !value },
@@ -52,7 +52,7 @@ pub(super) fn negate_condition(condition: E) -> E {
 /// SymbolicMemory reads, arithmetic, ordinary calls, and ownership events stay excluded.
 /// Bound substitution growth rather than expanding a shared expression DAG
 /// exponentially. The fixed bound makes work linear in header size.
-pub(super) fn header_condition(
+fn header_condition(
     mir: &MirBody,
     headers: &[usize],
     condition: &E,
@@ -148,7 +148,7 @@ pub(super) struct While {
     /// The test's exit. Without a `break` it is `exit`; with one, it starts
     /// the straight blocks the test's exit runs to `exit`.
     pub after: usize,
-    pub body_on_true: bool,
+    pub condition: E,
     /// Whether some body edge leaves the loop other than through the test,
     /// as a `break` does.
     pub breaks: bool,
@@ -169,8 +169,6 @@ pub(super) struct Flow {
     /// than one arm; the paths through it are the executor's anyway.
     pub exit_tails: Vec<bool>,
     pub loops: BTreeMap<usize, While>,
-    pub scalar_names: BTreeSet<MirLocalId>,
-    pub metadata_names: BTreeSet<MirLocalId>,
 }
 impl Flow {
     pub fn analyze(function: &Function, mir: &MirBody) -> Result<Self, String> {
@@ -181,6 +179,27 @@ impl Flow {
             return Err("invalid MIR entry".into());
         }
         let mut stack = vec![(0, 0)];
+        let scalar_names = function
+            .parameters
+            .iter()
+            .chain(&mir.locals)
+            .filter(|p| p.value_type.is_scalar())
+            .map(|p| p.name.clone())
+            .collect();
+        let metadata_names = function
+            .parameters
+            .iter()
+            .chain(&mir.locals)
+            // A slice's length is fixed whatever its mutability, so a
+            // guard may read it from either.
+            .filter(|p| {
+                matches!(
+                    p.value_type,
+                    Type::ByteSlice { .. } | Type::ScalarSlice { .. }
+                )
+            })
+            .map(|p| p.name.clone())
+            .collect();
         let mut latches: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         colors[0] = 1;
         while let Some((block, next)) = stack.pop() {
@@ -434,6 +453,18 @@ impl Flow {
                     parents[block] = header;
                 }
             }
+            // Check the header before lowering MIR storage. An effectful guard
+            // can introduce unnamed locals that a supported header never needs.
+            let condition = if header_calls {
+                condition.clone()
+            } else {
+                header_condition(mir, &headers, condition, &scalar_names, &metadata_names)?
+            };
+            let condition = if body_on_true {
+                condition
+            } else {
+                negate_condition(condition)
+            };
             loops.insert(
                 header,
                 While {
@@ -442,7 +473,7 @@ impl Flow {
                     body,
                     exit: join,
                     after,
-                    body_on_true,
+                    condition,
                     breaks,
                     header_calls,
                     escapes,
@@ -488,27 +519,6 @@ impl Flow {
             joins,
             exit_tails,
             loops,
-            scalar_names: function
-                .parameters
-                .iter()
-                .chain(&mir.locals)
-                .filter(|p| p.value_type.is_scalar())
-                .map(|p| p.name.clone())
-                .collect(),
-            metadata_names: function
-                .parameters
-                .iter()
-                .chain(&mir.locals)
-                // A slice's length is fixed whatever its mutability, so a
-                // guard may read it from either.
-                .filter(|p| {
-                    matches!(
-                        p.value_type,
-                        Type::ByteSlice { .. } | Type::ScalarSlice { .. }
-                    )
-                })
-                .map(|p| p.name.clone())
-                .collect(),
         })
     }
 }

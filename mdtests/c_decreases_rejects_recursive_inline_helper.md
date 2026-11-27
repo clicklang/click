@@ -50,5 +50,5 @@ int32 drain(int32 n) {
 ```
 
 ```expect
-fail: could not certify termination for `drain`: callee `step_down` has no termination evidence: the recursive call to `step_down` is ranked by no function-level `decreases` measure
+fail: could not certify termination for `drain`: callee `"c_decreases_rejects_recursive_inline_helper.c"::step_down` has no termination evidence: the recursive call to `"c_decreases_rejects_recursive_inline_helper.c"::step_down` is ranked by no function-level `decreases` measure
 ```

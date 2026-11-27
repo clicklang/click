@@ -81,7 +81,10 @@ void inspect(struct node* parent) {
         maintain by {
             match tree_context.model {
                 Parent::At(pid, sm, fm) => {
-                    have parent == parent_identity(Parent::At(pid, sm, fm)) by { rewrite(Parent::At(pid, sm, fm), tree_context.model); close(); }
+                    have tree_context.model == Parent::At(pid, sm, fm);
+                    have parent == parent_identity(Parent::At(pid, sm, fm)) by {
+                        close() using { parent == parent_identity(tree_context.model); tree_context.model == Parent::At(pid, sm, fm); };
+                    }
                     have parent == pid by { unfold(parent_identity(Parent::At(pid, sm, fm))); close(); }
                     let { c: c, f: f } = unfold(tree_context);
             match c.model {

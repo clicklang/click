@@ -23509,8 +23509,8 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
     // bound premise. Reject a false comparison and a false public claim.
     for (before, after) in [
         (
-            "(8 - to_integer(x)) <= ((8 - to_integer(x)) + 4)",
-            "(8 - to_integer(x)) <= ((8 - to_integer(x)) - 4)",
+            "(8 - to_integer(x)) <= (8 - to_integer(x) + 4)",
+            "(8 - to_integer(x)) <= (8 - to_integer(x) - 4)",
         ),
         ("ensures result == 0;", "ensures result == 1;"),
     ] {

@@ -11018,7 +11018,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
         });
         let expanded = expanded.unwrap();
         planning.push(work);
-        assert_eq!(expanded.matches("all {").count(), 1);
+        assert_eq!(expanded.matches("have *q0 == 0 and").count(), 1);
         assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));

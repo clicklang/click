@@ -3844,6 +3844,17 @@ fn advance_prepared_execution_match<'a>(
         }
         let closed = close_refuted_arm(&scoped, last.source_index)?;
         closed.finish_execution_match_arm_exclusion(&mut plan, index, &entered, partition)?;
+        if last.source_index != owning_source_index
+            && let Some(site) = proof_site
+            && capture_selects_source(expansion_capture.as_deref(), site, last.source_index)
+        {
+            record_proof_site_tactic_expansion(
+                expansion_capture.as_deref_mut(),
+                site,
+                last.source_index,
+                &[ProofTactic::CloseUnreachable],
+            );
+        }
     }
     if plan.live_cases().is_empty() {
         return Err(ClickError::new(
