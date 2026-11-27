@@ -4931,6 +4931,13 @@ impl parser::ProgramLayouts {
                     receiver_constant(function),
                 ));
             }
+            if let Some(signature) = &function.cpp_source_signature {
+                tables.cpp_signatures.insert(
+                    signature,
+                    function.name(),
+                    receiver(function).is_none() && function.closure_captures().is_empty(),
+                );
+            }
             if let Some(path) = execution.overload_paths.get(function.name()) {
                 tables
                     .cpp_overloads

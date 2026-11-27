@@ -343,6 +343,7 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The C++ declarations that share a path, as overloads do, by the
     /// importer name of that path: a head there selects one by signature.
     pub(in crate::surface) cpp_overloads: BTreeMap<String, Vec<CppOverload>>,
+    pub(in crate::surface) cpp_signatures: cpp_syntax::DeclarationSignatures,
     /// The instances of each generic crate trait the import declares an
     /// interface of, by the trait's importer name.
     pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
@@ -1189,6 +1190,7 @@ struct Parser {
     rust_generic_instances: Vec<GenericInstance>,
     /// The C++ overloads by their shared path, as the layouts give them.
     cpp_overloads: BTreeMap<String, Vec<CppOverload>>,
+    cpp_signatures: cpp_syntax::DeclarationSignatures,
     /// The index of each `fn` token of a generic function's instance the
     /// parser wrote out: only these may name an instance.
     rust_written_instances: BTreeSet<usize>,
@@ -1969,6 +1971,7 @@ impl Parser {
         parser.closure_captures = layouts.closure_captures;
         parser.rust_generic_instances = layouts.rust_generic_instances;
         parser.cpp_overloads = layouts.cpp_overloads;
+        parser.cpp_signatures = layouts.cpp_signatures;
         // A generic function's instances are written out at their types.
         let mut function_instances = BTreeMap::<String, rust_generic_functions::Instances>::new();
         use rust_generic_functions::ImplKey;
@@ -2319,6 +2322,7 @@ impl Parser {
             rust_abstract_type_parameters: BTreeSet::new(),
             rust_generic_instances: Vec::new(),
             cpp_overloads: BTreeMap::new(),
+            cpp_signatures: Default::default(),
             rust_written_instances: BTreeSet::new(),
             cpp_generic_instances: BTreeMap::new(),
             rust_trait_implementations: Vec::new(),
@@ -10065,7 +10069,9 @@ impl Parser {
                 let arguments = if kind == crate::kernel::TerminationAtomKind::Callbacks {
                     Vec::new()
                 } else {
-                    vec![SyntaxTerm::Binding(self.expect_string("function name")?)]
+                    vec![SyntaxTerm::Binding(
+                        self.parse_termination_function_reference()?,
+                    )]
                 };
                 self.expect(Token::RParen)?;
                 return Ok(SyntaxProposition::PredicateCall { name, arguments });
@@ -12416,13 +12422,13 @@ impl Parser {
             "obtain" => return Err(self.error("write `let name = obtain(exists (k: Type) { P });` to name an existential witness")) ,
             "check_termination_local" => {
                 self.expect(Token::LParen)?;
-                let function = self.expect_string("function name")?;
+                let function = self.parse_termination_function_reference()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::CheckTerminationLocal(function)
             }
             "check_termination_component" => {
                 self.expect(Token::LParen)?;
-                let function = self.expect_string("function name")?;
+                let function = self.parse_termination_function_reference()?;
                 self.expect(Token::Comma)?;
                 let strict = match self.expect_ident("strict or normal")?.as_str() {
                     "strict" => true,
@@ -15960,6 +15966,17 @@ impl Parser {
                 source_pointer,
                 ProgramExpression::Load(Box::new(pointer)),
             ));
+        }
+        if self.verifies_cpp()
+            && self.peek() == Some(&Token::Amp)
+            && self.has_cpp_overloaded_address()
+        {
+            self.position += 1;
+            let (key, written) = self.parse_cpp_signature_reference(true)?;
+            return Ok(SyntaxTerm::CUnary {
+                operand: Box::new(SyntaxTerm::Binding(written)),
+                lowered: crate::kernel::program_expression::function_address(key),
+            });
         }
         if self.verifies_cpp()
             && self.peek() == Some(&Token::Amp)

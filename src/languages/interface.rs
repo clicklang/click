@@ -91,6 +91,7 @@ pub struct ImportedFunction {
     pub(super) cpp_overload_paths: Option<std::sync::Arc<BTreeMap<String, String>>>,
     /// The checked C++ declaration location, used to spell an exact overload.
     pub(crate) cpp_declaration_site: Option<std::sync::Arc<super::cpp::CppSpan>>,
+    pub(crate) cpp_source_signature: Option<std::sync::Arc<str>>,
     pub(super) enums: DeclarationMap<CEnumDefinition>,
     pub(super) unions: DeclarationMap<CUnionLayout>,
     pub(super) globals: DeclarationMap<CGlobal>,
@@ -858,6 +859,7 @@ impl ImportedFunction {
             prepared_record_layouts: std::sync::Arc::default(),
             cpp_overload_paths: None,
             cpp_declaration_site: None,
+            cpp_source_signature: None,
             enums: DeclarationMap::new(),
             unions: DeclarationMap::new(),
             globals: DeclarationMap::new(),
@@ -964,6 +966,7 @@ impl ImportedFunction {
         other.cpp_virtual = self.cpp_virtual;
         other.cpp_overload_paths = self.cpp_overload_paths.clone();
         other.cpp_declaration_site = self.cpp_declaration_site.clone();
+        other.cpp_source_signature = self.cpp_source_signature.clone();
         *self == other
     }
 

@@ -880,6 +880,7 @@ private:
                                                   : destructor_name(destructor))
                          : constructor_name(constructor);
     result["path"] = function_path(declaration);
+    result["parameter_type_spellings"] = parameter_type_spellings(declaration);
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
@@ -4824,6 +4825,19 @@ private:
     return segment;
   }
 
+  // Declaration spelling is separate from the width-based execution types.
+  // In particular, LP64 overloads on long and long long remain distinct.
+  llvm::json::Array parameter_type_spellings(const clang::FunctionDecl *declaration) {
+    clang::PrintingPolicy policy = context_.getPrintingPolicy();
+    policy.SuppressTagKeyword = true;
+    llvm::json::Array types;
+    for (const auto *parameter : declaration->parameters()) {
+      auto type = parameter->getType().getCanonicalType().getUnqualifiedType();
+      types.push_back(without_archetypes(type.getAsString(policy)));
+    }
+    return types;
+  }
+
   // Template arguments as Clang prints them against their parameters,
   // `<long long, true>`: a trailing argument equal to its default is left
   // out and an integer is printed without a suffix, so `std::span<int>` and
@@ -7061,6 +7075,7 @@ private:
                                                   : destructor_name(destructor))
                          : constructor_name(constructor);
     result["path"] = function_path(declaration);
+    result["parameter_type_spellings"] = parameter_type_spellings(declaration);
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);

@@ -7783,6 +7783,7 @@ fn describe_contract_expression_grouping_casts(
         SyntaxTerm::CUnary { operand, lowered } => {
             let operand = describe_contract_expression(operand);
             match lowered {
+                ProgramExpression::FunctionAddress(_) => format!("&{operand}"),
                 ProgramExpression::Cast {
                     target_type: ProgramType::VoidPointer,
                     integer_mode: crate::kernel::IntegerCastMode::PointerCoercion,
