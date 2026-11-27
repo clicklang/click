@@ -2720,6 +2720,9 @@ impl Renderer<'_> {
             crate::kernel::AddressBase::Load(load) => {
                 self.fmt(format_args!("loaded-pointer#{}", load.id()))
             }
+            crate::kernel::AddressBase::SliceData(load) => {
+                self.fmt(format_args!("loaded-slice-data#{}", load.id()))
+            }
             crate::kernel::AddressBase::StringLiteral { identity, .. } => {
                 self.push(&identity.to_string())
             }

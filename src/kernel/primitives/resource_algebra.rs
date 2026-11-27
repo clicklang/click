@@ -187,6 +187,7 @@ pub(in crate::kernel) fn memory_block_may_alias(block: &AddressBase) -> bool {
             | AddressBase::Symbolic(_)
             | AddressBase::FunctionSymbolic(_)
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
     )
 }
 
@@ -5589,7 +5590,7 @@ impl ResourceContext {
                 // A loaded pointer's displacement is all of its offset: the
                 // read itself, at displacement zero, is the object's base.
                 OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. }
-                    if matches!(base.base, AddressBase::Load(_)) =>
+                    if matches!(base.base, AddressBase::Load(_) | AddressBase::SliceData(_)) =>
                 {
                     AddressOffset::constant(0)
                 }

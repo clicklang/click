@@ -3006,7 +3006,7 @@ fn store_member_probe_bases(pointer: &Address, assumptions: &PureFactContext) ->
             // A loaded pointer's displacement is all of its offset: the
             // read itself, at displacement zero, is the object's base.
             OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. }
-                if matches!(base.base, AddressBase::Load(_)) =>
+                if matches!(base.base, AddressBase::Load(_) | AddressBase::SliceData(_)) =>
             {
                 AddressOffset::constant(0)
             }
@@ -6940,9 +6940,11 @@ fn transport_framed_atomic_pointer_value(
             }
             transport_framed_atomic_pointer(pointer, after, assumptions)
         },
-        // A wide pointer's count has no frame transport yet (step 2b-ii-b of
-        // `design/rust-slice-values.md`): the transport refuses it.
-        |_| None,
+        // A wide pointer's count is a numeric child, transported as the
+        // loads in an offset are: a count read across the same checked frame
+        // (`design/rust-slice-values.md`, step 2b-ii-b). A slice read's data
+        // pointer keeps its load, as a pointer read's base does.
+        |count| transport_framed_atomic_bitvector(count, after, assumptions),
     )
 }
 
@@ -9523,6 +9525,33 @@ mod common_boolean_transport_tests {
             .unwrap();
             assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
         }
+    }
+
+    /// A wide pointer's count transports as a numeric child: an equality of
+    /// two slices crosses a frame that leaves their counts unchanged, where
+    /// it was refused before (`design/rust-slice-values.md`, step 2b-ii-b).
+    #[test]
+    fn framed_transport_carries_a_slice_count() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let wide = |pointer, count| {
+            Pointer::new(
+                Address::symbolic(Variable(pointer)),
+                ProgramType::UInt8Pointer,
+            )
+            .with_element_count(OldMachineTerm::Variable(Variable(count)))
+        };
+        let source = OldConditionTerm::PointerEqual(
+            Box::new(wide(972_010, 972_011)),
+            Box::new(wide(972_012, 972_013)),
+        );
+        assert_eq!(
+            transport_framed_atomic_condition(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
+                None
+            ),
+            Some(source)
+        );
     }
 
     #[test]

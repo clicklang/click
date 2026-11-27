@@ -6604,6 +6604,13 @@ fn synthesize_surface_bitvector(
             }))
         }
         OldMachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
+            // A slice's count raises as `s.len()` with 2b-iii's Surface slice
+            // type, never as a typed read of one of the cell's words.
+            assert!(
+                *kind != crate::kernel::LoadKind::SliceCount,
+                "internal error: raising a slice's count to Surface has no form yet \
+                 (design/rust-slice-values.md, step 2b-iii)"
+            );
             if memory.read_version_id().is_some() {
                 let value_type = load_kind_value_type(*kind)?;
                 return synthesize_point_read(

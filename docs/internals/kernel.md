@@ -1368,8 +1368,15 @@ one of its words (a thin pointer, an integer, a byte, or the cell at another
 slice type) is a `LoadTypeMismatch`, since the kernel states no layout for the
 words. No `LoadKind` reads a stored slice and no pointer decoding answers with
 one, so read-over-write and complete-pointer recovery never hand a slice to a
-thin read. A logical read of a slice cell names its version and, with no
-symbolic slice read yet, refuses (`design/rust-slice-values.md`, step 2b-ii).
+thin read. A symbolic read of a slice cell (a logical read, or a read of an
+unknown cell) is `Pointer::slice_read`: its data pointer is based on
+`AddressBase::SliceData(load)` and its count is the read
+`MemoryLoad(point, cell, LoadKind::SliceCount)`, both named by the cell's one
+`Load`, and neither is a read of either word. The read-over-write authority
+`stored_slice_of_load` (the version point's indexed slice store, else the
+memoized version walk) resolves the whole read, its data pointer and its
+count to the stored slice's, and frame transport carries a count as a numeric
+child (`design/rust-slice-values.md`, step 2b-ii).
 
 ## Symbolic execution
 

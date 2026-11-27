@@ -850,6 +850,7 @@ impl EqualityGraph {
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
         let mut stored_values = Vec::new();
+        let mut stored_slices = Vec::new();
         let mut read_domains = Vec::new();
         while let Some(value) = pending.pop() {
             let direct_read = value.as_loaded_value();
@@ -901,6 +902,30 @@ impl EqualityGraph {
                         pending.push(stored.address().clone());
                         definitions.push((read.clone(), stored.address().clone()));
                         stored_values.push((read, stored));
+                    }
+                }
+            }
+            // A slice read equals the slice its state stores in the whole
+            // cell, data pointer and count (`design/rust-slice-values.md`,
+            // step 2b-ii-b): the same producer metadata, one indexed lookup.
+            if self.resolve_stored_values
+                && let AddressBase::SliceData(load) = &value.base
+            {
+                let read = value.with_offset(AddressOffset::constant(0));
+                if !state.logical_values.contains(&read) {
+                    state.logical_values = state.logical_values.with_value(read.clone());
+                    drop(reads);
+                    let stored = crate::kernel::eval::stored_slice_of_load(load);
+                    reads = self.logical_reads.lock().expect("logical pointer reads");
+                    if let Some(stored) = stored {
+                        let slice = Pointer::slice_read(
+                            load.point().clone(),
+                            load.cell(),
+                            stored.program_type(),
+                        );
+                        pending.push(stored.address().clone());
+                        definitions.push((read, stored.address().clone()));
+                        stored_slices.push((slice, stored));
                     }
                 }
             }
@@ -999,6 +1024,9 @@ impl EqualityGraph {
             state
                 .terms
                 .add_pointer_equality(&Pointer::new(read, stored.program_type()), &stored);
+        }
+        for (read, stored) in stored_slices {
+            state.terms.add_pointer_equality(&read, &stored);
         }
         state.close(definitions);
     }

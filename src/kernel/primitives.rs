@@ -808,6 +808,12 @@ pub enum LoadKind {
     UInt128,
     Float32,
     Float64,
+    /// The element count of the slice a read of a slice cell decodes to
+    /// (`design/rust-slice-values.md`, step 2b-ii-b): the cell's metadata,
+    /// a `u64`, read from the whole 16-byte cell. The kernel states no
+    /// layout for the cell's words, so this is no integer read of either
+    /// word, and no integer read of the cell is this read.
+    SliceCount,
 }
 
 impl LoadKind {
@@ -900,6 +906,11 @@ impl LoadKind {
             return Some(value.clone());
         }
         match self {
+            // A slice read's count is the stored slice's count.
+            Self::SliceCount => match value {
+                ProgramValue::Pointer(stored) => stored.len().cloned().map(ProgramValue::UInt64),
+                _ => None,
+            },
             Self::Int8 => ProgramType::Int8.read_cell(value),
             Self::UInt8 => ProgramType::UInt8.read_cell(value),
             Self::Int16 => ProgramType::Int16.read_cell(value),
@@ -922,6 +933,8 @@ impl LoadKind {
     pub(crate) fn unrecorded_access_byte_width(self) -> u32 {
         if self.is_word32() {
             crate::kernel::C_POINTER_BYTE_WIDTH
+        } else if self == Self::SliceCount {
+            crate::kernel::WIDE_POINTER_BYTE_WIDTH
         } else {
             self.byte_width()
         }
@@ -933,7 +946,7 @@ impl LoadKind {
             Self::Int8 | Self::UInt8 => 1,
             Self::Int16 | Self::UInt16 => 2,
             Self::Int32 | Self::UInt32 | Self::Float32 => 4,
-            Self::Bits64 | Self::Float64 => 8,
+            Self::Bits64 | Self::Float64 | Self::SliceCount => 8,
             Self::Int128 | Self::UInt128 => 16,
             // A cell holding a value of algebraic type keeps the model width;
             // the bytes the read reaches are its extent.
@@ -948,6 +961,10 @@ impl LoadKind {
             // `AccessExtent::of_algebraic` of the read's type.
             Self::Algebraic(parameter) => {
                 crate::kernel::AccessExtent::of_type(ProgramType::Parameter(parameter))
+            }
+            // A count reads the slice's whole cell, never one word of it.
+            Self::SliceCount => {
+                crate::kernel::AccessExtent::Bytes(crate::kernel::WIDE_POINTER_BYTE_WIDTH)
             }
             other => crate::kernel::AccessExtent::Bytes(other.byte_width()),
         }
@@ -2660,6 +2677,49 @@ impl Pointer {
         Self::from_read_at(pointer, program_type, memory, None, cell)
     }
 
+    /// The slice a read of the slice cell `cell` at `point` decodes to
+    /// (`design/rust-slice-values.md`, step 2b-ii-b): a wide pointer of
+    /// `slice_type` whose data pointer ([`AddressBase::SliceData`]) and count
+    /// ([`LoadKind::SliceCount`]) are both named by the one load of the cell.
+    /// Neither is a read of one of the cell's words, which the kernel relates
+    /// to them only by a layout fact it does not state. Two reads of one
+    /// load are one slice.
+    pub(in crate::kernel) fn slice_read(
+        point: ProgramPoint,
+        cell: &Address,
+        slice_type: ProgramType,
+    ) -> Self {
+        let ProgramType::SlicePointer(element) = slice_type else {
+            panic!("internal error: a slice read at the thin type `{slice_type:?}`");
+        };
+        let count = OldMachineTerm::read_named(point, cell.clone(), LoadKind::SliceCount);
+        let OldMachineTerm::MemoryLoad(_, read, _) = &count else {
+            unreachable!("a named read is a memory load");
+        };
+        let data = Address::new(read.load().slice_data_base(), AddressOffset::constant(0));
+        Self::new(data, element.thin_pointer_type())
+            .with_element_count(count)
+            .with_type(slice_type)
+    }
+
+    /// The load a slice read names ([`Self::slice_read`]), when this is one:
+    /// the whole read, its data pointer undisplaced and its count the same
+    /// load's. A slice built from parts of reads is not one.
+    pub(in crate::kernel) fn slice_read_load(&self) -> Option<&Load> {
+        let AddressBase::SliceData(load) = &self.address().base else {
+            return None;
+        };
+        if !matches!(self.address().offset.view(), OffsetView::Constant(0)) {
+            return None;
+        }
+        let OldMachineTerm::MemoryLoad(_, read, LoadKind::SliceCount) = self.len()? else {
+            return None;
+        };
+        (read.load() == load
+            && *self == Self::slice_read(load.point().clone(), load.cell(), self.program_type()))
+        .then_some(load)
+    }
+
     /// [`Self::from_read`] of a read made at `site`, when the caller has one:
     /// the domain's origin records it as its read site
     /// (`Address::loaded_value_read_at`). The value is the same.
@@ -3024,6 +3084,13 @@ pub enum AddressBase {
     /// storage block that held it and of the type that decodes it
     /// (`design/loads.md`). Built only by [`Load::base`].
     Load(Load),
+    /// The data pointer of the slice a slice-typed load decodes to
+    /// (`design/rust-slice-values.md`, step 2b-ii-b): the thin part of a
+    /// read of a 16-byte slice cell. It is its own read, never the pointer
+    /// read of the cell's first word ([`Self::Load`]), which the kernel would
+    /// equate with it only by a layout fact it does not state. Built only by
+    /// [`Load::slice_data_base`].
+    SliceData(Load),
     /// An opaque pointer-valued pure call. This is not an allocation identity
     /// and grants neither distinctness nor memory access.
     PureFunctionApplication(SharedPureApplication),
@@ -3131,6 +3198,10 @@ impl std::hash::Hash for AddressBase {
             }
             Self::Load(load) => {
                 9u64.hash(state);
+                load.hash(state);
+            }
+            Self::SliceData(load) => {
+                18u64.hash(state);
                 load.hash(state);
             }
             Self::Heap(identity) => {
@@ -3263,6 +3334,7 @@ impl AddressBase {
             | Self::ExternalObject(_)
             | Self::Symbolic(_)
             | Self::Load(_)
+            | Self::SliceData(_)
             | Self::PureFunctionApplication(_)
             | Self::Heap(_)
             | Self::Temporary(_) => None,
@@ -3505,6 +3577,7 @@ impl std::fmt::Display for AddressBase {
             Self::ExternalObject(variable) => write!(formatter, "arg-object:{}", variable.0),
             Self::Symbolic(variable) => write!(formatter, "symbolic-pointer:{}", variable.0),
             Self::Load(load) => write!(formatter, "loaded-pointer:{}", load.id()),
+            Self::SliceData(load) => write!(formatter, "loaded-slice-data:{}", load.id()),
             Self::Heap(identity) => write!(formatter, "heap-allocation:{identity}"),
             Self::Temporary(identity) => write!(formatter, "temporary:{identity}"),
         }

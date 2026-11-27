@@ -1,10 +1,11 @@
 # Rust slices as wide pointers
 
 Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
-2a, 2b-i and 2b-ii-a of the [plan](#plan) are done: the kernel has the
-wide pointer and its slice pointer type, every kernel consumer reads or
-refuses its count, and a slice is stored and read back as one memory
-cell, but no front end produces a wide pointer yet.
+2a, 2b-i, 2b-ii-a and 2b-ii-b of the [plan](#plan) are done: the kernel
+has the wide pointer and its slice pointer type, every kernel consumer
+reads or refuses its count, a slice is stored and read back as one memory
+cell, and a symbolic read of a slice cell names its data pointer and count,
+but no front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -514,22 +515,44 @@ construct.
      yet, it refuses rather than lowering to the stored slice. Tests:
      `kernel::tests::slice_cell_tests`; scaling test
      `slice_cell_store_and_read_ignore_unrelated_cells`.
-   - **2b-ii-b. Symbolic slice reads.** Symbolic loads of a slice type
-     (`symbolic_load_value_unrecorded`, today `None`), so that logical
-     reads and reads of unknown cells name the read; the thin part and the
-     count of a loaded slice as named load terms, each its own read
-     identity, so that a slice read never equals a thin or integer read of
-     the cell's words without a layout fact (today a pointer read is named
-     by its point and address alone, `Address::loaded`, so this needs a
-     slice read kind beside it); read-over-write of a stored slice
-     (`pointer_read_over_write_decoded_value` at a slice decoding, the
-     logical read equation and `comparison_form_uncached`, which skips a
-     slice today); `register_logical_read_values` over a loaded count;
-     and frame transport of the count
-     (`transport_framed_atomic_pointer_value`, which refuses it with
-     `|_| None`). The count's Surface form, `(*p).len()`, is spelled by
-     2b-iii's `.len()` lowering; until then raising it refuses with an
-     internal error, as raising a wide pointer does.
+   - **2b-ii-b. Symbolic slice reads.** Done. A symbolic read of a
+     slice cell (`symbolic_load_value_unrecorded`, and the slice branch of
+     `canonicalized_retained_symbolic_load_value_with_identity`) is the
+     slice its load decodes to, `Pointer::slice_read`: its data pointer is
+     `AddressBase::SliceData(load)` and its count the read
+     `MemoryLoad(point, cell, LoadKind::SliceCount)`, both named by the one
+     `Load` of the cell. Neither is a thin pointer read (`AddressBase::Load`)
+     or an integer read of either word, so no slice read equals a word read
+     without a layout fact. The count is a `u64` read whose extent is the
+     whole 16-byte cell. A logical read of a slice cell and a read of an
+     unknown one name the read; the 2b-ii-a refusal is gone. Read-over-write
+     is one authority, `stored_slice_of_load`: the store the load's version
+     point indexes (`ProgramPoint::indexed_slice_version`), else the
+     memoized version walk the pointer authority takes. The whole read
+     (`slice_read_over_write_value`), its data pointer
+     (`pointer_read_over_write_decoded_value`, so `stored_pointer_address`
+     and the `AddressEqual` comparison form follow) and its count
+     (`read_over_write_value`, through `LoadKind::read_cell`) resolve to the
+     stored slice's; `comparison_form_uncached` resolves a slice side,
+     including one whose count the scalar batch already replaced, and folds
+     two equal slices. A read of a stored slice carries the read equation.
+     `register_logical_read_values` joins a slice read with the stored
+     slice, data pointer and count (`add_pointer_equality`). Frame transport
+     carries a count as a numeric child
+     (`transport_framed_atomic_bitvector`), as it carries the loads of an
+     offset; a slice read's data pointer keeps its load, as a pointer read's
+     base does. The opaque-block consumers that group `AddressBase::Load`
+     (may-alias, symbolic-block, unresolved-pointer, carrier and resource-read
+     sets) include `SliceData`. Raising a count refuses with an internal
+     error until 2b-iii, as raising a wide pointer does. Tests:
+     `kernel::tests::slice_cell_tests` (the 2b-ii-b cases),
+     `memory_history::tests::framed_transport_carries_a_slice_count`;
+     scaling tests `symbolic_slice_reads_ignore_unrelated_cells` and
+     `unknown_slice_cell_reads_stay_flat_as_reads_grow`. Not done here: a
+     cell that holds its own slice read (a materialization) reads as the
+     stored slice through the read equation, not as that read; and the
+     state-aware alpha key of a slice read's data pointer is its load's
+     identity alone, so two reads at alpha-equivalent states key apart.
    - **2b-iii. Surface type and raising.** An interface type for slice
      pointers; the library's `Slice<T>` becomes the built-in type and
      `slice::len`, `slice::as_ptr`, `slice::from_raw_parts` its components

@@ -1138,6 +1138,8 @@ enum AlphaAddressBaseKey {
     ExternalObject(AlphaVariableKey),
     Symbolic(AlphaVariableKey),
     Load(crate::kernel::Load),
+    /// A slice read's data pointer, keyed by its load.
+    SliceData(crate::kernel::Load),
     /// A pointer loaded from memory is its own block, named by the load
     /// variable; like a load at an offset position, it is keyed by the
     /// state and address it reads, so a binder inside that address
@@ -2373,6 +2375,7 @@ fn alpha_address_base_key<const ALLOW_LOADS: bool>(
             alpha_pointer_load_with_bindings::<ALLOW_LOADS>(load, bindings, next_binder)?,
         ),
         AddressBase::Load(load) => AlphaAddressBaseKey::Load(load.clone()),
+        AddressBase::SliceData(load) => AlphaAddressBaseKey::SliceData(load.clone()),
         AddressBase::Heap(identity) => AlphaAddressBaseKey::Heap(*identity),
         AddressBase::Temporary(identity) => AlphaAddressBaseKey::Temporary(*identity),
     })

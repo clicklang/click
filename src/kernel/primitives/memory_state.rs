@@ -107,6 +107,9 @@ fn write_havoc_block(identity: &mut String, block: AddressBase) {
         AddressBase::Load(load) => {
             let _ = write!(identity, "blp{};", load.id());
         }
+        AddressBase::SliceData(load) => {
+            let _ = write!(identity, "bls{};", load.id());
+        }
         AddressBase::Heap(value) => {
             let _ = write!(identity, "bh{value};");
         }

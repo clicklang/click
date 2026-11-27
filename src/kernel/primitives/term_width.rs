@@ -56,7 +56,10 @@ impl CarrierWidth {
             LoadKind::Int8 | LoadKind::UInt8 => Self::Bits8,
             LoadKind::Int16 | LoadKind::UInt16 => Self::Bits16,
             LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => Self::Bits32,
-            LoadKind::Bits64 | LoadKind::Algebraic(_) | LoadKind::Float64 => Self::Bits64,
+            LoadKind::Bits64
+            | LoadKind::Algebraic(_)
+            | LoadKind::Float64
+            | LoadKind::SliceCount => Self::Bits64,
             LoadKind::Int128 | LoadKind::UInt128 => Self::Bits128,
         }
     }

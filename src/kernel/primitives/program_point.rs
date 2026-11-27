@@ -2308,6 +2308,17 @@ impl ProgramPoint {
         })
     }
 
+    /// The version a slice load names at this point when a recorded store
+    /// wrote a slice to exactly its 16-byte cell
+    /// (`design/rust-slice-values.md`, step 2b-ii-b). A store into either
+    /// word ends the version by `indexed_version`'s extent check.
+    pub(crate) fn indexed_slice_version(&self, pointer: &Address) -> Option<Self> {
+        self.indexed_version(pointer, super::WIDE_POINTER_BYTE_WIDTH, |store| {
+            matches!(store, MemoryDerivation::Store { value, .. }
+                if value.program_type().is_slice_pointer())
+        })
+    }
+
     pub(super) fn abstract_local_version(
         &self,
         pointer: &Address,

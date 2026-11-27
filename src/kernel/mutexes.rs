@@ -258,6 +258,7 @@ impl ProvenanceKind {
             AddressBase::ExternalArgument | AddressBase::ExternalObject(_) => Self::External,
             AddressBase::Symbolic(_)
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
             | AddressBase::PureFunctionApplication(_) => Self::Symbolic,
             AddressBase::Function(_)
             | AddressBase::FunctionSymbolic(_)
@@ -983,6 +984,7 @@ fn may_alias_automatic_storage(block: &super::AddressBase) -> bool {
         AddressBase::Symbolic(_)
         | AddressBase::PureFunctionApplication(_)
         | AddressBase::Load(_)
+        | AddressBase::SliceData(_)
         | AddressBase::FunctionSymbolic(_)
         | AddressBase::Function(_)
         | AddressBase::StringLiteral { .. } => true,

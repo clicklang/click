@@ -1687,6 +1687,17 @@ fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>
             ProgramPoint::viewing(load.point().shared_memory(), load.point()),
         );
     }
+    // A slice read's data pointer reads the slice's whole cell.
+    if let AddressBase::SliceData(load) = block {
+        push_read(
+            reads,
+            OwnedResource::Cell {
+                pointer: load.cell().clone(),
+                bytes: crate::kernel::AccessExtent::from(crate::kernel::WIDE_POINTER_BYTE_WIDTH),
+            },
+            ProgramPoint::viewing(load.point().shared_memory(), load.point()),
+        );
+    }
 }
 
 fn collect_shared_offset_reads(

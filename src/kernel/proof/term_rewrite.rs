@@ -967,7 +967,9 @@ fn collect_address_base_carriers(block: &AddressBase, variables: &mut CarrierVar
         }
         // A loaded pointer carries whatever its defining read's address
         // carries, as a registered load variable's offset does.
-        AddressBase::Load(load) if variables.pointer_loads.insert(load.clone()) => {
+        AddressBase::Load(load) | AddressBase::SliceData(load)
+            if variables.pointer_loads.insert(load.clone()) =>
+        {
             collect_pointer_carriers(load.cell(), variables);
         }
         _ => {}

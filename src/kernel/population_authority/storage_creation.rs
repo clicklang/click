@@ -246,7 +246,9 @@ enum StorageEvent {
 pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::Address) -> bool {
     match &anchor.base {
         AddressBase::ExternalArgument => true,
-        AddressBase::Load(load) => load.cell().base == AddressBase::ExternalArgument,
+        AddressBase::Load(load) | AddressBase::SliceData(load) => {
+            load.cell().base == AddressBase::ExternalArgument
+        }
         _ => false,
     }
 }

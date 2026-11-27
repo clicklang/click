@@ -142,6 +142,13 @@ impl Load {
         AddressBase::Load(self.clone())
     }
 
+    /// This load as the base of the data pointer of the slice it decodes to,
+    /// for a load of a slice cell (`design/rust-slice-values.md`, step
+    /// 2b-ii-b). The one builder of [`AddressBase::SliceData`].
+    pub(crate) fn slice_data_base(&self) -> AddressBase {
+        AddressBase::SliceData(self.clone())
+    }
+
     /// The pointer address this load holds, undisplaced.
     pub(crate) fn address(&self) -> Address {
         Address::new(self.base(), AddressOffset::constant(0))

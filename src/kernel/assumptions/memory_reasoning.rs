@@ -2401,7 +2401,7 @@ impl PureFactContext {
         for base in additive_base_spellings(pointer) {
             crate::instrumentation::record_deterministic_work(1);
             keys.push(base.clone());
-            let opaque = matches!(&base.base, AddressBase::Load(_))
+            let opaque = matches!(&base.base, AddressBase::Load(_) | AddressBase::SliceData(_))
                 || matches!(&base.base, AddressBase::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable));
             if !opaque {
