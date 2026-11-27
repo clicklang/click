@@ -2633,6 +2633,40 @@ fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
 }
 
 #[test]
+fn selected_rewrite_preserves_the_shared_side_of_a_fold_equality() {
+    let source = r#"
+function sum(bytes: uint8[], n: int32) -> Integer {
+    (0..n).fold(0, |acc, k| { acc + to_integer(bytes[k] as int32) })
+}
+theorem append_one(bytes: uint8[], n: int32, m: int32) {
+    requires 0 <= n;
+    requires n <= 2147483646;
+    requires 0 <= m;
+    requires to_integer(m) == to_integer(n);
+    requires sum(bytes, n + 1) == sum(bytes, m) + to_integer(bytes[m] as int32);
+    ensures sum(bytes, n + 1) == sum(bytes, n) + to_integer(bytes[n] as int32) by {
+        close() using {
+            sum(bytes, n + 1) == sum(bytes, m) + to_integer(bytes[m] as int32);
+            to_integer(m) == to_integer(n);
+        };
+    }
+}
+"#;
+    let claim = "append_one.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &[], claim).unwrap();
+    assert!(expanded.contains("have (sum("), "{expanded}");
+    assert!(expanded.contains("rewrite(to_integer("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    let without_cited_index = source.replace("            to_integer(m) == to_integer(n);\n", "");
+    assert_ne!(without_cited_index, source);
+    assert!(verify_c_sources(&without_cited_index, &[]).is_err());
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
@@ -25277,6 +25311,29 @@ fn replacement_with_children_preserves_pointer_values_across_stores() {
     );
     assert_ne!(source, wrong_identity);
     assert!(verify_c_sources(&wrong_identity, &sources).is_err());
+}
+
+#[test]
+fn grouped_rewrites_keep_the_checked_arithmetic_certificate() {
+    let sources = [("id.c", "int32 id(int32 x) { return x; }")];
+    let source = r#"
+verifying "id.c";
+int32 id(int32 x) {
+    ensures to_integer(result) + to_integer(x) == 2 * to_integer(x);
+    ensures result == x;
+} by {
+    step_until(function.exit);
+    rewrite(result, x);
+    close();
+}
+"#;
+    let claim = "id.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim).unwrap();
+    assert!(expanded.contains("integer::multiply_add("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]

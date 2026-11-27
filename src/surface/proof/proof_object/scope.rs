@@ -471,6 +471,19 @@ impl<'a> ProofScope<'a> {
         self.join_inner()
     }
 
+    /// Retain a completed search descendant of this proposition scope.
+    pub(in crate::surface::proof) fn join_with_completed_body(
+        mut self,
+        body: Proof<'a>,
+    ) -> Result<Proof<'a>, ClickError> {
+        if !matches!(self.structure.as_ref(), ProofScopeStructure::Have { .. }) {
+            return Err(self.root.step_error("expected a proposition scope"));
+        }
+        body.certificate_since(&self.body.checkpoint())?;
+        self.body = body;
+        self.join()
+    }
+
     /// The enclosing-frontier bookkeeping of a checked execution `have`:
     /// lowering and certificate fact recording.
     fn carry_have_into_frontier(
