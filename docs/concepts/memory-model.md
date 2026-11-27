@@ -176,9 +176,9 @@ finite set of ranges lists, so its step records the consumed and borrowed
 inputs as a bound: every write lies inside their footprint. That bound is a
 fact about the step, so it belongs to the history, not to the resource
 context, even though answering a question about it consults the resource
-context for what `list(child)` covers. (The kernel still carries it on the
-call's `MemoryEffectSummary` fact, as `resource_effect_bound`; it is moving
-to the call's `CallHavoc` step.) This is how a later
+context for what `list(child)` covers. The kernel records it on the call's
+`CallHavoc` step, and a region's footprint reads it from the steps between
+the region's two points. This is how a later
 `preserve(memory(*slot), statement(0))` carries a separate cell across such a
 call (`mdtests/a_call_that_consumes_a_recursive_resource_bounds_its_footprint_by_it.md`).
 

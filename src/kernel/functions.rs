@@ -3770,12 +3770,21 @@ fn execute_verified_function_applications_with_suspension(
                 &effective_assumptions,
             )
             .with_caller_before_transfer(caller_state.resources());
-            entry_state.memory.clone().with_call_memory_havoc_with_copy(
+            // A call whose writes its consumed and borrowed inputs bound
+            // records that bound on its step, unless mutex storage or a
+            // construction also writes outside them.
+            let resource_bound = (mutex_storage_effects.is_empty()
+                && interface.aggregate_return_mode() != AggregateReturnMode::Construction
+                && interface.construction_parameter().is_none())
+            .then(|| transfer.resource_effect_bound.clone().map(Arc::new))
+            .flatten();
+            entry_state.memory.clone().with_bounded_call_memory_havoc(
                 memory_identity,
                 &transfer.memory_effects,
                 &effective_assumptions,
                 Some(&kept),
                 copy_initialization.as_ref(),
+                resource_bound,
             )
         };
         let mut exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
@@ -3878,13 +3887,6 @@ fn execute_verified_function_applications_with_suspension(
         }
         // Construction initialization is part of this checked call effect,
         // so its endpoint must include the initialized value fields.
-        // The call's effect summary is built once its effect point exists;
-        // whether it also bounds the call's resource effects is decided here.
-        let summary_effect_bound = (mutex_storage_effects.is_empty()
-            && interface.aggregate_return_mode() != AggregateReturnMode::Construction
-            && interface.construction_parameter().is_none())
-        .then(|| transfer.resource_effect_bound.clone().map(Arc::new))
-        .flatten();
         // Protocol effects remain in the caller scope. The ordinary summary
         // partition below is recovered before this checked successor is
         // published, so no call-local hold can escape or be discarded.
@@ -4010,7 +4012,7 @@ fn execute_verified_function_applications_with_suspension(
         // The call's writes, its own and its mutex protocol steps', bound
         // between its entry and its effect point: one summary for the region.
         if !worker_effects.is_empty() {
-            let mut effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
+            let effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                 before: entry_state.memory.clone(),
                 before_point: entry_state.path_link().clone(),
                 after: post_state.memory.clone(),
@@ -4018,7 +4020,6 @@ fn execute_verified_function_applications_with_suspension(
                 mutable_ranges: worker_effects.clone(),
             })
             .into_certified();
-            effect.resource_effect_bound = summary_effect_bound;
             facts.push(effect);
         }
         // A `produces` binder owns nothing at entry: the call creates the

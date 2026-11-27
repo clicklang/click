@@ -265,6 +265,10 @@ impl PartialEq for PointReadWrite {
 #[derive(Debug)]
 pub(super) struct PointNode {
     id: ProgramPointId,
+    /// The number of points before this one on its longest path from the
+    /// path's start: one more than its deepest predecessor. A walk back
+    /// toward an ancestor stops once it reaches the ancestor's depth.
+    depth: u32,
     function_entry: bool,
     /// Whether this is a contract call's effect point
     /// ([`PointTransition::CallEffect`]).
@@ -713,6 +717,16 @@ enum IndexedView {
     Unverified,
 }
 
+/// One more than the deepest of `predecessors`, or zero at a path's start.
+fn path_depth(predecessors: &[PathLink]) -> u32 {
+    predecessors
+        .iter()
+        .filter_map(|link| link.0.as_ref())
+        .map(|node| node.depth + 1)
+        .max()
+        .unwrap_or(0)
+}
+
 impl PathLink {
     /// Visits every recorded step on the path from `from` to this point,
     /// newest first, until `visit` returns false: the memory history between
@@ -725,6 +739,7 @@ impl PathLink {
         mut visit: impl FnMut(&MemoryDerivation) -> bool,
     ) -> Option<bool> {
         let target = from.id()?;
+        let target_depth = from.0.as_ref()?.depth;
         let mut link = self;
         loop {
             crate::instrumentation::record_deterministic_work(1);
@@ -732,17 +747,29 @@ impl PathLink {
                 return Some(true);
             }
             let node = link.0.as_ref()?;
+            // An ancestor is never as deep as its descendant: past its depth
+            // the walk cannot meet it.
+            if node.depth <= target_depth {
+                return None;
+            }
+            let [predecessor] = node.predecessors.as_ref() else {
+                return None;
+            };
+            // The steps from the predecessor to this point: a log can carry
+            // older steps before them, which end where the predecessor's
+            // memory begins.
+            let start = predecessor.0.as_ref().map(|node| node.memory.arena_id());
             let mut steps = node.steps.as_deref();
             while let Some(log) = steps {
                 crate::instrumentation::record_deterministic_work(1);
                 if !visit(&log.step) {
                     return Some(false);
                 }
+                if Some(log.step.base().arena_id()) == start {
+                    break;
+                }
                 steps = log.previous.as_deref();
             }
-            let [predecessor] = node.predecessors.as_ref() else {
-                return None;
-            };
             link = predecessor;
         }
     }
@@ -905,6 +932,7 @@ impl PathLink {
         Self(
             Some(Arc::new_cyclic(|joined| PointNode {
                 id,
+                depth: path_depth(&predecessors),
                 function_entry: false,
                 call_effect: false,
                 memory,
@@ -963,6 +991,7 @@ impl PathLink {
             );
             PointNode {
                 id,
+                depth: path_depth(&predecessors),
                 function_entry: transition == PointTransition::FunctionEntry,
                 call_effect: transition == PointTransition::CallEffect,
                 memory,
