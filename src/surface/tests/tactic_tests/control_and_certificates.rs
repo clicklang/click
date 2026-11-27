@@ -834,7 +834,7 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
                 proposition: nonnegative.clone(),
                 proof: SourceProof::Script(vec![ProofTactic::Known]),
             })],
-            else_tactics: vec![ProofTactic::Normalize],
+            else_tactics: vec![ProofTactic::Known],
         }),
     ];
     let certificate = ProofCertificate::from_proof_tactics(&tactics)

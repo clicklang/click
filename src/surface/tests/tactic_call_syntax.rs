@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn smart_proof_calls_have_identical_meaning_with_optional_braces() {
-    for tactic in ["close", "normalize"] {
-        let call = format!("by {tactic}();");
-        let block = format!("by {{ {tactic}(); }}");
+    for tactic in ["close()", "close() using { x == 7; }"] {
+        let call = format!("by {tactic};");
+        let block = format!("by {{ {tactic}; }}");
         let source = |proof: &str| {
             format!(
                 "verifying \"identity.c\"; int32 identity(int32 x) {{ ensures result == x {proof} }}"
@@ -15,14 +15,9 @@ fn smart_proof_calls_have_identical_meaning_with_optional_braces() {
             parser::parse(&source(&block)).unwrap().function_blocks(),
             "{tactic}: braces must only delimit the same one-tactic proof"
         );
-        let goal = if tactic == "normalize" {
-            "7 == 7"
-        } else {
-            "x == 7"
-        };
         for proof in [&call, &block] {
             verify_click_theorems(&format!(
-                "theorem fact(x: int32) {{ requires x == 7; ensures {goal} {proof} }}"
+                "theorem fact(x: int32) {{ requires x == 7; ensures x == 7 {proof} }}"
             ))
             .unwrap_or_else(|error| panic!("{proof}: {error:?}"));
         }
