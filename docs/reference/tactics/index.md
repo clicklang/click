@@ -3057,7 +3057,10 @@ induction hypothesis and accept no `ensuring` clause.
 Payload names are local to the written arm, including when tactics follow the
 match. The kernel reduces the goal to universally quantified constructor
 implications and checks their complete conjunction. An impossible arm may
-end with `close()` once that case holds `false`; the remaining live arms are split and joined normally, and a sole
+end with `close()` once that case holds `false`. The arm can establish
+`false` with a checked proof prefix, such as `unfold(r)` to expose a fact
+from an owned resource. This works at function exit in a `match ... ensuring`
+as well. The remaining live arms are split and joined normally, and a sole
 live arm runs on the parent frontier without a join.
 
 **Failure, checking, and tools:**
@@ -3070,8 +3073,8 @@ states rejoin through `ensuring { fact ...; owns ...; }`, written after the
 scrutinee, exactly as the arms of a proof `if ... ensuring` do; a `match` over
 more than two constructors is joined pairwise through the same interface.
 
-Without `ensuring`, arms that end in different states are refused. Exclusion
-after local proof prefixes and all-impossible matches remain unsupported.
+Without `ensuring`, arms that end in different states are refused. A match
+in which every constructor is excluded is unsupported.
 
 **Checked examples:** [`proof_match_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_resource.md), [`proof_match_three_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_three_constructors.md), [`proof_match_four_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_four_constructors.md), [`proof_match_live_arms_beside_an_excluded_one.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_live_arms_beside_an_excluded_one.md), [`match_bindings_in_branch_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/match_bindings_in_branch_arm.md), [`proof_match_after_c_step.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_after_c_step.md), [`loop_body_proof_match.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match.md), [`loop_body_proof_match_two_live_arms.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match_two_live_arms.md), [`loop_body_proof_match_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_body_proof_match_shared_continuation.md), [`proof_match_arms_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_arms_rejoin.md), [`proof_match_arms_must_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_arms_must_rejoin.md), [`proof_match_three_arms_rejoin.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_three_arms_rejoin.md), [`proof_match_ensuring_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_ensuring_rejoins.md), [`proof_match_ensuring_three_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_match_ensuring_three_constructors.md), [`pure_match_constructor_cases.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_constructor_cases.md), [`pure_match_in_induction_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_in_induction_arm.md), [`pure_match_typed_payloads.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_match_typed_payloads.md), [`a_pure_match_runs_inside_an_if_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/a_pure_match_runs_inside_an_if_arm.md)
 

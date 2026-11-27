@@ -11223,9 +11223,10 @@ impl ExecutionProofCore {
         )
     }
 
-    /// Construct and retain the selected unfold once. Surface may name the
-    /// exposed cells at that point; the ordinary observation checks validate
-    /// that presentation against this exact exchange.
+    /// Construct the selected unfold once. During execution the retained
+    /// exchange also checks the surface presentation against the trace state.
+    /// A refuting exit-match arm uses the kernel-produced delta directly.
+    /// It needs neither names for later C reads nor an execution event.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn unfold_resource_instance_with_children(
         &mut self,
@@ -11234,6 +11235,7 @@ impl ExecutionProofCore {
         before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
         selected_children: Option<Arc<[(String, InstanceId)]>>,
+        refuting_exit_match_arm: bool,
         materialize: impl FnOnce(
             &crate::kernel::functions::ResourceInstanceRewriteResult,
             &PureFactStore,
@@ -11245,7 +11247,7 @@ impl ExecutionProofCore {
         ),
         InstanceUnfoldError,
     > {
-        if self.evidence_completed {
+        if self.evidence_completed && !refuting_exit_match_arm {
             return Err(InstanceUnfoldError::Recording(
                 "a resource rewrite was recorded after the trace completed".into(),
             ));
@@ -11273,6 +11275,11 @@ impl ExecutionProofCore {
             .fold(before_facts.clone(), |facts, fact| {
                 facts.with_kernel_checked_fact(fact.clone())
             });
+        if self.evidence_completed {
+            CheckedResourceRewrite::check_instance_definition(function, definition)
+                .map_err(|message| InstanceUnfoldError::Recording(message.into()))?;
+            return Ok((result, after_facts));
+        }
         let after_state = materialize(&result, &after_facts);
         // A proof view can differ from the state reached by the trace. The
         // retained exchange is reusable only at its exact input.

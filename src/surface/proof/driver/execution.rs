@@ -3543,12 +3543,11 @@ fn advance_focused_execution_arm<'a>(
     Ok(Ok(proof))
 }
 
-/// Checks the fact-only bridge of a match arm that ends by refuting itself.
+/// Checks the proof prefix of a match arm that ends by refuting itself.
 /// Unlike [`advance_focused_execution_arm`], it never defers a tactic to the
 /// post-execution phase at function exit: the refuted arm has no outcome
-/// path for a deferred tactic to run on, so deferring would leave it
-/// unchecked. Every bridge tactic is fact-only (`bridges_without_executing`),
-/// so it applies at the arm's own state.
+/// path for a deferred tactic to run on. Each prefix tactic is checked in
+/// the arm's own state without executing C.
 fn advance_refuting_bridge<'a>(
     mut proof: Proof<'a>,
     tactics: &[IndexedTactic],
@@ -3556,6 +3555,11 @@ fn advance_refuting_bridge<'a>(
     proof_site: Option<&ProofSite>,
     owning_source_index: usize,
 ) -> Driven<Proof<'a>> {
+    if !tactics.is_empty() && proof.is_at_function_exit() {
+        (proof, ()) = proof.edit_execution_presentation(|presentation| {
+            presentation.refuting_exit_match_arm = true;
+        })?;
+    }
     for indexed in tactics {
         proof = proof.at_source_tactic(indexed.source_index);
         let claim_label = proof.claim_label().to_string();
@@ -3698,7 +3702,7 @@ fn advance_prepared_execution_match<'a>(
     let marker = proof.checkpoint();
     let mut plan = proof.plan_execution_match(source)?;
     // A terminal closer can exclude a constructor before executing C.
-    // Run the arm's fact-only prefix so it can establish the refutation in
+    // Run the arm's proof prefix so it can establish the refutation in
     // the arm's own state. Publish its capture only if the arm is excluded.
     for (index, arm) in arms.iter().enumerate() {
         if plan.excluded_certificate(index).is_some() {

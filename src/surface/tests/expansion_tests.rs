@@ -28903,6 +28903,50 @@ fn match_arm_can_establish_false_in_its_bridge_at_function_exit() {
 }
 
 #[test]
+fn match_arm_can_unfold_a_resource_to_establish_false_at_function_exit() {
+    let source = r#"
+        verifying "id.c";
+
+        spec enum Tag { A, B }
+        resource tag() { field model: Tag; }
+        resource non_a() {
+            field model: Tag;
+            fact model != Tag::A;
+        }
+        int32 id(int32 x) {
+            owns r: tag();
+            owns n: non_a();
+            requires r.model == n.model;
+            ensures result == x;
+            ensures n.model == old(n.model);
+        } by {
+            step_until(function.exit);
+            match r.model ensuring { fact result == x; } {
+                Tag::A => {
+                    unfold(n);
+                    close();
+                },
+                Tag::B => { },
+            }
+            close();
+        }
+    "#;
+    let sources = [("id.c", "int32 id(int32 x) { return x; }")];
+    let expanded = expand_function_proof_source(source, &sources, "id")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("match r.model ensuring"), "{expanded}");
+    assert!(expanded.contains("unfold(n);"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+
+    let reachable = expanded.replace("requires r.model == n.model;", "");
+    assert_ne!(reachable, expanded);
+    assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
+    let missing_fact = expanded.replace("unfold(n);", "");
+    assert!(without_implicit_solve(|| verify_c_sources(&missing_fact, &sources)).is_err());
+}
+
+#[test]
 fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
     let (source, sources) = mdtest_sources(
         "mdtests/a_refuted_match_arm_bridge_at_function_exit_uses_propagated_false.md",

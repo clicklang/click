@@ -705,6 +705,7 @@ impl<'a> Proof<'a> {
                 self.facts(),
                 instance,
                 selected_children.clone(),
+                execution.presentation.refuting_exit_match_arm,
                 |rewrite, facts| {
                     // Use the opening delta to name exposed cells. Later
                     // body facts must not rename a cell after publication.
