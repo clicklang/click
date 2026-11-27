@@ -1570,6 +1570,8 @@ impl CallBinderBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallBinderTransport {
     callee: String,
+    /// The source spelling of a qualified callee, for diagnostics and replay.
+    source_callee: Option<String>,
     /// The written source region when the proof steps a reference binding.
     source_binding: Option<CodeRegionRef>,
     /// Select this named interface at the current C call; arguments come from C.
@@ -1718,7 +1720,10 @@ impl std::fmt::Display for CallBinderTransport {
                 .source_binding
                 .as_ref()
                 .map(diagnostics::describe_code_region_ref);
-            let callee = target.as_deref().unwrap_or(&self.callee);
+            let callee = target
+                .as_deref()
+                .or(self.source_callee.as_deref())
+                .unwrap_or(&self.callee);
             let entries = self.map_entries();
             return if entries.is_empty() {
                 write!(f, "step({})", callee)

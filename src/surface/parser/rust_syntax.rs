@@ -214,7 +214,11 @@ impl Parser {
                         &impl_type, trait_name, &name,
                     ),
                     (None, Some(suffix)) => format!("{impl_type}_{name}_{suffix}"),
-                    (None, None) => self.rust_inherent_method(&impl_type, &name)?,
+                    (None, None) => self.rust_inherent_method(
+                        self.rust_impl_module.as_deref(),
+                        &impl_type,
+                        &name,
+                    )?,
                 }
             }
             None => name,
@@ -764,26 +768,35 @@ impl Parser {
     #[inline(never)]
     pub(super) fn rust_inherent_method(
         &self,
+        module: Option<&str>,
         impl_type: &str,
         method: &str,
     ) -> Result<String, ClickError> {
-        let Some(module) = self.rust_impl_module.as_deref() else {
+        let Some(module) = module else {
             return Ok(crate::languages::rust::names::inherent_method_name(
                 None, impl_type, method,
             ));
         };
         let suffix =
             crate::languages::rust::names::inherent_method_name(Some(""), impl_type, method);
-        let mut found = self
-            .local_struct_pointers_by_function
-            .keys()
-            .filter(|name| name.starts_with("__rust_q") && name.ends_with(&suffix));
-        match (found.next(), found.next()) {
-            (Some(name), None) => Ok(name.clone()),
-            (Some(_), Some(_)) => Err(self.error(format!(
+        let methods = self.rust_inherent_methods.get_or_init(|| {
+            let mut methods = BTreeMap::new();
+            for name in self.local_struct_pointers_by_function.keys() {
+                if let Some(suffix) = crate::languages::rust::names::impl_item_suffix(name) {
+                    methods
+                        .entry(suffix.to_owned())
+                        .and_modify(|entry| *entry = None)
+                        .or_insert_with(|| Some(name.clone()));
+                }
+            }
+            methods
+        });
+        match methods.get(&suffix) {
+            Some(Some(name)) => Ok(name.clone()),
+            Some(None) => Err(self.error(format!(
                 "the import has more than one method `{method}` of this type"
             ))),
-            (None, _) => Ok(crate::languages::rust::names::inherent_method_name(
+            None => Ok(crate::languages::rust::names::inherent_method_name(
                 Some(module),
                 impl_type,
                 method,
@@ -895,16 +908,42 @@ impl Parser {
     }
 
     /// A call step's Rust callee after its first segment `first`: the rest
-    /// of its path and a generic function instance's type arguments, named
-    /// as the function's head names it.
-    pub(super) fn rust_step_callee(&mut self, first: String) -> Result<String, ClickError> {
+    /// of its path and type arguments. A receiver's type arguments precede
+    /// the final method name, as in `crate_name::Stack::<u32>::push`.
+    pub(super) fn rust_step_callee(
+        &mut self,
+        first: String,
+    ) -> Result<(String, Option<String>), ClickError> {
         let mut path = vec![first];
-        while self.peek() == Some(&Token::ColonColon) {
+        while self.peek() == Some(&Token::ColonColon) && self.peek_next() != Some(&Token::LessThan)
+        {
             self.position += 1;
             path.push(self.expect_ident("function name")?);
         }
+        if self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+        }
         let arguments = self.rust_instance_arguments(true);
-        Ok(trait_instance_name(&path, &arguments))
+        if !arguments.is_empty() && self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            let method = self.expect_ident("method name")?;
+            let impl_type = trait_instance_name(&path, &arguments);
+            let module = (path.len() > 1).then(|| {
+                crate::languages::rust::names::qualified_name(
+                    path[..path.len() - 1].iter().map(String::as_str),
+                )
+            });
+            let callee = self.rust_inherent_method(module.as_deref(), &impl_type, &method)?;
+            let written = format!("{}::<{}>::{method}", path.join("::"), arguments.join(", "));
+            return Ok((callee, Some(written)));
+        }
+        let callee = trait_instance_name(&path, &arguments);
+        let written = if !arguments.is_empty() {
+            Some(format!("{}<{}>", path.join("::"), arguments.join(", ")))
+        } else {
+            (path.len() > 1).then(|| path.join("::"))
+        };
+        Ok((callee, written))
     }
 
     /// The generic parameters after a function's name: lifetimes, `<'a, 'b:

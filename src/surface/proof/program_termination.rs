@@ -52,8 +52,8 @@ impl TerminationSourceNames {
             .or_insert_with(|| Some(key.to_owned()));
     }
 
-    /// Compatibility for already-written certificates uses their exact
-    /// verifier key. A source spelling must identify one function.
+    /// Bare source paths must identify one function. Signature references
+    /// already carry the exact declaration key from parsing.
     pub(in crate::surface) fn resolve<'s>(&'s self, written: &'s str) -> Result<&'s str, String> {
         self.by_spelling.get(written).map_or(Ok(written), |key| {
             key.as_deref()
