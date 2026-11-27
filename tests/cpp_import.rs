@@ -7584,7 +7584,7 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
             site.line,
             site.column,
         )
-        .unwrap();
+        .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
         let rewritten = parsed.with_entry_source(expanded.clone());
         verify_program_prepared_project(&rewritten, &import)
             .expect("expanded method proof reverifies");
