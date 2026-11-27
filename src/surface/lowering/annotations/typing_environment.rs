@@ -23,7 +23,9 @@ use super::*;
 /// capture reads.
 pub(super) struct PointInputs<'a> {
     pub(super) entry_values: &'a ProgramValueBindings,
-    pub(super) entry_point: crate::kernel::ProgramPoint,
+    /// `None` for a scope built from a function's declarations alone, whose
+    /// `old(..)` reads the same declarations.
+    pub(super) entry_point: Option<crate::kernel::ProgramPoint>,
     pub(super) retained_states: Option<&'a RecordedStates>,
     pub(super) capture_referenced_names: Option<&'a BTreeSet<String>>,
 }
@@ -141,9 +143,10 @@ impl TypeScope for SpecElaborationContext {
         }
     }
     fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
-        Ok(Box::new(
-            self.old_state(inputs.entry_values, &inputs.entry_point)?,
-        ))
+        Ok(Box::new(self.old_state(
+            inputs.entry_values,
+            inputs.entry_point.as_ref(),
+        )?))
     }
     fn at_point(
         &self,

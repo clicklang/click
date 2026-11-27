@@ -6084,7 +6084,7 @@ impl SpecElaborationContext {
     fn old_state(
         &self,
         entry_values: &ProgramValueBindings,
-        entry: &crate::kernel::ProgramPoint,
+        entry: Option<&crate::kernel::ProgramPoint>,
     ) -> Result<Self, String> {
         if self.function_contract {
             return Ok(Self {
@@ -6104,6 +6104,7 @@ impl SpecElaborationContext {
                 checking_definedness: self.checking_definedness,
             });
         }
+        let entry = entry.ok_or_else(|| "`old(..)` has no entry state here".to_string())?;
         let mut values = entry_values
             .iter()
             .map(|(name, value)| (name.clone(), SpecExpression::Value(value.clone())))

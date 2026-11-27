@@ -3090,6 +3090,8 @@ pub(in crate::surface) fn function_contract_summary(
         retained_states: None,
         loop_records: None,
     };
+    #[cfg(debug_assertions)]
+    let declared = elaborator::Elaborator::of_function(parsed_function, spec_definitions);
     let mut context = SpecElaborationContext::for_function_contract();
     // Parameters shadow file-scope spellings in both current and old clauses.
     // Keep them as C bindings, not loads from same-named global storage.
@@ -3141,6 +3143,8 @@ pub(in crate::surface) fn function_contract_summary(
     let mut requires = Vec::new();
     let mut contract_requirement_sources = Vec::new();
     for proposition in requirement_definedness_surfaces(function_block.requires()) {
+        #[cfg(debug_assertions)]
+        elaborator::check_contract_elaboration(&lowerer, &declared, &proposition, &context);
         match lowerer.lower_opaque_contract_proposition(&proposition, &context) {
             Ok(proposition) => {
                 requires.push(proposition);
@@ -3175,6 +3179,8 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
+        #[cfg(debug_assertions)]
+        elaborator::check_contract_elaboration(&lowerer, &declared, &proposition, &context);
         match lowerer.lower_opaque_contract_proposition(&proposition, &context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
@@ -3229,6 +3235,8 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
+        #[cfg(debug_assertions)]
+        elaborator::check_contract_elaboration(&lowerer, &declared, &proposition, &ensures_context);
         match lowerer.lower_opaque_contract_proposition(&proposition, &ensures_context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
@@ -3262,6 +3270,13 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
+        #[cfg(debug_assertions)]
+        elaborator::check_contract_elaboration(
+            &lowerer,
+            &declared,
+            proposition,
+            &exceptional_context,
+        );
         match lowerer.lower_opaque_contract_proposition(proposition, &exceptional_context) {
             Ok(proposition) => exceptional_ensures.push(proposition),
             Err(error) => {
@@ -4999,8 +5014,10 @@ impl AnnotationLowerer<'_> {
                         self.click_proposition_to_spec_proposition(proposition, environment)
                     }
                     ResolvedProgramPoint::FunctionEntry => {
-                        let old_environment = environment
-                            .old_state(&self.entry_values, &self.entry_state.program_point())?;
+                        let old_environment = environment.old_state(
+                            &self.entry_values,
+                            Some(&self.entry_state.program_point()),
+                        )?;
                         self.click_proposition_to_spec_proposition(proposition, &old_environment)
                     }
                     _ => Err("`at(...)` propositions are proof-script states".to_string()),
@@ -5937,8 +5954,8 @@ impl AnnotationLowerer<'_> {
                 return self.lower_contract_integer_to_spec(value, environment);
             }
             SyntaxTerm::Old(inner) => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old_environment = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 return self.lower_contract_integer_to_spec(inner, &old_environment);
             }
             SyntaxTerm::At {
@@ -5955,8 +5972,10 @@ impl AnnotationLowerer<'_> {
                         self.lower_contract_integer_to_spec(expression, environment)
                     }
                     ResolvedProgramPoint::FunctionEntry => {
-                        let old_environment = environment
-                            .old_state(&self.entry_values, &self.entry_state.program_point())?;
+                        let old_environment = environment.old_state(
+                            &self.entry_values,
+                            Some(&self.entry_state.program_point()),
+                        )?;
                         self.lower_contract_integer_to_spec(expression, &old_environment)
                     }
                     ResolvedProgramPoint::LoopEntry(_) => {
@@ -7077,8 +7096,8 @@ impl AnnotationLowerer<'_> {
             }
 
             SyntaxTerm::Old(expression) => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old_environment = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 self.lower_contract_expression_to_spec(expression, &old_environment)
             }
             SyntaxTerm::At {
@@ -7752,8 +7771,8 @@ impl AnnotationLowerer<'_> {
                 })
             }
             SyntaxTerm::Old(inner) => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old_environment = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 self.lower_contract_algebraic_to_spec(inner, &old_environment)
             }
             SyntaxTerm::At {
@@ -8238,8 +8257,8 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.lower_contract_sequence_to_spec(right, environment)?),
             )),
             SyntaxTerm::Old(inner) => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old_environment = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 self.lower_contract_sequence_to_spec(inner, &old_environment)
             }
             SyntaxTerm::At {
@@ -8254,8 +8273,10 @@ impl AnnotationLowerer<'_> {
                         self.lower_contract_sequence_to_spec(expression, environment)
                     }
                     ResolvedProgramPoint::FunctionEntry => {
-                        let old_environment = environment
-                            .old_state(&self.entry_values, &self.entry_state.program_point())?;
+                        let old_environment = environment.old_state(
+                            &self.entry_values,
+                            Some(&self.entry_state.program_point()),
+                        )?;
                         self.lower_contract_sequence_to_spec(expression, &old_environment)
                     }
                     ResolvedProgramPoint::LoopEntry(_) => Err(
@@ -8276,7 +8297,7 @@ impl AnnotationLowerer<'_> {
         match segment.state {
             ContractSegmentState::Current => Ok(environment.clone()),
             ContractSegmentState::Old => {
-                environment.old_state(&self.entry_values, &self.entry_state.program_point())
+                environment.old_state(&self.entry_values, Some(&self.entry_state.program_point()))
             }
         }
     }
@@ -8387,8 +8408,8 @@ impl AnnotationLowerer<'_> {
                 self.lower_resource_subject_to_spec(resource, environment)
             }
             ResolvedProgramPoint::FunctionEntry => {
-                let old =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 self.lower_resource_subject_to_spec(resource, &old)
             }
             _ => Err("`at(...)` resources require a recorded state".into()),
@@ -8783,8 +8804,8 @@ impl AnnotationLowerer<'_> {
                 self.lower_contract_expression_to_spec(expression, environment)
             }
             ResolvedProgramPoint::FunctionEntry => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old_environment = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 self.lower_contract_expression_to_spec(expression, &old_environment)
             }
             ResolvedProgramPoint::LoopEntry(loop_index) => {
@@ -9591,8 +9612,8 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecArrayRef, String> {
         match expression {
             SyntaxTerm::Old(expression) => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old_environment = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 self.lower_array_ref_to_spec(expression, &old_environment)
             }
             SyntaxTerm::At {
@@ -9721,8 +9742,8 @@ impl AnnotationLowerer<'_> {
         match self.resolve_visit_selector(selector, environment)? {
             ResolvedProgramPoint::Current => self.lower_array_ref_to_spec(expression, environment),
             ResolvedProgramPoint::FunctionEntry => {
-                let old_environment =
-                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                let old_environment = environment
+                    .old_state(&self.entry_values, Some(&self.entry_state.program_point()))?;
                 self.lower_array_ref_to_spec(expression, &old_environment)
             }
             ResolvedProgramPoint::LoopEntry(loop_index) => {

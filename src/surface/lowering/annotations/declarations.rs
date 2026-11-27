@@ -8,7 +8,10 @@ use super::*;
 #[derive(Clone)]
 pub(super) struct Declarations<'a> {
     pub(super) source_bindings: Option<syntax::CSourceBindings>,
-    pub(super) entry_state: &'a ExecutionState,
+    /// The lowering context's entry state, or `None` for declarations built
+    /// from a function alone (`Declarations::of_function`), which answer
+    /// globals from `global_declarations`.
+    pub(super) entry_state: Option<&'a ExecutionState>,
     pub(super) result_type: ProgramType,
     pub(super) entry_values: Arc<ProgramValueBindings>,
     pub(super) local_type_state: Option<&'a ExecutionState>,
@@ -29,7 +32,7 @@ impl<'a> AnnotationLowerer<'a> {
     pub(super) fn declarations(&self) -> Declarations<'a> {
         Declarations {
             source_bindings: self.source_bindings.clone(),
-            entry_state: self.entry_state,
+            entry_state: Some(self.entry_state),
             result_type: self.result_type,
             entry_values: self.entry_values.clone(),
             local_type_state: self.local_type_state,
@@ -37,6 +40,49 @@ impl<'a> AnnotationLowerer<'a> {
             program_parameter_types: self.program_parameter_types.clone(),
             pointer_element_types: self.pointer_element_types.clone(),
             parameter_pointer_element_widths: self.parameter_pointer_element_widths.clone(),
+        }
+    }
+}
+
+impl Declarations<'static> {
+    /// The declarations of `function` alone, with no lowering context: its
+    /// parameters, result and pointer elements, and its global and static
+    /// objects. What a function contract's clauses can name.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pub(super) fn of_function(function: &crate::languages::interface::ImportedFunction) -> Self {
+        Declarations {
+            source_bindings: None,
+            entry_state: None,
+            result_type: function.return_type().to_kernel_type(),
+            entry_values: Default::default(),
+            local_type_state: None,
+            program_parameter_types: function
+                .parameters()
+                .iter()
+                .map(|parameter| {
+                    (
+                        parameter.name().to_string(),
+                        parameter.interface_type().to_kernel_type(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+                .into(),
+            pointer_element_types: function
+                .parameters()
+                .iter()
+                .filter_map(|parameter| {
+                    Some((
+                        parameter.name().to_string(),
+                        click_array_element_type(parameter.interface_type())?,
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>()
+                .into(),
+            parameter_pointer_element_widths: parameter_pointer_element_widths(
+                function.parameters(),
+            )
+            .into(),
+            global_declarations: Some(function.global_declarations()),
         }
     }
 }
@@ -107,11 +153,17 @@ impl Declarations<'_> {
                 name.metadata_in(self.entry_values.as_ref())
                     .map(ProgramValue::program_type)
             })
-            .or_else(|| {
-                self.entry_state
+            .or_else(|| match self.entry_state {
+                Some(entry_state) => entry_state
                     .locals()
                     .get(&name)
-                    .map(|value| value.program_type())
+                    .map(|value| value.program_type()),
+                // The entry of a function's declarations binds its globals
+                // and statics.
+                None => self
+                    .global_declarations
+                    .as_ref()
+                    .and_then(|declarations| declarations.object_type(&name)),
             })
             .or_else(|| {
                 self.local_type_state
@@ -201,7 +253,13 @@ impl Declarations<'_> {
                 })
                 // A global or static array is indexed by its element type.
                 .or_else(|| {
-                    let from_state = self.entry_state.global_array_element_type(name);
+                    let Some(entry_state) = self.entry_state else {
+                        return self.declared_global(
+                            name,
+                            crate::languages::interface::GlobalDeclarations::array_element_type,
+                        );
+                    };
+                    let from_state = entry_state.global_array_element_type(name);
                     self.check_declared_global(
                         name,
                         from_state,
@@ -218,7 +276,15 @@ impl Declarations<'_> {
                 })
                 // A pointer global reads at its declared pointee.
                 .or_else(|| {
-                    let from_state = self.entry_state.global_object_type(name);
+                    let Some(entry_state) = self.entry_state else {
+                        return self
+                            .declared_global(
+                                name,
+                                crate::languages::interface::GlobalDeclarations::object_type,
+                            )
+                            .and_then(ProgramType::pointee_type);
+                    };
+                    let from_state = entry_state.global_object_type(name);
                     self.check_declared_global(
                         name,
                         from_state,
@@ -279,6 +345,33 @@ impl Declarations<'_> {
                     "global `{name}`: the type the function declares is not the type its entry state gives"
                 );
             });
+        }
+    }
+
+    /// A global's or static's declared type from `global_declarations`.
+    fn declared_global(
+        &self,
+        name: &crate::kernel::BindingName,
+        declared: fn(
+            &crate::languages::interface::GlobalDeclarations,
+            &crate::kernel::BindingName,
+        ) -> Option<ProgramType>,
+    ) -> Option<ProgramType> {
+        declared(self.global_declarations.as_ref()?, name)
+    }
+
+    /// The element type of the global or static array `name`: the entry
+    /// state's, or the declared one when there is no entry state.
+    pub(super) fn global_array_element_type(
+        &self,
+        name: &crate::kernel::BindingName,
+    ) -> Option<ProgramType> {
+        match self.entry_state {
+            Some(entry_state) => entry_state.global_array_element_type(name),
+            None => self.declared_global(
+                name,
+                crate::languages::interface::GlobalDeclarations::array_element_type,
+            ),
         }
     }
 }

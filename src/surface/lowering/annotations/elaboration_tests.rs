@@ -2,8 +2,7 @@
 //!
 //! Each test builds an `Elaborator` from declarations and a typing
 //! environment over `NoOuterNames`, with no lowerer and no lowering context,
-//! and checks the Surface it gives. The declarations still carry an empty
-//! entry state, a kernel value, until they become a table of declared types.
+//! and checks the Surface it gives. The declarations hold no kernel state.
 use super::typing_environment::NoOuterNames;
 use super::*;
 use crate::surface::typed_surface::{ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType};
@@ -42,13 +41,12 @@ impl Declared {
         pointer_elements: &[PointerElementDeclaration],
         elaborate: impl FnOnce(&Elaborator<'_>, &TypingEnvironment<'_>) -> T,
     ) -> T {
-        let entry_state = ExecutionState::new();
         let predicates = PredicateEnvironment::new(&[]);
         let functions = ClickFunctionEnvironment::new(&[]);
         let elaborator = Elaborator {
             declarations: Declarations {
                 source_bindings: None,
-                entry_state: &entry_state,
+                entry_state: None,
                 result_type: ProgramType::Int32,
                 entry_values: Default::default(),
                 local_type_state: None,
