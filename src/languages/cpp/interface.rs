@@ -593,7 +593,6 @@ fn function_interface(
     )
     .with_return_reference(return_reference)
     .with_return_pointee_constant(return_constant);
-    interface.cpp_declaration_site = Some(std::sync::Arc::new(source.span.clone()));
     let parameter_count = source.parameters.len() - usize::from(source.receiver().is_some());
     let explicit = parameter_count
         .checked_sub(source.closure_captures)

@@ -32,16 +32,6 @@ impl TerminationSourceNames {
                 .unwrap_or_else(|| key.to_owned());
             crate::instrumentation::record_deterministic_work(1);
             let source = if is_declaration_key(key) {
-                // Replay older certificates without writing locations in new ones.
-                if let Some(site) = &function.cpp_declaration_site {
-                    names.register_spelling(
-                        format!(
-                            "{path} at {}:{}:{}",
-                            site.file, site.start_line, site.start_column
-                        ),
-                        key,
-                    );
-                }
                 let Some(signature) = &function.cpp_source_signature else {
                     continue;
                 };

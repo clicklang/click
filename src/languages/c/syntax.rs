@@ -9868,7 +9868,6 @@ impl Parser {
             structs: self.structs.clone(),
             prepared_record_layouts: std::sync::Arc::default(),
             cpp_overload_paths: None,
-            cpp_declaration_site: None,
             cpp_source_signature: None,
             enums: self.enums.clone(),
             unions: self.unions.clone(),
