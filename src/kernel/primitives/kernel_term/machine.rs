@@ -12,6 +12,13 @@ fn retained_machine_input(node: &KernelTermNode) -> Option<&OldMachineTerm> {
 }
 
 impl KernelTerm {
+    pub(crate) fn int32_literal(bits: u32) -> Self {
+        Self::intern(
+            KernelType::Program(ProgramType::Int32),
+            KernelTermNode::MachineLiteral(KernelMachineLiteral::Word32(bits)),
+        )
+    }
+
     /// Wide shifts accept a literal count at either word width.
     pub(super) fn literal_shift_count(&self) -> Option<u32> {
         let KernelTermNode::MachineLiteral(value) = self.node() else {
@@ -21,7 +28,7 @@ impl KernelTerm {
     }
 
     /// Read only literal roots, including a selected native compatibility input.
-    pub(super) fn guard_literal(&self) -> Option<KernelMachineLiteral> {
+    pub(super) fn machine_literal(&self) -> Option<KernelMachineLiteral> {
         match self.node() {
             KernelTermNode::MachineLiteral(value) => Some(value.clone()),
             _ => {
@@ -1330,15 +1337,9 @@ impl KernelTerm {
         assert!(self.is_shared_machine_operand());
         use KernelMachineLiteral as L;
         use MachineIntegerType as Ty;
-        let literal = |bits| {
-            Self::intern(
-                KernelType::Program(Ty::Int32.program_type()),
-                KernelTermNode::MachineLiteral(L::Word32(bits)),
-            )
-        };
         let root = |value: &Self| match value.node() {
-            KernelTermNode::MachineLiteral(L::Int64(bits)) => literal(*bits as u32),
-            KernelTermNode::MachineLiteral(L::UInt64(bits)) => literal(*bits as u32),
+            KernelTermNode::MachineLiteral(L::Int64(bits)) => Self::int32_literal(*bits as u32),
+            KernelTermNode::MachineLiteral(L::UInt64(bits)) => Self::int32_literal(*bits as u32),
             KernelTermNode::MachineCast {
                 encoding:
                     MachineCastSpelling::Int64From32
@@ -1363,12 +1364,12 @@ impl KernelTerm {
                 arguments: [a, b],
             } => match (a.node(), b.node()) {
                 (_, KernelTermNode::MachineLiteral(L::UInt64(bits))) => {
-                    Some((*op, root(a), literal(*bits as u32)))
+                    Some((*op, root(a), Self::int32_literal(*bits as u32)))
                 }
                 (KernelTermNode::MachineLiteral(L::UInt64(bits)), _)
                     if *op == MachineBinaryOp::Add =>
                 {
-                    Some((*op, literal(*bits as u32), root(b)))
+                    Some((*op, Self::int32_literal(*bits as u32), root(b)))
                 }
                 _ => None,
             },
@@ -1382,7 +1383,7 @@ impl KernelTerm {
             _ => None,
         };
         if let (Some(a), Some(b)) = (bits(&a), bits(&b)) {
-            return literal(if operator == MachineBinaryOp::Add {
+            return Self::int32_literal(if operator == MachineBinaryOp::Add {
                 a.wrapping_add(b)
             } else {
                 a.wrapping_sub(b)

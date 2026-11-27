@@ -7,9 +7,6 @@ use MachineIntegerType as T;
 use SignedArithmeticAtomToken as Token;
 use std::collections::HashMap;
 
-fn constant(bits: u32) -> KernelTerm {
-    KernelTermImport::default().machine(T::Int32, &OldMachineTerm::constant(bits))
-}
 fn variable(variable: Variable) -> KernelTerm {
     if crate::kernel::is_load_variable(&variable)
         && let Some(read) = crate::kernel::eval::registered_scalar_read_term(&variable, T::Int32)
@@ -68,7 +65,7 @@ pub(super) fn from_tokens(tokens: Vec<Token>) -> Option<SignedArithmeticAtom> {
             return None;
         }
         let key = match token {
-            Token::Constant(bits) => constant(bits),
+            Token::Constant(bits) => KernelTerm::int32_literal(bits),
             Token::Read(read) => read,
             Token::Variable(value) => variable(value),
             Token::Narrow64Variable(value) => low_word(variable(value)),
@@ -274,7 +271,7 @@ pub(super) fn from_shared(root: &KernelTerm) -> Option<SignedArithmeticAtom> {
                 Head::Opaque(_) => unreachable!(),
                 Head::Variable(v) => (variable(v), true, true),
                 Head::Read(read) => (read.with_machine_observation_type(T::Int32), true, true),
-                Head::Constant(v) => (constant(v), false, true),
+                Head::Constant(v) => (KernelTerm::int32_literal(v), false, true),
                 Head::NativeConstant(v) => (
                     KernelTermImport::default()
                         .machine(T::UInt64, &OldMachineTerm::uint64_constant(v)),

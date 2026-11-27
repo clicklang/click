@@ -30,7 +30,7 @@ impl KernelTerm {
             (R::Equal, T::UInt128) => T::Int128,
             _ => format,
         };
-        let literals = arguments.each_ref().map(Self::guard_literal);
+        let literals = arguments.each_ref().map(Self::machine_literal);
         if let [Some(left), Some(right)] = &literals {
             if let (Some(a), Some(b)) = (left.constant_at(format), right.constant_at(format)) {
                 return Self::boolean_literal(a.compare(relation, b));
@@ -121,7 +121,11 @@ impl KernelTerm {
                     }
                 }
                 for (word, zero) in [(views[0], &arguments[1]), (views[1], &arguments[0])] {
-                    if zero.guard_literal().and_then(|literal| literal.signed64()) != Some(0) {
+                    if zero
+                        .machine_literal()
+                        .and_then(|literal| literal.signed64())
+                        != Some(0)
+                    {
                         continue;
                     }
                     if let Some((pointer, alignment)) =
