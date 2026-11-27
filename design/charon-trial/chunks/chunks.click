@@ -37,6 +37,16 @@ fn walk(bytes: &[u8]) -> usize {
                 have (bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
                 mark head;
                 step_until(loop(0).back_edge);
+                have iter.v.len() == at(head, iter.v.len()) - 4u64;
+                apply(integer::uint64_subtract_to_integer(at(head, iter.v.len()), 4u64));
+                have to_integer(iter.v.len()) < to_integer(at(head, iter.v.len())) by {
+                    rewrite(iter.v.len(), at(head, iter.v.len()) - 4u64);
+                    rewrite(to_integer(at(head, iter.v.len()) - 4u64), to_integer(at(head, iter.v.len())) - 4);
+                    close() using {};
+                }
+                have iter.v.len() < at(head, iter.v.len()) by close() using {
+                    to_integer(iter.v.len()) < to_integer(at(head, iter.v.len()));
+                };
                 have (bytes.len() - bytes.len() % 4u64 - at(head, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
                 have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
             } else {

@@ -244,7 +244,11 @@ int32 bubble_sort3_loop_permutation(int32 p[3]) {
             }
         }
         unfold(permutation::permutation(p, old(p), 0, 3));
-        close();
+        intro() {
+            unfold(permutation::count(p, 0, 3, x));
+            unfold(permutation::count(old(p), 0, 3, x));
+            close();
+        }
     }
 }
 ```
