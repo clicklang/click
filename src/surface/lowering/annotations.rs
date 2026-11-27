@@ -10260,54 +10260,6 @@ impl AnnotationLowerer<'_> {
             .map(|element| element.to_kernel_type().byte_width()))
     }
 
-    /// Physical element widths take precedence over scalar resource carriers.
-    fn contract_pointer_element_width(
-        &self,
-        expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
-    ) -> Option<u32> {
-        match expression {
-            SyntaxTerm::RegionResult(region) => {
-                let ProgramValue::Pointer(pointer) = self
-                    .retained_states?
-                    .region_result_value_at(region, environment.call_result_point.as_ref())
-                    .ok()?
-                else {
-                    return None;
-                };
-                self.spec_definitions.pointer_element_width(&pointer).ok()
-            }
-            SyntaxTerm::ProgramBinding(name) => self.program_expression_array_element_width(
-                &ProgramExpression::Variable((name.clone()).into()),
-                environment,
-            ),
-            SyntaxTerm::CUnary { lowered, .. }
-            | SyntaxTerm::QualifiedC { lowered, .. }
-            | SyntaxTerm::ProgramExpression(lowered)
-            | SyntaxTerm::Field { lowered, .. } => {
-                self.program_expression_array_element_width(lowered, environment)
-            }
-            SyntaxTerm::Old(inner) | SyntaxTerm::Exact(inner) => {
-                self.contract_pointer_element_width(inner, environment)
-            }
-            SyntaxTerm::At {
-                selector,
-                expression,
-            } => {
-                let mut context = environment.clone();
-                context.call_result_point = Some(selector.clone());
-                self.contract_pointer_element_width(expression, &context)
-            }
-            SyntaxTerm::Add(left, right) => self
-                .contract_pointer_element_width(left, environment)
-                .or_else(|| self.contract_pointer_element_width(right, environment)),
-            SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_width(left, environment),
-            _ => self
-                .contract_pointer_element_type(expression, &TypingEnvironment::of(environment))
-                .map(ProgramType::byte_width),
-        }
-    }
-
     fn pointee_less_program_operand(
         &self,
         operand: &ProgramExpression,
@@ -10333,6 +10285,24 @@ impl AnnotationLowerer<'_> {
     ) -> Result<(), String> {
         self.elaborator()
             .refuse_untyped_pointer_access(expression, &TypingEnvironment::of(environment))
+    }
+
+    fn contract_pointer_element_width(
+        &self,
+        expression: &SyntaxTerm,
+        environment: &SpecElaborationContext,
+    ) -> Option<u32> {
+        self.elaborator()
+            .contract_pointer_element_width(expression, &TypingEnvironment::of(environment))
+    }
+
+    fn program_expression_array_element_width(
+        &self,
+        expression: &ProgramExpression,
+        environment: &SpecElaborationContext,
+    ) -> Option<u32> {
+        self.elaborator()
+            .program_expression_array_element_width(expression, &TypingEnvironment::of(environment))
     }
 
     fn contract_pointer_element_type(
@@ -10368,108 +10338,6 @@ impl AnnotationLowerer<'_> {
     ) -> Option<ProgramType> {
         self.declarations()
             .program_expression_array_element_type(expression, typing)
-    }
-
-    /// The physical width used by C pointer arithmetic.  A pointer to a
-    /// struct has the nominal compatible `int32*` kernel carrier, so its
-    /// pointee layout must be consulted before falling back to `ProgramType`.
-    fn program_expression_array_element_width(
-        &self,
-        expression: &ProgramExpression,
-        environment: &SpecElaborationContext,
-    ) -> Option<u32> {
-        if let ProgramExpression::Variable(name) = expression
-            && let Some(width) = name.metadata_in(self.parameter_pointer_element_widths.as_ref())
-        {
-            return Some(*width);
-        }
-        if let Some(pointer) = self.direct_pointer_value(expression, environment) {
-            return self.spec_definitions.pointer_element_width(pointer).ok();
-        }
-        if matches!(expression, ProgramExpression::Variable(name) if name.is_named("result"))
-            && environment.contract_result_in_scope
-        {
-            return self.program_expression_array_element_width(
-                &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
-                environment,
-            );
-        }
-        match expression {
-            ProgramExpression::AddressOf(target)
-            | ProgramExpression::CheckedObjectAddress(target)
-                if matches!(target.as_ref(), ProgramExpression::Index(..)) =>
-            {
-                let ProgramExpression::Index(base, _) = target.as_ref() else {
-                    unreachable!()
-                };
-                self.program_expression_array_element_width(base, environment)
-            }
-            ProgramExpression::AddressOf(target)
-            | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
-                ProgramExpression::TypedLoad { value_type, .. } => Some(value_type.byte_width()),
-                ProgramExpression::Variable(name) => {
-                    self.c_variable_type(name).map(ProgramType::byte_width)
-                }
-                _ => None,
-            },
-            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer
-                .program_type()
-                .pointee_type()
-                .map(ProgramType::byte_width),
-            ProgramExpression::Cast { target_type, .. } => {
-                target_type.pointee_type().map(ProgramType::byte_width)
-            }
-            ProgramExpression::Variable(name) => name
-                .metadata_in(self.parameter_pointer_element_widths.as_ref())
-                .copied()
-                .or_else(|| {
-                    name.named_in(&environment.array_refs)
-                        .map(|array_ref| array_ref.element_type.byte_width())
-                })
-                .or_else(|| {
-                    self.declared_pointer_element_type(name)
-                        .map(|ty| ty.byte_width())
-                })
-                .or_else(|| {
-                    (name == &crate::kernel::CONTRACT_RESULT)
-                        .then(|| self.result_type.pointee_type())
-                        .flatten()
-                        .map(ProgramType::byte_width)
-                })
-                .or_else(|| {
-                    self.entry_state
-                        .global_array_element_type(name)
-                        .map(ProgramType::byte_width)
-                })
-                .or_else(|| {
-                    name.named_in(&environment.values)
-                        .and_then(|value| match value {
-                            SpecExpression::Value(ProgramValue::Pointer(pointer)) => pointer
-                                .program_type()
-                                .pointee_type()
-                                .map(ProgramType::byte_width),
-                            _ => None,
-                        })
-                }),
-            ProgramExpression::TypedLoad { value_type, .. } => match value_type {
-                ProgramType::Int32Array(_) => Some(4),
-                ProgramType::Int64Array(_) | ProgramType::UInt64Array(_) => Some(8),
-                ProgramType::Int128Array(_) | ProgramType::UInt128Array(_) => Some(16),
-                ProgramType::UInt8Array(_) => Some(1),
-                value_type => value_type.pointee_type().map(ProgramType::byte_width),
-            },
-            ProgramExpression::PointerOffsetBytes { pointer, .. }
-            | ProgramExpression::Subobject { pointer, .. } => {
-                self.program_expression_array_element_width(pointer, environment)
-            }
-            ProgramExpression::Add(left, right) => self
-                .program_expression_array_element_width(left, environment)
-                .or_else(|| self.program_expression_array_element_width(right, environment)),
-            ProgramExpression::Subtract(left, _) => {
-                self.program_expression_array_element_width(left, environment)
-            }
-            _ => None,
-        }
     }
 
     fn loop_frame_checks(&self, loop_index: usize) -> Result<Vec<LoopEffectCheck>, ClickError> {

@@ -9,7 +9,7 @@ use super::typing_environment::NoOuterNames;
 use super::*;
 use crate::surface::typed_surface::{ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType};
 
-/// Lowering's answers when it knows nothing: no pointer widths and no
+/// Lowering's answers when it knows nothing: no call result widths and no
 /// generic call results. Right for any proposition without
 /// pointers or generic calls.
 struct NothingLowered;
@@ -17,9 +17,6 @@ struct NothingLowered;
 impl LoweringQueries for NothingLowered {
     fn generic_call_returns_algebraic(&mut self, _: &SyntaxTerm) -> bool {
         false
-    }
-    fn contract_pointer_element_width(&mut self, _: &SyntaxTerm) -> Option<u32> {
-        None
     }
     fn call_pointer_element_width(&mut self, _: &SyntaxTerm) -> Result<Option<u32>, String> {
         Ok(None)
@@ -31,6 +28,9 @@ struct Declared {
     binders: Vec<(&'static str, ClickType)>,
     c_parameters: Vec<(&'static str, ProgramType)>,
 }
+
+/// A pointer parameter's declared element: its type and its width.
+type PointerElementDeclaration = (&'static str, ProgramType, u32);
 
 impl Declared {
     fn elaborate<'s>(&self, proposition: &'s SyntaxProposition) -> SurfaceProposition<'s> {
@@ -51,6 +51,14 @@ impl Declared {
     }
 
     fn run<T>(&self, elaborate: impl FnOnce(&Elaborator<'_>, &TypingEnvironment<'_>) -> T) -> T {
+        self.run_with_pointer_elements(&[], elaborate)
+    }
+
+    fn run_with_pointer_elements<T>(
+        &self,
+        pointer_elements: &[PointerElementDeclaration],
+        elaborate: impl FnOnce(&Elaborator<'_>, &TypingEnvironment<'_>) -> T,
+    ) -> T {
         let entry_state = ExecutionState::new();
         let predicates = PredicateEnvironment::new(&[]);
         let functions = ClickFunctionEnvironment::new(&[]);
@@ -68,7 +76,18 @@ impl Declared {
                         .map(|(name, ty)| (name.to_string(), *ty))
                         .collect(),
                 ),
-                pointer_element_types: Default::default(),
+                pointer_element_types: Arc::new(
+                    pointer_elements
+                        .iter()
+                        .map(|(name, element, _)| (name.to_string(), *element))
+                        .collect(),
+                ),
+                parameter_pointer_element_widths: Arc::new(
+                    pointer_elements
+                        .iter()
+                        .map(|(name, _, width)| (name.to_string(), *width))
+                        .collect(),
+                ),
             },
             definitions: SpecDefinitions::new(&predicates, &functions),
             retained_states: None,
@@ -278,4 +297,43 @@ fn a_step_through_an_untyped_pointer_parameter_stays_untyped_for_lowering_to_ref
     };
     assert_eq!(kind, ComparisonKind::Native);
     assert_eq!(left, SurfaceTerm::Untyped(step));
+}
+
+#[test]
+fn a_step_of_a_pointer_parameter_is_a_pointer_step_by_its_declared_element_width() {
+    // `p + 1` for an `int32 *` parameter steps by the declared 4-byte
+    // element, decided by elaboration from the declaration with no lowerer.
+    let declared = Declared {
+        binders: vec![],
+        c_parameters: vec![("p", ProgramType::Int32Pointer)],
+    };
+    let step = SyntaxTerm::Add(Box::new(c_variable("p")), Box::new(literal("1")));
+    let surface = declared.run_with_pointer_elements(
+        &[("p", ProgramType::Int32, 4)],
+        |elaborator, typing| {
+            elaborator.elaborate_comparison(
+                &step,
+                ComparisonOperator::Equal,
+                &c_variable("p"),
+                typing,
+                &mut NothingLowered,
+            )
+        },
+    );
+    let Ok(SurfaceProposition::Comparison { kind, left, .. }) = surface else {
+        panic!("a pointer comparison elaborates to a comparison");
+    };
+    assert_eq!(kind, ComparisonKind::Native);
+    assert_eq!(
+        left,
+        SurfaceTerm::PointerStep {
+            pointer: Box::new(SurfaceTerm::Name {
+                name: "p".into(),
+                ty: LeafType::Program(ProgramType::Int32Pointer),
+            }),
+            elements: Box::new(program_literal("1", ProgramType::Int32)),
+            element_width: 4,
+            backward: false,
+        }
+    );
 }
