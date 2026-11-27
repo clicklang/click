@@ -6091,67 +6091,13 @@ fn retained_integer_comparison(
     right: &IntegerResult,
 ) -> (StoredConditionTerm, bool) {
     let arguments = [left.clone().into_kernel(), right.clone().into_kernel()];
-    let atomic_observations = arguments.iter().all(|root| {
-        matches!(
-            root.node(),
-            KernelTermNode::MachineObservation { .. } | KernelTermNode::IntegerLiteral(_)
-        )
-    }) && arguments
-        .iter()
-        .any(|root| matches!(root.node(), KernelTermNode::MachineObservation { .. }));
-    let native = if atomic_observations {
-        let left = left.old_form();
-        let right = right.old_form();
-        let condition = match operator {
-            IntegerComparisonOperator::Equal => OldConditionTerm::IntegerEqual(left, right),
-            IntegerComparisonOperator::NotEqual => OldConditionTerm::IntegerNotEqual(left, right),
-            IntegerComparisonOperator::LessThan => OldConditionTerm::IntegerLessThan(left, right),
-            IntegerComparisonOperator::LessEqual => OldConditionTerm::IntegerLessEqual(left, right),
-            IntegerComparisonOperator::GreaterThan => {
-                OldConditionTerm::IntegerGreaterThan(left, right)
-            }
-            IntegerComparisonOperator::GreaterEqual => {
-                OldConditionTerm::IntegerGreaterEqual(left, right)
-            }
-        };
-        match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&condition, true) {
-            Some((OldConditionTerm::Constant(_), _)) | None => Some(condition),
-            Some((native, truth)) => {
-                let mut source = arguments.each_ref();
-                if matches!(operator, IntegerComparisonOperator::GreaterThan | IntegerComparisonOperator::GreaterEqual) {
-                    source.swap(0, 1);
-                }
-                // Only these source classes pass through the canonical native
-                // constructor without rewriting an arithmetic/alignment operand.
-                let simple = source.iter().all(|root| match root.node() {
-                    KernelTermNode::IntegerLiteral(_) => true,
-                    KernelTermNode::MachineObservation { operand, .. } => matches!(operand.node(), KernelTermNode::Variable(_)),
-                    _ => false,
-                });
-                if simple && let OldConditionTerm::Compare { format, relation, left, right } = &native {
-                    let mut import = KernelTermImport::for_exact_field_inputs();
-                    let operands = source.into_iter().zip([left.as_ref(), right.as_ref()]).map(|(root, literal)| {
-                        match root.node() {
-                            KernelTermNode::MachineObservation { operand, .. } => operand.with_machine_observation_type(*format),
-                            KernelTermNode::IntegerLiteral(_) => import.machine(*format, literal),
-                            _ => unreachable!("simple comparison source"),
-                        }
-                    }).collect::<Vec<_>>();
-                    let root = KernelTerm::boolean_comparison_raw(*format, *relation,
-                        [operands[0].clone(), operands[1].clone()]);
-                    root.retain_old_condition_output(native);
-                    return (StoredConditionTerm::from_root(root).expect("canonical comparison"), truth);
-                }
-                return (StoredConditionTerm::from_minted(native), truth);
-            },
-        }
-    } else {
-        None
-    };
-    let root = KernelTerm::integer_comparison(operator, arguments).expect("Integer operands");
-    if let Some(native) = native {
-        root.retain_old_condition_output(native);
+    if let Some(result) = crate::kernel::machine_integer::comparison::stored_machine_spelling(
+        operator,
+        arguments.each_ref(),
+    ) {
+        return result;
     }
+    let root = KernelTerm::integer_comparison(operator, arguments).expect("Integer operands");
     (
         StoredConditionTerm::from_root(root).expect("logical comparison"),
         true,

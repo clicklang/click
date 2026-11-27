@@ -1183,6 +1183,72 @@ pub(crate) fn structural_native_comparison_of_integer_observation(
     structural_native_comparison_view(condition, value)?.boxed_condition()
 }
 
+/// The machine spelling of a specification comparison, when its immediate
+/// Integer operands observe one machine format and the comparison stays nonconstant.
+pub(in crate::kernel) fn stored_machine_spelling(
+    operator: IntegerComparisonOperator,
+    operands: [&KernelTerm; 2],
+) -> Option<(crate::kernel::StoredConditionTerm, bool)> {
+    use crate::kernel::{KernelTermImport, StoredConditionTerm};
+
+    match operands.map(KernelTerm::node) {
+        [
+            KernelTermNode::MachineObservation { .. },
+            KernelTermNode::MachineObservation { .. },
+        ]
+        | [
+            KernelTermNode::MachineObservation { .. },
+            KernelTermNode::IntegerLiteral(_),
+        ]
+        | [
+            KernelTermNode::IntegerLiteral(_),
+            KernelTermNode::MachineObservation { .. },
+        ] => {}
+        _ => return None,
+    }
+    let (relation, left, right) = order_integer_operands(operator, operands, true);
+    let (native, truth) = structural_native_comparison_from_operands(
+        relation,
+        left.integer_native_compat()?,
+        right.integer_native_compat()?,
+    )?
+    .boxed_condition()?;
+    if matches!(native, OldConditionTerm::Constant(_)) {
+        return None;
+    }
+    if let OldConditionTerm::Compare {
+        format,
+        relation,
+        left: written_left,
+        right: written_right,
+    } = &native
+    {
+        // Canonical comparison construction preserves a variable observation
+        // and converts a literal to the selected machine format. More complex
+        // operands can be rewritten and must come from the canonical output.
+        let operand = |root: &KernelTerm, written: &OldMachineTerm| match root.node() {
+            KernelTermNode::MachineObservation { operand, .. }
+                if matches!(operand.node(), KernelTermNode::Variable(_)) =>
+            {
+                Some(operand.with_machine_observation_type(*format))
+            }
+            KernelTermNode::IntegerLiteral(_) => {
+                Some(KernelTermImport::for_exact_field_inputs().machine(*format, written))
+            }
+            _ => None,
+        };
+        if let (Some(a), Some(b)) = (operand(left, written_left), operand(right, written_right)) {
+            let root = KernelTerm::boolean_comparison_raw(*format, *relation, [a, b]);
+            root.retain_old_condition_output(native);
+            return Some((
+                StoredConditionTerm::from_root(root).expect("machine comparison"),
+                truth,
+            ));
+        }
+    }
+    Some((StoredConditionTerm::from_minted(native), truth))
+}
+
 pub(crate) fn structural_native_comparison_view(
     condition: &OldConditionTerm,
     value: bool,
