@@ -3234,6 +3234,38 @@ fn sequence_equality_children_retain_state_spellings() {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        let mut proof = String::new();
+        for i in 0..length {
+            proof.push_str(&format!("step(); have dst[{i}] == old(src[{i}]);\n"));
+            for j in i + 1..length {
+                proof.push_str(&format!(
+                    r#"
+                    have contains(memory(dst[0..{length}]), memory(dst[{i}])) by {{
+                        apply(click::separation::contains_element(dst, 0, {length}, {i}));
+                    }}
+                    have contains(memory(src[0..{length}]), memory(src[{j}])) by {{
+                        apply(click::separation::contains_element(src, 0, {length}, {j}));
+                    }}
+                    have separate(memory(dst[{i}]), memory(src[{j}])) by {{
+                        apply(click::separation::separate_restrict(
+                            memory(dst[0..{length}]), memory(src[0..{length}]),
+                            memory(dst[{i}]), memory(src[{j}])
+                        ));
+                    }}
+                    have separate(statement({i}).footprint, memory(src[{j}])) by {{
+                        close() using {{ separate(memory(dst[{i}]), memory(src[{j}])); }};
+                    }}
+                    have src[{j}] == at(statement({i}).entry, src[{j}]) by {{
+                        preserve(memory(src[{j}]), statement({i}));
+                    }}
+                    have src[{j}] == old(src[{j}]) by {{
+                        rewrite(src[{j}], at(statement({i}).entry, src[{j}]));
+                        close();
+                    }}
+                    "#
+                ));
+            }
+        }
         let source = format!(
             r#"
             verifying "copy.c";
@@ -3242,13 +3274,17 @@ fn sequence_equality_children_retain_state_spellings() {
                 views src[0..{length}];
                 requires separate(memory(dst[0..{length}]), memory(src[0..{length}]));
                 ensures [dst[0]] ++ [{}] == old([src[0]] ++ [{}]);
+            }} by {{
+                {proof}
+                step();
+                close();
             }}
         "#,
             tail("dst"),
             tail("src")
         );
         let sources = [("copy.c", c.as_str())];
-        let expanded = expand_function_proof_source(&source, &sources, "copy").unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "copy.contract").unwrap();
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
         let wrong = c.replace(
             &format!("dst[{}] = src[{}];", length - 1, length - 1),
