@@ -1,4 +1,4 @@
-use super::tests::complete_source;
+use super::tests::{complete_source, element_source};
 use super::*;
 use crate::kernel::effective_type::{CAccessClass, CScalarClass};
 
@@ -140,7 +140,7 @@ fn wide_pointer_component_reads_stay_flat() {
     let costs = [8u64, 32, 128].map(|size| {
         let unrelated = (0..size)
             .map(|index| {
-                complete_source()
+                element_source()
                     .with_element_count(OldMachineTerm::Variable(Variable(1000200 + index)))
             })
             .collect::<Vec<_>>();
@@ -153,7 +153,7 @@ fn wide_pointer_component_reads_stay_flat() {
                 [count.clone(), count],
             );
         }
-        let thin = complete_source().into_shared();
+        let thin = element_source().into_shared();
         let exports = KernelTermExport::machine_export_count();
         let (wide, work) = crate::instrumentation::measure_deterministic_work(|| {
             let wide = thin.with_element_count(count.clone());

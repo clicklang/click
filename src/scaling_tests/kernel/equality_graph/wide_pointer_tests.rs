@@ -59,3 +59,38 @@ fn wide_pointer_components_ignore_unrelated_facts() {
         assert!(pair[1] <= pair[0] + 8, "{costs:?}");
     }
 }
+
+/// Whether two slices match in everything but their address reads their
+/// counts' classes: one indexed lookup. It stays flat as unrelated slice
+/// facts grow and as the chain of count equalities that makes the two
+/// counts one class grows (`design/rust-slice-values.md`, "Design check").
+#[test]
+fn wide_pointer_value_matches_stay_flat() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let costs = [8u64, 32, 128].map(|size| {
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            let (a, b) = (
+                wide(956_000 + 2 * index, 957_000 + 2 * index),
+                wide(956_001 + 2 * index, 957_001 + 2 * index),
+            );
+            context = context.assume_condition(complete_equal(&a, &b), true);
+        }
+        // Related input: the counts are equal through a chain of `size`.
+        for index in 0..size {
+            context = context.assume_condition(
+                OldConditionTerm::uint64_equal(count(958_000 + index), count(958_001 + index)),
+                true,
+            );
+        }
+        let (s, t) = (wide(959_000, 958_000), wide(959_000, 958_000 + size));
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(context.pointer_provenance_match(&s, &t));
+            assert!(!context.pointer_provenance_match(&s, &s.as_ptr()));
+        });
+        work
+    });
+    for pair in costs.windows(2) {
+        assert!(pair[1] <= pair[0] + 8, "{costs:?}");
+    }
+}

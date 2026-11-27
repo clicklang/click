@@ -1718,6 +1718,13 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
             .unwrap(),
         ProgramValue::Float32(_) => ProgramValue::Float32(OldMachineTerm::constant(0)),
         ProgramValue::Float64(_) => ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
+        // An exhausted slice keeps its kind and type: a thin placeholder
+        // with a count, as each scalar's placeholder is its type's zero.
+        ProgramValue::Pointer(pointer) if pointer.is_wide() => ProgramValue::Pointer(
+            Pointer::new(exhausted_pointer(), pointer.as_ptr().program_type())
+                .with_element_count(OldMachineTerm::uint64_constant(0))
+                .with_type(pointer.program_type()),
+        ),
         ProgramValue::Pointer(pointer) => {
             ProgramValue::Pointer(Pointer::new(exhausted_pointer(), pointer.program_type()))
         }
@@ -4363,8 +4370,11 @@ impl<'a> TermRewrite<'a> {
             ProgramValue::Float32(v) => ProgramValue::Float32(self.bits(v)),
             ProgramValue::Float64(v) => ProgramValue::Float64(self.bits(v)),
             ProgramValue::Pointer(v) => {
+                // A wide value equals only a wide one; an equality between a
+                // slice and a thin pointer is false and substitutes nothing.
                 if let Some((from, to)) = self.pointer_value_exact
                     && v == from
+                    && from.is_wide() == to.is_wide()
                     && !self.source_disabled
                 {
                     self.changed = true;
@@ -6160,10 +6170,13 @@ impl<'a> TermRewrite<'a> {
                 else {
                     unreachable!()
                 };
+                // The count was rewritten with the value above; offset
+                // canonicalization is an address normal form only.
                 let canonical = |value: Pointer| {
-                    value.map_addresses(|p| {
-                        p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset))
-                    })
+                    value.map_addresses(
+                        |p| p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset)),
+                        OldMachineTerm::clone,
+                    )
                 };
                 OldConditionTerm::pointer_equal(canonical(a), canonical(b))
             }

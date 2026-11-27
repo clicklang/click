@@ -534,9 +534,13 @@ fn constructor_injectivity_splits_pointer_fields() {
 #[test]
 fn constructor_injectivity_splits_wide_pointer_counts() {
     let _session = crate::kernel::VerificationSession::enter();
+    // The field is a `[u8]` slice: a wide pointer has its slice pointer
+    // type, which a thin `uint8*` field does not accept.
     let ty = model_type(
         "WidePointerInjective",
-        AlgebraicValueType::Program(ProgramType::UInt8Pointer),
+        AlgebraicValueType::Program(ProgramType::SlicePointer(
+            crate::kernel::SliceElement::UInt8,
+        )),
     );
     let (p, q) = (
         Address::symbolic(Variable(98)),

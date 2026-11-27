@@ -251,7 +251,8 @@ pub(crate) fn instance_field_values_proven_equal(
             (left.numeric_value(), right.numeric_value())
     {
         return (assumptions.pointer_provenance_match(left, right)
-            || assumptions.provenance_equal(left.provenance(), right.provenance()))
+            || (assumptions.pointer_metadata_known_equal(left, right)
+                && assumptions.provenance_equal(left.provenance(), right.provenance())))
             && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                 left.address(),
                 right.address(),
@@ -652,7 +653,11 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
                             }
                             _ => unreachable!("LP64 representation"),
                         }),
-                        pointer: Box::new(record.pointer.map_addresses(canonicalize_pointer_loads)),
+                        pointer: Box::new(
+                            record
+                                .pointer
+                                .map_addresses(canonicalize_pointer_loads, scalar),
+                        ),
                     })
                 }
                 ProgramValue::Parameter(term) => ProgramValue::Parameter(term.clone()),
@@ -671,7 +676,7 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
                 ProgramValue::Float32(term) => ProgramValue::Float32(scalar(term)),
                 ProgramValue::Float64(term) => ProgramValue::Float64(scalar(term)),
                 ProgramValue::Pointer(pointer) => {
-                    ProgramValue::Pointer(pointer.map_addresses(canonicalize_pointer_loads))
+                    ProgramValue::Pointer(pointer.map_addresses(canonicalize_pointer_loads, scalar))
                 }
             };
             (key, value)
@@ -720,7 +725,11 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
                         }
                         _ => unreachable!("LP64 representation"),
                     }),
-                    pointer: Box::new(record.pointer.map_addresses(canonicalize_pointer_loads)),
+                    pointer: Box::new(
+                        record
+                            .pointer
+                            .map_addresses(canonicalize_pointer_loads, canonicalize_atomic_loads),
+                    ),
                 })
             }
             ProgramValue::Parameter(term) => ProgramValue::Parameter(term.clone()),
@@ -738,9 +747,9 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
             ProgramValue::UInt128(term) => ProgramValue::UInt128(canonicalize_atomic_loads(term)),
             ProgramValue::Float32(term) => ProgramValue::Float32(canonicalize_atomic_loads(term)),
             ProgramValue::Float64(term) => ProgramValue::Float64(canonicalize_atomic_loads(term)),
-            ProgramValue::Pointer(pointer) => {
-                ProgramValue::Pointer(pointer.map_addresses(canonicalize_pointer_loads))
-            }
+            ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
+                pointer.map_addresses(canonicalize_pointer_loads, canonicalize_atomic_loads),
+            ),
         };
         std::sync::Arc::make_mut(&mut canonical.union_cells)
             .insert((key, *program_type), value.with_native_value(mapped));
@@ -6923,7 +6932,7 @@ fn transport_framed_atomic_pointer_value(
             }
             transport_framed_atomic_pointer(pointer, after, assumptions)
         },
-        // A wide pointer's count has no frame transport yet (step 2b of
+        // A wide pointer's count has no frame transport yet (step 2b-ii of
         // `design/rust-slice-values.md`): the transport refuses it.
         |_| None,
     )

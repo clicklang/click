@@ -696,7 +696,9 @@ pub(super) fn aggregate_zero_fields(
             ProgramValue::typed_pointer(Address::null(), element_type)
         } else {
             match element_type {
-                ProgramType::Parameter(_) | ProgramType::ParameterPointer(_) => {
+                ProgramType::Parameter(_)
+                | ProgramType::ParameterPointer(_)
+                | ProgramType::SlicePointer(_) => {
                     unreachable!("an array element is a machine type")
                 }
                 ProgramType::Bool => ProgramValue::bool_constant(false),

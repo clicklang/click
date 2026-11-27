@@ -1080,6 +1080,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()
         }
+        RuntimeError::ThinPointerRequired { operation } => {
+            RuntimeError::thin_pointer_required_message(operation)
+        }
         RuntimeError::UnsupportedPointerSubtractionOffsets => {
             "Click does not yet support pointer subtraction with these offsets".into()
         }

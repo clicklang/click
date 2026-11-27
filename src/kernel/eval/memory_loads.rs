@@ -3385,7 +3385,11 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             // The whole stored value defines the unmodified read. An
             // explicitly selected subobject or changed domain is a different
             // value even when it carries that same numeric read address.
-            if side != &Pointer::new(side.address().clone(), side.program_type()) {
+            // A slice is never a stored cell's whole value yet: a wide
+            // pointer's cell arrives with step 2b-ii of
+            // `design/rust-slice-values.md`.
+            if side.is_wide() || side != &Pointer::new(side.address().clone(), side.program_type())
+            {
                 return None;
             }
             pointer_read_over_write_decoded_value(
@@ -6244,6 +6248,9 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | ProgramType::Float32Array(_)
         | ProgramType::Float64Array(_) => None,
         ProgramType::PointerArray(_, _) => None,
+        // A wide pointer's two-word cell has no symbolic load yet
+        // (`design/rust-slice-values.md`, step 2b-ii): the load refuses.
+        ProgramType::SlicePointer(_) => None,
     }
 }
 

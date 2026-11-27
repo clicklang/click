@@ -1354,6 +1354,16 @@ produces `RuntimeError::IndeterminatePointeeType`. Importers should normally
 emit typed loads/stores and preserve enough pointer-type information to avoid
 that model error.
 
+A wide pointer (`design/rust-slice-values.md`) has type
+`ProgramType::SlicePointer(element)` and carries its element count; no thin
+pointer has that type, and retyping never adds or drops a count
+(`with_element_count` builds one, `as_ptr` takes its thin part). Arithmetic,
+ordering, equality, bitwise operations, member offsets and selections,
+dereferences, coercions, truth tests and casts that would add or drop a count
+refuse a wide operand with `RuntimeError::ThinPointerRequired`, naming the
+operation; a cast between slice pointer types keeps the count. Importers read
+a slice's address and length through its components, never through the slice.
+
 ## Symbolic execution
 
 ### What stepping a statement means

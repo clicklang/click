@@ -2319,6 +2319,17 @@ impl EqualityGraph {
                 state.register_pointer_address(a.address());
                 state.register_pointer_address(b.address());
                 state.close(Vec::new());
+                // A wide pointer's count is a machine operand: the addresses
+                // it reads are registered as a bitvector condition's are.
+                // Nothing is visited for a thin pair.
+                if a.is_wide() || b.is_wide() {
+                    self.register_expression_operands(
+                        state,
+                        a.metadata_terms().chain(b.metadata_terms()),
+                        [],
+                        [],
+                    );
+                }
             }
             OldConditionTerm::AddressEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);

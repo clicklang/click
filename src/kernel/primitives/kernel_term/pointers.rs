@@ -216,6 +216,7 @@ impl SharedPointer {
         if old.program_type == program_type {
             return self.clone();
         }
+        written::check_retyping(old.program_type, program_type);
         let mut value = old.clone();
         value.program_type = program_type;
         Self::new(value)
@@ -274,6 +275,7 @@ impl SharedPointer {
             "internal error: a wide pointer is built from a thin pointer"
         );
         let mut value = self.node().clone();
+        value.program_type = written::widened_type(value.program_type);
         value.metadata = Some(Arc::new(KernelPointerMetadata::element_count(count)));
         Self::new(value)
     }
@@ -286,6 +288,7 @@ impl SharedPointer {
             return self.clone();
         }
         let mut value = self.node().clone();
+        value.program_type = written::thin_part_type(value.program_type);
         value.metadata = None;
         Self::new(value)
     }
@@ -481,6 +484,11 @@ mod tests {
             Some(ObjectTypeEvidence::parameter(class, 3, 1000006, false));
         pointer
     }
+    /// [`complete_source`] at an element pointer type, the thin part a
+    /// slice is built from (`int32*`, widened to `[int32]`).
+    pub(super) fn element_source() -> Pointer {
+        complete_source().with_type(ProgramType::Int32Pointer)
+    }
     /// A written pointer is its kernel handle: the kernel reads the same
     /// payload, and exporting it back shares the handle.
     #[test]
@@ -640,7 +648,7 @@ mod tests {
 
     #[test]
     fn wide_pointer_identity_adds_the_element_count() {
-        let thin = complete_source();
+        let thin = element_source();
         let wide = |id| thin.clone().with_element_count(count(id));
         let (a, same, b) = (wide(1000102), wide(1000102), wide(1000103));
         assert_eq!(a, same);
@@ -661,7 +669,7 @@ mod tests {
     #[test]
     fn wide_pointer_components_read_in_place() {
         let _session = crate::kernel::VerificationSession::enter();
-        let thin = complete_source();
+        let thin = element_source();
         let wide = thin.clone().with_element_count(count(1000104));
         assert_eq!(wide.len(), Some(&count(1000104)));
         assert_eq!(
@@ -699,14 +707,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "a wide pointer is built from a thin pointer")]
     fn a_wide_pointer_is_not_widened_again() {
-        let wide = complete_source().with_element_count(count(1000106));
+        let wide = element_source().with_element_count(count(1000106));
         let _ = wide.with_element_count(count(1000107));
     }
 
     #[test]
     #[should_panic(expected = "has no form for a wide pointer's metadata yet")]
     fn thin_only_operations_refuse_a_wide_pointer() {
-        let wide = complete_source().with_element_count(count(1000108));
+        let wide = element_source().with_element_count(count(1000108));
         complete_source().expect_thin("a thin consumer");
         wide.expect_thin("a thin consumer");
     }
@@ -717,7 +725,7 @@ mod tests {
     fn substitution_and_collection_reach_the_element_count() {
         let _session = crate::kernel::VerificationSession::enter();
         let (from, to) = (Variable(1000110), Variable(1000111));
-        let wide = complete_source().with_element_count(count(from.0));
+        let wide = element_source().with_element_count(count(from.0));
         let substituted = wide.map_pointers(Address::clone, |term| {
             crate::kernel::reasoning::substitute_bitvector_variable(
                 term,
@@ -738,9 +746,24 @@ mod tests {
                 .is_none(),
             "a refused count refuses the value"
         );
-        // Respelling physical addresses keeps the count, as it keeps the
-        // provenance.
-        assert_eq!(wide.map_addresses(Address::clone), wide);
+        // Respelling physical addresses keeps the provenance; the count is
+        // respelled by the caller's machine-term map, as the scalars beside
+        // the value are (canonical reads, an address-equality rewrite), and
+        // a thin pointer never calls it.
+        assert_eq!(
+            wide.map_addresses(Address::clone, OldMachineTerm::clone),
+            wide
+        );
+        let respelled = wide.map_addresses(Address::clone, |_| count(to.0));
+        assert_eq!(respelled.len(), Some(&count(to.0)));
+        assert_eq!(respelled.as_ptr(), wide.as_ptr());
+        assert_eq!(respelled.program_type(), wide.program_type());
+        let mut thin_respellings = 0;
+        complete_source().map_addresses(Address::clone, |term| {
+            thin_respellings += 1;
+            term.clone()
+        });
+        assert_eq!(thin_respellings, 0);
         let mut variables = std::collections::BTreeSet::new();
         crate::kernel::reasoning::collect_program_value_bitvector_variables(
             &ProgramValue::Pointer(wide.clone()),

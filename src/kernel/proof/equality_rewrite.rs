@@ -1418,7 +1418,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         rewrite_pointer,
                         rewrite_shared,
                     )),
-                    pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
+                    pointer: Box::new(record.pointer.map_addresses(rewrite_pointer, rewrite_term)),
                 })
             }
             ProgramValue::Parameter(term) => ProgramValue::Parameter(Box::new(rewrite_algebraic(
@@ -1442,7 +1442,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ProgramValue::Float32(term) => ProgramValue::Float32(rewrite_term(term)),
             ProgramValue::Float64(term) => ProgramValue::Float64(rewrite_term(term)),
             ProgramValue::Pointer(pointer) => {
-                ProgramValue::Pointer(pointer.map_addresses(rewrite_pointer))
+                ProgramValue::Pointer(pointer.map_addresses(rewrite_pointer, rewrite_term))
             }
         }
     }
@@ -2186,10 +2186,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 if let Some((OldConditionTerm::PointerEqual(goal_left, goal_right), _)) =
                     condition_source_0.old_condition() =>
             {
+                // A wide pointer's count is respelled as the condition's
+                // other machine terms are below: its reads at the rewritten
+                // addresses.
+                let rewrite_count =
+                    |term: &OldMachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
                 Proposition::condition_is(
                     OldConditionTerm::PointerEqual(
-                        Box::new(goal_left.map_addresses(&rewrite_pointer)),
-                        Box::new(goal_right.map_addresses(&rewrite_pointer)),
+                        Box::new(goal_left.map_addresses(&rewrite_pointer, rewrite_count)),
+                        Box::new(goal_right.map_addresses(&rewrite_pointer, rewrite_count)),
                     ),
                     *expected,
                 )

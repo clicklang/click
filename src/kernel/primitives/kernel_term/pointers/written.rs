@@ -394,6 +394,50 @@ fn hash_pointer_metadata<H: Hasher>(metadata: Option<PointerMetadata<'_>>, state
 }
 const WIDE_POINTER_HASH_MARKER: u64 = 0x7769_6465_2d70_7472; // "wide-ptr"
 
+/// The slice pointer type a thin pointer of type `thin` widens to: `T *`
+/// to a pointer to `[T]`. A type that is no slice's thin part is an internal
+/// error: the front end builds a slice from a typed element pointer.
+pub(super) fn widened_type(thin: ProgramType) -> ProgramType {
+    match SliceElement::of_thin_pointer_type(thin) {
+        Some(element) => ProgramType::SlicePointer(element),
+        None => panic!("internal error: a `{thin:?}` pointer is no slice's thin part"),
+    }
+}
+
+/// The type of a wide pointer's thin part.
+pub(super) fn thin_part_type(wide: ProgramType) -> ProgramType {
+    match wide {
+        ProgramType::SlicePointer(element) => element.thin_pointer_type(),
+        other => panic!("internal error: a wide pointer has the thin type `{other:?}`"),
+    }
+}
+
+/// A thin pointer is never built at a slice pointer type: every value of
+/// that type carries its element count.
+#[track_caller]
+fn assert_thin_pointer_type(program_type: ProgramType) {
+    assert!(
+        !program_type.is_slice_pointer(),
+        "internal error: a slice pointer is built with its element count \
+         (`Pointer::with_element_count`), not as a thin pointer"
+    );
+}
+
+/// A retyping keeps the value, so it keeps a wide pointer's metadata: a thin
+/// pointer retypes only to thin types, a wide one only to slice pointer
+/// types, as Rust's `as` between `*const [T]` and `*const [U]` keeps the
+/// count. Adding or removing the count is a construction or a projection,
+/// never a cast (`design/rust-slice-values.md`, "Representation").
+#[track_caller]
+pub(super) fn check_retyping(from: ProgramType, to: ProgramType) {
+    assert_eq!(
+        from.is_slice_pointer(),
+        to.is_slice_pointer(),
+        "internal error: retyping `{from:?}` to `{to:?}` would add or remove a slice's \
+         element count; build it with `with_element_count` or take `as_ptr`"
+    );
+}
+
 /// A pointer value: an address and its provenance (`design/pointer-model.md`),
 /// the written view of a kernel pointer handle (module documentation).
 /// C provenance is the allocation the pointer was derived from plus the array
@@ -422,6 +466,7 @@ impl Pointer {
         array: ArrayObject,
         program_type: ProgramType,
     ) -> Self {
+        assert_thin_pointer_type(program_type);
         Self(SharedPointer(Arc::new(KernelPointer {
             address: address.into_shared(),
             provenance: provenance.into_shared(),
@@ -486,8 +531,13 @@ impl Pointer {
         self
     }
 
+    /// The same value at another type. Retyping never adds or removes a
+    /// wide pointer's metadata: a thin pointer takes a thin type and a wide
+    /// one a slice pointer type ([`check_retyping`]). Widening is
+    /// [`Self::with_element_count`] and narrowing [`Self::as_ptr`].
     pub(crate) fn with_type(mut self, program_type: ProgramType) -> Self {
         if self.program_type() != program_type {
+            check_retyping(self.program_type(), program_type);
             self.update(|value| value.program_type = program_type);
         }
         self
@@ -529,11 +579,31 @@ impl Pointer {
     }
 
     /// The wide pointer with this thin part and element count, a `UInt64`
-    /// term (`design/rust-slice-values.md`, "Construction").
+    /// term (`design/rust-slice-values.md`, "Construction"). Its type is the
+    /// slice pointer type whose thin part has this pointer's type
+    /// ([`widened_type`]): a `T *` becomes a pointer to `[T]`.
+    #[allow(dead_code)] // Built by step 2b-iii's front ends; kernel tests build it today.
     pub(crate) fn with_element_count(mut self, count: OldMachineTerm) -> Self {
         assert!(
             !self.is_wide(),
             "internal error: a wide pointer is built from a thin pointer"
+        );
+        let program_type = widened_type(self.program_type());
+        self.update(|value| {
+            value.program_type = program_type;
+            value.metadata = Some(Arc::new(KernelPointerMetadata::ElementCount(
+                MachineComponent::written(MachineIntegerType::UInt64, count),
+            )))
+        });
+        self
+    }
+
+    /// The same wide pointer with another element count, as a substitution
+    /// maps it: the type, `[T]` or `str`, is kept.
+    pub(crate) fn with_replaced_element_count(mut self, count: OldMachineTerm) -> Self {
+        assert!(
+            self.is_wide(),
+            "internal error: only a wide pointer has an element count to replace"
         );
         self.update(|value| {
             value.metadata = Some(Arc::new(KernelPointerMetadata::ElementCount(
@@ -544,11 +614,16 @@ impl Pointer {
     }
 
     /// The thin part (`s.as_ptr()`): the same address, provenance and array
-    /// object, with no metadata. A thin pointer is its own thin part.
+    /// object, with no metadata, at the element's thin pointer type. A thin
+    /// pointer is its own thin part.
     pub(crate) fn as_ptr(&self) -> Self {
         let mut thin = self.clone();
         if thin.is_wide() {
-            thin.update(|value| value.metadata = None);
+            let program_type = thin_part_type(thin.program_type());
+            thin.update(|value| {
+                value.program_type = program_type;
+                value.metadata = None;
+            });
         }
         thin
     }
@@ -561,13 +636,14 @@ impl Pointer {
 
     /// Refuse a wide pointer where an operation reads only a thin one and has
     /// no form for its metadata yet. This is an internal error, never a
-    /// fallback that drops the length (`design/rust-slice-values.md`, step 2b).
+    /// fallback that drops the length (`design/rust-slice-values.md`, steps
+    /// 2b-ii and 2b-iii).
     #[track_caller]
     pub(crate) fn expect_thin(&self, operation: &str) -> &Self {
         if self.is_wide() {
             panic!(
                 "internal error: {operation} has no form for a wide pointer's metadata yet \
-                 (design/rust-slice-values.md, step 2b)"
+                 (design/rust-slice-values.md, steps 2b-ii and 2b-iii)"
             );
         }
         self
