@@ -59,7 +59,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
             let [a,b] = pair.arguments();
             return Ok(KernelTerm::pointer_equal([rewrite.boolean_pointer_value(a).ok_or(())?,rewrite.boolean_pointer_value(b).ok_or(())?]));
         }
-        if let KernelTermNode::AddressEqual { arguments } = leaf.node() {
+        if let KernelTermNode::AddressEqual { arguments, .. } = leaf.node() {
             return Ok(KernelTerm::address_equal_raw([
                 rewrite.boolean_address(&arguments[0]).ok_or(())?,
                 rewrite.boolean_address(&arguments[1]).ok_or(())?,

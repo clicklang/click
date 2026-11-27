@@ -4240,7 +4240,7 @@ fn raise_pointer_comparison(
             }
             (left, right)
         }
-        Node::AddressEqual { arguments } => {
+        Node::AddressEqual { arguments, .. } => {
             let left = arguments[0].export().ok()?;
             let right = arguments[1].export().ok()?;
             // As the condition form above: a pointer equality is `p == q`.

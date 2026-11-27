@@ -24,5 +24,6 @@ fn admitted_read_trace_walks_only_the_selected_delta() {
         );
         samples.push(work);
     }
-    assert_eq!(samples, vec![2, 2, 2]);
+    // Two history entries visited and one returned equality constructed.
+    assert_eq!(samples, vec![3, 3, 3]);
 }

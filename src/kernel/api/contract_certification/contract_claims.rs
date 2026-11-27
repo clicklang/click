@@ -2939,6 +2939,7 @@ fn reflexive_completion_condition(condition: BooleanOperandView<'_>) -> bool {
         BooleanOperandView::Shared(root) => match root.node() {
             KernelTermNode::AddressEqual {
                 arguments: [left, right],
+                ..
             } => left.syntax_equal(right),
             KernelTermNode::PointerEqual(pair) => {
                 let [left, right] = pair.arguments();
@@ -3953,7 +3954,6 @@ mod completion_operand_tests {
                     StoredConditionTerm::from_root(root.clone()).unwrap(),
                     polarity,
                 );
-                let native = Proposition::ConditionIs(condition.clone().into(), polarity);
                 let key = completion_key(&retained);
                 assert_eq!(
                     completion_truth(&key),
@@ -3966,6 +3966,12 @@ mod completion_operand_tests {
                     assert_eq!(result.root(), Some(&root));
                 }
                 assert!(!root.has_cached_native_argument());
+            }
+            // Storing a written address equality retains the supplied old
+            // output on this same root. Exercise completion from a cold root
+            // for both polarities before admitting that input.
+            for polarity in [false, true] {
+                let native = Proposition::ConditionIs(condition.clone().into(), polarity);
                 assert_eq!(
                     completion_truth(&completion_key(&native)),
                     expected.map(|value| value == polarity)

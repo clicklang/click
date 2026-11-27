@@ -74,6 +74,12 @@ thread_local! {
 }
 
 impl Load {
+    /// The session's retained point and cell. The numeric load id alone
+    /// can recur in a later verification.
+    pub(super) fn payload_id(&self) -> std::num::NonZeroUsize {
+        std::ptr::NonNull::from(self.node.as_ref()).addr()
+    }
+
     /// The load of `cell` at `point`. The one constructor: the identity is
     /// the point's read key and the cell; a later selection with the same
     /// key returns the load already interned, keeping its first point.

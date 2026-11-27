@@ -163,7 +163,7 @@ pub(super) fn collect_common_memory_loads(
                     &mut pending,
                 )?;
             }
-            KernelTermNode::AddressEqual { arguments } => {
+            KernelTermNode::AddressEqual { arguments, .. } => {
                 push_offset_memory_loads(
                     arguments.iter().map(|address| address.offset()),
                     &mut pending,

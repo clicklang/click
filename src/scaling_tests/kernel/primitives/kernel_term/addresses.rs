@@ -28,6 +28,24 @@ fn address_construction_and_identity_do_not_walk_displacement_dags() {
 }
 
 #[test]
+fn storing_address_equality_retains_displacements_without_walking_them() {
+    for size in [16, 64, 256] {
+        let mut offset = AddressOffset::variable(Variable(999041));
+        for _ in 0..size {
+            offset = AddressOffset::raw_add(offset.clone(), offset);
+        }
+        let local = Address::new(AddressBase::Symbolic(Variable(999042)), offset);
+        let equality = OldConditionTerm::AddressEqual(Box::new(local), Box::new(Address::null()));
+        let (stored, work) = crate::instrumentation::measure_deterministic_work(|| {
+            StoredConditionTerm::from(equality)
+        });
+        let root = stored.root().expect("stored address comparison");
+        assert!(root.cached_condition_output().is_some());
+        assert_eq!(work, 1, "size={size}");
+    }
+}
+
+#[test]
 fn block_admission_charges_selected_bytes_not_unrelated_literal_bytes() {
     for size in [16, 64, 256] {
         let _unrelated = (0..size)
@@ -129,7 +147,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
         let KernelTermNode::BoolEqual { arguments } = pointers.node() else {
             panic!("Boolean equality")
         };
-        let KernelTermNode::AddressEqual { arguments } = arguments[0].node() else {
+        let KernelTermNode::AddressEqual { arguments, .. } = arguments[0].node() else {
             panic!("raw address equality")
         };
         assert_eq!(arguments[0].offset(), &offset);

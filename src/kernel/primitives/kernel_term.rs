@@ -109,6 +109,9 @@ pub enum KernelTermNode {
     PointerEqual(KernelPointerEquality),
     AddressEqual {
         arguments: [SharedAddress; 2],
+        /// The operands keep their block payloads alive. Observation keys use
+        /// the semantic block identities already present in the arguments.
+        block_payloads: [Option<std::num::NonZeroUsize>; 2],
     },
     AddressOffsetEqual {
         arguments: [SharedAddressOffset; 2],

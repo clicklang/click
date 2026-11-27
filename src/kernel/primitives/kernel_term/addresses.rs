@@ -708,6 +708,85 @@ mod tests {
     }
 
     #[test]
+    fn address_equality_keeps_each_producers_binding_metadata() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for (order, declarations) in [
+            [("x", ProgramType::Int32), ("y", ProgramType::Int64)],
+            [("y", ProgramType::Int64), ("x", ProgramType::Int32)],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let other = Address::symbolic(Variable(999040));
+            let stored = declarations.map(|(name, ty)| {
+                let owner = LocalFunctionId::new(None, format!("address_equal_{order}"));
+                owner.record_declaration_spelling(name, false);
+                let binding = LocalBindingId::new(owner, false, 0, Some(name.into()));
+                binding.initialize_program_type(ty);
+                let local = Address::new(
+                    AddressBase::AutomaticLocal {
+                        binding,
+                        instance: LocalStorageInstance::Implicit,
+                    },
+                    AddressOffset::constant(0),
+                );
+                StoredConditionTerm::from(OldConditionTerm::AddressEqual(
+                    Box::new(local),
+                    Box::new(other.clone()),
+                ))
+            });
+            let roots = stored.each_ref().map(|term| term.root().unwrap());
+            assert_ne!(roots[0], roots[1]);
+            assert_eq!(stored[0], stored[1]);
+            let facts = std::collections::HashSet::from([stored[0].clone()]);
+            assert!(facts.contains(&stored[1]));
+            let observations =
+                roots.map(crate::kernel::primitives::integer::observation_identity::normalize);
+            assert_eq!(observations[0], observations[1]);
+            for (term, (name, ty)) in stored.iter().zip(declarations) {
+                let exported = KernelTermExport::condition(term.root().unwrap()).unwrap();
+                for written in [term.old_form(), &exported] {
+                    let OldConditionTerm::AddressEqual(local, _) = written else {
+                        panic!("expected address equality")
+                    };
+                    let AddressBase::AutomaticLocal { binding, .. } = &local.base else {
+                        panic!("expected local block")
+                    };
+                    assert_eq!(binding.spelling(), Some(name));
+                    assert_eq!(binding.program_type(), Some(ty));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn address_equality_keeps_the_load_from_its_own_session() {
+        let produce = || {
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
+            let cell = Address::symbolic(Variable(999043));
+            let address = Address::loaded_value(&memory, &cell);
+            let root = KernelTerm::address_equal_raw([address.into_shared(), cell.into_shared()]);
+            (root, memory.arena_id())
+        };
+        let first = produce();
+        let second = produce();
+        assert_ne!(first.1, second.1);
+        assert_ne!(first.0, second.0);
+        let load_ids = [first, second].map(|(root, arena)| {
+            let KernelTermNode::AddressEqual { arguments, .. } = root.node() else {
+                panic!("expected address equality")
+            };
+            let AddressBase::Load(load) = arguments[0].atom() else {
+                panic!("expected load")
+            };
+            assert_eq!(load.point().shared_memory().arena_id(), arena);
+            load.id()
+        });
+        assert_eq!(load_ids[0], load_ids[1]);
+    }
+
+    #[test]
     fn exact_call_payloads_remain_separate_from_logical_call_identity() {
         let a = SharedPureApplication::intern("call".into(), vec![]);
         let b = SharedPureApplication::intern("call".into(), vec![]);
