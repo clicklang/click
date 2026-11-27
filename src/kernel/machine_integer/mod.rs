@@ -43,7 +43,8 @@ pub(in crate::kernel) mod wide_spec;
 #[cfg(test)]
 mod matrix_tests;
 
-use crate::kernel::{IntegerTerm, MachineIntegerType};
+use crate::kernel::{IntegerTerm, MachineIntegerType, OverflowOperation};
+use num_bigint::BigInt;
 
 /// Every machine-integer format, narrowest first, signed before unsigned.
 /// The test matrix runs every rule at each of them.
@@ -87,6 +88,25 @@ pub(crate) enum Operation {
 impl Operation {
     #[cfg(test)]
     pub(crate) const ALL: [Self; 3] = [Self::Add, Self::Subtract, Self::Multiply];
+
+    pub(crate) fn from_overflow(op: OverflowOperation) -> Option<Self> {
+        match op {
+            OverflowOperation::Add => Some(Self::Add),
+            OverflowOperation::Subtract => Some(Self::Subtract),
+            OverflowOperation::Multiply => Some(Self::Multiply),
+            OverflowOperation::Divide | OverflowOperation::ShiftLeft => None,
+        }
+    }
+
+    pub(crate) fn overflows(self, format: MachineIntegerType, left: BigInt, right: BigInt) -> bool {
+        let exact = match self {
+            Self::Add => left + right,
+            Self::Subtract => left - right,
+            Self::Multiply => left * right,
+        };
+        let (minimum, maximum) = range::range(format);
+        exact < minimum || exact > maximum
+    }
 
     /// The exact `Integer` result of the operation on `left` and `right`.
     pub(crate) fn exact(self, left: IntegerTerm, right: IntegerTerm) -> IntegerTerm {

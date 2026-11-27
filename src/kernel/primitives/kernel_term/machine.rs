@@ -16,6 +16,16 @@ fn retained_machine_input(node: &KernelTermNode) -> Option<&OldMachineTerm> {
 }
 
 impl KernelTerm {
+    pub(super) fn literal_constant_at(
+        &self,
+        format: MachineIntegerType,
+    ) -> Option<MachineIntegerConstant> {
+        match self.node() {
+            KernelTermNode::MachineLiteral(literal) => literal.constant_at(format),
+            _ => None,
+        }
+    }
+
     /// Borrow a selected operand already owned by its machine input.
     pub(crate) fn retained_machine_input(&self) -> Option<&OldMachineTerm> {
         retained_machine_input(self.node())

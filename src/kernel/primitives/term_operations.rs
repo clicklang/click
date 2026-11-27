@@ -2750,35 +2750,23 @@ impl OldConditionTerm {
             // Every other format folds constant operands by the exact
             // result's range: an unsigned overflow is a wrap, a narrow one
             // leaves the narrow range.
-            (format, op @ (O::Add | O::Subtract | O::Multiply)) => {
-                match (
-                    machine_constant_value(format, &left),
-                    machine_constant_value(format, &right),
-                ) {
-                    (Some(a), Some(b)) => {
-                        let exact = match op {
-                            O::Add => a + b,
-                            O::Subtract => a - b,
-                            _ => a * b,
-                        };
-                        let (minimum, maximum) =
-                            crate::kernel::machine_integer::range::range(format);
-                        Self::Constant(exact < minimum || exact > maximum)
-                    }
-                    _ => Self::Overflows {
-                        format,
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
+            (format, op) => {
+                if let Some(operation) =
+                    crate::kernel::machine_integer::Operation::from_overflow(op)
+                    && let (Some(a), Some(b)) = (
+                        machine_constant_value(format, &left),
+                        machine_constant_value(format, &right),
+                    )
+                {
+                    return Self::Constant(operation.overflows(format, a, b));
+                }
+                Self::Overflows {
+                    format,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
                 }
             }
-            (format, op) => Self::Overflows {
-                format,
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            },
         }
     }
 

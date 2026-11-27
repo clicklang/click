@@ -20,6 +20,18 @@ impl KernelTerm {
         operation: OverflowOperation,
         mut arguments: [Self; 2],
     ) -> Self {
+        if let Some(arithmetic) =
+            crate::kernel::machine_integer::Operation::from_overflow(operation)
+            && let [Some(a), Some(b)] = arguments
+                .each_ref()
+                .map(|argument| argument.literal_constant_at(format))
+        {
+            return Self::boolean_literal(arithmetic.overflows(
+                format,
+                a.to_integer(),
+                b.to_integer(),
+            ));
+        }
         let views = arguments.each_ref().map(MachineOperandView::Shared);
         if let [Some(a), Some(b)] = views.map(|view| view.literal()) {
             return KernelTermImport::default().condition(&OldConditionTerm::machine_overflows(
@@ -72,6 +84,12 @@ mod tests {
         for value in [0, 1, 31, 32, 63, 64] {
             values.push(OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), value).unwrap(),
+            ));
+        }
+        let (minimum, maximum) = format.format().bounds();
+        for limit in [minimum, maximum] {
+            values.push(OldMachineTerm::machine_constant(
+                MachineIntegerConstant::from_integer(format.format(), &limit).unwrap(),
             ));
         }
         if let Some(value) = MachineIntegerConstant::from_signed(format.format(), -1) {

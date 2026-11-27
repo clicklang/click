@@ -26,11 +26,9 @@ impl KernelTerm {
         use MachineIntegerType as T;
         let boolean = |value| Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value));
         let native = |value: OldConditionTerm| KernelTermImport::default().condition(&value);
-        if let [Some(left), Some(right)] =
-            arguments.each_ref().map(|argument| match argument.node() {
-                KernelTermNode::MachineLiteral(value) => value.constant_at(format),
-                _ => None,
-            })
+        if let [Some(left), Some(right)] = arguments
+            .each_ref()
+            .map(|argument| argument.literal_constant_at(format))
         {
             return Self::boolean_literal(left.compare(relation, right));
         }
