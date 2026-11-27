@@ -212,6 +212,9 @@
         "kind": "free"
       },
       "name": "cleanup",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:field_drop.cpp@169@F@cleanup#&I#@value",
@@ -396,6 +399,7 @@
         "record_name": "Guard"
       },
       "name": "Guard_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Guard@F@~Guard#@this",
@@ -559,6 +563,9 @@
         "record_name": "Guard"
       },
       "name": "Guard_constructor",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Guard@F@Guard#&I#@this",

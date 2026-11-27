@@ -56,11 +56,11 @@
         "sources": {
           "cleanup_requirement.cpp": {
             "artifact": {
-              "bytes": 15666,
+              "bytes": 15828,
               "path": ".click/captures/fixture/cleanup_requirement.cpp.click-cpp.json",
-              "sha256": "fdb477aeec3176826e36b5f1ae7761ffb42f7572862bbb606862edb3fcf454ed"
+              "sha256": "f1204e3f5b67859c843271c9f6d723c658820007a96be698424f58a29b9620c7"
             },
-            "identity": "18aa195cf6ca27a28a8a432d830f3ecec2cdc5e3d25df3248ee870d7ab8add81",
+            "identity": "ae4122d7b8b602fd250f31be2d1502bc974ef83681c263e9e2beb99223d1c87d",
             "inputs": {
               "$unit/cleanup_requirement.cpp": "a0de3d8a152c64b9f2a2b4dbe7d21b47cafe7a0f005900ff765d4197b9847d03"
             }

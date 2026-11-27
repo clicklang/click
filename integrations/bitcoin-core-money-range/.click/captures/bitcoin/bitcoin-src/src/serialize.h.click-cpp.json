@@ -535,6 +535,9 @@
         "kind": "free"
       },
       "name": "GetSizeOfCompactSize",
+      "parameter_type_spellings": [
+        "unsigned long"
+      ],
       "parameters": [
         {
           "declaration_id": "c:serialize.h@12742@F@GetSizeOfCompactSize#l#@nSize",

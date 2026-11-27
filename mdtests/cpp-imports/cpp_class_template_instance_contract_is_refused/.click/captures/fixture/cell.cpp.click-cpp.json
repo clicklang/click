@@ -80,6 +80,10 @@
         "kind": "free"
       },
       "name": "store",
+      "parameter_type_spellings": [
+        "Cell<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:cell.cpp@110@F@store#&$@S@Cell>#I#I#@cell",
@@ -195,6 +199,9 @@
         }
       },
       "name": "Cell__int_set",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#I@F@set#I#@this",
@@ -321,6 +328,9 @@
         "record_name": "Cell__param_T"
       },
       "name": "Cell__param_T_set",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#@this",

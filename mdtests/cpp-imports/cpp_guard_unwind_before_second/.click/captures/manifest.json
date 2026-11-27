@@ -56,11 +56,11 @@
         "sources": {
           "guarded_before_second.cpp": {
             "artifact": {
-              "bytes": 36650,
+              "bytes": 36903,
               "path": ".click/captures/fixture/guarded_before_second.cpp.click-cpp.json",
-              "sha256": "02668a5ffd15a58174ee8f5b81d7b84c67ed290062315204253d33287044aea9"
+              "sha256": "e32064d8d4e0a5804f6f1412876800ed046a39e944a98d895e060edd0527932f"
             },
-            "identity": "9456c910f38aeb6fc58f1a2ca5844eb4bab2a6b696392eea3e59cc47311c292b",
+            "identity": "60cc89f14e107c262afe0231e01201b18c1d430b1b43385b0c404ece30035b87",
             "inputs": {
               "$unit/guarded_before_second.cpp": "327e6ff62a67e1b077a0c7e7d423a287257ada44b8c4311a52c5aef3aa029fc7"
             }

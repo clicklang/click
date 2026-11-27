@@ -133,6 +133,9 @@
         "kind": "free"
       },
       "name": "peek",
+      "parameter_type_spellings": [
+        "const Boxed &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:boxed.cpp@254@F@peek#&1$@S@Boxed#@boxed",
@@ -325,6 +328,9 @@
         "kind": "free"
       },
       "name": "read",
+      "parameter_type_spellings": [
+        "const Store &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:boxed.cpp@168@F@read#&1$@S@Store#@store",
@@ -376,6 +382,7 @@
         "record_name": "Store"
       },
       "name": "Store_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Store@F@get#1@this",
@@ -517,6 +524,7 @@
         "record_name": "Boxed"
       },
       "name": "Boxed_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Boxed@F@get#1@this",

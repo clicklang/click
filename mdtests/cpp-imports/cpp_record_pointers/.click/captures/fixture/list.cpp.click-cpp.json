@@ -559,6 +559,10 @@
         "kind": "free"
       },
       "name": "relink",
+      "parameter_type_spellings": [
+        "Node *",
+        "Node *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@471@F@relink#*$@S@Node#S0_#@first",
@@ -720,6 +724,9 @@
         "kind": "free"
       },
       "name": "rest",
+      "parameter_type_spellings": [
+        "Node *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@119@F@rest#*$@S@Node#@node",
@@ -847,6 +854,9 @@
         "kind": "free"
       },
       "name": "is_empty",
+      "parameter_type_spellings": [
+        "Node *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@271@F@is_empty#*$@S@Node#@node",
@@ -998,6 +1008,10 @@
         "kind": "free"
       },
       "name": "link",
+      "parameter_type_spellings": [
+        "Node *",
+        "Node *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@179@F@link#*$@S@Node#S0_#@node",
@@ -1120,6 +1134,9 @@
         "kind": "free"
       },
       "name": "head",
+      "parameter_type_spellings": [
+        "Node *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@58@F@head#*$@S@Node#@node",
@@ -1337,6 +1354,10 @@
         "kind": "free"
       },
       "name": "first_or",
+      "parameter_type_spellings": [
+        "Node *",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@338@F@first_or#*$@S@Node#I#@node",

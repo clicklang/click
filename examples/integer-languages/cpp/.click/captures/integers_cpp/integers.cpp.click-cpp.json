@@ -97,6 +97,10 @@
         "kind": "free"
       },
       "name": "add_i32",
+      "parameter_type_spellings": [
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@169@F@add_i32#I#I#@a",
@@ -247,6 +251,10 @@
         "kind": "free"
       },
       "name": "sub_i32",
+      "parameter_type_spellings": [
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@222@F@sub_i32#I#I#@a",
@@ -397,6 +405,10 @@
         "kind": "free"
       },
       "name": "mul_i32",
+      "parameter_type_spellings": [
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@275@F@mul_i32#I#I#@a",
@@ -547,6 +559,10 @@
         "kind": "free"
       },
       "name": "wrapping_add_u32",
+      "parameter_type_spellings": [
+        "unsigned int",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@347@F@wrapping_add_u32#i#i#@a",
@@ -697,6 +713,10 @@
         "kind": "free"
       },
       "name": "wrapping_sub_u32",
+      "parameter_type_spellings": [
+        "unsigned int",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@436@F@wrapping_sub_u32#i#i#@a",
@@ -847,6 +867,10 @@
         "kind": "free"
       },
       "name": "wrapping_mul_u32",
+      "parameter_type_spellings": [
+        "unsigned int",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@525@F@wrapping_mul_u32#i#i#@a",
@@ -941,6 +965,7 @@
         "kind": "free"
       },
       "name": "above_int32_max",
+      "parameter_type_spellings": [],
       "parameters": [],
       "path": [
         "above_int32_max"
@@ -1112,6 +1137,9 @@
         "kind": "free"
       },
       "name": "keep_above_int32_max",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@683@F@keep_above_int32_max#i#@u",
@@ -1215,6 +1243,9 @@
         "kind": "free"
       },
       "name": "to_signed_i32",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@797@F@to_signed_i32#i#@u",
@@ -1318,6 +1349,9 @@
         "kind": "free"
       },
       "name": "to_unsigned_u32",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@883@F@to_unsigned_u32#I#@x",
@@ -1450,6 +1484,10 @@
         "kind": "free"
       },
       "name": "div_u32",
+      "parameter_type_spellings": [
+        "unsigned int",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@962@F@div_u32#i#i#@a",
@@ -1600,6 +1638,10 @@
         "kind": "free"
       },
       "name": "rem_u32",
+      "parameter_type_spellings": [
+        "unsigned int",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1042@F@rem_u32#i#i#@a",
@@ -1750,6 +1792,10 @@
         "kind": "free"
       },
       "name": "div_i32",
+      "parameter_type_spellings": [
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1194@F@div_i32#I#I#@a",
@@ -1900,6 +1946,10 @@
         "kind": "free"
       },
       "name": "rem_i32",
+      "parameter_type_spellings": [
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1247@F@rem_i32#I#I#@a",
@@ -2021,6 +2071,9 @@
         "kind": "free"
       },
       "name": "narrow_u8",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1376@F@narrow_u8#i#@x",
@@ -2124,6 +2177,9 @@
         "kind": "free"
       },
       "name": "narrow_u8_in_range",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1554@F@narrow_u8_in_range#i#@x",
@@ -2256,6 +2312,10 @@
         "kind": "free"
       },
       "name": "add_i64",
+      "parameter_type_spellings": [
+        "long",
+        "long"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1635@F@add_i64#L#L#@a",
@@ -2406,6 +2466,10 @@
         "kind": "free"
       },
       "name": "wrapping_add_u64",
+      "parameter_type_spellings": [
+        "unsigned long",
+        "unsigned long"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1709@F@wrapping_add_u64#l#l#@a",
@@ -2554,6 +2618,10 @@
         "kind": "free"
       },
       "name": "below_i32",
+      "parameter_type_spellings": [
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1786@F@below_i32#I#I#@a",
@@ -2700,6 +2768,10 @@
         "kind": "free"
       },
       "name": "below_u32",
+      "parameter_type_spellings": [
+        "unsigned int",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1842@F@below_u32#i#i#@a",
@@ -2853,6 +2925,9 @@
         "kind": "free"
       },
       "name": "sign_bit_set",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1919@F@sign_bit_set#i#@u",
@@ -2950,6 +3025,9 @@
         "kind": "free"
       },
       "name": "not_bool",
+      "parameter_type_spellings": [
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@1994@F@not_bool#b#@b",
@@ -3072,6 +3150,10 @@
         "kind": "free"
       },
       "name": "and_bool",
+      "parameter_type_spellings": [
+        "bool",
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@2040@F@and_bool#b#b#@a",
@@ -3185,6 +3267,9 @@
         "kind": "free"
       },
       "name": "int_to_bool",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@2101@F@int_to_bool#I#@x",
@@ -3284,6 +3369,9 @@
         "kind": "free"
       },
       "name": "bool_to_u8",
+      "parameter_type_spellings": [
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@2175@F@bool_to_u8#b#@b",
@@ -3444,6 +3532,10 @@
         "kind": "free"
       },
       "name": "bool_sum",
+      "parameter_type_spellings": [
+        "bool",
+        "bool"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@2247@F@bool_sum#b#b#@a",
@@ -3622,6 +3714,11 @@
         "kind": "free"
       },
       "name": "select_i32",
+      "parameter_type_spellings": [
+        "bool",
+        "int",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:integers.cpp@2305@F@select_i32#b#I#I#@b",

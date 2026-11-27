@@ -56,11 +56,11 @@
         "sources": {
           "shapes.cpp": {
             "artifact": {
-              "bytes": 18665,
+              "bytes": 18936,
               "path": ".click/captures/fixture/shapes.cpp.click-cpp.json",
-              "sha256": "c1d7908280e6763171d32a400b2be3fc1298f724ab712ef2974d7e7d41f5036b"
+              "sha256": "347f8f585e750b1f6fc995c347375a30f3af2f421fef2aaf283e71ad15510980"
             },
-            "identity": "406cbf46c6dd23171fa35170bcf9c8c18b47e874ccde3e6e087169ca08a3a2e8",
+            "identity": "a500167006bd6f3ea1a0f796e9fdc7bb01a6e5c70061925e8cd197e07640ea2d",
             "inputs": {
               "$unit/shapes.cpp": "04091df17af2596f1785d441f1e65183cfde4c9d3effcfb0edf0f3c1ace5926f"
             }

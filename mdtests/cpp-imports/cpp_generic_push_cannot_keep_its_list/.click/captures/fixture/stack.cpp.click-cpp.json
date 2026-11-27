@@ -328,6 +328,9 @@
         "kind": "free"
       },
       "name": "pushed_size",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:stack.cpp@361@F@pushed_size#I#@x",
@@ -427,6 +430,9 @@
         }
       },
       "name": "Stack__int_push",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@push#I#@this",
@@ -504,6 +510,7 @@
         }
       },
       "name": "Stack__int_size",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#I@F@size#1@this",
@@ -836,6 +843,9 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_push",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@push#S0_#@this",
@@ -952,6 +962,7 @@
         "record_name": "Stack__param_T"
       },
       "name": "Stack__param_T_size",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Stack>#$@S@__click_T@F@size#1@this",

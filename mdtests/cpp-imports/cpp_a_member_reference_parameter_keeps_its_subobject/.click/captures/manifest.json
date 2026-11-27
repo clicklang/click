@@ -56,11 +56,11 @@
         "sources": {
           "refp.cpp": {
             "artifact": {
-              "bytes": 10399,
+              "bytes": 10540,
               "path": ".click/captures/fixture/refp.cpp.click-cpp.json",
-              "sha256": "c1eb3752fb29411befe2276470704f7d2a11f14509046f62df8a715c63e8a671"
+              "sha256": "c234e48c5c42376e0e4931c4300f82228e2dc3eb904b9a97705c310cc3e06134"
             },
-            "identity": "17159859f9f1e88ae6f9d9a9f8e968a259b7effe29c6612b7fd18cea7c1d0418",
+            "identity": "143ab35c53549969e61e8b6460b6c0dc20aecf9da668b73c440a31095a9e4ea7",
             "inputs": {
               "$unit/refp.cpp": "6138163d17f80514930aa0d088f9d3c686250e2da592a3923c79e1d9e111b4db"
             }

@@ -54,6 +54,9 @@
         "kind": "free"
       },
       "name": "pick",
+      "parameter_type_spellings": [
+        "unsigned char *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:observed.cpp@20@F@pick#*c#@p",
@@ -202,6 +205,9 @@
         "kind": "free"
       },
       "name": "read_through",
+      "parameter_type_spellings": [
+        "unsigned char *"
+      ],
       "parameters": [
         {
           "declaration_id": "c:observed.cpp@88@F@read_through#*c#@p",

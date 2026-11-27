@@ -178,6 +178,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "Pair &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:refr.cpp@106@F@caller#&$@S@Pair#@pair",
@@ -342,6 +345,9 @@
         "kind": "free"
       },
       "name": "first",
+      "parameter_type_spellings": [
+        "Pair &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:refr.cpp@51@F@first#&$@S@Pair#@pair",

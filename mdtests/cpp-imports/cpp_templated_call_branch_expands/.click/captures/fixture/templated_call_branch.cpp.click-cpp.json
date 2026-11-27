@@ -183,6 +183,9 @@
         "kind": "free"
       },
       "name": "probe",
+      "parameter_type_spellings": [
+        "const Box<int> &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:templated_call_branch.cpp@140@F@probe#&1$@S@Box>#I#@box",
@@ -282,6 +285,7 @@
         "kind": "free"
       },
       "name": "prepare",
+      "parameter_type_spellings": [],
       "parameters": [],
       "path": [
         "prepare"
@@ -360,6 +364,7 @@
         "record_name": "Box__int"
       },
       "name": "Box__int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Box>#I@F@get#1@this",

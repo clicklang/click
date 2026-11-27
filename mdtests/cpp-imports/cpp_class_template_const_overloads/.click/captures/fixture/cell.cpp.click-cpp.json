@@ -177,6 +177,11 @@
         "kind": "free"
       },
       "name": "pick",
+      "parameter_type_spellings": [
+        "Cell<int> &",
+        "const Cell<int> &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:cell.cpp@219@F@pick#&$@S@Cell>#I#&1S1_#I#@counted",
@@ -316,6 +321,7 @@
         }
       },
       "name": "Cell__int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#I@F@get#@this",
@@ -379,6 +385,7 @@
         }
       },
       "name": "Cell__int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#I@F@get#1@this",
@@ -607,6 +614,7 @@
         "record_name": "Cell__param_T"
       },
       "name": "Cell__param_T_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#$@S@__click_T@F@get#@this",
@@ -707,6 +715,7 @@
         "record_name": "Cell__param_T"
       },
       "name": "Cell__param_T_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#$@S@__click_T@F@get#1@this",

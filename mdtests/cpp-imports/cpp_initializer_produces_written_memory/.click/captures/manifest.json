@@ -56,11 +56,11 @@
         "sources": {
           "initializer.cpp": {
             "artifact": {
-              "bytes": 10213,
+              "bytes": 10375,
               "path": ".click/captures/fixture/initializer.cpp.click-cpp.json",
-              "sha256": "4307ec754b85f074c76c1fe221458c4a604d2ec7ebc2227e16ea24e4b1f4d828"
+              "sha256": "075d085c5162de983d7063a29cce5037a26f9164efd2cac1a93f4fa36fca2104"
             },
-            "identity": "499b7ead4bb2ca3e83cc9065dd6b0a4a4cd2f555e5fd64157da84ed47d63d780",
+            "identity": "cbddb9b4cd9bb129f83c9adc222b1aca4a3ff8de3cf64b9f1437079b50b1a5ca",
             "inputs": {
               "$unit/initializer.cpp": "b7e46236f682f27e12982563309fd7f3617f06d1bd6282c55214d7c7f3eae200"
             }

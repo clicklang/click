@@ -424,6 +424,12 @@
         "kind": "free"
       },
       "name": "round_trip",
+      "parameter_type_spellings": [
+        "Cell<int> &",
+        "Cell<unsigned int> &",
+        "int",
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:cell.cpp@283@F@round_trip#&$@S@Cell>#I#&$@S@Cell>#i#I#i#@small",
@@ -581,6 +587,9 @@
         }
       },
       "name": "Cell__int_set",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#I@F@set#I#@this",
@@ -658,6 +667,9 @@
         }
       },
       "name": "Cell__unsigned_int_set",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#i@F@set#i#@this",
@@ -735,6 +747,9 @@
         }
       },
       "name": "Cell__unsigned_int_read",
+      "parameter_type_spellings": [
+        "unsigned int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#i@F@read#&i#1@this",
@@ -815,6 +830,7 @@
         }
       },
       "name": "Cell__int_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#I@F@get#1@this",
@@ -1053,6 +1069,9 @@
         "record_name": "Cell__param_T"
       },
       "name": "Cell__param_T_set",
+      "parameter_type_spellings": [
+        "T"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#$@S@__click_T@F@set#S0_#@this",
@@ -1177,6 +1196,9 @@
         "record_name": "Cell__param_T"
       },
       "name": "Cell__param_T_read",
+      "parameter_type_spellings": [
+        "T &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#$@S@__click_T@F@read#&S0_#1@this",
@@ -1294,6 +1316,7 @@
         "record_name": "Cell__param_T"
       },
       "name": "Cell__param_T_get",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Cell>#$@S@__click_T@F@get#1@this",

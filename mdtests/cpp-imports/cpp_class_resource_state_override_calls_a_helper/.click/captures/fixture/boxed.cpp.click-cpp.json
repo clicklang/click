@@ -96,6 +96,10 @@
         "kind": "free"
       },
       "name": "through",
+      "parameter_type_spellings": [
+        "Boxed &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:boxed.cpp@276@F@through#&$@S@Boxed#I#@boxed",
@@ -266,6 +270,10 @@
         "kind": "free"
       },
       "name": "put",
+      "parameter_type_spellings": [
+        "Store &",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:boxed.cpp@210@F@put#&$@S@Store#I#@store",
@@ -331,6 +339,9 @@
         "record_name": "Store"
       },
       "name": "Store_set",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Store@F@set#I#@this",
@@ -483,6 +494,9 @@
         "record_name": "Boxed"
       },
       "name": "Boxed_set",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Boxed@F@set#I#@this",
@@ -648,6 +662,9 @@
         "record_name": "Boxed"
       },
       "name": "Boxed_write",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Boxed@F@write#I#@this",

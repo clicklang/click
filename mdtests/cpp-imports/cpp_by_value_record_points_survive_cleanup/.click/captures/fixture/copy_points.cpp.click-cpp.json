@@ -113,6 +113,9 @@
         "kind": "free"
       },
       "name": "probe",
+      "parameter_type_spellings": [
+        "const View &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:copy_points.cpp@149@F@probe#&1$@S@View#@source",
@@ -320,6 +323,9 @@
         "kind": "free"
       },
       "name": "shorten",
+      "parameter_type_spellings": [
+        "View"
+      ],
       "parameters": [
         {
           "declaration_id": "c:copy_points.cpp@59@F@shorten#$@S@View#@value",

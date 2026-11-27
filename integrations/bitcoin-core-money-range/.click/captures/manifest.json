@@ -270,11 +270,11 @@
         "sources": {
           "bitcoin-src/src/consensus/amount.h": {
             "artifact": {
-              "bytes": 70768,
+              "bytes": 70836,
               "path": ".click/captures/bitcoin/bitcoin-src/src/consensus/amount.h.click-cpp.json",
-              "sha256": "8324df166455315d21aeaa130aa06da67622021bc7cddd41a192ed6eebd4885a"
+              "sha256": "f8691676c9637c15da9004fa85c332e895416f4f63e919a3a6ae8a0643b96a87"
             },
-            "identity": "8e7c6b5e6f9398e7a81dcb9daf052e3d5f1c34d2c72d55867d52ed8d0e583446",
+            "identity": "24f42a71b2d2975773210d97a3db9494f359ff0af3702d30f9de86c7f5803d9f",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
@@ -600,11 +600,11 @@
           },
           "bitcoin-src/src/serialize.h": {
             "artifact": {
-              "bytes": 77634,
+              "bytes": 77703,
               "path": ".click/captures/bitcoin/bitcoin-src/src/serialize.h.click-cpp.json",
-              "sha256": "ecfb1936c134f748452a01861a682a6dd0c1a55a8568900d894acdebe4f44654"
+              "sha256": "8aeb8e9073567099438900b7740208ba48f8cb992e65bb50a428088b786cee91"
             },
-            "identity": "1d0f323c4c6a639263fb2cbbd8c8c1a599b992008b840f1e7f681dc0ee6f5bd2",
+            "identity": "0397d1784bff7bae5dd40590b710d517f79fa4b16886fc0d782496d9be065d92",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
@@ -930,11 +930,11 @@
           },
           "bitcoin-src/src/util/feefrac.h": {
             "artifact": {
-              "bytes": 118098,
+              "bytes": 118448,
               "path": ".click/captures/bitcoin/bitcoin-src/src/util/feefrac.h.click-cpp.json",
-              "sha256": "b2fa31b58409b0b10f5871ee32c4b37c675b5ccc7a42a4885a47abf0dc7bb69d"
+              "sha256": "83896a3467366014632fcbdd3dba854e718381f69ae81125a5ab95cc0e3c733f"
             },
-            "identity": "56f8b3c360c7f7164ae411ec776207fd6fbda740f560dd58bd8b62e62892a57d",
+            "identity": "f5adf808fc72de1db19372dc3726a1a1818439ec6b62538f6c7d492f6845408a",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",

@@ -56,11 +56,11 @@
         "sources": {
           "integers.cpp": {
             "artifact": {
-              "bytes": 100511,
+              "bytes": 102535,
               "path": ".click/captures/integers_cpp/integers.cpp.click-cpp.json",
-              "sha256": "fa75ceae6ee667f42a98dfd1305c2fa79ddfcbefab3a920404643b68db82149c"
+              "sha256": "eaa9164ef43cbd67dcaec18b876ff6e8e91ffdc41fcfb68d0ac1914ed48fb9f9"
             },
-            "identity": "057619312821ea2be3c019ec665a3c89f2389a6bbcc40be693a235d2ea6e5012",
+            "identity": "2eb4f05821a2116323a1307d04a257439e78f3d7e59f01242c260aa5a5f46948",
             "inputs": {
               "$unit/integers.cpp": "f870461de694ef93625ee5dc96962d1562bb9e7ba0bd8f7021560ff4e03fa090"
             }

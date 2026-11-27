@@ -271,6 +271,9 @@
         "kind": "free"
       },
       "name": "f",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:g.cpp@151@F@f#&I#@v",
@@ -433,6 +436,7 @@
         "record_name": "Guard"
       },
       "name": "Guard_destructor",
+      "parameter_type_spellings": [],
       "parameters": [
         {
           "declaration_id": "c:@S@Guard@F@~Guard#@this",
@@ -545,6 +549,9 @@
         "record_name": "Guard"
       },
       "name": "Guard_constructor",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:@S@Guard@F@Guard#&I#@this",
@@ -651,6 +658,9 @@
         "kind": "free"
       },
       "name": "set",
+      "parameter_type_spellings": [
+        "int &"
+      ],
       "parameters": [
         {
           "declaration_id": "c:g.cpp@112@F@set#&I#@out",

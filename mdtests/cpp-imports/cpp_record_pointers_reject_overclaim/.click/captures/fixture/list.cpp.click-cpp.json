@@ -180,6 +180,10 @@
         "kind": "free"
       },
       "name": "first_or",
+      "parameter_type_spellings": [
+        "Node *",
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:list.cpp@62@F@first_or#*$@S@Node#I#@node",

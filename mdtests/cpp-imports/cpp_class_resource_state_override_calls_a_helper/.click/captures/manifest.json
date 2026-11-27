@@ -56,11 +56,11 @@
         "sources": {
           "boxed.cpp": {
             "artifact": {
-              "bytes": 20551,
+              "bytes": 20884,
               "path": ".click/captures/fixture/boxed.cpp.click-cpp.json",
-              "sha256": "0d88ccc252d3b91470239feca0bd267579341e5162d38f6761f063e0ea7f8129"
+              "sha256": "e4c516fb14e2ea997744344d98cf13880b39beb70987255d4f2b1b11f5270054"
             },
-            "identity": "a19ffe51d312ae146e2b8e24d0424a6bd529c2c577903f30cd36ec22d1c23fe0",
+            "identity": "e0347db327d3a589e81b453f30a4c244f1d284cdb2ba92afdcf516a62f734055",
             "inputs": {
               "$unit/boxed.cpp": "74d19ffd27d1578263bd4ab552a1106b0fe7fa50b517647a4c6d7a33b016bbe9"
             }

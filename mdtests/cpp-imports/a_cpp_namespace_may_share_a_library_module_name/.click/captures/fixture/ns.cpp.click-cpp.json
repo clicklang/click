@@ -134,6 +134,9 @@
         "kind": "free"
       },
       "name": "caller",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:ns.cpp@193@F@caller#I#@x",
@@ -259,6 +262,9 @@
         "kind": "free"
       },
       "name": "bytes_count",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:ns.cpp@88@N@bytes@F@count#I#@x",
@@ -346,6 +352,9 @@
         "kind": "free"
       },
       "name": "list_append",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:ns.cpp@28@N@list@F@append#I#@x",
@@ -435,6 +444,9 @@
         "record_name": "V"
       },
       "name": "V_length",
+      "parameter_type_spellings": [
+        "int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:ns.cpp@149@S@V@F@length#I#S@x",

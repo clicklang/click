@@ -102,6 +102,9 @@
         "kind": "free"
       },
       "name": "is_max",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:equality.cpp@11@F@is_max#i#@u",
@@ -292,6 +295,9 @@
         "kind": "free"
       },
       "name": "signed_view",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:equality.cpp@81@F@signed_view#i#@u",
@@ -378,6 +384,9 @@
         "kind": "free"
       },
       "name": "stated",
+      "parameter_type_spellings": [
+        "unsigned int"
+      ],
       "parameters": [
         {
           "declaration_id": "c:equality.cpp@164@F@stated#i#@u",

@@ -254,6 +254,9 @@
         "kind": "free"
       },
       "name": "read_signed",
+      "parameter_type_spellings": [
+        "__int128"
+      ],
       "parameters": [
         {
           "declaration_id": "c:wide_reads.cpp@21@F@read_signed#J#@value",
@@ -543,6 +546,9 @@
         "kind": "free"
       },
       "name": "read_unsigned",
+      "parameter_type_spellings": [
+        "unsigned __int128"
+      ],
       "parameters": [
         {
           "declaration_id": "c:wide_reads.cpp@175@F@read_unsigned#j#@value",

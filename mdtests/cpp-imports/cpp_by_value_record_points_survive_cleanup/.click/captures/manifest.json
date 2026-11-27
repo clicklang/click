@@ -56,11 +56,11 @@
         "sources": {
           "copy_points.cpp": {
             "artifact": {
-              "bytes": 10649,
+              "bytes": 10777,
               "path": ".click/captures/fixture/copy_points.cpp.click-cpp.json",
-              "sha256": "641e52a2a01a4e3e3d2456b174cf24016de5373f23e25e046a6c87aebb3a6d50"
+              "sha256": "bb4c0c06c65c312a8acf13fccdef205bb9be461dffc14d54002d55da822b5a91"
             },
-            "identity": "5819404cf86423775ea19196195adba509fa817474f02024bb42fce2bd6692ab",
+            "identity": "e5e65de75b8de0dd8decb4a7608eb671512b4e9281278722f18397e0c96d9e7c",
             "inputs": {
               "$unit/copy_points.cpp": "1cf0468277734d77cc5c526180eff7c31e0ce854de06b0b53bde5cd19a725915"
             }
