@@ -865,13 +865,13 @@ impl super::ProofSearch<PureFactContext> {
         // trigger order reasoning over unrelated conditions for every range.
         if let Proposition::MemoryLoadable {
             memory,
+            point,
             base,
             bytes,
             wide: false,
-            ..
         } = proposition
             && let Some(premises) =
-                context.adjacent_loadable_region_facts(memory, base, bytes.old_form())
+                context.adjacent_loadable_region_facts(memory, point, base, bytes.old_form())
             && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
             && let Some(found) = trial(&premises)
         {
@@ -884,10 +884,10 @@ impl super::ProofSearch<PureFactContext> {
         if exclude_exact_goal
             && let Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: false,
-                ..
             } = proposition
             && candidates.len() > 1
         {
@@ -901,7 +901,7 @@ impl super::ProofSearch<PureFactContext> {
             )?;
             let sources = atomic_context_from_facts(context, &conditions, &propositions);
             if let Some(premises) =
-                sources.adjacent_loadable_region_facts(memory, base, bytes.old_form())
+                sources.adjacent_loadable_region_facts(memory, point, base, bytes.old_form())
                 && let Some(found) = trial(&premises)
             {
                 return Some(found);

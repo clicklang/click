@@ -714,6 +714,39 @@ enum IndexedView {
 }
 
 impl PathLink {
+    /// Visits every recorded step on the path from `from` to this point,
+    /// newest first, until `visit` returns false: the memory history between
+    /// two points. `Some(true)` when every step was visited, `Some(false)`
+    /// when `visit` stopped, and `None` when this point is not reached from
+    /// `from` through single predecessors (another path, or a branch join).
+    pub(crate) fn visit_steps_since(
+        &self,
+        from: &PathLink,
+        mut visit: impl FnMut(&MemoryDerivation) -> bool,
+    ) -> Option<bool> {
+        let target = from.id()?;
+        let mut link = self;
+        loop {
+            crate::instrumentation::record_deterministic_work(1);
+            if link.id() == Some(target) {
+                return Some(true);
+            }
+            let node = link.0.as_ref()?;
+            let mut steps = node.steps.as_deref();
+            while let Some(log) = steps {
+                crate::instrumentation::record_deterministic_work(1);
+                if !visit(&log.step) {
+                    return Some(false);
+                }
+                steps = log.previous.as_deref();
+            }
+            let [predecessor] = node.predecessors.as_ref() else {
+                return None;
+            };
+            link = predecessor;
+        }
+    }
+
     pub(in crate::kernel) fn shares_point_and_view(&self, other: &Self) -> bool {
         self.id() == other.id() && self.1 == other.1
     }

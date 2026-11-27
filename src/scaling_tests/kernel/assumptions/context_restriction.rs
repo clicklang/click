@@ -147,18 +147,23 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
             memory = memory.store(other, ProgramValue::Int32(7.into()));
         }
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.adjacent_loadable_region_facts(&SymbolicMemory::new(), &base, &12.into())
+            context.adjacent_loadable_region_facts(
+                &SymbolicMemory::new(),
+                &Default::default(),
+                &base,
+                &12.into(),
+            )
         });
         assert_eq!(facts.unwrap(), vec![prefix.clone(), suffix]);
         let selected = PureFactContext::new().assume_proposition(prefix.clone());
         let memory = memory.store(base.offset_by_bytes(8), ProgramValue::Int32(9.into()));
         let (facts, stored_work) = crate::instrumentation::measure_deterministic_work(|| {
-            selected.adjacent_loadable_region_facts(&memory, &base, &12.into())
+            selected.adjacent_loadable_region_facts(&memory, &Default::default(), &base, &12.into())
         });
         assert_eq!(facts.unwrap(), vec![prefix]);
         assert!(
             selected
-                .adjacent_loadable_region_facts(&memory, &base, &16.into())
+                .adjacent_loadable_region_facts(&memory, &Default::default(), &base, &16.into())
                 .is_none()
         );
         samples.push(work + stored_work);

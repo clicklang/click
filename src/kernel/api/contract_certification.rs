@@ -560,10 +560,10 @@ pub fn program_loadability_obligation_impossible_with_assumptions(
 pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposition) -> bool {
     let Proposition::MemoryLoadable {
         memory,
+        point: goal_point,
         base,
         bytes,
         wide: false,
-        ..
     } = goal
     else {
         return false;
@@ -579,10 +579,10 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
             .any(|fact| {
                 let Proposition::MemoryLoadable {
                     memory: fact_memory,
+                    point: fact_point,
                     base: fact_base,
                     bytes: fact_bytes,
                     wide: false,
-                    ..
                 } = fact
                 else {
                     return false;
@@ -601,7 +601,9 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                         assumptions,
                     )
                     && !memories_canonically_equal(fact_memory, memory)
-                    && !memories_connected_by_effects(fact_memory, memory, assumptions)
+                    && crate::kernel::memory_history::liveness_preserved_between_points(
+                        fact_point, goal_point, &base.base,
+                    ) != Some(true)
                 {
                     return false;
                 }

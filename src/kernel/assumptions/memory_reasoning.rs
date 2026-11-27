@@ -782,7 +782,7 @@ impl PureFactContext {
         }
 
         if self
-            .adjacent_loadable_region_facts(memory, base, bytes)
+            .adjacent_loadable_region_facts(memory, point, base, bytes)
             .is_some()
         {
             return true;
@@ -876,10 +876,11 @@ impl PureFactContext {
     pub(crate) fn adjacent_loadable_region_facts(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         base: &Address,
         bytes: &OldMachineTerm,
     ) -> Option<Vec<Proposition>> {
-        let compatible = |fact_memory: &SymbolicMemory, fact_base: &Address| {
+        let compatible_by_memory = |fact_memory: &SymbolicMemory, fact_base: &Address| {
             fact_memory == memory
                 // Stores change cell contents, not whether the surrounding
                 // stack blocks or heap allocations are live. Pointer terms
@@ -891,7 +892,18 @@ impl PureFactContext {
                     && fact_memory.heap == memory.heap)
                 || memory_range_still_available(fact_memory, memory, fact_base, self)
                 || crate::kernel::api::memories_canonically_equal(fact_memory, memory)
-                || crate::kernel::api::memories_connected_by_effects(fact_memory, memory, self)
+        };
+        // The memory history connects the fact's point to this one with no
+        // step that could end the block's lifetime.
+        let compatible = |fact_memory: &SymbolicMemory,
+                          fact_point: &crate::kernel::program_point::PathLink,
+                          fact_base: &Address| {
+            compatible_by_memory(fact_memory, fact_base)
+                || crate::kernel::memory_history::liveness_preserved_between_points(
+                    fact_point,
+                    point,
+                    &fact_base.base,
+                ) == Some(true)
         };
         let equal = |left: &OldMachineTerm, right: &OldMachineTerm| {
             let left = self.simplify_bitvector_under_assumptions(left);
@@ -912,6 +924,7 @@ impl PureFactContext {
             .filter_map(|fact| {
                 let Proposition::MemoryLoadable {
                     memory: fact_memory,
+                    point: fact_point,
                     base: fact_base,
                     bytes: fact_bytes,
                     wide: false,
@@ -920,15 +933,19 @@ impl PureFactContext {
                 else {
                     return None;
                 };
-                (fact_base.base == base.base && compatible(fact_memory, fact_base)).then(|| {
-                    (
-                        Some(fact),
-                        crate::kernel::api::canonicalize_pointer_loads(fact_base),
-                        fact_bytes.clone(),
-                        fact_memory == memory
-                            || crate::kernel::api::memories_canonically_equal(fact_memory, memory),
-                    )
-                })
+                (fact_base.base == base.base && compatible(fact_memory, fact_point, fact_base))
+                    .then(|| {
+                        (
+                            Some(fact),
+                            crate::kernel::api::canonicalize_pointer_loads(fact_base),
+                            fact_bytes.clone(),
+                            fact_memory == memory
+                                || crate::kernel::api::memories_canonically_equal(
+                                    fact_memory,
+                                    memory,
+                                ),
+                        )
+                    })
             })
             .collect::<Vec<_>>();
         // A materialized cell is selected at the requested address, never
@@ -990,7 +1007,7 @@ impl PureFactContext {
                     else {
                         return None;
                     };
-                    compatible(before, address).then(|| {
+                    compatible_by_memory(before, address).then(|| {
                         (
                             Some(fact),
                             crate::kernel::api::canonicalize_pointer_loads(address),
@@ -6085,6 +6102,7 @@ mod seeded_interval_adjacency_tests {
             context
                 .adjacent_loadable_region_facts(
                     &memory,
+                    &Default::default(),
                     &base,
                     &OldMachineTerm::constant(0x8000_0001)
                 )
@@ -6095,6 +6113,7 @@ mod seeded_interval_adjacency_tests {
             context
                 .adjacent_loadable_region_facts(
                     &memory,
+                    &Default::default(),
                     &base,
                     &OldMachineTerm::constant(0x8000_0001)
                 )

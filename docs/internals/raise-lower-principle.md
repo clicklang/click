@@ -133,7 +133,12 @@ they look up carry it. A proposition built only to look a fact up by a memory
 no point holds (a derivation step's source, a specification load's query, a
 cached body comparison) takes `PathLink::lookup_key()`: lookups compare no
 point, and these go when fact indexes are keyed by point.
-A state's memory can still differ from its point's memory: a
+The memory history answers liveness by point: a range live at one point is
+live at another reached from it through single predecessors when no step
+between them may end its block's lifetime
+(`memory_history::liveness_preserved_between_points`). Liveness facts
+transport this way, without the call summaries. A state's memory can still
+differ from its point's memory: a
 verified proof-only view names more cells of the same state, but some states
 hold memory no point holds.
 
