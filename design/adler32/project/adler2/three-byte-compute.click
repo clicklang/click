@@ -17,8 +17,9 @@ impl adler2::Adler32 {
      ensures to_integer(self.a) == old(adler_spec_a(bytes, 3, 1));
      ensures to_integer(self.b) == old(adler_spec_b(bytes, 3, 1, 0));
     } by {
+     have old(bytes.len()) == 3u64 by close() using { old(bytes.len()) == 3u64; };
+     observe(bytes[0..3]);
      apply(adler_serial_three_result_spec(bytes));
-     have old(bytes.len()) == 3u64;
      // The empty chunk iterators execute no body. Prove the scalar reduction
      // from its checked transition before following lane recombination.
      step_until(assignment(b, 0).entry); step();
