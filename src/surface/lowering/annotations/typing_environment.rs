@@ -332,14 +332,24 @@ impl<'a> TypingEnvironment<'a> {
             .or_else(|| self.outer.call_result_point())
     }
 
-    /// What the pointer a C name is directly bound to steps by. A binder is
-    /// never bound to a pointer value: lowering binds it to its variable.
+    /// What the pointer a C name is directly bound to steps by. Lowering
+    /// binds a pointer binder to a pointer of its declared type, carrying
+    /// its struct when it declares one (as `ClickType::from_object_pointer_class`
+    /// reads it back), so the declared type answers.
     pub(super) fn bound_pointer_element(
         &self,
         name: &crate::kernel::BindingName,
     ) -> Option<PointerElement> {
         match self.binders.get(name) {
-            Some(_) => None,
+            Some(ClickType::CObjectPointer {
+                interface_type: InterfaceType::Int32Pointer,
+                struct_name,
+            }) => Some(PointerElement::Struct(struct_name.clone())),
+            Some(click_type) => click_type
+                .interface_type()
+                .map(InterfaceType::to_kernel_type)
+                .filter(|ty| ty.is_pointer())
+                .map(|ty| PointerElement::Pointee(ty.pointee_type())),
             None => self.outer.bound_pointer_element(name),
         }
     }
