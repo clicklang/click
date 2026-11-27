@@ -8171,6 +8171,7 @@ struct SpecDefinitions<'a> {
     struct_sizes: Option<&'a BTreeMap<String, u32>>,
     termination_scope: Option<&'a std::sync::Arc<crate::kernel::OrdinaryTerminationScope>>,
     termination_tactics: Option<&'a BTreeSet<String>>,
+    termination_source_names: Option<&'a proof::program_termination::TerminationSourceNames>,
     predicates: &'a PredicateEnvironment,
     functions: &'a ClickFunctionEnvironment,
 }
@@ -8183,6 +8184,7 @@ impl<'a> SpecDefinitions<'a> {
             struct_sizes: None,
             termination_scope: None,
             termination_tactics: None,
+            termination_source_names: None,
         }
     }
 
@@ -8190,10 +8192,17 @@ impl<'a> SpecDefinitions<'a> {
         mut self,
         scope: &'a std::sync::Arc<crate::kernel::OrdinaryTerminationScope>,
         tactics: &'a BTreeSet<String>,
+        source_names: &'a proof::program_termination::TerminationSourceNames,
     ) -> Self {
         self.termination_scope = Some(scope);
         self.termination_tactics = Some(tactics);
+        self.termination_source_names = Some(source_names);
         self
+    }
+
+    fn termination_function_key<'s>(&'s self, written: &'s str) -> Result<&'s str, String> {
+        self.termination_source_names
+            .map_or(Ok(written), |names| names.resolve(written))
     }
 
     fn with_struct_sizes(mut self, sizes: &'a BTreeMap<String, u32>) -> Self {

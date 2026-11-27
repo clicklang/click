@@ -11287,6 +11287,35 @@ fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types()
     }
     sidecar.push_str("int32 relay(int64 x, int64 y, int32 z) { ensures result == 76; }\n");
     check_selected_claim_certificate(&project, &import, &sidecar);
+    let expansion = click::surface::expand_claim_by_label(
+        None,
+        &sidecar,
+        &ProgramInputs::program(&import),
+        "program.termination",
+        None,
+    )
+    .unwrap();
+    let (_, termination) = expansion.source.rsplit_once("\ntermination ").unwrap();
+    for helper in helpers.iter().filter(|helper| helper.path == ["echo"]) {
+        let span = &helper.span;
+        let written = format!(
+            "echo at {}:{}:{}",
+            span.file, span.start_line, span.start_column
+        );
+        assert!(
+            termination.contains(&format!("check_termination_local({written:?})")),
+            "{termination}"
+        );
+    }
+    assert!(!termination.contains("__cpp_q"), "{termination}");
+    let expanded_path = project.directory.join("expanded.click");
+    fs::write(&expanded_path, &expansion.source).unwrap();
+    let parsed = read_click_project(&expanded_path, &expansion.source).unwrap();
+    click::surface::check_audit_claim("program.termination", true, || {
+        verify_program_prepared_project(&parsed, &import).map_err(|error| error.report())
+    })
+    .unwrap();
+
     let false_claim = sidecar.replace("result == 76", "result == 74");
     let path = project.directory.join("wrong.click");
     fs::write(&path, &false_claim).unwrap();

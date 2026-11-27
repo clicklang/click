@@ -593,6 +593,7 @@ fn function_interface(
     )
     .with_return_reference(return_reference)
     .with_return_pointee_constant(return_constant);
+    interface.cpp_declaration_site = Some(std::sync::Arc::new(source.span.clone()));
     // An axiom keeps no body: its calls are checked against a contract.
     // A pure virtual method is only its interface.
     // A generic method's instance is verified as that method, once.

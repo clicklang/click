@@ -2910,14 +2910,23 @@ fn verify_program_in_context(
             has_unselected_functions: !unselected_executing_names.is_empty(),
         })
         .map_err(|failure| program_contract_failure(failure, &declared_diverging, &tactic_names))?;
+    let termination_source_names = Arc::new(
+        super::proof::program_termination::TerminationSourceNames::new(
+            parsed_sources.values().map(|(_, function)| function),
+        ),
+    );
     let (proved_program, _termination_certificate) = super::proof::program_termination::prove(
         generated_program,
         termination_proof,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
         &tactic_names,
+        &termination_source_names,
     )?;
-    super::expansion::record_termination_certificate(&_termination_certificate);
+    super::expansion::record_termination_certificate(
+        &_termination_certificate,
+        &termination_source_names,
+    );
     let completed_program = proved_program.complete();
     function_environment = function_environment
         .with_verified_function_termination_rules(completed_program.into_termination_rules());

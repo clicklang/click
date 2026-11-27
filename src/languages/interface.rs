@@ -89,6 +89,8 @@ pub struct ImportedFunction {
     pub(super) prepared_record_layouts: std::sync::Arc<BTreeMap<String, RecordLayout>>,
     /// Source paths shared by overloaded C++ declarations.
     pub(super) cpp_overload_paths: Option<std::sync::Arc<BTreeMap<String, String>>>,
+    /// The checked C++ declaration location, used to spell an exact overload.
+    pub(crate) cpp_declaration_site: Option<std::sync::Arc<super::cpp::CppSpan>>,
     pub(super) enums: DeclarationMap<CEnumDefinition>,
     pub(super) unions: DeclarationMap<CUnionLayout>,
     pub(super) globals: DeclarationMap<CGlobal>,
@@ -850,6 +852,7 @@ impl ImportedFunction {
             structs: DeclarationMap::new(),
             prepared_record_layouts: std::sync::Arc::default(),
             cpp_overload_paths: None,
+            cpp_declaration_site: None,
             enums: DeclarationMap::new(),
             unions: DeclarationMap::new(),
             globals: DeclarationMap::new(),
@@ -955,6 +958,7 @@ impl ImportedFunction {
         other.requires_read_only_contract = self.requires_read_only_contract;
         other.cpp_virtual = self.cpp_virtual;
         other.cpp_overload_paths = self.cpp_overload_paths.clone();
+        other.cpp_declaration_site = self.cpp_declaration_site.clone();
         *self == other
     }
 
