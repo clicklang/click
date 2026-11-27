@@ -2645,10 +2645,11 @@ fn collect_proposition_bound_variables_one(
 
 fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>) {
     match term {
-        Term::Condition(condition) => {
-            collect_condition_bound_variables(condition.old_form(), variables)
-        }
-        Term::Bitvector32(bits) => collect_bitvector_bound_variables(bits.old_form(), variables),
+        Term::Condition(condition) => match condition.root() {
+            Some(root) => collect_shared_bound_variables(root, variables),
+            None => collect_condition_bound_variables(condition.old_form(), variables),
+        },
+        Term::Bitvector32(bits) => collect_machine_bound_variables(bits.operand_view(), variables),
         Term::Integer(integer) => {
             if integer
                 .root()
@@ -2665,15 +2666,19 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
             let root = offset.root();
             root.visit_root_in_order(false, |node| {
                 if let Some(index) = node.index() {
-                    collect_offset_index_bound_variables(
-                        MachineOperandView::Shared(index),
-                        variables,
-                    );
+                    collect_machine_bound_variables(MachineOperandView::Shared(index), variables);
                 }
             });
         }
         Term::ProgramValue(value) => {
-            collect_program_value_bound_variables(value.old_form(), variables);
+            if let Some(root) = value.root()
+                && root.is_shared_machine_operand()
+                && value.value().machine().is_some()
+            {
+                collect_shared_bound_variables(root, variables);
+            } else {
+                collect_program_value_bound_variables(value.old_form(), variables);
+            }
         }
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term.old_form(), variables),
@@ -2704,10 +2709,10 @@ fn collect_expression_value_bound_variables(
     value: &ExecutionValue,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if let Some((_, view @ MachineOperandView::Shared(_))) = value.machine() {
-        visit_machine_operand_scoped_leaves(view, |leaf| {
-            collect_scoped_leaf_bound_variables(leaf, variables)
-        });
+    if let Some((_, MachineOperandView::Shared(root))) = value.machine()
+        && root.is_shared_machine_operand()
+    {
+        collect_shared_bound_variables(root, variables);
     } else {
         collect_program_value_bound_variables(&value.native(), variables);
     }
@@ -3473,60 +3478,85 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
 /// `collect_bitvector_variables` intentionally removes those identities from
 /// its result because they are not free; freshness construction needs the
 /// bound identities as well so a logical or fold binder cannot reuse one.
-fn collect_scoped_leaf_bound_variables(
-    leaf: MachineOperandView<'_>,
+fn collect_machine_bound_variables(
+    operand: MachineOperandView<'_>,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if let MachineOperandView::Shared(root) = leaf
-        && matches!(root.node(), KernelTermNode::FloatConvert { .. })
-    {
-        // This freshness policy includes state contents as well as binders.
-        // Keep its selected native boundary; the ordinary free-variable reader
-        // intentionally has different scope and memory rules.
-        collect_bitvector_bound_variables(
-            &crate::kernel::KernelTermExport::machine(root).expect("float conversion"),
-            variables,
-        );
-        return;
+    match operand {
+        MachineOperandView::Old(word) => collect_bitvector_bound_variables(word, variables),
+        MachineOperandView::Shared(root) => collect_shared_bound_variables(root, variables),
     }
-    if let MachineOperandView::Shared(root) = leaf
-        && let KernelTermNode::Fold(fold) = root.node()
-    {
-        variables.insert(fold.accumulator);
-        variables.insert(fold.item);
-        for child in &fold.arguments {
-            visit_machine_operand_scoped_leaves(MachineOperandView::Shared(child), |leaf| {
-                collect_scoped_leaf_bound_variables(leaf, variables)
-            });
+}
+
+fn collect_shared_bound_variables(root: &KernelTerm, variables: &mut BTreeSet<Variable>) {
+    let mut pending = vec![root];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(root) = pending.pop() {
+        if super::variable_collection::checked_collection_checkpoint() {
+            return;
         }
-    } else if let MachineOperandView::Shared(root) = leaf
-        && let KernelTermNode::Match(matched) = root.node()
-    {
-        let mut export = crate::kernel::KernelTermExport::default();
-        if let PureFunctionArgument::Algebraic(scrutinee) = export
-            .argument(&matched.arguments[0])
-            .expect("match scrutinee")
+        if root.is_shared_machine_operand()
+            && !root.has_machine_reads()
+            && !root.has_machine_conversions()
         {
-            collect_algebraic_bound_variables(&scrutinee, variables);
+            continue;
         }
-        for arm in &matched.arms {
-            for binding in arm
-                .export_bindings(&mut export)
-                .expect("match declarations")
-            {
-                collect_algebraic_value_bound_variables(&binding, variables);
+        if !seen.insert(root.id()) {
+            continue;
+        }
+        match root.node() {
+            KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => {}
+            KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
+            | KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::BoolEqual { arguments } => pending.extend(arguments),
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. }
+            | KernelTermNode::BoolCast { operand, .. } => pending.push(operand),
+            KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
+                pending.extend(arguments)
+            }
+            _ if root.ty() == &crate::kernel::KernelType::Bool => {
+                collect_condition_bound_variables(
+                    &BooleanOperandView::Shared(root).native(),
+                    variables,
+                );
+            }
+            KernelTermNode::Fold(fold) => {
+                variables.extend([fold.accumulator, fold.item]);
+                pending.extend(&fold.arguments);
+            }
+            KernelTermNode::Match(matched) => {
+                let mut export = crate::kernel::KernelTermExport::default();
+                if let PureFunctionArgument::Algebraic(scrutinee) = export
+                    .argument(&matched.arguments[0])
+                    .expect("match scrutinee")
+                {
+                    collect_algebraic_bound_variables(&scrutinee, variables);
+                }
+                for arm in &matched.arms {
+                    for binding in arm
+                        .export_bindings(&mut export)
+                        .expect("match declarations")
+                    {
+                        collect_algebraic_value_bound_variables(&binding, variables);
+                    }
+                }
+                pending.extend(&matched.arguments[1..]);
+            }
+            _ => {
+                // Freshness also reserves identities inside states and declarations.
+                // Apply the native policy only to this selected payload.
+                if let Some(word) = MachineOperandView::Shared(root).read_source() {
+                    collect_bitvector_bound_variables(&word, variables);
+                } else {
+                    collect_bitvector_bound_variables(
+                        &crate::kernel::KernelTermExport::machine(root).expect("machine payload"),
+                        variables,
+                    );
+                }
             }
         }
-        for body in &matched.arguments[1..] {
-            visit_machine_operand_scoped_leaves(MachineOperandView::Shared(body), |leaf| {
-                collect_scoped_leaf_bound_variables(leaf, variables)
-            });
-        }
-    } else {
-        collect_bitvector_bound_variables(
-            &leaf.read_source().expect("native scoped leaf"),
-            variables,
-        );
     }
 }
 
@@ -3579,9 +3609,7 @@ fn collect_bitvector_bound_variables(term: &OldMachineTerm, variables: &mut BTre
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
-                            collect_scoped_leaf_bound_variables(leaf, variables);
-                        });
+                        collect_machine_bound_variables(value.operand_view(), variables);
                     }
                     PureFunctionArgument::Value(value) => {
                         collect_program_value_bound_variables(value, variables)
@@ -3684,9 +3712,7 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
-                            collect_scoped_leaf_bound_variables(leaf, variables);
-                        });
+                        collect_machine_bound_variables(value.operand_view(), variables);
                     }
                     PureFunctionArgument::Value(value) => {
                         collect_program_value_bound_variables(value, variables)
@@ -3729,16 +3755,8 @@ fn collect_condition_bound_variables(
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
-            left.for_each_machine_operand(|view| {
-                visit_machine_operand_scoped_leaves(view, |term| {
-                    collect_scoped_leaf_bound_variables(term, variables)
-                })
-            });
-            right.for_each_machine_operand(|view| {
-                visit_machine_operand_scoped_leaves(view, |term| {
-                    collect_scoped_leaf_bound_variables(term, variables)
-                })
-            });
+            left.for_each_machine_operand(|view| collect_machine_bound_variables(view, variables));
+            right.for_each_machine_operand(|view| collect_machine_bound_variables(view, variables));
         }
         OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
@@ -3765,9 +3783,7 @@ fn collect_condition_bound_variables(
             for argument in application.arguments() {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
-                            collect_scoped_leaf_bound_variables(leaf, variables);
-                        });
+                        collect_machine_bound_variables(value.operand_view(), variables);
                     }
                     PureFunctionArgument::Value(value) => {
                         collect_program_value_bound_variables(value, variables)
@@ -3804,16 +3820,7 @@ fn collect_pointer_offset_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     offset.for_each_scaled_operand(|value| {
-        collect_offset_index_bound_variables(value.operand_view(), variables);
-    });
-}
-
-fn collect_offset_index_bound_variables(
-    view: MachineOperandView<'_>,
-    variables: &mut BTreeSet<Variable>,
-) {
-    visit_machine_operand_scoped_leaves(view, |leaf| {
-        collect_scoped_leaf_bound_variables(leaf, variables)
+        collect_machine_bound_variables(value.operand_view(), variables);
     });
 }
 
@@ -10685,10 +10692,63 @@ mod float_conversion_freshness_tests {
         let mut expected = BTreeSet::new();
         collect_bitvector_bound_variables(&native, &mut expected);
         let mut actual = BTreeSet::new();
-        collect_scoped_leaf_bound_variables(MachineOperandView::Shared(&root), &mut actual);
+        collect_machine_bound_variables(MachineOperandView::Shared(&root), &mut actual);
         assert!(expected.contains(&Variable(999983)) && expected.contains(&Variable(999984)));
         assert_eq!(actual, expected);
     }
+}
+
+#[cfg(test)]
+#[test]
+fn stored_machine_freshness_collects_binders_in_guards_and_arms() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let fold = |id| OldMachineTerm::RangeFold {
+        start: Box::new(OldMachineTerm::constant(0)),
+        end: Box::new(OldMachineTerm::Variable(Variable(999970))),
+        initial: Box::new(OldMachineTerm::constant(0)),
+        accumulator: Variable(id),
+        item: Variable(id + 1),
+        body: Box::new(OldMachineTerm::Variable(Variable(id))),
+    };
+    let native = OldMachineTerm::If {
+        condition: Box::new(OldConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(fold(999971)),
+            right: Box::new(OldMachineTerm::constant(1)),
+        }),
+        then_term: Box::new(fold(999973)),
+        else_term: Box::new(fold(999975)),
+    };
+    let root =
+        crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+    let value = ExecutionValue::Shared(root.clone());
+    let expected = (999971..=999976).map(Variable).collect::<BTreeSet<_>>();
+    let KernelTermNode::MachineIf { arguments } = root.node() else {
+        panic!("expected a shared machine conditional");
+    };
+    let guard = StoredConditionTerm::from_root(arguments[0].clone()).unwrap();
+    let before = crate::kernel::KernelTermExport::machine_export_count();
+    for (term, binders) in [
+        (
+            Term::Bitvector32(StoredMachineTerm::from_value(value.clone()).unwrap()),
+            expected.clone(),
+        ),
+        (Term::ProgramValue(value.into()), expected),
+        (
+            Term::Condition(guard),
+            BTreeSet::from([Variable(999971), Variable(999972)]),
+        ),
+    ] {
+        let mut actual = BTreeSet::new();
+        collect_term_bound_variables(&term, &mut actual);
+        assert_eq!(actual, binders);
+    }
+    assert_eq!(
+        crate::kernel::KernelTermExport::machine_export_count(),
+        before
+    );
+    assert!(!root.has_cached_native_argument());
 }
 
 #[cfg(test)]
