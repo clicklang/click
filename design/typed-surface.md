@@ -313,10 +313,19 @@ which lowering reads to classify an error, is handed back to the lowerer by
 `with_elaborator`.
 
 `annotations/elaboration_tests.rs` elaborates comparisons from declared types
-alone, with no lowerer: Click binders declared in a `TypingEnvironment` over
-`NoOuterNames`, and C parameters and their pointer elements in the
-declarations. The declarations still hold an (empty) entry state, a kernel
-value.
+alone, with no lowerer and no kernel state: Click binders declared in a
+`TypingEnvironment` over `NoOuterNames`, and C parameters and their pointer
+elements in the declarations.
+
+A function contract's clauses can be elaborated from the function's
+declarations alone. `Declarations::of_function` holds its parameters, result,
+pointer elements and global and static objects (`GlobalDeclarations`), and no
+entry state: a global's type, and a name's type at entry, come from the
+declarations. `Elaborator::of_function` builds an `Elaborator` from them with
+no lowerer. Debug builds check, for every clause `function_contract_summary`
+lowers, that this elaboration equals the one its lowering context gives
+(`check_contract_elaboration`). Next, the contract's clauses are elaborated
+this way once, before lowering, and lowering reads the stored Surface.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
 entry values, and the state that declares the clause's locals) for names that

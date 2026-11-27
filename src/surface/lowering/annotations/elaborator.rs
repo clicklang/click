@@ -43,6 +43,46 @@ impl<'a> AnnotationLowerer<'a> {
     }
 }
 
+impl<'a> Elaborator<'a> {
+    /// An `Elaborator` for `function`'s contract, from its declarations
+    /// alone, with no lowerer and no kernel state.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pub(super) fn of_function(
+        function: &crate::languages::interface::ImportedFunction,
+        definitions: SpecDefinitions<'a>,
+    ) -> Self {
+        Elaborator {
+            declarations: Declarations::of_function(function),
+            definitions,
+            retained_states: None,
+            capture_referenced_names: None,
+            type_inference_failure: Default::default(),
+        }
+    }
+}
+
+/// Debug builds: a function contract's clause elaborates from the function's
+/// declarations alone to the Surface its lowering context gives it, so the
+/// contract can be elaborated before lowering (`design/typed-surface.md`).
+#[cfg(debug_assertions)]
+pub(super) fn check_contract_elaboration(
+    lowerer: &AnnotationLowerer<'_>,
+    declared: &Elaborator<'_>,
+    proposition: &SyntaxProposition,
+    context: &SpecElaborationContext,
+) {
+    crate::instrumentation::uncharged_debug_check(|| {
+        let typing = TypingEnvironment::of(context);
+        assert_eq!(
+            declared.elaborate_proposition(proposition, &typing),
+            lowerer
+                .elaborator()
+                .elaborate_proposition(proposition, &typing),
+            "contract clause `{proposition:?}` elaborates differently from its function's declarations"
+        );
+    });
+}
+
 impl Elaborator<'_> {
     fn record_type_inference_failure(&self, message: &str) {
         *self.type_inference_failure.borrow_mut() = Some(message.to_string());
@@ -52,7 +92,10 @@ impl Elaborator<'_> {
     fn point_inputs(&self) -> PointInputs<'_> {
         PointInputs {
             entry_values: &self.declarations.entry_values,
-            entry_point: self.declarations.entry_state.program_point(),
+            entry_point: self
+                .declarations
+                .entry_state
+                .map(|entry_state| entry_state.program_point()),
             retained_states: self.retained_states,
             capture_referenced_names: self.capture_referenced_names.as_deref(),
         }
@@ -770,7 +813,6 @@ impl Elaborator<'_> {
                 })
                 .or_else(|| {
                     self.declarations
-                        .entry_state
                         .global_array_element_type(name)
                         .map(ProgramType::byte_width)
                 }),

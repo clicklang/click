@@ -507,7 +507,7 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         BTreeMap::new(),
     );
     let old_context = context
-        .old_state(&lowerer.entry_values, &state.program_point())
+        .old_state(&lowerer.entry_values, Some(&state.program_point()))
         .unwrap();
     for (context, lexical) in [(&context, 7), (&old_context, 3)] {
         for expression in [
