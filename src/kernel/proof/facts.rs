@@ -528,7 +528,7 @@ impl PropositionSource for PureFactStore {
 
 /// Whether `proposition` equates two constructors of different variants of
 /// one algebraic type, which no value satisfies.
-fn is_constructor_clash(proposition: &Proposition) -> bool {
+pub(super) fn is_constructor_clash(proposition: &Proposition) -> bool {
     matches!(proposition,
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
             if left.old_form().algebraic_type == right.old_form().algebraic_type

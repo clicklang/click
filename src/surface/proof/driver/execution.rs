@@ -3719,14 +3719,17 @@ fn advance_prepared_execution_match<'a>(
         if !matches!(
             last.tactic,
             ProofTactic::Close | ProofTactic::CloseUnreachable
-        ) || (matches!(last.tactic, ProofTactic::Close)
-            && proof.is_at_function_exit()
-            && !plan.arm_holds_false(index))
-            || !matches!(continuation.as_ref(), InternalProofNode::Done)
+        ) || !matches!(continuation.as_ref(), InternalProofNode::Done)
             || !bridge
                 .iter()
                 .all(|indexed| bridges_without_executing(&indexed.tactic))
         {
+            continue;
+        }
+        let probe = matches!(last.tactic, ProofTactic::Close)
+            && proof.is_at_function_exit()
+            && !plan.arm_holds_false(index);
+        if probe && bridge.is_empty() {
             continue;
         }
         let scoped = proof.enter_execution_match_arm(&plan, index)?;
@@ -3735,14 +3738,21 @@ fn advance_prepared_execution_match<'a>(
         // that fails leaves the arm to the live driver below, which runs the
         // same tactics again and must find the capture as it was.
         let mut bridge_capture = expansion_capture.as_deref().cloned();
-        let Ok(scoped) = advance_refuting_bridge(
+        let advanced = advance_refuting_bridge(
             scoped,
             bridge,
             bridge_capture.as_mut(),
             proof_site,
             owning_source_index,
-        )?
-        else {
+        );
+        // At function exit a live arm can depend on the outcome. If its
+        // frontier bridge fails, keep it for the normal outcome driver.
+        let advanced = if probe {
+            attempt::candidate_outcome(advanced)?
+        } else {
+            Some(advanced?)
+        };
+        let Some(Ok(scoped)) = advanced else {
             continue;
         };
         let scoped = scoped.at_source_tactic(last.source_index);

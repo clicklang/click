@@ -306,6 +306,9 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
             have address(parent) == address(node) by {
                 close();
             }
+            have not (address(parent) == address(node)) by {
+                close() using { address(parent) != address(node); };
+            }
             close();
         } else {
             close();

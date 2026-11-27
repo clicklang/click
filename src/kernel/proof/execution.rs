@@ -10229,6 +10229,12 @@ impl ExecutionProofCore {
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
+                if super::facts::is_constructor_clash(case) {
+                    arm_facts = arm_facts.with_fact(Proposition::condition_is(
+                        OldConditionTerm::Constant(false),
+                        true,
+                    ));
+                }
                 // A term an exact premise equates with the scrutinee is the
                 // same constructor in this arm: a local holding a call's
                 // result `c = a` matched at `c == None` gives `a == None`.
