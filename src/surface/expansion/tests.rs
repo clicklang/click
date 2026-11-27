@@ -9,6 +9,31 @@ fn verification_only_normalization_has_no_source_expansion() {
 }
 
 #[test]
+fn expanded_addition_and_subtraction_preserve_association() {
+    for operations in [" - 1".repeat(20), " - 1 + 1".repeat(20)] {
+        let expression = format!("value{operations} - (other - 1)");
+        let source = format!(
+            "theorem kept(value: Integer, other: Integer) {{
+                requires {expression} <= 0;
+                ensures {expression} <= 0 by {{
+                    have {expression} <= 0 by close();
+                    close();
+                }}
+            }}"
+        );
+        let claim = "kept.ensures_0";
+        verify_click_theorems(&source).unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &[], claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains(&format!("have ({expression}) <= 0")));
+        crate::surface::check_audit_claim(claim, true, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}"));
+    }
+}
+
+#[test]
 fn nested_loop_range_bound_replays_after_theorem_application() {
     let c = r#"
 void check_span(unsigned char *p, unsigned long len) {

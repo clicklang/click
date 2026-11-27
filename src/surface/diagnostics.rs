@@ -7611,8 +7611,11 @@ fn describe_contract_expression_grouping_casts(
     expression: &SyntaxTerm,
     group_cast: bool,
 ) -> String {
-    if matches!(expression, SyntaxTerm::Add(_, _)) {
-        return describe_add_contract_expression(expression);
+    if matches!(
+        expression,
+        SyntaxTerm::Add(_, _) | SyntaxTerm::Subtract(_, _)
+    ) {
+        return describe_additive_contract_expression(expression);
     }
     match expression {
         SyntaxTerm::IntegerContext(value) => {
@@ -7946,12 +7949,9 @@ fn describe_contract_expression_grouping_casts(
         SyntaxTerm::Negate(expression) => {
             format!("-{}", describe_contract_expression(expression))
         }
-        SyntaxTerm::Add(_, _) => unreachable!("addition is rendered iteratively above"),
-        SyntaxTerm::Subtract(left, right) => format!(
-            "({} - {})",
-            describe_additive_operand(left),
-            describe_additive_operand(right)
-        ),
+        SyntaxTerm::Add(_, _) | SyntaxTerm::Subtract(_, _) => {
+            unreachable!("addition and subtraction are rendered iteratively above")
+        }
         SyntaxTerm::Multiply(left, right) => describe_binary_contract_expression(left, "*", right),
         SyntaxTerm::Divide(left, right) => describe_binary_contract_expression(left, "/", right),
         SyntaxTerm::Remainder(left, right) => describe_binary_contract_expression(left, "%", right),
@@ -8143,20 +8143,23 @@ fn describe_additive_operand(expression: &SyntaxTerm) -> String {
     describe_contract_expression_grouping_casts(expression, false)
 }
 
-fn describe_add_contract_expression(expression: &SyntaxTerm) -> String {
-    // The parser already associates a flat sum to the left. Walk only that
-    // spine: reassociating the right operand could change C overflow or
-    // pointer arithmetic, even though it is harmless for mathematical Integers.
-    // Append once rather than copying every growing prefix of a long sum.
+fn describe_additive_contract_expression(expression: &SyntaxTerm) -> String {
+    // The parser associates both operators to the left. Walk that spine and
+    // keep each right operand grouped to preserve overflow and pointer arithmetic.
     let mut left = expression;
-    let mut rights = Vec::new();
-    while let SyntaxTerm::Add(first, second) = left {
-        rights.push(second.as_ref());
+    let mut operations = Vec::new();
+    loop {
+        let (first, operator, right) = match left {
+            SyntaxTerm::Add(first, right) => (first, " + ", right),
+            SyntaxTerm::Subtract(first, right) => (first, " - ", right),
+            _ => break,
+        };
+        operations.push((operator, right.as_ref()));
         left = first;
     }
     let mut output = format!("({}", describe_additive_operand(left));
-    for right in rights.into_iter().rev() {
-        output.push_str(" + ");
+    for (operator, right) in operations.into_iter().rev() {
+        output.push_str(operator);
         output.push_str(&describe_additive_operand(right));
     }
     output.push(')');
