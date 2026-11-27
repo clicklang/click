@@ -1,8 +1,7 @@
 # Two impossible constructors and one live arm
 
 Preconditions rule out two of the three constructors. Each impossible arm
-closes with `contradiction`, which names an exact fact and its negation in that
-case, so no C outcome is simulated for it. The one surviving arm runs on the
+closes from the `false` established in that case, so it contributes no C outcome. The one surviving arm runs on the
 parent frontier without a split at all: a sole live arm is not joined, so it
 keeps the outer routing scope.
 
@@ -31,8 +30,8 @@ int read(int* p) {
     ensures c.model == old(c.model);
 } by {
     match c.model {
-        Tri::Zero => { contradiction(c.model == Tri::Zero); },
-        Tri::One => { contradiction(c.model == Tri::One); },
+        Tri::Zero => { close(); },
+        Tri::One => { close(); },
         Tri::Two(value) => {
             unfold(c);
             step_until(function.exit);

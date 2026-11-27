@@ -76,7 +76,6 @@ remains supported.
   [Proposition reasoning](#proposition-reasoning).
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
   [Proposition reasoning](#proposition-reasoning).
-- `contradiction(P)`: close an impossible case from a fact and its negation.
   Use `close()` for an established `false` in a proposition proof, an
   execution `match` arm, or a loop `maintain` path.
   See [Proposition reasoning](#proposition-reasoning).
@@ -246,7 +245,7 @@ expanded proof uses `close()` if the goal already holds. When it needs to split 
 condition before reaching the goal, it writes a proof `if`. At each end, expansion proves an equation between the application and
 the selected branch's literal using `unfold`, selected arm equations and
 `close()`. It rewrites the claimed value comparison with the equation and
-closes the branch with `contradiction`. At most 16
+closes the branch from `false`. At most 16
 connected function facts are read, each up to 16 ends; a `match` that its
 arguments do not decide, or an end that is not a constant, is a miss. See
 [`solve_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_reads_a_condition_out_of_a_definition.md)
@@ -1134,8 +1133,6 @@ step is still checked.
 | `intro() { ... }` | control | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
 | `intro(name) { ... }` | control | Specialized | Choose the name introduced into the block. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
-| `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
-| `contradiction()` | simple | Core | Close a goal from an established `false`. | [Reference](#contradictions) |
 | `instantiate(F, value, ...)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `apply(fact)` | simple | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
@@ -1367,14 +1364,12 @@ A conjunction under implications or universals is first tried leaf by leaf with
 direct logical steps, and a written conjunction is split before any search over
 the whole goal, each conjunct trying direct steps first.
 
-An implication whose antecedent `normalize()` refutes, such as
-`i == i + 1 implies n <= 5u64` with Integer `i + 1`, is introduced and closed
-by `contradiction` on that antecedent, reading only the goal; expansion
-writes `intro() { contradiction(A); }`
+An implication with an impossible antecedent is introduced and closed from
+`false`. Expansion includes a checked proof of the antecedent's negation
+when the branch does not already hold `false`.
 ([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
 An implication whose antecedent, or one conjunct of an `a and b` antecedent,
-has its opposite among the facts closes by `contradiction` once `close()`
-introduces it, whichever form the facts state the opposite in (`x > 100`
+has its opposite among the facts closes once `close()` introduces it, whichever form the facts state the opposite in (`x > 100`
 for `x <= 100` false), so `a and b implies c` closes where the curried
 `a implies b implies c` does
 ([`solve_refutes_a_conjunct_of_an_antecedent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_refutes_a_conjunct_of_an_antecedent.md),
@@ -1465,7 +1460,7 @@ an aliased read as written
 
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the
-refuted arms closing by `contradiction`
+refuted arms closing from `false`
 ([`solve_disjunctive_syllogism.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_disjunctive_syllogism.md)).
 
 A goal that an available implication (or chain) concludes whose antecedents are
@@ -1766,6 +1761,10 @@ both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
 Each check reads the named operands and at most two exact bound keys; it does
 not search for an interval or derive missing bounds.
+
+A written signed `int32` or `int64` division observation equals the mathematical
+truncating quotient of the same operands when the divisor is known nonzero and
+the signed minimum divided by `-1` is excluded.
 
 For a valid literal shift count, a left-shift observation equals multiplication
 by its power of two when the exact result is in range; signed shifts also
@@ -2372,7 +2371,8 @@ field and must match the constructed equality.
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
 and constructs it at the exit. At a checked function return, it can carry
-the fact through a recorded cleanup that retires a distinct automatic object.
+the fact through recorded cleanup when each retired automatic object is
+provably distinct from the selected cell.
 The separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
@@ -2383,9 +2383,9 @@ only automatic storage, or a return with only automatic-storage effects,
 including scope cleanup. The latter footprints require unchanged heap
 retirement information. Prove separation from the footprint and supply the
 exact entry viewability fact. The conclusion is a live-storage fact for the
-same range at the exit, including for symbolic `uint64` byte ranges. At the
-published outcome a return can also include one recorded retirement of a
-provably distinct automatic object after the statement's exit snapshot.
+same range at the exit, including for symbolic `uint64` byte ranges. The
+published outcome can also include recorded retirements after the return's
+exit snapshot when each retired automatic object is provably distinct.
 
 For equality goals, use an ordinary `have` to establish the equality, then
 `rewrite` and `close()` to carry a proposition across the change. The tactic remains
@@ -2543,8 +2543,8 @@ states the named laws' exact guards.
 Integer inequality composition writes the equalities that convert bounds
 to and from `left - right <= 0`. `close()` checks the local equalities,
 and the algebra emitter writes named laws and rewrites for coefficient
-rearrangements. A cited fact that is false by computation can close with
-`contradiction(fact)` directly.
+rearrangements. For an impossible comparison, expansion writes the proof of its negation
+before closing the branch.
 
 Bounded cast identities expand by proving the exact destination range from
 the selected bounds and then closing the observation equality with
@@ -2800,53 +2800,6 @@ unchanged, and profiling reports that work.
 
 **Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`loop_entry_guard_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_entry_guard_intro.md), [`enumerate_closes_instances_by_evaluation_or_exact_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/enumerate_closes_instances_by_evaluation_or_exact_facts.md), [`enumerate_refuses_an_instance_held_in_another_spelling.md`](https://github.com/clicklang/click/blob/master/mdtests/enumerate_refuses_an_instance_held_in_another_spelling.md)
 
-### Contradictions
-
-**Forms:** `contradiction()` and `contradiction(P)`.
-
-**Core.** `contradiction()` closes the focused branch, whatever its goal,
-when `false` is already established. `contradiction(P)` closes the branch
-from the selected proposition and its negation. Both use indexed lookups
-and context-free checks.
-
-**Accepts** `P` when both halves hold:
-
-- `P` is held: it is an available fact in any of its forms (written,
-  mirrored, such as `0 > x` for `x < 0` or `3 == x` for `x == 3`, or at the
-  other polarity), possibly as a conjunct of a held conjunction; or `P` is a
-  conjunction whose conjuncts are each available.
-- Its negation is held: `not P` is an available fact; or `P` is a comparison
-  and the opposite comparison of the same operands is (`x != 3` for
-  `x == 3`, `x >= 0` for `x < 0`, `x <= 5` for `x > 5`); or one of the fixed
-  equivalent forms of its negation is, including the mirrored one
-  (`0 <= x` for `x < 0`, `5 >= x` for `x > 5`, `3 != x` for `x == 3`), in
-  every family: `int32`, the 64-bit machine types such as `x < 32u64` beside
-  `x >= 32u64`, and `Integer`; or `not P` evaluates to true by
-  `normalize()`'s rules, as for `P` = `1 == 0`, `x < x`, or
-  `to_integer(x) + 1 == to_integer(x)`.
-- `P` may be any proposition for the `not P` form, including a `bool`, a call
-  comparison, an implication, or a quantifier.
-
-**Outside it**, with what to write instead:
-
-- A merely contradictory pair that is not a negation, such as `x < 0` beside
-  `x >= 1`, or `x == 3` beside `x == 0`: first derive the negation with
-  `have x >= 0 by close() using { x >= 1; };`, or close with
-  `close() using { ... }`.
-- A `not P` that needs scaling or overflow reasoning, such as `2 * x == x + x`
-  or `x + 1 > x` at a C width: `close() using { ... }`.
-
-**Failure, checking, and tools:**
-
-An empty call without an established `false` is refused. For a selected
-proposition, the refusal names the missing half. `contradiction(false)`
-is also accepted, and expansion prints it as `contradiction()`. Profiling
-charges one leaf for either form.
-
-**Checked examples:** [`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md), [`surface_syntax.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/surface_syntax.rs),
-[`contradiction_opposite_comparison.md`](https://github.com/clicklang/click/blob/master/mdtests/contradiction_opposite_comparison.md),
-[`uint64_branch_negation_refutes_the_other_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_branch_negation_refutes_the_other_arm.md), [`function_match_arm_closes_by_contradiction_after_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/function_match_arm_closes_by_contradiction_after_a_have.md), [`function_match_arm_contradiction_needs_a_refuted_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/function_match_arm_contradiction_needs_a_refuted_fact.md)
-
 ### Universal instantiation
 
 **Form:** `instantiate(F, value, ...)`
@@ -3079,8 +3032,8 @@ decided the same way, with the arm's field bindings
 Tactics written after it in the same arm are part of that arm, so they
 continue each of its cases, as after a nested `if`
 (`mdtests/tactics_after_a_nested_post_execution_match_continue_each_path.md`).
-A `match` with `ensuring`, or with an arm that is a lone `contradiction`,
-splits once at the exit frontier instead, on the path's facts, and so does a
+A `match` with `ensuring` splits once at the exit frontier on the path's
+facts, and so does a
 `match` whose scrutinee has no checked value there.
 
 Tactics written after a `match` in a `maintain` body are checked once:
@@ -3100,8 +3053,7 @@ induction hypothesis and accept no `ensuring` clause.
 Payload names are local to the written arm, including when tactics follow the
 match. The kernel reduces the goal to universally quantified constructor
 implications and checks their complete conjunction. An impossible arm may
-consist of `contradiction(proposition)` naming an exact fact and its negation in
-that case; the remaining live arms are split and joined normally, and a sole
+end with `close()` once that case holds `false`; the remaining live arms are split and joined normally, and a sole
 live arm runs on the parent frontier without a join.
 
 **Failure, checking, and tools:**
@@ -3303,7 +3255,7 @@ from an earlier `have` or a proof `if` condition inside a pure theorem has none
 and is not offered. In a pure theorem, an omitted proof of `ensures P` uses the same
 closure and search as `close()`. `have name: P` also names the fact: until the end of
 the enclosing block, `name` stands for `P` wherever a proposition is cited
-whole, as in `using { name; }`, `have name by close();` or `contradiction(name)`, and is
+whole, as in `using { name; }` or `have name by close();`, and is
 read as `P` there, so citing it proves exactly what restating `P` proves.
 
 The name is not visible inside the fact's own proof, and expansion writes `P` in

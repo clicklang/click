@@ -1,8 +1,15 @@
 # Rust slices as wide pointers
 
-Status: direction agreed with the maintainer on 2026-11-25. Steps 0 and 1
-of the [plan](#plan) are done; the wide pointer itself is not
-implemented.
+Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
+2a, 2b-i, 2b-ii-a, 2b-ii-b, 2b-iii-a, 2b-iii-b-i, 2b-iii-b-ii and
+2b-iii-c-i of the [plan](#plan) are done: the kernel has the wide pointer
+and its slice pointer type, every kernel consumer reads or refuses its
+count, a slice is stored and read back as one memory cell, a symbolic read
+of a slice cell names its data pointer and count, a slice named by one
+variable, such as a call's result or a binder, names its count from that
+variable, a slice-valued pure application names its count from the
+application, and the spec language reads a slice's components and builds
+one from raw parts, but no front end produces a wide pointer yet.
 
 ## Requirements
 
@@ -127,7 +134,7 @@ specs may also write the Rust type. The other four are spelled as in Rust.
 
 1. **Consumers of a pointer that assume it is thin.** Arithmetic,
    dereference, range formation and integer casts must take the thin part
-   or refuse a wide pointer. There are 203 `OldPointer::new` sites in 72
+   or refuse a wide pointer. There are 203 `Pointer::new` sites in 72
    files outside tests. The type distinguishes wide pointers, so a
    consumer that does not handle one refuses it rather than misreading it.
    The inventory is [below](#inventory-of-pointer-consumers).
@@ -145,10 +152,11 @@ behaviour in the large evaluation files (`eval/memory_loads.rs`,
 `eval/expression.rs`, `kernel/spec.rs`, `surface/proof/surface_synthesis.rs`)
 is still to be confirmed.
 
-**Choke points.** `OldPointer`'s fields are private
-(`primitives.rs:2945-3300`), so metadata flows through a few places:
+**Choke points.** `Pointer` is the written view of the kernel payload
+`KernelPointer`, whose fields only `kernel_term/pointers.rs` and its
+`written.rs` reach, so metadata flows through a few places:
 
-- `identity()` (`primitives.rs:3313-3373`) for equality, hash and order,
+- `Pointer::identity()` (`kernel_term/pointers/written.rs`) for equality, hash and order,
   plus `same_provenance_as` and `retained_nonaddress_metadata`;
 - `map_pointers`, `try_map_pointers` and `map_addresses` (`:3256-3283`)
   for substitution and transport, which today map addresses only and need
@@ -192,11 +200,13 @@ change.
 bitwise tag operations, pointer-to-integer and integer-to-pointer casts
 (`expression.rs:980-1129`), and the retyping builders `with_type`,
 `retag_pointer` and `with_binding_type` (thin to wide must carry a length).
-All of these are reached through the type: `is_pointer` derives from
-`pointee_type()` (`term_operations.rs:4185`, `:4508`), so a slice pointer
-type whose `pointee_type` is `None` refuses them without per-site edits,
-and the ~100 `PointerInteger` sites are only reachable after a cast that
-refuses.
+The type alone does not refuse them: `is_pointer` derives from
+`pointee_type()`, but the operators take their step width from the
+expression, not the value's type, and default to 4 without one, so a
+slice would be stepped as an `int *`. Step 2b-i therefore refuses a wide
+operand explicitly at each operator's entry (`RuntimeError::
+ThinPointerRequired`), and the ~100 `PointerInteger` sites are only
+reachable after a cast that refuses.
 
 **Sites that take the thin part (T):** ranges, resources, aliases,
 mutexes and borrows match on `AddressBase` only; the range base at
@@ -243,7 +253,7 @@ one value.
 
 ### Kernel facts the options rely on
 
-- `OldPointer` (`src/kernel/primitives.rs:2657`) is already a compound: an
+- `Pointer` (`src/kernel/primitives/kernel_term/pointers/written.rs`) is already a compound: an
   address, its provenance and its array object. Its identity, hash and
   order use those components, not its type.
 - The e-graph decomposes pointer equality by component:
@@ -425,12 +435,288 @@ construct.
 1. **Inventory** of every `Pointer` consumer, classified as takes the thin
    part, refuses a wide pointer, or handles metadata. Done; recorded
    [above](#inventory-of-pointer-consumers).
-2. **Kernel wide pointer.** The metadata component, slice pointer types,
-   identity, e-graph, substitution, memory cells, raising, with unit tests
-   and the scaling tests above. The library's `Slice<T>` becomes the
-   built-in type, so slice-valued pure functions, `Option<&[u8]>` contract
-   payloads and slice-returning functions use it. This finishes slice
-   returns and `as_bytes`.
+2. **Kernel wide pointer**, in two parts.
+   - **2a. Metadata component.** Done. `KernelPointer.metadata` is
+     `Option<Arc<KernelPointerMetadata>>`, whose one kind is
+     `ElementCount` (a `UInt64` term; a `dyn` vtable would be a second
+     kind). `Pointer::with_element_count`/`SharedPointer::with_element_count`
+     build one from a thin pointer and a count; `as_ptr` and `len` read the
+     components in place. Identity (`written.rs`), storage keys and fact
+     keys add the count after the thin identity and hash nothing for a thin
+     pointer, so thin hash streams, order and equality are unchanged.
+     `map_pointers`/`try_map_pointers` take a count map, the kernel rewrite
+     maps it as a numeric child, and variable, load, read and memory
+     collectors visit it (`Pointer::metadata_terms`). The e-graph interns
+     the count as one more `Apply` operand, and `add_pointer_equality`,
+     `join_pointer_components` (constructor injectivity) and class merges
+     join the count pair. `pointer_equal` keeps the complete `PointerEqual`
+     for a wide operand instead of reducing to `AddressEqual`; deciders that
+     reduce a complete equality to addresses (`pointer_offset_sides`,
+     `decide`, the state-modulo condition matchers, pointer translation and
+     the rewrite's graph check) require equal metadata first. Raising to
+     Surface, diagnostics rendering, memory stores, allocation rebasing and
+     frame transport refuse a wide pointer with an internal error naming
+     step 2b (`Pointer::expect_thin`). Tests: `kernel_term::pointers`,
+     `equality_graph::wide_pointer_tests` and
+     `constructor_injectivity_splits_wide_pointer_counts`; scaling tests
+     `wide_pointer_equality_chains_grow_linearly`,
+     `wide_pointer_components_ignore_unrelated_facts` and
+     `wide_pointer_component_reads_stay_flat`.
+   - **2b. Types, cells and raising**, in three parts. Raising cannot
+     land before the Surface type: a raised `s.len()` or
+     `slice::from_raw_parts(p, n)` must lower back to the wide pointer,
+     and today the Surface `Slice<T>` is the library's enum. Memory cells
+     are their own subsystem, with their own scaling tests. So:
+   - **2b-i. Slice pointer types and consumers.** Done.
+     `ProgramType::SlicePointer(SliceElement)` is the type of every wide
+     pointer and of no thin one: `with_element_count` widens `T *` to
+     `[T]` (or `str`, by retyping), `as_ptr` narrows it back, and
+     `Pointer::new` at a slice type, or a `with_type`/`with_binding_type`
+     between a thin and a slice type, is an internal error. `&`/`&mut`,
+     raw and `Box` slices are one kernel type, told apart by the
+     declaration's qualifiers and contract as thin `&T`/`&mut T` are. It is
+     16 bytes, 8-aligned, and has no pointee type. Arithmetic, ordering,
+     equality, bitwise operations, member offsets and selections,
+     dereferences (`Load`, `TypedLoad`, spec `MemoryLoad`), spec
+     `PointerOffset`, coercions, truth tests and every cast that would add
+     or drop a count refuse a wide operand with `ThinPointerRequired`,
+     naming the operation and `.as_ptr()`; a cast between slice types keeps
+     the count. `pointer_provenance_match`, which its address-comparing
+     callers read as "equal in all but the address", now requires
+     known-equal metadata (`pointer_metadata_known_equal`: the same count
+     term or one `UInt64` class), so each of its callers is complete for
+     wide pointers; the 2a guards beside `decide` and the condition
+     matchers fold into it. `map_addresses` takes a count map: load
+     canonicalization and the address-equality rewrite respell a count's
+     reads as they respell the scalars beside it, rather than keeping it.
+     Condition preparation registers a count's machine operands. Rebasing a
+     pending allocation keeps a slice's count, as it keeps a bounds width.
+     Diagnostic text (`describe_condition`, the proof renderer) prints a
+     wide pointer as `slice::from_raw_parts(p, n)`. Tests: `kernel::tests::
+     slice_pointer_tests`, `a_slice_equality_is_described_with_its_count`;
+     scaling test `wide_pointer_value_matches_stay_flat`.
+   - **2b-ii. Memory cells**, in two parts: the stored cell, then
+     symbolic reads of it.
+   - **2b-ii-a. Slice cells.** Done. A wide pointer is stored as one
+     16-byte cell (`store_with_effective_type` no longer refuses it); a
+     program store of one ends every cell it overlaps, and a store into
+     either word ends it, as for any cell of its width. A program read of
+     the cell at its own slice type returns the stored slice, count
+     included. Every read that would take one word of the cell refuses
+     with `LoadTypeMismatch` until a layout fact exists: a thin pointer,
+     an integer, a byte, either word, or the cell at another slice type.
+     The thin read-over-write paths close to a stored slice at their
+     sources, so the load sites that retype a stored pointer
+     (`stored.with_type(value_type)` in `memory_loads.rs`) and those that
+     rebuild a read at the stored value's type (`logical_read_equation`,
+     the stored-value equalities of `register_logical_read_values`,
+     `comparison_form_uncached`) never receive one: no `LoadKind` reads a
+     slice (`LoadKind::of_value`), no pointer decoding answers with one
+     (`decodes_as`), and complete-pointer recovery
+     (`complete_pointer_carrier_read_retained_value`) recovers none. A
+     logical read of a slice cell names its version, as a pointer read
+     does (`logical_read_names_its_version`); with no symbolic slice read
+     yet, it refuses rather than lowering to the stored slice. Tests:
+     `kernel::tests::slice_cell_tests`; scaling test
+     `slice_cell_store_and_read_ignore_unrelated_cells`.
+   - **2b-ii-b. Symbolic slice reads.** Done. A symbolic read of a
+     slice cell (`symbolic_load_value_unrecorded`, and the slice branch of
+     `canonicalized_retained_symbolic_load_value_with_identity`) is the
+     slice its load decodes to, `Pointer::slice_read`: its data pointer is
+     `AddressBase::SliceData(load)` and its count the read
+     `MemoryLoad(point, cell, LoadKind::SliceCount)`, both named by the one
+     `Load` of the cell. Neither is a thin pointer read (`AddressBase::Load`)
+     or an integer read of either word, so no slice read equals a word read
+     without a layout fact. The count is a `u64` read whose extent is the
+     whole 16-byte cell. A logical read of a slice cell and a read of an
+     unknown one name the read; the 2b-ii-a refusal is gone. Read-over-write
+     is one authority, `stored_slice_of_load`: the store the load's version
+     point indexes (`ProgramPoint::indexed_slice_version`), else the
+     memoized version walk the pointer authority takes. The whole read
+     (`slice_read_over_write_value`), its data pointer
+     (`pointer_read_over_write_decoded_value`, so `stored_pointer_address`
+     and the `AddressEqual` comparison form follow) and its count
+     (`read_over_write_value`, through `LoadKind::read_cell`) resolve to the
+     stored slice's; `comparison_form_uncached` resolves a slice side,
+     including one whose count the scalar batch already replaced, and folds
+     two equal slices. A read of a stored slice carries the read equation.
+     `register_logical_read_values` joins a slice read with the stored
+     slice, data pointer and count (`add_pointer_equality`). Frame transport
+     carries a count as a numeric child
+     (`transport_framed_atomic_bitvector`), as it carries the loads of an
+     offset; a slice read's data pointer keeps its load, as a pointer read's
+     base does. The opaque-block consumers that group `AddressBase::Load`
+     (may-alias, symbolic-block, unresolved-pointer, carrier and resource-read
+     sets) include `SliceData`. Raising a count refuses with an internal
+     error until 2b-iii, as raising a wide pointer does. Tests:
+     `kernel::tests::slice_cell_tests` (the 2b-ii-b cases),
+     `memory_history::tests::framed_transport_carries_a_slice_count`;
+     scaling tests `symbolic_slice_reads_ignore_unrelated_cells` and
+     `unknown_slice_cell_reads_stay_flat_as_reads_grow`. Not done here: a
+     cell that holds its own slice read (a materialization) reads as the
+     stored slice through the read equation, not as that read; and the
+     state-aware alpha key of a slice read's data pointer is its load's
+     identity alone, so two reads at alpha-equivalent states key apart.
+   - **2b-iii. Opaque slices, Surface type and raising**, in four parts.
+     The Surface `Slice<T>` cannot become the built-in type while a slice
+     the Surface already writes has no kernel value: a theorem's or pure
+     function's slice parameter, a slice-valued pure function's result, a
+     quantified or matched slice. And the enum cannot stay beside the
+     built-in type, which would be two representations of one slice. So
+     the kernel names every opaque slice's count first (2b-iii-a,
+     2b-iii-b-i, 2b-iii-b-ii),
+     then the Surface type replaces the enum in one step with its raising
+     (2b-iii-c), then strings (2b-iii-d).
+   - **2b-iii-a. Slices named by a variable.** Done. A slice named by one
+     variable `v` has thin part `Address::symbolic(v)` and count
+     `Variable(v.element_count())`: a `UInt64` variable whose identity is
+     `v`'s plus the component, so one name gives both components with no
+     second allocation, and the count raises from the slice's name
+     (`Variable::counted_slice`). A count is no ordinary, bound, witness,
+     match or produced variable (every origin predicate is false for it),
+     orders after every variable that is not one, so
+     `Variable::FIRST_NON_ORDINARY` still bounds the ordinary ones, and
+     hashes as `v` plus one word, so every other variable hashes as before.
+     `symbolic_call_result` builds such a slice for a slice type, in place
+     of its internal error: a slice-returning call's result, an exception
+     payload, a termination parameter and a case binder's payload. A count
+     is an independent variable to the logic, so a pass that renames or
+     closes over `v` alone leaves a valid fact about a fixed count; only the
+     naming link is lost, which 2b-iii-b-i closes for binders. Raising a count
+     refuses with an internal error until 2b-iii-c. Tests:
+     `kernel::tests::slice_call_result_tests`; scaling test
+     `a_named_slice_ignores_unrelated_slices_and_facts`.
+   - **2b-iii-b. Slice binders and slice-valued pure applications**, in
+     two parts: binders, whose count is already named (2b-iii-a), then
+     pure applications, which need a count term of their own.
+   - **2b-iii-b-i. Slice binders.** Done. A slice binder (a quantifier's
+     sort, a choice witness, a `match` arm's payload) is a variable-named
+     slice (`Sort::symbolic_pointer_value`, which refused a slice sort
+     before), and closing, opening, renaming
+     and substituting it carry `v` and `v.element_count()` together.
+     `quantifiers::rename_slice_count` renames the count beside every
+     rename of `v`: `rename_quantified_variable` (so `close_forall`,
+     `close_exists`, `open_quantifier` and `canonical_binders`), choice
+     opening in the proof object, and the alpha comparison and capture-free
+     alignment of `contract_certification`, whose freshness and capture
+     checks read a free count as naming its slice. The typed rewrite
+     (`TermRewrite::for_typed_variables`, behind instantiation and `match`
+     reduction) maps the count of a binder replaced by a slice value to the
+     value's count and the count of a scope-renamed binder to the new
+     binder's count, one lookup of the counted slice per count leaf; a
+     replacement that mentions a count mentions its slice for capture. A
+     substitution of `v` by a thin address
+     (`substitute_pointer_variable_in_proposition`) leaves the count alone,
+     a valid fact about a fixed count; the rewrite's whole-formal
+     replacement of a slice keeps the thin type for the thin part and
+     rewrites the count as a numeric child. Thin binders are unchanged. Theorem
+     and pure-function parameters reach the kernel as quantifiers and
+     lowering environments; no front end gives one a slice sort until
+     2b-iii-c. Tests: `kernel::tests::slice_binder_tests`; scaling tests
+     `closing_a_slice_binder_grows_linearly_with_unrelated_slices` and
+     `instantiating_a_slice_binder_ignores_unrelated_binders`.
+   - **2b-iii-b-ii. Slice-valued pure applications.** Done. Kernel only. A
+     pure application of slice type (a branch of its own in `spec.rs` beside
+     the pointer-result branch, `spec::pure_slice_application_value`) is a
+     wide pointer whose thin part is based on
+     `AddressBase::PureFunctionApplication(app)` at the element's thin
+     pointer type and whose count is `OldMachineTerm::PureApplicationCount(app)`,
+     `f(x).len()`: a `UInt64` term keyed by the application's identity,
+     never an integer application of the same name. It follows every other
+     `OldMachineTerm` variant, so their derived order is unchanged. In the
+     e-graph the count is the `ArgumentTag::PointerCallCount` projection of
+     the application's `PointerFunctionIdentity` node, beside the provenance
+     and bounds projections `retain_pointer_call_component` makes, so the
+     counts of applications to equal arguments are equal; one key lookup
+     per count, the identity's definition queued once. The count is an
+     exact scalar leaf of the `KernelTermNode::PointerCall` value's
+     metadata. Frame transport keeps it, as it keeps the application block
+     of the thin part. Every rewrite rewrites its application's arguments
+     and names the count of the rewritten application: `TermRewrite::bits`
+     argument by argument (never reading the application as an integer
+     call, so no replacement of `f(x)` applies to it) and
+     `substitute_bitvector_variable` through the application's call term;
+     the variable, capture, binder and scope collectors read the
+     application's arguments. A definitional unfolding, `f(x) == body` at
+     slice type, lowers to the complete pointer equality, so
+     `add_pointer_equality` joins both components with the body's slice.
+     Raising the count refuses with an internal error naming 2b-iii-c; a
+     diagnostic describes it as `f(<typed Click arguments>).len()`. No front
+     end produces a slice-valued application until 2b-iii-c. Tests:
+     `kernel::spec::slice_application_tests`,
+     `kernel::equality_graph::slice_application_tests`,
+     `framed_transport_carries_a_slice_application_count`,
+     `raising_a_slice_application_count_refuses`; scaling tests
+     `slice_application_counts_ignore_unrelated_applications` and
+     `interning_application_counts_grows_linearly`. The equality-rewrite
+     atom index (`bitvector_equality_atom_key`) files a count by its
+     application's identity.
+   - **2b-iii-c. Spec operations, Surface slice type and raising**, in
+     two parts: the kernel's spec operations on slices, which `s.len()`,
+     `s.as_ptr()`, `slice::from_raw_parts(p, n)` and `s[a..b]` lower to,
+     then the Surface type with its raising, which replaces the enum. The
+     second cannot split further: raising needs a Surface spelling that
+     lowers back to the wide pointer, which is the enum's spelling until the
+     enum goes, and removing the enum without raising leaves every
+     expansion and diagnostic of a slice on an internal error.
+   - **2b-iii-c-i. Spec slice operations.** Done. Kernel only.
+     `SpecExpression::SliceLength(s)` and `SpecExpression::SliceData(s)`
+     read the count and the thin part of the wide pointer `s` evaluates to
+     (`Pointer::len`, `Pointer::as_ptr`), in place, with no unfold and no
+     fact read; a thin or non-pointer operand is a `TypeMismatch`.
+     `SpecExpression::SliceFromRawParts { data, count }` evaluates its
+     operands in order, as a binary operator does, and builds
+     `data.with_element_count(count)` directly; it owes nothing and adds no
+     fact. A wide `data` is refused with `ThinPointerRequired` (naming
+     `slice::from_raw_parts` and `.as_ptr()`); a thin pointer no slice has,
+     such as `void *`, or a count that is not a `u64` is a `TypeMismatch`.
+     So `from_raw_parts(p, n).len()` is `n` itself and every slice `s`
+     evaluates equal to `from_raw_parts(s.as_ptr(), s.len())` (requirement
+     7's eta) by construction. The spec walks, the rewrite, pointer-variable
+     substitution, the contract interface identity, `defined(...)` (whose
+     operands are the slice and the data and count) and the termination and
+     refinement read classifications treat the three as pure operations of
+     their operands; the generated spec trees of the walk oracle tests
+     include them. Tests: `kernel::spec::slice_operation_tests`; scaling
+     tests `slice_component_reads_ignore_unrelated_facts` and
+     `nested_slice_rebuilds_grow_linearly`.
+   - **2b-iii-c-ii. Surface slice type and raising.** `spec enum Slice<T>`
+     is removed in the same step as the built-in type arrives: `Slice<T>`
+     lowers to `ProgramType::SlicePointer` and gets an interface type
+     (`interface_type_from_program_type` panics today);
+     `slice::from_raw_parts(p, n)`, `slice::len` and `slice::as_ptr` are
+     name-table entries for the constructor and the two components, not
+     functions with bodies; `s.len()`, `s.as_ptr()` and a recorded
+     `s[a..b]` lower to the components and a construction, and
+     `slice::subslice_len` and `Slice::Slice(p, n)` go. Raising replaces
+     every refusal: the `expect_thin` sites in `surface_synthesis.rs` and
+     `render/surface.rs`, `load_type_spelling` and the `SliceCount` read,
+     `SliceData`-based pointers, element-count variables and pure-application
+     counts, each lowering back to the same kernel term in the same
+     context. `rust_spelling` prints a slice directly rather than pairing a
+     pointer with a length. Slice-valued pure functions, `Option<&[u8]>`
+     contract payloads and slice-returning functions use the kernel forms of
+     2b-iii-a and 2b-iii-b. Rust slice parameters stay spread into a
+     pointer and a length until step 3, so a sidecar's bare slice argument
+     is the construction `slice::from_raw_parts(bytes, bytes.len())` of the
+     parameter's two bindings. The mdtests that use `Slice<T>` as the
+     example of a library enum (`library_field_accessors_*`,
+     `a_library_field_function_of_a_constructed_value_*`) change meaning:
+     `slice::len(slice::from_raw_parts(p, n))` is the component `n` with no
+     unfold, an intended change each explained in the PR. The Rust front
+     end's program values also carry the enum today: a chunk iterator's
+     `Option<&[u8]>` item is an `Option` whose payload is a `Slice<u8>`
+     enum value (`rust/lowering.rs`, `rust_enum_type_name` in
+     `verification.rs`), so its payload becomes a wide pointer field in the
+     same step (constructor injectivity already splits one, step 2a).
+     `s.len()`, `s.as_ptr()` and `slice::from_raw_parts` lower to the
+     2b-iii-c-i operations, and `s[a..b]` to
+     `Requires { a <= b <= s.len(), SliceFromRawParts(s.as_ptr() + a,
+     b - a) }`, recorded so it raises as `s[a..b]`.
+   - **2b-iii-d. Strings.** `str.interface.click` states `as_bytes` as
+     `result == s` retyped (a cast between slice types keeps the count),
+     mapped in the Rust front end's name table only. This finishes slice
+     returns and `as_bytes`.
 3. **Parameters and locals.** Slice parameters enter as one wide pointer;
    locals, assignments, reborrows, call arguments and returns carry it.
    Remove `spread_slice_arguments` and the paired-local paths. Migrate

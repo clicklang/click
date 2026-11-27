@@ -571,6 +571,15 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         ProgramType::FunctionPointer(_) => {
             ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
         }
+        // A slice named by one variable names its element count from it
+        // (`design/rust-slice-values.md`, step 2b-iii-a): the thin part is the
+        // variable's address, as for a thin pointer, and the count is the
+        // variable's count, so the one name gives both components.
+        ProgramType::SlicePointer(element) => ProgramValue::Pointer(
+            Pointer::new(Address::symbolic(variable), element.thin_pointer_type())
+                .with_element_count(OldMachineTerm::Variable(variable.element_count()))
+                .with_type(program_type),
+        ),
         ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")
         }
@@ -594,12 +603,13 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
 }
 
 pub(in crate::kernel) fn add_memory_store_obligation(
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     pointer: &Address,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProofObligation>> {
+    let memory = state.memory();
     if memory.can_store_concretely(pointer, value) {
         return Some(obligations);
     }
@@ -609,6 +619,7 @@ pub(in crate::kernel) fn add_memory_store_obligation(
         assumptions,
         Proposition::MemoryCanStore {
             memory: memory.clone(),
+            point: state.memory_point(),
             pointer: pointer.clone(),
             byte_width: value.byte_width(),
         },
@@ -838,6 +849,7 @@ pub(super) fn append_string_literal_loadable_facts(
     for literal in function.string_literals() {
         let base = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         let proposition = Proposition::MemoryLoadable {
+            point: state.memory_point(),
             memory: state.memory.clone(),
             base,
             bytes: (OldMachineTerm::constant(literal.bytes().len() as u32)).into(),
@@ -1645,7 +1657,7 @@ mod pointer_argument_tests {
     #[test]
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027100)),
             ProgramType::Int32Pointer,
         );
@@ -1655,7 +1667,7 @@ mod pointer_argument_tests {
                 "argument_source".into(),
                 vec![],
             ),
-            SharedPointer::import(&pointer),
+            pointer.shared().clone(),
         );
         let mut state = ExecutionState::new();
         state.locals.set_retained_typed_with_all_qualifiers(
@@ -1707,7 +1719,7 @@ mod pointer_argument_tests {
                 .unwrap()
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointer::import(legacy.pointer().unwrap()))
+                .same_source_payload(&legacy.pointer().unwrap().shared().clone())
         );
     }
 }
@@ -1718,7 +1730,7 @@ mod pointer_return_tests {
     #[test]
     fn pointer_returns_keep_complete_payload() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         );
@@ -1728,7 +1740,7 @@ mod pointer_return_tests {
                 "source".into(),
                 vec![],
             ),
-            SharedPointer::import(&pointer),
+            pointer.shared().clone(),
         );
         let plain = program_function(
             ProgramType::Int32Pointer,

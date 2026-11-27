@@ -2556,10 +2556,10 @@ impl MemoryRange {
     /// Physical identity for separation only. This does not carry permission
     /// to access the bytes and must not be used for ownership or containment.
     pub(crate) fn spatial_key(&self) -> Self {
-        let carrier = OldPointer::new(self.base.clone(), ProgramType::VoidPointer);
+        let carrier = Pointer::new(self.base.clone(), ProgramType::VoidPointer);
         Self {
             carrier: carrier.array_object().clone(),
-            provenance: std::sync::Arc::new(self.base.object_identity()),
+            provenance: self.base.object_identity(),
             typed_carrier: false,
             formation_coverage: Default::default(),
             ..self.clone()
@@ -2567,7 +2567,7 @@ impl MemoryRange {
     }
 
     pub(crate) fn from_retained_bounds(
-        base: &OldPointer,
+        base: &Pointer,
         start: crate::kernel::ExecutionValue,
         end: crate::kernel::ExecutionValue,
         element_width: u32,
@@ -2610,10 +2610,10 @@ impl MemoryRange {
         element_width: u32,
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
-        let carrier = OldPointer::new(base.clone(), ProgramType::VoidPointer);
+        let carrier = Pointer::new(base.clone(), ProgramType::VoidPointer);
         Self {
             carrier: carrier.array_object().clone(),
-            provenance: std::sync::Arc::new(base.object_identity()),
+            provenance: base.object_identity(),
             typed_carrier: false,
             base,
             start_bound: StoredMachineTerm::new(MachineIntegerType::Int32, start),
@@ -2693,7 +2693,7 @@ impl MemoryRange {
     /// A typed clause carries the complete pointer's origin, independently of
     /// whichever address spelling the resource algebra subsequently selects.
     pub(crate) fn from_pointer_value(
-        value: &OldPointer,
+        value: &Pointer,
         start: OldMachineTerm,
         end: OldMachineTerm,
         element_width: u32,
@@ -2703,7 +2703,7 @@ impl MemoryRange {
     }
 
     pub(crate) fn from_pointer_value_wide(
-        value: &OldPointer,
+        value: &Pointer,
         start: OldMachineTerm,
         end: OldMachineTerm,
         element_width: u32,
@@ -2715,18 +2715,17 @@ impl MemoryRange {
     /// The origin and bounds ancestry retained by this admitted footprint.
     /// Its own bounds describe the authorized bytes; this carrier is not a
     /// new pointer access and does not infer a selected subobject bounds.
-    pub(in crate::kernel) fn pointer_carrier(&self) -> OldPointer {
-        OldPointer {
-            address: self.base.clone(),
-            provenance: self.provenance.clone(),
-            array: self.carrier.clone(),
-            program_type: ProgramType::VoidPointer,
-            qualifiers: None,
-        }
+    pub(in crate::kernel) fn pointer_carrier(&self) -> Pointer {
+        Pointer::from_parts(
+            self.base.clone(),
+            self.provenance.clone(),
+            self.carrier.clone(),
+            ProgramType::VoidPointer,
+        )
     }
 
-    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &OldPointer) -> Self {
-        self.provenance = value.provenance.clone();
+    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &Pointer) -> Self {
+        self.provenance = value.provenance().clone();
         self.carrier = value.array_object().with_bounds(None);
         self.typed_carrier = true;
         self
@@ -2742,7 +2741,7 @@ impl MemoryRange {
         self
     }
 
-    pub(in crate::kernel) fn carrier_owner(&self) -> Option<&std::sync::Arc<Address>> {
+    pub(in crate::kernel) fn carrier_owner(&self) -> Option<&Address> {
         self.carrier.owner()
     }
 
@@ -2751,22 +2750,19 @@ impl MemoryRange {
     }
 
     pub(crate) fn carrier_has_known_bounds(&self) -> bool {
-        matches!(self.carrier, ArrayObject::Allocation)
+        self.carrier.is_allocation()
     }
 
     pub(in crate::kernel) fn with_bounds_owner(
         mut self,
-        origin: Option<std::sync::Arc<Address>>,
+        origin: Option<Address>,
         known: bool,
     ) -> Self {
         self.carrier = ArrayObject::from_parts(known, None, origin);
         self
     }
 
-    pub(in crate::kernel) fn with_provenance(
-        mut self,
-        provenance: std::sync::Arc<Address>,
-    ) -> Self {
+    pub(in crate::kernel) fn with_provenance(mut self, provenance: Address) -> Self {
         self.provenance = provenance;
         self
     }
@@ -2785,13 +2781,7 @@ impl MemoryRange {
     }
 
     pub(in crate::kernel) fn access_provenance(&self) -> (&Address, Option<&Address>) {
-        (
-            &self.provenance,
-            match &self.carrier {
-                ArrayObject::Opaque(owner) => owner.as_deref(),
-                ArrayObject::Allocation | ArrayObject::Member(_) => None,
-            },
-        )
+        (&self.provenance, self.carrier.opaque_owner())
     }
 
     /// Retained identity metadata for diagnostic rendering only. Reading this
@@ -2799,7 +2789,7 @@ impl MemoryRange {
     pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Address, Option<&Address>, bool) {
         (
             &self.provenance,
-            self.carrier.owner().map(|owner| &**owner),
+            self.carrier.owner(),
             self.carrier.is_known(),
         )
     }
@@ -2882,9 +2872,14 @@ impl MemoryRange {
     /// count is the unsigned 64-bit `(end - start) * width`, written by
     /// [`wide_loadable_byte_count`] and read back by
     /// [`wide_loadable_element_count`].
-    pub(crate) fn loadable_fact(&self, memory: &SymbolicMemory) -> Proposition {
+    pub(crate) fn loadable_fact(
+        &self,
+        memory: &SymbolicMemory,
+        point: super::program_point::PathLink,
+    ) -> Proposition {
         Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point,
             base: self.start_pointer(),
             bytes: self.loadable_byte_count(),
             wide: self.kind == RangeIndexKind::UInt64,
@@ -3255,7 +3250,7 @@ impl MemoryRange {
 
     /// [`Self::access`] through the pointer value `value`, keeping its
     /// origin as a typed clause's range does.
-    pub(crate) fn access_through(value: &OldPointer, program_type: ProgramType) -> Self {
+    pub(crate) fn access_through(value: &Pointer, program_type: ProgramType) -> Self {
         Self::access(value.address().clone(), program_type).with_pointer_carrier(value)
     }
 
@@ -4568,6 +4563,7 @@ impl ExecutionEnvironment {
                                 base,
                                 bytes,
                                 wide: false,
+                                ..
                             } => {
                                 memory_states_proven_equal_at_pointer(
                                     memory,

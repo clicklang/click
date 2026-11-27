@@ -8353,7 +8353,7 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
                             rewrite(b, 0u64);
                             close();
                         }
-                        contradiction(b > 0u64);
+                        close();
                     } else {
                         close();
                     }
@@ -20168,13 +20168,13 @@ int apply(int (*f)(int), int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
 }
-int caller::(lambda#0)(int y) {
+int caller.statement(0).call(0).argument(0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures 0 <= result and result <= 2000;
     ensures result == y + y;
 }
 theorem lambda_doubles() {
-    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling(&caller::(lambda#0))); close(); }
+    ensures Doubling(&caller.statement(0).call(0).argument(0)) by { unfold(Doubling(&caller.statement(0).call(0).argument(0))); close(); }
 }
 int caller(int x) {
     requires 0 <= x and x <= 1000;
@@ -20183,10 +20183,9 @@ int caller(int x) {
 "#;
 
 // A lambda that captures nothing, passed for a function pointer, is its call
-// operator's address. The sidecar names the call operator by its enclosing
-// function and its index there, `caller::(lambda#0)`, verifies it like any
-// function, and a caller passing it must show it meets the contract the
-// callee requires of the pointer.
+// operator's address. The sidecar selects the call operator by expression
+// path and verifies it like any function. The caller must show it meets the
+// contract the callee requires of the pointer.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
@@ -20201,7 +20200,10 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         verify_program_prepared_project(&parsed, &import).map(|_| parsed)
     };
     let parsed = verify(LAMBDA_SIDECAR).unwrap_or_else(|error| panic!("{}", error.message()));
-    for label in ["caller::(lambda#0).contract", "caller.ensures_0"] {
+    for label in [
+        "caller.statement(0).call(0).argument(0).contract",
+        "caller.ensures_0",
+    ] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
@@ -20212,22 +20214,25 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         (
             "    ensures result == y + y;\n",
             "    ensures result >= y;\n",
-            "contract-refinement proof does not establish `Doubling(&caller::(lambda#0))`",
+            "contract-refinement proof does not establish `Doubling(&caller.statement(0).call(0).argument(0))`",
         ),
         (
             "    ensures result == y + y;\n",
             "    ensures result == y + y + 1;\n",
-            "contract-refinement proof does not establish `Doubling(&caller::(lambda#0))`",
+            "contract-refinement proof does not establish `Doubling(&caller.statement(0).call(0).argument(0))`",
         ),
         (
-            "int caller::(lambda#0)(int y)",
-            "int caller::(lambda#1)(int y)",
-            "`caller::(lambda#1)` is not a verified or external function compatible with contract `Doubling`",
+            "int caller.statement(0).call(0).argument(0)(int y)",
+            "int caller.statement(0).call(0).argument(1)(int y)",
+            "`caller.statement(0).call(0).argument(1)` is not a verified or external function compatible with contract `Doubling`",
         ),
     ] {
         let mut hostile = LAMBDA_SIDECAR.replacen(before, after, 1);
-        if before == "int caller::(lambda#0)(int y)" {
-            hostile = hostile.replace("&caller::(lambda#0)", "&caller::(lambda#1)");
+        if before == "int caller.statement(0).call(0).argument(0)(int y)" {
+            hostile = hostile.replace(
+                "&caller.statement(0).call(0).argument(0)",
+                "&caller.statement(0).call(0).argument(1)",
+            );
         }
         assert_ne!(hostile, LAMBDA_SIDECAR);
         let Err(error) = verify(&hostile) else {
@@ -20238,11 +20243,11 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
     }
 }
 
-// Lambdas are numbered in source order within their enclosing function.
+// The source path distinguishes lambdas supplied to different written calls.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
-fn cpp_lambdas_are_numbered_in_their_enclosing_function() {
+fn cpp_lambdas_are_selected_at_their_written_call_arguments() {
     let project = Project::with_fixture("callback.cpp", "pair", LAMBDA_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
@@ -20256,21 +20261,21 @@ int apply(int (*f)(int), int x) {
     requires 0 <= x and x <= 1000;
     ensures 0 <= result and result <= 2000;
 }
-int pair::(lambda#0)(int y) {
+int pair.statement(0).call(0).argument(0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures 0 <= result and result <= 2000;
     ensures result == y + 1;
 }
-int pair::(lambda#1)(int y) {
+int pair.statement(0).call(1).argument(0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures 0 <= result and result <= 2000;
     ensures result == y + y;
 }
 theorem first_is_bounded() {
-    ensures Bounded(&pair::(lambda#0)) by { unfold(Bounded(&pair::(lambda#0))); close(); }
+    ensures Bounded(&pair.statement(0).call(0).argument(0)) by { unfold(Bounded(&pair.statement(0).call(0).argument(0))); close(); }
 }
 theorem second_is_bounded() {
-    ensures Bounded(&pair::(lambda#1)) by { unfold(Bounded(&pair::(lambda#1))); close(); }
+    ensures Bounded(&pair.statement(0).call(1).argument(0)) by { unfold(Bounded(&pair.statement(0).call(1).argument(0))); close(); }
 }
 int pair(int x) {
     requires 0 <= x and x <= 1000;
@@ -20292,8 +20297,45 @@ int pair(int x) {
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
 }
 
-// A lambda converted to a function pointer is admitted in a free function;
-// the importer refuses one in a member function by name.
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: exports two lambda arguments with pinned Clang"]
+fn cpp_lambdas_in_one_call_select_distinct_arguments() {
+    let program = r#"
+int receive(int (*first)(int) noexcept, int (*second)(int) noexcept, int x) noexcept {
+    return x;
+}
+int pair(int x) noexcept {
+    return receive([](int y) noexcept { return y + 1; },
+                   [](int y) noexcept { return y + 2; }, x);
+}
+"#;
+    let project = Project::with_fixture("callback.cpp", "pair", program);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "callback.cpp";
+int receive(int (*first)(int), int (*second)(int), int x) {
+    ensures result == x;
+}
+int pair.statement(0).call(0).argument(0)(int y) {
+    requires 0 <= y and y <= 1000;
+    ensures result == y + 1;
+}
+int pair.statement(0).call(0).argument(1)(int y) {
+    requires 0 <= y and y <= 1000;
+    ensures result == y + 2;
+}
+int pair(int x) { ensures result == x; }
+"#;
+    let sidecar = project.directory.join("callback.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+// A lambda converted to a function pointer is admitted in a free function.
+// The importer refuses one in a member function by name.
 #[test]
 fn cpp_lambdas_outside_a_free_function_are_refused() {
     let source = "struct R { int v; int m(int x) noexcept; };\n\
@@ -21266,6 +21308,8 @@ uint64 probe(const struct View& source) {
     ensures source.data == old(source.data);
     ensures state.count == old(state.count);
 } by {
+    step_until(call(shorten, 0).entry);
+    have call(shorten, 0).parameter(value).count == old(source.count) by close();
     step(shorten, { count: old(source.count) });
 }
 "#;
@@ -22325,7 +22369,7 @@ int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x;
     step_until(call(0).entry);
     outcomes {
         returned => { step_until(function.exit); close(); }
-        threw => { have fail == true; have false by { contradiction(fail); }; close(); }
+        threw => { have fail == true; have false by { close(); }; close(); }
     }
 }
 int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures result == x; exceptional ensures true; }

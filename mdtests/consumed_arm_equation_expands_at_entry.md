@@ -73,7 +73,7 @@ unsigned long peek(struct node* p) {
     ensures u.model == old(t.model);
 } by {
     match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Empty => { close(); },
         Tree::Node(id, color, left_model) => {
             let { left: l } = unfold(t);
             step();

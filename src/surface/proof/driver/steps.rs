@@ -394,7 +394,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::IntroBinder(name) => Some(driver_proof.apply_intro(Some(name.clone()))),
             ProofStep::Enumerate => Some(driver_proof.apply_enumerate()),
             ProofStep::CloseUnreachable => Some(driver_proof.apply_close_unreachable()),
-            ProofStep::Contradiction(surface) => Some(driver_proof.apply_contradiction(surface)),
             ProofStep::Instantiate {
                 quantified,
                 arguments,

@@ -3,6 +3,8 @@
 //! specification definitions, the recorded states and a typing environment,
 //! and nothing that lowering builds, so elaboration can be run without
 //! lowering. The lowerer builds one for each query and delegates to it.
+//! Names at another program point (`old(..)`, `at(..)`) are typed in the
+//! scope there, which the outer `TypeScope` builds from the inputs here.
 use super::*;
 
 #[derive(Clone)]
@@ -10,6 +12,11 @@ pub(super) struct Elaborator<'a> {
     pub(super) declarations: Declarations<'a>,
     pub(super) definitions: SpecDefinitions<'a>,
     pub(super) retained_states: Option<&'a RecordedStates>,
+    /// The names a capture reads, which a scope at a recorded state binds.
+    pub(super) capture_referenced_names: Option<Arc<BTreeSet<String>>>,
+    /// The last generic instantiation that failed to infer its types. The
+    /// lowerer reads it to tell a type error from another failure.
+    pub(super) type_inference_failure: std::cell::RefCell<Option<String>>,
 }
 
 impl<'a> AnnotationLowerer<'a> {
@@ -19,11 +26,38 @@ impl<'a> AnnotationLowerer<'a> {
             declarations: self.declarations(),
             definitions: self.spec_definitions,
             retained_states: self.retained_states,
+            capture_referenced_names: self.capture_referenced_names.clone(),
+            type_inference_failure: std::cell::RefCell::new(None),
         }
+    }
+
+    /// Run `elaborate` on the lowerer's `Elaborator`, keeping the type
+    /// inference failure it records, as lowering recorded its own.
+    pub(super) fn with_elaborator<T>(&mut self, elaborate: impl FnOnce(&Elaborator<'_>) -> T) -> T {
+        let elaborator = self.elaborator();
+        let result = elaborate(&elaborator);
+        if let Some(failure) = elaborator.type_inference_failure.take() {
+            self.type_inference_failure = Some(failure);
+        }
+        result
     }
 }
 
 impl Elaborator<'_> {
+    fn record_type_inference_failure(&self, message: &str) {
+        *self.type_inference_failure.borrow_mut() = Some(message.to_string());
+    }
+
+    /// What a scope at another program point is built from.
+    fn point_inputs(&self) -> PointInputs<'_> {
+        PointInputs {
+            entry_values: &self.declarations.entry_values,
+            entry_point: self.declarations.entry_state.program_point(),
+            retained_states: self.retained_states,
+            capture_referenced_names: self.capture_referenced_names.as_deref(),
+        }
+    }
+
     pub(super) fn program_name_type(
         &self,
         name: impl Into<crate::kernel::BindingName>,
@@ -443,5 +477,592 @@ impl Elaborator<'_> {
             SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_type(left, typing),
             _ => None,
         }
+    }
+
+    /// The element type a contract expression steps by when it is a pointer:
+    /// an array reference or a pointer-valued binding in scope, a pointer
+    /// fragment, or pointer arithmetic on one. `None` for a scalar.
+    /// Whether a contract cast's operand is a `void *`, by its Surface type or,
+    /// for a C name, by its declared type.
+    pub(super) fn contract_operand_is_void_pointer(
+        &self,
+        operand: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> bool {
+        if matches!(
+            self.contract_expression_click_type(operand, typing),
+            Some(ClickType::Program(InterfaceType::VoidPointer))
+        ) {
+            return true;
+        }
+        match operand {
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)) => {
+                self.declarations.c_variable_type(name.clone()) == Some(ProgramType::VoidPointer)
+            }
+            // A name bound to a `void *` value, whatever object it may name.
+            SyntaxTerm::ProgramBinding(name) => {
+                typing
+                    .program_binding_click_type(name)
+                    .and_then(|click_type| click_type.interface_type())
+                    == Some(InterfaceType::VoidPointer)
+            }
+            SyntaxTerm::Old(expression)
+            | SyntaxTerm::Exact(expression)
+            | SyntaxTerm::At { expression, .. } => {
+                self.contract_operand_is_void_pointer(expression, typing)
+            }
+            _ => false,
+        }
+    }
+    /// The spelling of `operand`'s type when it is a pointer that states no
+    /// pointee type ([`pointee_less_pointer_spelling`]): a cast to one, a
+    /// `load` of one, a byte offset of one, or a binding, parameter or call
+    /// of that type.
+    pub(super) fn pointee_less_operand(
+        &self,
+        operand: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<&'static str> {
+        let spelling = match operand {
+            SyntaxTerm::CUnary { operand, lowered } => self
+                .pointee_less_program_operand(lowered, typing)
+                .or_else(|| {
+                    matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
+                        .then(|| self.pointee_less_operand(operand, typing))
+                        .flatten()
+                }),
+            SyntaxTerm::ProgramExpression(lowered) => {
+                self.pointee_less_program_operand(lowered, typing)
+            }
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
+                expression: inner, ..
+            } => self.pointee_less_operand(inner, typing),
+            // A call's recorded `void *` result.
+            SyntaxTerm::RegionResult(region) => {
+                match self.retained_states.and_then(|states| {
+                    states
+                        .region_result_value_at(region, typing.call_result_point())
+                        .ok()
+                }) {
+                    Some(ProgramValue::Pointer(pointer)) => {
+                        pointee_less_pointer_spelling(pointer.program_type())
+                    }
+                    _ => None,
+                }
+            }
+            _ => match self.contract_expression_click_type(operand, typing) {
+                Some(ClickType::Program(operand_type)) => {
+                    pointee_less_pointer_spelling(operand_type.to_kernel_type())
+                }
+                _ => None,
+            },
+        };
+        spelling.or_else(|| {
+            self.contract_operand_is_void_pointer(operand, typing)
+                .then_some("void *")
+        })
+    }
+    /// [`Self::pointee_less_operand`] for a lowered C fragment.
+    pub(super) fn pointee_less_program_operand(
+        &self,
+        operand: &ProgramExpression,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<&'static str> {
+        match operand {
+            ProgramExpression::Cast { target_type, .. } => {
+                pointee_less_pointer_spelling(*target_type)
+            }
+            ProgramExpression::TypedLoad { value_type, .. } => {
+                pointee_less_pointer_spelling(*value_type)
+            }
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                pointee_less_pointer_spelling(pointer.program_type())
+            }
+            ProgramExpression::PointerOffsetBytes { pointer, .. } => {
+                self.pointee_less_program_operand(pointer, typing)
+            }
+            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => self
+                .pointee_less_program_operand(left, typing)
+                .or_else(|| self.pointee_less_program_operand(right, typing)),
+            ProgramExpression::Variable(name @ crate::kernel::BindingName::Named(_)) => match self
+                .contract_expression_click_type(
+                    &SyntaxTerm::ProgramExpression(operand.clone()),
+                    typing,
+                ) {
+                Some(ClickType::Program(operand_type)) => {
+                    pointee_less_pointer_spelling(operand_type.to_kernel_type())
+                }
+                _ => None,
+            }
+            .or_else(|| {
+                self.declarations
+                    .c_variable_type(name.clone())
+                    .and_then(pointee_less_pointer_spelling)
+            }),
+            _ => None,
+        }
+    }
+    /// Refuses `*q` and `q[i]` when `q` is a `Pointer` or a `void *`, and
+    /// `q + k` and `q - k` when `q` is a `Pointer`: it has no pointee type to
+    /// read at or step by. A `void *` steps by one byte, as in C.
+    pub(super) fn refuse_untyped_pointer_access(
+        &self,
+        expression: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<(), String> {
+        let refused_program = |lowered: &ProgramExpression| match lowered {
+            ProgramExpression::Load(pointer) | ProgramExpression::Index(pointer, _) => {
+                self.pointee_less_program_operand(pointer, typing)
+            }
+            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => {
+                pointee_less_step_refusal(
+                    self.pointee_less_program_operand(left, typing),
+                    self.pointee_less_program_operand(right, typing),
+                    matches!(lowered, ProgramExpression::Subtract(..)),
+                )
+            }
+            _ => None,
+        };
+        let refused = match expression {
+            SyntaxTerm::CUnary { operand, lowered } => refused_program(lowered).or_else(|| {
+                matches!(
+                    lowered,
+                    ProgramExpression::Load(_) | ProgramExpression::Index(..)
+                )
+                .then(|| self.pointee_less_operand(operand, typing))
+                .flatten()
+            }),
+            SyntaxTerm::ProgramExpression(lowered) => refused_program(lowered),
+            SyntaxTerm::ArrayIndex { base, lowered, .. } => {
+                refused_program(lowered).or_else(|| self.pointee_less_operand(base, typing))
+            }
+            SyntaxTerm::Index(base, _) => self.pointee_less_operand(base, typing),
+            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
+                pointee_less_step_refusal(
+                    self.pointee_less_operand(left, typing),
+                    self.pointee_less_operand(right, typing),
+                    matches!(expression, SyntaxTerm::Subtract(..)),
+                )
+            }
+            _ => None,
+        };
+        match refused {
+            Some(spelling) => Err(pointee_less_access_message(spelling)),
+            None => Ok(()),
+        }
+    }
+
+    /// Physical element widths take precedence over scalar resource carriers.
+    pub(super) fn contract_pointer_element_width(
+        &self,
+        expression: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<u32> {
+        match expression {
+            SyntaxTerm::RegionResult(region) => {
+                let ProgramValue::Pointer(pointer) = self
+                    .retained_states?
+                    .region_result_value_at(region, typing.call_result_point())
+                    .ok()?
+                else {
+                    return None;
+                };
+                self.definitions.pointer_element_width(&pointer).ok()
+            }
+            SyntaxTerm::ProgramBinding(name) => self.program_expression_array_element_width(
+                &ProgramExpression::Variable((name.clone()).into()),
+                typing,
+            ),
+            SyntaxTerm::CUnary { lowered, .. }
+            | SyntaxTerm::QualifiedC { lowered, .. }
+            | SyntaxTerm::ProgramExpression(lowered)
+            | SyntaxTerm::Field { lowered, .. } => {
+                self.program_expression_array_element_width(lowered, typing)
+            }
+            SyntaxTerm::Old(inner) | SyntaxTerm::Exact(inner) => {
+                self.contract_pointer_element_width(inner, typing)
+            }
+            SyntaxTerm::At {
+                selector,
+                expression,
+            } => self.contract_pointer_element_width(expression, &typing.at_call(selector)),
+            SyntaxTerm::Add(left, right) => self
+                .contract_pointer_element_width(left, typing)
+                .or_else(|| self.contract_pointer_element_width(right, typing)),
+            SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_width(left, typing),
+            _ => self
+                .contract_pointer_element_type(expression, typing)
+                .map(ProgramType::byte_width),
+        }
+    }
+
+    /// The physical width used by C pointer arithmetic.  A pointer to a
+    /// struct has the nominal compatible `int32*` kernel carrier, so its
+    /// pointee layout must be consulted before falling back to `ProgramType`.
+    pub(super) fn program_expression_array_element_width(
+        &self,
+        expression: &ProgramExpression,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<u32> {
+        if let ProgramExpression::Variable(name) = expression
+            && let Some(width) =
+                name.metadata_in(self.declarations.parameter_pointer_element_widths.as_ref())
+        {
+            return Some(*width);
+        }
+        if let Some(element) = self.direct_pointer_element(expression, typing) {
+            return self.definitions.element_width(&element).ok();
+        }
+        if matches!(expression, ProgramExpression::Variable(name) if name.is_named("result"))
+            && typing.contract_result_in_scope()
+        {
+            return self.program_expression_array_element_width(
+                &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
+                typing,
+            );
+        }
+        match expression {
+            ProgramExpression::AddressOf(target)
+            | ProgramExpression::CheckedObjectAddress(target)
+                if matches!(target.as_ref(), ProgramExpression::Index(..)) =>
+            {
+                let ProgramExpression::Index(base, _) = target.as_ref() else {
+                    unreachable!()
+                };
+                self.program_expression_array_element_width(base, typing)
+            }
+            ProgramExpression::AddressOf(target)
+            | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
+                ProgramExpression::TypedLoad { value_type, .. } => Some(value_type.byte_width()),
+                ProgramExpression::Variable(name) => self
+                    .declarations
+                    .c_variable_type(name)
+                    .map(ProgramType::byte_width),
+                _ => None,
+            },
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer
+                .program_type()
+                .pointee_type()
+                .map(ProgramType::byte_width),
+            ProgramExpression::Cast { target_type, .. } => {
+                target_type.pointee_type().map(ProgramType::byte_width)
+            }
+            ProgramExpression::Variable(name) => name
+                .metadata_in(self.declarations.parameter_pointer_element_widths.as_ref())
+                .copied()
+                .or_else(|| {
+                    name.named()
+                        .and_then(|name| typing.bound_array_element_type(name))
+                        .map(ProgramType::byte_width)
+                })
+                .or_else(|| {
+                    self.declarations
+                        .declared_pointer_element_type(name)
+                        .map(|ty| ty.byte_width())
+                })
+                .or_else(|| {
+                    (name == &crate::kernel::CONTRACT_RESULT)
+                        .then(|| self.declarations.result_type.pointee_type())
+                        .flatten()
+                        .map(ProgramType::byte_width)
+                })
+                .or_else(|| {
+                    self.declarations
+                        .entry_state
+                        .global_array_element_type(name)
+                        .map(ProgramType::byte_width)
+                }),
+            ProgramExpression::TypedLoad { value_type, .. } => match value_type {
+                ProgramType::Int32Array(_) => Some(4),
+                ProgramType::Int64Array(_) | ProgramType::UInt64Array(_) => Some(8),
+                ProgramType::Int128Array(_) | ProgramType::UInt128Array(_) => Some(16),
+                ProgramType::UInt8Array(_) => Some(1),
+                value_type => value_type.pointee_type().map(ProgramType::byte_width),
+            },
+            ProgramExpression::PointerOffsetBytes { pointer, .. }
+            | ProgramExpression::Subobject { pointer, .. } => {
+                self.program_expression_array_element_width(pointer, typing)
+            }
+            ProgramExpression::Add(left, right) => self
+                .program_expression_array_element_width(left, typing)
+                .or_else(|| self.program_expression_array_element_width(right, typing)),
+            ProgramExpression::Subtract(left, _) => {
+                self.program_expression_array_element_width(left, typing)
+            }
+            _ => None,
+        }
+    }
+
+    /// The pointer `expression` directly is, by what it steps by: a pointer
+    /// value, or a C name bound to one. A name bound to a pointer value never
+    /// reaches the declared-type lookups after it, so the lookup that read
+    /// such a value's pointee there was never reached and is not kept.
+    fn direct_pointer_element(
+        &self,
+        expression: &ProgramExpression,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<crate::surface::PointerElement> {
+        match expression {
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                Some(crate::surface::PointerElement::of(pointer))
+            }
+            ProgramExpression::Variable(name) => typing.bound_pointer_element(name),
+            _ => None,
+        }
+    }
+
+    /// Whether `expression` calls a generic function whose result type, a
+    /// type parameter, is algebraic at this call: `vec::get(v, i)` with `v`
+    /// a `Vec<T>` of a theorem's rigid `T`.
+    pub(super) fn generic_call_returns_algebraic(
+        &self,
+        expression: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> bool {
+        let SyntaxTerm::Call { name, arguments } = expression else {
+            return false;
+        };
+        let Some(definition) = self.definitions.functions.get(name).cloned() else {
+            return false;
+        };
+        if !matches!(definition.return_type(), ClickType::Parameter(_)) {
+            return false;
+        }
+        self.instantiate_click_function_for_call(&definition, arguments, typing)
+            .is_ok_and(|instance| matches!(instance.return_type(), ClickType::Algebraic(_)))
+    }
+
+    pub(super) fn instantiate_click_function_for_call(
+        &self,
+        definition: &ClickFunctionDefinition,
+        arguments: &[SyntaxTerm],
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<ClickFunctionDefinition, String> {
+        if definition.type_parameters().is_empty() {
+            return Ok(definition.clone());
+        }
+        let argument_types = definition
+            .parameters()
+            .iter()
+            .zip(arguments)
+            .map(|(parameter, argument)| {
+                self.infer_call_argument_type(parameter.click_type(), argument, typing)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let substitution = generics::infer_type_substitution(
+            "function",
+            definition.name(),
+            definition.type_parameters(),
+            definition
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.click_type().clone()),
+            argument_types,
+        )
+        .inspect_err(|message| self.record_type_inference_failure(message))?;
+        generics::instantiate_function(definition, &substitution)
+    }
+
+    pub(super) fn infer_call_argument_type(
+        &self,
+        expected: &ClickType,
+        argument: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<ClickType>, String> {
+        match expected {
+            ClickType::Resource => Ok(Some(ClickType::Resource)),
+            ClickType::Function { .. } => self
+                .contract_expression_click_type_in_scope(argument, typing, &mut Vec::new())
+                .map(Some)
+                .ok_or_else(|| "callback argument needs a concrete lambda".into()),
+            ClickType::Proposition => Err("proposition parameters are not supported yet".into()),
+            // The argument's type by the rules lowering it would apply, without
+            // lowering it.
+            ClickType::Algebraic(_) => self.algebraic_argument_click_type(argument, typing),
+            // A `T*` parameter binds `T` from the argument's pointer type,
+            // as a `T` parameter binds it from the argument's type.
+            ClickType::Program(InterfaceType::ParameterPointer(_)) | ClickType::Parameter(_) => {
+                self.infer_unconstrained_call_argument_type(argument, typing)
+            }
+            ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
+            ClickType::Integer => Ok(Some(ClickType::Integer)),
+        }
+    }
+
+    /// The type of an argument passed where an algebraic value is expected,
+    /// by the rules lowering such an argument applies, without lowering it:
+    /// a program value of an enum or library type is that type's algebraic
+    /// value; `old(..)` and `at(..)` type their operand in the scope of the
+    /// point they name; a bare name is an algebraic binding or an error; a
+    /// call is its instance's result; anything else has its synthesized type.
+    /// Over the gate this answered exactly as lowering the argument did,
+    /// errors included.
+    pub(super) fn algebraic_argument_click_type(
+        &self,
+        argument: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<ClickType>, String> {
+        if let Some(enum_type) = self.enum_program_value_type(argument, typing) {
+            return Ok(Some(generics::click_type_from_algebraic_value_type(
+                &enum_type.algebraic_type().value_type(),
+            )));
+        }
+        match argument {
+            // The operand is typed where it is read: a local named in it is
+            // one in scope at that point, as lowering reads it there.
+            SyntaxTerm::Old(inner) => {
+                let entry = typing.at_entry(&self.point_inputs())?;
+                self.algebraic_argument_click_type(inner, &TypingEnvironment::in_scope(&*entry))
+            }
+            SyntaxTerm::At {
+                selector,
+                expression,
+            } => {
+                let retained_state =
+                    typing.at_point(selector, &self.point_inputs())?.ok_or_else(|| {
+                        "algebraic values at unresolved program points are not supported in this slice"
+                            .to_string()
+                    })?;
+                self.algebraic_argument_click_type(
+                    expression,
+                    &TypingEnvironment::in_scope(&*retained_state),
+                )
+            }
+            // A bare name is an algebraic binding or nothing: an Integer or
+            // program binding of that name does not make it algebraic.
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => typing
+                .algebraic_binding_click_type(name)
+                .map(Some)
+                .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope")),
+            SyntaxTerm::Call { name, arguments } if name != "to_nat" => {
+                let Some(definition) = self.definitions.functions.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let definition =
+                    self.instantiate_click_function_for_call(&definition, arguments, typing)?;
+                Ok(Some(definition.return_type().clone()))
+            }
+            _ => {
+                Ok(self.contract_expression_click_type_in_scope(argument, typing, &mut Vec::new()))
+            }
+        }
+    }
+
+    pub(super) fn infer_unconstrained_call_argument_type(
+        &self,
+        argument: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<ClickType>, String> {
+        if let Some(cast_type) = generics::explicit_cast_click_type(argument) {
+            return Ok(Some(cast_type));
+        }
+        match argument {
+            SyntaxTerm::IntegerLiteral(_) | SyntaxTerm::Negate(_) => {
+                Ok(generics::default_numeral_click_type(argument))
+            }
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
+                expression: inner, ..
+            } => self.infer_unconstrained_call_argument_type(inner, typing),
+            SyntaxTerm::ResourceField(access) => Ok(access.click_type.clone()),
+            SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
+            | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
+                Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
+            }
+            SyntaxTerm::Binding(name) => Ok(typing
+                .algebraic_binding_click_type(name)
+                .or_else(|| typing.program_binding_click_type(name))),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+                Ok(Some(generics::click_type_from_program_value(value)))
+            }
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => Ok(typing
+                .algebraic_binding_click_type(name)
+                .or_else(|| typing.program_binding_click_type(name))),
+            SyntaxTerm::Call { name, arguments } => {
+                let definition = self
+                    .definitions
+                    .functions
+                    .get(name)
+                    .ok_or_else(|| format!("unknown function `{name}`"))?
+                    .clone();
+                let definition =
+                    self.instantiate_click_function_for_call(&definition, arguments, typing)?;
+                Ok(Some(definition.return_type().clone()))
+            }
+            // Pointer arithmetic keeps its pointer's type: `bytes + k` is a
+            // `*const u8` as `bytes` is.
+            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
+                let left = self.infer_unconstrained_call_argument_type(left, typing)?;
+                if left
+                    .as_ref()
+                    .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
+                {
+                    return Ok(left);
+                }
+                if matches!(argument, SyntaxTerm::Add(..)) {
+                    let right = self.infer_unconstrained_call_argument_type(right, typing)?;
+                    if right
+                        .as_ref()
+                        .is_some_and(|ty| ty.interface_type().is_some_and(|c| c.is_pointer()))
+                    {
+                        return Ok(right);
+                    }
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// The element width a pure call's result steps by when the call
+    /// returns a pointer: its declared result's pointee, at the call's own
+    /// type arguments. `None` for any other expression or result.
+    pub(super) fn call_pointer_element_width(
+        &self,
+        expression: &SyntaxTerm,
+        typing: &TypingEnvironment<'_>,
+    ) -> Result<Option<u32>, String> {
+        // A state changes the value read, not the call's declared type.
+        if let SyntaxTerm::Old(inner)
+        | SyntaxTerm::Exact(inner)
+        | SyntaxTerm::At {
+            expression: inner, ..
+        } = expression
+        {
+            return self.call_pointer_element_width(inner, typing);
+        }
+        // Only a declared pure function with a pointer result: a built-in
+        // conversion such as `to_int32` is not one.
+        let SyntaxTerm::Call { name, .. } = expression else {
+            return Ok(None);
+        };
+        if !self
+            .definitions
+            .functions
+            .get(name)
+            .is_some_and(|definition| match definition.return_type() {
+                ClickType::Program(interface_type) => {
+                    interface_type.is_pointer()
+                        || matches!(interface_type, InterfaceType::ParameterPointer(_))
+                }
+                ClickType::CObjectPointer { .. } => true,
+                _ => false,
+            })
+        {
+            return Ok(None);
+        }
+        Ok(self
+            .infer_unconstrained_call_argument_type(expression, typing)?
+            .and_then(|result| result.interface_type())
+            .and_then(|result| result.pointee_type())
+            .map(|element| element.to_kernel_type().byte_width()))
     }
 }

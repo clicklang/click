@@ -7,13 +7,13 @@ an equality has been introduced by an ordinary theorem application.
 theorem opposite(a: Integer, b: Integer) {
     requires a == b;
     requires a != b;
-    ensures false by { contradiction(a == b); }
+    ensures false by { close(); }
 }
 
 theorem mirrored(a: Integer, b: Integer) {
     requires a == b;
     requires b != a;
-    ensures false by { contradiction(a == b); }
+    ensures false by { close(); }
 }
 ```
 

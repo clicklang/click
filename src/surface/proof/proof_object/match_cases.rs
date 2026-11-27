@@ -46,8 +46,14 @@ impl ExecutionMatchPlan {
     ) -> Option<&ProofCertificate> {
         self.excluded[index].as_ref()
     }
+    pub(in crate::surface::proof) fn arm_holds_false(&self, index: usize) -> bool {
+        self.partition
+            .facts_for_case(self.case_indices[index])
+            .is_some_and(|facts| facts.holds_false())
+    }
+
     /// The arms this match still has to execute: every constructor whose arm
-    /// was not closed by a checked `contradiction`.
+    /// still has an open execution path.
     pub(in crate::surface::proof) fn live_cases(&self) -> Vec<usize> {
         (0..self.excluded.len())
             .filter(|&index| self.excluded[index].is_none())
@@ -488,7 +494,6 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn plan_execution_match(
         &self,
         source: &Arc<ProofMatch>,
-        arm_source_index: impl Fn(usize) -> usize,
     ) -> Result<ExecutionMatchPlan, ClickError> {
         let equation = SyntaxProposition::Comparison {
             left: source.scrutinee.clone(),
@@ -610,7 +615,7 @@ impl<'a> Proof<'a> {
             self.match_arm_bindings(source, &partition, &case_indices, &value)?;
         let mut parent_locals = self.state.locals().clone();
         parent_locals.next_choice_variable = next;
-        let mut plan = ExecutionMatchPlan {
+        let plan = ExecutionMatchPlan {
             partition,
             source: Arc::clone(source),
             arm_case_source: Arc::clone(source),
@@ -633,55 +638,7 @@ impl<'a> Proof<'a> {
                 })
             }),
         };
-        for (index, arm) in source.arms.iter().enumerate() {
-            if let [ProofTactic::Contradiction(surface)] = arm.tactics.as_slice() {
-                // The single-tactic arm is checked during planning, before
-                // the ordinary indexed arm driver runs. Attribute its refusal
-                // to that written tactic rather than the enclosing frontier.
-                let scoped = self
-                    .enter_execution_match_arm(&plan, index)?
-                    .at_source_tactic(arm_source_index(index));
-                let fact =
-                    scoped.lower_surface_proposition(surface, "constructor-arm contradiction")?;
-                plan.partition = plan.partition.excluding_constructor_case(plan.case_indices[index], fact)
-                    .ok_or_else(|| scoped.step_error(format!(
-                        "in match arm `{}::{}`: constructor-arm `contradiction` requires an exact fact and its negation in that arm; refused `contradiction({})`",
-                        arm.type_name, arm.variant,
-                        crate::surface::diagnostics::describe_click_proposition(surface),
-                    )))?;
-                plan.excluded[index] = Some(ProofCertificate::from_steps(vec![
-                    ProofStep::Contradiction(surface.clone()),
-                ])?);
-            }
-        }
-        if plan.excluded.iter().all(Option::is_some) {
-            return Err(
-                self.step_error("proof match with every constructor excluded is not yet supported")
-            );
-        }
         Ok(plan)
-    }
-
-    /// Constructs the partition excluding this arm from its explicit
-    /// contradiction, using the facts established by the arm's bridge.
-    /// The driver retains this result while applying the written step.
-    pub(in crate::surface::proof) fn prepare_execution_match_arm_exclusion(
-        &self,
-        plan: &ExecutionMatchPlan,
-        index: usize,
-        surface: &SyntaxProposition,
-    ) -> Result<Arc<CheckedProofCasePartition>, ClickError> {
-        let fact = self.lower_surface_proposition(surface, "constructor-arm contradiction")?;
-        plan.partition
-            .excluding_constructor_case_in(plan.case_indices[index], self.facts(), Some(fact))
-            .ok_or_else(|| {
-                self.step_error(format!(
-                    "in match arm `{}::{}`: constructor-arm `contradiction({})` requires an exact fact and its negation in that arm",
-                    plan.source.arms[index].type_name,
-                    plan.source.arms[index].variant,
-                    crate::surface::diagnostics::describe_click_proposition(surface)
-                ))
-            })
     }
 
     /// Uses the arm's indexed falsehood to exclude this constructor.
@@ -691,11 +648,11 @@ impl<'a> Proof<'a> {
         index: usize,
     ) -> Option<Arc<CheckedProofCasePartition>> {
         plan.partition
-            .excluding_constructor_case_in(plan.case_indices[index], self.facts(), None)
+            .excluding_constructor_case_in(plan.case_indices[index], self.facts())
     }
 
     /// Publishes the retained partition and the closed arm's certificate.
-    /// `self` is the successor of the bridge and its written contradiction;
+    /// `self` is the successor of the bridge and its terminal closure.
     /// `entered` is the checkpoint taken on entry to that arm.
     pub(in crate::surface::proof) fn finish_execution_match_arm_exclusion(
         &self,

@@ -95,7 +95,7 @@ fn opening_control_retains_loaded_pointer_facts() {
         panic!("the reproduction selects one model constructor");
     };
     let prepared = root.prepare_execution_match(false, 0).unwrap();
-    let plan = prepared.plan_execution_match(source, |_| 1).unwrap();
+    let plan = prepared.plan_execution_match(source).unwrap();
     let arm = prepared.enter_execution_match_arm(&plan, 0).unwrap();
     let [
         ProofTactic::UnfoldResource(parent),

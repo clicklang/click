@@ -108,13 +108,13 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
                 selected_index(old(before.shape))
             ) by {
                 intro() {
-                    contradiction(enabled == 1);
+                    close();
                 }
             }
             have enabled == 1 implies
                 result == cells[selected_index(old(before.shape))] by {
                 intro() {
-                    contradiction(enabled == 1);
+                    close();
                 }
             }
             close();

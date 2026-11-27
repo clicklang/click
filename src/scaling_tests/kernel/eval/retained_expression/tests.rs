@@ -305,10 +305,11 @@ fn retained_pointer_step_receipts_do_not_walk_dags_or_sibling_results() {
                     "step".into(),
                     vec![argument],
                 ),
-                SharedPointer::import(&OldPointer::new(
+                Pointer::new(
                     Address::symbolic(Variable(1027951)),
                     ProgramType::Int32Pointer,
-                )),
+                )
+                .into_shared(),
             );
             state.set_retained_step_result(11, root.clone().into());
             let expression = ProgramExpression::StepResult {

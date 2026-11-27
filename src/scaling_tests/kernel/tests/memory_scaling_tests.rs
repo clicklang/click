@@ -2982,7 +2982,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
         let field = Address::symbolic(Variable(998_910));
         let write = Address::symbolic(Variable(998_911));
         let initial = crate::kernel::intern_memory(SymbolicMemory::new());
-        let original = OldPointer::new(
+        let original = Pointer::new(
             Address::loaded_value(&initial, &field),
             ProgramType::Int32Pointer,
         );
@@ -3008,7 +3008,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                     .clone()
                     .store(write.clone(), ProgramValue::Int32(index.into()));
                 let retained_state = crate::kernel::intern_memory_ref(&memory);
-                let current = OldPointer::new(
+                let current = Pointer::new(
                     Address::loaded_value(&retained_state, &field),
                     ProgramType::Int32Pointer,
                 );
@@ -3168,6 +3168,7 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
         let initial = SymbolicMemory::new();
         let defined = |memory: &SymbolicMemory| {
             PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: read.clone(),
@@ -3193,7 +3194,12 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
                 original.clone()
             };
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.has_memory_read_defined_evidence(&memory, &read, ProgramType::Int32)
+                facts.has_memory_read_defined_evidence(
+                    &memory,
+                    &Default::default(),
+                    &read,
+                    ProgramType::Int32,
+                )
             });
             if adjacent || exact || index == 0 {
                 assert!(proved, "read initialization at query {index} of {size}");
@@ -3274,7 +3280,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
             reads
                 .iter()
                 .map(|(address, read)| {
-                    crate::kernel::OldPointer::from_read(
+                    crate::kernel::Pointer::from_read(
                         read.clone(),
                         ProgramType::Int32Pointer,
                         &current,

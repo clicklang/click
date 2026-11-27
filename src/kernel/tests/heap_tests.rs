@@ -949,10 +949,12 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
     assert!(matches!(
         free_facts.to_vec().as_slice(),
         [fact] if matches!(fact.proposition(), Proposition::HeapAllocationFreed {
-            after, allocation_base, bytes, ..
+            after, blocks, ..
         } if after == freed.memory()
-            && allocation_base == pointer.address()
-            && *bytes == AllocationSize::int32(OldMachineTerm::constant(16)))
+            && blocks.as_slice() == [(
+                pointer.address().clone(),
+                AllocationSize::int32(OldMachineTerm::constant(16)),
+            )])
     ));
     let derivation = intern_memory_ref(freed.memory())
         .derivation()
@@ -2325,6 +2327,7 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
     ));
     assert!(!assumptions.proves_memory_read_defined(
         state.memory(),
+        &Default::default(),
         pointer.address(),
         ProgramType::Int32
     ));
@@ -2353,14 +2356,21 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
     };
     let address = pointer.address().clone();
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: state.memory().clone(),
         pointer: address.clone(),
         value_type: ProgramType::Int32,
     });
-    assert!(assumptions.proves_memory_read_defined(state.memory(), &address, ProgramType::Int32));
+    assert!(assumptions.proves_memory_read_defined(
+        state.memory(),
+        &Default::default(),
+        &address,
+        ProgramType::Int32
+    ));
     assert!(!assumptions.has_memory_read_defined_evidence(
         state.memory(),
+        &Default::default(),
         &address,
         ProgramType::Int64
     ));
@@ -2375,13 +2385,19 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
         &PureFactContext::new(),
         None,
     );
-    assert!(!assumptions.has_memory_read_defined_evidence(&changed, &address, ProgramType::Int32));
+    assert!(!assumptions.has_memory_read_defined_evidence(
+        &changed,
+        &Default::default(),
+        &address,
+        ProgramType::Int32
+    ));
     let freed = state
         .memory()
         .clone()
         .free_heap_block(&address, &PureFactContext::new())
         .unwrap();
     let stale = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: freed,
         pointer: address,
@@ -2404,42 +2420,66 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
     let alias = Address::symbolic(Variable(940_001));
     let unrelated = Address::new(AddressBase::Heap(940_002), AddressOffset::constant(0));
     let validity = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: state.memory().clone(),
         pointer: address.clone(),
         value_type: ProgramType::Int32,
     };
     let bare = PureFactContext::new().assume_proposition(validity);
-    assert!(!bare.has_memory_read_defined_evidence(state.memory(), &alias, ProgramType::Int32));
+    assert!(!bare.has_memory_read_defined_evidence(
+        state.memory(),
+        &Default::default(),
+        &alias,
+        ProgramType::Int32
+    ));
     let assumptions = bare.assume_proposition(Proposition::condition_is(
         OldConditionTerm::address_equal(alias.clone(), address.clone()),
         true,
     ));
     assert!(assumptions.has_memory_read_defined_evidence(
         state.memory(),
+        &Default::default(),
         &alias,
         ProgramType::Int32
     ));
     assert!(!assumptions.has_memory_read_defined_evidence(
         state.memory(),
+        &Default::default(),
         &alias,
         ProgramType::Int64
     ));
     assert!(!assumptions.has_memory_read_defined_evidence(
         state.memory(),
+        &Default::default(),
         &alias,
         ProgramType::UInt32
     ));
     let changed = state.memory().clone().store(unrelated, int32(5));
-    assert!(assumptions.has_memory_read_defined_evidence(&changed, &alias, ProgramType::Int32));
+    assert!(assumptions.has_memory_read_defined_evidence(
+        &changed,
+        &Default::default(),
+        &alias,
+        ProgramType::Int32
+    ));
     let range = MemoryRange::new(alias.clone(), 0u32.into(), 1u32.into());
     let havoc =
         changed
             .clone()
             .with_call_memory_havoc(Variable(940_003), &[range], &assumptions, None);
-    assert!(!assumptions.has_memory_read_defined_evidence(&havoc, &alias, ProgramType::Int32));
+    assert!(!assumptions.has_memory_read_defined_evidence(
+        &havoc,
+        &Default::default(),
+        &alias,
+        ProgramType::Int32
+    ));
     let freed = changed.free_heap_block(&address, &assumptions).unwrap();
-    assert!(!assumptions.has_memory_read_defined_evidence(&freed, &alias, ProgramType::Int32));
+    assert!(!assumptions.has_memory_read_defined_evidence(
+        &freed,
+        &Default::default(),
+        &alias,
+        ProgramType::Int32
+    ));
 }
 
 #[test]
@@ -2453,6 +2493,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
         .unwrap();
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: memory.clone(),
             pointer: field.clone(),
@@ -2464,12 +2505,19 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
         ));
     assert!(assumptions.has_memory_read_defined_evidence(
         &memory,
+        &Default::default(),
         &alias_field,
         ProgramType::Int32
     ));
-    assert!(!assumptions.has_memory_read_defined_evidence(&memory, &alias, ProgramType::Int32));
     assert!(!assumptions.has_memory_read_defined_evidence(
         &memory,
+        &Default::default(),
+        &alias,
+        ProgramType::Int32
+    ));
+    assert!(!assumptions.has_memory_read_defined_evidence(
+        &memory,
+        &Default::default(),
         &alias_field,
         ProgramType::Int64
     ));
@@ -2479,6 +2527,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     );
     assert!(assumptions.has_memory_read_defined_evidence(
         &changed,
+        &Default::default(),
         &alias_field,
         ProgramType::Int32
     ));
@@ -2494,12 +2543,14 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     );
     assert!(!assumptions.has_memory_read_defined_evidence(
         &havoc,
+        &Default::default(),
         &alias_field,
         ProgramType::Int32
     ));
     let freed = changed.free_heap_block(&base, &assumptions).unwrap();
     assert!(!assumptions.has_memory_read_defined_evidence(
         &freed,
+        &Default::default(),
         &alias_field,
         ProgramType::Int32
     ));
@@ -3050,13 +3101,19 @@ fn viewability_alone_cannot_certify_initialization_of_external_storage() {
             }
             let assumptions =
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: pointer.clone(),
                     bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
                     wide: false,
                 });
             assert_eq!(
-                assumptions.proves_memory_read_defined(&memory, &pointer, value_type),
+                assumptions.proves_memory_read_defined(
+                    &memory,
+                    &Default::default(),
+                    &pointer,
+                    value_type
+                ),
                 initialized
             );
         }
@@ -3077,13 +3134,19 @@ fn typed_read_initialization_accepts_only_complete_cached_byte_coverage() {
             crate::kernel::intern_memory(SymbolicMemory::new()),
         );
         let context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: pointer.clone(),
             bytes: (OldMachineTerm::constant(8)).into(),
             wide: false,
         });
         assert_eq!(
-            context.proves_memory_read_defined(&memory, &pointer, ProgramType::Int32Pointer),
+            context.proves_memory_read_defined(
+                &memory,
+                &Default::default(),
+                &pointer,
+                ProgramType::Int32Pointer
+            ),
             count == 2
         );
     }

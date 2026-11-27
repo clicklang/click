@@ -3593,48 +3593,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Use plain closure when the focused proposition already has `false`
-    /// in scope. Other refutations still need their selected fact.
-    pub(in crate::surface::proof) fn refutation_step(&self, fact: SyntaxProposition) -> ProofStep {
-        if self.goal().is_some() && self.facts().holds_false() {
-            ProofStep::Known
-        } else {
-            ProofStep::Contradiction(fact)
-        }
-    }
-
-    fn apply_contradiction(
-        &self,
-        surface: &SyntaxProposition,
-    ) -> Result<KernelProofHandle, ClickError> {
-        let fact = self.lower_cited_surface_proposition(surface, "`contradiction` fact")?;
-        self.state
-            .apply_contradiction(&fact)
-            .map_err(|error| match error {
-                PropositionCloseError::ContradictionUnavailable { .. }
-                    if matches!(surface, SyntaxProposition::Value(value)
-                        if bool_literal_value(value) == Some(false)) =>
-                {
-                    self.step_error("`contradiction()` requires an established `false` fact")
-                }
-                PropositionCloseError::ContradictionUnavailable { fact_held } => {
-                    let written = crate::surface::diagnostics::describe_click_proposition(surface);
-                    let missing = if fact_held {
-                        format!("`{written}` is available, but neither `not ({written})` nor its opposite comparison is")
-                    } else {
-                        format!("`{written}` itself is not an available fact")
-                    };
-                    self.step_error(format!(
-                        "`contradiction({written})` requires an exact fact and its exact negation or opposite condition polarity: {missing}"
-                    ))
-                }
-                PropositionCloseError::Unavailable => {
-                    self.step_error("`contradiction` requires an open proof branch")
-                }
-                _ => unreachable!("kernel returned an unrelated contradiction error"),
-            })
-    }
-
     fn proposition_goal(&self, message: &str) -> Result<&Proposition, ClickError> {
         self.goal().ok_or_else(|| self.step_error(message))
     }
@@ -3994,7 +3952,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Loop(_) => "loop",
         ProofStep::Rewrite(_) => "rewrite",
         ProofStep::CloseUnreachable => "close",
-        ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
         ProofStep::LetSatisfy(_) => "obtain",
         ProofStep::Choose(_) => "choose",

@@ -199,7 +199,6 @@ pub(super) fn collect_pointer_bound_identities(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     pub(super) fn native_variables(
         pointer: &Address,
         mode: FoldVariableRead,
@@ -309,8 +308,8 @@ mod tests {
             collect_address_variables(&shared, mode, &mut actual);
             assert_eq!(actual, native_variables(&address, mode), "{mode:?}");
         }
-        let source = OldPointer::new(address, ProgramType::VoidPointer);
-        let shared = SharedPointer::import(&source);
+        let source = Pointer::new(address, ProgramType::VoidPointer);
+        let shared = source.shared().clone();
         let mut expected = BTreeSet::new();
         collect_program_value_bound_identities(
             &ProgramValue::Pointer(source),
@@ -326,17 +325,17 @@ mod tests {
     #[test]
     fn complete_pointer_readers_keep_native_metadata_and_coordinate_policy() {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = OldPointer::new(
+        let source = Pointer::new(
             Address::symbolic(Variable(1001010)),
             ProgramType::VoidPointer,
         )
-        .with_provenance(Arc::new(Address::symbolic(Variable(1001011))))
-        .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1001012)))))
-        .with_bounds(Some(SubobjectBounds {
-            start: Address::symbolic(Variable(1001013)),
-            width: OldMachineTerm::Variable(Variable(1001014)),
-        }));
-        let shared = SharedPointer::import(&source);
+        .with_provenance(Address::symbolic(Variable(1001011)))
+        .with_bounds_owner(Some(Address::symbolic(Variable(1001012))))
+        .with_bounds(Some(SubobjectBounds::new(
+            Address::symbolic(Variable(1001013)),
+            OldMachineTerm::Variable(Variable(1001014)),
+        )));
+        let shared = source.shared().clone();
         for mode in MODES {
             let mut actual = BTreeSet::new();
             collect_pointer_variables(&shared, mode, &mut actual);

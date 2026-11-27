@@ -760,6 +760,13 @@ impl PathLink {
         self
     }
 
+    /// The point of a proposition built only to look a fact up by its
+    /// memory: lookups compare no point, so it needs none. It goes when
+    /// fact indexes are keyed by point.
+    pub(crate) fn lookup_key() -> Self {
+        Self::default()
+    }
+
     pub(super) fn function_entry(memory: SharedMemory) -> Self {
         Self::reached_from(
             memory,
@@ -2301,6 +2308,17 @@ impl ProgramPoint {
         })
     }
 
+    /// The version a slice load names at this point when a recorded store
+    /// wrote a slice to exactly its 16-byte cell
+    /// (`design/rust-slice-values.md`, step 2b-ii-b). A store into either
+    /// word ends the version by `indexed_version`'s extent check.
+    pub(crate) fn indexed_slice_version(&self, pointer: &Address) -> Option<Self> {
+        self.indexed_version(pointer, super::WIDE_POINTER_BYTE_WIDTH, |store| {
+            matches!(store, MemoryDerivation::Store { value, .. }
+                if value.program_type().is_slice_pointer())
+        })
+    }
+
     pub(super) fn abstract_local_version(
         &self,
         pointer: &Address,
@@ -2704,7 +2722,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let pointer_slot = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
-        let pointer = OldPointer::from_point_read(
+        let pointer = Pointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::Int32Pointer,
             &pointer_slot,
@@ -2738,7 +2756,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let point = entry.program_point();
         let slot = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
-        let pointer = OldPointer::from_point_read(
+        let pointer = Pointer::from_point_read(
             point.clone().for_legacy_read(),
             ProgramType::Int32Pointer,
             &slot,
@@ -2756,7 +2774,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let caller_cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
-        let loaded = OldPointer::from_point_read(
+        let loaded = Pointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::UInt64Pointer,
             &caller_cell.offset_by_bytes(8),

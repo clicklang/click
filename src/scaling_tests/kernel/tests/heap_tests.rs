@@ -10,6 +10,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let pointer = Address::new(AddressBase::Heap(941_000), AddressOffset::constant(0));
     let alias = Address::symbolic(Variable(941_001));
     let validity = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: memory.clone(),
         pointer: pointer.offset_by_bytes(4),
@@ -24,6 +25,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
         ));
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: Address::new(
@@ -35,12 +37,18 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
         }
         let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.has_memory_read_defined_evidence(&memory, &field_alias, ProgramType::Int32)
+            assumptions.has_memory_read_defined_evidence(
+                &memory,
+                &Default::default(),
+                &field_alias,
+                ProgramType::Int32,
+            )
         });
         assert!(proved);
         samples.push(work);
         assert!(!unrelated.has_memory_read_defined_evidence(
             &memory,
+            &Default::default(),
             &field_alias,
             ProgramType::Int32
         ));
@@ -56,6 +64,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
     let memory = SymbolicMemory::new();
     let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let validity = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: memory.clone(),
         pointer: pointer.clone(),
@@ -66,6 +75,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         let mut unrelated = PureFactContext::new();
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: Address::new(
@@ -77,11 +87,21 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         }
         let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.has_memory_read_defined_evidence(&memory, &pointer, ProgramType::Int32)
+            assumptions.has_memory_read_defined_evidence(
+                &memory,
+                &Default::default(),
+                &pointer,
+                ProgramType::Int32,
+            )
         });
         assert!(proved);
         samples.push(work);
-        assert!(!unrelated.has_memory_read_defined_evidence(&memory, &pointer, ProgramType::Int32));
+        assert!(!unrelated.has_memory_read_defined_evidence(
+            &memory,
+            &Default::default(),
+            &pointer,
+            ProgramType::Int32
+        ));
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
@@ -108,7 +128,12 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
             );
         }
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            PureFactContext::new().proves_memory_read_defined(&memory, &target, ProgramType::Int32)
+            PureFactContext::new().proves_memory_read_defined(
+                &memory,
+                &Default::default(),
+                &target,
+                ProgramType::Int32,
+            )
         });
         assert!(!proved);
         samples.push(work);
@@ -128,6 +153,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         let mut assumptions = PureFactContext::new();
         for index in 0..count {
             assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: None,
                 memory: memory.clone(),
                 pointer: address.clone(),
@@ -153,6 +179,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         // Supply validity at the selected adjacent transition's entry.
         // Earlier history is deliberately not an implicit proof argument.
         let assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: pending.clone(),
             pointer: address.clone(),
@@ -162,6 +189,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             .resolve_pending_heap_allocation(&request, false)
             .unwrap();
         let goal = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: failed.clone(),
             pointer: address.clone(),
@@ -184,6 +212,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         );
         assert!(!assumptions.has_memory_read_defined_evidence(
             &changed,
+            &Default::default(),
             &address,
             ProgramType::Int32
         ));
@@ -662,18 +691,25 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         }
         // The equality supplies storage identity, not access authority.
         facts = facts.assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: query.clone(),
             bytes: (OldMachineTerm::constant(8)).into(),
             wide: false,
         });
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            facts.proves_memory_read_defined(&memory, &query.offset_by_bytes(4), ProgramType::Int32)
+            facts.proves_memory_read_defined(
+                &memory,
+                &Default::default(),
+                &query.offset_by_bytes(4),
+                ProgramType::Int32,
+            )
         });
         assert!(proved);
         samples.push(work);
         assert!(!facts.proves_memory_read_defined(
             &memory,
+            &Default::default(),
             &query.offset_by_bytes(8),
             ProgramType::Int32,
         ));

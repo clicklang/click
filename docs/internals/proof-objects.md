@@ -935,7 +935,7 @@ Three standing rules keep the boundary where the 2026-09 cleanup left it.
   For an implication guarded by algebraic equality, `close()` first tries to
   refute the guard with an indexed model equality and direct normalization.
   A successful candidate emits the ordinary scoped `have`, `rewrite`,
-  `intro`, and `contradiction` operations, before selecting or raising facts
+  `intro`, and `close()` operations, before selecting or raising facts
   connected to the entire implication. A missed candidate leaves the ordinary
   closure search available.
 

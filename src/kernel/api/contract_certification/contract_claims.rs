@@ -2185,6 +2185,7 @@ fn check_effect_on_prepared_path(
                 before,
                 after,
                 writes,
+                ..
             } => {
                 let repeats_transition =
                     seen_transitions.iter().any(|(seen_before, seen_after)| {
@@ -2293,12 +2294,9 @@ fn check_effect_on_prepared_path(
                     None => Ok(()),
                 }
             }
-            Proposition::HeapAllocationFreed {
-                before,
-                after,
-                allocation_base,
-                bytes,
-            } => {
+            // The kernel constructs each recorded free from the free it
+            // performed, so closing checks only that the effects connect.
+            Proposition::HeapAllocationFreed { before, after, .. } => {
                 let repeats_transition =
                     seen_transitions.iter().any(|(seen_before, seen_after)| {
                         program_effect_memories_definitionally_equal(
@@ -2326,11 +2324,6 @@ fn check_effect_on_prepared_path(
                 {
                     return Err(ContractClosingRefusal::Internal(
                         "the recorded memory effects do not connect to one another".into(),
-                    ));
-                }
-                if !heap_free_effect_is_valid(before, after, allocation_base, bytes) {
-                    return Err(ContractClosingRefusal::Internal(
-                        "a recorded deallocation has inconsistent memory states".into(),
                     ));
                 }
                 if !repeats_transition {
@@ -2449,29 +2442,6 @@ pub(in crate::kernel) fn program_effect_memory_advances_over_internal_heap_state
         Vec::new(),
     );
     program_effect_memories_definitionally_equal(before, &stripped, assumptions)
-}
-
-fn heap_free_effect_is_valid(
-    before: &SymbolicMemory,
-    after: &SymbolicMemory,
-    allocation_base: &Address,
-    bytes: &AllocationSize,
-) -> bool {
-    // The effect states the freed size with its format, so the claim it
-    // reinstates is the block's own, 32-bit or 64-bit.
-    let Some(live) = (if before.live_heap_block_size(allocation_base).is_some() {
-        Some(before.clone())
-    } else {
-        before
-            .clone()
-            .with_heap_allocation_claim(allocation_base.clone(), bytes.clone())
-    }) else {
-        return false;
-    };
-    live.live_heap_block_size(allocation_base) == Some(bytes)
-        && live
-            .free_heap_block(allocation_base, &PureFactContext::new())
-            .is_ok_and(|expected| expected == *after)
 }
 
 /// The goal a proof closes to establish one proposition claim of a contract
@@ -3281,39 +3251,6 @@ fn function_contract_claims_are_complete(function: &ProgramFunction) -> bool {
 }
 
 #[cfg(test)]
-mod heap_free_effect_tests {
-    use super::*;
-
-    /// A free effect reinstates the freed block's claim in the size's own
-    /// format: a 64-bit block whose claim was not live before the free (a
-    /// contract-imported allocation) is matched by its `uint64` size, and
-    /// a 32-bit reading of the same byte term is not that block's free.
-    #[test]
-    fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
-        let base = Address::new(AddressBase::Heap(940_100), AddressOffset::constant(0));
-        let bytes = OldMachineTerm::uint64_multiply(
-            OldMachineTerm::Variable(Variable(940_101)),
-            OldMachineTerm::uint64_constant(4),
-        );
-        let wide = AllocationSize::new(bytes.clone(), AllocationSizeKind::UInt64);
-        let before = SymbolicMemory::new();
-        let after = before
-            .clone()
-            .with_heap_allocation_claim(base.clone(), wide.clone())
-            .expect("a fresh claim")
-            .free_heap_block(&base, &PureFactContext::new())
-            .expect("a free of the claimed block");
-        assert!(heap_free_effect_is_valid(&before, &after, &base, &wide));
-        assert!(!heap_free_effect_is_valid(
-            &before,
-            &after,
-            &base,
-            &AllocationSize::int32(bytes),
-        ));
-    }
-}
-
-#[cfg(test)]
 mod checked_proposition_index_tests {
     use super::*;
 
@@ -3358,7 +3295,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            OldPointer::new(pointer.clone(), ProgramType::Int32Pointer),
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer),
             Address::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
         );
         let mut paths = vec![
@@ -3880,7 +3817,7 @@ mod retained_contract_input_tests {
     use super::*;
     use crate::kernel::{
         AlgebraicType, ExecutionValue, KernelTermExport, KernelTermImport, KernelType,
-        LocalBinding, SharedPointer, StoredExecutionValue,
+        LocalBinding, StoredExecutionValue,
     };
 
     fn prepared_input(value: StoredExecutionValue) -> StoredExecutionValue {
@@ -3922,7 +3859,7 @@ mod retained_contract_input_tests {
     #[test]
     fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996801)),
             ProgramType::Int32Pointer,
         );
@@ -3934,8 +3871,8 @@ mod retained_contract_input_tests {
                 KernelType::Algebraic(AlgebraicType::parameter("T".into())),
                 Variable(996805),
             ),
-            KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
-            KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
+            KernelTerm::shared_pointer_value(pointer.shared().clone()),
+            KernelTerm::shared_pointer_value(pointer.shared().clone()),
         ];
         for root in roots {
             let input = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
@@ -3961,7 +3898,7 @@ mod retained_contract_input_tests {
                         .unwrap()
                         .pointer_payload()
                         .unwrap()
-                        .same_source_payload(&SharedPointer::import(pointer))
+                        .same_source_payload(pointer.shared())
                 );
             } else {
                 assert_eq!(actual.shared(), Some(&root));

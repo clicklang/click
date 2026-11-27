@@ -37,7 +37,7 @@ fn participants() -> (BorrowLedger, BorrowParticipantId, BorrowParticipantId) {
 }
 
 fn opaque_memory_borrow_fixture() -> (ResourceFact, CheckedResourceFact) {
-    let pointer = crate::kernel::OldPointer::new(
+    let pointer = crate::kernel::Pointer::new(
         Address::symbolic(Variable(9_819_001)),
         crate::kernel::ProgramType::Int32Pointer,
     );

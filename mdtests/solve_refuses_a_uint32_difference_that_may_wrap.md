@@ -12,5 +12,5 @@ theorem difference_that_may_wrap(x: uint32) {
 ```
 
 ```expect
-fail: could not establish `to_integer(((0u32 - x) + 3u32)) < to_integer(((0u32 - x) + 4u32))`
+fail: could not establish `to_integer((0u32 - x + 3u32)) < to_integer((0u32 - x + 4u32))`
 ```

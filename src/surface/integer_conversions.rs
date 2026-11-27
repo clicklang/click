@@ -114,7 +114,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         have a + c <= b + d by {
             apply(integer::add_le(a, b, c, d));
         }
-        contradiction(a + c <= b + d);
+        close();
     }
 }
 "#;

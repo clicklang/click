@@ -373,7 +373,7 @@ theorem erase_unlink_red_if_not_black(c: Color) {
             Color::Red => { close(); }
             Color::Black => {
                 have Color::Black == Color::Black by close();
-                contradiction(Color::Black == Color::Black);
+                close();
             }
         }
     }
@@ -392,7 +392,7 @@ theorem erase_deep_no_fixup(tree: RbTree, up: Context, successor: struct rb_node
                 cases {
                     not(RbTree::Empty == RbTree::Empty) => {
                         have RbTree::Empty == RbTree::Empty by close();
-                        contradiction(RbTree::Empty == RbTree::Empty);
+                        close();
                     }
                     color == Color::Red => {
                         rewrite(color, Color::Red);
@@ -414,7 +414,7 @@ theorem erase_deep_no_fixup(tree: RbTree, up: Context, successor: struct rb_node
                 cases {
                     not(RbTree::Empty == RbTree::Empty) => {
                         have RbTree::Empty == RbTree::Empty by close();
-                        contradiction(RbTree::Empty == RbTree::Empty);
+                        close();
                     }
                     color == Color::Red => {
                         rewrite(color, Color::Red);
@@ -545,7 +545,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         if erase_minimum_child(rb_minimum(rb_right(tree.model))) == RbTree::Empty
             and erase_minimum_color(rb_minimum(rb_right(tree.model))) == Color::Black {
             match tree.model {
-                RbTree::Empty => { contradiction(tree.model == RbTree::Empty); },
+                RbTree::Empty => { close(); },
                 RbTree::Node(identity, parent_model, color, left_model, right_model) => {
                     have rb_left(tree.model) == left_model by {
                         rewrite(tree.model, RbTree::Node(identity, parent_model, color, left_model, right_model));
@@ -575,7 +575,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     mark erased_parent_initial;
                     let old_left = fold(erase_saved_left(node), { child: node->rb_left });
                     match left_model {
-                        RbTree::Empty => { contradiction(left_model == RbTree::Empty); },
+                        RbTree::Empty => { close(); },
                         RbTree::Node(lid, lp, lc, ll, lr) => {
                             let { left: ll_tree, right: lr_tree } = unfold(l);
                             have at(erased_parent_initial, node->rb_left) == lid;
@@ -589,7 +589,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 left: lid->rb_left, right: lid->rb_right
                             });
                             match right_model {
-                                RbTree::Empty => { contradiction(right_model == RbTree::Empty); },
+                                RbTree::Empty => { close(); },
                                 RbTree::Node(rid, rp, rc, rl, rr) => {
                                     have rl != RbTree::Empty by {
                                         unfold(rb_left(RbTree::Node(rid, rp, rc, rl, rr)));
@@ -599,7 +599,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     apply(rb_parent_consistent_node_left(rid, rp, rc, rl, rr, identity));
                                     let { left: t, right: right_sibling } = unfold(r);
                                     match rl {
-                                        RbTree::Empty => { contradiction(rl == RbTree::Empty); },
+                                        RbTree::Empty => { close(); },
                                         RbTree::Node(iid, ip, ic, il, ir) => {
                                             let { left: init_l, right: init_r } = unfold(t);
                                             have at(erased_parent_initial, node->rb_right->rb_left) == iid;
@@ -627,7 +627,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 initialize by close();
                                                 maintain by {
                                                     match t.model {
-                                                        RbTree::Empty => { unfold(t); have tmp != 0 by { close(); } contradiction(tmp == 0); },
+                                                        RbTree::Empty => { unfold(t); have tmp != 0 by { close(); } close(); },
                                                         RbTree::Node(tid, tp, tc, tl, tr) => {
                                                             have plug(erase_context(EraseSpine::Left(tid, tp, tc, tr, c.model)), tl) == rl by {
                                                                 unfold(erase_context(EraseSpine::Left(tid, tp, tc, tr, c.model)));
@@ -657,12 +657,12 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 RbTree::Node(a, b, col, lt, rt) => {
                                                     have t.model == RbTree::Empty;
                                                     have t.model != RbTree::Empty by { rewrite(t.model, RbTree::Node(a, b, col, lt, rt)); close(); }
-                                                    contradiction(t.model == RbTree::Empty);
+                                                    close();
                                                 },
                                                 RbTree::Empty => {
                                                     have c.model != EraseSpine::Top;
                                                     match c.model {
-                                                        EraseSpine::Top => { contradiction(c.model == EraseSpine::Top); },
+                                                        EraseSpine::Top => { close(); },
                                                         EraseSpine::Left(mid, mp, mc, mr, mu) => {
                                                             apply(erase_spine_minimum(mu, RbTree::Node(mid, mp, mc, RbTree::Empty, mr)));
                                                             have rb_minimum(rl) == RbMinimum::Found(mid, mc, mr) by {
@@ -1329,7 +1329,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                         unfold(ctx_identity(Context::Top));
                                                                         close();
                                                                     }
-                                                                    contradiction(rebalance == 0);
+                                                                    close();
                                                                 } else { close(); }
                                                             }
                                                             have ctx_consistent(erase_deep_context(old(tree.model), old(up.model)), RbTree::Empty, 0) == 1 by {
@@ -1408,8 +1408,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         if erase_minimum_color(rb_minimum(rb_right(tree.model))) == Color::Black {
                             have erase_minimum_child(rb_minimum(rb_right(tree.model))) == RbTree::Empty
                                 and erase_minimum_color(rb_minimum(rb_right(tree.model))) == Color::Black by close();
-                            contradiction(erase_minimum_child(rb_minimum(rb_right(tree.model))) == RbTree::Empty
-                                and erase_minimum_color(rb_minimum(rb_right(tree.model))) == Color::Black);
+                            close();
                         } else {
                             close();
                         }
@@ -1421,7 +1420,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 }
             }
             match tree.model {
-                RbTree::Empty => { contradiction(tree.model == RbTree::Empty); },
+                RbTree::Empty => { close(); },
                 RbTree::Node(identity, parent_model, color, left_model, right_model) => {
                     have rb_left(tree.model) == left_model by {
                         rewrite(tree.model, RbTree::Node(identity, parent_model, color, left_model, right_model));
@@ -1450,7 +1449,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     mark erased_parent_initial;
                     let old_left = fold(erase_saved_left(node), { child: node->rb_left });
                     match left_model {
-                        RbTree::Empty => { contradiction(left_model == RbTree::Empty); },
+                        RbTree::Empty => { close(); },
                         RbTree::Node(lid, lp, lc, ll, lr) => {
                             let { left: ll_tree, right: lr_tree } = unfold(l);
                             have at(erased_parent_initial, node->rb_left) == lid;
@@ -1464,7 +1463,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 left: lid->rb_left, right: lid->rb_right
                             });
                             match right_model {
-                                RbTree::Empty => { contradiction(right_model == RbTree::Empty); },
+                                RbTree::Empty => { close(); },
                                 RbTree::Node(rid, rp, rc, rl, rr) => {
                                     have rl != RbTree::Empty by {
                                         unfold(rb_left(RbTree::Node(rid, rp, rc, rl, rr)));
@@ -1475,7 +1474,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     apply(rb_remove_min_blackened_parent_consistent(rl, rid));
                                     let { left: t, right: right_sibling } = unfold(r);
                                     match rl {
-                                        RbTree::Empty => { contradiction(rl == RbTree::Empty); },
+                                        RbTree::Empty => { close(); },
                                         RbTree::Node(iid, ip, ic, il, ir) => {
                                             let { left: init_l, right: init_r } = unfold(t);
                                             have at(erased_parent_initial, node->rb_right->rb_left) == iid;
@@ -1503,7 +1502,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 initialize by close();
                                                 maintain by {
                                                     match t.model {
-                                                        RbTree::Empty => { unfold(t); have tmp != 0 by { close(); } contradiction(tmp == 0); },
+                                                        RbTree::Empty => { unfold(t); have tmp != 0 by { close(); } close(); },
                                                         RbTree::Node(tid, tp, tc, tl, tr) => {
                                                             have plug(erase_context(EraseSpine::Left(tid, tp, tc, tr, c.model)), tl) == rl by {
                                                                 unfold(erase_context(EraseSpine::Left(tid, tp, tc, tr, c.model)));
@@ -1532,12 +1531,12 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 RbTree::Node(a, b, col, lt, rt) => {
                                                     have t.model == RbTree::Empty by close();
                                                     have t.model != RbTree::Empty by { rewrite(t.model, RbTree::Node(a, b, col, lt, rt)); close(); }
-                                                    contradiction(t.model == RbTree::Empty);
+                                                    close();
                                                 },
                                                 RbTree::Empty => {
                                                     have c.model != EraseSpine::Top by close();
                                                     match c.model {
-                                                        EraseSpine::Top => { contradiction(c.model == EraseSpine::Top); },
+                                                        EraseSpine::Top => { close(); },
                                                         EraseSpine::Left(mid, mp, mc, mr, mu) => {
                                                             apply(erase_spine_minimum(mu, RbTree::Node(mid, mp, mc, RbTree::Empty, mr)));
                                                             have rb_minimum(rl) == RbMinimum::Found(mid, mc, mr) by {
@@ -2076,7 +2075,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     have mr == RbTree::Empty by { rewrite(mr, min_right.model); close(); }
                                                                     have mc == Color::Red by {
                                                                         cases {
-                                                                            not(mr == RbTree::Empty) => { contradiction(mr == RbTree::Empty); }
+                                                                            not(mr == RbTree::Empty) => { close(); }
                                                                             mc == Color::Red => { close(); }
                                                                         }
                                                                     }
@@ -2308,7 +2307,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         }
     } else {
     match tree.model {
-        RbTree::Empty => { contradiction(tree.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(erased, erased_parent, erased_color, erased_left, erased_right) => {
             match erased_left {
                 RbTree::Empty => {
@@ -3741,8 +3740,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     }
                                     have rb_left(tree.model) != RbTree::Empty and rb_right(tree.model) != RbTree::Empty
                                         and rb_left(rb_right(tree.model)) != RbTree::Empty by close();
-                                    contradiction(rb_left(tree.model) != RbTree::Empty and rb_right(tree.model) != RbTree::Empty
-                                        and rb_left(rb_right(tree.model)) != RbTree::Empty);
+                                    close();
                                 },
                             }
                         },

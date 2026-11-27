@@ -107,7 +107,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         step();
                     }
                     false => {
-                        contradiction(not (occupied[i] == 0));
+                        close();
                     }
                 }
                 step();
@@ -190,7 +190,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
             } else {
                 branch {
                     true => {
-                        contradiction(occupied[i] == 0);
+                        close();
                     }
                     false => {
                         step();

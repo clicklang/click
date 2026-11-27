@@ -81,7 +81,7 @@ void set_parent_black(struct rb_node* node, struct rb_node* old_parent, struct r
     produces u: rb_at(node);
 } by {
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, model_parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             have color_bit(Color::Red) == 0 by {

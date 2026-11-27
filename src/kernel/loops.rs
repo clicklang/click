@@ -5968,7 +5968,7 @@ pub(super) fn collect_loop_preservation_summary(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Address,
-    pub(super) provenance: std::sync::Arc<Address>,
+    pub(super) provenance: Address,
     /// The array object of the pointer that names the segment, without
     /// bounds of its own.
     pub(super) carrier: crate::kernel::primitives::ArrayObject,
@@ -8185,11 +8185,11 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         let evaluated = EvaluatedMemorySegment {
-            provenance: std::sync::Arc::new(base_value.provenance().clone()),
+            provenance: base_value.provenance().clone(),
             carrier: crate::kernel::primitives::ArrayObject::from_parts(
                 base_value.bounds_are_known(),
                 None,
-                base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+                base_value.bounds_owner().cloned(),
             ),
             base,
             start,
@@ -8232,11 +8232,11 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
-        provenance: std::sync::Arc::new(base_value.provenance().clone()),
+        provenance: base_value.provenance().clone(),
         carrier: crate::kernel::primitives::ArrayObject::from_parts(
             base_value.bounds_are_known(),
             None,
-            base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+            base_value.bounds_owner().cloned(),
         ),
         base,
         start,
@@ -9975,8 +9975,8 @@ fn with_retained_bounds(
             ProgramValue::Pointer(
                 pointer
                     .with_bounds(previous.bounds().cloned())
-                    .with_provenance(std::sync::Arc::new(previous.provenance().clone()))
-                    .with_bounds_owner(previous.bounds_owner().cloned().map(std::sync::Arc::new)),
+                    .with_provenance(previous.provenance().clone())
+                    .with_bounds_owner(previous.bounds_owner().cloned()),
             )
         }
         (fresh, _) => fresh,
@@ -9991,7 +9991,7 @@ fn with_retained_bounds(
 /// claims nothing. A pointer without bounds is bounded by its complete
 /// object, as before.
 fn segment_bounds_refusal(
-    base: &OldPointer,
+    base: &Pointer,
     segment: &EvaluatedMemorySegment,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -10008,7 +10008,7 @@ fn segment_bounds_refusal(
 /// [`segment_bounds_refusal`] for a lowered range: a proof step's clause
 /// names its range through the same pointer value.
 pub(crate) fn memory_range_bounds_refusal(
-    base: &OldPointer,
+    base: &Pointer,
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -10027,7 +10027,7 @@ pub(crate) fn memory_range_bounds_refusal(
 }
 
 fn range_bounds_refusal(
-    base: &OldPointer,
+    base: &Pointer,
     start: &OldMachineTerm,
     end: &OldMachineTerm,
     element_width: u32,
@@ -10052,7 +10052,7 @@ fn range_bounds_refusal(
     // The domain witness can use another equal pointer's coordinates.
     // Resolve only the checked address; the clause's base value stays intact.
     let respelled = assumptions
-        .pointer_at_known_base(base.address(), &bounds.start)
+        .pointer_at_known_base(base.address(), &bounds.start())
         .filter(|respelled| {
             respelled != base.address()
                 && assumptions.pointers_known_equal(base.address(), respelled)
@@ -10060,12 +10060,15 @@ fn range_bounds_refusal(
     let Some(offset) = respelled
         .as_ref()
         .and_then(|respelled| {
-            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(respelled, &bounds.start)
+            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
+                respelled,
+                &bounds.start(),
+            )
         })
         .or_else(|| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
                 base.address(),
-                &bounds.start,
+                &bounds.start(),
             )
         })
     else {
@@ -10154,14 +10157,14 @@ mod pointer_domain_clause_tests {
     #[test]
     fn clause_ranges_check_admitted_member_bounds_without_rewriting_the_base() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = OldPointer::new(
+        let base = Pointer::new(
             Address::symbolic(Variable(1013200)),
             ProgramType::Int32Pointer,
         );
-        let selected = base.clone().with_bounds(Some(SubobjectBounds {
-            start: base.address().clone(),
-            width: 4u32.into(),
-        }));
+        let selected = base.clone().with_bounds(Some(SubobjectBounds::new(
+            base.address().clone(),
+            4u32.into(),
+        )));
         let context = PureFactContext::new().assume_condition(
             OldConditionTerm::pointer_equal(base.clone(), selected),
             true,

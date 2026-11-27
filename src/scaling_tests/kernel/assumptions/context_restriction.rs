@@ -10,7 +10,7 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
             context = context.assume_proposition(Proposition::Predicate {
                 name: "pointer_fact".into(),
                 arguments: vec![Term::ProgramValue(
-                    (ProgramValue::Pointer(OldPointer::new(
+                    (ProgramValue::Pointer(Pointer::new(
                         Address::new(
                             format!("ambient_{index}").into(),
                             AddressOffset::constant(0),
@@ -54,6 +54,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: pointer(720_000 + index),
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -64,6 +65,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
             for _ in 0..4 {
                 assert!(!context.proves_memory_loadable(
                     &memory,
+                    &Default::default(),
                     &pointer(730_000),
                     &OldMachineTerm::constant(4)
                 ));
@@ -116,12 +118,14 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::new("adjacent".into(), AddressOffset::constant(0));
         let prefix = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: base.clone(),
             bytes: 8.into(),
             wide: false,
         };
         let suffix = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: base.offset_by_bytes(8),
             bytes: 4.into(),
@@ -134,6 +138,7 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
         for index in 0..size {
             let other = base.offset_by_bytes(1000 + index as u32 * 4);
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: SymbolicMemory::new(),
                 base: other.clone(),
                 bytes: 4.into(),
@@ -171,6 +176,7 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(770_000));
         let fact = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: base.clone(),
             bytes: 8.into(),
@@ -209,6 +215,7 @@ fn memory_view_miss_does_not_scan_same_address_spans() {
         let mut context = PureFactContext::new();
         for span in 1..=size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: base.clone(),
                 bytes: span.into(),
@@ -217,10 +224,15 @@ fn memory_view_miss_does_not_scan_same_address_spans() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
-                assert!(!context.proves_memory_loadable(&memory, &base, &4096.into()));
+                assert!(!context.proves_memory_loadable(
+                    &memory,
+                    &Default::default(),
+                    &base,
+                    &4096.into()
+                ));
             }
         });
-        assert!(context.proves_memory_loadable(&memory, &base, &size.into()));
+        assert!(context.proves_memory_loadable(&memory, &Default::default(), &base, &size.into()));
         samples.push(work);
     }
     eprintln!("same address view miss work: {samples:?}");
@@ -260,6 +272,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                         memory.clone()
                     };
                     let fact = Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: source,
                         base: base.clone(),
                         bytes: crate::kernel::StoredMachineTerm::new(
@@ -280,9 +293,14 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 let selected = selected.unwrap();
                 let proves = |context: &PureFactContext, bytes: &OldMachineTerm| {
                     if wide {
-                        context.proves_native_memory_loadable(&memory, &base, bytes)
+                        context.proves_native_memory_loadable(
+                            &memory,
+                            &Default::default(),
+                            &base,
+                            bytes,
+                        )
                     } else {
-                        context.proves_memory_loadable(&memory, &base, bytes)
+                        context.proves_memory_loadable(&memory, &Default::default(), &base, bytes)
                     }
                 };
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -297,9 +315,19 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                             unreachable!()
                         };
                         assert!(if wide {
-                            context.proves_native_memory_loadable(memory, &base, bytes.old_form())
+                            context.proves_native_memory_loadable(
+                                memory,
+                                &Default::default(),
+                                &base,
+                                bytes.old_form(),
+                            )
                         } else {
-                            context.proves_memory_loadable(memory, &base, bytes.old_form())
+                            context.proves_memory_loadable(
+                                memory,
+                                &Default::default(),
+                                &base,
+                                bytes.old_form(),
+                            )
                         });
                     }
                 });
@@ -342,6 +370,7 @@ fn atomic_view_miss_cannot_reopen_coverage_bucket_scans() {
             let mut context = PureFactContext::new();
             for index in 1..=size {
                 context = context.assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: if same_address {
                         base.clone()
@@ -353,6 +382,7 @@ fn atomic_view_miss_cannot_reopen_coverage_bucket_scans() {
                 });
             }
             let goal = Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: base.clone(),
                 bytes: 4096.into(),

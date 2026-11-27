@@ -38,6 +38,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
             assert_eq!(facts.is_some(), missing.is_none());
             if missing.is_none() {
                 let goal = Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory,
                     base: base.clone(),
                     bytes: (OldMachineTerm::constant(size + 1)).into(),

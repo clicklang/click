@@ -66,7 +66,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     cases {
      len == 0u64 => {
       have not (len >= 16u64) by { rewrite(len, 0u64); close(); }
-      contradiction(len >= 16u64);
+      close();
      }
      len == 16u64 => { close(); }
     }
@@ -715,7 +715,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    len == 0u64 => { close(); }
    len == 16u64 => {
     have len >= 16u64 by { rewrite(len, 16u64); close(); }
-    contradiction(len >= 16u64);
+    close();
    }
   }
  }

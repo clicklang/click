@@ -718,10 +718,11 @@ fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
             memory = memory.with_block(format!("pointer-read-unrelated-{n}"), 8);
         }
         let memory = intern_memory(memory);
-        let value = SharedPointer::import(&OldPointer::new(
+        let value = Pointer::new(
             Address::symbolic(Variable(1018100)),
             ProgramType::Int32Pointer,
-        ));
+        )
+        .into_shared();
         for size in [16, 64, 256] {
             let mut offset = KernelAddressOffset::Constant(0).into_shared().unwrap();
             for _ in 0..size {
@@ -768,10 +769,13 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
             .map(|n| {
-                KernelTerm::shared_pointer_value(SharedPointer::import(&OldPointer::new(
-                    Address::symbolic(Variable(1022100 + n)),
-                    ProgramType::Int32Pointer,
-                )))
+                KernelTerm::shared_pointer_value(
+                    Pointer::new(
+                        Address::symbolic(Variable(1022100 + n)),
+                        ProgramType::Int32Pointer,
+                    )
+                    .into_shared(),
+                )
             })
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
@@ -781,10 +785,11 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
                     .into_shared()
                     .unwrap();
             }
-            let source = SharedPointer::import(&OldPointer::new(
+            let source = Pointer::new(
                 Address::symbolic(Variable(1022700)),
                 ProgramType::Int32Pointer,
-            ));
+            )
+            .into_shared();
             let mut payload = source.node().clone();
             payload.address = SharedAddress::new(payload.address.block(), offset);
             payload.provenance = payload.address.clone();
@@ -810,10 +815,11 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
 #[test]
 fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = SharedPointer::import(&OldPointer::new(
+    let base = Pointer::new(
         Address::symbolic(Variable(1023100)),
         ProgramType::Int32Pointer,
-    ));
+    )
+    .into_shared();
     let base_root = KernelTerm::shared_pointer_value(base.clone());
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
@@ -884,10 +890,11 @@ fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
 #[test]
 fn pointer_numeric_observations_retain_prepared_dags_without_export() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = SharedPointer::import(&OldPointer::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(1024200)),
         ProgramType::Int32Pointer,
-    ));
+    )
+    .into_shared();
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
             .map(|n| {
@@ -937,10 +944,11 @@ fn pointer_numeric_observations_retain_prepared_dags_without_export() {
 #[test]
 fn pointer_call_handoffs_retain_prepared_argument_dags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let value = SharedPointer::import(&OldPointer::new(
+    let value = Pointer::new(
         Address::symbolic(Variable(1025200)),
         ProgramType::Int32Pointer,
-    ));
+    )
+    .into_shared();
     let memory = intern_memory(SymbolicMemory::new());
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)

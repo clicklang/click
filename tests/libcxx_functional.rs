@@ -130,7 +130,7 @@ int apply(const std::function<int(int)>& f, int x, int k) {
     requires 0 <= k and k <= 1000;
     ensures result == x + k;
 }
-int caller::(lambda#0)(int y) {
+int caller.statement(0).call(0).argument(0)(int y) {
     requires 0 <= y and y <= 1000;
     requires 0 <= k and k <= 1000;
     ensures result == y + k;
@@ -154,7 +154,10 @@ fn libcxx_std_function_holds_a_capturing_lambda() {
         &root,
         &import,
         CAPTURING_SIDECAR,
-        &["caller::(lambda#0).ensures_0", "caller.ensures_0"],
+        &[
+            "caller.statement(0).call(0).argument(0).ensures_0",
+            "caller.ensures_0",
+        ],
     )
     .unwrap_or_else(|error| panic!("{error}"));
     for (before, after, expected) in [
@@ -166,7 +169,7 @@ fn libcxx_std_function_holds_a_capturing_lambda() {
         (
             "    ensures result == y + k;\n",
             "    ensures result == y + k + 1;\n",
-            "caller::(lambda#0).ensures_0",
+            "caller.statement(0).call(0).argument(0).ensures_0",
         ),
         (
             "    requires Adds(f, { amount: k });\n",

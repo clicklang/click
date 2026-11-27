@@ -943,7 +943,7 @@ theorem black_color_is_black(color: Color) {
         match color {
             Color::Red => {
                 have not(color_black(Color::Red) == 1);
-                contradiction(color_black(Color::Red) == 1);
+                close();
             }
             Color::Black => { close(); }
         }
@@ -970,7 +970,7 @@ theorem black_color_is_black(color: Color) {
         match color {
             Color::Red => {
                 have not(color_black(Color::Red) == 1) by close();
-                contradiction(color_black(Color::Red) == 1);
+                close();
             }
             Color::Black => { close(); }
         }
@@ -1064,7 +1064,7 @@ fn definition_refutation_expands_with_branch_equations() {
         let expanded = expand_c_claim_source_by_label(source, &[], "forced.ensures_0")
             .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
         assert!(expanded.contains("unfold("), "{expanded}");
-        assert!(expanded.contains("contradiction("), "{expanded}");
+        assert!(!expanded.contains("contradiction("), "{expanded}");
         assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[]))

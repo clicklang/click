@@ -454,10 +454,7 @@ fn signed_division_sign(
         let Some((ty, n, d)) = overflow_exclusion else {
             return true;
         };
-        let exclusion = Proposition::signed_division_exclusion_views(ty, n, d);
-        holds(&exclusion, available)
-            || matches!(&exclusion, Proposition::Or(a, b)
-                if holds(a, available) || holds(b, available))
+        signed_division_overflow_excluded(ty, n, d, available)
     };
     if quotient {
         // Equal signs give a nonnegative quotient. The signed minimum divided
@@ -470,6 +467,47 @@ fn signed_division_sign(
             && (positive || negative() || nonzero())
             && (nonnegative || positive || checked_domain())
     }
+}
+
+fn signed_division_overflow_excluded(
+    ty: MachineIntegerType,
+    dividend: MachineOperandView<'_>,
+    divisor: MachineOperandView<'_>,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let exclusion = Proposition::signed_division_exclusion_views(ty, dividend, divisor);
+    holds(&exclusion, available)
+        || matches!(&exclusion, Proposition::Or(a, b)
+            if holds(a, available) || holds(b, available))
+}
+
+/// A defined signed division truncates toward zero in both domains.
+fn signed_quotient_observation(
+    observed: &IntegerTerm,
+    exact: &IntegerTerm,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let (IntegerTerm::Machine(machine), IntegerTerm::TruncatingQuotient(n, d)) = (observed, exact)
+    else {
+        return false;
+    };
+    let Some((
+        ty @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+        MachineBinaryOp::Divide,
+        [dividend, divisor],
+    )) = machine.operand_view().binary()
+    else {
+        return false;
+    };
+    ty == machine.ty()
+        && dividend.observe(ty).as_ref() == Some(n.as_ref())
+        && divisor.observe(ty).as_ref() == Some(d.as_ref())
+        && comparison_holds(
+            OldConditionTerm::integer_not_equal(d.as_ref().clone(), IntegerTerm::constant_i64(0)),
+            true,
+            available,
+        )
+        && signed_division_overflow_excluded(ty, dividend, divisor, available)
 }
 
 fn bool_arm(
@@ -577,6 +615,7 @@ pub(in crate::kernel) fn known_uint32_from_defined_bytes(
         memory,
         pointer,
         value_type: ProgramType::UInt32,
+        point,
     } = goal
     else {
         return false;
@@ -585,6 +624,7 @@ pub(in crate::kernel) fn known_uint32_from_defined_bytes(
         && (0..ProgramType::UInt32.byte_width()).all(|offset| {
             crate::instrumentation::record_deterministic_work(1);
             contains(&Proposition::MemoryReadDefined {
+                point: point.clone(),
                 at: *at,
                 memory: memory.clone(),
                 pointer: pointer.offset_by_bytes(offset),
@@ -759,6 +799,8 @@ pub(crate) fn known_bridge_leaf(
                 || integer_arm(b, a, available)
                 || identity(a.as_ref(), b.as_ref(), available)
                 || identity(b.as_ref(), a.as_ref(), available)
+                || signed_quotient_observation(a, b, available)
+                || signed_quotient_observation(b, a, available)
                 || super::super::arithmetic_special::signed_max_shift_identity_count_bound(a, b)
                     .is_some_and(|bound| holds(&bound, available))
         }
@@ -897,6 +939,42 @@ mod tests {
             le(value.clone(), IntegerTerm::Constant(max)),
         ]
     }
+
+    #[test]
+    fn known_signed_quotient_observation_checks_operands_and_domain() {
+        let _session = VerificationSession::enter();
+        for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+            let x = OldMachineTerm::Variable(Variable(995701));
+            let y = OldMachineTerm::Variable(Variable(995702));
+            let quotient = OldMachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Divide,
+                left: x.clone().into(),
+                right: y.clone().into(),
+            };
+            let observed = IntegerTerm::from_machine(ty, quotient).unwrap();
+            let dividend = IntegerTerm::from_machine(ty, x.clone()).unwrap();
+            let divisor = IntegerTerm::from_machine(ty, y.clone()).unwrap();
+            let exact = IntegerTerm::truncating_quotient(dividend.clone(), divisor.clone());
+            let goal = equality(observed.clone(), exact);
+            let premises = [
+                Proposition::condition_is(
+                    OldConditionTerm::integer_not_equal(
+                        divisor.clone(),
+                        IntegerTerm::constant_i64(0),
+                    ),
+                    true,
+                ),
+                Proposition::signed_division_exclusion(ty, &x, &y),
+            ];
+            assert!(known(&goal, &premises), "{ty:?}");
+            assert!(!known(&goal, &premises[..1]), "missing overflow guard");
+            assert!(!known(&goal, &premises[1..]), "missing nonzero guard");
+            let swapped = IntegerTerm::truncating_quotient(divisor, dividend);
+            assert!(!known(&equality(observed, swapped), &premises));
+        }
+    }
+
     #[test]
     fn defined_local_word_checks_four_exact_bytes_among_unrelated_facts() {
         let _session = VerificationSession::enter();
@@ -907,6 +985,7 @@ mod tests {
             ProgramType::UInt32,
         );
         let defined = |pointer, value_type| Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: memory.clone(),
             pointer,

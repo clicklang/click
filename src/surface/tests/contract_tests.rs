@@ -770,7 +770,7 @@ fn contradiction_closes_an_impossible_concrete_outcome() {
                 step();
                 have result == 1 implies data[0] == 2 by {
                     intro() {
-                        contradiction(result == 1);
+                        close();
                     }
                 }
                 close();

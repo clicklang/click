@@ -792,6 +792,7 @@ fn collect_proposition_bitvector_variables_one(
             memory,
             pointer,
             outcome,
+            ..
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
@@ -811,6 +812,7 @@ fn collect_proposition_bitvector_variables_one(
             base,
             bytes,
             wide: _,
+            ..
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(base, variables);
@@ -823,7 +825,9 @@ fn collect_proposition_bitvector_variables_one(
         Proposition::ResourceComposition(resources) => {
             collect_resource_context_bitvector_variables(resources, variables);
         }
-        Proposition::ResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable {
+            memory, resource, ..
+        } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_resource_bitvector_variables(resource, variables);
         }
@@ -835,6 +839,7 @@ fn collect_proposition_bitvector_variables_one(
             before,
             after,
             writes,
+            ..
         } => {
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);
@@ -857,13 +862,19 @@ fn collect_proposition_bitvector_variables_one(
         Proposition::HeapAllocationFreed {
             before,
             after,
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
+            ..
         } => {
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);
-            collect_pointer_bitvector_variables(allocation_base, variables);
-            collect_bitvector_variables(bytes.bytes(), variables);
+            for (base, bytes) in blocks {
+                collect_pointer_bitvector_variables(base, variables);
+                collect_bitvector_variables(bytes.bytes(), variables);
+            }
+            for range in mutable_ranges {
+                collect_memory_range_bitvector_variables(range, variables);
+            }
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)
@@ -1589,6 +1600,9 @@ fn collect_program_value_bound_identities(
                         collect_pure_argument_bound_identities(argument, variables, _integer_seen);
                     }
                 }
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_integer_variables(count, variables);
             }
         }
         ProgramValue::Int8(bits) => {
@@ -2391,6 +2405,9 @@ pub(crate) fn collect_condition_bitvector_variables(
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_variables(pointer, variables);
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_variables(count, variables);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -2703,6 +2720,10 @@ fn collect_bitvector_integer_variables_seen(
                 }
                 collect_bitvector_integer_variables_seen(argument, variables, seen);
             }
+        }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_integer_variables_seen(application.native_call(), variables, seen)
         }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
@@ -3576,6 +3597,10 @@ pub(crate) fn collect_bitvector_variables(
                 collect_bitvector_variables(argument, variables);
             }
         }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_variables(application.native_call(), variables)
+        }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             collect_application_connection_variables(arguments, variables);
         }
@@ -3693,6 +3718,14 @@ fn collect_bitvector_capture_variables_seen(
                 collect_bitvector_capture_variables_seen(argument, variables, integer_seen);
             }
         }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_capture_variables_seen(
+                application.native_call(),
+                variables,
+                integer_seen,
+            )
+        }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -3791,6 +3824,9 @@ fn collect_condition_capture_variables(
         OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_capture_variables(pointer, variables, integer_seen);
+            }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_capture_variables_seen(count, variables, integer_seen);
             }
         }
 
@@ -3916,6 +3952,7 @@ fn collect_pointer_capture_variables(
         // The identity is opaque here, like a scalar load name. The equality
         // graph separately indexes its defining address exactly once.
         | AddressBase::Load(_)
+        | AddressBase::SliceData(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }
@@ -3966,6 +4003,9 @@ fn collect_capture_variables_in_program_value(
         ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_capture_variables(address, variables, integer_seen);
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_capture_variables_seen(count, variables, integer_seen);
             }
         }
     }
@@ -4795,6 +4835,10 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_scope_summary(application.native_call(), summaries)
+        }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             let mut summary = IntegerScopeSummary::default();
             for argument in arguments {
@@ -4896,6 +4940,9 @@ fn collect_condition_scope_summary(
             let mut summary = IntegerScopeSummary::default();
             for pointer in left.pointers().chain(right.pointers()) {
                 summary.merge(collect_pointer_scope_summary(pointer, summaries));
+            }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                summary.merge(collect_bitvector_scope_summary(count, summaries));
             }
             summary
         }
@@ -5031,6 +5078,9 @@ fn collect_program_value_scope_summary(
             let mut summary = IntegerScopeSummary::default();
             for address in pointer.pointers() {
                 summary.merge(collect_pointer_scope_summary(address, summaries));
+            }
+            for count in pointer.metadata_terms() {
+                summary.merge(collect_bitvector_scope_summary(count, summaries));
             }
             summary
         }
@@ -5489,6 +5539,15 @@ fn collect_bitvector_binder_variables_seen(
                 );
             }
         }
+        // A slice application's count mentions what its application does.
+        OldMachineTerm::PureApplicationCount(application) => {
+            collect_bitvector_binder_variables_seen(
+                application.native_call(),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            )
+        }
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -5555,6 +5614,14 @@ fn collect_condition_binder_variables(
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_binder_variables(
                     pointer,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_binder_variables_seen(
+                    count,
                     integer_variables,
                     bitvector_variables,
                     integer_seen,
@@ -5817,6 +5884,14 @@ fn collect_binder_variables_in_program_value(
             for address in pointer.pointers() {
                 collect_pointer_binder_variables(
                     address,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_binder_variables_seen(
+                    count,
                     integer_variables,
                     bitvector_variables,
                     integer_seen,
@@ -6086,7 +6161,9 @@ fn collect_address_base_bitvector_variables(
         // A pointer read has no variable of its own, but it is the value at
         // the address it was read from, so it depends on that address's
         // variables, as a load term depends on its address's.
-        AddressBase::Load(load) => collect_pointer_bitvector_variables(load.cell(), variables),
+        AddressBase::Load(load) | AddressBase::SliceData(load) => {
+            collect_pointer_bitvector_variables(load.cell(), variables)
+        }
         AddressBase::ContractResult
         | AddressBase::ContractException
         | AddressBase::AggregateReturn { .. }
@@ -6766,6 +6843,7 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
         | AddressBase::Load(_)
+        | AddressBase::SliceData(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }
@@ -7126,6 +7204,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | AddressBase::Function(_)
             | AddressBase::ExternalArgument
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
             | AddressBase::Heap(_)
             | AddressBase::Temporary(_) => {}
         }
@@ -7219,6 +7298,9 @@ pub(crate) fn collect_program_value_bitvector_variables(
         ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_bitvector_variables(address, variables);
+            }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_variables(count, variables);
             }
         }
     }

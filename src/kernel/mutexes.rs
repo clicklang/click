@@ -258,6 +258,7 @@ impl ProvenanceKind {
             AddressBase::ExternalArgument | AddressBase::ExternalObject(_) => Self::External,
             AddressBase::Symbolic(_)
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
             | AddressBase::PureFunctionApplication(_) => Self::Symbolic,
             AddressBase::Function(_)
             | AddressBase::FunctionSymbolic(_)
@@ -861,7 +862,7 @@ pub(super) fn acquisition_availability_refusal(
 }
 
 /// The caller-facing byte extent keeps the origin of the evaluated pointer.
-pub(super) fn storage_write_range(pointer: &super::OldPointer, bytes: u32) -> super::MemoryRange {
+pub(super) fn storage_write_range(pointer: &super::Pointer, bytes: u32) -> super::MemoryRange {
     super::MemoryRange::from_pointer_value(
         &pointer.clone().with_root_bounds(),
         0u32.into(),
@@ -983,6 +984,7 @@ fn may_alias_automatic_storage(block: &super::AddressBase) -> bool {
         AddressBase::Symbolic(_)
         | AddressBase::PureFunctionApplication(_)
         | AddressBase::Load(_)
+        | AddressBase::SliceData(_)
         | AddressBase::FunctionSymbolic(_)
         | AddressBase::Function(_)
         | AddressBase::StringLiteral { .. } => true,

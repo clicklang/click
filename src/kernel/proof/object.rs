@@ -187,11 +187,6 @@ pub(crate) enum PropositionCloseError {
     UnavailableSide(Proposition),
     ExpectedFiniteUniversal,
     MissingFiniteInstance,
-    /// `contradiction(fact)` found no refutation; `fact_held` says whether
-    /// the fact itself was available, so the missing half can be named.
-    ContradictionUnavailable {
-        fact_held: bool,
-    },
     /// An explicit premise of a guarded induction application is not held.
     InductionPremiseUnavailable(Proposition),
     InstantiateQuantifiedUnavailable,
@@ -1233,6 +1228,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if let ProofObligation::Proposition(goal) = &branch.obligation {
             excluded.extend(crate::kernel::proposition_variables(goal.proposition()));
         }
+        // A slice's count names its slice: the witness's count is fresh too.
+        let counted = excluded
+            .iter()
+            .filter_map(Variable::counted_slice)
+            .collect::<Vec<_>>();
+        excluded.extend(counted);
         let fresh = branch
             .state
             .facts
@@ -1361,6 +1362,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         } else {
                             crate::kernel::Address::symbolic(chosen)
                         };
+                    let body =
+                        crate::kernel::quantifiers::rename_slice_count(&body, *var, chosen, &sort);
                     crate::kernel::substitute_pointer_variable_in_proposition(&body, *var, &pointer)
                 }
                 Sort::Algebraic(algebraic_type) => {
@@ -1611,24 +1614,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         (matches!(branch.obligation, ProofObligation::Frontier(_))
             && branch.state.facts.holds_false())
         .then(|| self.closed_focused())
-    }
-
-    pub(crate) fn apply_contradiction(
-        &self,
-        fact: &Proposition,
-    ) -> Result<Self, PropositionCloseError> {
-        let branch = self
-            .state
-            .open_branches
-            .get(self.focused_branch)
-            .ok_or(PropositionCloseError::Unavailable)?;
-        let facts = &branch.state.facts;
-        facts
-            .contradicts(fact)
-            .then(|| self.closed_focused())
-            .ok_or_else(|| PropositionCloseError::ContradictionUnavailable {
-                fact_held: facts.holds_contradiction_fact(fact),
-            })
     }
 
     /// Modus ponens with an explicitly selected implication and evidence.
@@ -3579,6 +3564,7 @@ mod tests {
                         )),
                     )),
                     Box::new(Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory,
                         base: Address::new("alpha".into(), AddressOffset::constant(0)),
                         bytes: (OldMachineTerm::Variable(variable)).into(),
@@ -3681,7 +3667,7 @@ mod tests {
         let load = SpecExpression::MemoryLoad {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                crate::kernel::OldPointer::new(
+                crate::kernel::Pointer::new(
                     Address::new("unallocated".into(), AddressOffset::constant(0)),
                     ProgramType::Int32Pointer,
                 ),

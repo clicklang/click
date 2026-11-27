@@ -34,7 +34,7 @@ void roundtrip(struct node* p) {
  ensures t.model == old(t.model);
 } by {
  match t.model {
-  Tree::Empty => { contradiction(t.model == Tree::Empty); },
+  Tree::Empty => { close(); },
   Tree::Node(id, lm, rm) => {
    let { left: l, right: r } = unfold(t);
    let t = fold(tree(id), { model: Tree::Node(id, lm, rm), left: l, right: r });

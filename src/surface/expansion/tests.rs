@@ -8,6 +8,157 @@ fn verification_only_normalization_has_no_source_expansion() {
     assert!(error.message().contains("used legacy normalization"));
 }
 
+#[test]
+fn expanded_addition_and_subtraction_preserve_association() {
+    for operations in [" - 1".repeat(20), " - 1 + 1".repeat(20)] {
+        let expression = format!("value{operations} - (other - 1)");
+        let source = format!(
+            "theorem kept(value: Integer, other: Integer) {{
+                requires {expression} <= 0;
+                ensures {expression} <= 0 by {{
+                    have {expression} <= 0 by close();
+                    close();
+                }}
+            }}"
+        );
+        let claim = "kept.ensures_0";
+        verify_click_theorems(&source).unwrap();
+        let expanded = expand_c_claim_source_by_label(&source, &[], claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains(&format!("have ({expression}) <= 0")));
+        crate::surface::check_audit_claim(claim, true, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}"));
+    }
+}
+
+#[test]
+fn loop_expansion_retains_refuted_proof_if_arm() {
+    let c = r#"
+int32 count(int32 n, uint64 y) {
+    while (n > 0) {
+        n--;
+    }
+    return n;
+}
+"#;
+    let source = r#"
+verifying "count.c";
+
+theorem positive(y: uint64) {
+    requires 0u64 < y;
+    ensures 0u64 < y by close();
+}
+
+int32 count(int32 n, uint64 y) {
+    requires 0 <= n;
+    requires 1u64 <= y;
+    ensures result == 0;
+} by {
+    loop {
+        decreases to_integer(n);
+        invariant 0 <= n;
+        invariant 1u64 <= y;
+        maintain by {
+            if 0u64 < y {
+                apply(positive(y));
+                step_until(loop(0).back_edge);
+            } else {
+                have 0u64 < y by close() using { 1u64 <= y; };
+                close();
+            }
+        }
+    }
+    step_until(function.exit);
+    close();
+}
+"#;
+    let sources = [("count.c", c)];
+    let claim = "count.contract";
+    verify_c_sources(source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn nested_loop_range_bound_replays_after_theorem_application() {
+    let c = r#"
+void check_span(unsigned char *p, unsigned long len) {
+    while (len >= 16) {
+        len -= 16;
+        do { break; } while (len);
+        return;
+    }
+}
+"#;
+    let source = r#"
+verifying "span.c";
+import click::separation;
+void check_span(uint8 *p, uint64 len) {
+    requires len <= 9223372036854775807u64;
+    views p[0u64..len];
+    ensures 1 == 1;
+} by {
+    loop {
+        decreases to_integer(len);
+        invariant len <= 9223372036854775807u64;
+        invariant viewable(p[0u64..len]);
+        initialize by { close(); }
+        maintain by {
+            have 16u64 <= len by close();
+            mark start;
+            step();
+            step_until(loop(1).entry);
+            loop {
+                decreases to_integer(len);
+                invariant viewable(p[0u64..16u64 + len]);
+                initialize by {
+                    have to_integer(16u64 + len) == to_integer(at(start, len)) by close();
+                    have to_integer(16u64 + len) <= to_integer(9223372036854775807u64) by close() using {
+                        to_integer(16u64 + len) == to_integer(at(start, len));
+                        at(start, len) <= 9223372036854775807u64;
+                    };
+                    have at(statement(0).statement(0).entry, viewable(memory(at(start, p)[0u64..at(start, len)]))) by close();
+                    have separate(statement(0).statement(0).footprint, memory(at(start, p)[0u64..at(start, len)])) by close();
+                    have viewable(memory(at(start, p)[0u64..at(start, len)])) by {
+                        preserve(memory(at(start, p)[0u64..at(start, len)]), statement(0).statement(0));
+                    }
+                    have contains(memory(at(start, p)[0u64..at(start, len)]), memory(at(start, p)[0u64..16u64 + len])) by {
+                        rewrite(to_integer(16u64 + len), to_integer(at(start, len)));
+                        apply(click::separation::contains_refl(memory(at(start, p)[0u64..at(start, len)])));
+                    }
+                    apply(click::separation::viewable_restrict(memory(at(start, p)[0u64..at(start, len)]), memory(at(start, p)[0u64..16u64 + len])));
+                    have viewable(p[0u64..16u64 + len]) by {
+                        rewrite(p, at(start, p));
+                        close();
+                    }
+                    close();
+                }
+                maintain by { step(); close(); }
+            }
+            step_until(function.exit);
+            close();
+        }
+    }
+    step_until(function.exit);
+    close();
+}
+"#;
+    let sources = [("span.c", c)];
+    let claim = "check_span.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
 // Read proof fixtures at runtime, as the markdown harness does, so editing a
 // fixture does not invalidate the Rust test executable.
 fn mdtest_markdown(name: &str) -> String {

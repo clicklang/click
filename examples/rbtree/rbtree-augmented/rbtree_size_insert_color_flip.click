@@ -93,14 +93,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedFlipPhase::After(g, p, u));
                 unfold(sized_flip_pending(SizedFlipPhase::After(g, p, u))); close();
             }
-            contradiction(sized_flip_pending(state.phase) == 1);
+            close();
         },
         SizedFlipPhase::Done(g, p, u) => {
             have sized_flip_pending(state.phase) != 1 by {
                 rewrite(state.phase, SizedFlipPhase::Done(g, p, u));
                 unfold(sized_flip_pending(SizedFlipPhase::Done(g, p, u))); close();
             }
-            contradiction(sized_flip_pending(state.phase) == 1);
+            close();
         },
         SizedFlipPhase::Before(g, p, u) => {
             let { focus: focus, path: path } = unfold(state);
@@ -134,7 +134,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(state.phase, SizedFlipPhase::Done(x, y, z));
                                 unfold(sized_flip_running(SizedFlipPhase::Done(x, y, z))); close();
                             }
-                            contradiction(sized_flip_running(state.phase) == 1);
+                            close();
                         },
                         SizedFlipPhase::After(x, y, z) => {
                             have parent == 0 by {

@@ -1084,7 +1084,11 @@ impl<'a> Proof<'a> {
                     crate::kernel::proof::propositions_are_alpha_equal(&lowered, kernel)
                 })
             {
-                body_surface = candidate;
+                // Keep the machine span's Integer observation explicit when
+                // a retained application prints this goal as a nested `have`.
+                body_surface = crate::surface::proof::smart_closures::observed_native_arithmetic(
+                    kernel, &candidate,
+                );
             }
         }
         let body = self.focus_fixed_state_goal_with_surface(kernel.clone(), Some(body_surface))?;

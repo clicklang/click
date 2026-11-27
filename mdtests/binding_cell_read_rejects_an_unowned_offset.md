@@ -63,7 +63,7 @@ struct cell* read_unowned_offset(struct cell* node, struct cell* parent) {
     ensures result == result;
 } by {
     match f.model {
-        Holder::Empty => { contradiction(f.model == Holder::Empty); },
+        Holder::Empty => { close(); },
         Holder::Full(identity, value) => {
             have holder_reroot(Holder::Full(identity, value), parent)
                 == Holder::Full(parent, value) by {

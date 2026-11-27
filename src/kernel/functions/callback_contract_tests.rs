@@ -951,7 +951,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
             Term::ProgramValue(
-                (ProgramValue::Pointer(OldPointer::new(
+                (ProgramValue::Pointer(Pointer::new(
                     Address::new(
                         AddressBase::FunctionSymbolic(Variable(0)),
                         AddressOffset::constant(0),
@@ -2141,6 +2141,7 @@ fn supplementary_callback_postcondition_uses_the_return_point() {
     };
     assert_eq!(returned.memory(), caller.memory());
     let expected = Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: Some(returned.observation_point_id().unwrap()),
         memory: returned.memory().clone(),
         pointer,

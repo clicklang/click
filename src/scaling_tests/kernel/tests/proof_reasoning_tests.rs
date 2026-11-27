@@ -663,6 +663,7 @@ fn loadability_same_base_span_graph_queries_scale_without_fact_index() {
     let bytes = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
     for size in [16u64, 64, 256, 512] {
         let fact = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: (bytes(var(0))).into(),
@@ -678,6 +679,7 @@ fn loadability_same_base_span_graph_queries_scale_without_fact_index() {
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
                 let goal = Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: base.clone(),
                     bytes: (bytes(var(index))).into(),
@@ -933,6 +935,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                     true,
                 );
             let target = Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(OldMachineTerm::Variable(target_index)),
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -1502,6 +1505,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: root.offset_by_bytes(4 * (index + 1)),
                 bytes: crate::kernel::StoredMachineTerm::new(
@@ -1512,6 +1516,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
             });
         }
         context = context.assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: root.clone(),
             bytes: crate::kernel::StoredMachineTerm::new(
@@ -1523,6 +1528,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
         // Construct the address index once before measuring hot queries.
         assert!(context.proves_native_memory_loadable(
             &memory,
+            &Default::default(),
             &root,
             &OldMachineTerm::uint64_constant(16)
         ));
@@ -1530,11 +1536,13 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
             (
                 context.proves_native_memory_loadable(
                     &memory,
+                    &Default::default(),
                     &target,
                     &OldMachineTerm::uint64_constant(15),
                 ),
                 context.proves_native_memory_loadable(
                     &memory,
+                    &Default::default(),
                     &target,
                     &OldMachineTerm::uint64_constant(16),
                 ),
@@ -1559,6 +1567,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: base.offset_by_bytes(4 * (index + 1)),
                 bytes: crate::kernel::StoredMachineTerm::new(
@@ -1570,6 +1579,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
         }
         context = context
             .assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: base.clone(),
                 bytes: crate::kernel::StoredMachineTerm::new(
@@ -1587,9 +1597,15 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
             ));
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
-                context.proves_native_memory_loadable(&memory, &base, &requested),
                 context.proves_native_memory_loadable(
                     &memory,
+                    &Default::default(),
+                    &base,
+                    &requested,
+                ),
+                context.proves_native_memory_loadable(
+                    &memory,
+                    &Default::default(),
                     &base,
                     &OldMachineTerm::uint64_constant(17),
                 ),
@@ -1614,6 +1630,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: base.with_offset(AddressOffset::constant(4 * (index + 1))),
                 bytes: crate::kernel::StoredMachineTerm::new(
@@ -1624,6 +1641,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
             });
         }
         context = context.assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: crate::kernel::StoredMachineTerm::new(
@@ -1636,12 +1654,14 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
         // stay independent of the other addresses, even on a refusal.
         assert!(context.proves_native_memory_loadable(
             &memory,
+            &Default::default(),
             &base,
             &OldMachineTerm::uint64_constant(8)
         ));
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.proves_native_memory_loadable(
                 &memory,
+                &Default::default(),
                 &base,
                 &OldMachineTerm::uint64_constant(9),
             )
@@ -1753,12 +1773,14 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
     let memory = SymbolicMemory::new();
     let base = Address::new("retention_data".into(), AddressOffset::constant(0));
     let held = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.clone(),
         bytes: 8u32.into(),
         wide: false,
     };
     let derived = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: base.offset_by_int32_elements(1u32.into()),
         bytes: 4u32.into(),

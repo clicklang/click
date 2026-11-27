@@ -1085,6 +1085,8 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         "source discovery does not cross the cache-forgetting and store edges"
     );
     let effect = Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.memory().clone(),
         writes: vec![(written, crate::kernel::AccessExtent::from(4))],
@@ -1666,8 +1668,8 @@ fn complete_pointer_conditions_keep_read_order() {
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.set_offset(offset("local:f:i"));
     let source = OldConditionTerm::PointerEqual(
-        Box::new(OldPointer::new(left, ProgramType::Int32Pointer)),
-        Box::new(OldPointer::new(right, ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(left, ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(right, ProgramType::Int32Pointer)),
     );
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();

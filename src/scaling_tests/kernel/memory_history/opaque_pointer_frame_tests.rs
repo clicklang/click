@@ -169,12 +169,8 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
         let field = header.clone().offset_by_bytes(8);
         let buffer = Address::symbolic(Variable(9_909_001));
         let target = Address::symbolic(Variable(9_909_002));
-        let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
-            SubobjectBounds {
-                start: target,
-                width: 4u32.into(),
-            },
-        ));
+        let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+            .with_bounds(Some(SubobjectBounds::new(target, 4u32.into())));
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let write = buffer.clone().offset_by_bytes(4);
@@ -296,13 +292,13 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             Box::new(field.clone()),
             LoadKind::Bits64,
         );
-        let value = OldPointer::from_read(
+        let value = Pointer::from_read(
             Address::from_integer_address(bits),
             ProgramType::VoidPointer,
             &before,
             &field,
         );
-        let parent = OldPointer::new(
+        let parent = Pointer::new(
             Address::symbolic(Variable(9_891_000)),
             ProgramType::VoidPointer,
         );
@@ -470,7 +466,7 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
             numeric: Box::new(ProgramValue::UInt64(OldMachineTerm::integer_address(
                 target.clone(),
             ))),
-            pointer: Box::new(OldPointer::new(target, ProgramType::Int32Pointer)),
+            pointer: Box::new(Pointer::new(target, ProgramType::Int32Pointer)),
             kind: PointerIntegerKind::Exact,
         });
         let memory = memory
@@ -509,7 +505,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         let before = intern_memory(observed);
         // This is the actual read producer, not a warm-up of the query:
         // its provenance names the pre-observation version of the word.
-        let value = OldPointer::from_read(
+        let value = Pointer::from_read(
             Address::from_integer_address(OldMachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &before,
@@ -519,7 +515,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
             write.clone(),
             ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
         ));
-        let target = OldPointer::from_read(
+        let target = Pointer::from_read(
             Address::from_integer_address(OldMachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &after,

@@ -48,7 +48,7 @@ int cell_same(struct cell* p, struct cell* q) {
     ensures c.model == old(c.model);
 } by {
     match c.model {
-        CellModel::Missing => { contradiction(c.model == CellModel::Missing); },
+        CellModel::Missing => { close(); },
         CellModel::Present(identity, value) => {
             unfold(c);
             have identity == q;

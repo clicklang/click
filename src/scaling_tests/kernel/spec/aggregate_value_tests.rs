@@ -71,6 +71,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         assert!(paths[0].obligations.is_empty());
         assert!(!PureFactContext::new().proves_memory_read_defined(
             state.memory(),
+            &Default::default(),
             &slot,
             ProgramType::Int32,
         ));

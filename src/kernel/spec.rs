@@ -2113,13 +2113,13 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             point: memory,
             resource,
         } => {
-            let memory = match memory {
-                SpecPoint::Current => scope.state.memory(),
+            let (memory, memory_point) = match memory {
+                SpecPoint::Current => (scope.state.memory(), scope.state.memory_point()),
                 SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match scope.loop_entry_state {
-                    Some(entry) => entry.memory(),
+                    Some(entry) => (entry.memory(), entry.memory_point()),
                     None => return Ok(Vec::new()),
                 },
-                SpecPoint::At(point) => point.memory(),
+                SpecPoint::At(point) => (point.memory(), point.path_link().clone()),
             };
             let mut paths = Vec::new();
             for (resource, facts, obligations) in
@@ -2127,7 +2127,11 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
-                    proposition: crate::kernel::resource_viewable(memory, resource),
+                    proposition: crate::kernel::resource_viewable(
+                        memory,
+                        memory_point.clone(),
+                        resource,
+                    ),
                     facts,
                     obligations,
                 });
@@ -2766,7 +2770,7 @@ fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     // application or registry DAG once for every fold obligation.
     matches!(
         pointer.base,
-        AddressBase::PureFunctionApplication(_) | AddressBase::Load(_)
+        AddressBase::PureFunctionApplication(_) | AddressBase::Load(_) | AddressBase::SliceData(_)
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
@@ -3001,10 +3005,15 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &OldConditionTerm, variable: Variable) -> bool {
         match condition {
-            OldConditionTerm::PointerEqual(left, right) => left
-                .pointers()
-                .chain(right.pointers())
-                .any(|p| integer_carrier_in_pointer(p, variable)),
+            OldConditionTerm::PointerEqual(left, right) => {
+                left.pointers()
+                    .chain(right.pointers())
+                    .any(|p| integer_carrier_in_pointer(p, variable))
+                    || left
+                        .metadata_terms()
+                        .chain(right.metadata_terms())
+                        .any(|count| integer_carrier_in_bitvector(count, variable))
+            }
 
             crate::kernel::integer_comparison_condition!(left, right) => {
                 integer_carrier_in_integer(left.as_ref(), variable)
@@ -3085,12 +3094,18 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             })
         }
         Proposition::HeapAllocationFreed {
-            allocation_base,
-            bytes,
+            blocks,
+            mutable_ranges,
             ..
         } => {
-            integer_carrier_in_bitvector(bytes.bytes(), variable)
-                || integer_carrier_in_pointer(allocation_base, variable)
+            blocks.iter().any(|(base, bytes)| {
+                integer_carrier_in_bitvector(bytes.bytes(), variable)
+                    || integer_carrier_in_pointer(base, variable)
+            }) || mutable_ranges.iter().any(|range| {
+                integer_carrier_in_bitvector(range.bound_terms().0, variable)
+                    || integer_carrier_in_bitvector(range.bound_terms().1, variable)
+                    || integer_carrier_in_pointer(&range.base, variable)
+            })
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)
@@ -5698,13 +5713,13 @@ fn lower_spec_memory_loadable_at_state_in(
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
-    let memory = match memory {
-        SpecPoint::Current => state.memory(),
+    let (memory, memory_point) = match memory {
+        SpecPoint::Current => (state.memory(), state.memory_point()),
         SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match loop_entry_state {
-            Some(entry) => entry.memory(),
+            Some(entry) => (entry.memory(), entry.memory_point()),
             None => return Ok(Vec::new()),
         },
-        SpecPoint::At(point) => point.memory(),
+        SpecPoint::At(point) => (point.memory(), point.path_link().clone()),
     };
     Ok(evaluate_spec_values_at_state_in(
         scope,
@@ -5736,7 +5751,7 @@ fn lower_spec_memory_loadable_at_state_in(
             }
             Some(SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition: range.loadable_fact(memory),
+                proposition: range.loadable_fact(memory, memory_point.clone()),
                 facts: path.facts,
                 obligations,
             })
@@ -5763,7 +5778,7 @@ fn lower_spec_memory_loadable_at_state_in(
             }
             Some(SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition: range.loadable_fact(memory),
+                proposition: range.loadable_fact(memory, memory_point.clone()),
                 facts: path.facts,
                 obligations,
             })
@@ -5846,6 +5861,7 @@ fn lower_spec_memory_loadable_at_state_in(
                 introductions: Vec::new(),
                 proposition: Proposition::MemoryLoadable {
                     memory: memory.clone(),
+                    point: memory_point.clone(),
                     base,
                     bytes: (crate::kernel::memory_range_byte_count(
                         range_start,
@@ -8051,6 +8067,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 budget,
                 |value, facts, obligations| {
                     let outcome = match value {
+                        // A coercion keeps the value; a slice's count is
+                        // never dropped by one.
+                        ProgramValue::Pointer(pointer) if pointer.is_wide() => {
+                            ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {
+                                operation: "a pointer coercion",
+                            })
+                        }
                         ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
                                 && (!matches!(
@@ -8070,6 +8093,43 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         obligations,
                     }]
                 },
+            )?
+        }
+        SpecExpression::SliceLength(slice) => evaluate_spec_scalar_unary_paths_in(
+            SpecScope { state, ..scope },
+            slice,
+            assumptions,
+            budget,
+            |value, facts, obligations| {
+                vec![ExpressionPath {
+                    outcome: slice_component(value, |slice| {
+                        ProgramValue::UInt64(slice.len().expect("a wide pointer").clone())
+                    }),
+                    facts,
+                    obligations,
+                }]
+            },
+        )?,
+        SpecExpression::SliceData(slice) => evaluate_spec_scalar_unary_paths_in(
+            SpecScope { state, ..scope },
+            slice,
+            assumptions,
+            budget,
+            |value, facts, obligations| {
+                vec![ExpressionPath {
+                    outcome: slice_component(value, |slice| ProgramValue::Pointer(slice.as_ptr())),
+                    facts,
+                    obligations,
+                }]
+            },
+        )?,
+        SpecExpression::SliceFromRawParts { data, count } => {
+            evaluate_spec_slice_from_raw_parts_paths_in(
+                SpecScope { state, ..scope },
+                data,
+                count,
+                assumptions,
+                budget,
             )?
         }
         SpecExpression::Cast(expression, target_type) => {
@@ -8303,12 +8363,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let ProgramValue::Pointer(value) = path.value.into_native() else {
                     return None;
                 };
-                path.value =
-                    ProgramValue::Pointer(value.clone().with_bounds(Some(SubobjectBounds {
-                        start: value.address().clone(),
-                        width: (*width).into(),
-                    })))
-                    .into();
+                path.value = ProgramValue::Pointer(value.clone().with_bounds(Some(
+                    SubobjectBounds::new(value.address().clone(), (*width).into()),
+                )))
+                .into();
                 Some(path)
             })
             .collect()
@@ -8364,6 +8422,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let ProgramValue::Pointer(pointer) = pointer_path.value.into_native() else {
                     continue;
                 };
+                // A read through a slice reads its thin part, `s.as_ptr()`.
+                if pointer.is_wide() {
+                    budget
+                        .dropped_runtime_error
+                        .get_or_insert(RuntimeError::ThinPointerRequired {
+                            operation: "a dereference",
+                        });
+                    continue;
+                }
                 let pointer = pointer.into_pointer();
                 let (memory_view, selected_state) = match memory {
                     SpecPoint::Current => (state.memory(), Some(state)),
@@ -8375,6 +8442,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }
                     SpecPoint::At(point) => (point.memory(), None),
                 };
+                let memory_point = match memory {
+                    SpecPoint::At(point) => point.path_link().clone(),
+                    _ => selected_state.expect("selected read state").memory_point(),
+                };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
                 // even when this state's cached cell already proves it.
@@ -8384,6 +8455,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     && (budget.program_definedness
                         || !PureFactContext::new().proves_memory_read_defined(
                             memory_view,
+                            &memory_point,
                             &pointer,
                             *value_type,
                         ))
@@ -8394,6 +8466,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             _ => selected_state.and_then(ExecutionState::observation_point_id),
                         },
                         memory: memory_view.clone(),
+                        point: memory_point.clone(),
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));
@@ -8615,7 +8688,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .collect();
             let application = (!all_null)
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
-            let value = OldPointer::new(
+            let value = Pointer::new(
                 if all_null {
                     Address::null()
                 } else {
@@ -8632,10 +8705,47 @@ fn evaluate_spec_pure_function_application_paths_in(
                 SpecValue::Native(ProgramValue::Pointer(value))
             } else if let Some(application) = application {
                 KernelTermImport::default()
-                    .pointer_call(&application, retained, SharedPointer::import(&value))
+                    .pointer_call(&application, retained, value.shared().clone())
                     .into()
             } else {
                 SpecValue::retain_formed_pointer(ProgramValue::Pointer(value))
+            };
+            results.push(SpecExpressionPath {
+                value,
+                facts,
+                obligations,
+            });
+            continue;
+        }
+        if let ProgramType::SlicePointer(element) = result_type {
+            // A slice-valued application is a wide pointer whose two
+            // components are named by the one application
+            // (`design/rust-slice-values.md`, step 2b-iii-b-ii): its thin part
+            // is based on the application, as a pointer-valued one is, and
+            // its count is the application's count, `f(x).len()`.
+            let (_, object_class) = pure_pointer_result_class_from(pointer_result, |index| {
+                arguments
+                    .get(index)
+                    .and_then(SpecCallArgument::native_descriptor)
+            });
+            let retained = arguments
+                .iter()
+                .map(|argument| match argument {
+                    SpecCallArgument::Shared(root) => Some(root.clone()),
+                    SpecCallArgument::Native(_) => None,
+                })
+                .collect();
+            let application =
+                SharedPureApplication::intern(name.to_owned(), call_arguments(arguments));
+            let value = pure_slice_application_value(&application, element, result_type)
+                .with_declared_object_class(result_object_class.cloned())
+                .with_object_type_evidence(object_class);
+            let value = if budget.machine_result_production_disabled {
+                SpecValue::Native(ProgramValue::Pointer(value))
+            } else {
+                KernelTermImport::default()
+                    .pointer_call(&application, retained, value.shared().clone())
+                    .into()
             };
             results.push(SpecExpressionPath {
                 value,
@@ -8696,6 +8806,27 @@ fn evaluate_spec_pure_function_application_paths_in(
         });
     }
     Ok(results)
+}
+
+/// The slice a slice-valued pure application returns
+/// (`design/rust-slice-values.md`, step 2b-iii-b-ii): the wide pointer whose
+/// thin part is based on the application at the element's thin pointer type
+/// and whose count is the application's count. Both components are named by
+/// the application alone, so building it reads no fact or state.
+pub(crate) fn pure_slice_application_value(
+    application: &SharedPureApplication,
+    element: SliceElement,
+    result_type: ProgramType,
+) -> Pointer {
+    Pointer::new(
+        Address::new(
+            AddressBase::PureFunctionApplication(application.clone()),
+            AddressOffset::constant(0),
+        ),
+        element.thin_pointer_type(),
+    )
+    .with_element_count(OldMachineTerm::pure_application_count(application.clone()))
+    .with_type(result_type)
 }
 
 /// Instantiate the body's pointer origins with this call's actual values.
@@ -8817,7 +8948,7 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
-    let names_declared_object = |value: &OldPointer| {
+    let names_declared_object = |value: &Pointer| {
         [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
@@ -9136,6 +9267,14 @@ fn evaluate_spec_pointer_offset_paths_in(
         let ProgramValue::Pointer(pointer) = pointer_path.value.into_native() else {
             continue;
         };
+        if pointer.is_wide() {
+            budget
+                .dropped_runtime_error
+                .get_or_insert(RuntimeError::ThinPointerRequired {
+                    operation: "pointer arithmetic",
+                });
+            continue;
+        }
         let element_assumptions = assumptions_with_path_context(
             assumptions,
             &pointer_path.facts,
@@ -9627,6 +9766,86 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
             ));
         } else {
             paths.extend(spec_value_paths_in(results, budget));
+        }
+    }
+    Ok(paths)
+}
+
+/// A component of the slice `value`, read in place
+/// (`design/rust-slice-values.md`, step 2b-iii-c-i): `s.len()` or
+/// `s.as_ptr()` of any wide pointer, opaque or constructed, with no unfold.
+/// Anything but a wide pointer is a type mismatch.
+fn slice_component(
+    value: ProgramValue,
+    component: impl FnOnce(&Pointer) -> ProgramValue,
+) -> ExpressionOutcome {
+    match value {
+        ProgramValue::Pointer(slice) if slice.is_wide() => {
+            ExpressionOutcome::Value(component(&slice))
+        }
+        _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
+    }
+}
+
+/// `slice::from_raw_parts(data, count)`: the wide pointer with thin part
+/// `data` and element count `count` (`Pointer::with_element_count`), built
+/// directly; it owes nothing and adds no fact. The operands are evaluated in
+/// order, as a binary operator's are. A wide `data` is refused, naming
+/// `.as_ptr()`; a thin pointer no slice has, such as `void *`, or a count
+/// that is not a `u64`, is a type mismatch.
+fn evaluate_spec_slice_from_raw_parts_paths_in(
+    scope: SpecScope<'_>,
+    data: &SpecExpression,
+    count: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let mut paths = Vec::new();
+    for data_path in
+        evaluate_spec_expression_paths_with_algebraic_bindings_in(scope, data, assumptions, budget)?
+    {
+        let count_assumptions =
+            assumptions_with_path_context(assumptions, &data_path.facts, &data_path.obligations);
+        for count_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            scope,
+            count,
+            &count_assumptions,
+            budget,
+        )? {
+            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+                &data_path.facts,
+                &data_path.obligations,
+                &count_path.facts,
+                &count_path.obligations,
+                assumptions,
+                &count_assumptions,
+            ) else {
+                continue;
+            };
+            let outcome = match (
+                data_path.value.clone().into_native(),
+                count_path.value.into_native(),
+            ) {
+                (ProgramValue::Pointer(data), _) if data.is_wide() => {
+                    ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {
+                        operation: "`slice::from_raw_parts`",
+                    })
+                }
+                (ProgramValue::Pointer(data), ProgramValue::UInt64(count))
+                    if SliceElement::of_thin_pointer_type(data.program_type()).is_some() =>
+                {
+                    ExpressionOutcome::Value(ProgramValue::Pointer(data.with_element_count(count)))
+                }
+                _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
+            };
+            paths.extend(spec_value_paths_in(
+                vec![ExpressionPath {
+                    outcome,
+                    facts,
+                    obligations,
+                }],
+                budget,
+            ));
         }
     }
     Ok(paths)
@@ -11485,7 +11704,7 @@ mod pointer_integer_observation_tests {
     #[test]
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
@@ -11663,6 +11882,12 @@ mod execution_handoff_tests;
 
 #[cfg(test)]
 mod float_comparison_tests;
+
+#[cfg(test)]
+mod slice_application_tests;
+
+#[cfg(test)]
+mod slice_operation_tests;
 
 #[cfg(test)]
 mod mutex_held_tests;

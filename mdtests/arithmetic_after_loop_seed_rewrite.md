@@ -43,7 +43,7 @@ uint64 seed(uint64 word, uint64 len) {
      have 0u64 == len;
      have len == 0u64 by { rewrite(0u64, len); close(); }
      have not (len > 0u64) by { rewrite(len, 0u64); close(); }
-     contradiction(len > 0u64);
+     close();
     }
    }
    have 0 <= to_integer(len);

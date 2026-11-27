@@ -852,7 +852,7 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: OldMachineTerm) ->
                         Some(&retained_state),
                         &address,
                     );
-                return ProgramValue::Pointer(crate::kernel::OldPointer::from_read_at(
+                return ProgramValue::Pointer(crate::kernel::Pointer::from_read_at(
                     value,
                     program_type,
                     retained_state.shared_memory(),
@@ -2145,7 +2145,8 @@ impl CellStore {
             .map(|run| run.map(CellRun::element_type))
     }
 
-    /// The sole run covering an exact live slot, if its cover is unambiguous.
+    /// The sole run covering an exact live slot, if no other covering run
+    /// can supply any bytes of the slot.
     fn exact_run_at(&self, pointer: &Address) -> Result<Option<&CellRun>, ()> {
         let (stem, offset) = offset_stem_and_constant(&pointer.offset);
         let line = CoverLine {
@@ -2155,11 +2156,36 @@ impl CellStore {
         let Some(segment) = self.cover_segment(&line, offset) else {
             return Ok(None);
         };
-        let [key] = segment.runs.as_slice() else {
-            return Err(());
+        if let [key] = segment.runs.as_slice() {
+            let run = self.runs.get(key).expect("a covering run is held");
+            return Ok(run.live_slot_index(pointer).map(|_| run));
+        }
+        let covering_runs = || {
+            segment.runs.iter().map(|key| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.runs.get(key).expect("a covering run is held")
+            })
         };
-        let run = self.runs.get(key).expect("a covering run is held");
-        Ok(run.live_slot_index(pointer).map(|_| run))
+        let mut exact_runs = covering_runs().filter(|run| run.live_slot_index(pointer).is_some());
+        let Some(run) = exact_runs.next() else {
+            return Ok(None);
+        };
+        if exact_runs.next().is_some() {
+            return Err(());
+        }
+        let end = offset.checked_add(i64::from(run.value_width())).ok_or(())?;
+        for other in covering_runs().filter(|other| !std::ptr::eq(*other, run)) {
+            // The span index includes holes. In particular a sparse run
+            // can extend over another field while all its live bytes are
+            // after that field. Keep ambiguity for possible live overlap.
+            let (start, bytes) = other.live_byte_footprint().ok_or(())?;
+            let (_, start) = offset_stem_and_constant(&start.offset);
+            let other_end = start.checked_add(i64::from(bytes)).ok_or(())?;
+            if start < end && offset < other_end {
+                return Err(());
+            }
+        }
+        Ok(Some(run))
     }
 
     /// Borrow the value of an exact cell or a constant run slot. Other run

@@ -1634,24 +1634,28 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         // to trigger costly general equality searches before the matching
         // symbolic range was considered.
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(0),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(8),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(12),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: entry.clone(),
             base: arc_pointer(16),
             bytes: (OldMachineTerm::constant(32)).into(),
@@ -1696,7 +1700,12 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         ),
     );
     assert!(
-        assumptions.proves_memory_loadable(&later, &goal_base, &OldMachineTerm::constant(4)),
+        assumptions.proves_memory_loadable(
+            &later,
+            &Default::default(),
+            &goal_base,
+            &OldMachineTerm::constant(4)
+        ),
         "the viewable bound check must connect the two len forms along \
          the recorded block-declaration and cell-forgetting edges"
     );
@@ -2496,7 +2505,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     assert!(
         !canonical_equal_across_store_at(
             -4,
-            ProgramValue::Pointer(OldPointer::new(arc_pointer(0), ProgramType::Int32Pointer))
+            ProgramValue::Pointer(Pointer::new(arc_pointer(0), ProgramType::Int32Pointer))
         ),
         "a stored pointer is eight bytes, so one four bytes below the load \
          covers the load's first four bytes"
@@ -3128,8 +3137,8 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     );
     assert!(context.equality_graph.knows_condition(
         &OldConditionTerm::pointer_equal(
-            OldPointer::new(named.clone(), ProgramType::Int32Pointer),
-            OldPointer::new(observed.clone(), ProgramType::Int32Pointer),
+            Pointer::new(named.clone(), ProgramType::Int32Pointer),
+            Pointer::new(observed.clone(), ProgramType::Int32Pointer),
         ),
         true
     ));
@@ -3464,7 +3473,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     assert!(after.memory().has_initialized_bytes_at(&address, 8));
 
     let read = |memory: &SharedMemory| {
-        OldPointer::from_read(
+        Pointer::from_read(
             Address::loaded_value(memory, &address),
             ProgramType::Int32Pointer,
             memory,
@@ -4028,7 +4037,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = intern_memory(SymbolicMemory::new());
     let p = Address::symbolic(Variable(998_710));
-    let q = OldPointer::new(
+    let q = Pointer::new(
         Address::symbolic(Variable(998_711)),
         ProgramType::Int32Pointer,
     );

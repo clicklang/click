@@ -51,7 +51,7 @@ void touch(struct node *p) {
     ensures t.model == Tree::Node(Color::Black, Tree::Empty);
 } by {
     match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Empty => { close(); },
         Tree::Node(color, rest) => {
             have color == Color::Black;
             step_until(function.exit);

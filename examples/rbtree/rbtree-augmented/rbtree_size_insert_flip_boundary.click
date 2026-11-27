@@ -130,28 +130,28 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(old(state.chain), SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
                                 unfold(sized_flip_stopped(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); close();
                             }
-                            contradiction(sized_flip_stopped(old(state.chain)) == 1);
+                            close();
                         },
                         SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => {
                             have not (sized_flip_stopped(old(state.chain)) == 1) by {
                                 rewrite(old(state.chain), SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
                                 unfold(sized_flip_stopped(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); close();
                             }
-                            contradiction(sized_flip_stopped(old(state.chain)) == 1);
+                            close();
                         },
                         SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => {
                             have not (sized_flip_stopped(old(state.chain)) == 1) by {
                                 rewrite(old(state.chain), SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
                                 unfold(sized_flip_stopped(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); close();
                             }
-                            contradiction(sized_flip_stopped(old(state.chain)) == 1);
+                            close();
                         },
                         SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => {
                             have not (sized_flip_stopped(old(state.chain)) == 1) by {
                                 rewrite(old(state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
                                 unfold(sized_flip_stopped(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); close();
                             }
-                            contradiction(sized_flip_stopped(old(state.chain)) == 1);
+                            close();
                         },
                         SizedFlipChain::Root => {
                             have path.model == SizedContext::Top by {
@@ -229,7 +229,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(ctx, SizedContext::Top);
                                         unfold(sized_flip_black_boundary(SizedContext::Top)); close();
                                     }
-                                    contradiction(sized_flip_black_boundary(ctx) == 1);
+                                    close();
                                 },
                                 SizedContext::Left(a, gp, color, cached, sibling, up) => {
                                     have parent == a by {

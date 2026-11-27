@@ -12573,16 +12573,6 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Enumerate
             }
-            "contradiction" => {
-                self.expect(Token::LParen)?;
-                let proposition = if self.peek() == Some(&Token::RParen) {
-                    SyntaxProposition::Value(bool_literal(false))
-                } else {
-                    self.parse_proposition()?
-                };
-                self.expect(Token::RParen)?;
-                ProofTactic::Contradiction(proposition)
-            }
             "rewrite" => {
                 self.expect(Token::LParen)?;
                 let left = self.parse_contract_expression()?;
@@ -16051,6 +16041,12 @@ impl Parser {
                 source_pointer,
                 ProgramExpression::Load(Box::new(pointer)),
             ));
+        }
+        if self.verifies_cpp()
+            && self.peek() == Some(&Token::Amp)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if self.closure_captures.contains_key(name))
+        {
+            return Err(self.error("a capturing C++ lambda cannot convert to a function pointer"));
         }
         if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
             return self.parse_reference_parameter_address();
@@ -20118,8 +20114,6 @@ mod tactic_classification_tests {
         ("intro", "intro() { rewrite(x, 1); }"),
         ("intro-as", "intro(name) { rewrite(x, 1); }"),
         ("enumerate", "enumerate();"),
-        ("contradiction", "contradiction(x == 1);"),
-        ("contradiction-false", "contradiction();"),
         ("rewrite", "rewrite(x, 1);"),
         ("instantiate", "instantiate(F, 1);"),
         ("close-using", "close() using { x == 1; };"),
@@ -20134,6 +20128,15 @@ mod tactic_classification_tests {
             "check_termination_callbacks();",
         ),
     ];
+
+    #[test]
+    fn retired_contradiction_forms_are_rejected() {
+        for tactic in ["contradiction();", "contradiction(x == 0);"] {
+            let source = format!("theorem f(x: int32) {{ ensures false by {{ {tactic} }} }}");
+            let error = parse(&source).unwrap_err();
+            assert!(error.message().contains("unknown tactic `contradiction`"));
+        }
+    }
 
     #[test]
     fn branch_requires_two_distinct_labeled_arms() {

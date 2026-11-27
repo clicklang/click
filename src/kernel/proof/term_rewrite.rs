@@ -149,7 +149,7 @@ pub(crate) enum TypedProgramValueReplacement {
     Bitvector(OldMachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject bounds.
-    Pointer(OldPointer),
+    Pointer(Pointer),
 }
 
 type MatchFieldReplacements = (
@@ -556,13 +556,18 @@ fn replace_binding_variable(
                     AddressBase::FunctionSymbolic(_) => AddressBase::FunctionSymbolic(variable),
                     _ => AddressBase::Symbolic(variable),
                 };
-                *pointer = pointer.map_pointers(|address| {
-                    let mut renamed = address.clone();
-                    if renamed.base == old {
-                        renamed.set_base(new.clone());
-                    }
-                    renamed
-                });
+                // A pointer binder names a block; an element count is not
+                // an address and keeps its own binders.
+                *pointer = pointer.map_pointers(
+                    |address| {
+                        let mut renamed = address.clone();
+                        if renamed.base == old {
+                            renamed.set_base(new.clone());
+                        }
+                        renamed
+                    },
+                    OldMachineTerm::clone,
+                );
             }
             _ => {}
         },
@@ -839,6 +844,9 @@ fn collect_program_value_carriers(value: &ProgramValue, variables: &mut CarrierV
             for component in pointer.pointers() {
                 collect_pointer_carriers(component, variables);
             }
+            for count in pointer.metadata_terms() {
+                collect_bitvector_carriers(count, variables);
+            }
         }
     }
 }
@@ -959,7 +967,9 @@ fn collect_address_base_carriers(block: &AddressBase, variables: &mut CarrierVar
         }
         // A loaded pointer carries whatever its defining read's address
         // carries, as a registered load variable's offset does.
-        AddressBase::Load(load) if variables.pointer_loads.insert(load.clone()) => {
+        AddressBase::Load(load) | AddressBase::SliceData(load)
+            if variables.pointer_loads.insert(load.clone()) =>
+        {
             collect_pointer_carriers(load.cell(), variables);
         }
         _ => {}
@@ -1061,6 +1071,11 @@ fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVari
         OldMachineTerm::Constant { .. } => {}
         OldMachineTerm::Variable(variable) => {
             variables.program_values.insert(*variable);
+            // A slice's count mentions its slice: a binder of that slice
+            // would capture it.
+            if let Some(slice) = variable.counted_slice() {
+                variables.program_values.insert(slice);
+            }
             collect_registered_load_carriers(*variable, variables);
         }
         crate::kernel::binary_machine_term!(left, right) => {
@@ -1125,6 +1140,16 @@ fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVari
         OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             let mut seen = BTreeSet::new();
             for argument in arguments {
+                collect_argument_carriers(argument, variables, &mut seen);
+                if variables.exhausted() {
+                    return;
+                }
+            }
+        }
+        // A slice application's count carries its application's arguments.
+        OldMachineTerm::PureApplicationCount(application) => {
+            let mut seen = BTreeSet::new();
+            for argument in application.arguments() {
                 collect_argument_carriers(argument, variables, &mut seen);
                 if variables.exhausted() {
                     return;
@@ -1710,8 +1735,15 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
             .unwrap(),
         ProgramValue::Float32(_) => ProgramValue::Float32(OldMachineTerm::constant(0)),
         ProgramValue::Float64(_) => ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
+        // An exhausted slice keeps its kind and type: a thin placeholder
+        // with a count, as each scalar's placeholder is its type's zero.
+        ProgramValue::Pointer(pointer) if pointer.is_wide() => ProgramValue::Pointer(
+            Pointer::new(exhausted_pointer(), pointer.as_ptr().program_type())
+                .with_element_count(OldMachineTerm::uint64_constant(0))
+                .with_type(pointer.program_type()),
+        ),
         ProgramValue::Pointer(pointer) => {
-            ProgramValue::Pointer(OldPointer::new(exhausted_pointer(), pointer.program_type()))
+            ProgramValue::Pointer(Pointer::new(exhausted_pointer(), pointer.program_type()))
         }
     }
 }
@@ -1990,7 +2022,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_variable: Option<(Variable, &'a Address)>,
     pointer_addresses_only: bool,
     pointer_exact: Option<(&'a Address, &'a Address)>,
-    pointer_value_exact: Option<(&'a OldPointer, &'a OldPointer)>,
+    pointer_value_exact: Option<(&'a Pointer, &'a Pointer)>,
     pointer_offset_exact: Option<OffsetReplacement<'a>>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
@@ -2699,7 +2731,7 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_value_exact(from: &'a OldPointer, to: &'a OldPointer) -> Self {
+    pub(crate) fn for_pointer_value_exact(from: &'a Pointer, to: &'a Pointer) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_value_exact = Some((from, to));
         // Reads named by load variables can sit at addresses formed from
@@ -3471,8 +3503,8 @@ impl<'a> TermRewrite<'a> {
                 };
                 if let Some((from, to)) = self.pointer_value_exact
                     && !self.source_disabled
-                    && range.provenance.as_ref() == from.provenance()
-                    && range.carrier_owner().map(|owner| &**owner) == from.bounds_owner()
+                    && &range.provenance == from.provenance()
+                    && range.carrier_owner() == from.bounds_owner()
                     && range.carrier_known() == from.bounds_are_known()
                 {
                     // The footprint already fixed its admitted byte bounds.
@@ -3738,6 +3770,7 @@ impl<'a> TermRewrite<'a> {
             }
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide,
@@ -3755,6 +3788,7 @@ impl<'a> TermRewrite<'a> {
                 }
                 Proposition::MemoryLoadable {
                     memory: memory.clone(),
+                    point: point.clone(),
                     base,
                     bytes: crate::kernel::StoredMachineTerm::new(
                         if *wide {
@@ -3771,6 +3805,7 @@ impl<'a> TermRewrite<'a> {
                 memory,
                 pointer,
                 byte_width,
+                point,
             } => {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
@@ -3782,6 +3817,7 @@ impl<'a> TermRewrite<'a> {
                     return exhausted_proposition();
                 }
                 Proposition::MemoryCanStore {
+                    point: point.clone(),
                     memory: memory.clone(),
                     pointer,
                     byte_width: *byte_width,
@@ -3790,6 +3826,7 @@ impl<'a> TermRewrite<'a> {
             Proposition::MemoryReadDefined {
                 at,
                 memory,
+                point,
                 pointer,
                 value_type,
             } => {
@@ -3805,6 +3842,7 @@ impl<'a> TermRewrite<'a> {
                 Proposition::MemoryReadDefined {
                     at: *at,
                     memory: memory.clone(),
+                    point: point.clone(),
                     pointer,
                     value_type: *value_type,
                 }
@@ -3816,9 +3854,13 @@ impl<'a> TermRewrite<'a> {
                     right: Box::new(self.resource(right)),
                 }
             }
-            Proposition::ResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable {
+                memory,
+                point,
+                resource,
+            } => {
                 self.reserve_resource_variables_once(&[resource]);
-                crate::kernel::resource_viewable(memory, self.resource(resource))
+                crate::kernel::resource_viewable(memory, point.clone(), self.resource(resource))
             }
             Proposition::ResourceContains { parent, child } => {
                 self.reserve_resource_variables_once(&[parent, child]);
@@ -4345,8 +4387,11 @@ impl<'a> TermRewrite<'a> {
             ProgramValue::Float32(v) => ProgramValue::Float32(self.bits(v)),
             ProgramValue::Float64(v) => ProgramValue::Float64(self.bits(v)),
             ProgramValue::Pointer(v) => {
+                // A wide value equals only a wide one; an equality between a
+                // slice and a thin pointer is false and substitutes nothing.
                 if let Some((from, to)) = self.pointer_value_exact
                     && v == from
+                    && from.is_wide() == to.is_wide()
                     && !self.source_disabled
                 {
                     self.changed = true;
@@ -4401,7 +4446,14 @@ impl<'a> TermRewrite<'a> {
                     }
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
-                    Some(OldPointer::new(to.clone(), v.program_type()))
+                    // A slice's replacement supplies its thin part's
+                    // provenance and bounds; the count is rewritten below.
+                    let thin_type = if v.is_wide() {
+                        v.as_ptr().program_type()
+                    } else {
+                        v.program_type()
+                    };
+                    Some(Pointer::new(to.clone(), thin_type))
                 }));
                 let adopted = if !v.bounds_are_known() {
                     replacement.as_ref().and_then(|p| p.bounds().cloned())
@@ -4433,29 +4485,26 @@ impl<'a> TermRewrite<'a> {
                     None => None,
                     Some(origin) => {
                         if addresses_only {
-                            Some(std::sync::Arc::new(origin.clone()))
+                            Some(origin.clone())
                         } else if replacement.is_some() && origin == &v.address().object_identity()
                         {
-                            replacement
-                                .as_ref()
-                                .and_then(|p| p.bounds_owner().cloned())
-                                .map(std::sync::Arc::new)
+                            replacement.as_ref().and_then(|p| p.bounds_owner().cloned())
                         } else if let Some((from, to)) = self.pointer_variable
                             && !self.scope.program_values.contains_key(&from)
                             && matches!(origin.base, AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) if variable == from)
                         {
-                            Some(std::sync::Arc::new(to.object_identity()))
+                            Some(to.object_identity())
                         } else if let Some((from, to)) = self.pointer_value_exact
                             && !self.source_disabled
                             && !from.bounds_are_known()
                             && from.bounds_owner() == Some(origin)
                         {
-                            to.bounds_owner().cloned().map(std::sync::Arc::new)
+                            to.bounds_owner().cloned()
                         } else if self.pointer_exact.is_some() && self.pointer_value_exact.is_none()
                         {
-                            Some(std::sync::Arc::new(origin.clone()))
+                            Some(origin.clone())
                         } else {
-                            Some(std::sync::Arc::new(self.pointer(origin)))
+                            Some(self.pointer(origin))
                         }
                     }
                 };
@@ -4463,9 +4512,13 @@ impl<'a> TermRewrite<'a> {
                 if self.pointer_value_exact.is_some() {
                     self.resolve_registered_loads = true;
                 }
+                let count = v.len().map(|count| self.bits(count));
                 let mut mapped = v
-                    .map_pointers(|address| self.pointer(address))
-                    .with_provenance(std::sync::Arc::new(provenance))
+                    .map_pointers(
+                        |address| self.pointer(address),
+                        |_| count.expect("a wide pointer's rewritten count"),
+                    )
+                    .with_provenance(provenance)
                     .with_bounds_owner(bounds_owner);
                 if retain_view && let Some((from, _)) = shifted_source {
                     // The numeric consequence cannot identify the base's own
@@ -4474,15 +4527,13 @@ impl<'a> TermRewrite<'a> {
                     if v.provenance() != from.provenance()
                         && v.provenance().base == from.address().base
                     {
-                        mapped =
-                            mapped.with_provenance(std::sync::Arc::new(v.provenance().clone()));
+                        mapped = mapped.with_provenance(v.provenance().clone());
                     }
                     if (from.bounds_are_known() || v.bounds_owner() != from.bounds_owner())
                         && v.bounds_owner()
                             .is_some_and(|origin| origin.base == from.address().base)
                     {
-                        mapped = mapped
-                            .with_bounds_owner(v.bounds_owner().cloned().map(std::sync::Arc::new));
+                        mapped = mapped.with_bounds_owner(v.bounds_owner().cloned());
                     }
                 }
                 self.resolve_registered_loads = previous_load_resolution;
@@ -5447,6 +5498,9 @@ impl<'a> TermRewrite<'a> {
                         for address in pointer.pointers() {
                             collect_pointer_carriers(address, &mut variables);
                         }
+                        for count in pointer.metadata_terms() {
+                            collect_bitvector_carriers(count, &mut variables);
+                        }
                     }
                 }
                 if variables.exhausted() {
@@ -6140,10 +6194,13 @@ impl<'a> TermRewrite<'a> {
                 else {
                     unreachable!()
                 };
-                let canonical = |value: OldPointer| {
-                    value.map_addresses(|p| {
-                        p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset))
-                    })
+                // The count was rewritten with the value above; offset
+                // canonicalization is an address normal form only.
+                let canonical = |value: Pointer| {
+                    value.map_addresses(
+                        |p| p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset)),
+                        OldMachineTerm::clone,
+                    )
                 };
                 OldConditionTerm::pointer_equal(canonical(a), canonical(b))
             }
@@ -6444,7 +6501,11 @@ impl<'a> TermRewrite<'a> {
                     || left.same_provenance_as(right),
                     |context| context.pointer_provenance_match(left, right),
                 );
-                matches && graph.are_equal(left.address(), right.address())
+                // Address equality decides only pointers whose metadata
+                // already agrees; a wide pair needs its counts too.
+                matches
+                    && left.same_metadata_as(right)
+                    && graph.are_equal(left.address(), right.address())
             }
             OldConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
             OldConditionTerm::AddressOffsetEqual(left, right) => {
@@ -6803,6 +6864,25 @@ impl<'a> TermRewrite<'a> {
             self.changed = true;
             return replacement.clone();
         }
+        // A slice binder's count goes with its binder
+        // (`design/rust-slice-values.md`, step 2b-iii-b): a renamed binder's
+        // count is the new binder's count, and a binder replaced by a slice
+        // value has that value's count. One lookup of the counted slice.
+        if let OldMachineTerm::Variable(variable) = v
+            && let Some(slice) = variable.counted_slice()
+        {
+            if let Some(mapped) = self.scope.program_values.get(&slice) {
+                return OldMachineTerm::Variable(mapped.element_count());
+            }
+            if let Some(replacements) = &self.typed_variables
+                && let Some(TypedProgramValueReplacement::Pointer(replacement)) =
+                    replacements.program_values.get(&slice)
+                && let Some(count) = replacement.len()
+            {
+                self.changed = true;
+                return count.clone();
+            }
+        }
         if let Some(reads) = self.comparison_reads
             && let Some(OldMachineTerm::MemoryLoad(memory, pointer, kind)) =
                 crate::kernel::eval::viewed_as_memory_load(v)
@@ -7010,6 +7090,27 @@ impl<'a> TermRewrite<'a> {
                 OldMachineTerm::ClickFunctionApplication {
                     name: name.clone(),
                     arguments: rewritten,
+                }
+            }
+            // A slice application's count is a numeric child of its slice:
+            // its application's arguments are rewritten as the thin part's
+            // are, and the count names the rewritten application. The
+            // application itself is never read as an integer call.
+            OldMachineTerm::PureApplicationCount(application) => {
+                let mut rewritten = Vec::with_capacity(application.arguments().len());
+                for argument in application.arguments() {
+                    rewritten.push(self.argument(argument));
+                    if self.checked_work_exhausted() {
+                        return OldMachineTerm::constant(0);
+                    }
+                }
+                if rewritten.as_slice() == application.arguments() {
+                    v.clone()
+                } else {
+                    OldMachineTerm::pure_application_count(SharedPureApplication::intern(
+                        application.name().to_owned(),
+                        rewritten,
+                    ))
                 }
             }
             OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
@@ -7889,7 +7990,7 @@ mod tests {
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
                         point: crate::kernel::ProgramPoint::of_memory(&memory),
-                        pointer: ProgramValue::Pointer(OldPointer::new(
+                        pointer: ProgramValue::Pointer(Pointer::new(
                             pointer,
                             ProgramType::VoidPointer,
                         )),
@@ -7959,7 +8060,7 @@ mod tests {
         let mut program_replacements = BTreeMap::new();
         program_replacements.insert(
             source,
-            TypedProgramValueReplacement::Pointer(OldPointer::new(
+            TypedProgramValueReplacement::Pointer(Pointer::new(
                 replacement.clone(),
                 ProgramType::Int32Pointer,
             )),
@@ -9478,6 +9579,7 @@ mod tests {
     fn checked_substitution_collector_rejects_work_exhaustion() {
         let source = Variable(3_104_100);
         let atom = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: Address::new(
                 AddressBase::ExternalArgument,
@@ -9513,11 +9615,11 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = OldPointer::new(
+        let from = Pointer::new(
             Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
             ProgramType::Int32Pointer,
         );
-        let to = OldPointer::new(
+        let to = Pointer::new(
             Address::symbolic(Variable(996_021)),
             ProgramType::Int32Pointer,
         );
@@ -9553,11 +9655,11 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn full_pointer_rewrite_keeps_the_read_version_and_state() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = OldPointer::new(
+        let from = Pointer::new(
             Address::symbolic(Variable(996_010)),
             ProgramType::Int32PointerPointer,
         );
-        let to = OldPointer::new(
+        let to = Pointer::new(
             Address::symbolic(Variable(996_011)),
             ProgramType::Int32PointerPointer,
         );
@@ -9631,7 +9733,7 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996_001)),
             ProgramType::Int32Pointer,
         );

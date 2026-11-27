@@ -1,8 +1,6 @@
-# A bare `transport` refuses an overwritten quantified fact
+# A selected-premise proof refuses an overwritten quantified fact
 
-The store to `dst[3]` changes a byte set by `memset`. Bare transport
-reports the historical source and the current target when it cannot construct
-a proof of the full range.
+The store to `dst[3]` changes a byte set by `memset`. The saved range fact cannot establish the current range after that write.
 
 ```c filename=fill.c
 #include <string.h>
@@ -20,11 +18,14 @@ void fill(uint8* dst) {
     step();
     mark filled;
     step();
-    transport(at(filled, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 })),
-              (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }));
+    have (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }) by {
+        close() using {
+            at(filled, (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }));
+        };
+    }
 }
 ```
 
 ```expect
-fail: `transport` found no checked proof from its source
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

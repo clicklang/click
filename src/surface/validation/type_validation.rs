@@ -3257,7 +3257,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::IntroAs(_)
             | ProofTactic::IntroBinder(_)
             | ProofTactic::Enumerate
-            | ProofTactic::Contradiction(_)
             | ProofTactic::Preserve(_)
             | ProofTactic::Rewrite(_)
             | ProofTactic::Instantiate { .. }
@@ -3386,7 +3385,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         | ProofTactic::IntroBinder(_)
         | ProofTactic::IntroBlock { .. } => "intro",
         ProofTactic::Enumerate => "enumerate",
-        ProofTactic::Contradiction(_) => "contradiction",
         ProofTactic::CloseInvariants => "close_invariants",
         ProofTactic::CloseInvariantsBy(_) => "close_invariants",
         ProofTactic::Preserve(_) => "preserve",
@@ -4397,7 +4395,10 @@ fn interface_type_from_program_type(target_type: &ProgramType) -> Option<Interfa
         ProgramType::Int32PointerPointer => Some(InterfaceType::Int32PointerPointer),
         ProgramType::UInt8PointerPointer => Some(InterfaceType::UInt8PointerPointer),
         ProgramType::FunctionPointer(signature) => Some(InterfaceType::FunctionPointer(*signature)),
-        ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
+        ProgramType::Void
+        | ProgramType::Int32Array(_)
+        | ProgramType::UInt8Array(_)
+        | ProgramType::SlicePointer(_) => None,
         ProgramType::Int64 => Some(InterfaceType::Int64(LongRank::Long)),
         ProgramType::UInt64 => Some(InterfaceType::UInt64(LongRank::Long)),
         ProgramType::Float32 => Some(InterfaceType::Float32),
@@ -4670,6 +4671,7 @@ pub(in crate::surface) fn infer_program_expression_type(
             ProgramType::PointerArray(element, length) => {
                 InterfaceType::PointerArray(*element, LongRank::Long, *length)
             }
+            ProgramType::SlicePointer(_) => return None,
         }),
         ProgramExpression::Index(base, _) => {
             infer_program_expression_type(base, variables).and_then(pointer_element_type)

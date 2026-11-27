@@ -57,13 +57,11 @@ Kernel files:
   every retained arm is individually valid. Surface joins a constructor family
   of any width by splitting the frontier over the live arms, and preserves
   lexical bindings across deferred folds.
-  An exact contradiction under the partition root plus one constructor
-  equation can exclude that arm. The kernel retains the named contradiction
-  in a new partition identity, and coverage counts it without a C trace or
-  invented return state. Other arms still require checked execution evidence.
-  Surface currently accepts an excluded arm consisting of one
-  `contradiction(...)`, and splits the remaining live arms normally;
-  all-excluded matches remain unsupported.
+  A constructor arm can be excluded once its fact context holds `false`. The
+  kernel retains that exclusion in a new partition identity, and coverage
+  counts it without a C trace or return state. Surface uses a terminal
+  `close()` to exclude the arm and splits the remaining live arms normally.
+  All-excluded matches remain unsupported.
 - `reasoning.rs`: deterministic proof helpers, finite forall/range reasoning,
   substitutions, execution-derived pure facts, and obligation plumbing.
 - `spec.rs`: `SpecExpression`/`SpecProposition` lowering and evaluation.
@@ -1353,6 +1351,73 @@ untyped load, index, or pointer addition whose pointee type cannot be recovered
 produces `RuntimeError::IndeterminatePointeeType`. Importers should normally
 emit typed loads/stores and preserve enough pointer-type information to avoid
 that model error.
+
+A wide pointer (`design/rust-slice-values.md`) has type
+`ProgramType::SlicePointer(element)` and carries its element count; no thin
+pointer has that type, and retyping never adds or drops a count
+(`with_element_count` builds one, `as_ptr` takes its thin part). Arithmetic,
+ordering, equality, bitwise operations, member offsets and selections,
+dereferences, coercions, truth tests and casts that would add or drop a count
+refuse a wide operand with `RuntimeError::ThinPointerRequired`, naming the
+operation; a cast between slice pointer types keeps the count. Importers read
+a slice's address and length through its components, never through the slice.
+
+A slice is stored as one 16-byte cell. A program read of the cell at its own
+slice type returns the stored slice, count included; a read that would take
+one of its words (a thin pointer, an integer, a byte, or the cell at another
+slice type) is a `LoadTypeMismatch`, since the kernel states no layout for the
+words. No `LoadKind` reads a stored slice and no pointer decoding answers with
+one, so read-over-write and complete-pointer recovery never hand a slice to a
+thin read. A symbolic read of a slice cell (a logical read, or a read of an
+unknown cell) is `Pointer::slice_read`: its data pointer is based on
+`AddressBase::SliceData(load)` and its count is the read
+`MemoryLoad(point, cell, LoadKind::SliceCount)`, both named by the cell's one
+`Load`, and neither is a read of either word. The read-over-write authority
+`stored_slice_of_load` (the version point's indexed slice store, else the
+memoized version walk) resolves the whole read, its data pointer and its
+count to the stored slice's, and frame transport carries a count as a numeric
+child (`design/rust-slice-values.md`, step 2b-ii).
+
+A slice named by one variable `v`, which is every slice-typed value
+`symbolic_call_result` builds (a call's result, an exception payload, a
+termination parameter, a case binder's payload), has thin part
+`Address::symbolic(v)` and count `Variable(v.element_count())`. The count is
+a `UInt64` variable whose identity is `v`'s plus the component
+(`Variable::counted_slice` reads `v` back): it is no ordinary, bound, witness
+or produced variable, orders after every variable that is not a count, and
+hashes as `v` plus one word. Raising a count refuses with an internal error
+until the Surface slice type exists (step 2b-iii-c).
+
+A binder of slice sort (`Sort::ProgramPointer(SlicePointer(_))`: a
+quantifier's, a choice witness's, a `match` payload's) is such a variable, and
+every pass over it carries the count with it (step 2b-iii-b-i).
+`quantifiers::rename_slice_count` renames `v.element_count()` beside each
+rename of `v` (`rename_quantified_variable`, so closing, opening and
+canonical heights; choice opening; alpha comparison and capture-free
+alignment, whose freshness and capture checks read a free count as its
+slice). The typed rewrite (`TermRewrite::for_typed_variables`, used by
+instantiation and `match` reduction) replaces the count of a binder replaced
+by a slice value with that value's count, and the count of a scope-renamed
+binder with the new binder's count; a replacement that mentions a count
+mentions its slice for capture. A substitution of `v` by a thin address
+(`substitute_pointer_variable_in_proposition`) leaves the count alone.
+
+A slice-valued pure application `f(x)` (step 2b-iii-b-ii,
+`spec::pure_slice_application_value`) has thin part
+`AddressBase::PureFunctionApplication(app)` at the element's pointer type and
+count `OldMachineTerm::PureApplicationCount(app)`, `f(x).len()`: a `UInt64`
+term keyed by the application's identity, never the integer application of
+`f`, which would be another function of that name. In the e-graph the count
+is the `PointerCallCount` projection of the application's
+`PointerFunctionIdentity` node, beside its provenance and bounds, so the counts
+of applications to equal arguments are equal. It imports as an exact scalar
+leaf of the `PointerCall` term's metadata, transports unchanged as its
+application block does, and every rewrite (`TermRewrite::bits`,
+`substitute_bitvector_variable`) rewrites its application's arguments and
+names the count of the rewritten application. A definitional unfolding
+`f(x) == body` at slice type is a complete pointer equality, so
+`add_pointer_equality` joins both components with the body's. Raising the
+count refuses with an internal error until step 2b-iii-c.
 
 ## Symbolic execution
 

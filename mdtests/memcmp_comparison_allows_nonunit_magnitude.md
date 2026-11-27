@@ -46,7 +46,7 @@ theorem positive_seven(left: uint8[], right: uint8[]) {
                                 }
                                 have to_integer(k) == 0 by { close(); }
                                 have k == 0u64 by { close(); }
-                                contradiction(k == 0u64);
+                                close();
                             }
                         }
                         unfold(bytes::equal_range(left, right, 0u64, k));

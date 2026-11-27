@@ -1572,7 +1572,7 @@ fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch()
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: scalar-tail read must use the actual post-Next byte position"]
 fn charon_adler2_small_batch_compute_rejects_wrong_scalar_byte() {
-    let count = "(((bytes.len() as u32) as i32) - ((__rust_mir_138_remaining as u32) as i32))";
+    let count = "(((backing_length as u32) as i32) - ((loop(5).iter.len() as u32) as i32))";
     let goal =
         format!("have to_integer(byte as u32) == to_integer((bytes[({count} - 1)] as i32)) by");
     reject_compute(SMALL_BATCH_COMPUTE, &goal, &goal.replace(" - 1)", " - 2)"));
@@ -1584,10 +1584,14 @@ fn charon_adler2_small_batch_compute_rejects_wrong_scalar_byte() {
 fn charon_adler2_small_batch_compute_rejects_stale_scalar_a() {
     let error = reject_compute(
         SMALL_BATCH_COMPUTE,
-        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, byte as u32)) by",
-        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) by",
+        "have to_integer(at(tail_add_b, a)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, byte as u32)) by",
+        "have to_integer(at(tail_add_b, a)) == to_integer(at(tail_add_a, a)) by",
     );
-    assert!(error.message().contains("`known`"), "{}", error.message());
+    assert!(
+        error.message().contains("only its listed premises"),
+        "{}",
+        error.message()
+    );
 }
 
 #[test]
@@ -1617,15 +1621,16 @@ fn charon_adler2_small_batch_compute_rejects_false_final_checksum() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original vector constructor input-position rejections"]
 fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions() {
+    let input_position = "have byte_vec == bytes + ((bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64) by { rewrite(byte_vec, bytes + ((bytes.len() - bytes.len() % 4u64) - at(lane_head, adler_chunk_bytes(iter.len())))); rewrite((bytes.len() - bytes.len() % 4u64) - at(lane_head, adler_chunk_bytes(iter.len())), (bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64); close(); }";
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64) by",
-        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 3u64) by",
+        input_position,
+        &input_position.replace(" - 4u64", " - 3u64"),
     );
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - ((adler_chunk_bytes(iter.len()) as uint32) as int32)) - 4) + 3] as int32)) by",
-        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - ((adler_chunk_bytes(iter.len()) as uint32) as int32)) - 4) + 2] as int32)) by",
+        "to_integer(at(vector_a, val.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - ((adler_chunk_bytes(iter.len()) as uint32) as int32)) - 4) + 3] as int32)) by",
+        "to_integer(at(vector_a, val.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - ((adler_chunk_bytes(iter.len()) as uint32) as int32)) - 4) + 2] as int32)) by",
     );
 }
 
@@ -1719,10 +1724,10 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
         &format!(
-            "have truncating_remainder(to_integer(a), 65521) == adler_spec_a(bytes, {total}, {seed}) by"
+            "have truncating_remainder(to_integer(a), 65521) == at(vector_prefix, adler_spec_a(bytes, {total}, {seed})) by"
         ),
         &format!(
-            "have truncating_remainder(to_integer(a), 65521) == adler_spec_a(bytes, {total}, {seed} + 1) by"
+            "have truncating_remainder(to_integer(a), 65521) == at(vector_prefix, adler_spec_a(bytes, {total}, {seed} + 1)) by"
         ),
     );
 }
@@ -1746,10 +1751,10 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
         &format!(
-            "have truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, {total}, {a_seed}, {b_seed}) by"
+            "have truncating_remainder(to_integer(b), 65521) == at(vector_prefix, adler_spec_b(bytes, {total}, {a_seed}, {b_seed})) by"
         ),
         &format!(
-            "have truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, {total}, {a_seed}, {b_seed} + 1) by"
+            "have truncating_remainder(to_integer(b), 65521) == at(vector_prefix, adler_spec_b(bytes, {total}, {a_seed}, {b_seed} + 1)) by"
         ),
     );
 }
@@ -1782,9 +1787,9 @@ fn charon_adler2_small_batch_compute_requires_canonical_b() {
 fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() {
     for (before, after) in [
         (
-            // The chunk iterator's initial length comes from the library
-            // contract; the false count claims one chunk more.
-            "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 by {\n      apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 4u64));\n      close();\n     }",
+            // The native chunk iterator establishes the initial length.
+            // The false count claims one chunk more.
+            "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 by {\n      rewrite(loop(2).iter.len(), loop(2).iter.v.len() / 4u64);\n      rewrite(loop(2).iter.v.len(), bytes.len() - bytes.len() % 4u64);\n      close();\n     }",
             "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 + 1u64 by close();",
         ),
         ("ensures self.a < 65521;", "ensures self.a < 1;"),
@@ -1800,12 +1805,12 @@ fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() 
 fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
     for (before, after) in [
         (
-            "have __rust_mir_138_base == remainder by normalize();",
-            "have __rust_mir_138_base == remainder + 1 by close();",
+            "have loop(5).iter.as_slice() == remainder by",
+            "have loop(5).iter.as_slice() == remainder + 1 by",
         ),
         (
-            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by close() using { to_integer(__rust_mir_138_remaining) == to_integer(at(tail_head, __rust_mir_138_remaining) - 1u64); 1u64 <= at(tail_head, __rust_mir_138_remaining); };",
-            "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by close();",
+            "have loop(5).iter.len() < at(tail_head, loop(5).iter.len()) by close() using { to_integer(loop(5).iter.len()) == to_integer(at(tail_head, loop(5).iter.len())) - 1; };",
+            "have at(tail_head, loop(5).iter.len()) < loop(5).iter.len() by close() using { to_integer(loop(5).iter.len()) == to_integer(at(tail_head, loop(5).iter.len())) - 1; };",
         ),
     ] {
         reject_compute(SMALL_BATCH_COMPUTE, before, after);
@@ -2249,7 +2254,7 @@ const STORED_GUARD_LEMMAS: &str = r#"theorem adler_outer_nonempty_remaining(rema
     rewrite(to_integer(remaining), 0);
     close();
    }
-   contradiction(0 < to_integer(remaining));
+   close();
   } else {
    close();
   }
@@ -2320,7 +2325,7 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
      apply(adler_outer_nonempty_remaining(remaining));
      have size as uint32 as int32 == 22208 by { rewrite(size, 22208u64); close(); }
      have size as uint32 as int32 <= remaining by { rewrite(size as uint32 as int32, 22208); close(); }
-     contradiction(size as uint32 as int32 <= remaining);
+     close();
     } else {
      have remaining <= 0;
      close() using { 0 <= remaining; remaining <= 0; };

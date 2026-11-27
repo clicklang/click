@@ -1,11 +1,7 @@
-# a contradiction between a comparison and its arithmetic negation
+# Opposite comparisons establish false
 
-`contradiction(p)` closes a branch that holds both `p` and its negation.
-`x < 0` and `x >= 0` are that pair, but they are two different lowered
-conditions rather than one condition at both polarities, so the negation is
-recognized through the same bounded list of equivalent spellings a disjunct
-arm uses. Nothing is searched: the list is fixed and each spelling is looked
-up exactly.
+The exact facts `x < 0` and `x >= 0` establish `false` in the introduced
+branch. Its proof closes with `close()`.
 
 ```c filename=contradiction_opposite_comparison.c
 int32 nonnegative_identity(int32 x) {
@@ -22,7 +18,7 @@ int32 nonnegative_identity(int32 x) {
 } by {
     have x < 0 implies x == 7 by {
         intro() {
-            contradiction(x < 0);
+            close();
         }
     }
     step();

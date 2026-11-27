@@ -4098,6 +4098,7 @@ mod progress_tests {
             true,
         );
         let read = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: SymbolicMemory::new(),
             pointer: Address::symbolic(Variable(71_001)),

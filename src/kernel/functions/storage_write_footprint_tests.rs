@@ -99,6 +99,8 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
 fn memory_effect_write_collection_preserves_each_access_width() {
     let pointer = Address::new("global:owned".into(), AddressOffset::constant(3));
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: SymbolicMemory::new(),
         after: SymbolicMemory::new(),
         writes: vec![

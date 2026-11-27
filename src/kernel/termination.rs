@@ -1652,6 +1652,9 @@ fn collect_spec_program_variables(
                     | SpecExpression::NarrowArithmetic(_, _)
                     | SpecExpression::Cast(_, _)
                     | SpecExpression::PointerCoercion(_, _)
+                    | SpecExpression::SliceLength(_)
+                    | SpecExpression::SliceData(_)
+                    | SpecExpression::SliceFromRawParts { .. }
                     | SpecExpression::PureFunctionApplication { .. }
                     | SpecExpression::IntegerToMachine { .. }
                     | SpecExpression::AlgebraicMatch { .. } => {}
@@ -5502,9 +5505,10 @@ mod ranking_member_tests {
     fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
             point: SpecPoint::Current,
-            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                OldPointer::new(cell.clone(), ProgramType::Int32Pointer),
-            ))),
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+                cell.clone(),
+                ProgramType::Int32Pointer,
+            )))),
             value_type: ProgramType::Int32,
             exact: false,
         }

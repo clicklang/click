@@ -87,7 +87,7 @@ void set_parent_elsewhere(struct rb_node* node, struct rb_node* old_parent,
     ensures u.model == old(t.model);
 } by {
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, model_parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             step_until(function.exit);

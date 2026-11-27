@@ -1212,6 +1212,7 @@ fn rewrite_term(
         | OldMachineTerm::BoolCast { .. }
         | OldMachineTerm::RangeFold { .. }
         | OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
         | OldMachineTerm::AlgebraicMatch { .. }
         | OldMachineTerm::IntegerToMachine { .. } => {
             let mut rewrite = super::term_rewrite::TermRewrite::for_bits(from, to);
@@ -1418,7 +1419,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         rewrite_pointer,
                         rewrite_shared,
                     )),
-                    pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
+                    pointer: Box::new(record.pointer.map_addresses(rewrite_pointer, rewrite_term)),
                 })
             }
             ProgramValue::Parameter(term) => ProgramValue::Parameter(Box::new(rewrite_algebraic(
@@ -1442,7 +1443,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ProgramValue::Float32(term) => ProgramValue::Float32(rewrite_term(term)),
             ProgramValue::Float64(term) => ProgramValue::Float64(rewrite_term(term)),
             ProgramValue::Pointer(pointer) => {
-                ProgramValue::Pointer(pointer.map_addresses(rewrite_pointer))
+                ProgramValue::Pointer(pointer.map_addresses(rewrite_pointer, rewrite_term))
             }
         }
     }
@@ -1726,6 +1727,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | OldMachineTerm::BoolCast { .. }
                 | OldMachineTerm::RangeFold { .. }
                 | OldMachineTerm::ClickFunctionApplication { .. }
+                | OldMachineTerm::PureApplicationCount(_)
                 | OldMachineTerm::AlgebraicMatch { .. }
                 | OldMachineTerm::IntegerToMachine { .. }
                 | OldMachineTerm::Constant { .. } => term.clone(),
@@ -1786,7 +1788,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 base,
                 bytes,
                 wide,
+                point,
             } => Proposition::MemoryLoadable {
+                point: point.clone(),
                 // Same-block pointer equalities use offsets rather than the
                 // AddressEqual carrier. Substitute the selected address while
                 // retaining the exact state and readable byte span.
@@ -1911,8 +1915,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 left: Box::new(rewrite_resource_offset(goal_left, left, right)),
                 right: Box::new(rewrite_resource_offset(goal_right, left, right)),
             },
-            Proposition::ResourceViewable { memory, resource } => crate::kernel::resource_viewable(
+            Proposition::ResourceViewable {
                 memory,
+                point,
+                resource,
+            } => crate::kernel::resource_viewable(
+                memory,
+                point.clone(),
                 rewrite_resource_offset(resource, left, right),
             ),
             Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
@@ -2145,8 +2154,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 base,
                 bytes,
                 wide,
+                point,
             } => {
                 Proposition::MemoryLoadable {
+                    point: point.clone(),
                     // Clone only shared state roots. Equality changes the
                     // selected address, never the memory or view span.
                     memory: memory.clone(),
@@ -2177,10 +2188,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 if let Some((OldConditionTerm::PointerEqual(goal_left, goal_right), _)) =
                     condition_source_0.old_condition() =>
             {
+                // A wide pointer's count is respelled as the condition's
+                // other machine terms are below: its reads at the rewritten
+                // addresses.
+                let rewrite_count =
+                    |term: &OldMachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
                 Proposition::condition_is(
                     OldConditionTerm::PointerEqual(
-                        Box::new(goal_left.map_addresses(&rewrite_pointer)),
-                        Box::new(goal_right.map_addresses(&rewrite_pointer)),
+                        Box::new(goal_left.map_addresses(&rewrite_pointer, rewrite_count)),
+                        Box::new(goal_right.map_addresses(&rewrite_pointer, rewrite_count)),
                     ),
                     *expected,
                 )
@@ -2664,8 +2680,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             left: Box::new(rewrite_resource_term(goal_left)),
             right: Box::new(rewrite_resource_term(goal_right)),
         },
-        Proposition::ResourceViewable { memory, resource } => {
-            crate::kernel::resource_viewable(memory, rewrite_resource_term(resource))
+        Proposition::ResourceViewable {
+            memory,
+            point,
+            resource,
+        } => {
+            crate::kernel::resource_viewable(memory, point.clone(), rewrite_resource_term(resource))
         }
         Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
             parent: Box::new(rewrite_resource_term(parent)),
@@ -2676,7 +2696,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             memory,
             pointer,
             value_type,
+            point,
         } => Proposition::MemoryReadDefined {
+            point: point.clone(),
             at: *at,
             memory: memory.clone(),
             pointer: pointer.with_offset(rewrite_offset_term(&pointer.offset, left, right)),
@@ -2687,7 +2709,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             base,
             bytes,
             wide,
+            point,
         } => Proposition::MemoryLoadable {
+            point: point.clone(),
             memory: memory.clone(),
             base: base.with_offset(rewrite_offset_term(&base.offset, left, right)),
             bytes: crate::kernel::StoredMachineTerm::new(
@@ -4484,10 +4508,10 @@ mod numeric_address_annotation_tests {
                 .proposition(),
             &equality,
         );
-        let left = OldPointer::new(p.clone(), ProgramType::Int32Pointer)
+        let left = Pointer::new(p.clone(), ProgramType::Int32Pointer)
             .with_bounds(Some(SubobjectBounds::constant(p, 4)));
         for width in [4, 8] {
-            let right = OldPointer::new(q.clone(), ProgramType::Int32Pointer)
+            let right = Pointer::new(q.clone(), ProgramType::Int32Pointer)
                 .with_bounds(Some(SubobjectBounds::constant(q.clone(), width)));
             assert!(!facts.assumptions().pointer_provenance_match(&left, &right));
         }

@@ -52,13 +52,19 @@ fn checked_loadability_ignores_unrelated_free_history() {
             let facts = assumptions
                 .clone()
                 .assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: before.clone(),
                     base: target.clone(),
                     bytes: 8u32.into(),
                     wide: false,
                 });
             let proves = |memory: &SymbolicMemory| {
-                facts.proves_memory_loadable_for_memory_resolution(memory, &target, &4u32.into())
+                facts.proves_memory_loadable_for_memory_resolution(
+                    memory,
+                    &Default::default(),
+                    &target,
+                    &4u32.into(),
+                )
             };
             SymbolicMemory::take_heap_containment_checks();
             let (valid, work) =
@@ -200,12 +206,14 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         true,
     );
     let view = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: storage.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: result.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -225,6 +233,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             .assume_proposition(view.clone());
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: Address::new(
                     format!("unrelated-view-{index}").into(),
@@ -241,6 +250,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         assert!(!crate::kernel::search::ProofSearch::proves(
             &(context),
             &Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: result.offset_by_bytes(4),
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -263,6 +273,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             true,
         ))
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: before,
             base: local,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -271,6 +282,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(context),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: after,
             base: result,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -291,6 +303,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
         .map(|size| {
             let mut assumptions =
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: target.clone(),
                     bytes: (OldMachineTerm::constant(8)).into(),
@@ -298,6 +311,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 });
             for index in 0..size {
                 assumptions = assumptions.assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: target.with_offset(AddressOffset::constant(index as i64)),
                     bytes: (OldMachineTerm::constant(4)).into(),
@@ -308,6 +322,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
                     &Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: memory.clone(),
                         base: target.clone(),
                         bytes: (OldMachineTerm::constant(4)).into(),
@@ -472,6 +487,7 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
         )
     };
     let source = |bytes: OldMachineTerm| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.clone(),
         bytes: (bytes).into(),
@@ -501,7 +517,12 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
                 );
             }
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.proves_memory_loadable(&memory, &base, &OldMachineTerm::constant(4 * width))
+                context.proves_memory_loadable(
+                    &memory,
+                    &Default::default(),
+                    &base,
+                    &OldMachineTerm::constant(4 * width),
+                )
             });
             assert!(proved);
             costs.push(work);
@@ -510,17 +531,20 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
         let context = PureFactContext::new().assume_proposition(source(bytes));
         assert!(!context.proves_memory_loadable(
             &memory,
+            &Default::default(),
             &base,
             &OldMachineTerm::constant(4 * width + 1),
         ));
         assert!(!context.proves_memory_loadable(
             &memory,
+            &Default::default(),
             &Address::symbolic(Variable(9_319_002)),
             &OldMachineTerm::constant(4 * width),
         ));
     }
     assert!(!PureFactContext::new().proves_memory_loadable(
         &memory,
+        &Default::default(),
         &base,
         &OldMachineTerm::constant(4),
     ));
@@ -533,7 +557,12 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
     assert!(
         !PureFactContext::new()
             .assume_proposition(source(wrapped))
-            .proves_memory_loadable(&memory, &base, &OldMachineTerm::constant(4))
+            .proves_memory_loadable(
+                &memory,
+                &Default::default(),
+                &base,
+                &OldMachineTerm::constant(4)
+            )
     );
 }
 

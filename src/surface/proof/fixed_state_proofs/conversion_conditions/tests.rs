@@ -78,6 +78,7 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
     let site = StatedSite::new(StatedForm::Expression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -123,6 +124,7 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
             true,
         ))
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: state.memory().clone(),
             base: pointer_base(&values),
             bytes: (binary_node!(
@@ -136,6 +138,7 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
         });
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -201,6 +204,7 @@ fn established_conditions_are_named_beside_the_missing_one() {
         false,
     );
     let loadable = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: indexed_cell(&values),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -262,6 +266,7 @@ fn an_assumable_obligation_is_not_refused() {
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumable = vec![crate::kernel::ProofObligation::new(
         Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: (OldMachineTerm::constant(4)).into(),

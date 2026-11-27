@@ -528,6 +528,7 @@ fn cached_read_definedness_checks_only_the_selected_typed_cell() {
         .with_block(unrelated.base.clone(), 4096);
     let defined =
         |memory: &SymbolicMemory, pointer: Address, value_type| Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: memory.clone(),
             pointer,
@@ -597,6 +598,7 @@ fn declared_word_definedness_requires_its_complete_initialized_representation() 
     );
     let valid_at = |memory, pointer, value_type| {
         computes_leaf(&Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory,
             pointer,
@@ -674,6 +676,7 @@ fn computation_refusal_is_independent_of_memory_history() {
         assert!(cancelled);
         costs.push(work);
         assert!(!computes_leaf(&Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: before.memory().clone(),
             base: pointer,
             bytes: (OldMachineTerm::constant(5)).into(),

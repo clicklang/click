@@ -195,5 +195,7 @@ pub fn source_display_name(name: &str) -> Option<String> {
 /// Whether the claim label `label` is the one `requested` names, as the
 /// importer spells it or as its source language does.
 pub fn claim_label_matches(label: &str, requested: &str) -> bool {
-    label == requested || (requested.contains("::") && display_source_names(label) == requested)
+    label == requested
+        || ((requested.contains("::") || requested.contains(".statement("))
+            && display_source_names(label) == requested)
 }

@@ -278,6 +278,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
             .is_err()
     );
     let span = |bytes| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: owned.memory().clone(),
         base: external.clone(),
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -605,6 +606,7 @@ fn consuming_private_member_publishes_definedness_at_the_current_point() {
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
     let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: Some(state.observation_point_id().unwrap()),
         memory: state.memory().clone(),
         pointer: pointer.clone(),

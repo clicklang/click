@@ -803,6 +803,7 @@ mod tests {
             }
         }
         let state = Rejected(Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory: SymbolicMemory::new(),
             pointer: Address::symbolic(Variable(987_001)),
@@ -845,6 +846,7 @@ mod tests {
             }
         }
         let read = |memory| Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: None,
             memory,
             pointer: Address::symbolic(Variable(987_002)),
@@ -1036,6 +1038,7 @@ mod tests {
             }
         }
         let at = |memory| Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
             bytes: (OldMachineTerm::constant(1)).into(),

@@ -1350,6 +1350,7 @@ fn cached_body_loadability(
         base,
         bytes,
         wide,
+        ..
     } = fact
     else {
         return false;
@@ -1368,6 +1369,7 @@ fn cached_body_loadability(
     }
     allowed.contains(&Proposition::MemoryLoadable {
         memory: body_memory.clone(),
+        point: crate::kernel::program_point::PathLink::lookup_key(),
         base: base.clone(),
         bytes: bytes.clone(),
         wide: *wide,
@@ -3689,50 +3691,28 @@ impl CheckedProofCasePartition {
             .map(|(case, _)| case)
     }
 
-    pub(crate) fn excluding_constructor_case(
-        &self,
-        index: usize,
-        fact: Proposition,
-    ) -> Option<Arc<Self>> {
-        self.witness_scope.as_ref()?;
-        if !self.facts_for_case(index)?.contradicts(&fact) {
-            return None;
-        }
-        let mut successor = self.clone();
-        // Coverage from the old partition must not discharge this new one.
-        successor.identity = Arc::new(());
-        successor.excluded[index] = Some(fact);
-        Some(Arc::new(successor))
-    }
-
     /// Excludes a constructor whose arm refutes itself after bridging steps.
     ///
     /// `arm_facts` are the facts the arm's own proof reached: this case's
     /// facts plus what the arm's `have`s established from them, each checked
-    /// by its own proof. The arm is refuted when they hold `false` or
-    /// contradict the cited `fact`. The facts must hold this case's fact, so a
+    /// by its own proof. The arm must hold `false` and its constructor fact, so a
     /// context from another arm, or from before the split, cannot exclude
     /// this one.
     pub(crate) fn excluding_constructor_case_in(
         &self,
         index: usize,
         arm_facts: &PureFactStore,
-        fact: Option<Proposition>,
     ) -> Option<Arc<Self>> {
         self.witness_scope.as_ref()?;
-        if !arm_facts.contains(self.case_fact(index)?) {
+        if !arm_facts.contains(self.case_fact(index)?) || !arm_facts.holds_false() {
             return None;
         }
-        let fact = match fact {
-            Some(fact) if arm_facts.contradicts(&fact) => fact,
-            None if arm_facts.holds_false() => {
-                Proposition::condition_is(OldConditionTerm::Constant(false), true)
-            }
-            _ => return None,
-        };
         let mut successor = self.clone();
         successor.identity = Arc::new(());
-        successor.excluded[index] = Some(fact);
+        successor.excluded[index] = Some(Proposition::condition_is(
+            OldConditionTerm::Constant(false),
+            true,
+        ));
         Some(Arc::new(successor))
     }
 
@@ -5344,6 +5324,7 @@ fn checked_interface_effect_facts_along(
                     before,
                     after,
                     writes: changed,
+                    ..
                 } => {
                     if !fact.is_certified() {
                         return Err("an interface arm contains an uncertified memory effect");
@@ -5411,8 +5392,10 @@ fn checked_interface_effect_facts_along(
                 Proposition::HeapAllocationFreed {
                     before,
                     after,
-                    allocation_base,
-                    bytes,
+                    after_point,
+                    blocks,
+                    mutable_ranges,
+                    ..
                 } => {
                     if !chained && !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
@@ -5421,9 +5404,10 @@ fn checked_interface_effect_facts_along(
                     }
                     memory = after.clone();
                     heap_frees[arm_index].push((
-                        allocation_base.clone(),
-                        bytes.clone(),
+                        blocks.clone(),
+                        mutable_ranges.clone(),
                         after.clone(),
+                        after_point.clone(),
                     ));
                 }
                 _ if fact.is_certified() => {}
@@ -5441,12 +5425,14 @@ fn checked_interface_effect_facts_along(
         if heap_frees[0] == heap_frees[1] && !heap_frees[0].is_empty() {
             let facts = heap_frees[0]
                 .iter()
-                .map(|(allocation_base, bytes, after)| {
+                .map(|(blocks, mutable_ranges, after, after_point)| {
                     ExecutionPureFact::certified(Proposition::HeapAllocationFreed {
                         before: split_state.memory().clone(),
+                        before_point: split_state.memory_point(),
                         after: after.clone(),
-                        allocation_base: allocation_base.clone(),
-                        bytes: bytes.clone(),
+                        after_point: after_point.clone(),
+                        blocks: blocks.clone(),
+                        mutable_ranges: mutable_ranges.clone(),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -5457,7 +5443,9 @@ fn checked_interface_effect_facts_along(
     let proposition = if ranges.is_empty() {
         Proposition::MemoryMutatesOnly {
             before: split_state.memory().clone(),
+            before_point: split_state.memory_point(),
             after: joined_state.memory().clone(),
+            after_point: joined_state.memory_point(),
             writes,
         }
     } else {
@@ -5486,13 +5474,9 @@ fn conditional_heap_frees(
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
-            .filter_map(|fact| match fact.proposition() {
-                Proposition::HeapAllocationFreed {
-                    allocation_base,
-                    bytes,
-                    ..
-                } => Some((allocation_base.clone(), bytes.clone())),
-                _ => None,
+            .flat_map(|fact| match fact.proposition() {
+                Proposition::HeapAllocationFreed { blocks, .. } => blocks.clone(),
+                _ => Vec::new(),
             })
             .collect()
     })
@@ -5637,7 +5621,8 @@ fn interface_resource_intrinsic_fact(
 ) -> Option<Proposition> {
     let segment = spec.memory_segment()?;
     let range = resource.memory_range()?;
-    (segment.element_width() == range.element_width()).then(|| range.loadable_fact(state.memory()))
+    (segment.element_width() == range.element_width())
+        .then(|| range.loadable_fact(state.memory(), state.memory_point()))
 }
 
 /// The selected kernel lowering and the precise context in which it passed
@@ -5842,6 +5827,7 @@ impl InterfaceReadPremises {
                 base,
                 bytes,
                 wide: false,
+                ..
             } = &premise
             else {
                 continue;
@@ -5875,12 +5861,14 @@ pub(super) fn interface_read_is_subrange(goal: &Proposition, premise: &Propositi
             base,
             bytes,
             wide: false,
+            ..
         },
         Proposition::MemoryLoadable {
             memory: source_memory,
             base: source_base,
             bytes: source_bytes,
             wide: false,
+            ..
         },
     ) = (goal, premise)
     else {
@@ -7796,7 +7784,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     // This is read validity, not ownership or a value equality;
                     // no ambient range search or cross-state transport occurs.
                     let materialized_read = matches!(fact,
-                        Proposition::MemoryLoadable { memory, base, bytes, wide: false }
+                        Proposition::MemoryLoadable { memory, base, bytes, wide: false, .. }
                             if bytes.as_const().is_some_and(|width|
                                 width > 0 && memory.is_loadable_concretely(base, width)));
                     if !materialized_read
@@ -10241,6 +10229,12 @@ impl ExecutionProofCore {
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
+                if super::facts::is_constructor_clash(case) {
+                    arm_facts = arm_facts.with_fact(Proposition::condition_is(
+                        OldConditionTerm::Constant(false),
+                        true,
+                    ));
+                }
                 // A term an exact premise equates with the scrutinee is the
                 // same constructor in this arm: a local holding a call's
                 // result `c = a` matched at `c == None` gives `a == None`.

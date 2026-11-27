@@ -289,7 +289,7 @@ impl Drop for LocalStructLayoutScope {
 /// written, the pointer's value here, and the struct layout at that value.
 struct StructOwner {
     base: ProgramExpression,
-    pointer: crate::kernel::OldPointer,
+    pointer: crate::kernel::Pointer,
     layout: crate::languages::interface::RecordLayout,
 }
 
@@ -384,7 +384,7 @@ fn owner_field_pointer(
 struct NamedRangeBase {
     lowered: ProgramExpression,
     surface: SyntaxTerm,
-    pointer: crate::kernel::OldPointer,
+    pointer: crate::kernel::Pointer,
     width: u32,
 }
 
@@ -1140,7 +1140,7 @@ fn bitvector_term_exceeds_depth_limit_from(root: &OldMachineTerm, depth: usize) 
             return true;
         }
         match term {
-            OldMachineTerm::ThreadHandle(_) => {}
+            OldMachineTerm::ThreadHandle(_) | OldMachineTerm::PureApplicationCount(_) => {}
             crate::kernel::binary_machine_term!(left, right) => {
                 pending.push((left, depth + 1));
                 pending.push((right, depth + 1));
@@ -1410,7 +1410,9 @@ pub(in crate::surface) fn synthesize_surface_value(
     }
     match value {
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
-            pointer.address(),
+            pointer
+                .expect_thin("raising a pointer value to Surface")
+                .address(),
             parameter_binding,
             state,
             &BTreeMap::new(),
@@ -2272,7 +2274,7 @@ fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<OldMachineTe
 fn named_pointer_bases<'a>(
     parameter_binding: ParameterBinding<'a>,
     state: Option<&'a ExecutionState>,
-) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::OldPointer, u32)> + 'a {
+) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::Pointer, u32)> + 'a {
     parameter_binding
         .parameters
         .iter()
@@ -2832,7 +2834,10 @@ fn synthesize_surface_atomic_proposition(
             arguments: call_arguments,
         });
     }
-    if let Proposition::ResourceViewable { memory, resource } = proposition {
+    if let Proposition::ResourceViewable {
+        memory, resource, ..
+    } = proposition
+    {
         let viewable = SyntaxProposition::ResourceViewable {
             resource: synthesize_surface_resource_subject(
                 resource,
@@ -2902,6 +2907,7 @@ fn synthesize_surface_atomic_proposition(
         memory,
         pointer,
         value_type,
+        ..
     } = proposition
     {
         let matches_point = |candidate: &ExecutionState| match at {
@@ -2965,6 +2971,7 @@ fn synthesize_surface_atomic_proposition(
         base,
         bytes,
         wide: false,
+        ..
     } = proposition
     {
         let loadable = synthesize_zero_based_loadable_segment(
@@ -4335,7 +4342,7 @@ fn raise_algebraic_read(
         );
     }
     let memory = point.shared_memory();
-    let same_address = |pointer: &Address| address.syntax_equal(&pointer.shared().clone());
+    let same_address = |pointer: &Address| address.syntax_equal(pointer.shared());
     if let Some((parameter, _)) = parameter_binding
         .parameters
         .iter()
@@ -4414,7 +4421,12 @@ fn raise_constructor_field(
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
     if let Some(ProgramValue::Pointer(pointer)) = term.old_pointer_value() {
-        return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
+        return raise_constructor_pointer(
+            pointer.expect_thin("raising a pointer value to Surface"),
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     if term.ty() == &KernelType::Integer {
         return raise_kernel_term(term, parameter_binding, state, bound_variables)
@@ -4456,7 +4468,7 @@ fn raise_constructor_field(
 }
 
 fn raise_constructor_pointer(
-    pointer: &crate::kernel::OldPointer,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -5256,7 +5268,7 @@ fn synthesize_surface_resource_argument(
             ))
         }
         A::Program(ProgramValue::Pointer(pointer)) => synthesize_surface_pointer_expression(
-            pointer,
+            pointer.expect_thin("raising a pointer value to Surface"),
             parameter_binding,
             state,
             bound_variables,
@@ -6443,6 +6455,12 @@ fn synthesize_surface_bitvector(
         OldMachineTerm::ThreadHandle(_) => {
             unreachable!("a pthread handle must have a source value name at its introduction")
         }
+        // A slice application's count raises as `f(x).len()` with the Surface
+        // slice type, never as an integer application of `f`.
+        OldMachineTerm::PureApplicationCount(_) => panic!(
+            "internal error: raising a slice application's count to Surface has no form yet \
+             (design/rust-slice-values.md, step 2b-iii-c)"
+        ),
         // The 32-bit widening of a narrow value is written as the
         // conversion it is (`c as int32`, `c as uint32`).
         OldMachineTerm::Cast {
@@ -6592,6 +6610,13 @@ fn synthesize_surface_bitvector(
             }))
         }
         OldMachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
+            // A slice's count raises as `s.len()` with 2b-iii's Surface slice
+            // type, never as a typed read of one of the cell's words.
+            assert!(
+                *kind != crate::kernel::LoadKind::SliceCount,
+                "internal error: raising a slice's count to Surface has no form yet \
+                 (design/rust-slice-values.md, step 2b-iii)"
+            );
             if memory.read_version_id().is_some() {
                 let value_type = load_kind_value_type(*kind)?;
                 return synthesize_point_read(
@@ -6905,6 +6930,13 @@ fn synthesize_surface_bitvector(
         // lies in the same epoch; the kernel's own naming law decides that,
         // so the spelling lowers back to exactly this variable there.
         OldMachineTerm::Variable(variable) => {
+            // A slice's count raises as `s.len()` from the name of its slice,
+            // with the Surface slice type, never as a variable of its own.
+            assert!(
+                variable.counted_slice().is_none(),
+                "internal error: raising a slice's count to Surface has no form yet \
+                 (design/rust-slice-values.md, step 2b-iii-c)"
+            );
             // A recorded load already supplies the address to inspect. Avoid
             // searching unrelated locals when ordinary certificates name it.
             if let Some((_, pointer)) = crate::kernel::registered_load_for_variable(variable)
@@ -8462,11 +8494,12 @@ fn state_call_result(
 /// Keep this at the value-comparison boundary: resource addresses retain
 /// their existing source places and frontend layout information.
 fn synthesize_pointer_equality_operand(
-    value: &crate::kernel::OldPointer,
+    value: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
+    value.expect_thin("raising a pointer equality operand to Surface");
     if let Some(name) = pointer_names::native_name(&ProgramValue::Pointer(value.clone())) {
         return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             name.into(),
@@ -9108,7 +9141,7 @@ fn synthesize_entry_pointer_expression(
 /// state, or failing that the state state as `at(<selector>, ..)`,
 /// registers that read.
 fn synthesize_loaded_pointer_value(
-    pointer: &crate::kernel::OldPointer,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {

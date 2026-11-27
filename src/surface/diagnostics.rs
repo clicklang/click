@@ -1886,6 +1886,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::RuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
+        crate::kernel::RuntimeError::ThinPointerRequired { operation } => {
+            crate::kernel::RuntimeError::thin_pointer_required_message(operation)
+        }
         crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets
         | crate::kernel::RuntimeError::UnsupportedPointerComparisonOffsets
         | crate::kernel::RuntimeError::UnsupportedFunctionPointerOffset => error.kernel_summary(),
@@ -3581,6 +3584,7 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
         LoadKind::UInt128 => "an unsigned sixteen-byte integer",
         LoadKind::Float32 => "a `float32`",
         LoadKind::Float64 => "a `float64`",
+        LoadKind::SliceCount => "a slice's length",
     }
 }
 
@@ -7613,8 +7617,11 @@ fn describe_contract_expression_grouping_casts(
     expression: &SyntaxTerm,
     group_cast: bool,
 ) -> String {
-    if matches!(expression, SyntaxTerm::Add(_, _)) {
-        return describe_add_contract_expression(expression);
+    if matches!(
+        expression,
+        SyntaxTerm::Add(_, _) | SyntaxTerm::Subtract(_, _)
+    ) {
+        return describe_additive_contract_expression(expression);
     }
     match expression {
         SyntaxTerm::IntegerContext(value) => {
@@ -7948,12 +7955,9 @@ fn describe_contract_expression_grouping_casts(
         SyntaxTerm::Negate(expression) => {
             format!("-{}", describe_contract_expression(expression))
         }
-        SyntaxTerm::Add(_, _) => unreachable!("addition is rendered iteratively above"),
-        SyntaxTerm::Subtract(left, right) => format!(
-            "({} - {})",
-            describe_additive_operand(left),
-            describe_additive_operand(right)
-        ),
+        SyntaxTerm::Add(_, _) | SyntaxTerm::Subtract(_, _) => {
+            unreachable!("addition and subtraction are rendered iteratively above")
+        }
         SyntaxTerm::Multiply(left, right) => describe_binary_contract_expression(left, "*", right),
         SyntaxTerm::Divide(left, right) => describe_binary_contract_expression(left, "/", right),
         SyntaxTerm::Remainder(left, right) => describe_binary_contract_expression(left, "%", right),
@@ -8145,20 +8149,23 @@ fn describe_additive_operand(expression: &SyntaxTerm) -> String {
     describe_contract_expression_grouping_casts(expression, false)
 }
 
-fn describe_add_contract_expression(expression: &SyntaxTerm) -> String {
-    // The parser already associates a flat sum to the left. Walk only that
-    // spine: reassociating the right operand could change C overflow or
-    // pointer arithmetic, even though it is harmless for mathematical Integers.
-    // Append once rather than copying every growing prefix of a long sum.
+fn describe_additive_contract_expression(expression: &SyntaxTerm) -> String {
+    // The parser associates both operators to the left. Walk that spine and
+    // keep each right operand grouped to preserve overflow and pointer arithmetic.
     let mut left = expression;
-    let mut rights = Vec::new();
-    while let SyntaxTerm::Add(first, second) = left {
-        rights.push(second.as_ref());
+    let mut operations = Vec::new();
+    loop {
+        let (first, operator, right) = match left {
+            SyntaxTerm::Add(first, right) => (first, " + ", right),
+            SyntaxTerm::Subtract(first, right) => (first, " - ", right),
+            _ => break,
+        };
+        operations.push((operator, right.as_ref()));
         left = first;
     }
     let mut output = format!("({}", describe_additive_operand(left));
-    for right in rights.into_iter().rev() {
-        output.push_str(" + ");
+    for (operator, right) in operations.into_iter().rev() {
+        output.push_str(operator);
         output.push_str(&describe_additive_operand(right));
     }
     output.push(')');
@@ -8640,6 +8647,9 @@ pub(super) fn describe_bitvector_with_context(
         OldMachineTerm::ClickFunctionApplication { name, .. } => {
             format!("{name}(<typed Click arguments>)")
         }
+        OldMachineTerm::PureApplicationCount(application) => {
+            format!("{}(<typed Click arguments>).len()", application.name())
+        }
         OldMachineTerm::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         OldMachineTerm::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
         OldMachineTerm::IntegerAddress(pointer, _) => {
@@ -8902,6 +8912,20 @@ fn describe_integer_term(term: &crate::kernel::IntegerTerm) -> String {
     crate::surface::proof_diagnostics::render::render_integer_term(term)
 }
 
+/// A pointer value in a described condition: its address, and for a wide
+/// pointer the slice built from that address and its element count, as Rust
+/// spells an unrecorded construction (`design/rust-slice-values.md`).
+fn describe_pointer_value(value: &crate::kernel::Pointer) -> String {
+    let address = describe_pointer(value.address(), ParameterBinding::default());
+    match value.len() {
+        Some(count) => format!(
+            "slice::from_raw_parts({address}, {})",
+            describe_bitvector(count)
+        ),
+        None => address,
+    }
+}
+
 pub(super) fn describe_condition(condition: &OldConditionTerm) -> String {
     if let Some(unsigned) = describe_unsigned_comparison(condition, ParameterBinding::default()) {
         return unsigned;
@@ -8921,8 +8945,8 @@ pub(super) fn describe_condition(condition: &OldConditionTerm) -> String {
     match condition {
         OldConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
-            describe_pointer(left.address(), ParameterBinding::default()),
-            describe_pointer(right.address(), ParameterBinding::default())
+            describe_pointer_value(left),
+            describe_pointer_value(right)
         ),
 
         OldConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
@@ -9266,5 +9290,43 @@ mod assembly_fact_tests {
         let fallback =
             describe_unestablished_assembly_fact(&error, &[], &[], binding, &[]).unwrap();
         assert!(fallback.contains("missing pure fact: false"), "{fallback}");
+    }
+}
+
+#[cfg(test)]
+mod wide_pointer_description_tests {
+    use super::*;
+
+    /// A slice in a described equality keeps its count, spelled as an
+    /// unrecorded construction, and a refusal names `.as_ptr()`.
+    #[test]
+    fn a_slice_equality_is_described_with_its_count() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slice = |pointer, length| {
+            crate::kernel::Pointer::new(
+                Address::symbolic(Variable(pointer)),
+                crate::kernel::ProgramType::UInt8Pointer,
+            )
+            .with_element_count(OldMachineTerm::Variable(Variable(length)))
+        };
+        let (s, t) = (slice(985_500, 985_501), slice(985_502, 985_503));
+        let described = describe_condition(&OldConditionTerm::PointerEqual(
+            Box::new(s.clone()),
+            Box::new(t.clone()),
+        ));
+        assert_eq!(
+            described.matches("slice::from_raw_parts(").count(),
+            2,
+            "{described}"
+        );
+        assert!(described.contains(" == "), "{described}");
+        let thin = describe_condition(&OldConditionTerm::PointerEqual(
+            Box::new(s.as_ptr()),
+            Box::new(t.as_ptr()),
+        ));
+        assert!(!thin.contains("from_raw_parts"), "{thin}");
+        let refusal =
+            crate::kernel::RuntimeError::thin_pointer_required_message("pointer arithmetic");
+        assert!(refusal.contains("`.as_ptr()`"), "{refusal}");
     }
 }

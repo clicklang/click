@@ -77,6 +77,7 @@ impl ResourceContext {
                     range.base().base,
                     AddressBase::Symbolic(_)
                         | AddressBase::Load(_)
+                        | AddressBase::SliceData(_)
                         | AddressBase::FunctionSymbolic(_)
                         | AddressBase::ExternalArgument
                         | AddressBase::ExternalObject(_)

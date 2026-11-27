@@ -337,6 +337,9 @@ enum BitvectorEqualityAtomKey {
         memory: (u32, u32),
         pointer_hash: u64,
     },
+    /// A slice application's count, by its application's identity; holding
+    /// the application keeps the identity alive as long as the indexed fact.
+    PureApplicationCount(crate::kernel::SharedPureApplication),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -528,7 +531,7 @@ impl PropositionSource for PureFactStore {
 
 /// Whether `proposition` equates two constructors of different variants of
 /// one algebraic type, which no value satisfies.
-fn is_constructor_clash(proposition: &Proposition) -> bool {
+pub(super) fn is_constructor_clash(proposition: &Proposition) -> bool {
     matches!(proposition,
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
             if left.old_form().algebraic_type == right.old_form().algebraic_type
@@ -1267,8 +1270,7 @@ impl PureFactStore {
             || self.contains_opposite_constant_polarity(&falsehood)
     }
 
-    /// Whether the positive half of `contradiction(fact)` is held, so a
-    /// refusal can say which half was missing.
+    /// Whether the selected fact is held in one of its exact forms.
     pub(crate) fn holds_contradiction_fact(&self, fact: &Proposition) -> bool {
         // An introduced guard is held conjunct by conjunct, so a
         // contradiction written over the whole guard finds it that way.
@@ -2452,8 +2454,10 @@ pub(crate) fn restore_range_span_spelling(
                 base,
                 bytes: folded,
                 wide: false,
+                point,
             },
         ) => Proposition::MemoryLoadable {
+            point: point.clone(),
             memory,
             base,
             bytes: substituted_range_span(bytes.old_form(), from, to)
@@ -3032,6 +3036,9 @@ fn bitvector_equality_atom_key(term: &OldMachineTerm) -> Option<BitvectorEqualit
                 pointer_hash: std::hash::Hasher::finish(&hasher),
             })
         }
+        OldMachineTerm::PureApplicationCount(application) => Some(
+            BitvectorEqualityAtomKey::PureApplicationCount(application.clone()),
+        ),
         _ => None,
     }
 }
@@ -3074,6 +3081,9 @@ fn collect_condition_bitvector_atoms(
         OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_atoms(pointer, atoms);
+            }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_atoms(count, atoms);
             }
         }
 
@@ -3203,7 +3213,8 @@ fn collect_bitvector_atoms(term: &OldMachineTerm, atoms: &mut BTreeSet<Bitvector
                 collect_bitvector_atoms(argument, atoms);
             }
         }
-        OldMachineTerm::ClickFunctionApplication { .. } => {}
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_) => {}
         OldMachineTerm::AlgebraicMatch { arms, .. } => {
             for arm in arms {
                 collect_bitvector_atoms(&arm.body, atoms);
@@ -3755,6 +3766,7 @@ mod integer_equality_fact_index_tests {
             binder,
             Sort::ProgramInt32,
             Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: Address::new(block.into(), offset),
                 bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -3783,6 +3795,7 @@ mod integer_equality_fact_index_tests {
             binder,
             Sort::ProgramInt32,
             Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: Address::new(block.into(), offset),
                 bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -4606,8 +4619,8 @@ mod held_separation_tests {
         };
         Resource::Memory(
             range
-                .with_provenance(Arc::new(origin.base().clone()))
-                .with_bounds_owner(Some(Arc::new(origin.base().clone())), false)
+                .with_provenance(origin.base().clone())
+                .with_bounds_owner(Some(origin.base().clone()), false)
                 .with_typed_carrier(),
         )
     }

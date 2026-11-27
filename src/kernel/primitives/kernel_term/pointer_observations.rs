@@ -77,16 +77,17 @@ mod tests {
     fn pointer_argument_observations_keep_retained_sources() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1024002)),
             ProgramType::Int32Pointer,
         );
         let source = |class| {
-            KernelTerm::shared_pointer_value(SharedPointer::import(
-                &pointer
+            KernelTerm::shared_pointer_value(
+                pointer
                     .clone()
-                    .with_declared_object_class(Some(CAccessClass::Scalar(class))),
-            ))
+                    .with_declared_object_class(Some(CAccessClass::Scalar(class)))
+                    .into_shared(),
+            )
         };
         let first = source(CScalarClass::Int);
         let second = source(CScalarClass::Char);

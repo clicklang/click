@@ -224,6 +224,7 @@ impl PureFactContext {
     pub(crate) fn has_memory_read_defined_evidence(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         pointer: &Address,
         value_type: ProgramType,
     ) -> bool {
@@ -243,6 +244,7 @@ impl PureFactContext {
             let exact = Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
+                point: point.clone(),
                 pointer: pointer.clone(),
                 value_type,
             };
@@ -266,6 +268,7 @@ impl PureFactContext {
                 let premise = Proposition::MemoryReadDefined {
                     at: None,
                     memory: before.as_ref().clone(),
+                    point: crate::kernel::program_point::PathLink::lookup_key(),
                     pointer: candidate.clone(),
                     value_type,
                 };
@@ -339,10 +342,11 @@ impl PureFactContext {
     pub(crate) fn proves_memory_read_defined(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         pointer: &Address,
         value_type: ProgramType,
     ) -> bool {
-        if self.has_memory_read_defined_evidence(memory, pointer, value_type) {
+        if self.has_memory_read_defined_evidence(memory, point, pointer, value_type) {
             return true;
         }
         let initialized_cell = |address: &Address| {
@@ -414,7 +418,7 @@ impl PureFactContext {
         // first: in particular, the empty context used by logical lowering
         // must not resolve aliases across a whole symbolic memory merely to
         // discover that no range was available.
-        if !self.proves_memory_access(memory, pointer, value_type.byte_width()) {
+        if !self.proves_memory_access(memory, point, pointer, value_type.byte_width()) {
             return false;
         }
         let paths = crate::kernel::eval::evaluate_spec_memory_load_paths(
@@ -450,10 +454,16 @@ impl PureFactContext {
     pub(crate) fn proves_memory_access(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
-        self.proves_memory_loadable(memory, pointer, &OldMachineTerm::constant(byte_width))
+        self.proves_memory_loadable(
+            memory,
+            point,
+            pointer,
+            &OldMachineTerm::constant(byte_width),
+        )
     }
 
     /// Carry a native liveness range, or a checked subrange, through
@@ -463,6 +473,7 @@ impl PureFactContext {
     pub(crate) fn proves_native_memory_loadable(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
@@ -471,6 +482,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point: point.clone(),
             base: base.clone(),
             bytes: crate::kernel::StoredMachineTerm::new(
                 crate::kernel::MachineIntegerType::UInt64,
@@ -522,7 +534,7 @@ impl PureFactContext {
                     bytes.clone(),
                     OldMachineTerm::uint64_constant(u64::from(held)),
                 )) == Some(true))
-            && self.proves_memory_loadable(memory, base, &OldMachineTerm::constant(held))
+            && self.proves_memory_loadable(memory, point, base, &OldMachineTerm::constant(held))
         {
             return true;
         }
@@ -534,6 +546,7 @@ impl PureFactContext {
                     base: source_base,
                     bytes: source_bytes,
                     wide: true,
+                    ..
                 } = fact
                 else {
                     return false;
@@ -598,6 +611,7 @@ impl PureFactContext {
             base: source,
             bytes: held,
             wide: true,
+            ..
         } = fact
         else {
             return false;
@@ -673,6 +687,7 @@ impl PureFactContext {
     pub(crate) fn proves_memory_loadable(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
@@ -682,13 +697,14 @@ impl PureFactContext {
         // keeps execution pruning and solve planning byte-identical to the
         // pre-arc path (see api.rs).
         let proved = crate::kernel::api::with_extended_dag_bridging(|| {
-            self.proves_memory_loadable_inner(memory, base, bytes)
+            self.proves_memory_loadable_inner(memory, point, base, bytes)
         });
         if proved {
             record_implicit_consulted_premises(
                 self,
                 &Proposition::MemoryLoadable {
                     memory: memory.clone(),
+                    point: point.clone(),
                     base: base.clone(),
                     bytes: (bytes.clone()).into(),
                     wide: false,
@@ -701,6 +717,7 @@ impl PureFactContext {
     fn proves_memory_loadable_inner(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
@@ -709,6 +726,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point: point.clone(),
             base: base.clone(),
             bytes: (bytes.clone()).into(),
             wide: false,
@@ -745,6 +763,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: false,
+                    ..
                 } = proposition
                 else {
                     return false;
@@ -782,6 +801,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: true,
+                    ..
                 } = fact
                 else {
                     return false;
@@ -811,7 +831,7 @@ impl PureFactContext {
             return true;
         }
 
-        if self.proves_memory_loadable_for_memory_resolution(memory, base, bytes) {
+        if self.proves_memory_loadable_for_memory_resolution(memory, point, base, bytes) {
             return true;
         }
 
@@ -823,6 +843,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: false,
+                    ..
                 } = proposition
                 else {
                     return None;
@@ -894,6 +915,7 @@ impl PureFactContext {
                     base: fact_base,
                     bytes: fact_bytes,
                     wide: false,
+                    ..
                 } = fact
                 else {
                     return None;
@@ -963,6 +985,7 @@ impl PureFactContext {
                         base: address,
                         bytes: span,
                         wide: false,
+                        ..
                     } = fact
                     else {
                         return None;
@@ -1057,6 +1080,7 @@ impl PureFactContext {
     pub(crate) fn proves_memory_loadable_for_memory_resolution(
         &self,
         memory: &SymbolicMemory,
+        point: &crate::kernel::program_point::PathLink,
         base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
@@ -1065,6 +1089,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point: point.clone(),
             base: base.clone(),
             bytes: (bytes.clone()).into(),
             wide: false,
@@ -1097,6 +1122,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: false,
+                    ..
                 } = proposition
                 else {
                     return false;
@@ -2375,7 +2401,7 @@ impl PureFactContext {
         for base in additive_base_spellings(pointer) {
             crate::instrumentation::record_deterministic_work(1);
             keys.push(base.clone());
-            let opaque = matches!(&base.base, AddressBase::Load(_))
+            let opaque = matches!(&base.base, AddressBase::Load(_) | AddressBase::SliceData(_))
                 || matches!(&base.base, AddressBase::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable));
             if !opaque {
@@ -4941,7 +4967,7 @@ impl PureFactContext {
     /// classes select candidates; only full bounds identity admits evidence.
     pub(in crate::kernel) fn opaque_pointer_covers(
         &self,
-        value: &OldPointer,
+        value: &Pointer,
         position: &Address,
         bytes: u32,
     ) -> bool {
@@ -6394,7 +6420,7 @@ mod shallow_composition_separation_tests {
         let boxed = |variable: u64| Resource::Composite {
             name: "boxed".into(),
             arguments: vec![crate::kernel::AlgebraicValue::Program(
-                crate::kernel::ProgramValue::Pointer(crate::kernel::OldPointer::new(
+                crate::kernel::ProgramValue::Pointer(crate::kernel::Pointer::new(
                     symbolic(variable),
                     crate::kernel::ProgramType::Int32Pointer,
                 )),

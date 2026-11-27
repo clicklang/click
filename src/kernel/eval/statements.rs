@@ -773,13 +773,13 @@ fn write_program_lvalue_paths_for_initialization(
         }
     };
 
-    let lvalue_access_provenance = lvalue.provenance.as_deref().map(|root| {
+    let lvalue_access_provenance = lvalue.provenance.as_ref().map(|root| {
         (
             root,
-            match &lvalue.array {
-                Some(crate::kernel::primitives::ArrayObject::Opaque(owner)) => owner.as_deref(),
-                _ => None,
-            },
+            lvalue
+                .array
+                .as_ref()
+                .and_then(crate::kernel::primitives::ArrayObject::opaque_owner),
         )
     });
     let lvalue_opaque_named = !lvalue.bounds_known() && lvalue.bounds_owner().is_some();
@@ -788,7 +788,7 @@ fn write_program_lvalue_paths_for_initialization(
     let lvalue_domain_source = crate::kernel::assumptions::PointerDomainSource::Retained {
         bounds: lvalue_bounds.as_ref(),
         known: lvalue.bounds_known(),
-        opaque: lvalue_bounds_owner.as_deref(),
+        opaque: lvalue_bounds_owner.as_ref(),
     };
     let lvalue_value_type = lvalue.value_type;
     let lvalue_classes = (lvalue.access_class(), lvalue.object_class());
@@ -837,7 +837,7 @@ fn write_program_lvalue_paths_for_initialization(
                 )]);
             }
             if let Some(pointer) = state.locals.slot(&name)
-                && lvalue.provenance.as_deref().is_some_and(|origin| {
+                && lvalue.provenance.as_ref().is_some_and(|origin| {
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
                         || lvalue_opaque_named
                 })
@@ -881,7 +881,7 @@ fn write_program_lvalue_paths_for_initialization(
                 } else {
                     // Name the declared slot with the same carrier as `&name`.
                     let range = MemoryRange::from_pointer_value(
-                        &OldPointer::new(pointer.clone(), ProgramType::VoidPointer),
+                        &Pointer::new(pointer.clone(), ProgramType::VoidPointer),
                         0u32.into(),
                         1u32.into(),
                         bytes,
@@ -1024,7 +1024,7 @@ fn write_program_lvalue_paths_for_initialization(
                 )]);
             }
             let is_external = is_external_memory_pointer(&pointer)
-                || lvalue.provenance.as_deref().is_some_and(|origin| {
+                || lvalue.provenance.as_ref().is_some_and(|origin| {
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
                         || lvalue_opaque_named
                 });
@@ -1123,7 +1123,7 @@ fn write_program_lvalue_paths_for_initialization(
                 obligations
             } else {
                 let Some(obligations) = add_memory_store_obligation(
-                    &state.memory,
+                    &state,
                     &pointer,
                     &value,
                     obligations,
@@ -1246,6 +1246,7 @@ fn write_program_lvalue_paths_for_initialization(
                 }
             };
             let before_memory = state.memory.clone();
+            let before_point = state.memory_point();
             let mut state = state.clone();
             if !iterated_plan.is_empty() {
                 match iterated_plan.before_store(state.resources().clone()) {
@@ -1333,6 +1334,7 @@ fn write_program_lvalue_paths_for_initialization(
             let mut facts = facts;
             let mut store_fact = ExecutionPureFact::certified_store(
                 before_memory,
+                before_point,
                 state.program_point(),
                 written_pointer.clone(),
                 written_value.clone(),
@@ -1362,9 +1364,9 @@ fn write_program_lvalue_paths_for_initialization(
                 let read = if let Some(version) =
                     point.indexed_typed_version(&written_pointer, value_type)
                 {
-                    OldPointer::from_point_read(version, value_type, &written_pointer)
+                    Pointer::from_point_read(version, value_type, &written_pointer)
                 } else {
-                    OldPointer::new(
+                    Pointer::new(
                         Address::canonical_read(
                             point.shared_memory(),
                             Some(&point),
@@ -1716,7 +1718,7 @@ fn execute_program_aggregate_copy_paths(
 
 fn missing_aggregate_copy_write_resource(
     state: &ExecutionState,
-    target: &OldPointer,
+    target: &Pointer,
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
@@ -1763,7 +1765,7 @@ fn missing_aggregate_copy_write_resource(
 
 pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     state: &ExecutionState,
-    source: &OldPointer,
+    source: &Pointer,
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
@@ -2744,7 +2746,7 @@ fn execute_program_realloc_result_paths(
         let old_argument = match old_value {
             ProgramValue::Pointer(pointer) => pointer,
             ProgramValue::Int32(bits) if bits.as_const() == Some(0) => {
-                OldPointer::new(Address::null(), target_type)
+                Pointer::new(Address::null(), target_type)
             }
             _ => {
                 paths.push(StatementExecutionPath::new(
@@ -3267,6 +3269,7 @@ fn execute_program_heap_free_paths(
             .map(ProgramType::byte_width)
             .unwrap_or(ProgramType::Int32.byte_width());
         let before_free = state.memory.clone();
+        let before_free_point = state.memory_point();
         let mut working_memory = state.memory.clone();
         let bytes = if let Some(bytes) = working_memory.live_heap_block_size(pointer.address()) {
             bytes.clone()
@@ -3442,7 +3445,7 @@ fn execute_program_heap_free_paths(
         for (address, value_type) in pointer_frames {
             let point = state.program_point();
             let before = if let Some(version) = point.indexed_typed_version(&address, value_type) {
-                OldPointer::from_point_read(version, value_type, &address)
+                Pointer::from_point_read(version, value_type, &address)
             } else {
                 // `before_free` is the state's memory: the read is made at
                 // its point.
@@ -3466,18 +3469,20 @@ fn execute_program_heap_free_paths(
                 )));
             }
         }
+        let mut next = state
+            .clone()
+            .with_memory(memory.clone())
+            .with_resource_context(resources);
         facts.push(ExecutionPureFact::internal(
             Proposition::HeapAllocationFreed {
                 before: before_free,
-                after: memory.clone(),
-                allocation_base: pointer.address().clone(),
-                bytes: bytes.clone(),
+                before_point: before_free_point,
+                after: memory,
+                after_point: next.memory_point(),
+                blocks: vec![(pointer.address().clone(), bytes.clone())],
+                mutable_ranges: Vec::new(),
             },
         ));
-        let mut next = state
-            .clone()
-            .with_memory(memory)
-            .with_resource_context(resources);
         if let Err(error) = next.retire_population_storage(&pointer.base) {
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::RuntimeError(error),
@@ -6595,6 +6600,7 @@ pub(in crate::kernel) fn declare_local(
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer
         | ProgramType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
+        ProgramType::SlicePointer(_) => crate::kernel::WIDE_POINTER_BYTE_WIDTH,
         ProgramType::Int32Array(length) => {
             state.stage_memory(state.memory.clone().with_classed_block(
                 pointer.base.clone(),
@@ -7129,25 +7135,31 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 /// A pointer value moved from a pending allocation's base to its resolved
 /// block. Its subobject bounds, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
-    value: &OldPointer,
+    value: &Pointer,
     base: &Address,
     resolved: &Address,
-) -> OldPointer {
+) -> Pointer {
+    // An allocation's rebase respells its block in addresses only. A wide
+    // pointer's count is a length, not an address in the block: it is kept,
+    // as the bounds width is.
     let resolved_value = value
-        .map_pointers(|address| {
-            if address == base {
-                resolved.clone()
-            } else if address.base == base.base
-                && matches!(base.offset.view(), OffsetView::Constant(0))
-            {
-                resolved.with_offset(AddressOffset::add(
-                    resolved.offset.clone(),
-                    address.offset.clone(),
-                ))
-            } else {
-                address.clone()
-            }
-        })
+        .map_pointers(
+            |address| {
+                if address == base {
+                    resolved.clone()
+                } else if address.base == base.base
+                    && matches!(base.offset.view(), OffsetView::Constant(0))
+                {
+                    resolved.with_offset(AddressOffset::add(
+                        resolved.offset.clone(),
+                        address.offset.clone(),
+                    ))
+                } else {
+                    address.clone()
+                }
+            },
+            OldMachineTerm::clone,
+        )
         .with_bounds_owner(None);
     if resolved_value.bounds().is_none() {
         resolved_value.with_root_bounds()

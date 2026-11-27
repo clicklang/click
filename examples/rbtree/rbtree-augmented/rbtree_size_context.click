@@ -133,17 +133,17 @@ theorem sized_context_valid_checks(cached: Integer, expected: Integer, sibling: 
                 } else {
                     have above == 0 by close();
                     have above != 1 by { rewrite(above, 0); close(); }
-                    contradiction(above == 1);
+                    close();
                 }
             } else {
                 have rest == 0 by close();
                 have rest != 1 by { rewrite(rest, 0); close(); }
-                contradiction(rest == 1);
+                close();
             }
         } else {
             have valid == 0 by close();
             have valid != 1 by { rewrite(valid, 0); close(); }
-            contradiction(valid == 1);
+            close();
         }
     }
 }

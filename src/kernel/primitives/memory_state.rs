@@ -107,6 +107,9 @@ fn write_havoc_block(identity: &mut String, block: AddressBase) {
         AddressBase::Load(load) => {
             let _ = write!(identity, "blp{};", load.id());
         }
+        AddressBase::SliceData(load) => {
+            let _ = write!(identity, "bls{};", load.id());
+        }
         AddressBase::Heap(value) => {
             let _ = write!(identity, "bh{value};");
         }
@@ -339,6 +342,9 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                 match term {
                     OldMachineTerm::ThreadHandle(id) => {
                         let _ = write!(identity, "thread-handle:{id:?};");
+                    }
+                    OldMachineTerm::PureApplicationCount(application) => {
+                        let _ = write!(identity, "tpcount{};", application.id());
                     }
                     OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
@@ -2429,7 +2435,7 @@ impl LocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = (&'a BindingName, &'a OldPointer)> {
+    ) -> impl Iterator<Item = (&'a BindingName, &'a Pointer)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -4790,7 +4796,7 @@ impl SymbolicMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(&self, result: &OldPointer) -> Option<OldPointer> {
+    pub(crate) fn fresh_allocation_identity(&self, result: &Pointer) -> Option<Pointer> {
         let base = result.address();
         match base.base {
             AddressBase::Heap(_) => Some(result.clone()),
@@ -8959,7 +8965,7 @@ impl SymbolicMemory {
         // cell, either of which already carries its definition.
         match Address::version_read_value(&retained_state, site, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
-            Err(value) => ProgramValue::Pointer(OldPointer::from_read_at(
+            Err(value) => ProgramValue::Pointer(Pointer::from_read_at(
                 value,
                 value_type,
                 &retained_state,
@@ -8989,7 +8995,7 @@ impl SymbolicMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition_at(&value, &retained_state, site, pointer);
-        ProgramValue::Pointer(OldPointer::from_read_at(
+        ProgramValue::Pointer(Pointer::from_read_at(
             value,
             value_type,
             &retained_state,
@@ -10594,6 +10600,7 @@ impl ExecutionState {
                 && !self.memory.access_in_bounds(&base, bytes)
                 && !assumptions.proves_memory_loadable_for_memory_resolution(
                     &self.memory,
+                    &self.memory_point(),
                     &base,
                     &OldMachineTerm::constant(bytes),
                 )
@@ -11131,6 +11138,17 @@ impl ExecutionState {
     /// Where on its path this state stands.
     pub(crate) fn path_link(&self) -> &super::program_point::PathLink {
         &self.point
+    }
+
+    /// The point this state's memory is the state at, for a fact that
+    /// quotes it: where the state stands. A state with staged steps stands
+    /// between points, and no fact quotes its memory.
+    pub(crate) fn memory_point(&self) -> super::program_point::PathLink {
+        assert!(
+            self.memory.pending_steps.is_none(),
+            "a fact quotes a state with staged steps before its atomic region completes"
+        );
+        self.point.clone()
     }
 
     /// The identity of the point this state stands at, without interning its

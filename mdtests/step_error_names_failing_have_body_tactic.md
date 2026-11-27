@@ -7,7 +7,7 @@ failures at the same depth in different `have` blocks report different
 locations.
 
 Here the second first-level `have` is source tactic 1, and its failing
-`contradiction(x > 0)` is the second tactic of that body.
+`rewrite(x, 0)` is the second tactic of that body.
 
 ```c filename=two_haves.c
 int32 two_haves(int32 x) {
@@ -28,7 +28,7 @@ int32 two_haves(int32 x) {
             have x > 0 by {
                 close();
             }
-            contradiction(x > 0);
+            rewrite(x, 0);
         }
         step();
         close();
@@ -37,5 +37,5 @@ int32 two_haves(int32 x) {
 ```
 
 ```expect
-fail: `two_haves.ensures_0` proof step tactic 1 > have body tactic 2: `contradiction(x > 0)` requires an exact fact and its exact negation or opposite condition polarity
+fail: `rewrite` requires its equality to be an exact available fact
 ```

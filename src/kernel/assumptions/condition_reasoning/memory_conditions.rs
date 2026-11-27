@@ -18,7 +18,7 @@ impl PureFactContext {
             (left, right)
         {
             let same_value =
-                |a: &OldPointer, b: &OldPointer| {
+                |a: &Pointer, b: &Pointer| {
                     self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.address(), b.address(), self,
@@ -49,7 +49,7 @@ impl PureFactContext {
             (left, right)
         {
             let same_value =
-                |a: &OldPointer, b: &OldPointer| {
+                |a: &Pointer, b: &Pointer| {
                     self.pointer_provenance_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                         a.address(), b.address(), self,
@@ -222,6 +222,7 @@ impl PureFactContext {
                     before,
                     after,
                     writes,
+                    ..
                 } => {
                     let matches = memories_match_for_pointer_load(before, left, pointer)
                         && memories_match_for_pointer_load(after, right, pointer)
@@ -275,8 +276,9 @@ impl PureFactContext {
                 Proposition::HeapAllocationFreed {
                     before,
                     after,
-                    allocation_base,
-                    bytes,
+                    blocks,
+                    mutable_ranges,
+                    ..
                 } => {
                     // Bounded for the same reason as the effect-summary arm.
                     let endpoint_matches = |expected: &SymbolicMemory, actual: &SymbolicMemory| {
@@ -288,12 +290,13 @@ impl PureFactContext {
                     let matches = endpoint_matches(before, left) && endpoint_matches(after, right)
                         || endpoint_matches(before, right) && endpoint_matches(after, left);
                     matches
-                        && crate::kernel::api::heap_allocation_proven_separate_from_pointer(
-                            allocation_base,
-                            bytes,
-                            pointer,
-                            self,
-                        )
+                        && blocks.iter().all(|(base, bytes)| {
+                            crate::kernel::api::heap_allocation_proven_separate_from_pointer(
+                                base, bytes, pointer, self,
+                            )
+                        })
+                        && (mutable_ranges.is_empty()
+                            || self.ranges_directly_disjoint_from_pointer(mutable_ranges, pointer))
                 }
                 _ => false,
             })
@@ -531,6 +534,9 @@ impl PureFactContext {
             LoadKind::Int32 => Some(memory.symbolic_int32_load(point, pointer)),
             LoadKind::UInt32 => Some(memory.symbolic_uint32_load(point, pointer)),
             LoadKind::Bits64 => Some(memory.symbolic_int64_load(point, pointer)),
+            // A slice's count is read only with its slice
+            // (`Pointer::slice_read`), never as a scalar of its own.
+            LoadKind::SliceCount => None,
             // A value of algebraic type is its own decoding of the cell.
             LoadKind::Algebraic(parameter) => {
                 Some(memory.symbolic_algebraic_load(point, pointer, parameter))

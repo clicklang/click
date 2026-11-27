@@ -118,6 +118,7 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             base,
             bytes,
             wide,
+            ..
         } => {
             let size = if *wide {
                 bytes
@@ -2019,6 +2020,7 @@ mod tests {
                 memory = memory.with_block(format!("other_{i}"), 4);
             }
             let goal = Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory,
                 base: Address::new("target".into(), AddressOffset::constant(4)),
                 bytes: OldMachineTerm::constant(size).into(),
@@ -2054,6 +2056,7 @@ mod tests {
                         OldMachineTerm::constant(size as u32).into()
                     };
                     let goal = Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: memory.clone(),
                         base: Address::symbolic(Variable(402901)),
                         bytes,

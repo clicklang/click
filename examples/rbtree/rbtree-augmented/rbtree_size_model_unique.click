@@ -17,7 +17,7 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                             rewrite(b, SizedTree::Node(bi, bp, bc, bv, bl, br));
                             unfold(sized_shape(SizedTree::Empty)); unfold(sized_shape(SizedTree::Node(bi, bp, bc, bv, bl, br))); close();
                         }
-                        contradiction(sized_shape(SizedTree::Empty) == sized_shape(b));
+                        close();
                     },
                 }
             },
@@ -28,7 +28,7 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                             rewrite(b, SizedTree::Empty);
                             unfold(sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar))); unfold(sized_shape(SizedTree::Empty)); close();
                         }
-                        contradiction(sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar)) == sized_shape(b));
+                        close();
                     },
                     SizedTree::Node(bi, bp, bc, bv, bl, br) => {
                         unfold(sized_shape(SizedTree::Node(ai, ap, ac, av, al, ar))); unfold(sized_shape(SizedTree::Node(bi, bp, bc, bv, bl, br)));

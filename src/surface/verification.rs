@@ -928,7 +928,7 @@ fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
         }
     } else if !matches!(
         script.last(),
-        Some(ProofTactic::Close | ProofTactic::CloseUnreachable | ProofTactic::Contradiction(_))
+        Some(ProofTactic::Close | ProofTactic::CloseUnreachable)
     ) {
         script.extend(suffix.iter().cloned());
     }

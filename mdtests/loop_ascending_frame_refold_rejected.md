@@ -133,7 +133,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
         initialize by close();
         maintain by {
             match c.model {
-                Context::Top => { contradiction(c.model == Context::Top); },
+                Context::Top => { close(); },
                 Context::Left(identity, grandparent, value, sibling_model, up_model) => {
                     have plug(up_model,
                               HeapTree::Node(identity, value, t.model, sibling_model))
@@ -196,7 +196,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
     unfold(c);
     let ctx = fold(pctx_at(node, parent), { model: Context::Top });
     match t.model {
-        HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
+        HeapTree::Empty => { close(); },
         HeapTree::Node(identity, value, left_model, right_model) => {
             have HeapTree::Node(identity, value, left_model, right_model)
                 == plug(old(c.model), old(t.model)) by {

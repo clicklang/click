@@ -2240,7 +2240,7 @@ fn short_circuit_return_expands_after_an_early_return() {
                     have 2 <= size implies (first as int32) == 67 implies
                         (second as int32) == 75 implies result by {
                         intro() {
-                            contradiction(size < 2);
+                            close();
                         }
                     }
                     close();
@@ -2621,20 +2621,10 @@ fn established_false_expands_to_checked_close() {
     })
     .unwrap();
 
-    let empty =
-        "theorem impossible(x: int32) { requires false; ensures x == 7 by { contradiction(); } }";
-    without_implicit_solve(|| verify_click_theorems(empty)).unwrap();
-    let explicit = empty.replace("contradiction()", "contradiction(false)");
-    without_implicit_solve(|| verify_click_theorems(&explicit)).unwrap();
-    let missing = empty.replace("requires false;", "");
-    let error = verify_click_theorems(&missing).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("requires an established `false` fact"),
-        "{}",
-        error.report()
-    );
+    let source = "theorem impossible(x: int32) { requires false; ensures x == 7 by { close(); } }";
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
+    let missing = source.replace("requires false;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }
 
 #[test]
@@ -3028,6 +3018,75 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
     let expanded = expand_c_tactic_source_at(&local, &c_sources, position.line, position.column)
         .expect("the non-project theorem route retains local unselected tactic interfaces");
     verify_c_sources(&expanded, &c_sources).expect("local procedure expansion checks");
+}
+
+#[test]
+fn execution_theorem_expansion_preserves_pointer_parameter_field_names() {
+    let c_sources = [(
+        "executes_nested_pointer.c",
+        r#"
+            struct node {
+                int value;
+                struct node *link;
+            };
+
+            void skip(struct node *p, struct node *alias) { p->value = 1; }
+        "#,
+    )];
+    let source = r#"
+        verifying "executes_nested_pointer.c";
+
+        spec enum Tag {
+            Empty,
+            At(struct node*),
+        }
+
+        function parent_is(tag: Tag, parent: struct node*) -> int32 {
+            match tag {
+                Tag::Empty => 1,
+                Tag::At(p) => if p == parent { 1 } else { 0 },
+            }
+        }
+
+        resource tagged(p: struct node*) {
+            field model: Tag;
+            fact parent_is(model, p) == 1;
+        }
+
+        resource linked(p: struct node*, alias: struct node*) {
+            owns p->link;
+            owns child: tagged(p->link);
+            fact p->link == alias;
+        }
+
+        void skip(struct node* p, struct node* alias) { owns p->value; ensures p->value == 1; }
+
+        contract void Kept(struct node* p, struct node* alias) {
+            consumes link: linked(p, alias);
+            owns p->value;
+            produces out: tagged(alias);
+        }
+
+        theorem skip_keeps_tag() executes skip(struct node* p, struct node* alias) {
+            ensures Kept(&skip) as { link: link, out: out } by {
+                let { child: child } = unfold(link);
+                mark named;
+                step();
+                let {  } = unfold(child);
+                let out = fold(tagged(alias), { model: at(named, child.model) });
+                close();
+                close();
+            }
+        }
+    "#;
+    let claim = "skip_keeps_tag.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
+        .expect("the generated fold proof must name the nominal parameter's field");
+    assert!(expanded.contains("rewrite(1, p->value)"), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("the expanded execution proof must replay without search");
 }
 
 #[test]
@@ -4429,6 +4488,7 @@ fn guarded_quantified_postcondition_expands_and_reverifies() {
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("execute()"), "{expanded}");
         assert!(!claim.contains("solve()"), "{expanded}");
+        assert!(!claim.contains("contradiction("), "{expanded}");
         assert!(
             claim.contains("have result == 1 implies forall (k: int32)"),
             "{expanded}"
@@ -4751,12 +4811,8 @@ fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) ->
     expanded
 }
 
-/// A match arm that bridges with a `have` and then refutes itself is planned
-/// like a sole `contradiction`. Its bridge ran without the expansion capture,
-/// so expanding the `solve` inside it reported `has no source tactic` while
-/// `click verify` accepted the proof. At function exit the bridge `have` was
-/// also deferred to an outcome path the refuted arm does not have, so it was
-/// never checked at all.
+/// Expansion can select the closer inside a match arm's checked bridge.
+/// The refuted constructor has no outcome path for a deferred bridge.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
@@ -4776,10 +4832,7 @@ fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
         let expanded = expand_function_proof_source(&source, &sources, "id").unwrap();
-        assert!(
-            expanded.contains("contradiction(r.model == Tag::A())"),
-            "{expanded}"
-        );
+        assert!(!expanded.contains("contradiction("), "{expanded}");
         with_proof_trace("id", || {
             without_implicit_solve_for_claim("id.contract", || {
                 verify_c_sources(&expanded, &sources).map_err(|error| error.report())
@@ -7316,6 +7369,38 @@ fn cpp_local_record_call_requirement_expands_and_replays() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: imported C++ branch certificate"]
+fn cpp_templated_method_call_branch_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_templated_call_branch_expands.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let crate::cli::VerificationInput::PreparedProgram(import) = &inputs else {
+        panic!("expected a prepared C++ fixture");
+    };
+    let source = fixture.click_source.as_deref().unwrap();
+    let claim = "probe.contract";
+    let expanded = expand_claim_by_label(None, source, &inputs.program_inputs(), claim, None)
+        .unwrap_or_else(|error| panic!("{}", error.report()))
+        .source;
+    assert!(expanded.contains("call(1).result"), "{expanded}");
+    let project = crate::surface::ClickProject::new(
+        "proof.click",
+        [crate::surface::ClickModuleSource::new(
+            "proof.click",
+            &expanded,
+            [],
+        )],
+    );
+    crate::surface::without_proof_search_for_claim(claim, || {
+        crate::surface::verify_program_prepared_project(&project, import)
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7.0s in the parallel gate"]
 fn cpp_allocation_rewrites_expand_and_replay() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -8708,6 +8793,31 @@ fn post_execution_solve_uses_the_introduced_antecedent_for_contradiction() {
         .expect("the introduced contradiction should check independently");
     let false_on_the_reachable_branch = expanded.replace("result == 1", "result == 2");
     assert!(verify_c_sources(&false_on_the_reachable_branch, &sources).is_err());
+}
+
+#[test]
+fn symbolic_false_antecedent_expands_into_an_explicit_negation() {
+    let source = r#"
+        theorem refuted(x: Integer) {
+            ensures ((-2 * x + 2 * x + 1) <= 0) implies x == 7 by close();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "refuted.ensures_0").unwrap();
+    assert!(expanded.contains("have not "), "{expanded}");
+    assert!(!expanded.contains("contradiction("), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    let reachable = source.replace("+ 1", "- 1");
+    assert!(verify_c_sources(&reachable, &[]).is_err());
+
+    let premise = r#"
+        theorem refuted(x: Integer) {
+            requires -2 * x + 2 * x + 1 <= 0;
+            ensures x == 7 by close();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(premise, &[], "refuted.ensures_0").unwrap();
+    assert!(expanded.contains("have not "), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
 }
 
 #[test]
@@ -23519,7 +23629,7 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
             ensures t.model == old(t.model);
         } by {
             match t.model {
-                Tree::Empty => { contradiction(t.model == Tree::Empty); },
+                Tree::Empty => { close(); },
                 Tree::Node(id) => {
                     loop {
                         decreases n;
@@ -28750,6 +28860,49 @@ fn instantiation_expansion_proves_weakened_guards_with_ordinary_haves() {
 }
 
 #[test]
+fn match_arm_can_establish_false_in_its_bridge_at_function_exit() {
+    let source = r#"
+        verifying "id.c";
+
+        spec enum Tag { A, B }
+        resource tag() { field model: Tag; }
+        function tag_code(value: Tag) -> Integer {
+            match value {
+                Tag::A => 0,
+                Tag::B => 1,
+            }
+        }
+
+        int id(int x) {
+            owns r: tag();
+            requires tag_code(r.model) != 0;
+            ensures result == x;
+            ensures r.model == old(r.model);
+        } by {
+            step_until(function.exit);
+            match r.model ensuring { fact result == x; } {
+                Tag::A => {
+                    have tag_code(r.model) == 0 by {
+                        rewrite(r.model, Tag::A);
+                        unfold(tag_code(Tag::A));
+                        close();
+                    }
+                    close();
+                },
+                Tag::B => { },
+            }
+            close();
+        }
+    "#;
+    let sources = [("id.c", "int id(int x) { return x; }")];
+    let expanded = expand_function_proof_source(source, &sources, "id").unwrap();
+    assert!(expanded.contains("unfold(tag_code(Tag::A())"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    let reachable = source.replace("requires tag_code(r.model) != 0;", "");
+    assert!(verify_c_sources(&reachable, &sources).is_err());
+}
+
+#[test]
 fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
     let (source, sources) = mdtest_sources(
         "mdtests/a_refuted_match_arm_bridge_at_function_exit_uses_propagated_false.md",
@@ -28769,10 +28922,8 @@ fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
         .unwrap_or_else(|| panic!("{expanded}"))
         .1;
     let body = bridge.split_once('}').unwrap().0;
-    assert!(
-        body.contains("close();") || body.contains("contradiction("),
-        "{expanded}"
-    );
+    assert!(body.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("contradiction("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let reachable = expanded.replace("requires r.model != Tag::A;", "");
     assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());

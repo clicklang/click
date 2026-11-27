@@ -228,6 +228,30 @@ impl NamedCalls {
             .and_then(|calls| calls.get(callee))
             .map_or(&[], Vec::as_slice)
     }
+
+    fn source_step(
+        &self,
+        path: Option<&[u32]>,
+        callee: &str,
+        region: usize,
+    ) -> Option<crate::surface::SourcePathStep> {
+        use crate::surface::SourcePathStep;
+        // A named selector accepts an identifier path. Use the call's ordinal
+        // when the display name contains template arguments or punctuation.
+        if callee.split("::").all(|segment| {
+            let mut bytes = segment.bytes();
+            bytes
+                .next()
+                .is_some_and(|byte| byte == b'_' || byte.is_ascii_alphabetic())
+                && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+        }) {
+            let ordinal = self.regions(path, callee).binary_search(&region).ok()?;
+            Some(SourcePathStep::Call(callee.to_owned(), ordinal))
+        } else {
+            let ordinal = self.all(path).binary_search(&region).ok()?;
+            Some(SourcePathStep::AnyCall(ordinal))
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1990,14 +2014,17 @@ impl SourceExecutionLayout {
         use crate::surface::{CodeRegionRef, SourcePathStep};
         let callee = self.data.call_targets.get(&region)?;
         let path = self.data.region_paths.get(&region).map(Vec::as_slice);
-        let calls = self.data.named_calls.as_ref()?.regions(path, callee);
-        let ordinal = calls.binary_search(&region).ok()?;
         let mut steps = path
             .unwrap_or_default()
             .iter()
             .map(|index| SourcePathStep::Statement(*index as usize))
             .collect::<Vec<_>>();
-        steps.push(SourcePathStep::Call(callee.clone(), ordinal));
+        steps.push(
+            self.data
+                .named_calls
+                .as_ref()?
+                .source_step(path, callee, region)?,
+        );
         Some(CodeRegionRef::Path(steps))
     }
 
@@ -2442,15 +2469,15 @@ impl SourceExecutionLayout {
             }
             let earlier = data.calls.range(..region);
             let steps = vec![match data.call_targets.get(&region) {
-                Some(function) => SourcePathStep::Call(
-                    function.clone(),
-                    match &data.named_calls {
-                        Some(named) => named.regions(None, function).binary_search(&region).ok()?,
-                        None => earlier
+                Some(function) => match &data.named_calls {
+                    Some(named) => named.source_step(None, function, region)?,
+                    None => SourcePathStep::Call(
+                        function.clone(),
+                        earlier
                             .filter(|earlier| data.call_targets.get(earlier) == Some(function))
                             .count(),
-                    },
-                ),
+                    ),
+                },
                 None => SourcePathStep::AnyCall(earlier.count()),
             }];
             return (self.source_path_region(&steps, kind) == Ok(region)).then_some(steps);
@@ -2480,13 +2507,16 @@ impl SourceExecutionLayout {
                             .count(),
                     )
                 }
-                Some(function) => SourcePathStep::Call(
-                    function.clone(),
-                    own[..position]
-                        .iter()
-                        .filter(|earlier| data.call_targets.get(earlier) == Some(function))
-                        .count(),
-                ),
+                Some(function) => match &data.named_calls {
+                    Some(named) => named.source_step(Some(path), function, region)?,
+                    None => SourcePathStep::Call(
+                        function.clone(),
+                        own[..position]
+                            .iter()
+                            .filter(|earlier| data.call_targets.get(earlier) == Some(function))
+                            .count(),
+                    ),
+                },
                 None => SourcePathStep::Region(position),
             });
         }

@@ -66,6 +66,7 @@ fn is_inline_block(block: &AddressBase) -> bool {
             | AddressBase::ExternalArgument
             | AddressBase::ExternalObject(_)
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
             | AddressBase::Heap(_)
             | AddressBase::Temporary(_)
     )
@@ -451,6 +452,20 @@ impl SharedAddress {
         // SAFETY: `Address` is a `repr(transparent)` wrapper of
         // `SharedAddress`, and its offset was just checked to be written.
         Ok(unsafe { &*(self as *const SharedAddress as *const Address) })
+    }
+
+    /// The written view of a handle known to be written: a part of a
+    /// written pointer ([`crate::kernel::Pointer`]), whose addresses were
+    /// written when it was built.
+    pub(crate) fn written_view(&self) -> &Address {
+        // SAFETY: `Address` is a `repr(transparent)` wrapper of
+        // `SharedAddress`; the caller holds a written handle.
+        unsafe { &*(self as *const SharedAddress as *const Address) }
+    }
+
+    /// Whether both are one handle.
+    pub(crate) fn same_handle(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 
     /// The written view as an owned handle ([`Self::written`]), whose block

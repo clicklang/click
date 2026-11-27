@@ -48,7 +48,13 @@ fn old_collect_body_reads(
         | SpecExpression::BitwiseNot(inner)
         | SpecExpression::Cast(inner, _)
         | SpecExpression::NarrowArithmetic(inner, _)
-        | SpecExpression::PointerCoercion(inner, _) => old_collect_body_reads(inner, bound, reads),
+        | SpecExpression::PointerCoercion(inner, _)
+        | SpecExpression::SliceLength(inner)
+        | SpecExpression::SliceData(inner) => old_collect_body_reads(inner, bound, reads),
+        SpecExpression::SliceFromRawParts { data, count } => {
+            old_collect_body_reads(data, bound, reads)?;
+            old_collect_body_reads(count, bound, reads)
+        }
         SpecExpression::If {
             condition,
             then_branch,

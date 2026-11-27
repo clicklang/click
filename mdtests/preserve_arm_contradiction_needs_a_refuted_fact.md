@@ -1,17 +1,6 @@
-# a `contradiction` on a proposition the path does not refute
+# A reachable preservation arm cannot prove false
 
-Reaching a `contradiction` after a prefix of other tactics does not make it
-cheap to satisfy. The refutation is decided from the facts standing on the path
-at that point, exactly as it is decided for an arm written as `contradiction`
-alone: the named proposition and its negation both have to be there.
-
-This arm names `n >= 0`, which the contract requires and the `have` restates,
-so it is available — and nothing on the path denies it. The arm stays open, and
-the refusal names the proposition as it was written, so the reader can see
-which of several `contradiction`s in a body failed, and says which half of the
-refutation was missing: the fact is held, its negation is not. It used to end
-in a kernel dump of the lowered proposition,
-`ConditionIs(Bitvector32SignedGreaterEqual(Variable(Variable(1)), Constant(0)), true)`.
+The loop-body arm can restate `n >= 0` but has no evidence that the path is impossible. Its attempted proof of `false` fails.
 
 ```c filename=preserve_arm_contradiction_needs_a_refuted_fact.c
 struct cell {
@@ -64,6 +53,7 @@ void bump_n(struct cell* node, int32 n) {
     step();
     loop {
         owns l: list_at(node);
+        decreases to_integer(n) - to_integer(i);
         invariant i >= 0;
         invariant i <= n;
         invariant node != 0;
@@ -71,11 +61,10 @@ void bump_n(struct cell* node, int32 n) {
         initialize by close();
         maintain by {
             match l.model {
-                CellList::Nil => {
-                    have n >= 0;
-                    contradiction(n >= 0);
-                },
+                CellList::Nil => { close(); },
                 CellList::Cons(identity, value, tail_model) => {
+                    have n >= 0;
+                    have false by close();
                     let { tail: t } = unfold(l);
                     step();
                     step();
@@ -91,5 +80,5 @@ void bump_n(struct cell* node, int32 n) {
 ```
 
 ```expect
-fail: `contradiction(n >= 0)` requires an exact fact and its exact negation or opposite condition polarity: `n >= 0` is available, but neither `not (n >= 0)` nor its opposite comparison is
+fail: could not establish `false`
 ```

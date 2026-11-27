@@ -202,8 +202,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             | ProofStep::CompatibilityNormalize(None)
             | ProofStep::Rewrite(_)
             | ProofStep::Intro
-            | ProofStep::CloseUnreachable
-            | ProofStep::Contradiction(_) => {}
+            | ProofStep::CloseUnreachable => {}
             _ => {
                 eprintln!("nonordinary arithmetic step: {step:?}");
                 return None;
@@ -434,6 +433,8 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
         let source: ExecutionFacts = (0..size)
             .map(|index| {
                 ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
+                    before_point: Default::default(),
+                    after_point: Default::default(),
                     before: memory.clone(),
                     after: memory.clone(),
                     writes: vec![(
@@ -529,6 +530,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 )),
             )),
             Box::new(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: SymbolicMemory::new().with_block("sum", 16),
                 base: pointer,
                 bytes: (OldMachineTerm::Variable(Variable(30))).into(),
@@ -9969,6 +9971,7 @@ fn observe_composite_keeps_the_defined_read_at_the_selected_point() {
         observed
             .added_facts()
             .contains(&Proposition::MemoryReadDefined {
+                point: Default::default(),
                 at: Some(point),
                 memory: after.memory().clone(),
                 pointer,
@@ -15246,7 +15249,7 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = SyntaxTerm::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));

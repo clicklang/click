@@ -1230,7 +1230,7 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
             };
             let split = Arc::new(split);
             let prepared = proof.prepare_execution_match(false, 0)?;
-            let plan = prepared.plan_execution_match(&split, |_| usize::MAX)?;
+            let plan = prepared.plan_execution_match(&split)?;
             splits += 1;
             for index in plan.live_cases() {
                 pending.push(prepared.enter_execution_match_arm(&plan, index)?);
@@ -1569,7 +1569,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         root.register_trace_scope_under(parent_lineage);
     }
     let mut leaves = Vec::new();
-    let mut refuted_match_paths = Vec::new();
+    let mut refuted_case_paths = Vec::new();
     let mut unfinished = Vec::new();
     with_preservation_continuation_record(|| {
         advance_preservation_region(
@@ -1581,7 +1581,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             owning_source_index,
             &claim_label,
             &mut leaves,
-            &mut refuted_match_paths,
+            &mut refuted_case_paths,
             &mut unfinished,
             None,
         )
@@ -1616,7 +1616,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let mut seen_early_exits = SeenLoopExits::default();
 
     let mut nested_loop_rules = Vec::new();
-    for (execution, path_certificate) in refuted_match_paths {
+    for (execution, path_certificate) in refuted_case_paths {
         let case_path = execution
             .presentation
             .case_assumptions

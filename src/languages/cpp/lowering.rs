@@ -85,6 +85,7 @@ impl LoweredCppFunction {
 pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, String> {
     // Each function is named by its C++ path, which an artifact locked
     // before paths were exported does not carry.
+    let lambda_paths = super::schema::lambda_paths(import.export())?;
     let paths = import
         .export()
         .functions
@@ -99,7 +100,10 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             }
             Ok((
                 function.declaration_id.as_str(),
-                super::names::path_name(&function.path),
+                lambda_paths
+                    .get(function.declaration_id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| super::names::path_name(&function.path)),
             ))
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1977,14 +1981,6 @@ impl LoweringContext<'_> {
             .unwrap_or_default()
     }
 
-    fn normalize_temporary_arguments(
-        &mut self,
-        arguments: &[CppCallArgument],
-        allow_temporaries: bool,
-    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
-        self.normalize_temporary_arguments_for(arguments, &[], allow_temporaries)
-    }
-
     fn normalize_temporary_arguments_for(
         &mut self,
         arguments: &[CppCallArgument],
@@ -2092,33 +2088,30 @@ impl LoweringContext<'_> {
                         "C++ record temporaries require a statement-call full expression".into(),
                     );
                 }
-                let (callee, arguments, value_type, constructor, opaque_copy) = match argument {
+                let (callee, arguments, value_type, constructor) = match argument {
                     CppCallArgument::Construct {
                         callee,
                         arguments,
                         value_type,
-                        opaque_copy,
                         ..
-                    } => (callee, arguments, value_type, true, *opaque_copy),
+                    } => (callee, arguments, value_type, true),
                     CppCallArgument::Call {
                         callee,
                         arguments,
                         value_type,
                         ..
-                    } => (callee, arguments, value_type, false, false),
+                    } => (callee, arguments, value_type, false),
                     _ => unreachable!(),
                 };
                 let CppType::Record { name, .. } = value_type else {
                     unreachable!()
                 };
                 let layout = self.record_layout(name)?;
-                let capture = if opaque_copy {
-                    self.fresh_prepared_argument(name, parameter_name)?
-                } else {
-                    self.fresh_aggregate_capture(name)?
-                };
-                let (prefix, mut actual, inner_temporaries) =
-                    self.normalize_temporary_arguments(arguments, true)?;
+                // The prvalue initializes the callee's parameter object directly.
+                let capture = self.fresh_prepared_argument(name, parameter_name)?;
+                let inner_parameter_names = self.callee_parameter_names(callee);
+                let (prefix, mut actual, inner_temporaries) = self
+                    .normalize_temporary_arguments_for(arguments, &inner_parameter_names, true)?;
                 temporaries.extend(inner_temporaries);
                 evaluation = evaluate_then(evaluation, prefix);
                 let operation = if constructor {
@@ -2140,9 +2133,14 @@ impl LoweringContext<'_> {
                         self.coerced(operation),
                     ),
                 );
-                let (materialize, address) = self.retain_materialized(&capture);
+                // Preserve the materialization point for proofs. The call's
+                // source layout also needs the prepared binding itself.
+                let (materialize, _) = self.retain_materialized(&capture);
                 evaluation = evaluate_then(evaluation, materialize);
-                lowered.push(address);
+                lowered.push(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::variable(capture.clone()),
+                    ProgramType::UInt8Pointer,
+                ));
                 temporaries.push(capture);
             } else if let CppCallArgument::Call {
                 callee,

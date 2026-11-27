@@ -136,7 +136,6 @@ pub enum ProofStep {
     },
     Enumerate,
     CloseUnreachable,
-    Contradiction(SyntaxProposition),
     Rewrite(SyntaxProposition),
     Preserve(SyntaxProposition),
     /// Substitute consecutive universal binders, preserving the residual body and guards.
@@ -533,7 +532,7 @@ impl ProofCertificate {
 
 impl ProofStep {
     pub(in crate::surface) fn ends_refuted_path(&self) -> bool {
-        matches!(self, Self::CloseUnreachable | Self::Contradiction(_))
+        matches!(self, Self::CloseUnreachable)
     }
 
     pub(super) fn from_validated_tactic(tactic: &ProofTactic) -> Self {
@@ -811,7 +810,6 @@ impl ProofStep {
             ProofTactic::IntroAs(name) => Self::IntroAs(name.clone()),
             ProofTactic::IntroBinder(name) => Self::IntroBinder(name.clone()),
             ProofTactic::Enumerate => Self::Enumerate,
-            ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
             ProofTactic::Preserve(proposition) => Self::Preserve(proposition.clone()),
             ProofTactic::Rewrite(proposition) => Self::Rewrite(proposition.clone()),
             ProofTactic::Instantiate {
@@ -1000,7 +998,6 @@ impl ProofStep {
             Self::IntroAs(name) => ProofTactic::IntroAs(name.clone()),
             Self::IntroBinder(name) => ProofTactic::IntroBinder(name.clone()),
             Self::Enumerate => ProofTactic::Enumerate,
-            Self::Contradiction(proposition) => ProofTactic::Contradiction(proposition.clone()),
             Self::Preserve(proposition) => ProofTactic::Preserve(proposition.clone()),
             Self::Rewrite(proposition) => ProofTactic::Rewrite(proposition.clone()),
             Self::Instantiate {
@@ -1243,7 +1240,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         }
         ProofStep::IntroBlock { .. } => TacticClass::Control(ControlTactic::Intro),
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
-        ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
         ProofStep::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
         ProofStep::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),

@@ -1630,6 +1630,9 @@ fn collect_condition_reads(condition: &OldConditionTerm, reads: &mut Vec<Resourc
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_reads(pointer, reads);
             }
+            for count in left.metadata_terms().chain(right.metadata_terms()) {
+                collect_bitvector_reads(count, reads);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -1680,6 +1683,17 @@ fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>
             OwnedResource::Cell {
                 pointer: load.cell().clone(),
                 bytes: crate::kernel::AccessExtent::from(crate::kernel::C_POINTER_BYTE_WIDTH),
+            },
+            ProgramPoint::viewing(load.point().shared_memory(), load.point()),
+        );
+    }
+    // A slice read's data pointer reads the slice's whole cell.
+    if let AddressBase::SliceData(load) = block {
+        push_read(
+            reads,
+            OwnedResource::Cell {
+                pointer: load.cell().clone(),
+                bytes: crate::kernel::AccessExtent::from(crate::kernel::WIDE_POINTER_BYTE_WIDTH),
             },
             ProgramPoint::viewing(load.point().shared_memory(), load.point()),
         );

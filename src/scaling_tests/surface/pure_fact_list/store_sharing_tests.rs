@@ -83,6 +83,7 @@ fn restricted_facts_keep_ambient_memory_reservations() {
         });
         crate::kernel::intern_memory(memory.clone());
         let selected = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: pointer(0),
             bytes: (OldMachineTerm::constant(4)).into(),

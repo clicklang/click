@@ -86,7 +86,7 @@ const INPUT_VARIABLE_BASE: u64 = 1 << 34;
 const INPUT_VARIABLE_CEILING: u64 = 1 << 40;
 thread_local! {
     static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
-    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::OldPointer)>> = Default::default();
+    static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::Pointer)>> = Default::default();
     static INPUT_VARIABLE_OWNERS: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize)>> = Default::default();
     static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
 }
@@ -195,7 +195,7 @@ fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickErr
 // before the function is verified. No unrelated function inputs are searched.
 pub(in crate::surface) fn input_pointer_parameter(
     scope: u64,
-    pointer: &crate::kernel::OldPointer,
+    pointer: &crate::kernel::Pointer,
 ) -> Option<usize> {
     let variable = input_pointer_identity(pointer)?;
     crate::instrumentation::record_deterministic_work(1);
@@ -206,7 +206,7 @@ pub(in crate::surface) fn input_pointer_parameter(
     })
 }
 
-fn input_pointer_identity(pointer: &crate::kernel::OldPointer) -> Option<Variable> {
+fn input_pointer_identity(pointer: &crate::kernel::Pointer) -> Option<Variable> {
     if pointer.address().base != AddressBase::ExternalArgument {
         return None;
     }
@@ -1229,6 +1229,7 @@ fn check_segment_base_loadability(
         return Ok(());
     };
     let obligation = Proposition::MemoryLoadable {
+        point: state.memory_point(),
         memory: state.memory().clone(),
         base: cell.into_pointer(),
         bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
@@ -3241,7 +3242,11 @@ fn loadable_requirement_props(
                 .map(|requirement| requirement.proposition),
         );
         reject_impossible_range_guards(&guards, assumptions)?;
-        let mut propositions = vec![memory_range_loadable_atom_prop(memory, &range)];
+        let mut propositions = vec![memory_range_loadable_atom_prop(
+            memory,
+            state.memory_point(),
+            &range,
+        )];
         propositions.extend(guards);
         return Ok(propositions);
     }
@@ -3249,6 +3254,7 @@ fn loadable_requirement_props(
     reject_impossible_range_guards(&guards, assumptions)?;
     let mut propositions = vec![Proposition::MemoryLoadable {
         memory: memory.clone(),
+        point: state.memory_point(),
         base,
         bytes: (bytes).into(),
         wide: false,
@@ -3268,7 +3274,7 @@ pub(in crate::surface) fn resource_clause_loadable_prop_at_state(
     };
     let mut propositions = ranges
         .iter()
-        .map(|range| memory_range_loadable_atom_prop(state.memory(), range))
+        .map(|range| memory_range_loadable_atom_prop(state.memory(), state.memory_point(), range))
         .collect::<Vec<_>>();
     let first = propositions
         .drain(..1)
@@ -3295,7 +3301,7 @@ pub(in crate::surface) fn resource_clause_loadable_props_at_state(
     };
     let loadable = ranges
         .iter()
-        .map(|range| memory_range_loadable_atom_prop(state.memory(), range))
+        .map(|range| memory_range_loadable_atom_prop(state.memory(), state.memory_point(), range))
         .reduce(|left, right| Proposition::And(Box::new(left), Box::new(right)))
         .expect("memory resource clause has at least one range");
     // Every stated range carries its byte-count guards, whichever clause
@@ -3376,21 +3382,24 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
 
 pub(in crate::surface) fn memory_range_loadable_prop(
     memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
     range: &MemoryRange,
 ) -> Proposition {
-    memory_range_loadable_atom_prop(memory, range)
+    memory_range_loadable_atom_prop(memory, point, range)
 }
 
 pub(in crate::surface) fn memory_range_loadable_atom_prop(
     memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
     range: &MemoryRange,
 ) -> Proposition {
     if range.wide_bounds().is_some() {
-        return range.loadable_fact(memory);
+        return range.loadable_fact(memory, point);
     }
     let (base, bytes) = range.byte_footprint();
     Proposition::MemoryLoadable {
         memory: memory.clone(),
+        point,
         base,
         bytes: (bytes).into(),
         wide: false,
@@ -3407,7 +3416,9 @@ pub(in crate::surface) fn concrete_loadable_block(
 ) -> Result<Option<(String, ConcreteMemoryRangeSeed)>, ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
-            let state = ExecutionState::new();
+            // A segment's bounds read only parameters: they are evaluated at
+            // the entry of an otherwise empty state.
+            let state = ExecutionState::new().begin_function_entry_memory();
             let source_segment = segment;
             let Ok(segment) =
                 evaluate_requirement_segment(parameter_binding, &state, source_segment)
@@ -3484,7 +3495,9 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
         .into_iter()
         .filter(|segment| !segment.is_uninitialized())
     {
-        let state = ExecutionState::new();
+        // A segment's bounds read only parameters: they are evaluated at the
+        // entry of an otherwise empty state.
+        let state = ExecutionState::new().begin_function_entry_memory();
         let source_segment = segment;
         let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
         else {
@@ -3546,7 +3559,9 @@ pub(in crate::surface) fn loadable_base_and_bytes(
 ) -> Result<(Address, OldMachineTerm, Vec<Proposition>), ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
-            let state = ExecutionState::new();
+            // A segment's bounds read only parameters: they are evaluated at
+            // the entry of an otherwise empty state.
+            let state = ExecutionState::new().begin_function_entry_memory();
             let segment = evaluate_requirement_segment(parameter_binding, &state, segment)
                 .map_err(|message| {
                     ClickError::new(format!("could not lower `viewable` segment: {message}"))

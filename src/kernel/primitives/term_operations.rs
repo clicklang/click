@@ -242,6 +242,26 @@ impl OldMachineTerm {
 }
 
 impl OldMachineTerm {
+    /// The element count of the slice `application` returns
+    /// (`design/rust-slice-values.md`, step 2b-iii-b-ii): `f(x).len()`.
+    pub(crate) fn pure_application_count(application: SharedPureApplication) -> Self {
+        Self::PureApplicationCount(application)
+    }
+
+    /// The count of the application `call` spells, as a pass that rewrites
+    /// a count's application rebuilds it: the pass rewrites the application's
+    /// call term, a `ClickFunctionApplication`, and this names the count of
+    /// the result. Interning the rewritten call is one key per argument, as
+    /// interning any application is.
+    pub(crate) fn pure_application_count_of_call(call: Self) -> Self {
+        let Self::ClickFunctionApplication { name, arguments } = call else {
+            unreachable!(
+                "internal error: a slice application's count is rewritten as its application"
+            )
+        };
+        Self::PureApplicationCount(SharedPureApplication::intern(name, arguments))
+    }
+
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
     pub(crate) fn integer_address(pointer: Address) -> Self {
@@ -366,6 +386,7 @@ impl OldMachineTerm {
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
             | Self::ClickFunctionApplication { .. }
+            | Self::PureApplicationCount(_)
             | Self::AlgebraicMatch { .. }
             | int64_constant!(_)
             | uint64_constant!(_)
@@ -3722,7 +3743,11 @@ impl OldConditionTerm {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
-            Self::PointerEqual(a, b) if a.base == b.base && a.same_provenance_as(b) => {
+            // Equal offsets are the whole equality only when nothing else
+            // in the two values differs, a wide pointer's metadata included.
+            Self::PointerEqual(a, b)
+                if a.base == b.base && a.same_provenance_as(b) && a.same_metadata_as(b) =>
+            {
                 Some((&a.offset, &b.offset))
             }
             _ => None,
@@ -3735,15 +3760,22 @@ impl OldConditionTerm {
     /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
     /// Producers whose result must match a lowered goal use it too; checking
     /// decides the reflexive comparison (`OldConditionTerm::reflexive_value`).
-    pub(crate) fn logical_pointer_equal(left: OldPointer, right: OldPointer) -> Self {
-        if left == right && !left.is_null() {
+    pub(crate) fn logical_pointer_equal(left: Pointer, right: Pointer) -> Self {
+        if left == right && !left.is_null() && !left.is_wide() {
             let address = left.address().clone();
             return Self::AddressEqual(Box::new(address.clone()), Box::new(address));
         }
         Self::pointer_equal(left, right)
     }
 
-    pub(crate) fn pointer_equal(left: OldPointer, right: OldPointer) -> Self {
+    pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
+        // A wide pointer's equality also compares its metadata
+        // (`design/rust-slice-values.md`, "Equality"), which no address
+        // equality states and a condition has no conjunction for: it stays
+        // the complete equality, whose admission merges the counts too.
+        if left.is_wide() || right.is_wide() {
+            return Self::PointerEqual(Box::new(left), Box::new(right));
+        }
         // A pointer equal to the null pointer is null: a comparison with null
         // states address equality, as `p == 0` lowers
         // (`surface::lowering::comparison_proposition`). Every producer
@@ -3792,7 +3824,7 @@ impl OldConditionTerm {
             if left.base == right.base
                 && let Self::Constant(value) =
                     Self::address_offset_equal(left.offset.clone(), right.offset.clone())
-                && !(value && matches!(left.base, AddressBase::Load(_)))
+                && !(value && matches!(left.base, AddressBase::Load(_) | AddressBase::SliceData(_)))
             {
                 return Self::Constant(value);
             }
@@ -4035,6 +4067,8 @@ impl ProgramType {
                     | ProgramType::Float64Array(_)
                     | ProgramType::PointerArray(_, _)
                     | ProgramType::VoidPointerPointer
+                    // No C callback passes a wide pointer.
+                    | ProgramType::SlicePointer(_)
                     // Click's untyped pointer is a specification type; no
                     // callback signature names it.
                     | ProgramType::Pointer => {
@@ -4151,7 +4185,15 @@ impl ProgramType {
             | Self::Float32Array(_)
             | Self::Float64Array(_) => None,
             Self::PointerArray(_, _) => None,
+            // No pointer-to-slice-pointer type exists yet.
+            Self::SlicePointer(_) => None,
         }
+    }
+
+    /// Whether this is a wide pointer type, whose values carry an element
+    /// count ([`ProgramType::SlicePointer`]).
+    pub(crate) fn is_slice_pointer(self) -> bool {
+        matches!(self, Self::SlicePointer(_))
     }
 
     /// `unsigned char *` or `signed char *` (plain `char *` is one of them).
@@ -4275,6 +4317,12 @@ impl ProgramType {
             | (Self::Float32, ProgramValue::Float32(_))
             | (Self::Float64, ProgramValue::Float64(_))
             | (Self::UInt32, ProgramValue::UInt32(_)) => true,
+            // A wide pointer is a value of its own slice pointer type only:
+            // a thin pointer is never one, and a slice pointer never
+            // converts implicitly to another type.
+            (Self::SlicePointer(_), ProgramValue::Pointer(pointer)) => {
+                pointer.is_wide() && pointer.program_type() == self
+            }
             (target, ProgramValue::Pointer(pointer)) if target.is_pointer() => {
                 pointer.is_null()
                     || (pointer.program_type().pointer_types_compatible(target)
@@ -4362,6 +4410,7 @@ impl ProgramType {
             Self::Float64Array(length) => length.saturating_mul(8),
             Self::Int128Array(length) | Self::UInt128Array(length) => length.saturating_mul(16),
             Self::PointerArray(_, length) => length.saturating_mul(C_POINTER_BYTE_WIDTH),
+            Self::SlicePointer(_) => WIDE_POINTER_BYTE_WIDTH,
         }
     }
 
@@ -4454,7 +4503,7 @@ impl ProgramValue {
         }
         Self::PointerInteger(PointerIntegerValue {
             numeric: Box::new(self),
-            pointer: Box::new(OldPointer::new(identity, ProgramType::VoidPointer)),
+            pointer: Box::new(Pointer::new(identity, ProgramType::VoidPointer)),
             kind: PointerIntegerKind::Word { changed_bits: 0 },
         })
     }
@@ -4483,7 +4532,7 @@ impl ProgramValue {
     }
 
     pub(crate) fn typed_pointer(pointer: Address, program_type: ProgramType) -> Self {
-        Self::Pointer(OldPointer::new(pointer, program_type))
+        Self::Pointer(Pointer::new(pointer, program_type))
     }
 
     pub(crate) fn retag_pointer(self, program_type: ProgramType) -> Self {
@@ -4583,6 +4632,7 @@ impl ProgramValue {
             Self::Int128(_) | Self::UInt128(_) => 16,
             Self::Float32(_) => 4,
             Self::Float64(_) => 8,
+            Self::Pointer(pointer) if pointer.is_wide() => WIDE_POINTER_BYTE_WIDTH,
             Self::Pointer(_) => C_POINTER_BYTE_WIDTH,
         }
     }
@@ -4653,21 +4703,21 @@ impl LValue {
 
     /// The lvalue reached through `pointer`, which keeps its bounds and the
     /// class of the object it designates.
-    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &OldPointer) -> Self {
-        self.provenance = Some(std::sync::Arc::new(pointer.provenance().clone()));
+    pub(in crate::kernel) fn with_bounds_of(mut self, pointer: &Pointer) -> Self {
+        self.provenance = Some(pointer.provenance().clone());
         self.array = Some(pointer.array_object().clone());
         self.object_class = pointer.object_class();
         self
     }
 
     pub(in crate::kernel) fn access_provenance(&self) -> Option<(&Address, Option<&Address>)> {
-        self.provenance.as_deref().map(|root| {
+        self.provenance.as_ref().map(|root| {
             (
                 root,
                 if self.bounds_known() {
                     None
                 } else {
-                    self.bounds_owner().map(|owner| &**owner)
+                    self.bounds_owner()
                 },
             )
         })
@@ -4704,7 +4754,7 @@ impl LValue {
         self.array.as_ref().is_some_and(ArrayObject::is_known)
     }
 
-    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&std::sync::Arc<Address>> {
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
         self.array.as_ref()?.owner()
     }
 
@@ -4751,7 +4801,7 @@ impl SharedPureApplication {
     }
 }
 
-impl OldPointer {
+impl Pointer {
     /// The word of a pointer converted from an integer, as
     /// `(word) as (T *)` writes it.
     pub(crate) fn integer_cast_word(&self) -> Option<&OldMachineTerm> {
@@ -5014,7 +5064,7 @@ impl Address {
         memory: &SharedMemory,
         site: Option<&ProgramPoint>,
         address: &Address,
-    ) -> Result<OldPointer, Self> {
+    ) -> Result<Pointer, Self> {
         let source = memory.unchanged_bytes_source();
         let canonical = crate::kernel::memory_history::canonical_value_load_memory(
             &source,
@@ -5080,6 +5130,7 @@ impl Address {
             AddressBase::ExternalArgument
                 | AddressBase::Symbolic(_)
                 | AddressBase::Load(_)
+                | AddressBase::SliceData(_)
                 | AddressBase::PureFunctionApplication(_)
         )
     }

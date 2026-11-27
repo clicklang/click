@@ -241,7 +241,7 @@ fn active_stable_borrow_requires_separation_for_local_assignment_and_alias_store
     assert_eq!(
         written,
         &Resource::Memory(MemoryRange::from_pointer_value(
-            &OldPointer::new(pointer, ProgramType::Int32Pointer),
+            &Pointer::new(pointer, ProgramType::Int32Pointer),
             0u32.into(),
             1u32.into(),
             4,
@@ -2085,6 +2085,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
 fn while_invariant_is_proof_obligation() {
     let pointer = Address::new("block".into(), AddressOffset::constant(0));
     let invariant = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: pointer,
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -3343,7 +3344,7 @@ fn loop_join_reports_the_local_and_both_object_classes() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     let pointer = |class| {
         ProgramValue::Pointer(
-            OldPointer::new(
+            Pointer::new(
                 Address::symbolic(Variable(987_001)),
                 ProgramType::Int32Pointer,
             )
@@ -3372,17 +3373,17 @@ fn loop_join_reports_the_local_and_both_object_classes() {
 fn loop_join_accepts_null_without_restoring_an_object_class() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     let node = CAccessClass::Struct(CStructClass::opaque("node"));
-    let head_pointer = OldPointer::new(
+    let head_pointer = Pointer::new(
         Address::symbolic(Variable(987_010)),
         ProgramType::Int32Pointer,
     )
     .with_object_class(Some(node));
     let head = ExecutionState::new().with_local("parent", ProgramValue::Pointer(head_pointer));
-    let unknown = OldPointer::new(
+    let unknown = Pointer::new(
         Address::symbolic(Variable(987_011)),
         ProgramType::Int32Pointer,
     );
-    let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
+    let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
         OldConditionTerm::address_equal(unknown.address().clone(), Address::null()),

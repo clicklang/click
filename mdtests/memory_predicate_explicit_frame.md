@@ -48,7 +48,7 @@ int32 set_before_terminator(
                     rewrite(index, length);
                     close();
                 }
-                contradiction(index < length);
+                close();
             } else {
                 close();
             }

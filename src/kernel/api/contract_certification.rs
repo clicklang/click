@@ -438,6 +438,7 @@ pub fn execution_state_justifies_loadability_obligation(
         }
         Proposition::MemoryReadDefined {
             memory,
+            point,
             pointer,
             value_type,
             ..
@@ -447,6 +448,7 @@ pub fn execution_state_justifies_loadability_obligation(
             }
             let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
+                point: point.clone(),
                 base: pointer.clone(),
                 bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
                 wide: false,
@@ -455,13 +457,15 @@ pub fn execution_state_justifies_loadability_obligation(
                 && assumptions
                     .clone()
                     .assume_proposition(loadable)
-                    .proves_memory_read_defined(memory, pointer, *value_type)
+                    .proves_memory_read_defined(memory, point, pointer, *value_type)
         }
         Proposition::MemoryLoadable {
             memory,
+            point,
             base,
             bytes,
             wide: false,
+            ..
         } => {
             assumptions.proves_exact(obligation)
                 || matches!(memory.load(base), ExpressionOutcome::Value(_))
@@ -481,6 +485,7 @@ pub fn execution_state_justifies_loadability_obligation(
                 }
                 || assumptions.proves_memory_loadable_for_memory_resolution(
                     memory,
+                    point,
                     base,
                     bytes.old_form(),
                 )
@@ -558,6 +563,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
         base,
         bytes,
         wide: false,
+        ..
     } = goal
     else {
         return false;
@@ -576,6 +582,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                     base: fact_base,
                     bytes: fact_bytes,
                     wide: false,
+                    ..
                 } = fact
                 else {
                     return false;
@@ -763,8 +770,9 @@ fn collect_shallow_term_variables(term: &OldMachineTerm, variables: &mut BTreeSe
                 collect_shallow_term_variables(argument, variables);
             }
         }
-        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
-        }
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
+        | OldMachineTerm::AlgebraicMatch { .. } => {}
         // The memory state may contain a large symbolic state. Only
         // variables outside nested loads can be the surrounding
         // quantified index. Variables in the loaded address belong to
@@ -942,6 +950,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                                 base: fact_base,
                                 bytes,
                                 wide: false,
+                                ..
                             } => {
                                 bytes.as_const() == Some(4)
                                     && crate::kernel::reasoning::memory_range_still_available(
@@ -1073,6 +1082,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::LoadTypeMismatch { .. } => error.kernel_summary(),
         RuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()
+        }
+        RuntimeError::ThinPointerRequired { operation } => {
+            RuntimeError::thin_pointer_required_message(operation)
         }
         RuntimeError::UnsupportedPointerSubtractionOffsets => {
             "Click does not yet support pointer subtraction with these offsets".into()
@@ -1904,7 +1916,7 @@ fn program_function_contract_entry_facts(
             assumptions = entry_facts.assume(
                 assumptions,
                 ContractEntryFactOrigin::ClauseLoadable,
-                range.loadable_fact(entry_state.memory()),
+                range.loadable_fact(entry_state.memory(), entry_state.memory_point()),
             );
             continue;
         }
@@ -1913,6 +1925,7 @@ fn program_function_contract_entry_facts(
             assumptions,
             ContractEntryFactOrigin::ClauseLoadable,
             Proposition::MemoryLoadable {
+                point: entry_state.memory_point(),
                 memory: entry_state.memory().clone(),
                 base: range
                     .base()
@@ -2943,6 +2956,12 @@ fn fresh_alpha_comparison_variable(
     crate::kernel::reasoning::collect_proposition_bound_variables(right_body, &mut reserved);
     reserved.insert(left_binder);
     reserved.insert(right_binder);
+    // A slice's count names its slice: a fresh binder's count must be fresh too.
+    let counted = reserved
+        .iter()
+        .filter_map(Variable::counted_slice)
+        .collect::<Vec<_>>();
+    reserved.extend(counted);
     KernelVariableGenerator::fresh_for(0, reserved).next()
 }
 
@@ -2965,9 +2984,13 @@ fn freshen_proposition_bodies(
             Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Address::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
+        let left_body =
+            crate::kernel::quantifiers::rename_slice_count(left_body, left_binder, fresh, sort);
+        let right_body =
+            crate::kernel::quantifiers::rename_slice_count(right_body, right_binder, fresh, sort);
         (
-            substitute_pointer_variable_in_proposition(left_body, left_binder, &pointer),
-            substitute_pointer_variable_in_proposition(right_body, right_binder, &pointer),
+            substitute_pointer_variable_in_proposition(&left_body, left_binder, &pointer),
+            substitute_pointer_variable_in_proposition(&right_body, right_binder, &pointer),
         )
     } else {
         (
@@ -3006,7 +3029,13 @@ pub(crate) fn substitute_quantified_body_capture_free(
     target: Variable,
     sort: &Sort,
 ) -> Option<Proposition> {
-    if binder != target && proposition_variables(body).contains(&target) {
+    if binder != target
+        && crate::kernel::quantifiers::binder_variables_mention(
+            &proposition_variables(body),
+            target,
+            sort,
+        )
+    {
         return None;
     }
     Some(
@@ -3023,7 +3052,8 @@ pub(crate) fn substitute_quantified_body_capture_free(
                 }
                 _ => unreachable!("pointer substitution only handles pointer sorts"),
             };
-            substitute_pointer_variable_in_proposition(body, binder, &pointer)
+            let body = crate::kernel::quantifiers::rename_slice_count(body, binder, target, sort);
+            substitute_pointer_variable_in_proposition(&body, binder, &pointer)
         } else {
             substitute_bitvector_variable_in_proposition(
                 body,
@@ -3122,12 +3152,14 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
                 base: left_base,
                 bytes: left_bytes,
                 wide: false,
+                ..
             },
             Proposition::MemoryLoadable {
                 memory: right_memory,
                 base: right_base,
                 bytes: right_bytes,
                 wide: false,
+                ..
             },
         ) => {
             canonicalize_pointer_loads(left_base) == canonicalize_pointer_loads(right_base)
@@ -3445,6 +3477,7 @@ pub(super) fn resources_certify_loadability(
         base,
         bytes,
         wide: false,
+        ..
     } = proposition
     else {
         return false;

@@ -14,7 +14,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
             )],
         },
     };
-    let pointer = OldPointer::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(1008501)),
         ProgramType::Int32Pointer,
     );
@@ -151,24 +151,34 @@ fn prepared_call_children_reuse_the_producer_only_in_the_current_session() {
     let application = SharedPureApplication::intern(
         "session_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            OldPointer::new(
+            Pointer::new(
                 Address::symbolic(Variable(1008515)),
                 ProgramType::Int32Pointer,
             ),
         ))],
     );
+    // Preparing imports the arguments, which charges; reusing the prepared
+    // arguments charges nothing. A written pointer's payload is its own
+    // handle, so both sessions read one root; each prepares it itself.
+    let prepare = || {
+        crate::instrumentation::measure_deterministic_work(|| {
+            application.common_argument(0).unwrap()
+        })
+    };
     let first = {
         let _session = crate::kernel::VerificationSession::enter();
-        let first = application.common_argument(0).unwrap();
-        assert_eq!(application.common_argument(0).as_ref(), Some(&first));
+        let (first, work) = prepare();
+        assert!(work > 0);
+        assert_eq!(prepare(), (first.clone(), 0));
         first
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let second = application.common_argument(0).unwrap();
-    assert_ne!(
-        first, second,
+    let (second, work) = prepare();
+    assert!(
+        work > 0,
         "fresh sessions must prepare their own pointer payloads"
     );
+    assert_eq!(prepare(), (second.clone(), 0));
     assert!(
         first
             .pointer_payload()
@@ -183,7 +193,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
     let application = SharedPureApplication::intern(
         "thread_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            OldPointer::new(
+            Pointer::new(
                 Address::symbolic(Variable(1008517)),
                 ProgramType::Int32Pointer,
             ),
@@ -197,11 +207,17 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
         }
         let _session = crate::kernel::VerificationSession::enter();
         assert_eq!(crate::kernel::verification_session_generation(), generation);
-        application.common_argument(0).unwrap()
+        // The other thread prepares its own arguments (preparing charges);
+        // the written pointer's payload is one handle, so the roots agree.
+        let (other, work) = crate::instrumentation::measure_deterministic_work(|| {
+            application.common_argument(0).unwrap()
+        });
+        assert!(work > 0, "another thread prepares its own pointer payload");
+        other
     })
     .join()
     .unwrap();
-    assert_ne!(first, other);
+    assert_eq!(first, other);
     assert!(
         first
             .pointer_payload()
@@ -228,10 +244,11 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let machine = import.machine_call(MachineIntegerType::Int32, &first);
     let boolean = import.boolean_call(&first);
     let integer = import.integer(&IntegerTerm::PureFunctionApplication(first.clone()).into());
-    let pointer = SharedPointer::import(&OldPointer::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(1008520)),
         ProgramType::Int32Pointer,
-    ));
+    )
+    .into_shared();
     let pointer = import.pointer_call(&first, vec![None], pointer);
     let KernelTermNode::PointerCall {
         call: pointer_call, ..
@@ -281,10 +298,9 @@ fn a_null_array_argument_is_formed_at_no_state() {
     let other =
         crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new().with_block("local:x", 8));
     let pointer = |address: Address| {
-        KernelTerm::shared_pointer_value(SharedPointer::import(&OldPointer::new(
-            address,
-            ProgramType::Int32Pointer,
-        )))
+        KernelTerm::shared_pointer_value(
+            Pointer::new(address, ProgramType::Int32Pointer).into_shared(),
+        )
     };
     let array = |point: &crate::kernel::ProgramPoint, pointer: &KernelTerm| {
         KernelTerm::shared_array_reference(point.clone(), pointer.clone(), ProgramType::Int32)

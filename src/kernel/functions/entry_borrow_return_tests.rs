@@ -131,6 +131,7 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
         })],
     )]);
     let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: Some(state.observation_point_id().unwrap()),
         memory: state.memory().clone(),
         pointer: pointer.clone(),
@@ -155,6 +156,7 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
     )
     .unwrap();
     assert!(memory_only_facts.contains(&Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: caller.memory().clone(),
         pointer: pointer.clone(),

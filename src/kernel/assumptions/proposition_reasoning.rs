@@ -361,27 +361,34 @@ impl PureFactContext {
         match proposition {
             Proposition::MemoryReadDefined {
                 memory,
+                point,
                 pointer,
                 value_type,
                 ..
-            } => self.proves_memory_read_defined(memory, pointer, *value_type),
+            } => self.proves_memory_read_defined(memory, point, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: true,
-            } => self.proves_native_memory_loadable(memory, base, bytes.old_form()),
+                ..
+            } => self.proves_native_memory_loadable(memory, point, base, bytes.old_form()),
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: false,
-            } => self.proves_memory_loadable(memory, base, bytes.old_form()),
+                ..
+            } => self.proves_memory_loadable(memory, point, base, bytes.old_form()),
             Proposition::MemoryCanStore {
                 memory,
+                point,
                 pointer,
                 byte_width,
-            } => self.proves_memory_access(memory, pointer, *byte_width),
+                ..
+            } => self.proves_memory_access(memory, point, pointer, *byte_width),
             Proposition::ResourceSeparate { left, right } => {
                 self.proves_resource_separate(left, right)
             }
@@ -573,23 +580,28 @@ impl PureFactContext {
             },
             Proposition::MemoryReadDefined {
                 memory,
+                point,
                 pointer,
                 value_type,
                 ..
-            } => self.proves_memory_read_defined(memory, pointer, *value_type),
+            } => self.proves_memory_read_defined(memory, point, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: true,
-            } => self.proves_native_memory_loadable(memory, base, bytes.old_form()),
+                ..
+            } => self.proves_native_memory_loadable(memory, point, base, bytes.old_form()),
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide: false,
+                ..
             } => {
-                self.proves_memory_loadable(memory, base, bytes.old_form())
+                self.proves_memory_loadable(memory, point, base, bytes.old_form())
                     // Loadability survives writes: an assumed loadable fact
                     // for the same range transports across any chain of
                     // recorded effects connecting the states. Its
@@ -604,6 +616,7 @@ impl PureFactContext {
                             base: fact_base,
                             bytes: fact_bytes,
                             wide: false,
+                            ..
                         } = fact
                         else {
                             return false;
@@ -637,14 +650,16 @@ impl PureFactContext {
                     || {
                         let simplified = self.simplify_bitvector_under_assumptions(bytes.old_form());
                         simplified != *bytes.old_form()
-                            && self.proves_memory_loadable(memory, base, &simplified)
+                            && self.proves_memory_loadable(memory, point, base, &simplified)
                     }
             }
             Proposition::MemoryCanStore {
                 memory,
+                point,
                 pointer,
                 byte_width,
-            } => self.proves_memory_access(memory, pointer, *byte_width),
+                ..
+            } => self.proves_memory_access(memory, point, pointer, *byte_width),
             Proposition::ResourceSeparate { left, right } => {
                 (self.prop_facts.contains(proposition)
                     && !self.resource_separation_conflicts_with_equalities(left, right))
@@ -4285,8 +4300,7 @@ impl PureFactContext {
                 OldConditionTerm::PointerEqual(fact_left, fact_right),
                 OldConditionTerm::PointerEqual(target_left, target_right),
             ) => {
-                let same = |fact: &crate::kernel::OldPointer,
-                            target: &crate::kernel::OldPointer| {
+                let same = |fact: &crate::kernel::Pointer, target: &crate::kernel::Pointer| {
                     fact == target
                         || fact.program_type() == target.program_type()
                             && self.pointer_provenance_match(fact, target)

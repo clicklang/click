@@ -27,7 +27,7 @@ theorem disequality(a: Integer, b: Integer) {
     ensures a != b by {
         if a == b {
             have false by { close() using { a < b; a == b; }; }
-            contradiction();
+            close();
         } else {
             close();
         }

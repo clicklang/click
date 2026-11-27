@@ -135,7 +135,7 @@ struct rb_node* rb_left_of(struct rb_node* node) {
     ensures ctx_holds(Context::Top, sub.model) == 1;
 } by {
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, node_parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             step_until(function.exit);

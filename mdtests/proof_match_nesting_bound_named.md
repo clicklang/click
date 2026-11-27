@@ -47,40 +47,40 @@ int32 read_one(struct cell* a) {
     ensures t.model == old(t.model);
 } by {
     match t.model {
-        Maybe::None => { contradiction(t.model == Maybe::None); },
+        Maybe::None => { close(); },
         Maybe::Some(v0) => {
             match t.model {
-                Maybe::None => { contradiction(t.model == Maybe::None); },
+                Maybe::None => { close(); },
                 Maybe::Some(v1) => {
                     match t.model {
-                        Maybe::None => { contradiction(t.model == Maybe::None); },
+                        Maybe::None => { close(); },
                         Maybe::Some(v2) => {
                             match t.model {
-                                Maybe::None => { contradiction(t.model == Maybe::None); },
+                                Maybe::None => { close(); },
                                 Maybe::Some(v3) => {
                                     match t.model {
-                                        Maybe::None => { contradiction(t.model == Maybe::None); },
+                                        Maybe::None => { close(); },
                                         Maybe::Some(v4) => {
                                             match t.model {
-                                                Maybe::None => { contradiction(t.model == Maybe::None); },
+                                                Maybe::None => { close(); },
                                                 Maybe::Some(v5) => {
                                                     match t.model {
-                                                        Maybe::None => { contradiction(t.model == Maybe::None); },
+                                                        Maybe::None => { close(); },
                                                         Maybe::Some(v6) => {
                                                             match t.model {
-                                                                Maybe::None => { contradiction(t.model == Maybe::None); },
+                                                                Maybe::None => { close(); },
                                                                 Maybe::Some(v7) => {
                                                                     match t.model {
-                                                                        Maybe::None => { contradiction(t.model == Maybe::None); },
+                                                                        Maybe::None => { close(); },
                                                                         Maybe::Some(v8) => {
                                                                             match t.model {
-                                                                                Maybe::None => { contradiction(t.model == Maybe::None); },
+                                                                                Maybe::None => { close(); },
                                                                                 Maybe::Some(v9) => {
                                                                                     match t.model {
-                                                                                        Maybe::None => { contradiction(t.model == Maybe::None); },
+                                                                                        Maybe::None => { close(); },
                                                                                         Maybe::Some(v10) => {
                                                                                             match t.model {
-                                                                                                Maybe::None => { contradiction(t.model == Maybe::None); },
+                                                                                                Maybe::None => { close(); },
                                                                                                 Maybe::Some(v11) => {
                                                                                                     unfold(t);
                                                                                                     step_until(function.exit);

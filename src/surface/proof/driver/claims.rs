@@ -983,7 +983,7 @@ fn prove_claims_by_checked_tactics(
     let frontier = ExecutionFrontier::default();
     let mut recorded_states =
         RecordedStates::new().with_source_layout(constants.source_layout.clone());
-    if !entry_separation_sources.facts.is_empty()
+    if (!entry_separation_sources.facts.is_empty() || !entry_separation_sources.ranges.is_empty())
         && let Some(point) = state.observation_point_id()
     {
         recorded_states.entry_separation_sources = Some((point, entry_separation_sources));

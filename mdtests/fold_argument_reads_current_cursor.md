@@ -41,7 +41,7 @@ struct cell* adopt(struct cell* p, struct cell* q) {
     ensures b.model == old(a.model);
 } by {
     match a.model {
-        Maybe::None => { contradiction(a.model == Maybe::None); },
+        Maybe::None => { close(); },
         Maybe::Some(value) => {
             unfold(a);
             step();

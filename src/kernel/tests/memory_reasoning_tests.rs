@@ -77,12 +77,14 @@ fn loadability_coverage_refuses_a_wrapped_byte_end() {
         AddressOffset::variable(Variable(9_300_000)),
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.clone(),
         bytes: (OldMachineTerm::constant(0x4000_0000)).into(),
         wide: false,
     });
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: base.offset_by_bytes(0x4000_0001),
         bytes: (OldMachineTerm::constant(0xc000_0000)).into(),
@@ -103,12 +105,14 @@ fn loadability_coverage_refuses_a_negative_signed_additive_shift() {
     );
     let count = OldMachineTerm::Variable(Variable(9_300_004));
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.clone(),
         bytes: (OldMachineTerm::add(count.clone(), OldMachineTerm::constant(1))).into(),
         wide: false,
     });
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base,
         bytes: (OldMachineTerm::add(count, OldMachineTerm::constant(0x8000_0000))).into(),
@@ -128,12 +132,14 @@ fn loadability_coverage_compares_wide_concrete_spans_exactly() {
         AddressOffset::variable(Variable(9_300_001)),
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.clone(),
         bytes: (OldMachineTerm::constant(u32::MAX)).into(),
         wide: false,
     });
     let covered = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.offset_by_bytes(0x8000_0000),
         bytes: (OldMachineTerm::constant(1)).into(),
@@ -145,6 +151,7 @@ fn loadability_coverage_compares_wide_concrete_spans_exactly() {
     ));
 
     let beyond = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: base.offset_by_bytes(0x8000_0000),
         bytes: (OldMachineTerm::constant(0x8000_0000)).into(),
@@ -164,12 +171,14 @@ fn loadability_coverage_refuses_a_wrapped_pointer_displacement() {
         AddressOffset::variable(Variable(9_300_002)),
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: base.clone(),
         bytes: (OldMachineTerm::constant(100)).into(),
         wide: false,
     });
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: base.offset_by_int32_elements(OldMachineTerm::constant(0x4000_0001)),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -745,6 +754,8 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
         .assume_condition(OldConditionTerm::equal(i.clone(), j.clone()), false);
     let assumptions = explicit_signed_elements(base, ProgramType::UInt8, i, j, assumptions);
     let effect = Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.clone(),
         writes: vec![(written, crate::kernel::AccessExtent::from(1))],
@@ -878,6 +889,8 @@ fn mutable_frame_proves_unwritten_load_equal_across_stack_locals() {
             true,
         )
         .assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: loop_entry_memory,
             after: loop_exit_memory.clone(),
             writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
@@ -917,11 +930,15 @@ fn mutable_frame_transports_load_across_certified_effect_chain() {
     let after = middle.clone().store(second_write.clone(), int32(2));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before.clone(),
             after: middle.clone(),
             writes: vec![(first_write, crate::kernel::AccessExtent::from(4))],
         })
         .assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: middle,
             after: after.clone(),
             writes: vec![(second_write, crate::kernel::AccessExtent::from(4))],
@@ -954,6 +971,7 @@ fn loadability_transports_across_long_certified_effect_chain() {
     let before = SymbolicMemory::new();
     let mut after = before.clone();
     let mut assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: before,
         base: loadable.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -962,6 +980,8 @@ fn loadability_transports_across_long_certified_effect_chain() {
     for value in 0..12 {
         let next = after.clone().store(written.clone(), int32(value));
         assumptions = assumptions.assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: after,
             after: next.clone(),
             writes: vec![(written.clone(), crate::kernel::AccessExtent::from(4))],
@@ -972,6 +992,7 @@ fn loadability_transports_across_long_certified_effect_chain() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: after,
             base: loadable,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -1290,7 +1311,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
     let resource_at = |memory: SymbolicMemory| Resource::Composite {
         name: "tree".to_string(),
         arguments: vec![
-            ProgramValue::Pointer(OldPointer::from_read(
+            ProgramValue::Pointer(Pointer::from_read(
                 Address::new(
                     AddressBase::ExternalArgument,
                     AddressOffset::scale_int32(
@@ -1430,6 +1451,7 @@ fn memory_loadable_candidates_ignore_unrelated_address_bases() {
     let memory = SymbolicMemory::new();
     let target = Address::new("indexed-viewable-target".into(), AddressOffset::constant(0));
     let mut assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: target.clone(),
         bytes: (OldMachineTerm::constant(8)).into(),
@@ -1437,6 +1459,7 @@ fn memory_loadable_candidates_ignore_unrelated_address_bases() {
     });
     for index in 0..128 {
         assumptions = assumptions.assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: Address::new(
                 format!("indexed-viewable-unrelated-{index}").into(),
@@ -1451,6 +1474,7 @@ fn memory_loadable_candidates_ignore_unrelated_address_bases() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: target,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -1580,6 +1604,8 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
             ))),
         })
         .assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before_memory.clone(),
             after: after_memory.clone(),
             writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
@@ -1643,6 +1669,8 @@ fn disjoint_ranges_frame_metadata_across_symbolic_index_store() {
             ))),
         })
         .assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before_memory.clone(),
             after: after_memory.clone(),
             writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
@@ -1731,6 +1759,8 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
             ))),
         })
         .assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: execution_memory.clone(),
             after: after_memory.clone(),
             writes: vec![(written_cell.clone(), crate::kernel::AccessExtent::from(4))],
@@ -1742,6 +1772,8 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         &owner_data_cell,
         ProgramType::Int32,
         &[Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: base_memory.clone(),
             after: execution_memory.clone(),
             writes: vec![(
@@ -1825,7 +1857,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
     }
     apply_law(
         crate::kernel::prove_separation_subrange(
-            OldPointer::new(execution_data.clone(), ProgramType::Int32Pointer),
+            Pointer::new(execution_data.clone(), ProgramType::Int32Pointer),
             4,
             MachineIntegerType::Int32,
             0u32.into(),
@@ -1884,6 +1916,8 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         &metadata_cell,
         ProgramType::Int32,
         &[Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: execution_memory.clone(),
             after: after_memory.clone(),
             writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
@@ -1952,6 +1986,8 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
             ))),
         })
         .assume_proposition(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before,
             after: after.clone(),
             writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
@@ -2041,13 +2077,13 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
         Box::new(field.clone()),
         crate::kernel::LoadKind::Bits64,
     );
-    let pointer = OldPointer::from_read(
+    let pointer = Pointer::from_read(
         Address::from_integer_address(bits),
         ProgramType::VoidPointer,
         &before,
         &field,
     );
-    let parent = OldPointer::new(
+    let parent = Pointer::new(
         Address::symbolic(Variable(9_889_501)),
         ProgramType::VoidPointer,
     );
@@ -3866,7 +3902,7 @@ fn a_store_to_a_local_is_not_framed_away_for_an_unresolved_pointer() {
         .without_possible_aliasing_cells(&q, crate::kernel::C_POINTER_BYTE_WIDTH, &bare)
         .store(
             q.clone(),
-            ProgramValue::Pointer(OldPointer::new(symbolic.clone(), ProgramType::Int32Pointer)),
+            ProgramValue::Pointer(Pointer::new(symbolic.clone(), ProgramType::Int32Pointer)),
         );
     let after_store = after_binding
         .clone()
@@ -5513,6 +5549,7 @@ fn quantified_load_witness_does_not_certify_loadability_in_a_freed_state() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: live,
             base: cell.clone(),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -5522,6 +5559,7 @@ fn quantified_load_witness_does_not_certify_loadability_in_a_freed_state() {
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: freed,
             base: cell,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -5567,6 +5605,7 @@ fn freed_external_allocation_is_not_still_available() {
     ));
 
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: live.clone(),
         base: base.clone(),
         bytes: (OldMachineTerm::constant(8)).into(),
@@ -5575,6 +5614,7 @@ fn freed_external_allocation_is_not_still_available() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: live,
             base: base.clone(),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -5584,6 +5624,7 @@ fn freed_external_allocation_is_not_still_available() {
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: freed,
             base,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -5847,6 +5888,7 @@ mod wrapped_assumed_span_is_refused {
         let count_term = OldMachineTerm::Variable(count);
         let mut assumptions = PureFactContext::new()
             .assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: array_base(0),
                 bytes: (OldMachineTerm::multiply(count_term.clone(), OldMachineTerm::constant(4)))
@@ -5882,6 +5924,7 @@ mod wrapped_assumed_span_is_refused {
         let range_base = array_base(0);
         let range_bytes = OldMachineTerm::constant(16);
         let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: range_base.clone(),
             bytes: (range_bytes.clone()).into(),
@@ -5958,12 +6001,12 @@ mod wrapped_assumed_span_is_refused {
         for bounded in [false, true] {
             let (memory, assumptions) = context(count, bounded);
             assert_eq!(
-                assumptions.proves_memory_access(&memory, &array_base(0), 4),
+                assumptions.proves_memory_access(&memory, &Default::default(), &array_base(0), 4),
                 bounded,
                 "a cell inside `v[0..n]` needs the range's span bound (bounded: {bounded})"
             );
             assert_eq!(
-                assumptions.proves_memory_access(&memory, &array_base(4), 4),
+                assumptions.proves_memory_access(&memory, &Default::default(), &array_base(4), 4),
                 bounded,
                 "so does a later cell (bounded: {bounded})"
             );
@@ -5980,6 +6023,7 @@ mod wrapped_assumed_span_is_refused {
             assert_eq!(
                 assumptions.proves_memory_loadable_for_memory_resolution(
                     &memory,
+                    &Default::default(),
                     &array_base(4),
                     &OldMachineTerm::constant(4),
                 ),
@@ -6019,6 +6063,7 @@ mod wrapped_assumed_span_is_refused {
     fn a_constant_wrapped_span_needs_no_facts_to_refuse() {
         let memory = SymbolicMemory::new();
         let wrapped = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: array_base(0),
             bytes: (OldMachineTerm::multiply(
@@ -6031,10 +6076,11 @@ mod wrapped_assumed_span_is_refused {
         // `1 << 30` four-byte elements scale to `0` bytes: the fact is true
         // and covers nothing, so no cell comes out of it.
         assert!(
-            !wrapped.proves_memory_access(&memory, &array_base(0), 4),
+            !wrapped.proves_memory_access(&memory, &Default::default(), &array_base(0), 4),
             "a constant wrapped span yields no cell"
         );
         let widest = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: array_base(0),
             bytes: (OldMachineTerm::multiply(
@@ -6045,7 +6091,7 @@ mod wrapped_assumed_span_is_refused {
             wide: false,
         });
         assert!(
-            widest.proves_memory_access(&memory, &array_base(0), 4),
+            widest.proves_memory_access(&memory, &Default::default(), &array_base(0), 4),
             "one element fewer is the widest span that fits, and it still works"
         );
     }
@@ -6058,6 +6104,7 @@ mod wrapped_assumed_span_is_refused {
         let memory = SymbolicMemory::new();
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: array_base(0),
                 bytes: (OldMachineTerm::Variable(count)).into(),
@@ -6071,7 +6118,7 @@ mod wrapped_assumed_span_is_refused {
                 true,
             );
         assert!(
-            assumptions.proves_memory_access(&memory, &array_base(1), 1),
+            assumptions.proves_memory_access(&memory, &Default::default(), &array_base(1), 1),
             "a one-byte element range is its own byte count"
         );
     }
@@ -6090,6 +6137,7 @@ mod stated_range_guard_derivation {
 
     fn int32_range_loadable(count: OldMachineTerm) -> Proposition {
         Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: Address::new("arg-memory".into(), AddressOffset::constant(0)),
             bytes: (OldMachineTerm::multiply(count, OldMachineTerm::constant(4))).into(),
@@ -6238,6 +6286,7 @@ mod stated_range_guard_derivation {
     fn a_byte_range_carries_its_count_bound() {
         let count = OldMachineTerm::Variable(Variable(9_200_020));
         let range = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: Address::new("arg-memory".into(), AddressOffset::constant(0)),
             bytes: (count.clone()).into(),
@@ -6257,6 +6306,7 @@ mod stated_range_guard_derivation {
     #[test]
     fn an_unscaled_span_carries_nothing() {
         let cell = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: Address::new("arg-memory".into(), AddressOffset::constant(0)),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -6804,6 +6854,8 @@ fn wide_effect_does_not_frame_an_overlapping_narrow_load() {
     let before = SymbolicMemory::new();
     let after = before.clone().store(write.clone(), int64(0));
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.clone(),
         writes: vec![(write, crate::kernel::AccessExtent::from(8))],
@@ -7263,6 +7315,7 @@ fn a_byte_range_narrows_by_its_endpoints() {
     let k = OldMachineTerm::Variable(Variable(9_310_002));
     let held = PureFactContext::new()
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: (n.clone()).into(),
@@ -7276,8 +7329,8 @@ fn a_byte_range_narrows_by_its_endpoints() {
         OldConditionTerm::signed_less_equal(k.clone(), n.clone()),
         true,
     );
-    assert!(bounded.proves_memory_loadable(&memory, &base, &k));
-    assert!(!held.proves_memory_loadable(&memory, &base, &k));
+    assert!(bounded.proves_memory_loadable(&memory, &Default::default(), &base, &k));
+    assert!(!held.proves_memory_loadable(&memory, &Default::default(), &base, &k));
 }
 
 mod loadable_span_graph_tests {
@@ -7298,6 +7351,7 @@ mod loadable_span_graph_tests {
         let range_bytes = span(var(9_320_001));
         let goal_bytes = span(var(9_320_002));
         let fact = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: (range_bytes.clone()).into(),
@@ -7309,13 +7363,28 @@ mod loadable_span_graph_tests {
         let _scope = branch.enter_id_scope();
 
         PureFactContext::reset_bitvector_equality_index_fact_visits();
-        assert!(branch.proves_memory_loadable_for_memory_resolution(&memory, &base, &goal_bytes));
+        assert!(branch.proves_memory_loadable_for_memory_resolution(
+            &memory,
+            &Default::default(),
+            &base,
+            &goal_bytes
+        ));
         assert!(branch.proves_loadable_region_from_range(&base, &range_bytes, &base, &goal_bytes));
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-        assert!(!parent.proves_memory_loadable_for_memory_resolution(&memory, &base, &goal_bytes));
+        assert!(!parent.proves_memory_loadable_for_memory_resolution(
+            &memory,
+            &Default::default(),
+            &base,
+            &goal_bytes
+        ));
         assert!(!parent.proves_loadable_region_from_range(&base, &range_bytes, &base, &goal_bytes));
         let other = Address::symbolic(Variable(9_320_003));
-        assert!(!branch.proves_memory_loadable_for_memory_resolution(&memory, &other, &goal_bytes));
+        assert!(!branch.proves_memory_loadable_for_memory_resolution(
+            &memory,
+            &Default::default(),
+            &other,
+            &goal_bytes
+        ));
     }
 
     #[cfg(test)]
@@ -8260,6 +8329,7 @@ fn loadability_coverage_ignores_other_blocks() {
             let memory = SymbolicMemory::new();
             let base = Address::new("coverage-target".into(), AddressOffset::constant(0));
             let goal = Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: base.clone(),
                 bytes: (OldMachineTerm::constant(16)).into(),
@@ -8267,6 +8337,7 @@ fn loadability_coverage_ignores_other_blocks() {
             };
             let mut assumptions =
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: base.clone(),
                     bytes: (OldMachineTerm::constant(8)).into(),
@@ -8274,6 +8345,7 @@ fn loadability_coverage_ignores_other_blocks() {
                 });
             for index in 0..unrelated {
                 assumptions = assumptions.assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: Address::new(
                         format!("coverage-unrelated-{index}").into(),

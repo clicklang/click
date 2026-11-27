@@ -512,6 +512,7 @@ fn dynamic_body_fact_dependency(
                 memory,
                 pointer,
                 value_type,
+                ..
             } => {
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
@@ -549,14 +550,18 @@ fn dynamic_body_fact_dependency(
                 binder,
                 selected,
             ),
-            Proposition::HeapAllocationFreed { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.bytes().clone().into()),
-                state,
-                assumptions,
-                temporary_views,
-                binder,
-                selected,
-            ),
+            Proposition::HeapAllocationFreed { blocks, .. } => {
+                blocks.iter().try_for_each(|(_, bytes)| {
+                    walk_term(
+                        &Term::Bitvector32(bytes.bytes().clone().into()),
+                        state,
+                        assumptions,
+                        temporary_views,
+                        binder,
+                        selected,
+                    )
+                })
+            }
             Proposition::MemoryCanStore { .. }
             | Proposition::MemoryMutatesOnly { .. }
             | Proposition::MemoryEffectSummary { .. }
@@ -2068,7 +2073,11 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
             .memory_view_range()
             .or_else(|| lowered.memory_own_range())
         {
-            let kernel = memory_range_loadable_atom_prop(fact_state.memory(), range);
+            let kernel = memory_range_loadable_atom_prop(
+                fact_state.memory(),
+                fact_state.memory_point(),
+                range,
+            );
             surface_propositions
                 .record_lowering(
                     &SyntaxProposition::Loadable {
@@ -2707,7 +2716,7 @@ pub(super) fn append_lowered_resource_clause_loadable_fact(
     else {
         return;
     };
-    let proposition = memory_range_loadable_prop(state.memory(), range);
+    let proposition = memory_range_loadable_prop(state.memory(), state.memory_point(), range);
     if !propositions.contains(&proposition) {
         propositions.push(proposition);
     }
@@ -3613,7 +3622,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             .memory_view_range()
             .or_else(|| lowered.memory_own_range())
         {
-            available_pure_facts.insert(memory_range_loadable_prop(state.memory(), range));
+            available_pure_facts.insert(memory_range_loadable_prop(
+                state.memory(),
+                state.memory_point(),
+                range,
+            ));
         }
     }
 
@@ -5787,6 +5800,7 @@ void child_release(struct child* obj) {
                 .is_some()
         );
         let fact = Proposition::MemoryReadDefined {
+            point: observed.memory_point(),
             at: None,
             memory: observed.memory().clone(),
             pointer: range.base().offset_by_bytes(4),
@@ -5890,6 +5904,7 @@ void child_release(struct child* obj) {
         let no_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
         let dependency_at = |at| {
             let fact = Proposition::MemoryReadDefined {
+                point: earlier.memory_point(),
                 at,
                 memory: earlier.memory().clone(),
                 pointer: Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
@@ -5942,6 +5957,7 @@ void child_release(struct child* obj) {
                     Box::new(Proposition::MemoryReadDefined {
                         at: None,
                         memory: memory.clone(),
+                        point: Default::default(),
                         pointer: Address::new(
                             AddressBase::ExternalArgument,
                             AddressOffset::int32_scaled(
@@ -6040,6 +6056,7 @@ void child_release(struct child* obj) {
             Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
+                point: Default::default(),
                 pointer: pointer.clone(),
                 value_type: crate::kernel::ProgramType::Int32,
             }
@@ -6505,6 +6522,7 @@ mod guarded_unmatched_materialization_tests {
             checked
                 .added_facts
                 .contains(&Proposition::MemoryReadDefined {
+                    point: Default::default(),
                     at: Some(point),
                     memory: after.memory().clone(),
                     pointer,
@@ -6568,6 +6586,7 @@ mod guarded_unmatched_materialization_tests {
                     memory,
                     pointer: address,
                     value_type: ProgramType::Int32,
+                    ..
                 } if address == &pointer => Some((*at, memory)),
                 _ => None,
             })
@@ -6650,6 +6669,7 @@ mod guarded_unmatched_materialization_tests {
             .into_iter()
             .fold(assumptions.clone(), PureFactContext::assume_proposition);
         let published = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: Some(point),
             memory: before.memory().clone(),
             pointer: pointer.clone(),

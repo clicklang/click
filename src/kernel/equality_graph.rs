@@ -80,9 +80,13 @@ mod pointer_call_tests;
 #[cfg(test)]
 mod scaled_int32_tests;
 #[cfg(test)]
+mod slice_application_tests;
+#[cfg(test)]
 mod storage_tests;
 #[cfg(test)]
 mod uint64_tests;
+#[cfg(test)]
+mod wide_pointer_tests;
 mod wide_sources;
 pub(in crate::kernel) use evidence::scalar_evidence_pair;
 pub(in crate::kernel) use inputs::InputKey;
@@ -785,11 +789,7 @@ impl EqualityGraph {
 
     /// Retain the complete value supplied by the selected typed read producer.
     /// The equality and its memo invalidation stay local to this branch.
-    pub(in crate::kernel) fn add_checked_pointer_equality(
-        &self,
-        left: &OldPointer,
-        right: &OldPointer,
-    ) {
+    pub(in crate::kernel) fn add_checked_pointer_equality(&self, left: &Pointer, right: &Pointer) {
         self.add_checked_read_equality(left.address(), right.address());
         let mut state = self.state.lock().expect("equality graph");
         state.remember_input(inputs::Input::Pointer(left.clone(), right.clone()));
@@ -852,6 +852,7 @@ impl EqualityGraph {
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
         let mut stored_values = Vec::new();
+        let mut stored_slices = Vec::new();
         let mut read_domains = Vec::new();
         while let Some(value) = pending.pop() {
             let direct_read = value.as_loaded_value();
@@ -903,6 +904,30 @@ impl EqualityGraph {
                         pending.push(stored.address().clone());
                         definitions.push((read.clone(), stored.address().clone()));
                         stored_values.push((read, stored));
+                    }
+                }
+            }
+            // A slice read equals the slice its state stores in the whole
+            // cell, data pointer and count (`design/rust-slice-values.md`,
+            // step 2b-ii-b): the same producer metadata, one indexed lookup.
+            if self.resolve_stored_values
+                && let AddressBase::SliceData(load) = &value.base
+            {
+                let read = value.with_offset(AddressOffset::constant(0));
+                if !state.logical_values.contains(&read) {
+                    state.logical_values = state.logical_values.with_value(read.clone());
+                    drop(reads);
+                    let stored = crate::kernel::eval::stored_slice_of_load(load);
+                    reads = self.logical_reads.lock().expect("logical pointer reads");
+                    if let Some(stored) = stored {
+                        let slice = Pointer::slice_read(
+                            load.point().clone(),
+                            load.cell(),
+                            stored.program_type(),
+                        );
+                        pending.push(stored.address().clone());
+                        definitions.push((read, stored.address().clone()));
+                        stored_slices.push((slice, stored));
                     }
                 }
             }
@@ -1000,7 +1025,10 @@ impl EqualityGraph {
         for (read, stored) in stored_values {
             state
                 .terms
-                .add_pointer_equality(&OldPointer::new(read, stored.program_type()), &stored);
+                .add_pointer_equality(&Pointer::new(read, stored.program_type()), &stored);
+        }
+        for (read, stored) in stored_slices {
+            state.terms.add_pointer_equality(&read, &stored);
         }
         state.close(definitions);
     }
@@ -1630,7 +1658,7 @@ impl EqualityGraph {
         equal
     }
 
-    pub(in crate::kernel) fn pointer_value_representative(&self, value: &OldPointer) -> OldPointer {
+    pub(in crate::kernel) fn pointer_value_representative(&self, value: &Pointer) -> Pointer {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, value.pointers());
         state.register_blocks(value.pointers().map(|p| p.base.clone()));
@@ -1638,11 +1666,7 @@ impl EqualityGraph {
         state.terms.pointer_value_representative(value)
     }
 
-    pub(in crate::kernel) fn add_pointer_equality(
-        &mut self,
-        left: &OldPointer,
-        right: &OldPointer,
-    ) {
+    pub(in crate::kernel) fn add_pointer_equality(&mut self, left: &Pointer, right: &Pointer) {
         self.add_equality(left.address(), right.address());
         if left.address().base == right.address().base {
             self.add_offset_equality(&left.address().offset, &right.address().offset);
@@ -2325,6 +2349,17 @@ impl EqualityGraph {
                 state.register_pointer_address(a.address());
                 state.register_pointer_address(b.address());
                 state.close(Vec::new());
+                // A wide pointer's count is a machine operand: the addresses
+                // it reads are registered as a bitvector condition's are.
+                // Nothing is visited for a thin pair.
+                if a.is_wide() || b.is_wide() {
+                    self.register_expression_operands(
+                        state,
+                        a.metadata_terms().chain(b.metadata_terms()),
+                        [],
+                        [],
+                    );
+                }
             }
             OldConditionTerm::AddressEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
@@ -3402,7 +3437,7 @@ mod tests {
         let cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let read = || {
             let point = crate::kernel::ProgramPoint::starting_at(&memory).for_exact_read();
-            OldPointer::from_point_read(point, crate::kernel::ProgramType::Int32Pointer, &cell)
+            Pointer::from_point_read(point, crate::kernel::ProgramType::Int32Pointer, &cell)
         };
         let left = read();
         let right = read();
@@ -3421,7 +3456,7 @@ mod tests {
 
     #[test]
     fn pointer_fact_search_uses_admission_order_across_allocations_and_rebuilds() {
-        let domain = crate::kernel::OldPointer::new(
+        let domain = crate::kernel::Pointer::new(
             Address::symbolic(Variable(985_000)),
             crate::kernel::ProgramType::Int32Pointer,
         );
@@ -3976,7 +4011,7 @@ mod tests {
         );
         assert_eq!(definition.defining_address, p);
         assert_eq!(definition.defining_memory.arena_id(), memory.arena_id());
-        let byte_view = OldPointer::new(from_p.clone(), ProgramType::Int32Pointer)
+        let byte_view = Pointer::new(from_p.clone(), ProgramType::Int32Pointer)
             .with_type(ProgramType::UInt8Pointer);
         assert_eq!(byte_view.address(), &from_p);
         let displaced = from_p.offset_by_bytes(8);

@@ -5,7 +5,7 @@ use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 #[test]
 fn separation_names_loaded_pointer_fields_at_their_declared_type() {
-    use crate::kernel::{MemoryRange, OldPointer, Resource};
+    use crate::kernel::{MemoryRange, Pointer, Resource};
     for scalar in ["uint8", "uint16", "int32", "uint64"] {
         let _session = crate::kernel::VerificationSession::enter();
         let function = syntax::parse_function(&format!(
@@ -30,7 +30,7 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
             );
         let range = |pointer| {
             Resource::Memory(MemoryRange::from_pointer_value(
-                &OldPointer::new(pointer, ProgramType::UInt8Pointer),
+                &Pointer::new(pointer, ProgramType::UInt8Pointer),
                 OldMachineTerm::constant(0),
                 OldMachineTerm::constant(4),
                 1,
@@ -57,9 +57,9 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
 
 #[test]
 fn separate_round_trips_without_generating_span_obligations() {
-    use crate::kernel::{MemoryRange, OldPointer, Resource};
+    use crate::kernel::{MemoryRange, Pointer, Resource};
     for wide in [false, true] {
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(997001)),
             ProgramType::Int32Pointer,
         );
@@ -260,11 +260,11 @@ fn an_integer_converted_pointer_is_spelled_as_its_conversion() {
     );
     let fact = Proposition::condition_is(
         OldConditionTerm::pointer_equal(
-            crate::kernel::OldPointer::new(
+            crate::kernel::Pointer::new(
                 Address::from_integer_address(masked),
                 ProgramType::Int32Pointer,
             ),
-            crate::kernel::OldPointer::new(other, ProgramType::Int32Pointer),
+            crate::kernel::Pointer::new(other, ProgramType::Int32Pointer),
         ),
         true,
     );
@@ -569,6 +569,7 @@ fn definedness_round_trips_at_distinct_points_after_unfold_names_a_cell() {
             ExpressionOutcome::Value(_)
         ));
         let fact = Proposition::MemoryReadDefined {
+            point: Default::default(),
             at: Some(point),
             memory: checked.state.memory().clone(),
             pointer: pointer.clone(),
@@ -915,6 +916,7 @@ fn external_byte_range_caller() -> (
 fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
     let (parameters, arguments, state) = external_byte_range_caller();
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: match &arguments[0] {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
@@ -961,6 +963,7 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
     };
     arguments[0] = ProgramExpression::Variable("bytes".into());
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base,
         bytes: (OldMachineTerm::add(
@@ -993,6 +996,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
     ));
     arguments.push(arguments[0].clone());
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: match &arguments[0] {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
@@ -1044,6 +1048,7 @@ fn external_byte_range_requirement(binder: Variable, length: &OldMachineTerm) ->
                 )),
             )),
             Box::new(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: SymbolicMemory::new(),
                 base: Address::new(
                     AddressBase::ExternalArgument,
@@ -1118,6 +1123,7 @@ fn external_symbolic_element_requirement_term(
     index: OldMachineTerm,
 ) -> Proposition {
     Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: Address::new(
             AddressBase::ExternalArgument,
@@ -1407,6 +1413,7 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
 
     let wrong_base = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: Address::new(
             AddressBase::ExternalArgument,
@@ -1570,6 +1577,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
         .with_local("elements", pointer)
         .with_local("start", start);
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: Address::new(
             AddressBase::Concrete("local:elements".into()),
@@ -1723,6 +1731,7 @@ fn external_element_range_requirement(
     end: OldMachineTerm,
 ) -> Proposition {
     Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: Address::new(
             AddressBase::ExternalArgument,
@@ -5480,13 +5489,11 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
-    use crate::kernel::{
-        AddressBase, KernelTerm, KernelTermImport, OldPointer, PureFunctionArgument, SharedPointer,
-    };
+    use crate::kernel::{AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument};
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
     let file = parser::parse(declarations).unwrap();
-    let input = ProgramValue::Pointer(OldPointer::new(
+    let input = ProgramValue::Pointer(Pointer::new(
         Address::symbolic(Variable(1025900)),
         ProgramType::Int32Pointer,
     ));
@@ -5535,8 +5542,8 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         };
         // Reconstruct the same nested common roots that the producer test
         // checks, keeping inner calls as children rather than exporting them.
-        fn common(pointer: &OldPointer) -> KernelTerm {
-            let value = SharedPointer::import(pointer);
+        fn common(pointer: &Pointer) -> KernelTerm {
+            let value = pointer.shared().clone();
             let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
             };
@@ -5603,7 +5610,7 @@ fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
 
 #[test]
 fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
-    use crate::kernel::{IntegerTerm, OldPointer};
+    use crate::kernel::{IntegerTerm, Pointer};
     for (format, name) in [
         (MachineIntegerType::Int64, "load<int64>"),
         (MachineIntegerType::UInt64, "load<uint64>"),
@@ -5615,7 +5622,7 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
             .with_memory(memory.clone())
             .with_local(
                 "p",
-                ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::UInt64Pointer)),
+                ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::UInt64Pointer)),
             );
         let read = crate::kernel::canonical_form_of_load(
             crate::kernel::intern_memory(memory),
@@ -7118,7 +7125,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
 #[test]
 fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::OldPointer::new(
+    let pointer = crate::kernel::Pointer::new(
         Address::symbolic(Variable(1008590)),
         ProgramType::Int32Pointer,
     );
@@ -7437,13 +7444,13 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
 
 #[test]
 fn shared_pointer_comparisons_preserve_native_spelling() {
-    use crate::kernel::{KernelTermImport, OldPointer};
+    use crate::kernel::{KernelTermImport, Pointer};
     let _session = crate::kernel::VerificationSession::enter();
-    let left = OldPointer::new(
+    let left = Pointer::new(
         Address::symbolic(Variable(999988)),
         ProgramType::Int32Pointer,
     );
-    let right = OldPointer::new(
+    let right = Pointer::new(
         Address::symbolic(Variable(999989)),
         ProgramType::Int32Pointer,
     );
@@ -9147,9 +9154,9 @@ fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
 
 #[test]
 fn a_reflexive_pointer_equality_raises_as_contract_equality_that_lowers_back() {
-    use crate::kernel::OldPointer;
+    use crate::kernel::Pointer;
     let _session = crate::kernel::VerificationSession::enter();
-    let node = OldPointer::new(
+    let node = Pointer::new(
         Address::symbolic(Variable(999977)),
         ProgramType::Int32Pointer,
     );
@@ -9401,7 +9408,7 @@ fn recorded_volatile_read_slots_retain_the_producer_value() {
 #[test]
 fn identical_word_comparisons_keep_their_comparison_through_lowering() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::OldPointer::new(
+    let pointer = crate::kernel::Pointer::new(
         Address::symbolic(Variable(999_962)),
         ProgramType::Int32Pointer,
     );
@@ -10361,4 +10368,27 @@ fn guarded_algebraic_matches_on_written_constructors_round_trip() {
             "{text}\nlowered: {actual:?}"
         );
     }
+}
+
+/// A slice application's count has no Surface form until the Surface slice
+/// type arrives (`design/rust-slice-values.md`, step 2b-iii-c): raising it
+/// refuses with an internal error rather than spelling an integer
+/// application of the same name or any placeholder.
+#[test]
+#[should_panic(expected = "raising a slice application's count to Surface has no form yet")]
+fn raising_a_slice_application_count_refuses() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let count =
+        OldMachineTerm::pure_application_count(crate::kernel::SharedPureApplication::intern(
+            "bytes_of".into(),
+            vec![crate::kernel::PureFunctionArgument::Value(
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(977_990))),
+            )],
+        ));
+    let _ = synthesize_surface_bitvector(
+        &count,
+        ParameterBinding::default(),
+        &ExecutionState::new(),
+        &BTreeMap::new(),
+    );
 }

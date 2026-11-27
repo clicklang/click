@@ -836,15 +836,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let kernel = equality.clone();
-            // A fact recorded at a statement's entry is spelled there; its
-            // unanchored form denotes the same fact where the proof stands
-            // when nothing it names has changed since, which lowering and
-            // the checked rewrite decide. Offer the unanchored form first.
+            // An anchored premise may read a different value after its
+            // selector is removed. A retained source pair can still cite
+            // the historical fact without that selector in memory, where
+            // a reparsed rewrite would lower the unanchored read afresh.
             if let Some(unanchored) = unanchored_equality(&surface)
-                && let Ok(lowered) =
-                    search_input.lower_surface_proposition(&unanchored, "`solve` rewrite equality")
+                && search_input
+                    .lower_proposition_spelling(&unanchored)
+                    .is_ok_and(|lowered| lowered == kernel)
             {
-                candidates.push(forms(lowered, unanchored));
+                candidates.push(forms(kernel.clone(), unanchored));
             }
             candidates.push(forms(kernel, surface));
         }
@@ -1447,9 +1448,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // A split may revisit a guard already established by the caller.
         // Its impossible arm needs only the explicit conflicting guard.
         if let Some(guard) = taken.last()
-            && let Ok(closed) = search_input
-                .driver()
-                .apply_step(search_input.refutation_step(guard.clone()))
+            && let Ok(closed) = Self::close_refuted_fact(search_input, guard)
         {
             return Ok(Some(closed));
         }
@@ -1500,9 +1499,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         differs = differs.driver().apply_step(ProofStep::Known)?;
                     }
                     let branch = differs.join()?;
-                    branch
-                        .driver()
-                        .apply_step(branch.refutation_step(refutation.fact.clone()))
+                    Self::close_refuted_fact(&branch, &refutation.fact)
                 })();
                 if let Some(closed) =
                     attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged)
@@ -1519,10 +1516,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let checked = search_input
                     .driver()
                     .apply_step(have(refutation.differs.clone(), steps))
-                    .and_then(|next| {
-                        next.driver()
-                            .apply_step(next.refutation_step(refutation.fact.clone()))
-                    });
+                    .and_then(|next| Self::close_refuted_fact(&next, &refutation.fact));
                 Ok(attempt::candidate_outcome(checked)?.filter(Proof::focused_discharged))
             }
             DefinitionPlan::Split {

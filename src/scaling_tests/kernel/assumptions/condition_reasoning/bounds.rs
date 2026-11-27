@@ -252,6 +252,7 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
             Proposition::Implies(
                 Box::new(guard),
                 Box::new(Proposition::MemoryReadDefined {
+                    point: Default::default(),
                     at: None,
                     memory: SymbolicMemory::new(),
                     pointer: Address::symbolic(Variable(9_200_101)).offset_by_elements(index, 4),

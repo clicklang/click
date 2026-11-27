@@ -44,11 +44,11 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("node"),
     );
-    let from = OldPointer::new(
+    let from = Pointer::new(
         Address::symbolic(Variable(970_001)),
         ProgramType::Int32Pointer,
     );
-    let to = OldPointer::new(
+    let to = Pointer::new(
         Address::symbolic(Variable(970_002)),
         ProgramType::Int32Pointer,
     );
@@ -956,6 +956,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
             );
         }
         let atom = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.as_ref().clone(),
             base: Address::new(
                 AddressBase::Concrete("array".into()),
@@ -1174,7 +1175,7 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
         );
     }
     let memory = crate::kernel::intern_memory(memory);
-    let from = OldPointer::new(
+    let from = Pointer::new(
         Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
         ProgramType::Int32Pointer,
     );
@@ -1195,7 +1196,7 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     }
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 0..count {
-            let to = OldPointer::new(
+            let to = Pointer::new(
                 Address::symbolic(Variable(997_000 + index)),
                 ProgramType::Int32Pointer,
             );
@@ -1245,7 +1246,7 @@ fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
 
 fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let to = OldPointer::new(
+    let to = Pointer::new(
         Address::symbolic(Variable(997_500)),
         ProgramType::Int32PointerPointer,
     );
@@ -1260,7 +1261,7 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
     let memory = memory.store(to.address().clone(), stored.clone());
     let inputs = (0..count)
         .map(|index| {
-            let from = OldPointer::new(
+            let from = Pointer::new(
                 Address::symbolic(Variable(999_500 + index)),
                 ProgramType::Int32PointerPointer,
             );

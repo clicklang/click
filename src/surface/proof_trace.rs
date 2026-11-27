@@ -1599,6 +1599,7 @@ mod tests {
 
     fn loadable_at(memory: SymbolicMemory) -> Proposition {
         Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
             bytes: (OldMachineTerm::constant(1)).into(),

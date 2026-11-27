@@ -1785,7 +1785,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires x == x;
             ensures not (x != x and x == x) by {
                 if x != x and x == x {
-                    contradiction(x == x);
+                    close();
                 } else {
                     close();
                 }
@@ -1812,7 +1812,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires not (x != x);
             ensures x != x implies x == 0 by {
                 intro() {
-                    contradiction(x != x);
+                    close();
                 }
             }
         }
@@ -1821,7 +1821,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires x == 0;
             requires not (x == 0);
             ensures x == 1 by {
-                contradiction(x == 0);
+                close();
             }
         }
 
@@ -1829,7 +1829,7 @@ fn verifies_explicit_structural_logic_tactics() {
             requires x < y;
             requires not (x < y);
             ensures x == 0 by {
-                contradiction(x < y);
+                close();
             }
         }
     "#;
@@ -2461,14 +2461,14 @@ theorem false_guard(x: int32) {
             .expect("expected false-guard certificate")
             .as_slice(),
         [ProofTactic::IntroBlock { binder: None, body }]
-            if matches!(body.as_slice(), [ProofTactic::Contradiction(_)])
+            if matches!(body.as_slice(), [ProofTactic::Known])
     ));
     verify_click_theorems(
         r#"
 theorem false_guard(x: int32) {
     ensures 1 == 2 implies x == 0 by {
         intro() {
-            contradiction(0u32 == 1u32);
+            close();
         }
     }
 }
@@ -4492,7 +4492,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm, OldPointer, ProgramType,
+        Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm, Pointer, ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
@@ -4502,7 +4502,7 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
         AddressOffset::constant(0),
     );
     let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
-        OldPointer::new(base.clone(), ProgramType::Int32Pointer),
+        Pointer::new(base.clone(), ProgramType::Int32Pointer),
     ))];
     for (low, high, width, expected) in [
         (0, 2, 4, "{p->head, p->inner.a}"),

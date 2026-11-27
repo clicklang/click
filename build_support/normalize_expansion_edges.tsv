@@ -45,7 +45,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_typed_atomic_
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	CompatibilityNormalize	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::prepare_integer_read_domain	CompatibilityNormalize	1
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	CompatibilityNormalize	1
-src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_index_disequality_from_order	CompatibilityNormalize	1
 src/surface/proof/source_context.rs	mixed	SourceContext::admits_leaf	CompatibilityNormalize	2
 src/surface/proof/source_context.rs	mixed	SourceContext::admits_leaf	Normalize	2
 src/surface/proof/source_context.rs	mixed	SourceContext::admits_leaf	NormalizeUsing	2

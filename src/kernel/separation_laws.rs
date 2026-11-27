@@ -5,7 +5,7 @@ use super::prelude::*;
 /// Distinct indices of one typed array describe disjoint complete elements.
 /// Pointer offsets use exact scaled coordinates, not modular byte arithmetic.
 pub(crate) fn prove_separation_elements(
-    base: OldPointer,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     i: OldMachineTerm,
@@ -53,7 +53,7 @@ pub(crate) fn prove_separation_elements(
 /// scaled offsets the same way), and the premise is the index disequality in
 /// the index format.
 pub(crate) fn prove_separation_distinct_elements(
-    base: OldPointer,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     i: OldMachineTerm,
@@ -122,7 +122,7 @@ pub(crate) fn prove_separation_restrict(
 /// A nested element interval denotes a contained resource. Both ranges are
 /// constructed with one base and width; no facts or memory are inspected.
 pub(crate) fn prove_separation_subrange(
-    base: OldPointer,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: OldMachineTerm,
@@ -175,7 +175,7 @@ pub(crate) fn prove_separation_subrange(
 /// Adjacent ordered intervals are disjoint and cover their concatenation. Exact coordinates avoid
 /// endpoint subtraction and wrapping; the constructor inspects no proof state.
 pub(crate) fn prove_separation_adjacent_ranges(
-    base: OldPointer,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: OldMachineTerm,
@@ -235,7 +235,7 @@ pub(crate) fn prove_separation_adjacent_ranges(
 /// ordered bounds make the subtraction exact in both admitted formats.
 /// This constructs descriptors; it neither grants ownership nor reads facts.
 pub(crate) fn prove_separation_rebase(
-    base: OldPointer,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: OldMachineTerm,
@@ -264,7 +264,7 @@ pub(crate) fn prove_separation_rebase(
             base.address()
                 .offset_by_typed_elements(lo.clone(), width, wide, wide),
         );
-    let range = |pointer: &OldPointer, start, end| {
+    let range = |pointer: &Pointer, start, end| {
         if wide {
             MemoryRange::from_pointer_value_wide(pointer, start, end, width)
         } else {
@@ -300,7 +300,7 @@ pub(crate) fn prove_separation_rebase(
 /// An explicitly bounded index denotes one complete element of its interval.
 /// Offset construction is exact; no wrapping `i + 1` endpoint is introduced.
 pub(crate) fn prove_separation_contains_element(
-    base: OldPointer,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: OldMachineTerm,
@@ -394,11 +394,16 @@ pub(crate) fn prove_resource_law(name: &str, args: &[Resource]) -> Option<Theore
 
 /// Viewability is a pure state-indexed fact, not resource ownership. SymbolicMemory
 /// descriptors use the existing atom so both Surface spellings coincide.
-pub(crate) fn resource_viewable(memory: &SymbolicMemory, resource: Resource) -> Proposition {
+pub(crate) fn resource_viewable(
+    memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
+    resource: Resource,
+) -> Proposition {
     match resource {
-        Resource::Memory(range) => range.loadable_fact(memory),
+        Resource::Memory(range) => range.loadable_fact(memory, point),
         resource => Proposition::ResourceViewable {
             memory: memory.clone(),
+            point,
             resource: Box::new(resource),
         },
     }
@@ -406,18 +411,19 @@ pub(crate) fn resource_viewable(memory: &SymbolicMemory, resource: Resource) -> 
 
 pub(crate) fn prove_viewable_restrict(
     memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
     parent: Resource,
     child: Resource,
 ) -> Theorem {
     crate::instrumentation::record_deterministic_work(1);
     Theorem::new(Proposition::Implies(
-        Box::new(resource_viewable(memory, parent.clone())),
+        Box::new(resource_viewable(memory, point.clone(), parent.clone())),
         Box::new(Proposition::Implies(
             Box::new(Proposition::ResourceContains {
                 parent: Box::new(parent),
                 child: Box::new(child.clone()),
             }),
-            Box::new(resource_viewable(memory, child)),
+            Box::new(resource_viewable(memory, point, child)),
         )),
     ))
 }
@@ -436,7 +442,9 @@ pub(crate) fn observe_memory_view(state: &ExecutionState, range: &MemoryRange) -
     {
         return None;
     }
-    Some(Theorem::new(range.loadable_fact(state.memory())))
+    Some(Theorem::new(
+        range.loadable_fact(state.memory(), state.memory_point()),
+    ))
 }
 
 #[cfg(test)]

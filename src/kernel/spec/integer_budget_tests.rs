@@ -262,6 +262,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         destination: MachineIntegerType::Int32,
     };
     let integer_address_requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: Address::new(
             AddressBase::Concrete("array".into()),
@@ -297,6 +298,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     ));
 
     let c_address_requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: Address::new(
             AddressBase::Concrete("array".into()),
@@ -340,6 +342,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         crate::kernel::LoadKind::Int32,
     );
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: Address::new(
             AddressBase::Concrete("array".into()),
@@ -365,6 +368,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     ));
 
     let direct_requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: Address::new(
             AddressBase::Concrete("array".into()),
@@ -413,6 +417,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         crate::kernel::LoadKind::Int32,
     );
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: Address::new(
             AddressBase::Concrete("array".into()),
@@ -467,6 +472,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         true,
     );
     let loadable = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -522,6 +528,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let retained_state = drop_verified_load_definition_conjuncts(Proposition::And(
         Box::new(tampered_state),
         Box::new(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -548,6 +555,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let retained_unknown = drop_verified_load_definition_conjuncts(Proposition::And(
         Box::new(unknown_definition),
         Box::new(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.as_ref().clone(),
             base: pointer,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -566,9 +574,10 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
     );
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
         exact: false,
     });
@@ -604,9 +613,10 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
             pointer.clone(),
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         ))),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
         exact: false,
     });
@@ -681,6 +691,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     };
     let exact = defining(registered_memory.clone(), registered_pointer.clone(), load);
     let loadable = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -774,9 +785,10 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     );
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(missing_pointer.clone(), ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            missing_pointer.clone(),
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
         exact: false,
     }));
@@ -824,15 +836,13 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
 fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     let item = Variable(71_103);
     let pointer = SpecExpression::PointerOffset {
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(
-                Address::new(
-                    AddressBase::Symbolic(Variable(71_104)),
-                    AddressOffset::constant(0),
-                ),
-                ProgramType::Int32Pointer,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            Address::new(
+                AddressBase::Symbolic(Variable(71_104)),
+                AddressOffset::constant(0),
             ),
-        ))),
+            ProgramType::Int32Pointer,
+        )))),
         elements: Box::new(SpecExpression::Value(ProgramValue::Int32(
             OldMachineTerm::Variable(item),
         ))),

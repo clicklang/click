@@ -97,7 +97,7 @@ fn lower_recorded_input(state: &ExecutionState) -> (SpecExpression, usize) {
         BTreeSet::new(),
         BTreeMap::new(),
     );
-    lowerer.capture_referenced_names = Some(BTreeSet::from(["input".into()]));
+    lowerer.capture_referenced_names = Some(Arc::new(BTreeSet::from(["input".into()])));
     // Build the retained environment once; measure only selected-point lookup
     // and lowering, not the fixture's initial context construction.
     crate::instrumentation::measure_deterministic_work(|| {

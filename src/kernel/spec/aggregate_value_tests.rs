@@ -305,6 +305,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
     assert!(paths[0].obligations.is_empty());
     assert!(!PureFactContext::new().proves_memory_read_defined(
         ended.memory(),
+        &Default::default(),
         &pointee,
         ProgramType::Int32,
     ));

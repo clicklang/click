@@ -54,6 +54,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     };
     let target = external(31_070);
     let loadable = |base| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base,
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -231,7 +232,7 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         let stored = subobject_pointer(0, 0, 4);
         let memory =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
-        let read = OldPointer::from_read(
+        let read = Pointer::from_read(
             stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(&memory),

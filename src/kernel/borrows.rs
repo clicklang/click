@@ -651,7 +651,10 @@ impl BorrowBindings {
 /// another block, so an unproved separation from it is not a conflict, as for
 /// any symbolic view (docs/internals/stable-views.md, "Footprints").
 fn ledger_interval_nodes(range: &MemoryRange) -> Option<Vec<ResourceMemoryIntervalNode>> {
-    if matches!(range.base().base, AddressBase::Load(_)) {
+    if matches!(
+        range.base().base,
+        AddressBase::Load(_) | AddressBase::SliceData(_)
+    ) {
         return None;
     }
     memory_interval_nodes(range)

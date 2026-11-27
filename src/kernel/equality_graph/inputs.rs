@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(super) enum Input {
-    Pointer(OldPointer, OldPointer),
+    Pointer(Pointer, Pointer),
     PointerReadValue(Address, Address),
     Address(Address, Address),
     Offset(AddressOffset, AddressOffset),

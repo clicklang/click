@@ -138,7 +138,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(state.phase, SizedInsertContextDoubleFarPhase::After(g, p, above, pv, gv, far));
                 unfold(sized_context_double_far_pending(SizedInsertContextDoubleFarPhase::After(g, p, above, pv, gv, far))); close();
             }
-            contradiction(sized_context_double_far_pending(state.phase) == 1);
+            close();
         },
         SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far) => {
             let { tree: tree, link: link } = unfold(state);

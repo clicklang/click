@@ -29,7 +29,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         rewrite(if parent == 0 { 1 } else { 0 }, 0);
                         close();
                     }
-                    contradiction(ctx_node_is(Context::Top, parent) == 1);
+                    close();
                 }
             }
             unfold(before);
@@ -57,7 +57,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         rewrite(if parent == identity { 1 } else { 0 }, 0);
                         close();
                     }
-                    contradiction(ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) == 1);
+                    close();
                 }
             }
             let { sibling: sibling, up: outer } = unfold(before);
@@ -100,7 +100,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         rewrite(if parent == identity { 1 } else { 0 }, 0);
                         close();
                     }
-                    contradiction(ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) == 1);
+                    close();
                 }
             }
             let { sibling: sibling, up: outer } = unfold(before);
@@ -113,7 +113,7 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     have parent->rb_left != old by {
                         if parent->rb_left == old {
                             have old == 0 by { rewrite(old, parent->rb_left); close(); }
-                            contradiction(old != 0);
+                            close();
                         } else { close(); }
                     }
                     let sibling = fold(rb_at(0), { model: RbTree::Empty });
@@ -242,7 +242,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 close() using { not(old->__rb_parent_color == 0); not(old->__rb_parent_color == 1); };
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0); close(); }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     rewrite(old->__rb_parent_color, 1); close();
@@ -287,7 +287,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0); close(); }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
@@ -332,7 +332,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                                 close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by { rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0); close(); }
-                            contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
+                            close();
                         }
                     }
                     close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };

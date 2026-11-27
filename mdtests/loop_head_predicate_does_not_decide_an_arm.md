@@ -7,8 +7,7 @@ loop head does not evaluate `list_nonempty_or_null` at each constructor to
 look for a contradiction. Here there is none to find anyway: the function is
 `1` at both constructors, at `Nil` because the pointer is null and at `Cons`
 because the head is this node. The `Nil` arm stays possible, so the body's
-proof `match` cannot close it by `contradiction`, and the loop refuses with
-the arm rule's own diagnostic.
+proof `match` cannot establish `false` in that arm.
 
 ```c filename=loop_head_predicate_does_not_decide_an_arm.c
 struct cell {
@@ -76,7 +75,7 @@ void bump_n(struct cell* node, int32 n) {
         initialize by close();
         maintain by {
             match l.model {
-                CellList::Nil => { contradiction(l.model == CellList::Nil); },
+                CellList::Nil => { have false by close(); close(); },
                 CellList::Cons(identity, value, tail_model) => {
                     let { tail: t } = unfold(l);
                     have list_nonempty_or_null(CellList::Cons(node, 7, tail_model), node) == 1 by {
@@ -97,5 +96,5 @@ void bump_n(struct cell* node, int32 n) {
 ```
 
 ```expect
-fail: constructor-arm `contradiction` requires an exact fact and its negation in that arm
+fail: could not establish `false`
 ```

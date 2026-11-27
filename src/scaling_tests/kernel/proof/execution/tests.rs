@@ -278,6 +278,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
             )
         });
         let view = |memory, index| Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: Address::new("body".into(), AddressOffset::constant(i64::from(index) * 4)),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -318,6 +319,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
         let context = returned_proposition_context(&state);
         for pointer in pointers {
             let fact = Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: pointer,
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -890,16 +892,17 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
-    use crate::kernel::{OldConditionTerm, OldPointer, SpecPoint};
+    use crate::kernel::{OldConditionTerm, Pointer, SpecPoint};
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Address::symbolic(Variable(951_000));
     let alias = Address::symbolic(Variable(951_001));
     let value = OldMachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            OldPointer::new(alias.clone(), ProgramType::UInt64Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            alias.clone(),
+            ProgramType::UInt64Pointer,
+        )))),
         value_type: ProgramType::UInt64,
         exact: false,
     };
@@ -978,6 +981,7 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
     use crate::kernel::{Address, SymbolicMemory};
     let memory = SymbolicMemory::new();
     let readable = |memory: SymbolicMemory, block: String, width| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: Address::new(block.into(), AddressOffset::constant(0)),
         bytes: (OldMachineTerm::constant(width)).into(),

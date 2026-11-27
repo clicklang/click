@@ -125,7 +125,13 @@ impl<'a> SpecNode<'a> {
                 | SpecExpression::NarrowArithmetic(body, _)
                 | SpecExpression::Cast(body, _)
                 | SpecExpression::PointerCoercion(body, _)
+                | SpecExpression::SliceLength(body)
+                | SpecExpression::SliceData(body)
                 | SpecExpression::LoopEntryState(body) => visit(N::Expression(body)),
+                SpecExpression::SliceFromRawParts { data, count } => {
+                    visit(N::Expression(data));
+                    visit(N::Expression(count));
+                }
                 SpecExpression::If {
                     condition,
                     then_branch,

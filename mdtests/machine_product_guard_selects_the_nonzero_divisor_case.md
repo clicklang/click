@@ -5,7 +5,7 @@ theorem bridge(left: uint32, right: uint32) {
     requires right != 0u32;
     ensures to_integer(left) <= to_integer(4294967295u32 / right) by {
         cases {
-            right == 0u32 => { contradiction(right == 0u32); }
+            right == 0u32 => { close(); }
             to_integer(left) <= to_integer(4294967295u32 / right) => { close(); }
         }
     }

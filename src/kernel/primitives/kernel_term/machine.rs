@@ -779,7 +779,10 @@ impl KernelTermImport {
             },
             // Unrecognized untyped intrinsics, wrong-sort float inputs and
             // read/address descriptors not admitted above keep exact payloads.
+            // A slice application's count is an opaque `usize` leaf keyed by
+            // its application, so it keeps its exact payload too.
             Old::PureFunctionApplication { .. }
+            | Old::PureApplicationCount(_)
             | Old::MemoryLoad(..)
             | Old::IntegerAddress(..)
             | Old::Float32Negate(_)

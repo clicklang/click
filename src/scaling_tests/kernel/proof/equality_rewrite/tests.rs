@@ -512,6 +512,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let memory = SymbolicMemory::new().with_block("offset-view-rewrite", 8);
     let span = OldMachineTerm::Variable(Variable(192_922));
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: Address::new(
             AddressBase::ExternalArgument,
@@ -581,6 +582,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
     let memory = SymbolicMemory::new().with_block("pointer-view-rewrite", 8);
     let span = OldMachineTerm::Variable(Variable(192_912));
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: source,
         bytes: (span.clone()).into(),
@@ -608,6 +610,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
             base,
             bytes,
             wide: false,
+            ..
         } = rewritten.proposition()
         else {
             panic!("viewability changed kind")
@@ -630,8 +633,8 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
     let target = Address::symbolic(Variable(921));
     let cited = Proposition::condition_is(
         OldConditionTerm::PointerEqual(
-            Box::new(OldPointer::new(source.clone(), ProgramType::Int32Pointer)),
-            Box::new(OldPointer::new(target.clone(), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(target.clone(), ProgramType::Int32Pointer)),
         ),
         true,
     );

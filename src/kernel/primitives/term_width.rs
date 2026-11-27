@@ -56,7 +56,10 @@ impl CarrierWidth {
             LoadKind::Int8 | LoadKind::UInt8 => Self::Bits8,
             LoadKind::Int16 | LoadKind::UInt16 => Self::Bits16,
             LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => Self::Bits32,
-            LoadKind::Bits64 | LoadKind::Algebraic(_) | LoadKind::Float64 => Self::Bits64,
+            LoadKind::Bits64
+            | LoadKind::Algebraic(_)
+            | LoadKind::Float64
+            | LoadKind::SliceCount => Self::Bits64,
             LoadKind::Int128 | LoadKind::UInt128 => Self::Bits128,
         }
     }
@@ -262,7 +265,8 @@ pub(crate) fn term_width(term: &OldMachineTerm) -> WidthResult {
     note_width_read();
     use CarrierWidth::{Bits32, Bits64};
     match term {
-        T::ThreadHandle(_) => Ok(Some(Bits64)),
+        // A slice application's count is a `usize`.
+        T::ThreadHandle(_) | T::PureApplicationCount(_) => Ok(Some(Bits64)),
         bits32_constant!(_) => Ok(Some(Bits32)),
         int64_constant!(_) | uint64_constant!(_) => Ok(Some(Bits64)),
         native_constant!(format, _) => Ok(Some(match format.format().bits() {
@@ -408,7 +412,7 @@ pub(crate) fn root_width(term: &OldMachineTerm) -> Option<CarrierWidth> {
     note_width_read();
     use CarrierWidth::{Bits32, Bits64};
     Some(match term {
-        T::ThreadHandle(_) => Bits64,
+        T::ThreadHandle(_) | T::PureApplicationCount(_) => Bits64,
         bits32_constant!(_) => Bits32,
         int64_constant!(_) | uint64_constant!(_) => Bits64,
         native_constant!(format, _) => CarrierWidth::of_bits(format.format().bits()),

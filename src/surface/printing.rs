@@ -282,13 +282,10 @@ fn machine_arithmetic(
         return Some("int64");
     }
     // Surface addition/subtraction may be pointer arithmetic. A typed
-    // literal nested inside it does not determine the result type:
-    // `a + (i + 1u64)` can be a pointer. Preserve its source semantics;
-    // generated C arithmetic still receives the machine barrier below.
-    if !retained_state
-        && comparison.is_none()
-        && matches!(inner, SyntaxTerm::Add(..) | SyntaxTerm::Subtract(..))
-    {
+    // literal nested inside it does not determine the result type, even
+    // under a state selector: `at(mark, p + 1u64)` can be a pointer.
+    // Generated C arithmetic still receives the machine barrier below.
+    if comparison.is_none() && matches!(inner, SyntaxTerm::Add(..) | SyntaxTerm::Subtract(..)) {
         return None;
     }
     fn c_arithmetic(expression: &ProgramExpression) -> bool {
@@ -1351,16 +1348,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
-        ProofTactic::Contradiction(SyntaxProposition::Value(value))
-            if bool_literal_value(value) == Some(false) =>
-        {
-            line(output, &prefix, "contradiction();")
-        }
-        ProofTactic::Contradiction(fact) => line(
-            output,
-            &prefix,
-            &format!("contradiction({});", source_click_proposition(fact)),
-        ),
         ProofTactic::SolveUsing(solve) => {
             write_using_premises(output, "close()", &solve.premises, indent)
         }
@@ -1940,6 +1927,38 @@ mod tests {
             // and reparses to itself.
             let again = requirement(&context(&source_click_proposition(&reparsed)));
             assert_eq!(again, reparsed, "{rendered}");
+        }
+    }
+
+    #[test]
+    fn recorded_pointer_arithmetic_expands_and_replays() {
+        let c = [("pointer.c", "int32 same_byte(uint8 *p) { return 0; }")];
+        for (left, right) in [
+            ("at(second, &p[1])", "at(first, p + 1u64)"),
+            ("at(second, p + 1u64)", "old(p + 1u64)"),
+        ] {
+            let source = format!(
+                r#"verifying "pointer.c";
+                int32 same_byte(uint8* p) {{
+                    requires viewable(p[0u64..2u64]);
+                    ensures result == 0;
+                }} by {{
+                    mark first;
+                    mark second;
+                    have {left} == {right} by close();
+                    step();
+                    close();
+                }}"#
+            );
+            let label = "same_byte.contract";
+            let expanded =
+                super::super::expansion::expand_c_claim_source_by_label(&source, &c, label)
+                    .unwrap_or_else(|error| panic!("{}", error.report()));
+            assert!(!expanded.contains("as uint64"), "{expanded}");
+            super::super::check_audit_claim(label, true, || {
+                verify_c_sources(&expanded, &c).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
         }
     }
 

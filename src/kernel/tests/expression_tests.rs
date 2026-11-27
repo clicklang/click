@@ -9,11 +9,10 @@ use crate::kernel::{constant_u32, int32_constant};
 fn pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(989_900));
-    let value = OldPointer::new(pointer.clone(), ProgramType::Int32Pointer);
-    let bounded = value.clone().with_bounds(Some(SubobjectBounds {
-        start: pointer,
-        width: 4u32.into(),
-    }));
+    let value = Pointer::new(pointer.clone(), ProgramType::Int32Pointer);
+    let bounded = value
+        .clone()
+        .with_bounds(Some(SubobjectBounds::new(pointer, 4u32.into())));
     let empty = PureFactContext::new();
     let facts = empty.assume_condition(
         OldConditionTerm::PointerEqual(Box::new(value.clone()), Box::new(bounded)),
@@ -1628,8 +1627,8 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
     let left = Address::symbolic(Variable(22_100));
     let right = Address::symbolic(Variable(22_101));
     let equality = OldConditionTerm::PointerEqual(
-        Box::new(OldPointer::new(left.clone(), ProgramType::Int32Pointer)),
-        Box::new(OldPointer::new(right.clone(), ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(left.clone(), ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(right.clone(), ProgramType::Int32Pointer)),
     );
 
     assert_eq!(
@@ -2881,7 +2880,7 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
 #[test]
 fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
     let null = Address::null();
-    let null_pointer = OldPointer::new(null.clone(), ProgramType::Int32Pointer);
+    let null_pointer = Pointer::new(null.clone(), ProgramType::Int32Pointer);
     assert!(disprove_builtin_prop(
         &crate::kernel::eval::same_allocation_proposition(&null_pointer, &null_pointer)
     ));
@@ -3008,6 +3007,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
     );
     let state = ExecutionState::new().with_local("pointer", ProgramValue::pointer(pointer.clone()));
     let loadable = |bytes| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: pointer.clone(),
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -3222,6 +3222,7 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
     );
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: (binary_node!(
@@ -4359,18 +4360,18 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
 
 /// A pointer at `pair + offset` whose subobject bounds are `[pair + start,
 /// pair + start + width)`, as `&pair.first` would carry.
-fn subobject_pointer(offset: i64, start: i64, width: u32) -> OldPointer {
-    OldPointer::new(
+fn subobject_pointer(offset: i64, start: i64, width: u32) -> Pointer {
+    Pointer::new(
         Address::new("pair".into(), AddressOffset::constant(offset)),
         ProgramType::Int32Pointer,
     )
-    .with_bounds(Some(SubobjectBounds {
-        start: Address::new("pair".into(), AddressOffset::constant(start)),
-        width: OldMachineTerm::constant(width),
-    }))
+    .with_bounds(Some(SubobjectBounds::new(
+        Address::new("pair".into(), AddressOffset::constant(start)),
+        OldMachineTerm::constant(width),
+    )))
 }
 
-fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> OldPointer {
+fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> Pointer {
     let theorem = prove_program_expression_evaluation(state.clone(), expression)
         .expect("the pointer expression should evaluate");
     let Proposition::ProgramExpressionEvaluates {
@@ -4433,7 +4434,7 @@ fn equal_addresses_with_different_bounds_are_different_values() {
     assert_eq!(one_past_first.address(), second.address());
     assert_ne!(one_past_first, second);
     assert_ne!(
-        OldPointer::new(second.address().clone(), ProgramType::Int32Pointer),
+        Pointer::new(second.address().clone(), ProgramType::Int32Pointer),
         second
     );
 }
@@ -4451,10 +4452,9 @@ fn substitution_maps_the_bounds_start_with_the_address() {
         )
     };
     let value = ProgramValue::Pointer(
-        OldPointer::new(address(4), ProgramType::Int32Pointer).with_bounds(Some(SubobjectBounds {
-            start: address(0),
-            width: OldMachineTerm::constant(4),
-        })),
+        Pointer::new(address(4), ProgramType::Int32Pointer).with_bounds(Some(
+            SubobjectBounds::new(address(0), OldMachineTerm::constant(4)),
+        )),
     );
     let replacement = OldMachineTerm::Variable(Variable(98_102));
     let ProgramValue::Pointer(substituted) =
@@ -4467,10 +4467,10 @@ fn substitution_maps_the_bounds_start_with_the_address() {
     assert_eq!(substituted.address(), &expected(4));
     assert_eq!(
         substituted.bounds(),
-        Some(&SubobjectBounds {
-            start: expected(0),
-            width: OldMachineTerm::constant(4),
-        })
+        Some(&SubobjectBounds::new(
+            expected(0),
+            OldMachineTerm::constant(4)
+        ))
     );
 }
 
@@ -4482,12 +4482,8 @@ mod scaling_tests {
 #[test]
 fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
     let address = Address::symbolic(Variable(22_102));
-    let pointer = OldPointer::new(address.clone(), ProgramType::Int8Pointer).with_bounds(Some(
-        SubobjectBounds {
-            start: address,
-            width: 4u32.into(),
-        },
-    ));
+    let pointer = Pointer::new(address.clone(), ProgramType::Int8Pointer)
+        .with_bounds(Some(SubobjectBounds::new(address, 4u32.into())));
     let (value, _) = program_evaluate_speprogram_expression_at_state(
         &ExecutionState::new(),
         &SpecExpression::PointerCoercion(
@@ -4573,7 +4569,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         .clone()
         .store(b.clone(), ProgramValue::Pointer(stored.clone()));
     let read = |memory: &SymbolicMemory, address: &Address| {
-        OldPointer::from_read(
+        Pointer::from_read(
             stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(memory),
@@ -4597,6 +4593,8 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &a,
         ProgramType::Int32Pointer,
         &[Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before_b.clone(),
             after: memory.clone(),
             writes: vec![(b.clone(), crate::kernel::AccessExtent::from(8))],
@@ -4611,10 +4609,10 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     assert!(context.pointer_provenance_match(&first, &second));
     assert!(!context.pointer_provenance_match(&first.clone().with_root_bounds(), &stored));
     assert!(!context.pointer_provenance_match(
-        &first.clone().with_bounds(Some(SubobjectBounds {
-            start: stored.address().clone(),
-            width: 2u32.into(),
-        })),
+        &first.clone().with_bounds(Some(SubobjectBounds::new(
+            stored.address().clone(),
+            2u32.into()
+        ))),
         &stored,
     ));
     let c = Address::symbolic(Variable(22_113));
@@ -4641,6 +4639,8 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &c,
         ProgramType::Int32Pointer,
         &[Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before.clone(),
             after: changed.clone(),
             writes: vec![(b.clone(), crate::kernel::AccessExtent::from(4))],

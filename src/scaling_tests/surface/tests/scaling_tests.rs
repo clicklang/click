@@ -486,7 +486,7 @@ fn false_quantified_frames_do_not_materialize_the_constant_domain() {
 #[ignore = "nightly: multi-size reference-call refusal and positive controls"]
 fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
     use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let mut samples = Vec::new();
     for size in [4, 8, 16, 32] {
         let parameters = (0..size)
@@ -502,12 +502,17 @@ fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
             "int32 read(int32* p) {{ return p[0]; }}\nint32 many({parameters}, int32* p) {{ {locals} {calls} return p[0]; }}"
         );
         let mut pair = Vec::new();
-        for (value, closer) in [(7, "solve"), (8, "known")] {
+        for value in [7, 8] {
             let source = format!(
                 r#"
                 verifying "calls.c";
                 int32 read(int32* p) {{ owns p[0..1]; ensures result == old(p[0]); ensures p[0] == old(p[0]); }}
-                int32 many({parameters}, int32* p) {{ owns p[0..1]; requires p[0] == 7; ensures result == {value}; ensures p[0] == 7; }} by {{ step_until(function.exit); {closer}(); }}
+                int32 many({parameters}, int32* p) {{ owns p[0..1]; requires p[0] == 7; ensures result == {value}; ensures p[0] == 7; }} by {{
+                    step_until(function.exit);
+                    have result == 7 by close();
+                    have result == {value} by close() using {{ result == 7; }};
+                    close();
+                }}
             "#
             );
             let ((result, events), total) = measure_deterministic_work(|| {
@@ -2326,6 +2331,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
             .offset_by_bytes(4 * element)
     };
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base,
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -2440,6 +2446,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
     let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
+        point: Default::default(),
         at: None,
         memory: memory.clone(),
         pointer,
@@ -2795,7 +2802,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20       initialize by close();\n\
              \x20       maintain by {{\n\
              \x20           match c.model {{\n\
-             \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
+             \x20               Chain::Nil => {{ close(); }},\n\
              \x20               Chain::Link(rest_model) => {{\n\
              \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
              \x20                       rewrite(c.model, Chain::Link(rest_model));\n\
@@ -7103,6 +7110,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         )
     };
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base,
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -7171,6 +7179,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                             false,
                         ))
                         .assume_proposition(Proposition::MemoryLoadable {
+                            point: Default::default(),
                             memory: memory.clone(),
                             base: Address::new(
                                 format!("other{index}").as_str().into(),
@@ -7295,12 +7304,14 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
             )
         };
         let source = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: at(OldMachineTerm::constant(2)),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let goal = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: at(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(&memory),
@@ -7411,6 +7422,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     true,
                 ))
                 .assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: Address::new(
                         format!("other{index}").as_str().into(),
@@ -7490,6 +7502,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         true,
                     ))
                     .assume_proposition(Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: memory.clone(),
                         base: Address::new(
                             format!("extension{step}").as_str().into(),

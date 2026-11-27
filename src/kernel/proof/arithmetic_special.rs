@@ -2,7 +2,7 @@
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
     Address, AddressBase, AddressOffset, ComparisonOperator, FloatClassification, FloatCondition,
-    FloatOperandView, KernelFloatType, OldConditionTerm, OldMachineTerm, OldPointer, Proposition,
+    FloatOperandView, KernelFloatType, OldConditionTerm, OldMachineTerm, Pointer, Proposition,
     SignedDefinedWidth,
 };
 
@@ -53,6 +53,7 @@ fn address_base_payload(block: &AddressBase) -> Option<usize> {
         | AddressBase::ExternalObject(_)
         | AddressBase::Symbolic(_)
         | AddressBase::Load(_)
+        | AddressBase::SliceData(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => 1,
     };
@@ -1293,7 +1294,8 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Some((OldConditionTerm::PointerEqual(left, right), true)) = (goal).old_condition() {
-        let same_domain = |a: &OldPointer, b: &OldPointer| a.same_provenance_as(b);
+        let same_domain =
+            |a: &Pointer, b: &Pointer| a.same_provenance_as(b) && a.same_metadata_as(b);
         let linked = match relation {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((OldConditionTerm::PointerEqual(a, b), _)) =

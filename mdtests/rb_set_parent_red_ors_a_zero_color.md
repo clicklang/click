@@ -77,7 +77,7 @@ void set_parent_red(struct rb_node* node, struct rb_node* parent) {
     ensures u.model == rb_reparent_color(old(t.model), parent, Color::Red);
 } by {
     match t.model {
-        RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+        RbTree::Empty => { close(); },
         RbTree::Node(identity, old_parent, color, left_model, right_model) => {
             unfold(t);
             have color_bit(Color::Red) == 0 by {

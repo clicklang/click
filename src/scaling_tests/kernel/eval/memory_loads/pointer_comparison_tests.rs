@@ -10,7 +10,7 @@ fn exact_pointer_read_reuses_the_indexed_store_across_local_history() {
         );
         let unrelated = Address::new("local:unrelated-scalar".into(), AddressOffset::constant(0));
         let value_type = ProgramType::Int32Pointer;
-        let target = OldPointer::new(Address::symbolic(Variable(989_013)), value_type);
+        let target = Pointer::new(Address::symbolic(Variable(989_013)), value_type);
         let mut state = ExecutionState::new().with_memory(
             SymbolicMemory::new()
                 .with_block(slot.base.clone(), value_type.byte_width())
@@ -25,7 +25,7 @@ fn exact_pointer_read_reuses_the_indexed_store_across_local_history() {
             state = state.with_memory(memory);
         }
         let read = |state: &ExecutionState| {
-            OldPointer::from_point_read(state.program_point().for_exact_read(), value_type, &slot)
+            Pointer::from_point_read(state.program_point().for_exact_read(), value_type, &slot)
         };
         let exact = read(&state);
         let (stored, work) = crate::instrumentation::measure_deterministic_work(|| {

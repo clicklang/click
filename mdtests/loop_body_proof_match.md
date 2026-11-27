@@ -4,7 +4,7 @@ At an arbitrary loop head a binder's model is a fresh symbolic value, so
 `unfold(c)` has no constructor to open. A proof `match` on `c.model` inside
 `maintain` supplies one: each arm's path gets the constructor equation with
 fresh bindings, and the arm that the invariants exclude closes by
-`contradiction` without running an iteration.
+`false` without running an iteration.
 
 Each arm runs to the loop's own boundary rather than to function exit. Nothing
 joins the arms: the live arm refolds its own instance and closes the invariants
@@ -56,7 +56,7 @@ int32 spin(struct cell* node, int32 n) {
         initialize by close();
         maintain by {
             match c.model {
-                Maybe::None => { contradiction(c.model == Maybe::None); },
+                Maybe::None => { close(); },
                 Maybe::Some(value) => {
                     have Maybe::Some(value) == old(c.model) by {
                         close() using { c.model == Maybe::Some(value); c.model == old(c.model); };

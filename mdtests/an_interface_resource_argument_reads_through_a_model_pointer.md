@@ -49,7 +49,7 @@ int32 peek(struct node* n, int32 x) {
     match l.model {
         Chain::Nil => {
             unfold(l);
-            contradiction(n == 0);
+            close();
         },
         Chain::Cons(id, value, rest) => {
             let { tail: t } = unfold(l);

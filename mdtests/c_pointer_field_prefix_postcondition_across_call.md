@@ -69,7 +69,7 @@ int32 vector_push(struct vector* owner, int32 value) {
                             rewrite(old(owner->len), k);
                             close();
                         }
-                        contradiction(k < old(owner->len));
+                        close();
                     } else {
                         close();
                     }

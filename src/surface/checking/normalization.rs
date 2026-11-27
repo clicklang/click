@@ -355,7 +355,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
 
 pub(in crate::surface) fn evaluate_bitvector_constant(term: &OldMachineTerm) -> Option<u32> {
     match term {
-        OldMachineTerm::ThreadHandle(_) => None,
+        OldMachineTerm::ThreadHandle(_) | OldMachineTerm::PureApplicationCount(_) => None,
         OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..
@@ -556,9 +556,9 @@ pub(in crate::surface) fn normalize_bitvector(term: &OldMachineTerm) -> OldMachi
                 arguments: arguments.iter().map(normalize_bitvector).collect(),
             }
         }
-        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
-            term.clone()
-        }
+        OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::PureApplicationCount(_)
+        | OldMachineTerm::AlgebraicMatch { .. } => term.clone(),
         OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
             OldMachineTerm::read_named(memory.clone(), pointer.clone(), *kind)
         }

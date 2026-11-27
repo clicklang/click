@@ -18,6 +18,16 @@ use super::*;
 /// this, so it does not depend on how a scope knows the answers. The
 /// lowering context answers from the values lowering bound the names to; a
 /// scope built from declarations can answer with no kernel at all.
+/// What a scope at another program point is built from: the function's
+/// entry values and entry point, its recorded states, and the names a
+/// capture reads.
+pub(super) struct PointInputs<'a> {
+    pub(super) entry_values: &'a ProgramValueBindings,
+    pub(super) entry_point: crate::kernel::ProgramPoint,
+    pub(super) retained_states: Option<&'a RecordedStates>,
+    pub(super) capture_referenced_names: Option<&'a BTreeSet<String>>,
+}
+
 pub(super) trait TypeScope {
     /// The type a name has.
     fn binding_click_type(
@@ -53,6 +63,19 @@ pub(super) trait TypeScope {
         &self,
         name: &dyn crate::surface::binders::BinderKey,
     ) -> Option<ClickType>;
+    /// What the pointer a C name is directly bound to steps by: a resolved
+    /// local's current pointer, or a pointer value the name is bound to.
+    fn bound_pointer_element(&self, name: &crate::kernel::BindingName) -> Option<PointerElement>;
+    /// This scope at the function's entry, as `old(..)` reads its operand.
+    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String>;
+    /// This scope at the recorded state `selector` names, as
+    /// `at(selector, ..)` reads its operand; `None` when no state is
+    /// recorded there.
+    fn at_point(
+        &self,
+        selector: &ProgramPointSelector,
+        inputs: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String>;
     /// The call whose result `result` and region results name here.
     fn call_result_point(&self) -> Option<&ProgramPointSelector>;
     /// Whether bare `result` names the contract's return value here.
@@ -103,6 +126,38 @@ impl TypeScope for SpecElaborationContext {
         name: &dyn crate::surface::binders::BinderKey,
     ) -> Option<ClickType> {
         Self::program_binding_click_type(self, name)
+    }
+    fn bound_pointer_element(&self, name: &crate::kernel::BindingName) -> Option<PointerElement> {
+        if name.local_id().is_some()
+            && let Some(state) = self.reference_state.as_ref()
+        {
+            return state.locals().get(name)?.pointer().map(PointerElement::of);
+        }
+        match name.named_in(&self.values) {
+            Some(SpecExpression::Value(ProgramValue::Pointer(pointer))) => {
+                Some(PointerElement::of(pointer))
+            }
+            _ => None,
+        }
+    }
+    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+        Ok(Box::new(
+            self.old_state(inputs.entry_values, &inputs.entry_point)?,
+        ))
+    }
+    fn at_point(
+        &self,
+        selector: &ProgramPointSelector,
+        inputs: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+        Ok(point_environment(
+            selector,
+            self,
+            inputs.retained_states,
+            inputs.entry_values,
+            inputs.capture_referenced_names,
+        )?
+        .map(|scope| Box::new(scope) as Box<dyn TypeScope>))
     }
     fn call_result_point(&self) -> Option<&ProgramPointSelector> {
         self.call_result_point.as_ref()
@@ -159,6 +214,19 @@ impl TypeScope for NoOuterNames {
     ) -> Option<ClickType> {
         None
     }
+    fn bound_pointer_element(&self, _: &crate::kernel::BindingName) -> Option<PointerElement> {
+        None
+    }
+    fn at_entry(&self, _: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+        Ok(Box::new(NoOuterNames))
+    }
+    fn at_point(
+        &self,
+        _: &ProgramPointSelector,
+        _: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+        Ok(None)
+    }
     fn call_result_point(&self) -> Option<&ProgramPointSelector> {
         None
     }
@@ -170,6 +238,9 @@ impl TypeScope for NoOuterNames {
 pub(super) struct TypingEnvironment<'a> {
     outer: &'a dyn TypeScope,
     binders: PersistentBinderMap<ClickType>,
+    /// The call `at(call, ..)` names inside the term being typed, in place
+    /// of the outer scope's.
+    call_result_point: Option<&'a ProgramPointSelector>,
 }
 
 impl<'a> TypingEnvironment<'a> {
@@ -184,6 +255,20 @@ impl<'a> TypingEnvironment<'a> {
         Self {
             outer,
             binders: PersistentBinderMap::default(),
+            call_result_point: None,
+        }
+    }
+
+    /// This environment inside `at(selector, ..)`: `result` and region
+    /// results name `selector`'s call.
+    pub(super) fn at_call<'b>(&self, selector: &'b ProgramPointSelector) -> TypingEnvironment<'b>
+    where
+        'a: 'b,
+    {
+        TypingEnvironment {
+            outer: self.outer,
+            binders: self.binders.clone(),
+            call_result_point: Some(selector),
         }
     }
 
@@ -290,9 +375,49 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 
+    /// The outer scope at the function's entry, for `old(..)`. Only the
+    /// outer scope moves: this environment's own binders, which only the
+    /// binder check sets today, are not carried to the new point.
+    pub(super) fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+        self.outer.at_entry(inputs)
+    }
+
+    /// The outer scope at the recorded state `selector` names, for
+    /// `at(selector, ..)`.
+    pub(super) fn at_point(
+        &self,
+        selector: &ProgramPointSelector,
+        inputs: &PointInputs<'_>,
+    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+        self.outer.at_point(selector, inputs)
+    }
+
     /// The call whose result `result` and region results name here.
     pub(super) fn call_result_point(&self) -> Option<&'a ProgramPointSelector> {
-        self.outer.call_result_point()
+        self.call_result_point
+            .or_else(|| self.outer.call_result_point())
+    }
+
+    /// What the pointer a C name is directly bound to steps by. Lowering
+    /// binds a pointer binder to a pointer of its declared type, carrying
+    /// its struct when it declares one (as `ClickType::from_object_pointer_class`
+    /// reads it back), so the declared type answers.
+    pub(super) fn bound_pointer_element(
+        &self,
+        name: &crate::kernel::BindingName,
+    ) -> Option<PointerElement> {
+        match self.binders.get(name) {
+            Some(ClickType::CObjectPointer {
+                interface_type: InterfaceType::Int32Pointer,
+                struct_name,
+            }) => Some(PointerElement::Struct(struct_name.clone())),
+            Some(click_type) => click_type
+                .interface_type()
+                .map(InterfaceType::to_kernel_type)
+                .filter(|ty| ty.is_pointer())
+                .map(|ty| PointerElement::Pointee(ty.pointee_type())),
+            None => self.outer.bound_pointer_element(name),
+        }
     }
 
     /// Whether bare `result` names the contract's return value here.
@@ -330,7 +455,16 @@ pub(super) fn check_declared_binder(
     let by_value = TypingEnvironment::of(lowered);
     let mut by_type = TypingEnvironment::of(lowered);
     by_type.declare(name, declared.clone());
-    let pairs: [(&str, String, String); 7] = [
+    let binding_name = match name {
+        SurfaceBinder::Written(written) => crate::kernel::BindingName::Named(written.clone()),
+        SurfaceBinder::Generated(id) => crate::kernel::BindingName::Generated(*id),
+    };
+    let pairs: [(&str, String, String); 8] = [
+        (
+            "bound_pointer_element",
+            format!("{:?}", by_type.bound_pointer_element(&binding_name)),
+            format!("{:?}", by_value.bound_pointer_element(&binding_name)),
+        ),
         (
             "binding_click_type",
             format!("{:?}", by_type.binding_click_type(name)),

@@ -187,6 +187,7 @@ pub(in crate::kernel) fn memory_block_may_alias(block: &AddressBase) -> bool {
             | AddressBase::Symbolic(_)
             | AddressBase::FunctionSymbolic(_)
             | AddressBase::Load(_)
+            | AddressBase::SliceData(_)
     )
 }
 
@@ -1710,6 +1711,7 @@ fn collect_memory_load_work_with<'a>(
                     | OldMachineTerm::RangeFold { .. }
                     | OldMachineTerm::PureFunctionApplication { .. }
                     | OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::PureApplicationCount(_)
                     | OldMachineTerm::AlgebraicMatch { .. }
                     | OldMachineTerm::IntegerToMachine { .. } => *uncertain = true,
                 }
@@ -5589,7 +5591,7 @@ impl ResourceContext {
                 // A loaded pointer's displacement is all of its offset: the
                 // read itself, at displacement zero, is the object's base.
                 OffsetView::Int32Scaled { .. } | OffsetView::Int64Scaled { .. }
-                    if matches!(base.base, AddressBase::Load(_)) =>
+                    if matches!(base.base, AddressBase::Load(_) | AddressBase::SliceData(_)) =>
                 {
                     AddressOffset::constant(0)
                 }
@@ -14036,11 +14038,11 @@ impl ResourceFact {
 
     /// `allocation(base, bytes)` with the byte count in the size's format.
     pub(in crate::kernel) fn own_heap_allocation(base: Address, size: &AllocationSize) -> Self {
-        Self::own_designated_allocation(OldPointer::new(base, ProgramType::Int32Pointer), size)
+        Self::own_designated_allocation(Pointer::new(base, ProgramType::Int32Pointer), size)
     }
 
     pub(in crate::kernel) fn own_designated_allocation(
-        base: OldPointer,
+        base: Pointer,
         size: &AllocationSize,
     ) -> Self {
         Self::own(Resource::Token {
@@ -14091,7 +14093,7 @@ impl ResourceFact {
             .map(|(base, bytes)| (base.address(), bytes))
     }
 
-    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&OldPointer, &OldMachineTerm)> {
+    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&Pointer, &OldMachineTerm)> {
         let (base, bytes) = self.allocation_arguments()?;
         let (ProgramValue::Int32(bytes) | ProgramValue::UInt64(bytes)) = bytes else {
             return None;
@@ -14100,7 +14102,7 @@ impl ResourceFact {
     }
 
     /// The base and tagged size of an owned `allocation` token.
-    pub(in crate::kernel) fn allocation_size(&self) -> Option<(&OldPointer, AllocationSize)> {
+    pub(in crate::kernel) fn allocation_size(&self) -> Option<(&Pointer, AllocationSize)> {
         let Self::Own(Resource::Token { name, arguments }, _) = self else {
             return None;
         };
@@ -14116,7 +14118,7 @@ impl ResourceFact {
         ))
     }
 
-    fn allocation_arguments(&self) -> Option<(&OldPointer, &ProgramValue)> {
+    fn allocation_arguments(&self) -> Option<(&Pointer, &ProgramValue)> {
         let Self::Own(Resource::Token { name, arguments }, _) = self else {
             return None;
         };
@@ -14441,10 +14443,7 @@ fn merge_memory_ranges(
         return None;
     }
     if !assumptions.provenance_equal(&left.provenance, &right.provenance)
-        || !match (
-            left.carrier_owner().map(|owner| &**owner),
-            right.carrier_owner().map(|owner| &**owner),
-        ) {
+        || !match (left.carrier_owner(), right.carrier_owner()) {
             (None, None) => true,
             (Some(a), Some(b)) => assumptions.bounds_owners_equal(a, b),
             _ => false,

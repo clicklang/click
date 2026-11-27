@@ -39,7 +39,7 @@ impl EqualityGraph {
             Term(&'a Term),
             Model(&'a AlgebraicTerm),
             Value(&'a ProgramValue),
-            Pointer(&'a OldPointer),
+            Pointer(&'a Pointer),
         }
         let mut pending = match proposition {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
@@ -296,7 +296,7 @@ impl EqualityGraph {
         &self,
         start: &Address,
     ) -> Vec<crate::kernel::Proposition> {
-        use crate::kernel::{OldPointer, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
+        use crate::kernel::{Pointer, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
         [3, 4]
             .into_iter()
             .flat_map(|arity| {
@@ -304,7 +304,7 @@ impl EqualityGraph {
                     SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
                     arity,
                     0,
-                    OldPointer::new(start.clone(), ProgramType::VoidPointer).program_type(),
+                    Pointer::new(start.clone(), ProgramType::VoidPointer).program_type(),
                 );
                 self.pointer_fact_candidates(start, &key)
                     .iter()

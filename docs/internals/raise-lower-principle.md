@@ -107,13 +107,35 @@ once that point exists.
 
 A fact that quotes a memory state also carries the point that memory is the
 state at, so it can be named by the point rather than by searching for its
-memory. `MemoryEffectSummary` carries `before_point` and `after_point`; the
-point is not part of the fact's equality, so adding it changes no reasoning.
-Each is the point of the state the memory was taken from. That state's memory
-can still differ from its point's: a verified proof-only view names more
-cells of the same state, but some states hold memory no point holds, and
-those must be named where they are made before a fact can drop its memory for
-its point.
+memory: `before_point` and `after_point` on `MemoryEffectSummary`,
+`MemoryMutatesOnly` and `HeapAllocationFreed`, and `point` on `MemoryLoads`,
+`MemoryCanStore`, `MemoryLoadable` and `ResourceViewable`. A point is a
+`PathLink`, which is not part of the fact's equality, so carrying it changes
+no reasoning. A fact built from a state takes `ExecutionState::memory_point`;
+a rewrite of a fact keeps its point.
+
+Every memory a fact quotes is the state at a point, and every state a fact is
+built from stands at one: a proof's entry, bound from a state on no path,
+starts at a function-entry point (`bind_program_function_arguments_impl`), as
+does a scratch state that evaluates a requirement segment's bounds. No fact quotes a staged
+state: `ExecutionState::memory_point` panics on one, as `program_point` does.
+A call's exit region records its frees in one `HeapAllocationFreed` from its
+effect point to its exit, whose `mutable_ranges` hold the region's other
+changes (the heap claims it retires or makes and the memory it produces), so
+the fact needs no memory between the two points. A distinct load case's
+memory, which drops only the undecided cell, is a view of the read's state
+and takes the read site's point. The memory queries (`proves_memory_loadable`,
+`proves_native_memory_loadable`, `proves_memory_loadable_for_memory_resolution`,
+`proves_memory_access`, `proves_memory_read_defined`,
+`has_memory_read_defined_evidence` and the initialization checks of
+`call_initialization`) take the point beside the memory, so the exact facts
+they look up carry it. A proposition built only to look a fact up by a memory
+no point holds (a derivation step's source, a specification load's query, a
+cached body comparison) takes `PathLink::lookup_key()`: lookups compare no
+point, and these go when fact indexes are keyed by point.
+A state's memory can still differ from its point's memory: a
+verified proof-only view names more cells of the same state, but some states
+hold memory no point holds.
 
 Review frontend and lowering changes against these checks.
 
@@ -583,8 +605,8 @@ Checking decides a closed condition from its literal roots with
 `machine_integer::comparison::closed_condition_value`, including when exact
 rewriting removed the last variable before the comparison was printed. It
 does so in exact matching through the comparison form, including closed
-comparisons nested under connectives and binders (so `contradiction(1 == 0)`
-matches a held `false`), in requirement matching, `normalize`, and
+comparisons nested under connectives and binders, in requirement matching,
+`normalize`, and
 assumption-free normalization. The fact store records a closed comparison
 that holds without indexing it. A closed goal is false or true whatever the
 facts, so `close()` treats a false one like the goal `false` and refutes the

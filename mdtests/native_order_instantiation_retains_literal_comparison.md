@@ -6,7 +6,7 @@ theorem signed_instance(x: int32) {
     ensures x <= 0 by {
         instantiate(forall (k: int32) { 2 <= k and k < 4 }, 4);
         have not (4 < 4) by { close(); }
-        contradiction(4 < 4);
+        close();
     }
 }
 
@@ -15,7 +15,7 @@ theorem unsigned_instance(x: uint64) {
     ensures x <= 0u64 by {
         instantiate(forall (k: uint64) { 2u64 <= k and k < 4u64 }, 4u64);
         have not (4u64 < 4u64) by { close(); }
-        contradiction(4u64 < 4u64);
+        close();
     }
 }
 ```

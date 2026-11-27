@@ -35,7 +35,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         // Its unknown value is retained as the initial opaque read.
         let before = before.store(
             field.clone(),
-            ProgramValue::Pointer(OldPointer::new(source.clone(), ProgramType::Int32Pointer)),
+            ProgramValue::Pointer(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let count = OldMachineTerm::Variable(Variable(999_321));
         let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), count.clone(), 4);
@@ -323,11 +323,9 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             true,
         );
         let bytes_value =
-            crate::kernel::OldPointer::new(bytes.clone(), crate::kernel::ProgramType::UInt8Pointer);
-        let cursor_value = crate::kernel::OldPointer::new(
-            cursor.clone(),
-            crate::kernel::ProgramType::UInt8Pointer,
-        );
+            crate::kernel::Pointer::new(bytes.clone(), crate::kernel::ProgramType::UInt8Pointer);
+        let cursor_value =
+            crate::kernel::Pointer::new(cursor.clone(), crate::kernel::ProgramType::UInt8Pointer);
         let aliases = PureFactContext::new()
             .assume_condition(
                 OldConditionTerm::pointer_equal(
