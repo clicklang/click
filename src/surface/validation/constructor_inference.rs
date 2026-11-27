@@ -483,11 +483,22 @@ impl ConstructorTypes {
         arguments: Vec<SyntaxTerm>,
     ) -> Result<SyntaxTerm, ClickError> {
         let receiver_type = self.known_type(&receiver);
+        // A string slice's methods are `str`'s: its length, data pointer and
+        // bytes, and nothing else a byte slice has.
+        if receiver_type
+            == Some(ClickType::Program(InterfaceType::Slice(
+                crate::kernel::SliceElement::Str,
+            )))
+            && let Some(resolved) = str_method(receiver.clone(), method, &arguments)
+        {
+            return Ok(resolved);
+        }
         // A slice, or a slice built from its parts whether or not its element
         // type is known here.
         let slice_type = matches!(
             &receiver_type,
-            Some(ClickType::Program(InterfaceType::Slice(_)))
+            Some(ClickType::Program(InterfaceType::Slice(element)))
+                if *element != crate::kernel::SliceElement::Str
         ) || slice_parts(&receiver).is_some();
         if slice_type
             && let Some(resolved) = slice_method(receiver.clone(), method, arguments.clone())
@@ -519,7 +530,10 @@ impl ConstructorTypes {
         // the index it always was.
         if method == "[]"
             && let [index] = arguments.as_slice()
-            && !matches!(&receiver_type, Some(ClickType::Algebraic(_)))
+            && !matches!(
+                &receiver_type,
+                Some(ClickType::Algebraic(_) | ClickType::Program(InterfaceType::Slice(_)))
+            )
         {
             return Ok(SyntaxTerm::Index(
                 Box::new(receiver),
@@ -708,6 +722,23 @@ fn slice_parts(receiver: &SyntaxTerm) -> Option<(&SyntaxTerm, &SyntaxTerm)> {
         }
         _ => None,
     }
+}
+
+/// A `str` method on `receiver`, a string slice (`design/rust-slice-values.md`,
+/// "String slices"): `len()` and `as_ptr()` are its components and
+/// `as_bytes()` its bytes as a byte slice. `None` for any other method,
+/// including an index, which Rust's `str` has not.
+fn str_method(receiver: SyntaxTerm, method: &str, arguments: &[SyntaxTerm]) -> Option<SyntaxTerm> {
+    let name = match (method, arguments) {
+        ("len", []) => crate::surface::RUST_STR_LEN,
+        ("as_ptr", []) => crate::surface::RUST_STR_AS_PTR,
+        ("as_bytes", []) => crate::surface::RUST_STR_AS_BYTES,
+        _ => return None,
+    };
+    Some(SyntaxTerm::Call {
+        name: name.to_string(),
+        arguments: vec![receiver],
+    })
 }
 
 /// A slice method on `receiver`, a slice (`design/rust-slice-values.md`):

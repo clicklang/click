@@ -4718,6 +4718,22 @@ id = "library.function.slice::subslice"
 path = "reference/library/index.md#slicesubslice"
 
 [[item]]
+id = "library.function.str::len"
+path = "reference/library/index.md#strlen"
+
+[[item]]
+id = "library.function.str::as_ptr"
+path = "reference/library/index.md#stras_ptr"
+
+[[item]]
+id = "library.function.str::as_bytes"
+path = "reference/library/index.md#stras_bytes"
+
+[[item]]
+id = "library.function.str::from_utf8_unchecked"
+path = "reference/library/index.md#strfrom_utf8_unchecked"
+
+[[item]]
 id = "library.type.Vec"
 path = "reference/library/index.md#vec"
 

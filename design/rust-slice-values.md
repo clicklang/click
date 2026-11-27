@@ -2,16 +2,17 @@
 
 Status: direction agreed with the maintainer on 2026-11-25. Steps 0, 1,
 2a, 2b-i, 2b-ii-a, 2b-ii-b, 2b-iii-a, 2b-iii-b-i, 2b-iii-b-ii,
-2b-iii-c-i and 2b-iii-c-ii of the [plan](#plan) are done: the kernel has
+2b-iii-c-i, 2b-iii-c-ii and 2b-iii-d-i of the [plan](#plan) are done: the kernel has
 the wide pointer and its slice pointer type, every kernel consumer reads or
 refuses its count, a slice is stored and read back as one memory cell, a
 symbolic read of a slice cell names its data pointer and count, a slice
 named by one variable, such as a call's result or a binder, names its count
 from that variable, a slice-valued pure application names its count from
 the application, the spec language reads a slice's components and builds
-one from raw parts, and the Surface `Slice<T>` is the built-in type, with
-every wide pointer raising to it. Rust `fn` slice parameters are still a
-pointer and a length (step 3).
+one from raw parts, the Surface `Slice<T>` is the built-in type, with
+every wide pointer raising to it, and `Str` is its string slice type, with
+`str`'s operations. Rust `fn` slice parameters are still a pointer and a
+length (step 3).
 
 ## Requirements
 
@@ -733,10 +734,46 @@ construct.
      `an_unnamed_slice_raises_as_its_construction`; scaling test
      `recording_and_spelling_a_subslice_ignore_unrelated_subslices` keys
      wide pointers.
-   - **2b-iii-d. Strings.** `str.interface.click` states `as_bytes` as
-     `result == s` retyped (a cast between slice types keeps the count),
-     mapped in the Rust front end's name table only. This finishes slice
-     returns and `as_bytes`.
+   - **2b-iii-d. Strings**, in two parts: the Surface string slice, then
+     `as_bytes` in imported Rust.
+   - **2b-iii-d-i. String slice values.** Done. `Str` is its own type: it
+     unifies with no `Slice<T>` and is compatible with no generic slice
+     parameter (`unify_click_type`, `click_types_compatible`), and a
+     comparison with a byte slice is refused, naming `s.as_bytes()`.
+     `library/rust/str.click` (`click::rust::str`, implied by a Rust
+     sidecar's `&str` value) declares `len`, `as_ptr`, `as_bytes` and
+     `from_utf8_unchecked` without bodies, name-table entries
+     (`RUST_STR_LEN`, `RUST_STR_AS_PTR`, `RUST_STR_AS_BYTES`,
+     `RUST_STR_FROM_UTF8_UNCHECKED` in `surface.rs`). `len` and `as_ptr`
+     lower to `SliceLength` and `SliceData`, as a byte slice's do;
+     `as_bytes` and `from_utf8_unchecked` lower to the spec `Cast` to
+     `[u8]` and to `str`, which is `with_type` between slice types and keeps
+     the data pointer and count, so `s.as_bytes().len()` is `s.len()` and
+     `from_utf8_unchecked(s.as_bytes())` is `s` by construction. A `Str`
+     receiver's methods are `len()`, `as_ptr()` and `as_bytes()`; an index,
+     a range and every other method refuse with "`Str` has no method".
+     Raising (`surface_synthesis/slices.rs`) reads the type of the value
+     that names a slice (a binder's or parameter's declared slice type, a
+     pure function's result type, a cell read's own type): a count or data
+     pointer of a string slice raises as `str::len(s)` or `str::as_ptr(s)`,
+     a slice at a type other than its name's as `str::as_bytes(s)` or
+     `str::from_utf8_unchecked(v)`, and an unnamed string slice as
+     `str::from_utf8_unchecked(slice::from_raw_parts(p, n))`. A slice a
+     call returns is never a string slice, since no front end returns a
+     `&str`. The diagnostic renderer and `rust_spelling` print the same
+     forms, `s.as_bytes()` and `click::rust::str::from_utf8_unchecked(v)`.
+     The UTF-8 invariant is not stated. Tests:
+     `a_string_slice_raises_with_its_own_operations`,
+     `surface::tests::rust_slice_functions` (the string slice cases),
+     `rust_slice_string_values_read_with_str_methods`.
+   - **2b-iii-d-ii. `as_bytes` in imported Rust.** Not done.
+     `str.interface.click` states `as_bytes` as `result ==
+     str::as_bytes(s)`, mapped in the Rust front end's name table only.
+     It cannot land before step 3: its result is a slice a call returns,
+     and a Rust local or argument of slice type is still a pointer and a
+     length, which a wide call result cannot initialize without a
+     program-level component read or a wide local, so this part moves
+     into step 3 with the other slice returns.
 3. **Parameters and locals.** Slice parameters enter as one wide pointer;
    locals, assignments, reborrows, call arguments and returns carry it.
    Remove `spread_slice_arguments` and the paired-local paths. Migrate

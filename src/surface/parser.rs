@@ -1414,6 +1414,9 @@ impl StructPointerCast {
 /// The module that specifies Rust slices, brought in where a sidecar
 /// declares a slice.
 pub(super) const SLICE_MODULE: &str = "library/rust/slice.click";
+/// The library module of the string slice type `Str`, whose operations a
+/// Rust sidecar's `&str` methods mean.
+pub(super) const STR_MODULE: &str = "library/rust/str.click";
 
 pub(super) fn is_c_type_keyword(name: &str) -> bool {
     matches!(

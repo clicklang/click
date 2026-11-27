@@ -9695,6 +9695,33 @@ impl AnnotationLowerer<'_> {
             _ => None,
         };
         let lowered = match name {
+            // A string slice's components are the wide pointer's, read in
+            // place as a byte slice's are.
+            crate::surface::RUST_STR_LEN | crate::surface::RUST_STR_AS_PTR => {
+                operation(1)?;
+                let slice =
+                    Box::new(self.lower_contract_expression_to_spec(&arguments[0], environment)?);
+                if name == crate::surface::RUST_STR_LEN {
+                    SpecExpression::SliceLength(slice)
+                } else {
+                    SpecExpression::SliceData(slice)
+                }
+            }
+            // `as_bytes` and `from_utf8_unchecked` retype the wide pointer
+            // between `Str` and `Slice<uint8>`: a cast between slice types
+            // keeps its data pointer and count.
+            crate::surface::RUST_STR_AS_BYTES | crate::surface::RUST_STR_FROM_UTF8_UNCHECKED => {
+                operation(1)?;
+                let target = if name == crate::surface::RUST_STR_AS_BYTES {
+                    crate::kernel::SliceElement::UInt8
+                } else {
+                    crate::kernel::SliceElement::Str
+                };
+                SpecExpression::Cast(
+                    Box::new(self.lower_contract_expression_to_spec(&arguments[0], environment)?),
+                    ProgramType::SlicePointer(target),
+                )
+            }
             crate::surface::RUST_SLICE_LEN | crate::surface::RUST_SLICE_AS_PTR => {
                 operation(1)?;
                 if let Some((requirement, data, count)) = subslice_component(&arguments[0]) {

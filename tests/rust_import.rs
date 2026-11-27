@@ -8070,6 +8070,51 @@ fn rust_methods_resolve_by_the_receivers_type() {
     }
 }
 
+/// A `&str` in a value position is the string slice `Str`
+/// (`design/rust-slice-values.md`, "String slices"): `str`'s methods read
+/// it, `s.as_bytes()` is the same bytes as a byte slice, and a failure
+/// prints a string slice and its bytes with those methods.
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+fn rust_slice_string_values_read_with_str_methods() {
+    let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = |claims: &str| {
+        format!(
+            "verifying \"borrow.rs\";\n\
+             function text(bytes: &[u8]) -> &str {{ click::rust::str::from_utf8_unchecked(bytes) }}\n\
+             function width(s: &str) -> usize {{ s.as_bytes().len() }}\n\
+             fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4u64;\n    views bytes[0..4];\n    ensures result == bytes[0];\n}} by {{\n{claims}\n    \
+             step_until(function.exit);\n    close();\n}}\n"
+        )
+    };
+    let accepted = sidecar(
+        "    have text(bytes).as_bytes() == bytes[0..4] by { unfold(text(bytes)); close(); }\n    \
+         have text(bytes).len() == 4u64 by { unfold(text(bytes)); close(); }\n    \
+         have text(bytes).as_ptr() == bytes by { unfold(text(bytes)); close(); }\n    \
+         have width(text(bytes)) == text(bytes).len() by { unfold(width(text(bytes))); close(); }",
+    );
+    ProgramVerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    for (claim, printed) in [
+        ("have text(bytes).len() == 3u64;", "text(bytes).len()"),
+        ("have text(bytes)[0] == 0u8;", "`Str` has no method `[]`"),
+        (
+            "have text(bytes) == bytes[0..4];",
+            "cannot compare `Str` and `Slice<uint8>`",
+        ),
+    ] {
+        let error = ProgramVerificationSession::new_program_prepared(&sidecar(claim), &prepared)
+            .err()
+            .unwrap_or_else(|| panic!("`{claim}` must fail"))
+            .to_string();
+        assert!(
+            error.contains(printed),
+            "`{claim}` prints `{printed}`: {error}"
+        );
+    }
+}
+
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]

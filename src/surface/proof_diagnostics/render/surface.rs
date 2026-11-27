@@ -2166,7 +2166,11 @@ impl Printer<'_> {
             && let Some(element) = self.slice_bound.get(variable).copied()
             && let Some(name) = self.variable_name(*variable)
         {
-            let data = atom(slice_component("as_ptr", &name));
+            let data = atom(slice_component(
+                "as_ptr",
+                &name,
+                element == crate::kernel::SliceElement::Str,
+            ));
             let width = element
                 .thin_pointer_type()
                 .pointee_type()
@@ -2228,7 +2232,11 @@ impl Printer<'_> {
             let slice_element =
                 crate::surface::diagnostics::slice_result_element(application.name());
             let call = match slice_element {
-                Some(_) => atom(slice_component("as_ptr", &call.text)),
+                Some(element) => atom(slice_component(
+                    "as_ptr",
+                    &call.text,
+                    element == crate::kernel::SliceElement::Str,
+                )),
                 None => call,
             };
             return Some(match pointer.offset.view() {
@@ -2844,6 +2852,27 @@ impl Printer<'_> {
     /// built as written, `bytes[a..b]`, and any other slice as its
     /// construction, `slice::from_raw_parts(p, n)`.
     fn slice(&mut self, slice: &crate::kernel::Pointer, depth: usize) -> Option<Spelled> {
+        let string = slice.program_type()
+            == crate::kernel::ProgramType::SlicePointer(crate::kernel::SliceElement::Str);
+        let spelled = self.slice_at_own_type(slice, depth)?;
+        // A slice whose type is not its name's is that name retyped
+        // (`design/rust-slice-values.md`, "String slices").
+        Some(match (spelled.1, string) {
+            (true, false) => atom(str_operation("as_bytes", &spelled.0.text)),
+            (false, true) => atom(str_operation("from_utf8_unchecked", &spelled.0.text)),
+            _ => spelled.0,
+        })
+    }
+
+    /// A slice as the value that names it or its construction, with whether
+    /// that spelling's own type is the string slice `Str`.
+    fn slice_at_own_type(
+        &mut self,
+        slice: &crate::kernel::Pointer,
+        depth: usize,
+    ) -> Option<(Spelled, bool)> {
+        let string = slice.program_type()
+            == crate::kernel::ProgramType::SlicePointer(crate::kernel::SliceElement::Str);
         let count = slice.len()?;
         let thin = slice.as_ptr();
         let address = thin.address();
@@ -2853,19 +2882,30 @@ impl Printer<'_> {
                     crate::kernel::AddressBase::Symbolic(variable),
                     OldMachineTerm::Variable(counted),
                 ) if counted.counted_slice() == Some(*variable) => {
-                    return self.pointer(address, depth);
+                    let named = self.slice_bound.get(variable).map_or(string, |element| {
+                        *element == crate::kernel::SliceElement::Str
+                    });
+                    return Some((self.pointer(address, depth)?, named));
                 }
                 (
                     crate::kernel::AddressBase::PureFunctionApplication(application),
                     OldMachineTerm::PureApplicationCount(counted),
                 ) if application == counted => {
-                    return self.call(application.name(), application.arguments(), depth + 1);
+                    let named =
+                        crate::surface::diagnostics::slice_result_element(application.name())
+                            .map_or(string, |element| {
+                                element == crate::kernel::SliceElement::Str
+                            });
+                    return Some((
+                        self.call(application.name(), application.arguments(), depth + 1)?,
+                        named,
+                    ));
                 }
                 (
                     crate::kernel::AddressBase::SliceData(load),
                     OldMachineTerm::MemoryLoad(_, read, crate::kernel::LoadKind::SliceCount),
                 ) if read.load() == load => {
-                    return Some(atom(self.place_at(load.cell(), depth)));
+                    return Some((atom(self.place_at(load.cell(), depth)), string));
                 }
                 _ => {}
             }
@@ -2878,14 +2918,14 @@ impl Printer<'_> {
             && crate::kernel::is_required_construction(slice)
             && let Some(subslice) = crate::surface::diagnostics::subslice_spelling(&data, &count)
         {
-            return Some(atom(subslice));
+            return Some((atom(subslice), false));
         }
         let name = if crate::surface::diagnostics::rust_spelling() {
             crate::surface::RUST_SLICE_FROM_RAW_PARTS
         } else {
             "slice::from_raw_parts"
         };
-        Some(atom(format!("{name}({data}, {count})")))
+        Some((atom(format!("{name}({data}, {count})")), false))
     }
 
     /// A slice's data pointer: `s.as_ptr()` of a slice cell's place, else
@@ -2895,7 +2935,7 @@ impl Printer<'_> {
             && matches!(address.offset.view(), OffsetView::Constant(0))
         {
             let place = self.place_at(load.cell(), depth);
-            return Some(atom(slice_component("as_ptr", &place)));
+            return Some(atom(slice_component("as_ptr", &place, false)));
         }
         self.pointer(address, depth)
     }
@@ -2903,21 +2943,26 @@ impl Printer<'_> {
     /// A slice's count, `s.len()` of the slice that names it: a slice a
     /// variable names, a slice-valued pure call, or a slice cell's place.
     fn slice_count(&mut self, count: &OldMachineTerm, depth: usize) -> Option<Spelled> {
-        let slice = match count {
+        let (slice, string) = match count {
             OldMachineTerm::Variable(counted) => {
                 let variable = counted.counted_slice()?;
-                self.pointer(&Address::symbolic(variable), depth)?.text
+                (
+                    self.pointer(&Address::symbolic(variable), depth)?.text,
+                    self.slice_bound.get(&variable) == Some(&crate::kernel::SliceElement::Str),
+                )
             }
-            OldMachineTerm::PureApplicationCount(application) => {
+            OldMachineTerm::PureApplicationCount(application) => (
                 self.call(application.name(), application.arguments(), depth + 1)?
-                    .text
-            }
+                    .text,
+                crate::surface::diagnostics::slice_result_element(application.name())
+                    == Some(crate::kernel::SliceElement::Str),
+            ),
             OldMachineTerm::MemoryLoad(_, read, crate::kernel::LoadKind::SliceCount) => {
-                self.place_at(read.load().cell(), depth)
+                (self.place_at(read.load().cell(), depth), false)
             }
             _ => return None,
         };
-        Some(atom(slice_component("len", &slice)))
+        Some(atom(slice_component("len", &slice, string)))
     }
 
     fn exact_pointer_value(
@@ -3296,11 +3341,27 @@ fn load_type_spelling(kind: crate::kernel::LoadKind) -> &'static str {
 /// `s.len()` or `s.as_ptr()` of the slice spelled `slice`, in the Rust
 /// spelling where the function is written in Rust syntax and as the
 /// library call elsewhere.
-fn slice_component(component: &str, slice: &str) -> String {
-    if crate::surface::diagnostics::rust_spelling() {
+/// A slice's component, `len` or `as_ptr`, as Rust's method or the
+/// library function of its type: `str::len(s)` for a string slice.
+fn slice_component(component: &str, slice: &str, string: bool) -> String {
+    if string {
+        str_operation(component, slice)
+    } else if crate::surface::diagnostics::rust_spelling() {
         format!("{slice}.{component}()")
     } else {
         format!("slice::{component}({slice})")
+    }
+}
+
+/// A string slice operation of `click::rust::str` applied to `operand`, as
+/// Rust's method, `s.as_bytes()`, or the library call.
+fn str_operation(operation: &str, operand: &str) -> String {
+    match (crate::surface::diagnostics::rust_spelling(), operation) {
+        (true, "from_utf8_unchecked") => {
+            format!("click::rust::str::from_utf8_unchecked({operand})")
+        }
+        (true, _) => format!("{operand}.{operation}()"),
+        (false, _) => format!("str::{operation}({operand})"),
     }
 }
 

@@ -783,6 +783,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/rust/slice.click",
         include_str!("../library/rust/slice.click"),
     ),
+    (
+        "library/rust/str.click",
+        include_str!("../library/rust/str.click"),
+    ),
 ];
 
 /// Emits one non-overlapping verifier phase on every exit path, including an
@@ -3410,6 +3414,17 @@ pub(crate) const RUST_SLICE_LEN: &str = "click::rust::slice::len";
 pub(crate) const RUST_SLICE_AS_PTR: &str = "click::rust::slice::as_ptr";
 pub(crate) const RUST_SLICE_FROM_RAW_PARTS: &str = "click::rust::slice::from_raw_parts";
 pub(crate) const RUST_SUBSLICE: &str = "click::rust::slice::subslice";
+
+/// The name-table entries of the string slice type `Str`
+/// (`design/rust-slice-values.md`, "String slices"): `str::len(s)` and
+/// `str::as_ptr(s)` read a string slice's components, as the slice ones do,
+/// and `str::as_bytes(s)` and `str::from_utf8_unchecked(v)` retype one
+/// between `Str` and `Slice<uint8>`, keeping its data pointer and length.
+/// None has a body; each lowers to the kernel's slice operation or cast.
+pub(crate) const RUST_STR_LEN: &str = "click::rust::str::len";
+pub(crate) const RUST_STR_AS_PTR: &str = "click::rust::str::as_ptr";
+pub(crate) const RUST_STR_AS_BYTES: &str = "click::rust::str::as_bytes";
+pub(crate) const RUST_STR_FROM_UTF8_UNCHECKED: &str = "click::rust::str::from_utf8_unchecked";
 
 /// Source expressions shared by declarations, proof claims and raised terms.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

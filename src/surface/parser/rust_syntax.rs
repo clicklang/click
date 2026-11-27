@@ -1659,6 +1659,7 @@ impl Parser {
         };
         self.implied_library_modules.insert(super::SLICE_MODULE);
         if string {
+            self.implied_library_modules.insert(super::STR_MODULE);
             return Ok(Some(InterfaceType::Slice(crate::kernel::SliceElement::Str)));
         }
         let slice = crate::kernel::SliceElement::of_thin_pointer_type(

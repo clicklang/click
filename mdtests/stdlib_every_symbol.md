@@ -261,6 +261,7 @@ import click::rust::u64;
 import click::rust::usize;
 import click::rust::vec;
 import click::rust::slice;
+import click::rust::str;
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
@@ -2060,6 +2061,18 @@ theorem viewed_address_is_not_null(p: uint8*, n: uint64, k: uint64) {
     ensures &p[k] != 0 by {
         have 0u64 <= k by { close(); }
         apply(separation::viewable_offset_nonnull(p, 0u64, n, k));
+    }
+}
+
+theorem use_str(p: uint8*, n: uint64) {
+    ensures str::len(str::from_utf8_unchecked(slice::from_raw_parts(p, n))) == n by {
+        close();
+    }
+    ensures str::as_ptr(str::from_utf8_unchecked(slice::from_raw_parts(p, n))) == p by {
+        close();
+    }
+    ensures str::as_bytes(str::from_utf8_unchecked(slice::from_raw_parts(p, n))) == slice::from_raw_parts(p, n) by {
+        close();
     }
 }
 
