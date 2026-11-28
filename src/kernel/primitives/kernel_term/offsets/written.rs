@@ -243,6 +243,11 @@ impl AddressOffset {
         )
     }
 
+    pub(crate) fn try_from_ref(root: &SharedAddressOffset) -> Result<&Self, &'static str> {
+        Self::check_written(root)?;
+        Ok(Self::from_ref(root))
+    }
+
     fn from_ref(root: &SharedAddressOffset) -> &Self {
         // SAFETY: `AddressOffset` is a `repr(transparent)` wrapper of
         // `SharedAddressOffset`, so the two references have one layout. A
