@@ -1453,6 +1453,52 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn stored_word_substitution_and_reservation_visit_shared_arithmetic_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let slice = Variable(982814);
+        let count = slice.element_count();
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::Program(format.program_type()), count);
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let word = Term::Bitvector32(
+            StoredMachineTerm::from_value(ExecutionValue::Shared(root.clone())).unwrap(),
+        );
+        let fact = Proposition::Predicate {
+            name: "word".into(),
+            arguments: vec![word.clone()],
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([slice, count])
+        );
+        assert!(!collector.exhausted());
+        assert!(collector.carriers.nodes <= depth + 4);
+
+        let from = OldMachineTerm::constant(0);
+        let to = OldMachineTerm::constant(1);
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        let before = rewrite.collector_visits;
+        rewrite.reserve_term_variables_once(&word);
+        assert!(rewrite.reserved_variables.contains(&slice));
+        assert!(rewrite.reserved_variables.contains(&count));
+        assert_eq!(rewrite.collector_visits - before, depth + 1);
+        assert_eq!(rewrite.refusal(), None);
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
 fn integer_to_float_carriers_visit_shared_machine_arithmetic_once() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
