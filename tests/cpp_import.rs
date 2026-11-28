@@ -11345,11 +11345,47 @@ theorem long_long_echo() {
     })
     .unwrap();
 
+    let key = names.iter().find(|name| name.contains("_D")).unwrap();
+    let mangled = expansion.source.replacen(
+        "check_termination_local(echo(long));",
+        &format!("check_termination_local({key:?});"),
+        1,
+    );
+    fs::write(&expanded_path, &mangled).unwrap();
+    let parsed = read_click_project(&expanded_path, &mangled).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error
+            .report()
+            .contains("using its source name or signature"),
+        "{error}"
+    );
+
     let false_claim = sidecar.replace("result == 76", "result == 74");
     let path = project.directory.join("wrong.click");
     fs::write(&path, &false_claim).unwrap();
     let parsed = read_click_project(&path, &false_claim).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: cold CLI expansion of the C++ stack example"]
+fn cpp_stack_expansion_keeps_source_function_references() {
+    let sidecar = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/cpp-stack/stack.click");
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["expand", "--claim", "round_trip.contract"])
+        .arg(&sidecar)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let expanded = String::from_utf8(output.stdout).unwrap();
+    assert!(expanded.contains("step(Stack<int>::push"), "{expanded}");
+    assert!(!expanded.contains("__cpp_q"), "{expanded}");
 }
 
 #[test]

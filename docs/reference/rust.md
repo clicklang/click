@@ -528,7 +528,9 @@ An operator-trait method prints in Rust's qualified form: the method of
 `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`, a reference or by-value
 argument reads `<T as AddAssign<&T>>::add_assign` or
 `<T as AddAssign<T>>::add_assign`, and `impl Default for adler2::Adler32` is
-`<adler2::Adler32 as Default>::default`. A crate trait is named by its path,
+`<adler2::Adler32 as Default>::default`. A call step can name an inherent method of
+a concrete generic type as `step(generic_stack::Stack::<u32>::push, { ... })`.
+A crate trait is named by its path,
 and its method's implementation prints as
 `<trait_methods::Square as trait_methods::Shape>::area` ([trait method
 interfaces](#trait-method-interfaces)). `--claim` and `--trace-proof` take

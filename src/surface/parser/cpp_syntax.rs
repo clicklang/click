@@ -26,7 +26,7 @@ struct SignatureKey {
 }
 
 fn declaration_path_at(tokens: &[Token], start: usize) -> Option<(String, usize)> {
-    let (segments, end) = cpp_path_at(tokens, start)?;
+    let (segments, end) = cpp_path(tokens, start, true)?;
     lambda_path_at(tokens, end, &segments)
         .or_else(|| Some((crate::languages::cpp::names::path_name(&segments), end)))
 }
@@ -82,7 +82,17 @@ impl DeclarationSignatures {
 
 impl Parser {
     pub(super) fn parse_termination_function_reference(&mut self) -> Result<String, ClickError> {
-        if !self.verifies_cpp() || matches!(self.peek(), Some(Token::String(_))) {
+        if !self.verifies_cpp() {
+            return self.expect_string("function name");
+        }
+        if let Some(Token::Ident(name) | Token::String(name)) = self.peek()
+            && let Some(path) = crate::languages::cpp::names::cpp_display_name(name)
+        {
+            return Err(self.error(format!(
+                "write the C++ function reference for `{path}` using its source name or signature"
+            )));
+        }
+        if matches!(self.peek(), Some(Token::String(_))) {
             return self.expect_string("function name");
         }
         let (path, end) = declaration_path_at(&self.tokens, self.position)
@@ -398,13 +408,13 @@ pub(super) fn rewrite_function_references(
     let mut out_positions = Vec::with_capacity(positions.len());
     let mut index = 0;
     while index < tokens.len() {
-        let after_marker = match (
+        let reference = match (
             index.checked_sub(1).map(|at| &tokens[at]),
             index.checked_sub(2).map(|at| &tokens[at]),
         ) {
             // An address, `&f`, follows an operator or a delimiter; a
             // reference return type, `int32& Cell::get()`, follows a type.
-            (Some(Token::Amp), before) => !matches!(
+            (Some(Token::Amp), before) => (!matches!(
                 before,
                 None | Some(
                     Token::Ident(_)
@@ -417,13 +427,14 @@ pub(super) fn rewrite_function_references(
                         | Token::RBrace
                         | Token::LBrace
                 )
-            ),
-            (Some(Token::Ident(word)), _) if word == "executes" => true,
-            (Some(Token::LParen), Some(Token::Ident(word))) if word == "step" => true,
-            _ => false,
+            ))
+            .then_some(false),
+            (Some(Token::Ident(word)), _) if word == "executes" => Some(false),
+            (Some(Token::LParen), Some(Token::Ident(word))) if word == "step" => Some(true),
+            _ => None,
         };
-        if after_marker
-            && let Some((segments, end)) = cpp_path_at(&tokens, index)
+        if let Some(allow_terminal_template) = reference
+            && let Some((segments, end)) = cpp_path(&tokens, index, allow_terminal_template)
             && let Some((name, end)) = lambda_path_at(&tokens, end, &segments).or_else(|| {
                 (segments.len() > 1 || segments[0].contains('<'))
                     .then(|| (crate::languages::cpp::names::path_name(&segments), end))
@@ -483,6 +494,14 @@ fn lambda_path_at(tokens: &[Token], mut index: usize, owner: &[String]) -> Optio
 /// `Stored<long long>::Read` or `choose<true>`, as its segments, and the
 /// index after it.
 pub(super) fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
+    cpp_path(tokens, start, false)
+}
+
+fn cpp_path(
+    tokens: &[Token],
+    start: usize,
+    allow_terminal_template: bool,
+) -> Option<(Vec<String>, usize)> {
     let mut segments = Vec::new();
     let mut index = start;
     loop {
@@ -523,7 +542,8 @@ pub(super) fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>
                 index += 1;
                 let mut segment = name.clone();
                 if tokens.get(index) == Some(&Token::LessThan)
-                    && let Some((arguments, end)) = template_arguments_at(tokens, index, false)
+                    && let Some((arguments, end)) =
+                        template_arguments_at(tokens, index, allow_terminal_template)
                 {
                     segment.push_str(&arguments);
                     index = end;

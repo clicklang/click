@@ -214,13 +214,13 @@ int round_trip(int x) {
     let empty = fold(nodes(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by close() using { length(List<int32>::Nil) == 0; };
-    let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty }) {
+    let { after: pushed } = step(Stack<int>::push, { before: empty }) {
         requires length(empty.items) < 1000000 by close();
         requires to_integer(stack.count) == length(empty.items) by close();
         requires aligned(&stack, 8) by close();
     }
     step();
-    let { after: remaining } = step(__cpp_q_X10_537461636b3c696e743e_I3_pop, { before: pushed }) {
+    let { after: remaining } = step(Stack<int>::pop, { before: pushed }) {
         requires to_integer(stack.count) == length(pushed.items) by close();
         requires aligned(&stack, 8) by close();
     }
@@ -243,12 +243,12 @@ unsigned long pushed_size(int x) {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
         length(List<int32>::Nil) == 0;
     };
-    let { after: one } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty }) {
+    let { after: one } = step(Stack<int>::push, { before: empty }) {
         requires length(empty.items) < 1000000 by close();
         requires to_integer(stack.count) == length(empty.items) by close();
         requires aligned(&stack, 8) by close();
     }
-    let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: one }) {
+    let { after: pushed } = step(Stack<int>::push, { before: one }) {
         requires length(one.items) < 1000000 by close();
         requires to_integer(stack.count) == length(one.items) by close();
         requires aligned(&stack, 8) by close();
@@ -263,7 +263,7 @@ unsigned long pushed_size(int x) {
     have stack.head == at(region(16).entry, stack.head) by {
         preserve(memory(stack.head), region(16));
     }
-    step(__cpp_q_X10_537461636b3c696e743e_X6_7e537461636b, { list: pushed });
+    step(Stack<int>::~Stack, { list: pushed });
     step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))));
     have length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == 2 by close() using {
