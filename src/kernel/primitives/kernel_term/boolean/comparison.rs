@@ -300,6 +300,7 @@ mod tests {
                         format,
                         left.clone(),
                         right.clone(),
+                        false,
                     );
                     let root = stored.root().unwrap();
                     assert!(!root.has_cached_native_argument());

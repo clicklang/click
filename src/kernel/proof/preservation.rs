@@ -443,7 +443,7 @@ fn integer_equality(
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
             // The produced equality must have the same shape as its logical
             // goal, including reflexive variables and closed literal operands.
-            StoredConditionTerm::logical_word64_equality(format, left, right)
+            StoredConditionTerm::logical_word64_equality(format, left, right, false)
         }
         MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
             StoredConditionTerm::integer_equal(
