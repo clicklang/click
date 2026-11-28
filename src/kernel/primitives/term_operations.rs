@@ -5742,12 +5742,7 @@ mod shift_overflow_refusal_tests {
 /// condition decision answers the same comparisons the same way.
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
-        condition_source_0 @ Proposition::ConditionIs(_, value)
-            if let Some((OldConditionTerm::Constant(constant), _)) =
-                condition_source_0.old_condition() =>
-        {
-            constant == value
-        }
+        p if let Some((actual, expected)) = p.literal_condition() => actual == expected,
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((
                 condition @ OldConditionTerm::Compare {

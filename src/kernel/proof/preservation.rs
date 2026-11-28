@@ -46,8 +46,7 @@ pub(crate) fn apply(
         preserve_field(separation, field).ok_or(
             "preserve requires the selected field of a resource separated from the footprint",
         )?
-    } else if matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _))))
-    {
+    } else if result.literal_condition() == Some((true, true)) {
         result.clone()
     } else {
         preserve_footprint(
