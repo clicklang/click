@@ -1499,6 +1499,85 @@ fn stored_word_substitution_and_reservation_visit_shared_arithmetic_once() {
 }
 
 #[test]
+fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let input = Variable(982815);
+        let mut bytes = KernelTerm::variable(KernelType::Program(ProgramType::Int32), input);
+        for _ in 0..depth {
+            bytes = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [bytes.clone(), bytes],
+            );
+        }
+        let float =
+            KernelTerm::float_convert(KernelFloatType::Float64, ProgramType::Int32, bytes.clone())
+                .unwrap();
+        let stored = StoredProgramValue::from(ExecutionValue::Shared(float.clone()));
+        let term = Term::ProgramValue(stored.clone());
+        let exports = (
+            KernelTermExport::machine_export_count(),
+            KernelTermExport::float_export_count(),
+        );
+        for fact in [
+            Proposition::Predicate {
+                name: "numeric".into(),
+                arguments: vec![
+                    term.clone(),
+                    Term::ProgramValue(ExecutionValue::Shared(bytes.clone()).into()),
+                ],
+            },
+            Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
+                id: VolatileEventId(1),
+                kind: VolatileAccessKind::Read,
+                pointer: Address::null(),
+                value_type: ProgramType::Float64,
+                value: stored.clone(),
+            })),
+            Proposition::SequenceMembership {
+                element: stored,
+                sequence: SequenceTerm {
+                    element_type: Some(ProgramType::Float64),
+                    node: std::sync::Arc::new(SequenceTermNode::Literal(
+                        SequenceValues::from_values([]),
+                    )),
+                },
+            },
+            Proposition::MemoryLoadable {
+                point: Default::default(),
+                memory: SymbolicMemory::new(),
+                base: Address::null(),
+                bytes: StoredMachineTerm::from_value(ExecutionValue::Shared(bytes.clone()))
+                    .unwrap(),
+                wide: false,
+            },
+        ] {
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect(&fact);
+            assert_eq!(collector.carriers.program_values, BTreeSet::from([input]));
+            assert!(!collector.exhausted());
+            assert!(collector.carriers.nodes <= 2 * depth + 12);
+        }
+        let from = OldMachineTerm::constant(0);
+        let to = OldMachineTerm::constant(1);
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        rewrite.reserve_term_variables_once(&term);
+        assert!(rewrite.reserved_variables.contains(&input));
+        assert_eq!(rewrite.refusal(), None);
+        assert_eq!(
+            (
+                KernelTermExport::machine_export_count(),
+                KernelTermExport::float_export_count()
+            ),
+            exports
+        );
+        assert!(!float.has_cached_native_argument());
+        assert!(!bytes.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn integer_to_float_carriers_visit_shared_machine_arithmetic_once() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
