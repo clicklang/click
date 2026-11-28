@@ -11284,7 +11284,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::Equal | ComparisonOperator::NotEqual
         )
     {
-        let condition = OldConditionTerm::pointer_equal(a.clone(), b.clone());
+        let condition = StoredConditionTerm::pointer_equal(a, b);
         return Some(Proposition::condition_is(
             condition,
             operator == ComparisonOperator::Equal,

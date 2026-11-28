@@ -389,6 +389,11 @@ impl Hash for SharedAddress {
 }
 
 impl SharedAddress {
+    pub(in crate::kernel) fn is_null(&self) -> bool {
+        matches!(self.atom(), AddressBase::Concrete(name) if name == "null")
+            && matches!(self.offset().node(), KernelAddressOffset::Constant(0))
+    }
+
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
         if matches!(self.offset().node(), KernelAddressOffset::Constant(0))
             && let AddressBase::PureFunctionApplication(application) = self.atom()

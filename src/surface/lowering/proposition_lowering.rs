@@ -70,7 +70,7 @@ pub(in crate::surface) fn comparison_proposition(
         };
         if !left.is_null() && !right.is_null() {
             return Ok(Proposition::condition_is(
-                OldConditionTerm::pointer_equal(left.clone(), right.clone()),
+                StoredConditionTerm::pointer_equal(left, right),
                 value,
             ));
         }
