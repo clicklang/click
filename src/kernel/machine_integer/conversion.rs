@@ -225,23 +225,7 @@ pub(crate) fn convert_term(
         L::Cast => OldMachineTerm::machine_integer_cast(source, destination, value),
         // A folded low word is a constant of the destination's format.
         L::LowWord => OldMachineTerm::uint32_from_64(value).in_format32(destination),
-        L::Reinterpret64 if to.is_signed() => {
-            // The bit pattern stays the same, but the signed Integer
-            // observation needs the conversion over a general operand.
-            if matches!(
-                &value,
-                OldMachineTerm::Cast {
-                    spelling: MachineCastSpelling::UInt64FromInt64
-                        | MachineCastSpelling::UInt64From32
-                        | MachineCastSpelling::UInt64FromInt32,
-                    ..
-                }
-            ) {
-                OldMachineTerm::int64_from_uint64_bits(value)
-            } else {
-                OldMachineTerm::machine_integer_cast(source, destination, value)
-            }
-        }
+        L::Reinterpret64 if to.is_signed() => OldMachineTerm::int64_from_uint64_bits(value),
         L::Reinterpret64 => match value {
             OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
@@ -260,9 +244,30 @@ pub(crate) fn convert_term(
     }
 }
 
-/// The modular conversion of an evaluated, typed machine value to
-/// `destination`: the one entry point of C++20 integral conversions and
-/// Rust `as` (`conversion::convert_value`), and of C's
+/// A C++20 conversion preserves the bits, with an explicit signed Integer
+/// observation when the operand's form does not already provide it.
+pub(crate) fn reinterpret_uint64_as_signed(value: OldMachineTerm) -> OldMachineTerm {
+    if matches!(
+        &value,
+        OldMachineTerm::Cast {
+            spelling: MachineCastSpelling::UInt64FromInt64
+                | MachineCastSpelling::UInt64From32
+                | MachineCastSpelling::UInt64FromInt32,
+            ..
+        }
+    ) {
+        OldMachineTerm::int64_from_uint64_bits(value)
+    } else {
+        OldMachineTerm::machine_integer_cast(
+            MachineIntegerType::UInt64,
+            MachineIntegerType::Int64,
+            value,
+        )
+    }
+}
+
+/// The shared modular conversion of an evaluated, typed machine value to
+/// `destination`, used by Rust `as`, C++20 integral conversions, and C's
 /// conversions involving 128 bits. A Boolean source observes its 0-or-1
 /// value. A root constant folds exactly; a 128-bit conversion first checks
 /// its operand's root (`accepts_cast_operand`). `None` for a value that is

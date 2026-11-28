@@ -2198,7 +2198,9 @@ fn evaluate_program_cast_paths(
                 } else if integer_mode == IntegerCastMode::UInt64BitsToInt64 {
                     match (target_type, value.numeric_value().clone()) {
                         (ProgramType::Int64, ProgramValue::UInt64(bits)) => Ok(
-                            ProgramValue::Int64(OldMachineTerm::int64_from_uint64_bits(bits)),
+                            ProgramValue::Int64(
+                                crate::kernel::machine_integer::conversion::reinterpret_uint64_as_signed(bits),
+                            ),
                         ),
                         _ => Err(RuntimeError::TypeMismatch),
                     }
