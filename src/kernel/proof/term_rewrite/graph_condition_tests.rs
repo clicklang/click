@@ -25,6 +25,60 @@ fn graph() -> EqualityGraph {
 }
 
 #[test]
+fn cited_graph_decides_stored_pointer_equations_at_either_polarity() {
+    let _session = VerificationSession::enter();
+    let addresses = [99849, 99850].map(|v| Address::symbolic(Variable(v)));
+    let offsets = [99851, 99852].map(offset);
+    let pointers = addresses.each_ref().map(|a| {
+        Pointer::new(a.clone(), ProgramType::Int32Pointer)
+            .with_element_count(OldMachineTerm::uint64_constant(5))
+    });
+    for root in [
+        KernelTerm::address_equal_raw(addresses.each_ref().map(|a| a.shared().clone())),
+        KernelTerm::address_offset_equal_raw(offsets.each_ref().map(|o| o.shared().clone())),
+        KernelTerm::pointer_equal_raw(pointers.each_ref().map(|p| p.shared().clone())),
+    ] {
+        let written = KernelTermExport::condition(&root).unwrap();
+        let mut positive = EqualityGraph::default();
+        match &written {
+            OldConditionTerm::AddressEqual(a, b) => {
+                positive.add_equality(a, b);
+            }
+            OldConditionTerm::AddressOffsetEqual(a, b) => {
+                positive.add_offset_equality(a, b);
+            }
+            OldConditionTerm::PointerEqual(a, b) => positive.add_pointer_equality(a, b),
+            _ => unreachable!(),
+        }
+        let empty = EqualityGraph::default();
+        let mut negative = EqualityGraph::default();
+        assert!(negative.add_condition(&written, false));
+        let facts = HashMap::new();
+        let direct = HashMap::from([(written.flipped(), false)]);
+        for truth in [true, false] {
+            let goal = Proposition::condition_is(
+                StoredConditionTerm::from_root(root.clone()).unwrap(),
+                truth,
+            );
+            for (map, selected, ambient, decision) in [
+                (&facts, &positive, &empty, Some(true)),
+                (&facts, &negative, &empty, Some(false)),
+                (&facts, &empty, &negative, None),
+                (&direct, &positive, &empty, Some(false)),
+            ] {
+                let result = TermRewrite::for_cited_conditions_with_graph(map, selected, ambient)
+                    .proposition(&goal);
+                assert_eq!(
+                    result.literal_condition(),
+                    decision.map(|value| (value, truth))
+                );
+                assert!(!root.has_cached_native_argument());
+            }
+        }
+    }
+}
+
+#[test]
 fn stored_offset_equality_keeps_written_sums_and_uses_graph_evidence() {
     let _session = VerificationSession::enter();
     let [a, b] = [99839, 99840].map(offset);

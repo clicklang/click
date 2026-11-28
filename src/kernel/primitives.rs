@@ -183,6 +183,7 @@ mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
+pub(crate) use descriptor_values::{PointerEquality, WrittenPointerEquality};
 pub use descriptor_values::{
     StoredAlgebraicTerm, StoredConditionTerm, StoredIntegerTerm, StoredMachineTerm,
     StoredPointerOffset, StoredProgramValue,
@@ -1523,7 +1524,7 @@ pub enum OldConditionTerm {
 /// format read as `int32` (rule K6). Borrowed, so building it is one match
 /// on the root: no scan, no clone. The variants follow [`OldConditionTerm`]'s
 /// order, so hashes and the derived order are unchanged elsewhere.
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum ConditionIdentity<'a> {
     Constant(bool),
     Variable(&'a Variable),
