@@ -334,7 +334,7 @@ impl PureTheoremContext {
                                 right: SyntaxTerm::IntegerLiteral("0".into()),
                             }, BTreeMap::new(), BTreeMap::new(), &state, &state, ProgramValueBindings::new(), ProgramValueBindings::new(),
                             BTreeMap::new(), &integer_values, None, &RecordedStates::new(), spec_definitions,
-                            BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
+                            BTreeSet::new(), BTreeMap::new(), None,).map_err(ClickError::new)?;
                         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec
                         else {
                             // An unannotated machine conversion can reference

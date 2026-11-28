@@ -69,7 +69,7 @@ pub(super) trait TypeScope {
     /// local's current pointer, or a pointer value the name is bound to.
     fn bound_pointer_element(&self, name: &crate::kernel::BindingName) -> Option<PointerElement>;
     /// This scope at the function's entry, as `old(..)` reads its operand.
-    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String>;
+    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope + '_>, String>;
     /// This scope at the recorded state `selector` names, as
     /// `at(selector, ..)` reads its operand; `None` when no state is
     /// recorded there.
@@ -77,7 +77,7 @@ pub(super) trait TypeScope {
         &self,
         selector: &ProgramPointSelector,
         inputs: &PointInputs<'_>,
-    ) -> Result<Option<Box<dyn TypeScope>>, String>;
+    ) -> Result<Option<Box<dyn TypeScope + '_>>, String>;
     /// The call whose result `result` and region results name here.
     fn call_result_point(&self) -> Option<&ProgramPointSelector>;
     /// Whether bare `result` names the contract's return value here.
@@ -142,7 +142,7 @@ impl TypeScope for SpecElaborationContext {
             _ => None,
         }
     }
-    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+    fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope + '_>, String> {
         Ok(Box::new(self.old_state(
             inputs.entry_values,
             inputs.entry_point.as_ref(),
@@ -152,7 +152,7 @@ impl TypeScope for SpecElaborationContext {
         &self,
         selector: &ProgramPointSelector,
         inputs: &PointInputs<'_>,
-    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+    ) -> Result<Option<Box<dyn TypeScope + '_>>, String> {
         Ok(point_environment(
             selector,
             self,
@@ -220,14 +220,14 @@ impl TypeScope for NoOuterNames {
     fn bound_pointer_element(&self, _: &crate::kernel::BindingName) -> Option<PointerElement> {
         None
     }
-    fn at_entry(&self, _: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+    fn at_entry(&self, _: &PointInputs<'_>) -> Result<Box<dyn TypeScope + '_>, String> {
         Ok(Box::new(NoOuterNames))
     }
     fn at_point(
         &self,
         _: &ProgramPointSelector,
         _: &PointInputs<'_>,
-    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+    ) -> Result<Option<Box<dyn TypeScope + '_>>, String> {
         Ok(None)
     }
     fn call_result_point(&self) -> Option<&ProgramPointSelector> {
@@ -404,7 +404,10 @@ impl<'a> TypingEnvironment<'a> {
     /// The outer scope at the function's entry, for `old(..)`. Only the
     /// outer scope moves: this environment's own binders, which only the
     /// binder check sets today, are not carried to the new point.
-    pub(super) fn at_entry(&self, inputs: &PointInputs<'_>) -> Result<Box<dyn TypeScope>, String> {
+    pub(super) fn at_entry(
+        &self,
+        inputs: &PointInputs<'_>,
+    ) -> Result<Box<dyn TypeScope + '_>, String> {
         self.outer.at_entry(inputs)
     }
 
@@ -414,7 +417,7 @@ impl<'a> TypingEnvironment<'a> {
         &self,
         selector: &ProgramPointSelector,
         inputs: &PointInputs<'_>,
-    ) -> Result<Option<Box<dyn TypeScope>>, String> {
+    ) -> Result<Option<Box<dyn TypeScope + '_>>, String> {
         self.outer.at_point(selector, inputs)
     }
 

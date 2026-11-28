@@ -235,12 +235,12 @@ fn fixed_measure_state(expression: &SyntaxTerm) -> Option<FixedMeasureState> {
 
 mod comparison_elaboration;
 mod declarations;
+mod declared_scope;
 mod elaborator;
 mod typing_environment;
 use declarations::Declarations;
 use elaborator::Elaborator;
-#[cfg(debug_assertions)]
-pub(in crate::surface) use elaborator::ProofClauseScope;
+pub(in crate::surface) use elaborator::{ElaboratedProofClause, elaborate_proof_clause};
 use typing_environment::{PointInputs, TypingEnvironment};
 #[cfg(test)]
 mod elaboration_tests;
@@ -2536,6 +2536,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
+    elaborated: Option<&ElaboratedProofClause<'_>>,
 ) -> Result<SpecProposition, String> {
     let (mut lowerer, context) = fixed_state_elaboration(
         array_element_types,
@@ -2610,7 +2611,10 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
             );
         }
     }
-    lowerer.click_proposition_to_spec_proposition(proposition, &context)
+    match elaborated {
+        Some(clause) => lowerer.lower_elaborated_proof_clause(clause, proposition, &context),
+        None => lowerer.click_proposition_to_spec_proposition(proposition, &context),
+    }
 }
 
 /// Elaborates an algebraic expression at a fixed proof state without
@@ -4848,8 +4852,6 @@ impl AnnotationLowerer<'_> {
         let surface = self.with_elaborator(|elaborator| {
             elaborator.elaborate_clause(proposition, &TypingEnvironment::of(environment))
         });
-        #[cfg(debug_assertions)]
-        elaborator::check_front_end_scope(self, &surface, proposition, environment);
         self.lower_surface_proposition(&surface, environment)
     }
 
@@ -10755,6 +10757,7 @@ mod integer_source_quantifier_tests {
                     ),
                     BTreeSet::new(),
                     BTreeMap::new(),
+                    None,
                 )
                 .unwrap();
                 let SpecProposition::ForAllMachineInteger { variable, body, .. } = lowered else {
@@ -10818,6 +10821,7 @@ mod integer_source_quantifier_tests {
                 ),
                 BTreeSet::new(),
                 BTreeMap::new(),
+                None,
             )
             .unwrap();
             let SpecProposition::ForAllInteger { variable, body, .. } = lowered else {

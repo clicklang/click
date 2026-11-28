@@ -2205,7 +2205,7 @@ impl<'a> Proof<'a> {
             states.element_types, BTreeMap::new(), &states.entry_state, &states.lowering_state, states.entry_values, states.current_values,
             algebraic, &integers, None, &RecordedStates::new(),
             context.spec_definitions, BTreeSet::new(),
-            BTreeMap::new(),).map_err(|message| self.step_error(format!("could not lower Integer witness: {message}")))?;
+            BTreeMap::new(), None,).map_err(|message| self.step_error(format!("could not lower Integer witness: {message}")))?;
         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec else {
             return Err(self.step_error("witness must be an Integer expression"));
         };
