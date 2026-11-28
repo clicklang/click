@@ -25,3 +25,8 @@ pub fn exclusive(bytes: &mut [u8]) -> &mut [u8] {
 pub fn named(s: &str) -> &str {
     s
 }
+
+pub fn copied(bytes: &[u8]) -> u8 {
+    let view = bytes;
+    view[0]
+}

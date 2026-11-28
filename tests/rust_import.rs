@@ -4345,6 +4345,16 @@ fn charon_str_as_bytes_reads_the_same_bytes() {
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(function), "{rendered}");
+        // The refused index's condition counts the stored slice local by
+        // its own name, a spelling that lowers, not through its data
+        // pointer (`bytes.as_ptr().len()`).
+        if function == "str_bytes::first_byte" {
+            assert!(
+                rendered.contains("could not show `0u64 < bytes.len()`"),
+                "{rendered}"
+            );
+            assert!(!rendered.contains("as_ptr().len()"), "{rendered}");
+        }
     }
 }
 
