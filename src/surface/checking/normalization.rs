@@ -168,12 +168,21 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
 pub(in crate::surface) fn normalize_condition_without_assumptions(
     condition: &StoredConditionTerm,
 ) -> Option<bool> {
-    let view = condition.operand_view();
-    if let Some(value) = view.constant() {
-        return Some(value);
-    }
-    if view.is_integer_comparison() {
-        return normalize_integer_comparison(view);
+    if let Some(root) = condition.root() {
+        match root.node() {
+            KernelTermNode::BoolLiteral(value) => return Some(*value),
+            KernelTermNode::IntegerCompare { .. } => {
+                return normalize_integer_comparison(BooleanOperandView::Shared(root));
+            }
+            // Surface leaves these predicates undecided, even for reflexive addresses.
+            KernelTermNode::Variable(_)
+            | KernelTermNode::AddressEqual { .. }
+            | KernelTermNode::AddressOffsetEqual { .. }
+            | KernelTermNode::BoolOverflow { .. }
+            | KernelTermNode::FloatCompare { .. }
+            | KernelTermNode::FloatClassify { .. } => return None,
+            _ => {}
+        }
     }
     normalize_native_condition(condition.old_form())
 }
@@ -596,6 +605,38 @@ mod tests {
 
     mod scaling_tests {
         include!("../../scaling_tests/surface/checking/normalization/tests.rs");
+    }
+
+    #[test]
+    fn normalize_undecided_scalar_conditions_without_export() {
+        use crate::kernel::{
+            ComparisonOperator, FloatClassification, FloatCondition, KernelTermImport,
+            OverflowOperation,
+        };
+        let word = || Box::new(OldMachineTerm::Variable(Variable(982813)));
+        for condition in [
+            OldConditionTerm::Variable(Variable(982814)),
+            OldConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left: word(),
+                right: word(),
+            },
+            OldConditionTerm::Float32(FloatCondition::Comparison {
+                operator: ComparisonOperator::Equal,
+                left: word(),
+                right: word(),
+            }),
+            OldConditionTerm::Float64(FloatCondition::Classification {
+                classification: FloatClassification::Nan,
+                value: word(),
+            }),
+        ] {
+            let root = KernelTermImport::default().condition(&condition);
+            let stored = StoredConditionTerm::from_root(root.clone()).unwrap();
+            assert_eq!(normalize_condition_without_assumptions(&stored), None);
+            assert!(!root.has_cached_native_argument());
+        }
     }
 
     #[test]

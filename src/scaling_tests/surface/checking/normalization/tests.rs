@@ -46,3 +46,41 @@ fn normalize_shared_integer_comparisons_without_expanding_operands() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn normalization_preserves_undecided_address_comparisons_without_export() {
+    use crate::kernel::{Address, KernelAddressOffset, KernelTerm, SharedAddress};
+    let mut samples = Vec::new();
+    for depth in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut offset = KernelAddressOffset::Variable(Variable(982811))
+            .into_shared()
+            .unwrap();
+        for _ in 0..depth {
+            offset = KernelAddressOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        let base = Address::symbolic(Variable(982812));
+        let address = SharedAddress::new(base.shared().block(), offset.clone());
+        let mut sample = 0;
+        for root in [
+            KernelTerm::address_equal_raw([address.clone(), address]),
+            KernelTerm::address_offset_equal_raw([offset.clone(), offset]),
+        ] {
+            let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+            let proposition = Proposition::condition_is(condition, true);
+            let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_proposition(&proposition)
+            });
+            assert_eq!(normalized, NormalizedProposition::Proposition(proposition));
+            assert!(!root.has_cached_native_argument());
+            sample += work;
+        }
+        samples.push(sample);
+    }
+    assert!(
+        samples.windows(2).all(|work| work[0] == work[1]),
+        "{samples:?}"
+    );
+}
