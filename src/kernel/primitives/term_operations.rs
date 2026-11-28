@@ -2890,7 +2890,9 @@ impl OldConditionTerm {
             Self::uint64_less_equal(b.clone(), OldMachineTerm::uint64_constant(i32::MAX as u64)),
         ])
     }
+}
 
+impl AddressOffset {
     /// Regroup two exact pointer displacements by full-width unsigned
     /// indices, `(p + a) + b` and `p + (a + b)`, only when the `uint64`
     /// addition `a + b` does not wrap: the returned condition,
@@ -2901,7 +2903,7 @@ impl OldConditionTerm {
     /// exact, so its byte offset is the index times the stride with no
     /// wrap of its own. A shared pointer base may precede them; other
     /// nested sums are refused.
-    pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<OldConditionTerm> {
+    pub(crate) fn uint64_association_guard(&self, other: &Self) -> Option<OldConditionTerm> {
         fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset.view() {
                 OffsetView::Int64Scaled {
@@ -2918,8 +2920,7 @@ impl OldConditionTerm {
                 _ => None,
             }
         }
-        let (left, right) = self.pointer_offset_sides()?;
-        for (expanded, indexed) in [(left, right), (right, left)] {
+        for (expanded, indexed) in [(self, other), (other, self)] {
             let OffsetView::Add(left, right) = expanded.view() else {
                 continue;
             };
@@ -2969,7 +2970,7 @@ impl OldConditionTerm {
                     IntegerTerm::from_machine(MachineIntegerType::UInt64, term.clone())
                         .map(SharedIntegerTerm::from)
                 };
-                return Some(Self::IntegerLessEqual(
+                return Some(OldConditionTerm::IntegerLessEqual(
                     IntegerTerm::Add(
                         integer(left.structural_value())?,
                         integer(right.structural_value())?,
@@ -2986,7 +2987,10 @@ impl OldConditionTerm {
     /// only when that index addition does not wrap. Each displacement is one
     /// scaled scalar or a representable constant. A shared pointer base may
     /// precede them; other nested sums and full-width indices are refused.
-    pub(crate) fn pointer_offset_association_guard(&self) -> Option<[SharedMachineIntegerTerm; 2]> {
+    pub(crate) fn int32_association_guard(
+        &self,
+        other: &Self,
+    ) -> Option<[SharedMachineIntegerTerm; 2]> {
         fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset.view() {
                 OffsetView::Int32Scaled { index, byte_width } if byte_width == width => Some(index),
@@ -3001,8 +3005,7 @@ impl OldConditionTerm {
                 _ => None,
             }
         }
-        let (left, right) = self.pointer_offset_sides()?;
-        for (expanded, indexed) in [(left, right), (right, left)] {
+        for (expanded, indexed) in [(self, other), (other, self)] {
             let OffsetView::Add(left, right) = expanded.view() else {
                 continue;
             };
@@ -3048,7 +3051,9 @@ impl OldConditionTerm {
         }
         None
     }
+}
 
+impl OldConditionTerm {
     pub(crate) fn uint64_less_than(left: OldMachineTerm, right: OldMachineTerm) -> Self {
         // A value masked by a constant is bounded by that mask, so a tag
         // read `word & m` is below any bound above `m`.
@@ -3677,13 +3682,7 @@ impl OldConditionTerm {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
-            // Equal offsets are the whole equality only when nothing else
-            // in the two values differs, a wide pointer's metadata included.
-            Self::PointerEqual(a, b)
-                if a.base == b.base && a.same_provenance_as(b) && a.same_metadata_as(b) =>
-            {
-                Some((&a.offset, &b.offset))
-            }
+            Self::PointerEqual(a, b) => a.equality_offset_sides(b),
             _ => None,
         }
     }
@@ -3703,44 +3702,20 @@ impl OldConditionTerm {
     }
 
     pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
-        // A wide pointer's equality also compares its metadata
-        // (`design/rust-slice-values.md`, "Equality"), which no address
-        // equality states and a condition has no conjunction for: it stays
-        // the complete equality, whose admission merges the counts too.
-        if left.is_wide() || right.is_wide() {
-            return Self::PointerEqual(Box::new(left), Box::new(right));
-        }
-        // A pointer equal to the null pointer is null: a comparison with null
-        // states address equality, as `p == 0` lowers
-        // (`surface::lowering::comparison_proposition`). Every producer
-        // builds that one term.
-        if left.is_null() || right.is_null() {
-            return Self::address_equal(left.address().clone(), right.address().clone());
-        }
-        if left.same_provenance_as(&right)
-            || (matches!(left.program_type(), ProgramType::FunctionPointer(_))
-                && matches!(right.program_type(), ProgramType::FunctionPointer(_)))
-        {
-            // With the complete pointer domain already identical, only the
-            // numeric coordinates remain. A logical word cast's coordinates
-            // use the same uint64 classes as its original word. Keep this
-            // reduction out of raw pointer equality, which provenance checks
-            // also use: numbers alone must never supply a pointer domain.
-            if left.address().integer_address_bits().is_some()
-                || right.address().integer_address_bits().is_some()
-            {
-                return Self::uint64_equal(
-                    OldMachineTerm::integer_address(left.address().clone()),
-                    OldMachineTerm::integer_address(right.address().clone()),
-                );
+        match left.equality_kind(&right) {
+            PointerEqualityKind::Complete => Self::PointerEqual(Box::new(left), Box::new(right)),
+            PointerEqualityKind::Address => {
+                Self::address_equal(left.address().clone(), right.address().clone())
             }
-            Self::address_equal(left.address().clone(), right.address().clone())
-        } else {
-            // Whether two pointers are equal does not depend on the `const`
-            // of the expressions that named them, and one proposition must
-            // be one term however its operands were read.
-            Self::PointerEqual(Box::new(left), Box::new(right))
+            PointerEqualityKind::IntegerAddress => Self::integer_address_equality(&left, &right),
         }
+    }
+
+    pub(crate) fn integer_address_equality(left: &Pointer, right: &Pointer) -> Self {
+        Self::uint64_equal(
+            OldMachineTerm::integer_address(left.address().clone()),
+            OldMachineTerm::integer_address(right.address().clone()),
+        )
     }
 
     pub fn address_equal(left: Address, right: Address) -> Self {
@@ -4619,7 +4594,46 @@ impl SharedPureApplication {
     }
 }
 
+pub(crate) enum PointerEqualityKind {
+    Complete,
+    Address,
+    IntegerAddress,
+}
+
 impl Pointer {
+    pub(crate) fn equality_kind(&self, other: &Self) -> PointerEqualityKind {
+        // A wide pointer comparison includes its element count, even against null.
+        if self.is_wide() || other.is_wide() {
+            return PointerEqualityKind::Complete;
+        }
+        if self.is_null() || other.is_null() {
+            return PointerEqualityKind::Address;
+        }
+        if self.same_provenance_as(other)
+            || (matches!(self.program_type(), ProgramType::FunctionPointer(_))
+                && matches!(other.program_type(), ProgramType::FunctionPointer(_)))
+        {
+            // Once the domain agrees, use the original word of an integer cast.
+            if self.address().integer_address_bits().is_some()
+                || other.address().integer_address_bits().is_some()
+            {
+                return PointerEqualityKind::IntegerAddress;
+            }
+            return PointerEqualityKind::Address;
+        }
+        PointerEqualityKind::Complete
+    }
+
+    /// Comparing offsets decides complete pointer equality only when the base,
+    /// provenance and element counts already agree.
+    pub(crate) fn equality_offset_sides<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> Option<(&'a AddressOffset, &'a AddressOffset)> {
+        (self.base == other.base && self.same_provenance_as(other) && self.same_metadata_as(other))
+            .then_some((&self.offset, &other.offset))
+    }
+
     /// The word of a pointer converted from an integer, as
     /// `(word) as (T *)` writes it.
     pub(crate) fn integer_cast_word(&self) -> Option<&OldMachineTerm> {
