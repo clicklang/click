@@ -1706,9 +1706,24 @@ pub(super) fn deferred_value_binders(tactic: &ProofTactic) -> impl Iterator<Item
         .chain(witnesses.iter().map(|(_, name)| name))
 }
 
+#[derive(Clone, Default)]
+pub(super) struct DeferredValueBindings {
+    names: PersistentBinderMap<()>,
+    has_unfold_witnesses: bool,
+}
+
+impl DeferredValueBindings {
+    pub(super) fn record(&mut self, tactic: &ProofTactic) {
+        for name in deferred_value_binders(tactic) {
+            self.names.insert(name.clone(), ());
+        }
+        self.has_unfold_witnesses |= matches!(tactic, ProofTactic::UnfoldWitnesses { .. });
+    }
+}
+
 impl PostExecutionTactic {
-    pub(super) fn reads_deferred_binding(&self, bindings: &PersistentBinderMap<()>) -> bool {
-        if bindings.is_empty() {
+    pub(super) fn reads_deferred_binding(&self, bindings: &DeferredValueBindings) -> bool {
+        if bindings.names.is_empty() {
             return false;
         }
         let proposition = match self {
@@ -1718,6 +1733,15 @@ impl PostExecutionTactic {
                 execution_route: None,
                 ..
             } => condition,
+            // The stated goal can be independent of the witness even
+            // when its written proof uses it. Check that proof after the
+            // return-time resource rewrite has produced the binding.
+            Self::Have(have)
+                if bindings.has_unfold_witnesses
+                    && matches!(have.proof, SourceProof::Script(_)) =>
+            {
+                return true;
+            }
             Self::Have(have) => &have.proposition,
             _ => return false,
         };
@@ -1726,7 +1750,7 @@ impl PostExecutionTactic {
             proposition,
             &mut names,
         );
-        names.iter().any(|name| bindings.contains_key(name))
+        names.iter().any(|name| bindings.names.contains_key(name))
     }
 
     /// The deferred tactics written in this control tactic's arms, every

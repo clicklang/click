@@ -156,7 +156,7 @@ fn defer_post_execution_case_split<'a>(
         .execution()
         .expect("the case is deferred on a terminal frontier")
         .presentation
-        .deferred_binding_names;
+        .deferred_value_bindings;
     let then_tactics = driven!(Ok::<_, ClickError>(deferred_region_with_bindings(
         then_branch,
         bindings
@@ -252,7 +252,7 @@ fn defer_post_execution_match<'a>(
         .execution()
         .expect("the match is deferred on a terminal frontier")
         .presentation
-        .deferred_binding_names;
+        .deferred_value_bindings;
     let deferred = driven!(Ok::<_, ClickError>(deferred_post_execution_match(
         index,
         source_index,
@@ -952,7 +952,7 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
 }
 
 fn deferred_post_execution_region(node: &InternalProofNode) -> Result<DeferredArm, Decline> {
-    deferred_region_with_bindings(node, &PersistentBinderMap::default())
+    deferred_region_with_bindings(node, &DeferredValueBindings::default())
 }
 
 /// Converts a supported post-execution syntax region into cursor metadata.
@@ -961,7 +961,7 @@ fn deferred_post_execution_region(node: &InternalProofNode) -> Result<DeferredAr
 /// sequential nodes are walked in a loop; only written nesting recurses.
 fn deferred_region_with_bindings(
     node: &InternalProofNode,
-    bindings: &PersistentBinderMap<()>,
+    bindings: &DeferredValueBindings,
 ) -> Result<DeferredArm, Decline> {
     let mut bindings = bindings.clone();
     let mut deferred = Vec::new();
@@ -983,9 +983,7 @@ fn deferred_region_with_bindings(
                         source_index: indexed.source_index,
                         tactic,
                     });
-                    for name in deferred_value_binders(&indexed.tactic) {
-                        bindings.insert(name.clone(), ());
-                    }
+                    bindings.record(&indexed.tactic);
                 }
                 continuation
             }
@@ -1075,7 +1073,7 @@ fn deferred_post_execution_match(
     source_index: usize,
     proof_match: &Arc<ProofMatch>,
     arms: &[InternalProofNode],
-    bindings: &PersistentBinderMap<()>,
+    bindings: &DeferredValueBindings,
 ) -> Result<DeferredPostExecutionTactic, Decline> {
     if proof_match.ensuring.is_some() {
         return Err(Decline::Shape);

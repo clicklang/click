@@ -598,7 +598,7 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     pub(in crate::surface::proof) post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
     /// Value names introduced by tactics scheduled directly on this frontier.
-    pub(in crate::surface::proof) deferred_binding_names: PersistentBinderMap<()>,
+    pub(in crate::surface::proof) deferred_value_bindings: DeferredValueBindings,
     /// Deferred source prefix already visited while preparing case obligations.
     pub(in crate::surface::proof) partitioned_post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
@@ -873,7 +873,7 @@ impl ExecutionProofState {
                 path_branch_premises: PersistentSequence::default(),
                 frontier_loop_clauses: FrontierLoopClauses::default(),
                 post_execution_tactics: PersistentSequence::default(),
-                deferred_binding_names: PersistentBinderMap::default(),
+                deferred_value_bindings: DeferredValueBindings::default(),
                 partitioned_post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
                 surface_record: SurfaceRecord::default(),
@@ -4059,11 +4059,9 @@ impl ExecutionProofPresentation {
         tactic: PostExecutionTactic,
         lexical_bindings: Option<PersistentBinderMap<SyntaxTerm>>,
     ) {
-        let reads_deferred_binding = tactic.reads_deferred_binding(&self.deferred_binding_names);
+        let reads_deferred_binding = tactic.reads_deferred_binding(&self.deferred_value_bindings);
         if let PostExecutionTactic::Leaf(leaf) = &tactic {
-            for name in deferred_value_binders(leaf) {
-                self.deferred_binding_names.insert(name.clone(), ());
-            }
+            self.deferred_value_bindings.record(leaf);
         }
         self.post_execution_tactics
             .push(DeferredPostExecutionTactic {

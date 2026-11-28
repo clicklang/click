@@ -277,13 +277,13 @@ fn returned_unfold_witnesses_replay_in_their_written_scope() {
             let base: int32* where base == p;
         }
 
-        int32 id(int32* p) {
+        int32 id(int32* p, int32 x) {
             owns r: box(p);
             ensures result == 0;
         } by {
             step_until(function.exit);
             BODY
-            close();
+            TAIL
         }
     "#;
     let open_and_restore = r#"
@@ -291,15 +291,33 @@ fn returned_unfold_witnesses_replay_in_their_written_scope() {
         have q == p by close();
         fold(r);
     "#;
-    let sources = [("id.c", "int32 id(int32* p) { return 0; }")];
-    for body in [
-        open_and_restore.to_owned(),
-        format!(
-            "if result == 0 {{ {open_and_restore} }} else {{ }}
-             if result == 0 {{ {open_and_restore} }} else {{ }}"
+    let sources = [("id.c", "int32 id(int32* p, int32 x) { return 0; }")];
+    let before_split = r#"
+        let { base: q } = unfold(r);
+        have p == p by {
+            have q == p by close();
+            close();
+        }
+        if x > 0 {
+            fold(r);
+            close();
+        } else {
+            fold(r);
+            close();
+        }
+    "#;
+    for (body, tail) in [
+        (open_and_restore.to_owned(), "close();"),
+        (
+            format!(
+                "if result == 0 {{ {open_and_restore} }} else {{ }}
+                 if result == 0 {{ {open_and_restore} }} else {{ }}"
+            ),
+            "close();",
         ),
+        (before_split.to_owned(), ""),
     ] {
-        let source = source.replace("BODY", &body);
+        let source = source.replace("BODY", &body).replace("TAIL", tail);
         let expanded = expand_function_proof_source(&source, &sources, "id")
             .unwrap_or_else(|error| panic!("{}\n{source}", error.report()));
         assert!(expanded.contains("base: q"), "{expanded}");
