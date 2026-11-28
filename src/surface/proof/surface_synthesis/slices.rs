@@ -79,7 +79,7 @@ fn retyped(named: SyntaxTerm, named_string: bool, string: bool) -> SyntaxTerm {
 
 /// Whether the slice the variable `variable` names is a string slice: the
 /// type its proof binder or its parameter declares. A slice a Rust call
-/// returns is not read here (`design/rust-slice-values.md`, step 3c-i).
+/// returns is named by [`call_result_slice`], which gives its element.
 fn slice_variable_is_string(variable: Variable, parameter_binding: ParameterBinding<'_>) -> bool {
     let element = folds::slice_binder_element(variable).or_else(|| {
         match slice_parameter_of(variable, parameter_binding)?.interface_type() {
@@ -124,6 +124,15 @@ fn named_slice(
         return None;
     }
     match (&address.base, count) {
+        (AddressBase::Symbolic(variable), OldMachineTerm::Variable(counted))
+            if counted.counted_slice() == Some(*variable)
+                && let Some((slice, element)) = call_result_slice(address, state) =>
+        {
+            Some(Named {
+                slice,
+                string: element == crate::kernel::SliceElement::Str,
+            })
+        }
         (AddressBase::Symbolic(variable), OldMachineTerm::Variable(counted))
             if counted.counted_slice() == Some(*variable) =>
         {
@@ -180,8 +189,12 @@ fn slice_variable(
             crate::surface::surface_parameter_binding(parameter.binding_name()),
         )));
     }
-    // A slice a call returned, or another value named where it was
-    // introduced, is named by its address's routes.
+    // A slice a Rust call returned is the call's result.
+    if let Some((slice, _)) = call_result_slice(&Address::symbolic(variable), state) {
+        return Some(slice);
+    }
+    // Another value named where it was introduced is named by its
+    // address's routes.
     synthesize_surface_pointer_expression(
         &Address::symbolic(variable),
         parameter_binding,
@@ -269,6 +282,45 @@ fn slice_parameter_data<'a>(
         })
 }
 
+/// The slice a Rust call returned whose data pointer is `data`, with its
+/// element (`design/rust-slice-values.md`, step 3c-i): the call's result as
+/// the program names it, a live call step or a recorded call's region
+/// result. Only a wide result names it: a thin result at the same address
+/// is no slice.
+fn call_result_slice(
+    data: &Address,
+    state: &ExecutionState,
+) -> Option<(SyntaxTerm, crate::kernel::SliceElement)> {
+    if !matches!(data.base, AddressBase::Symbolic(_))
+        || !matches!(data.offset.view(), OffsetView::Constant(0))
+    {
+        return None;
+    }
+    let element = |held: &crate::kernel::Pointer| match held.program_type() {
+        ProgramType::SlicePointer(element) => Some(element),
+        _ => None,
+    };
+    if let Some((step, found)) = state.step_results.as_ref().and_then(|results| {
+        results.iter().find_map(|(step, value)| {
+            crate::instrumentation::record_deterministic_work(1);
+            match &*value.native() {
+                ProgramValue::Pointer(held) if held.is_wide() && held.address() == data => {
+                    Some((*step, element(&held)?))
+                }
+                _ => None,
+            }
+        })
+    }) && let Some(result) = crate::surface::diagnostics::step_result_expression(step)
+    {
+        return Some((result, found));
+    }
+    SYNTHESIS_RECORDED_POINTS.with(|points| {
+        let points = points.borrow();
+        let (region, held) = points.as_ref()?.call_result_naming_slice(data)?;
+        Some((SyntaxTerm::RegionResult(region), element(&held)?))
+    })
+}
+
 /// The parameter whose argument is the slice `variable` names.
 fn slice_parameter_of<'a>(
     variable: Variable,
@@ -328,6 +380,12 @@ pub(super) fn raise_slice_count(
                     crate::kernel::SliceElement::Str,
                 ),
         ),
+        OldMachineTerm::Variable(counted)
+            if let Some((slice, element)) =
+                call_result_slice(&Address::symbolic(counted.counted_slice()?), state) =>
+        {
+            (slice, element == crate::kernel::SliceElement::Str)
+        }
         OldMachineTerm::Variable(counted) => {
             let variable = counted.counted_slice()?;
             (
@@ -453,6 +511,15 @@ pub(super) fn slice_data_pointer(
                 )?,
                 element,
             )
+        }
+        // A slice a Rust call returned.
+        AddressBase::Symbolic(_)
+            if let Some(found) = call_result_slice(
+                &address.with_offset(crate::kernel::AddressOffset::constant(0)),
+                state,
+            ) =>
+        {
+            found
         }
         // A match arm's slice binder.
         AddressBase::Symbolic(variable)

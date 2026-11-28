@@ -9675,6 +9675,21 @@ impl AnnotationLowerer<'_> {
                 value_type: self.known_pointee_type(pointer, environment)?,
                 exact: false,
             }),
+            // A slice component read at a recorded point, `at(p, s.len())`,
+            // reads the slice that point's state names: its operand is
+            // lowered there, as a scalar local's read is, since the program
+            // expression would read the current state's locals
+            // (`design/rust-slice-values.md`, step 3c-i).
+            ProgramExpression::SliceLength(slice) if environment.reference_state.is_some() => {
+                Ok(SpecExpression::SliceLength(Box::new(
+                    self.lower_program_expression_to_spec(slice, environment)?,
+                )))
+            }
+            ProgramExpression::SliceData(slice) if environment.reference_state.is_some() => {
+                Ok(SpecExpression::SliceData(Box::new(
+                    self.lower_program_expression_to_spec(slice, environment)?,
+                )))
+            }
             expression => {
                 let expression = if environment.contract_result_in_scope {
                     substitute_program_expression_in(

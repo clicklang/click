@@ -16,6 +16,12 @@ fn slice_returns::passed(bytes: &[u8]) -> &[u8] {
 // A caller binds the result as one slice local.
 fn slice_returns::measured(bytes: &[u8]) -> usize {
     ensures result == bytes.len();
+} by {
+    // A proof reads the slice local where it was live.
+    step_until(function.exit);
+    have at(statement(0).exit, view.as_ptr()) == bytes.as_ptr();
+    have at(statement(0).exit, view.len()) == bytes.len();
+    close();
 }
 
 // A contract indexes a slice result as it does a slice parameter.

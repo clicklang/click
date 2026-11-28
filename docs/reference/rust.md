@@ -339,9 +339,11 @@ they are refused. A slice result, `-> &[T]`, `-> &mut [T]` or `-> &str`, is
 one value too: the contract reads `result.len()`, `result.as_ptr()` and
 `result[i]`, and a caller binds the result as one slice local
 ([`tests/fixtures/rust-verification/slice-returns`](https://github.com/clicklang/click/blob/master/tests/fixtures/rust-verification/slice-returns/returns.click)).
-A caller's proof that reads elements through a returned slice is not yet
-supported, and failures may print a returned slice's data pointer as the
-slice ([step 3c-i](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)).
+A proof reads a slice local where it was live,
+`at(statement(0).exit, view.as_ptr())`. An element read through a slice
+local at an earlier point is not yet related to the same element read now,
+so a caller that indexes a returned slice is not proved
+([step 3c-i](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)).
 An index or a range bound keeps
 its `usize` type, so nothing is cast and the contract states no bound on the
 length:
