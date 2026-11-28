@@ -5375,35 +5375,6 @@ pub(in crate::kernel) fn memory_matches_effect_summary_endpoint(
     expected == actual || memories_match_for_pointer_load(expected, actual, pointer)
 }
 
-pub(in crate::kernel) fn collect_memory_effect_write_accesses(
-    facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<(Address, crate::kernel::AccessExtent)> {
-    // Concrete stores certify exact pointer-width pairs. Abstract calls and
-    // loops certify ranges separately through MemoryEffectSummary; comparing
-    // endpoint memories would mistake join abstraction and call havoc for
-    // writes.
-    let mut writes = BTreeSet::new();
-    for fact in facts.fact_iter() {
-        if let Proposition::MemoryMutatesOnly {
-            writes: accesses, ..
-        } = fact.proposition()
-        {
-            writes.extend(accesses.iter().cloned());
-        }
-    }
-
-    writes
-}
-
-pub(in crate::kernel) fn collect_memory_effect_write_pointers(
-    facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<Address> {
-    collect_memory_effect_write_accesses(facts)
-        .into_iter()
-        .map(|(pointer, _)| pointer)
-        .collect()
-}
-
 #[cfg(test)]
 #[test]
 fn offset_resolution_does_not_promote_wrapped_index_equality() {

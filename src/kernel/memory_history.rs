@@ -4399,6 +4399,73 @@ thread_local! {
 
 const DAG_LOAD_EQUALITY_MEMO_LIMIT: usize = 200_000;
 
+/// The writes the memory history records on every path from one point to a
+/// later one: what a region did to memory, read from its steps.
+#[derive(Debug, Default)]
+pub(crate) struct RecordedWrites {
+    /// Each store's destination and extent.
+    pub(crate) accesses: BTreeSet<(Address, AccessExtent)>,
+    /// Each call's or loop's write ranges, with the memory it started from.
+    pub(crate) ranges: Vec<(MemoryRange, SharedMemory)>,
+    /// The blocks the region declared or allocated: storage it created.
+    pub(crate) created: BTreeSet<AddressBase>,
+    /// Whether a loop between the points records no checked footprint: its
+    /// iterations' writes are not on this history.
+    pub(crate) unbounded_loop: bool,
+}
+
+impl RecordedWrites {
+    /// The writes between `before` and `after`, visiting each step once.
+    /// `None` when some path into `after` does not start at `before`.
+    pub(crate) fn between(
+        before: &crate::kernel::program_point::PathLink,
+        after: &crate::kernel::program_point::PathLink,
+    ) -> Option<Self> {
+        let mut writes = Self::default();
+        let mut unbounded = false;
+        after.visit_region_steps_since(before, |step| {
+            if let Some((pointer, extent)) = step.single_write_extent() {
+                writes.accesses.insert((pointer.clone(), extent));
+            }
+            match step {
+                MemoryDerivation::CellsSeeded { .. } => {
+                    for (pointer, value) in step.seeded_stores().expect("a CellsSeeded edge") {
+                        writes
+                            .accesses
+                            .insert((pointer, AccessExtent::Bytes(value.byte_width())));
+                    }
+                }
+                MemoryDerivation::CallHavoc {
+                    base,
+                    mutable_ranges,
+                    ..
+                } => writes.ranges.extend(
+                    mutable_ranges
+                        .iter()
+                        .map(|range| (range.clone(), base.clone())),
+                ),
+                MemoryDerivation::LoopHavoc {
+                    base,
+                    mutable_ranges,
+                    ..
+                } => match mutable_ranges {
+                    Some(ranges) => writes
+                        .ranges
+                        .extend(ranges.iter().map(|range| (range.clone(), base.clone()))),
+                    None => unbounded = true,
+                },
+                MemoryDerivation::BlockDeclared { block, .. }
+                | MemoryDerivation::HeapAllocated { block, .. } => {
+                    writes.created.insert(block.clone());
+                }
+                _ => {}
+            }
+        })?;
+        writes.unbounded_loop = unbounded;
+        Some(writes)
+    }
+}
+
 /// The memory history's liveness query: whether storage in `block` that is
 /// live at one of `left` and `right` is live at the other. One point must be
 /// reached from the other through single predecessors, and no step between

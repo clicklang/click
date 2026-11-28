@@ -264,7 +264,6 @@ pub(crate) use primitives::ABSTRACT_VALUE_WIDTH;
 pub(crate) use primitives::coalesce_written_resource_descriptions;
 pub(crate) use primitives::resource_context_has_symbolic_range_read;
 pub use primitives::*;
-pub(crate) use reasoning::memory_effect_write_pointers;
 pub(crate) use reasoning::memory_resolution::{
     ClosureFactCheck, closure_memoized_fact_check, with_closure_failure_memo,
 };

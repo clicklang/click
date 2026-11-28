@@ -44,15 +44,3 @@ pub(super) use path_facts::{
 pub(crate) use substitution::*;
 pub(crate) use variable_collection::resource_context_has_read;
 pub(crate) use variable_collection::*;
-
-pub(crate) fn memory_effect_write_accesses(
-    facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<(Address, crate::kernel::AccessExtent)> {
-    collect_memory_effect_write_accesses(facts)
-}
-
-pub(crate) fn memory_effect_write_pointers(
-    facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<Address> {
-    collect_memory_effect_write_pointers(facts)
-}

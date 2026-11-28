@@ -7,17 +7,13 @@ fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOu
         Vec::new(),
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
-    let memory = SymbolicMemory::new();
-    let facts = [
-        ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
-            before_point: Default::default(),
-            after_point: Default::default(),
-            before: memory.clone(),
-            after: memory,
-            mutable_ranges: vec![required],
-        })
-        .into_certified(),
-    ];
+    let writes = crate::kernel::RecordedWrites {
+        ranges: vec![(
+            required,
+            crate::kernel::intern_memory(SymbolicMemory::new()),
+        )],
+        ..Default::default()
+    };
     let projection = FunctionMemoryEffectProjection {
         ranges: owned,
         evidence_facts: ExecutionFacts::new(),
@@ -26,7 +22,7 @@ fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOu
     storage_writes_outside_owned_footprint(
         &function,
         &ExecutionState::new(),
-        &facts,
+        &writes,
         &PureFactContext::new(),
         None,
         Some(&projection),
