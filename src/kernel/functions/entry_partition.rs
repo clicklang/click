@@ -81,14 +81,12 @@ pub(crate) fn admit_declared_entry_resources(
         }
         let multiple = inherited_multiple
             || fact.owned_quantity_term().is_some_and(|quantity| {
-                quantity_condition_holds(
+                quantity_comparison_holds(
                     assumptions,
-                    OldConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::GreaterThan,
-                        left: Box::new(quantity.clone()),
-                        right: Box::new(OldMachineTerm::constant(1)),
-                    },
+                    MachineIntegerType::Int32,
+                    CompareRelation::GreaterThan,
+                    quantity,
+                    &OldMachineTerm::constant(1),
                 )
             });
         let name = match fact.resource() {
@@ -99,14 +97,12 @@ pub(crate) fn admit_declared_entry_resources(
                 };
                 if multiple
                     && range.element_width() > 0
-                    && quantity_condition_holds(
+                    && quantity_comparison_holds(
                         assumptions,
-                        OldConditionTerm::Compare {
-                            format,
-                            relation: CompareRelation::LessThan,
-                            left: Box::new(start.clone()),
-                            right: Box::new(end.clone()),
-                        },
+                        format,
+                        CompareRelation::LessThan,
+                        start,
+                        end,
                     )
                 {
                     return Err(RuntimeError::OverlappingOwnedMemoryResources {

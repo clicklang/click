@@ -2204,34 +2204,20 @@ fn quantity_relations_ignore_unrelated_facts() {
                 true,
             );
             let (decided, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let holds = |relation, literal| {
+                    quantity_comparison_holds(
+                        &assumptions,
+                        MachineIntegerType::Int32,
+                        relation,
+                        &count,
+                        &OldMachineTerm::constant(literal),
+                    )
+                };
                 [
-                    // `resource_quantity_is_positive`
-                    quantity_condition_holds(
-                        &assumptions,
-                        OldConditionTerm::signed_greater_than(
-                            count.clone(),
-                            OldMachineTerm::constant(0),
-                        ),
-                    ),
-                    // `resource_quantity_at_least`
-                    quantity_condition_holds(
-                        &assumptions,
-                        OldConditionTerm::signed_greater_equal(
-                            count.clone(),
-                            OldMachineTerm::constant(2),
-                        ),
-                    ),
-                    // An exact quantity equality
-                    quantity_condition_holds(
-                        &assumptions,
-                        OldConditionTerm::equal(count.clone(), OldMachineTerm::constant(3)),
-                    ),
-                    // A relation that does not follow: the miss must also be
-                    // flat, and must not be repaired by a broader search.
-                    quantity_condition_holds(
-                        &assumptions,
-                        OldConditionTerm::equal(count.clone(), OldMachineTerm::constant(4)),
-                    ),
+                    holds(CompareRelation::GreaterThan, 0),
+                    holds(CompareRelation::GreaterEqual, 2),
+                    holds(CompareRelation::Equal, 3),
+                    holds(CompareRelation::Equal, 4),
                 ]
             });
             assert_eq!(
