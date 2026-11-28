@@ -793,6 +793,29 @@ mod tests {
                     panic!("expected reversed address equality");
                 };
                 let [left, right] = term.operand_view().pointer_addresses().unwrap();
+                // Both possible result roots are already interned. Rebuilding
+                // local == other must select this declaration's exact root.
+                let third = Address::symbolic(Variable(999048)).into_shared();
+                let equality = |arguments| {
+                    crate::kernel::Proposition::condition_is(
+                        StoredConditionTerm::from_root(KernelTerm::address_equal_raw(arguments))
+                            .unwrap(),
+                        true,
+                    )
+                };
+                let goal = equality([left.clone(), third.clone()]);
+                let cited = equality([third, right.clone()]);
+                let crate::kernel::Proposition::ConditionIs(result, true) =
+                    crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
+                        &goal,
+                        &cited,
+                        std::slice::from_ref(&cited),
+                    )
+                    .unwrap()
+                else {
+                    panic!("expected rewritten address equality");
+                };
+                assert_eq!(result.root(), term.root());
                 assert_eq!(
                     reversed.operand_view().pointer_addresses().unwrap(),
                     [right, left]

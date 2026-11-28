@@ -559,7 +559,12 @@ fn rewrite_with_admitted_equality_reading(
                         Ok(Proposition::ConditionIs(condition, value)) => {
                             if matches!(
                                 condition.root().map(KernelTerm::node),
-                                Some(KernelTermNode::IntegerCompare { .. })
+                                Some(
+                                    KernelTermNode::BoolLiteral(_)
+                                        | KernelTermNode::IntegerCompare { .. }
+                                        | KernelTermNode::AddressEqual { .. }
+                                        | KernelTermNode::AddressOffsetEqual { .. }
+                                )
                             ) {
                                 results.push((Proposition::ConditionIs(condition, value), true));
                                 continue;
@@ -1318,6 +1323,36 @@ fn rewrite_atomic_by_word_equality(
     Ok(result)
 }
 
+fn rewrite_address_goal(
+    [left, right]: [SharedAddress; 2],
+    polarity: bool,
+    rewrite: impl Fn(&Address) -> Address,
+) -> Result<Proposition, AtomicRewriteRefusal> {
+    let root = KernelTerm::address_equal([
+        rewrite(left.written()?).into_shared(),
+        rewrite(right.written()?).into_shared(),
+    ]);
+    Ok(Proposition::condition_is(
+        StoredConditionTerm::from_root(root).expect("address equality is Boolean"),
+        polarity,
+    ))
+}
+
+fn rewrite_offset_goal(
+    [left, right]: [SharedAddressOffset; 2],
+    polarity: bool,
+    rewrite: impl Fn(&AddressOffset) -> AddressOffset,
+) -> Result<Proposition, AtomicRewriteRefusal> {
+    let root = KernelTerm::address_offset_equal_raw([
+        rewrite(AddressOffset::try_from_ref(&left)?).into_shared(),
+        rewrite(AddressOffset::try_from_ref(&right)?).into_shared(),
+    ]);
+    Ok(Proposition::condition_is(
+        StoredConditionTerm::from_root(root).expect("offset equality is Boolean"),
+        polarity,
+    ))
+}
+
 fn rewrite_atomic_proposition_by_exact_equality(
     goal: &Proposition,
     equality: &Proposition,
@@ -1414,10 +1449,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return Ok(rewritten);
     }
 
-    if matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
-            _,
-            _
-        ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::PointerEqual(..) | OldConditionTerm::AddressEqual(..), _))))
+    if let Proposition::ConditionIs(condition, _) = goal
+        && (condition.operand_view().pointer_addresses().is_some()
+            || condition.operand_view().pointer_values().is_some())
         && let Some((
             OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -1838,32 +1872,19 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 bytes: bytes.clone(),
                 wide: *wide,
             },
-            condition_source_0 @ Proposition::ConditionIs(_, expected)
-                if let Some((OldConditionTerm::AddressOffsetEqual(goal_left, goal_right), _)) =
-                    condition_source_0.old_condition() =>
+            Proposition::ConditionIs(condition, expected)
+                if let Some(offsets) = condition.operand_view().pointer_offsets() =>
             {
-                Proposition::condition_is(
-                    OldConditionTerm::AddressOffsetEqual(
-                        Box::new(rewrite_offset(goal_left, left, right)),
-                        Box::new(rewrite_offset(goal_right, left, right)),
-                    ),
-                    *expected,
-                )
+                rewrite_offset_goal(offsets, *expected, |offset| {
+                    rewrite_offset(offset, left, right)
+                })?
             }
-            condition_source_0 @ Proposition::ConditionIs(_, expected)
-                if let Some((OldConditionTerm::AddressEqual(goal_left, goal_right), _)) =
-                    condition_source_0.old_condition() =>
+            Proposition::ConditionIs(condition, expected)
+                if let Some(addresses) = condition.operand_view().pointer_addresses() =>
             {
-                let rewrite_pointer = |pointer: &Address| {
-                    pointer.with_offset(rewrite_offset(&pointer.offset, left, right))
-                };
-                Proposition::condition_is(
-                    OldConditionTerm::address_equal(
-                        rewrite_pointer(goal_left),
-                        rewrite_pointer(goal_right),
-                    ),
-                    *expected,
-                )
+                rewrite_address_goal(addresses, *expected, |address| {
+                    address.with_offset(rewrite_offset(&address.offset, left, right))
+                })?
             }
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term = |term: &OldMachineTerm| rewrite_term_offset(term, left, right);
@@ -2209,23 +2230,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     wide: *wide,
                 }
             }
-            condition_source_0 @ Proposition::ConditionIs(_, expected)
-                if let Some((OldConditionTerm::AddressEqual(goal_left, goal_right), _)) =
-                    condition_source_0.old_condition() =>
+            Proposition::ConditionIs(condition, expected)
+                if let Some(addresses) = condition.operand_view().pointer_addresses() =>
             {
-                Proposition::condition_is(
-                    // Replacing one side can land both pointers in the same
-                    // block, and a same-block pointer equality is carried
-                    // everywhere else as the equality of its offsets. Rebuild
-                    // through the canonicalizing constructor so the rewritten
-                    // goal is the term an ordinary lowering would produce and a
-                    // later `known` or `normalize() using` can see it.
-                    OldConditionTerm::address_equal(
-                        rewrite_pointer(goal_left),
-                        rewrite_pointer(goal_right),
-                    ),
-                    *expected,
-                )
+                rewrite_address_goal(addresses, *expected, rewrite_pointer)?
             }
             condition_source_0 @ Proposition::ConditionIs(_, expected)
                 if let Some((OldConditionTerm::PointerEqual(goal_left, goal_right), _)) =
@@ -2622,6 +2630,20 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             result
         }
+        Proposition::ConditionIs(condition, expected)
+            if let Some(offsets) = condition.operand_view().pointer_offsets() =>
+        {
+            rewrite_offset_goal(offsets, *expected, |offset| {
+                rewrite_offset_term(offset, left, right)
+            })?
+        }
+        Proposition::ConditionIs(condition, expected)
+            if let Some(addresses) = condition.operand_view().pointer_addresses() =>
+        {
+            rewrite_address_goal(addresses, *expected, |address| {
+                address.with_offset(rewrite_offset_term(&address.offset, left, right))
+            })?
+        }
         Proposition::ConditionIs(condition, expected) => {
             let rewritten_condition = if let Some((operator, goal_left, goal_right)) =
                 condition.old_form().as_bitvector_comparison()
@@ -2674,24 +2696,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         OldConditionTerm::IntegerNotEqual(
                             rewrite_integer_observation(goal_left, left, right),
                             rewrite_integer_observation(goal_right, left, right),
-                        )
-                    }
-                    // Pointer goals contain the same int32 terms inside their
-                    // offsets; substituting the proven equality there is the same
-                    // exact term congruence, with work bounded by the goal.
-                    OldConditionTerm::AddressOffsetEqual(goal_left, goal_right) => {
-                        OldConditionTerm::AddressOffsetEqual(
-                            Box::new(rewrite_offset_term(goal_left, left, right)),
-                            Box::new(rewrite_offset_term(goal_right, left, right)),
-                        )
-                    }
-                    OldConditionTerm::AddressEqual(goal_left, goal_right) => {
-                        let rewrite_pointer = |pointer: &Address| {
-                            pointer.with_offset(rewrite_offset_term(&pointer.offset, left, right))
-                        };
-                        OldConditionTerm::address_equal(
-                            rewrite_pointer(goal_left),
-                            rewrite_pointer(goal_right),
                         )
                     }
                     _ => {
@@ -3414,6 +3418,63 @@ mod tests {
                 assert_eq!(right.as_const(), Some(255));
             }
             assert!(!root.has_cached_native_argument());
+        }
+    }
+
+    #[test]
+    fn address_rewrite_keeps_goal_roots_and_polarity() {
+        let _session = VerificationSession::enter();
+        let a = Address::symbolic(Variable(982861));
+        let b = Address::symbolic(Variable(982862));
+        let c = Address::symbolic(Variable(982863));
+        let x = AddressOffset::variable(Variable(982864));
+        let seven = AddressOffset::constant(7);
+        let address_eq = |a: &Address, b: &Address| {
+            KernelTerm::address_equal_raw([a.shared().clone(), b.shared().clone()])
+        };
+        let offset_eq = |a: &AddressOffset, b: &AddressOffset| {
+            KernelTerm::address_offset_equal_raw([a.shared().clone(), b.shared().clone()])
+        };
+        for (premise, goal, expected) in [
+            (address_eq(&a, &b), address_eq(&a, &c), address_eq(&b, &c)),
+            (
+                address_eq(&a, &b),
+                address_eq(&a, &b),
+                KernelTerm::boolean_literal(true),
+            ),
+            (
+                offset_eq(&x, &seven),
+                address_eq(&a.with_offset(x.clone()), &b),
+                address_eq(&a.with_offset(seven.clone()), &b),
+            ),
+            (
+                offset_eq(&x, &seven),
+                offset_eq(&x, &seven),
+                offset_eq(&seven, &seven),
+            ),
+        ] {
+            let premise =
+                Proposition::condition_is(StoredConditionTerm::from_root(premise).unwrap(), true);
+            for polarity in [true, false] {
+                let written = Proposition::condition_is(
+                    StoredConditionTerm::from_root(goal.clone()).unwrap(),
+                    polarity,
+                );
+                let Proposition::ConditionIs(result, actual_polarity) =
+                    rewrite_proposition_by_exact_equality(
+                        &written,
+                        &premise,
+                        std::slice::from_ref(&premise),
+                    )
+                    .unwrap()
+                else {
+                    panic!("expected rewritten comparison");
+                };
+                assert_eq!(actual_polarity, polarity);
+                assert_eq!(result.root(), Some(&expected));
+                assert!(!goal.has_cached_native_argument());
+                assert!(!expected.has_cached_native_argument());
+            }
         }
     }
 

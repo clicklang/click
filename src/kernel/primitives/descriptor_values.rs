@@ -567,6 +567,27 @@ impl std::fmt::Debug for StoredConditionTerm {
     }
 }
 impl StoredConditionTerm {
+    /// The same ordering and hash as the written condition. Address comparisons
+    /// already hold the operands that the identity borrows.
+    fn atomic_identity(&self) -> ConditionIdentity<'_> {
+        match self.root().map(KernelTerm::node) {
+            Some(KernelTermNode::AddressEqual {
+                arguments: [left, right],
+                ..
+            }) => ConditionIdentity::AddressEqual(
+                left.written().expect("written address"),
+                right.written().expect("written address"),
+            ),
+            Some(KernelTermNode::AddressOffsetEqual {
+                arguments: [left, right],
+            }) => ConditionIdentity::AddressOffsetEqual(
+                AddressOffset::try_from_ref(left).expect("written offset"),
+                AddressOffset::try_from_ref(right).expect("written offset"),
+            ),
+            _ => self.old_form().identity(),
+        }
+    }
+
     fn connective_key(&self) -> Option<ConditionStorageKey> {
         match &self.0 {
             StoredCondition::Shared(root)
@@ -616,7 +637,7 @@ impl Ord for StoredConditionTerm {
             // BoolIf and BoolEqual follow all atomic conditions in OldConditionTerm.
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
-            (None, None) => self.old_form().cmp(other.old_form()),
+            (None, None) => self.atomic_identity().cmp(&other.atomic_identity()),
         }
     }
 }
@@ -625,7 +646,7 @@ impl std::hash::Hash for StoredConditionTerm {
         if let Some(key) = self.connective_key() {
             key.hash(state);
         } else {
-            self.old_form().hash(state);
+            self.atomic_identity().hash(state);
         }
     }
 }
@@ -875,6 +896,36 @@ mod protocol_value_tests {
         assert_eq!(left.cmp(&right), constructors[0].cmp(&constructors[1]));
         assert!(!left.root().unwrap().has_cached_native_argument());
         assert!(!right.root().unwrap().has_cached_native_argument());
+    }
+
+    #[test]
+    fn shared_address_comparisons_keep_written_order_and_hash() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let a = Address::symbolic(Variable(982866));
+        let b = Address::symbolic(Variable(982867));
+        let x = AddressOffset::variable(Variable(982868));
+        let y = AddressOffset::constant(7);
+        let written = [
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone())),
+            OldConditionTerm::AddressEqual(Box::new(b), Box::new(a)),
+            OldConditionTerm::AddressOffsetEqual(Box::new(x.clone()), Box::new(y.clone())),
+            OldConditionTerm::AddressOffsetEqual(Box::new(y), Box::new(x)),
+        ];
+        let stored = written.each_ref().map(|value| {
+            StoredConditionTerm::from_root(KernelTermImport::default().condition(value)).unwrap()
+        });
+        for (i, left) in stored.iter().enumerate() {
+            assert_eq!(hash(left), hash(&written[i]));
+            for (j, right) in stored.iter().enumerate() {
+                assert_eq!(left.cmp(right), written[i].cmp(&written[j]));
+            }
+        }
+        assert!(
+            stored
+                .iter()
+                .all(|condition| !condition.root().unwrap().has_cached_native_argument())
+        );
     }
 
     #[test]
