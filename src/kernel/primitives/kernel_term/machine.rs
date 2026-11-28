@@ -1261,6 +1261,20 @@ impl KernelTerm {
         CONDITIONAL_READINGS.with(|cache| cache.borrow_mut().clear());
     }
 
+    /// C integer promotion of an 8- or 16-bit read folds a typed literal
+    /// and otherwise keeps the source as the operand of a written widening.
+    pub(crate) fn promote_narrow_to_int32(self, source: MachineIntegerType) -> Self {
+        let destination = MachineIntegerType::Int32;
+        debug_assert!(crate::kernel::is_narrow_widening32(source, destination));
+        if let Some(value) = self
+            .machine_literal()
+            .and_then(|literal| literal.converted_term(source, destination))
+        {
+            return value;
+        }
+        Self::machine_cast_shared(MachineCastSpelling::Generic, source, destination, self)
+    }
+
     pub(crate) fn checking_machine_cast(
         &self,
         source: MachineIntegerType,

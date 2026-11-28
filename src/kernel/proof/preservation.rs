@@ -278,26 +278,19 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Integer(a),
             crate::kernel::ResourceFieldValue::Integer(b),
-        ) => OldConditionTerm::integer_equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::integer_equal(a.clone(), b.clone()).into(),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
-        ) if a.algebraic_type == b.algebraic_type => {
-            return Some(Proposition::condition_is(algebraic_equality(a, b), true));
-        }
+        ) if a.algebraic_type == b.algebraic_type => algebraic_equality(a, b),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
-        ) => {
-            return Some(Proposition::condition_is(
-                StoredConditionTerm::logical_pointer_equal(a, b),
-                true,
-            ));
-        }
+        ) => StoredConditionTerm::logical_pointer_equal(a, b),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),
-        ) => OldConditionTerm::equal(a.clone(), b.clone()),
+        ) => integer_equality(MachineIntegerType::Int32, a.clone(), b.clone())?,
         // An 8-bit field value is native: its equality is at its own format.
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(a)),
@@ -306,7 +299,7 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(b)),
-        ) => OldConditionTerm::uint32_equal(a.clone(), b.clone()),
+        ) => integer_equality(MachineIntegerType::UInt32, a.clone(), b.clone())?,
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(b)),
@@ -353,10 +346,15 @@ fn observation_equality(
         (kind, comparison)
         && narrow != MachineIntegerType::Int32
     {
-        let widen =
-            |value| OldMachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
+        let comparison = MachineIntegerType::Int32;
+        let mut import = KernelTermImport::for_exact_field_inputs();
+        let operands = [integer_bits(after)?, integer_bits(before)?].map(|word| {
+            import
+                .machine(narrow, &word)
+                .promote_narrow_to_int32(narrow)
+        });
         return Some(Proposition::condition_is(
-            OldConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
+            stored_word_equality(comparison, operands),
             true,
         ));
     }
@@ -381,7 +379,7 @@ fn observation_equality(
             algebraic_equality(&a, &b)
         }
         (ReadType::Integer(format), a, b) => {
-            integer_equality(format, integer_bits(a)?, integer_bits(b)?)?.into()
+            integer_equality(format, integer_bits(a)?, integer_bits(b)?)?
         }
         _ => return None,
     };
@@ -410,20 +408,35 @@ fn integer_bits(value: ProgramValue) -> Option<OldMachineTerm> {
     }
 }
 
+fn stored_word_equality(
+    format: MachineIntegerType,
+    operands: [KernelTerm; 2],
+) -> StoredConditionTerm {
+    let root = KernelTerm::boolean_comparison(format, CompareRelation::Equal, operands);
+    StoredConditionTerm::from_root(root).expect("machine word equality")
+}
+
 fn integer_equality(
     format: MachineIntegerType,
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> Option<OldConditionTerm> {
+) -> Option<StoredConditionTerm> {
     Some(match format {
         MachineIntegerType::Int8
         | MachineIntegerType::UInt8
         | MachineIntegerType::Int16
-        | MachineIntegerType::UInt16 => {
-            OldConditionTerm::machine_compare(format, CompareRelation::Equal, left, right)
+        | MachineIntegerType::UInt16
+        | MachineIntegerType::Int32
+        | MachineIntegerType::UInt32 => {
+            let mut import = KernelTermImport::for_exact_field_inputs();
+            stored_word_equality(
+                format,
+                [
+                    import.machine(format, &left),
+                    import.machine(format, &right),
+                ],
+            )
         }
-        MachineIntegerType::Int32 => OldConditionTerm::equal(left, right),
-        MachineIntegerType::UInt32 => OldConditionTerm::uint32_equal(left, right),
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
             // The produced equality must have the same shape as its logical
             // goal, including reflexive variables and closed literal operands.
@@ -435,12 +448,14 @@ fn integer_equality(
                     MachineOperandView::Old(&right),
                 ],
             )
+            .into()
         }
         MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
             OldConditionTerm::integer_equal(
                 IntegerTerm::from_machine(format, left)?,
                 IntegerTerm::from_machine(format, right)?,
             )
+            .into()
         }
     })
 }
@@ -1345,6 +1360,15 @@ mod tests {
         let observed = observation_type(comparison_type, bytes, &expected).unwrap();
         let observed_format = if bytes == 8 { comparison } else { format };
         assert_eq!(observed, ReadType::Integer(observed_format));
+        if bytes <= 4 {
+            let derived =
+                observation_equality(&footprint, slot.clone(), observed, comparison_type).unwrap();
+            let Proposition::ConditionIs(stored, true) = &derived else {
+                panic!("expected stored word equality");
+            };
+            assert!(!stored.root().unwrap().has_cached_native_argument());
+            assert_eq!(derived, expected);
+        }
         let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
