@@ -129,7 +129,8 @@ fn allocation_size_rewrite_keeps_the_mappers_exact_call_argument_payload() {
         original, replacement,
         "native equality observes the argument ID"
     );
-    let mapped = AllocationSize::int32(original).map_bytes(|_| replacement);
+    let mapped =
+        AllocationSize::int32(original).map_stored_bytes(|word| word.map_native(|_| replacement));
     let OldMachineTerm::ClickFunctionApplication { arguments, .. } = mapped.bytes() else {
         panic!("call");
     };
