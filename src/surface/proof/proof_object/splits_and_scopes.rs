@@ -1273,87 +1273,60 @@ impl<'a> Proof<'a> {
         if execution.core.frontier.is_at_function_exit() {
             return Err(self.step_error("`with` must begin before execution reaches function exit"));
         }
-        let (state, introduced_facts, restoration) = if let ResourceClause::Named {
-            binding,
-            resource: definition,
-        } = &resource
-        {
-            if let ResourceClause::Declared { name, .. } = definition.as_ref()
-                && context
-                    .resource_environment
-                    .get(name)
-                    .is_some_and(ResourceDefinition::is_authorized)
-            {
-                return Err(self.step_error(
-                    "`with` on a named instance requires an ordinary composite resource",
-                ));
-            }
-            let instance = execution
-                .core
-                .state
-                .resource_instance_at_path(binding.instance()?, &binding.children)
-                .ok_or_else(|| {
-                    self.step_error(format!(
-                        "`with` requires a held instance `{}`",
-                        binding.name
-                    ))
-                })?;
-            let transition =
-                self.apply_instance_rewrite(binding, &resource, true, Some(instance), &[])?;
-            let introduced = transition.added_facts.clone();
-            let state = self.publish_checked_transition(transition)?;
-            (
-                state,
-                introduced,
-                OpenResourceRestoration::Named(Arc::new(instance.clone())),
-            )
-        } else {
-            let before_facts = self.facts().clone();
-            let checked = open_composite_resource_for_proof(
-                context.resource_environment,
-                &resource,
-                context.parameter_binding(),
-                (*execution.core.state).clone(),
-                self.facts().clone(),
-                &mut execution.presentation.surface_propositions,
-                context.spec_definitions,
-                context.claim_label,
-                context.tactic_index,
-            )?;
-            execution
-                .core
-                .record_resource_rewrite(
-                    context.function,
-                    context.arguments,
-                    &before_facts,
-                    &checked.selected,
-                    &checked.state,
-                    &checked.facts,
+        let (state, introduced_facts, restoration) =
+            if matches!(resource, ResourceClause::Named { .. }) {
+                let (transition, restoration) =
+                    self.open_named_instance(&resource, &execution.core.state)?;
+                let introduced = transition.added_facts.clone();
+                let state = self.publish_checked_transition(transition)?;
+                (state, introduced, restoration)
+            } else {
+                let before_facts = self.facts().clone();
+                let checked = open_composite_resource_for_proof(
+                    context.resource_environment,
+                    &resource,
+                    context.parameter_binding(),
+                    (*execution.core.state).clone(),
+                    self.facts().clone(),
+                    &mut execution.presentation.surface_propositions,
+                    context.spec_definitions,
+                    context.claim_label,
+                    context.tactic_index,
+                )?;
+                execution
+                    .core
+                    .record_resource_rewrite(
+                        context.function,
+                        context.arguments,
+                        &before_facts,
+                        &checked.selected,
+                        &checked.state,
+                        &checked.facts,
+                    )
+                    .map_err(|message| {
+                        self.step_error(format!(
+                            "kernel rejected checked resource `with`: {message}"
+                        ))
+                    })?;
+                execution.core.state = checked.state.into();
+                let introduced_facts = checked.added_facts.clone();
+                let state = self
+                    .state
+                    .publish_checked_frontier_transition(
+                        checked.facts,
+                        execution,
+                        checked.added_facts.clone(),
+                        checked.added_facts,
+                    )
+                    .map_err(|error| self.execution_update_error("`with`", error))?;
+                (
+                    state,
+                    introduced_facts,
+                    OpenResourceRestoration::Declared {
+                        preserve_exposed_body: checked.body_was_already_exposed,
+                    },
                 )
-                .map_err(|message| {
-                    self.step_error(format!(
-                        "kernel rejected checked resource `with`: {message}"
-                    ))
-                })?;
-            execution.core.state = checked.state.into();
-            let introduced_facts = checked.added_facts.clone();
-            let state = self
-                .state
-                .publish_checked_frontier_transition(
-                    checked.facts,
-                    execution,
-                    checked.added_facts.clone(),
-                    checked.added_facts,
-                )
-                .map_err(|error| self.execution_update_error("`with`", error))?;
-            (
-                state,
-                introduced_facts,
-                OpenResourceRestoration::Declared {
-                    preserve_exposed_body: checked.body_was_already_exposed,
-                },
-            )
-        };
+            };
         let body = Proof {
             site: self.site.nested(ProofStepBlock::Open),
             context: self.context.clone(),

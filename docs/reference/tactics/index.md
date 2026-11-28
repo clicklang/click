@@ -3069,8 +3069,9 @@ arm. Profiling reports the descendant tactics.
 composite resource's body and checks that the resource is restored on every
 path out, including a function return. For an ordinary named instance,
 `with(c) { ... }` selects the same instance as `unfold(c)`. The scope must
-restore its original identity and field values. If the proof already restored
-that exact instance with `fold(c)`, the scope closes without another fold.
+restore its original identity and field values. A scope for an ordinary named
+instance can also start at function exit. If the proof already restored that
+exact instance with `fold(c)`, the scope closes without another fold.
 For a named parent, `with(r)` exposes its children under paths such as
 `r.child`. The closing fold takes those same children back. Nested `with`
 blocks can use a child path directly.
@@ -3079,9 +3080,11 @@ Use a family call for unnamed resources, including population members and
 viewed resources. Opening and restoring a population member preserves its
 membership and count. Operations inside the block can change the population
 under the usual authority rules. A viewed resource gives read-only access.
-A model `match` inside the block uses the ordinary checked
-constructor arms and joins: terminal arms each restore the resource at return;
-an `ensuring` interface can rejoin before the block closes.
+A block opened at the execution frontier supports the ordinary model
+`match` arms and joins. Terminal arms each restore the resource at return.
+An `ensuring` interface can rejoin before the block closes. A block opened
+at function exit runs on each existing return path. Put a model `match` that
+partitions return paths outside such a block.
 
 **Failure, checking, and tools:**
 
@@ -3096,7 +3099,7 @@ A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-**Checked closing examples:** [`open_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource.md), [`with_accepts_an_already_restored_instance.md`](https://github.com/clicklang/click/blob/master/mdtests/with_accepts_an_already_restored_instance.md), [`open_named_resource_requires_restoration.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource_requires_restoration.md), [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
+**Checked closing examples:** [`open_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource.md), [`with_accepts_an_already_restored_instance.md`](https://github.com/clicklang/click/blob/master/mdtests/with_accepts_an_already_restored_instance.md), [`open_named_resource_requires_restoration.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource_requires_restoration.md), [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md), [`with_starts_at_return.md`](https://github.com/clicklang/click/blob/master/mdtests/with_starts_at_return.md)
 
 ### Existential witnesses
 

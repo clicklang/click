@@ -760,7 +760,7 @@ impl<'a> ProofScope<'a> {
                     source_index,
                     PostExecutionTactic::CloseOpen {
                         resource: resource.clone(),
-                        restoration: restoration.clone(),
+                        restoration: Some(restoration.clone()),
                         retain_deferred_body,
                     },
                     Some(body.state.locals().values.clone()),

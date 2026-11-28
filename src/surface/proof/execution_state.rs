@@ -494,13 +494,13 @@ pub(super) struct SurfacePathChoice {
     pub(super) selector: SurfacePathSelector,
     pub(super) value: bool,
     pub(super) tactic_offset: usize,
-    pub(super) if_arm_end: Option<SurfaceIfArmEnd>,
+    pub(super) scope_end: Option<SurfaceScopeEnd>,
 }
 
-/// The checked arm ends before the source continuation. Both offsets refer
-/// to the same path as the choice, including cases nested inside this arm.
+/// The checked lexical scope ends before the source continuation. Both offsets
+/// refer to the same path, including cases nested inside this scope.
 #[derive(Clone, Copy)]
-pub(super) struct SurfaceIfArmEnd {
+pub(super) struct SurfaceScopeEnd {
     pub(super) step_offset: usize,
     pub(super) nested_choices: usize,
     pub(super) binds_locals: bool,
@@ -517,6 +517,8 @@ pub(super) enum SurfacePathSelector {
     /// The arm of a constructor `match`, by its index in the written arms.
     /// The choice's `value` is unused.
     MatchArm(Arc<ProofMatch>, usize),
+    /// A resource scope with one body on every outcome that reaches it.
+    Open(Arc<ResourceClause>),
 }
 
 impl SurfacePathSelector {
@@ -581,7 +583,11 @@ pub(super) fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
 
 /// Finish an exit-reaching open scope with its deferred operations and any
 /// restoration proof. Operations after the close are appended separately.
-fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bool {
+fn attach_deferred_open_tail(
+    steps: &mut Vec<ProofStep>,
+    step: &ProofStep,
+    frontier_prefix_len: Option<usize>,
+) -> bool {
     let ProofStep::Open {
         resource,
         proof,
@@ -601,7 +607,10 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
             }
         )
     };
-    let Some(scope_index) = steps.iter().rposition(is_open) else {
+    // A newly synthesized outcome scope is already closed. Its siblings
+    // can still contain the deferred close of a scope from the C frontier.
+    let prefix_len = frontier_prefix_len.unwrap_or(steps.len()).min(steps.len());
+    let Some(scope_index) = steps[..prefix_len].iter().rposition(is_open) else {
         return false;
     };
     let suffix = &steps[scope_index + 1..];
@@ -617,8 +626,10 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
     if scope != resource {
         // A nested scope reached return before its enclosing scope closed.
         // Follow the enclosing certificate to the matching scope.
+        let nested_prefix_len =
+            frontier_prefix_len.map(|_| body.len() + prefix_len - scope_index - 1);
         body.extend(suffix.iter().cloned());
-        if !attach_deferred_open_tail(&mut body, step) {
+        if !attach_deferred_open_tail(&mut body, step, nested_prefix_len) {
             return false;
         }
     } else if matches!(resource, ResourceClause::Named { .. }) && ends_in_terminal_match(&body) {
@@ -667,7 +678,7 @@ fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofSte
     if steps.last().is_some_and(ProofStep::ends_refuted_path) {
         return;
     }
-    if attach_deferred_open_tail(steps, step) {
+    if attach_deferred_open_tail(steps, step, None) {
         return;
     }
     if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
@@ -969,7 +980,7 @@ pub(super) fn append_surface_tactics_by_leaf(
             append_certificate(threw_proof, path_steps, next_path, open_scope);
         } else if let Some(suffix) = path_steps.get(*next_path) {
             for step in suffix {
-                if attach_deferred_open_tail(steps, step) {
+                if attach_deferred_open_tail(steps, step, None) {
                     continue;
                 }
                 if let ProofStep::Open {
@@ -1082,8 +1093,11 @@ pub(super) fn append_surface_steps_at_step_branch_path(
 
 /// Append a checked suffix whose steps already carry their lexical scopes.
 pub(super) fn append_surface_steps_in_order(steps: &mut Vec<ProofStep>, suffix: Vec<ProofStep>) {
+    let mut frontier_prefix_len = steps.len();
     for step in suffix {
-        if !attach_deferred_open_tail(steps, &step) {
+        if attach_deferred_open_tail(steps, &step, Some(frontier_prefix_len)) {
+            frontier_prefix_len = steps.len();
+        } else {
             steps.push(step);
         }
     }
@@ -1369,10 +1383,12 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     // Retain the splits that bind names used by the arm's tactics.
     if paths.len() == 1
         && !paths[0].choices().iter().any(|choice| {
-            choice.if_arm_end.is_some_and(|end| end.binds_locals)
+            choice.scope_end.is_some_and(|end| end.binds_locals)
                 || matches!(
                     &choice.selector,
-                    SurfacePathSelector::MatchArm(..) | SurfacePathSelector::IfEnsuring(..)
+                    SurfacePathSelector::MatchArm(..)
+                        | SurfacePathSelector::IfEnsuring(..)
+                        | SurfacePathSelector::Open(..)
                 )
         })
     {
@@ -1461,7 +1477,18 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
             else_paths.push(path);
         }
     }
-    let prefix = prefix.to_vec();
+    let mut prefix = prefix.to_vec();
+
+    if let SurfacePathSelector::Open(resource) = &first_choice.selector {
+        let (body, continuations) = synthesize_scoped_body(then_paths)?;
+        prefix.push(ProofStep::Open {
+            resource: (**resource).clone(),
+            proof: body,
+            deferred_tail: None,
+        });
+        prefix.extend(synthesize_surface_cursors(continuations)?);
+        return Ok(prefix);
+    }
 
     // A match keeps every arm, so its binders stay bound; an arm no path
     // reached is pruned.
@@ -1496,7 +1523,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     if let SurfacePathSelector::Proposition(condition) = &first_choice.selector
         && then_paths.iter().chain(&else_paths).any(|path| {
             path.choices[path.choice - 1]
-                .if_arm_end
+                .scope_end
                 .is_some_and(|end| end.binds_locals)
         })
     {
@@ -1542,7 +1569,9 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         SurfacePathSelector::CallOutcome => {
             return Err("call paths require the retained frontier outcomes arms".to_string());
         }
-        SurfacePathSelector::MatchArm(..) | SurfacePathSelector::IfEnsuring(..) => {
+        SurfacePathSelector::MatchArm(..)
+        | SurfacePathSelector::IfEnsuring(..)
+        | SurfacePathSelector::Open(..) => {
             unreachable!("scoped splits synthesize above")
         }
     });
@@ -1558,31 +1587,9 @@ fn synthesize_scoped_if<'p>(
     then_paths: Vec<SurfacePathCursor<'p>>,
     else_paths: Vec<SurfacePathCursor<'p>>,
 ) -> Result<Vec<ProofStep>, String> {
-    let mut continuations = Vec::with_capacity(then_paths.len() + else_paths.len());
-    let mut synthesize_arm = |paths: Vec<SurfacePathCursor<'p>>| {
-        let mut arms = Vec::with_capacity(paths.len());
-        for path in paths {
-            let end = path.choices[path.choice - 1]
-                .if_arm_end
-                .ok_or_else(|| "a retained if arm has no checked end".to_string())?;
-            let choice_end = path.choice + end.nested_choices;
-            arms.push(SurfacePathCursor {
-                steps: &path.steps[..end.step_offset],
-                choices: &path.choices[..choice_end],
-                ..path
-            });
-            continuations.push(SurfacePathCursor {
-                step: end.step_offset,
-                choice: choice_end,
-                ..path
-            });
-        }
-        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(arms)?)
-            .map(Box::new)
-            .map_err(|error| error.raw_summary().to_string())
-    };
-    let then_proof = synthesize_arm(then_paths)?;
-    let else_proof = synthesize_arm(else_paths)?;
+    let (then_proof, mut continuations) = synthesize_scoped_body(then_paths)?;
+    let (else_proof, else_continuations) = synthesize_scoped_body(else_paths)?;
+    continuations.extend(else_continuations);
     prefix.push(ProofStep::If {
         ensuring,
         condition: condition.clone(),
@@ -1591,6 +1598,34 @@ fn synthesize_scoped_if<'p>(
     });
     prefix.extend(synthesize_surface_cursors(continuations)?);
     Ok(prefix)
+}
+
+/// Split each path at the checked end of this lexical scope.
+fn synthesize_scoped_body(
+    paths: Vec<SurfacePathCursor<'_>>,
+) -> Result<(Box<ProofCertificate>, Vec<SurfacePathCursor<'_>>), String> {
+    let mut bodies = Vec::with_capacity(paths.len());
+    let mut continuations = Vec::with_capacity(paths.len());
+    for path in paths {
+        let end = path.choices[path.choice - 1]
+            .scope_end
+            .ok_or_else(|| "a retained proof scope has no checked end".to_string())?;
+        let choice_end = path.choice + end.nested_choices;
+        bodies.push(SurfacePathCursor {
+            steps: &path.steps[..end.step_offset],
+            choices: &path.choices[..choice_end],
+            ..path
+        });
+        continuations.push(SurfacePathCursor {
+            step: end.step_offset,
+            choice: choice_end,
+            ..path
+        });
+    }
+    let body =
+        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(bodies)?)
+            .map_err(|error| error.raw_summary().to_string())?;
+    Ok((Box::new(body), continuations))
 }
 
 /// Distinguish certificates checked at the same surface leaf by the
@@ -1644,9 +1679,16 @@ pub(super) enum PostExecutionTactic {
     Both(ProofTactic),
     /// A fold or user tactic application with written obligation proofs.
     ResourceStepProved(ProofTactic),
+    Open {
+        resource: Arc<ResourceClause>,
+        body: DeferredArm,
+        close: Arc<DeferredPostExecutionTactic>,
+    },
     CloseOpen {
         resource: ResourceClause,
-        restoration: OpenResourceRestoration,
+        /// A frontier scope has a template already. A scope opened on the
+        /// outcome takes its template from the live scope stack.
+        restoration: Option<OpenResourceRestoration>,
         retain_deferred_body: bool,
     },
     Apply(TheoremApplication),
@@ -1768,6 +1810,7 @@ impl PostExecutionTactic {
                 ..
             } => vec![returned_tactics.as_slice(), threw_tactics.as_slice()],
             Self::Match { arms, .. } => arms.iter().map(|arm| arm.as_slice()).collect(),
+            Self::Open { body, .. } => vec![body.as_slice()],
             _ => Vec::new(),
         };
         arms.into_iter().flatten()
@@ -2123,7 +2166,9 @@ pub(super) fn post_execution_tactic_timing(
         }
         PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
         PostExecutionTactic::ResourceStepProved(tactic) => (tactic_name(tactic), "control"),
-        PostExecutionTactic::CloseOpen { .. } => ("with", "control"),
+        PostExecutionTactic::Open { .. } | PostExecutionTactic::CloseOpen { .. } => {
+            ("with", "control")
+        }
         PostExecutionTactic::Ensuring(_) => ("ensuring", "simple"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),

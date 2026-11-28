@@ -1879,7 +1879,7 @@ impl<'a> Proof<'a> {
                         selector: SurfacePathSelector::Proposition(condition.clone()),
                         value,
                         tactic_offset,
-                        if_arm_end: None,
+                        scope_end: None,
                     });
             }
             let added = added_fact.into_iter().collect::<Vec<_>>();
