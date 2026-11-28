@@ -94,7 +94,14 @@ pub(crate) fn written_integer_comparison(
             };
             Some((
                 *operator,
-                arguments.clone().map(SharedIntegerTerm::from_root),
+                arguments
+                    .each_ref()
+                    .map(|root| match root.written_argument() {
+                        Some(crate::kernel::PureFunctionArgument::Integer(integer)) => {
+                            integer.clone()
+                        }
+                        _ => SharedIntegerTerm::from_root(root.clone()),
+                    }),
             ))
         }
     }
