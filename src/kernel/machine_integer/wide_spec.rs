@@ -35,7 +35,9 @@ pub(in crate::kernel) fn result_and_domain(
 ) -> (IntegerTerm, Option<ProofObligation>) {
     let mut domain = Vec::new();
     let mut require = |proposition: Proposition| {
-        if !matches!(proposition.old_condition(), Some((OldConditionTerm::Constant(actual), expected)) if actual == expected)
+        if proposition
+            .literal_condition()
+            .is_none_or(|(actual, expected)| actual != expected)
         {
             domain.push(proposition);
         }

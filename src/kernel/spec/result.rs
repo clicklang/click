@@ -382,7 +382,7 @@ impl SpecValue {
         // format, such as `address(p) + 3u64 == address(p) + 3u64`, keep
         // the comparison; checking decides it.
         if let Some(Proposition::ConditionIs(condition, _)) = &proposition
-            && matches!(condition.old_form(), OldConditionTerm::Constant(_))
+            && condition.operand_view().constant().is_some()
             && let Some(retained) = retained_word_comparison(&left, op, &right)
         {
             return Ok(Some(retained));

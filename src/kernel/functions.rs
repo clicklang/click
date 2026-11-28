@@ -8684,9 +8684,10 @@ fn matched_instance_body_ownership(
         definitions,
         assumptions,
     );
-    if clauses.iter().any(|clause| {
-        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(false), _))))
-    }) {
+    if clauses
+        .iter()
+        .any(|clause| clause.proposition.literal_condition() == Some((false, true)))
+    {
         return None;
     }
     let ranges = projection

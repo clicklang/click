@@ -4080,19 +4080,15 @@ fn asserted_condition_proposition(condition: &ProgramExpression) -> SyntaxPropos
 fn literal_requirement_spelling(
     requirement: &UnresolvedRequirement,
 ) -> Option<RequirementSpelling> {
-    let Some((OldConditionTerm::Constant(value), polarity)) =
-        requirement.proposition.old_condition()
-    else {
-        return None;
-    };
+    let (value, polarity) = requirement.proposition.literal_condition()?;
     if requirement.assertion_condition.is_some() {
         return None;
     }
     // The `bool` literal lowers to exactly this constant condition; a closed
     // comparison such as `0 == 1` is retained by lowering instead.
-    let literal = SyntaxProposition::Value(crate::surface::bool_literal(*value));
+    let literal = SyntaxProposition::Value(crate::surface::bool_literal(value));
     Some(RequirementSpelling {
-        surface: if *polarity {
+        surface: if polarity {
             literal
         } else {
             SyntaxProposition::Not(Box::new(literal))

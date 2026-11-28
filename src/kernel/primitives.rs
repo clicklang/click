@@ -15229,6 +15229,15 @@ impl KernelProposition {
         Self::ConditionIs(condition.into(), truth)
     }
 
+    /// The written Boolean literal and its asserted polarity. Compound
+    /// conditions keep their spelling even when their value is known.
+    pub(crate) fn literal_condition(&self) -> Option<(bool, bool)> {
+        let Self::ConditionIs(condition, polarity) = self else {
+            return None;
+        };
+        Some((condition.operand_view().constant()?, *polarity))
+    }
+
     /// Selected native condition-payload inspection. This view borrows the
     /// original payload and truth marker without rebuilding a proposition.
     pub(crate) fn old_condition(&self) -> Option<(&OldConditionTerm, &bool)> {

@@ -281,8 +281,8 @@ pub(super) fn checked_returned_instance_body_facts(
         );
         facts.extend(read_projection);
         facts.extend(clauses.into_iter().filter_map(|clause| {
-            (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(false), _)))))
-            .then_some(clause.proposition)
+            (clause.proposition.literal_condition() != Some((false, true)))
+                .then_some(clause.proposition)
         }));
     }
     // The returned owner justifies these consequences even when the caller
@@ -350,8 +350,8 @@ pub(super) fn selected_resource_instance_case_facts(
                 // can simplify it to `false`; publishing that as a premise
                 // would make every subsequent obligation vacuous.
                 .filter_map(|clause| {
-                    (!matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(false), _)))))
-                    .then_some(clause.proposition)
+                    (clause.proposition.literal_condition() != Some((false, true)))
+                        .then_some(clause.proposition)
                 }),
             )
         })

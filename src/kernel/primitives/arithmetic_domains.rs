@@ -117,7 +117,7 @@ impl Proposition {
         if let IntegerTerm::Machine(value) = &exact
             && format.format().contains(value.ty().format())
         {
-            return Self::condition_is(OldConditionTerm::Constant(true), true);
+            return Self::condition_is(StoredConditionTerm::constant(true), true);
         }
         let (minimum, maximum) = format.format().bounds();
         Self::And(
@@ -182,10 +182,9 @@ impl Proposition {
         fn retain(part: Proposition) -> Option<Proposition> {
             crate::instrumentation::record_deterministic_work(1);
             match part {
-                condition_source_0 @ Proposition::ConditionIs(_, expected)
-                    if let Some((OldConditionTerm::Constant(actual), _)) =
-                        condition_source_0.old_condition()
-                        && (*actual == expected) =>
+                part if part
+                    .literal_condition()
+                    .is_some_and(|(actual, expected)| actual == expected) =>
                 {
                     None
                 }
@@ -397,10 +396,7 @@ mod construction_tests {
                 IntegerTerm::from_machine(source, OldMachineTerm::Variable(Variable(987001)))
                     .unwrap();
             let range = Proposition::arithmetic_result_range(destination, value);
-            assert_eq!(
-                matches!(&range, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _)))),
-                fits
-            );
+            assert_eq!(range.literal_condition() == Some((true, true)), fits);
         }
     }
 }
