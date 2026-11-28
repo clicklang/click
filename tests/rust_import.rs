@@ -1276,7 +1276,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         let offset = length - length % 4;
         let tail = length % 4;
         let claim = format!(
-            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail, 0).entry); step(); step(); have tail.len() == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); close(); }}"
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail, 0).entry); step(); step(); have tail.len() == {tail}u64; have tail.as_ptr() == bytes.as_ptr() + {offset}u64; step_until(function.exit); close(); }}"
         );
         ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -1334,7 +1334,7 @@ fn charon_chunk_iterator_fields_expand_and_replay() {
     let claim = "walk.contract";
     let sidecar = CHARON_CHUNK_SIDECAR.replacen(
         "    step_until(loop(0).entry);\n    loop {",
-        "    step_until(loop(0).entry);\n    have bytes.len() % 4u64 <= bytes.len();\n    have loop(0).iter.rem.len() == bytes.len() % 4u64;\n    have loop(0).iter.rem == bytes + (bytes.len() - bytes.len() % 4u64);\n    loop {",
+        "    step_until(loop(0).entry);\n    have bytes.len() % 4u64 <= bytes.len();\n    have loop(0).iter.rem.len() == bytes.len() % 4u64;\n    have loop(0).iter.rem == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64);\n    loop {",
         1,
     );
     assert_ne!(sidecar, CHARON_CHUNK_SIDECAR);
@@ -1834,8 +1834,8 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
         // The chunk iterator's `v` stands where its length says, not a
         // chunk further on.
         (
-            "invariant iter.v == bytes + (16u64 - iter.v.len());",
-            "invariant iter.v == bytes + ((16u64 - iter.v.len()) + 4u64);",
+            "invariant iter.v == bytes.as_ptr() + (16u64 - iter.v.len());",
+            "invariant iter.v == bytes.as_ptr() + ((16u64 - iter.v.len()) + 4u64);",
         ),
         ("ensures result == 0u32;", "ensures result == 1u32;"),
     ] {
@@ -1876,8 +1876,8 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
         ),
         // The iterator stands where the count says, not one element on.
         (
-            "invariant iter.as_slice() == bytes + (bytes.len() - iter.len());",
-            "invariant iter.as_slice() == bytes + ((bytes.len() - iter.len()) + 1u64);",
+            "invariant iter.as_slice() == bytes.as_ptr() + (bytes.len() - iter.len());",
+            "invariant iter.as_slice() == bytes.as_ptr() + ((bytes.len() - iter.len()) + 1u64);",
         ),
         // Each `next()` yields one element.
         (
@@ -2561,7 +2561,7 @@ fn rust_slice_value_proofs_expand_to_verified_proofs() {
          have bytes[1..3][0] == bytes[1];\n    \
          have bytes[2..].len() == 2u64;\n    \
          have forall (k: uint64) { k <= 4u64 implies bytes[k..].len() == bytes.len() - k };\n    \
-         have bytes[0..4] == slice::from_raw_parts(bytes, 4u64);\n    \
+         have bytes[0..4] == slice::from_raw_parts(bytes.as_ptr(), 4u64);\n    \
          step_until(function.exit);\n    close();\n}\n",
     )
     .unwrap();
@@ -4093,7 +4093,10 @@ fn charon_expansion_names_shadowed_slice_parameter_length_at_entry() {
     let expanded =
         click::surface::expand_program_prepared_claim_source_by_label(&source, &prepared, claim)
             .unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(expanded.contains("at(function.entry, memory("));
+    assert!(
+        expanded.contains("at(function.entry, memory("),
+        "{expanded}"
+    );
     click::surface::without_proof_search_for_claim(claim, || {
         verify_rust_function(&expanded, &prepared, "use_scalar").map_err(|error| error.report())
     })
@@ -4959,7 +4962,8 @@ const SLICES_SIDECAR: &str = include_str!("../examples/rust-slices/bytes.click")
 
 /// Arithmetic on a Rust pointer local keeps its C meaning under Integer
 /// specification arithmetic, as arithmetic on a pointer parameter does:
-/// `right == left + mid` is pointer arithmetic on the split's two halves.
+/// `right.as_ptr() == left.as_ptr() + mid` is pointer arithmetic on the
+/// split's two halves.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
@@ -4969,7 +4973,7 @@ fn a_rust_pointer_local_keeps_its_c_meaning_in_arithmetic() {
 fn right_length(bytes: &[u8], mid: usize) -> usize {\n\
     requires mid <= bytes.len();\n\
     ensures result == bytes.len() - mid;\n\
-} by { step_until(assignment(right, 0).entry); step(); have right == bytes + mid; have right == left + mid; step_until(function.exit); close(); }\n";
+} by { step_until(assignment(right, 0).entry); step(); have right.as_ptr() == bytes.as_ptr() + mid; have right.as_ptr() == left.as_ptr() + mid; step_until(function.exit); close(); }\n";
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared)
@@ -6903,7 +6907,7 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
         have bytes.len() - bytes.len() % 2u64 == 4u64;
         step_until(assignment(tail, 0).entry); step(); step();
         have tail.len() == 1u64;
-        have tail == bytes + 4u64;
+        have tail.as_ptr() == bytes.as_ptr() + 4u64;
         step_until(function.exit);
         close();
     }";
@@ -6948,7 +6952,7 @@ fn chunks_exact_is_proved_from_its_fields() {
             views bytes[0..bytes.len()];
             invariant iter.chunk_size == 4u64;
             invariant iter.v.len() <= bytes.len() - bytes.len() % 4u64;
-            invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+            invariant iter.v == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
             invariant to_integer(n) * 4 + to_integer(iter.v.len()) == to_integer(bytes.len()) - to_integer(bytes.len() % 4u64);
             initialize by {
                 have bytes.len() % 4u64 <= bytes.len();
@@ -6957,7 +6961,7 @@ fn chunks_exact_is_proved_from_its_fields() {
                     rewrite(bytes.len() - bytes.len() % 4u64, iter.v.len());
                     close();
                 }
-                have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len()) by {
+                have iter.v == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len()) by {
                     rewrite(bytes.len() - bytes.len() % 4u64 - iter.v.len(), 0u64);
                     close();
                 }
@@ -6971,12 +6975,12 @@ fn chunks_exact_is_proved_from_its_fields() {
                     have to_integer((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64) <= to_integer(bytes.len());
                     have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) < to_integer(bytes.len());
                     have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4 <= 18446744073709551615;
-                    have (bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
+                    have (bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes.as_ptr() + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
                     mark taken;
                     step_until(loop(0).back_edge);
                     have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                     have (bytes.len() - bytes.len() % 4u64 - at(taken, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
-                    have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+                    have iter.v == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
                     have to_integer(n) == to_integer(at(taken, n)) + 1;
                     have iter.v.len() < at(taken, iter.v.len());
                 } else {
@@ -7045,8 +7049,8 @@ fn check_chunks_loop_claims(by_reference: bool) {
         ),
         sidecar.replace("views bytes[0..bytes.len()];", "views bytes[0..0];"),
         sidecar.replace(
-            "invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());",
-            "invariant iter.v == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);",
+            "invariant iter.v == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len());",
+            "invariant iter.v == bytes.as_ptr() + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);",
         ),
         sidecar.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
         // `next` moves `v` on by a chunk: that sum's bound is owed.
@@ -7977,7 +7981,7 @@ fn rust_pure_function_slice_arguments_are_one_value() {
         )
     };
     let accepted = sidecar(
-        "    have head(slice::from_raw_parts(bytes, bytes.len())) == head(bytes);\n    \
+        "    have head(slice::from_raw_parts(bytes.as_ptr(), bytes.len())) == head(bytes);\n    \
          have old(head(bytes)) == head(old(bytes));\n    \
          step_until(function.exit);\n    close();",
     );
@@ -7990,7 +7994,7 @@ fn rust_pure_function_slice_arguments_are_one_value() {
         .expect("two arguments for one slice must be refused")
         .to_string();
     assert!(
-        error.contains("each slice is one argument") && error.contains("slice::from_raw_parts"),
+        error.contains("function `head` expects 1 argument(s), got 2"),
         "{error}"
     );
     let failing =
@@ -8083,7 +8087,7 @@ fn rust_slice_string_values_read_with_str_methods() {
     let accepted = sidecar(
         "    have text(bytes).as_bytes() == bytes[0..4] by { unfold(text(bytes)); close(); }\n    \
          have text(bytes).len() == 4u64 by { unfold(text(bytes)); close(); }\n    \
-         have text(bytes).as_ptr() == bytes by { unfold(text(bytes)); close(); }\n    \
+         have text(bytes).as_ptr() == bytes.as_ptr() by { unfold(text(bytes)); close(); }\n    \
          have width(text(bytes)) == text(bytes).len() by { unfold(width(text(bytes))); close(); }",
     );
     ProgramVerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
@@ -8238,7 +8242,7 @@ fn rust_slice_values_read_with_rust_methods() {
     let accepted = rust_slice_values_sidecar(
         "    have half(bytes).len() == bytes.len() / 2u64;\n    \
          have half(bytes)[0] == bytes[0];\n    \
-         have half(bytes).as_ptr() == bytes;\n    \
+         have half(bytes).as_ptr() == bytes.as_ptr();\n    \
          have size(half(bytes)) == bytes.len() / 2u64;\n    \
          have some_half(bytes) == Option::Some(half(bytes));\n    \
          have half(bytes).len() - 1u64 == 1u64;\n    \
@@ -8251,7 +8255,7 @@ fn rust_slice_values_read_with_rust_methods() {
          have forall (k: uint64) { k <= 2u64 implies bytes[k..2] == bytes[k..2] };\n    \
          have forall (k: uint64) { k <= 4u64 implies bytes[k..].len() == bytes.len() - k };\n    \
          have size(bytes[1..]) == 3u64;\n    \
-         have bytes[0..4] == slice::from_raw_parts(bytes, 4u64);",
+         have bytes[0..4] == slice::from_raw_parts(bytes.as_ptr(), 4u64);",
     );
     ProgramVerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
     // The subslice bound follows from the function definition and the entry
@@ -8300,7 +8304,7 @@ fn rust_slice_values_refuse_additional_claims() {
                 &["`half(bytes).len() == 3u64`"][..],
             ),
             (
-                "have half(bytes).as_ptr() == bytes + 1;",
+                "have half(bytes).as_ptr() == bytes.as_ptr() + 1;",
                 &["goal: half(bytes).as_ptr() == &bytes[1]"],
             ),
             (

@@ -45,7 +45,8 @@ fn charon_slice_into_iter_many_slice_parameters_lower_with_linear_charged_work()
             super::super::super::lowering::lower(&export)
         });
         let (functions, _) = result.unwrap();
-        assert_eq!(functions[0].parameters().len(), 2 * (count + 1));
+        // Each slice parameter is one wide value.
+        assert_eq!(functions[0].parameters().len(), count + 1);
         assert!(work <= 4 * count + 1000, "{count} slice parameters: {work}");
     }
 }

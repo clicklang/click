@@ -57,11 +57,6 @@ thread_local! {
     static SLICE_RESULT_FUNCTIONS: std::cell::RefCell<
         std::collections::BTreeMap<String, crate::kernel::SliceElement>,
     > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
-    /// For each pure function that takes a slice, the positions of its
-    /// slice parameters.
-    static PURE_FUNCTION_SLICES: std::cell::RefCell<
-        std::collections::BTreeMap<String, std::rc::Rc<[usize]>>,
-    > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
 }
 
 /// Records that the pure function `name` returns a slice of `element`, so the
@@ -80,46 +75,6 @@ pub(crate) fn record_slice_result_function(name: &str, element: crate::kernel::S
 pub(crate) fn slice_result_element(name: &str) -> Option<crate::kernel::SliceElement> {
     let name = name.split("::<").next().unwrap_or(name);
     SLICE_RESULT_FUNCTIONS.with(|slot| slot.borrow().get(name).copied())
-}
-
-/// Records that the pure function `name` takes slices at the parameter
-/// positions `positions`, so a call prints a slice parameter's own slice as
-/// the parameter, as it is written.
-pub(crate) fn record_pure_function_slices(name: &str, positions: &[usize]) {
-    PURE_FUNCTION_SLICES.with(|slot| {
-        slot.borrow_mut()
-            .insert(name.to_string(), positions.iter().copied().collect());
-    });
-}
-
-/// The spelled arguments of a call to the pure function `name`, with each
-/// slice built from a slice parameter's own pointer and length,
-/// `slice::from_raw_parts(bytes, bytes.len())`, written as that parameter,
-/// `bytes` or `old(bytes)`: the parser reads a slice parameter there as that
-/// slice (`design/rust-slice-values.md`, until step 3).
-pub(crate) fn slice_call_arguments(name: &str, mut arguments: Vec<String>) -> Vec<String> {
-    let Some(slices) = PURE_FUNCTION_SLICES.with(|slot| slot.borrow().get(name).cloned()) else {
-        return arguments;
-    };
-    for &position in slices.iter() {
-        let Some(argument) = arguments.get_mut(position) else {
-            continue;
-        };
-        let Some((pointer, length)) = argument
-            .strip_prefix("click::rust::slice::from_raw_parts(")
-            .and_then(|rest| rest.strip_suffix(')'))
-            .and_then(split_top_level_pair)
-        else {
-            continue;
-        };
-        if let Some((parameter, lengths)) = slice_with_data(pointer)
-            && !pointer.ends_with(".as_ptr()")
-            && lengths.iter().any(|own| own == unparenthesized(length))
-        {
-            *argument = parameter;
-        }
-    }
-    arguments
 }
 
 /// `left, right` split at its one top-level comma.
@@ -187,44 +142,11 @@ pub(crate) fn subslice_spelling(pointer: &str, length: &str) -> Option<String> {
     ))
 }
 
-/// The slice whose data pointer is spelled `pointer`, with the spellings of
-/// its own length: a slice parameter, also at another point (`old(bytes)`),
-/// or a slice value's `x.as_ptr()`.
+/// The slice whose data pointer is spelled `pointer`, `x.as_ptr()`, with
+/// the spelling of its own length.
 fn slice_with_data(pointer: &str) -> Option<(String, Vec<String>)> {
-    if let Some(slice) = pointer.strip_suffix(".as_ptr()") {
-        return Some((slice.to_string(), vec![format!("{slice}.len()")]));
-    }
-    let (wrap, name): (Box<dyn Fn(&str) -> String>, &str) = match pointer
-        .strip_prefix("old(")
-        .and_then(|rest| rest.strip_suffix(')'))
-    {
-        Some(name) => (Box::new(|inner| format!("old({inner})")), name),
-        None => match pointer
-            .strip_prefix("at(")
-            .and_then(|rest| rest.strip_suffix(')'))
-            .and_then(|rest| rest.split_once(", "))
-        {
-            Some((point, name)) => {
-                let point = point.to_string();
-                (Box::new(move |inner| format!("at({point}, {inner})")), name)
-            }
-            None => (Box::new(|inner| inner.to_string()), pointer),
-        },
-    };
-    if !rust_slice_parameters()?
-        .iter()
-        .any(|parameter| parameter == name)
-    {
-        return None;
-    }
-    // A slice parameter's length never changes, so it is also spelled
-    // without the point.
-    let lengths = vec![
-        format!("{pointer}.len()"),
-        wrap(&format!("{name}.len()")),
-        format!("{name}.len()"),
-    ];
-    Some((pointer.to_string(), lengths))
+    let slice = pointer.strip_suffix(".as_ptr()")?;
+    Some((slice.to_string(), vec![format!("{slice}.len()")]))
 }
 
 /// A subslice bound as written: `usize`, so a numeral needs no suffix.

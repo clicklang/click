@@ -3782,6 +3782,17 @@ pub(super) fn decode_crate(
                     // Preserve the schema-3 value boundary and its existing diagnostic.
                     return Err("Rust value type outside direct scalar/reference lowering".into());
                 }
+                // A `&str` parameter is a string slice, not the bytes the
+                // body reads it as.
+                let place = match local.ty.kind() {
+                    a::TyKind::Ref(_, pointee, a::RefKind::Shared) if str_type(pointee) => {
+                        out::Place {
+                            value_type: Type::StrSlice,
+                            ..place
+                        }
+                    }
+                    _ => place,
+                };
                 parameters.push(place);
             } else {
                 locals.push(place);

@@ -50,17 +50,17 @@ fn quad::walk(bytes: &[u8]) -> u32 {
         invariant bytes.len() == 16u64;
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= 16u64;
-        invariant iter.v == bytes + (16u64 - iter.v.len());
+        invariant iter.v == bytes.as_ptr() + (16u64 - iter.v.len());
         maintain by {
             if 4u64 <= iter.v.len() {
                 have to_integer(16u64 - iter.v.len()) + 4 <= 16;
                 have to_integer((16u64 - iter.v.len()) + 4u64) <= 16;
                 have to_integer(16u64 - iter.v.len()) < 16;
                 have to_integer(16u64 - iter.v.len()) + 4 <= 18446744073709551615;
-                have (bytes + (16u64 - iter.v.len())) + 4u64 == bytes + ((16u64 - iter.v.len()) + 4u64);
+                have (bytes.as_ptr() + (16u64 - iter.v.len())) + 4u64 == bytes.as_ptr() + ((16u64 - iter.v.len()) + 4u64);
                 mark taken;
                 step_until(assignment(chunk, 0).entry); step(); step();
-                have chunk == bytes + (16u64 - at(taken, iter.v.len()));
+                have chunk.as_ptr() == bytes.as_ptr() + (16u64 - at(taken, iter.v.len()));
                 have chunk.len() == 4u64;
                 mark before;
                 step_until(statement(1).statement(0).region(7).entry);
@@ -119,7 +119,7 @@ fn quad::walk(bytes: &[u8]) -> u32 {
                 have 4u64 <= at(taken, iter.v.len());
                 have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                 have (16u64 - at(taken, iter.v.len())) + 4u64 == 16u64 - iter.v.len();
-                have iter.v == bytes + (16u64 - iter.v.len());
+                have iter.v == bytes.as_ptr() + (16u64 - iter.v.len());
             } else {
                 step(); step(); step();
             }

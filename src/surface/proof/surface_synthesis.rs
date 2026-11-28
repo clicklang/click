@@ -586,14 +586,11 @@ fn named_range_bases(
     full_state: &ExecutionState,
 ) -> Vec<NamedRangeBase> {
     let mut bases = named_pointer_bases(parameter_binding, state)
-        .map(|(name, pointer, width)| {
-            let lowered = ProgramExpression::Variable(name);
-            NamedRangeBase {
-                surface: SyntaxTerm::ProgramExpression(lowered.clone()),
-                lowered,
-                pointer,
-                width,
-            }
+        .map(|(lowered, pointer, width)| NamedRangeBase {
+            surface: SyntaxTerm::ProgramExpression(lowered.clone()),
+            lowered,
+            pointer,
+            width,
         })
         .collect::<Vec<_>>();
     bases.extend(field_pointer_bases(parameter_binding, full_state));
@@ -1388,7 +1385,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     {
         return synthesize_materialized_result(pointer.address());
     }
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::SliceLength { .. } | AddressBase::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
             value.clone(),
@@ -2285,39 +2282,60 @@ fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<OldMachineTe
 /// Every pointer this proof context can name, with the element width its
 /// declared type steps by: the call's own parameters first, then the state's
 /// pointer locals. The walk is over those two named lists only.
+/// The pointers parameters and locals name, each with its element width: a
+/// pointer itself, or a Rust slice's data pointer, `s.as_ptr()`
+/// (`design/rust-slice-values.md`, step 3b).
 fn named_pointer_bases<'a>(
     parameter_binding: ParameterBinding<'a>,
     state: Option<&'a ExecutionState>,
-) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::Pointer, u32)> + 'a {
+) -> impl Iterator<Item = (ProgramExpression, crate::kernel::Pointer, u32)> + 'a {
+    let named = |name: crate::kernel::BindingName, base: &crate::kernel::Pointer| {
+        let name = ProgramExpression::Variable(name);
+        if base.is_wide() {
+            let crate::kernel::ProgramType::SlicePointer(element) = base.program_type() else {
+                return None;
+            };
+            let width = element.thin_pointer_type().pointee_type()?.byte_width();
+            return Some((
+                ProgramExpression::SliceData(Box::new(name)),
+                base.as_ptr(),
+                width,
+            ));
+        }
+        let width = base.program_type().pointee_type()?.byte_width();
+        Some((name, base.clone(), width))
+    };
     parameter_binding
         .parameters
         .iter()
         .zip(parameter_binding.arguments)
-        .filter_map(|(parameter, argument)| {
+        .filter_map(move |(parameter, argument)| {
             let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 return None;
             };
+            let name = crate::surface::surface_parameter_binding(parameter.binding_name());
+            if base.is_wide() {
+                return named(name, base);
+            }
             let width = parameter
                 .interface_type()
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            Some((
-                crate::surface::surface_parameter_binding(parameter.binding_name()),
-                base.clone(),
-                width,
-            ))
+            Some((ProgramExpression::Variable(name), base.clone(), width))
         })
-        .chain(state.into_iter().flat_map(|state| {
-            state.locals().object_values().filter_map(|(name, value)| {
-                value.pointer()?;
-                let native = value.native();
-                let ProgramValue::Pointer(base) = native.as_ref() else {
-                    return None;
-                };
-                let width = base.program_type().pointee_type()?.byte_width();
-                Some((surface_local_name(name), base.clone(), width))
-            })
+        .chain(state.into_iter().flat_map(move |state| {
+            state
+                .locals()
+                .object_values()
+                .filter_map(move |(name, value)| {
+                    value.pointer()?;
+                    let native = value.native();
+                    let ProgramValue::Pointer(base) = native.as_ref() else {
+                        return None;
+                    };
+                    named(surface_local_name(name), base)
+                })
         }))
 }
 
@@ -8186,7 +8204,6 @@ fn synthesize_surface_pointer(
             | AddressBase::AggregateReturn { .. }
             | AddressBase::StringLiteral { .. }
             | AddressBase::AutomaticLocal { .. }
-            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::StaticObject { .. }
     ) {

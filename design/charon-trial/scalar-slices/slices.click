@@ -76,7 +76,7 @@ fn last(xs: &[i64]) -> i64 {
         views xs[0..xs.len()];
         invariant xs.len() <= 1000u64;
         invariant iter.len() <= xs.len();
-        invariant iter.as_slice() == xs + (xs.len() - iter.len());
+        invariant iter.as_slice() == xs.as_ptr() + (xs.len() - iter.len());
         maintain by {
             if 0u64 < iter.len() {
                 mark iteration;
@@ -85,7 +85,7 @@ fn last(xs: &[i64]) -> i64 {
                 have to_integer(xs.len() - iter.len()) + 1 <= to_integer(xs.len());
                 have to_integer((xs.len() - iter.len()) + 1u64) <= to_integer(xs.len());
                 have to_integer(xs.len() - iter.len()) + 1 <= 18446744073709551615;
-                have (xs + (xs.len() - iter.len())) + 1u64 == xs + ((xs.len() - iter.len()) + 1u64);
+                have (xs.as_ptr() + (xs.len() - iter.len())) + 1u64 == xs.as_ptr() + ((xs.len() - iter.len()) + 1u64);
                 step_until(loop.back_edge);
                 have to_integer(iter.len()) == to_integer(at(iteration, iter.len())) - 1;
                 have to_integer(xs.len() - iter.len()) == to_integer(xs.len()) - to_integer(iter.len());
@@ -93,7 +93,7 @@ fn last(xs: &[i64]) -> i64 {
                 have to_integer((xs.len() - at(iteration, iter.len())) + 1u64) == to_integer(xs.len() - at(iteration, iter.len())) + 1;
                 have to_integer(xs.len() - iter.len()) == to_integer((xs.len() - at(iteration, iter.len())) + 1u64);
                 have (xs.len() - at(iteration, iter.len())) + 1u64 == xs.len() - iter.len();
-                have iter.as_slice() == xs + (xs.len() - iter.len());
+                have iter.as_slice() == xs.as_ptr() + (xs.len() - iter.len());
                 have iter.len() <= xs.len();
                 have iter.len() < at(iteration, iter.len());
             } else {

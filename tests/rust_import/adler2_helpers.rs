@@ -1238,8 +1238,8 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
         );
     }
     for (field, specification) in [
-        ("a", "adler_spec_a(bytes, 1, 1)"),
-        ("b", "adler_spec_b(bytes, 1, 1, 0)"),
+        ("a", "adler_spec_a(bytes.as_ptr(), 1, 1)"),
+        ("b", "adler_spec_b(bytes.as_ptr(), 1, 1, 0)"),
     ] {
         reject_single_byte_compute(
             &format!("ensures to_integer(self.{field}) == old({specification});"),
@@ -1405,8 +1405,8 @@ fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() 
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have loop(2).iter.v == old(bytes) + 4u64 by",
-        "have loop(2).iter.v == old(bytes) + 8u64 by",
+        "have loop(2).iter.v == old(bytes.as_ptr()) + 4u64 by",
+        "have loop(2).iter.v == old(bytes.as_ptr()) + 8u64 by",
     );
 }
 
@@ -1440,9 +1440,9 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
             &format!("ensures to_integer(self.{field}) == 1 + to_integer("),
         );
         let specification = if field == "a" {
-            "adler_spec_a(bytes, 4, 1)"
+            "adler_spec_a(bytes.as_ptr(), 4, 1)"
         } else {
-            "adler_spec_b(bytes, 4, 1, 0)"
+            "adler_spec_b(bytes.as_ptr(), 4, 1, 0)"
         };
         reject_compute(
             FOUR_BYTE_COMPUTE,
@@ -1527,7 +1527,7 @@ fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
             .lines()
             .nth(position.line - 1)
             .unwrap()
-            .contains("have loop(2).iter.v == old(bytes) + 4u64")
+            .contains("have loop(2).iter.v == old(bytes.as_ptr()) + 4u64")
     );
     assert!(!target.failed, "{target:?}");
     assert!(target.work > 0 && target.work <= 192_075, "{target:?}");
@@ -1631,7 +1631,7 @@ fn charon_adler2_small_batch_compute_rejects_false_final_checksum() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original vector constructor input-position rejections"]
 fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions() {
-    let input_position = "have byte_vec == bytes + ((bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64) by { rewrite(byte_vec, bytes + ((bytes.len() - bytes.len() % 4u64) - at(lane_head, adler_chunk_bytes(iter.len())))); rewrite((bytes.len() - bytes.len() % 4u64) - at(lane_head, adler_chunk_bytes(iter.len())), (bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64); close(); }";
+    let input_position = "have byte_vec.as_ptr() == bytes.as_ptr() + ((bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64) by { rewrite(byte_vec.as_ptr(), bytes.as_ptr() + ((bytes.len() - bytes.len() % 4u64) - at(lane_head, adler_chunk_bytes(iter.len())))); rewrite((bytes.len() - bytes.len() % 4u64) - at(lane_head, adler_chunk_bytes(iter.len())), (bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64); close(); }";
     reject_compute(
         SMALL_BATCH_COMPUTE,
         input_position,
@@ -1670,10 +1670,10 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
         &format!(
-            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {prefix_length}, to_integer(a)) by"
+            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes.as_ptr(), {prefix_length}, to_integer(a)) by"
         ),
         &format!(
-            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {prefix_length}, to_integer(a) + 1) by"
+            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes.as_ptr(), {prefix_length}, to_integer(a) + 1) by"
         ),
     );
 }
@@ -1734,10 +1734,10 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
         &format!(
-            "have truncating_remainder(to_integer(a), 65521) == at(vector_prefix, adler_spec_a(bytes, {total}, {seed})) by"
+            "have truncating_remainder(to_integer(a), 65521) == at(vector_prefix, adler_spec_a(bytes.as_ptr(), {total}, {seed})) by"
         ),
         &format!(
-            "have truncating_remainder(to_integer(a), 65521) == at(vector_prefix, adler_spec_a(bytes, {total}, {seed} + 1)) by"
+            "have truncating_remainder(to_integer(a), 65521) == at(vector_prefix, adler_spec_a(bytes.as_ptr(), {total}, {seed} + 1)) by"
         ),
     );
 }
@@ -1761,10 +1761,10 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
         &format!(
-            "have truncating_remainder(to_integer(b), 65521) == at(vector_prefix, adler_spec_b(bytes, {total}, {a_seed}, {b_seed})) by"
+            "have truncating_remainder(to_integer(b), 65521) == at(vector_prefix, adler_spec_b(bytes.as_ptr(), {total}, {a_seed}, {b_seed})) by"
         ),
         &format!(
-            "have truncating_remainder(to_integer(b), 65521) == at(vector_prefix, adler_spec_b(bytes, {total}, {a_seed}, {b_seed} + 1)) by"
+            "have truncating_remainder(to_integer(b), 65521) == at(vector_prefix, adler_spec_b(bytes.as_ptr(), {total}, {a_seed}, {b_seed} + 1)) by"
         ),
     );
 }
@@ -3260,7 +3260,7 @@ fn check_public_boundary_tools(lengths: &[usize]) {
         // body; the focused ordinary tests only select the four API bodies.
         assert_cli(&p, &["profile"]);
         let needle = format!(
-            "have to_integer(statement(2).call(0).result) == old(adler_spec_checksum_u64(data, {length}u64"
+            "have to_integer(statement(2).call(0).result) == old(adler_spec_checksum_u64(data.as_ptr(), {length}u64"
         );
         let offset = source.find(&needle).unwrap();
         let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;

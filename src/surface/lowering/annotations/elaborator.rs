@@ -171,6 +171,23 @@ impl Elaborator<'_> {
 
         match expression {
             SyntaxTerm::IntegerContext(_) => Some(ClickType::Integer),
+            // A Rust slice's components: its length and its data pointer
+            // (`design/rust-slice-values.md`, step 3b).
+            SyntaxTerm::ProgramExpression(ProgramExpression::SliceLength(_)) => {
+                Some(ClickType::Program(InterfaceType::UInt64(
+                    crate::languages::c::syntax::LongRank::Long,
+                )))
+            }
+            SyntaxTerm::ProgramExpression(ProgramExpression::SliceData(slice)) => {
+                match self.declarations.slice_expression_type(slice, typing)? {
+                    ProgramType::SlicePointer(element) => Some(ClickType::Program(
+                        crate::surface::generics::interface_type_from_program_type(
+                            element.thin_pointer_type(),
+                        ),
+                    )),
+                    _ => None,
+                }
+            }
 
             SyntaxTerm::Lambda {
                 parameters, result, ..
@@ -791,6 +808,11 @@ impl Elaborator<'_> {
             ProgramExpression::Cast { target_type, .. } => {
                 target_type.pointee_type().map(ProgramType::byte_width)
             }
+            // A slice's data pointer steps by its element.
+            ProgramExpression::SliceData(_) => self
+                .declarations
+                .program_expression_array_element_type(expression, typing)
+                .map(ProgramType::byte_width),
             ProgramExpression::Variable(name) => name
                 .metadata_in(self.declarations.parameter_pointer_element_widths.as_ref())
                 .copied()
@@ -1029,10 +1051,34 @@ impl Elaborator<'_> {
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                 Ok(Some(generics::click_type_from_program_value(value)))
             }
-            // A program variable, such as a slice parameter's pointer passed
-            // to `slice::from_raw_parts`, has its declared type: the pointer
-            // to its element, which a slice parameter, one with a length,
-            // declares (`design/rust-slice-values.md`, until step 3).
+            // A Rust slice named as the program resolves it, `program::s`,
+            // has its declared slice type.
+            SyntaxTerm::ProgramBinding(name)
+                if let Some(slice) = self
+                    .declarations
+                    .local_type_state
+                    .and_then(|state| {
+                        let id = state.locals().visible_local_declaration(name)?;
+                        state.local_object_type(crate::kernel::BindingName::Local(id.clone()))
+                    })
+                    .filter(|ty| ty.is_slice_pointer())
+                    .or_else(|| {
+                        self.declarations.slice_expression_type(
+                            &ProgramExpression::Variable(name.as_str().into()),
+                            typing,
+                        )
+                    }) =>
+            {
+                Ok(Some(ClickType::Program(
+                    crate::surface::generics::interface_type_from_program_type(slice),
+                )))
+            }
+            // A Rust slice's components, `s.len()` and `s.as_ptr()`.
+            SyntaxTerm::ProgramExpression(
+                ProgramExpression::SliceLength(_) | ProgramExpression::SliceData(_),
+            ) => Ok(self.contract_expression_click_type(argument, typing)),
+            // A program variable, such as a slice parameter passed to a pure
+            // function, has its declared type.
             SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => Ok(typing
@@ -1040,10 +1086,16 @@ impl Elaborator<'_> {
                 .or_else(|| typing.program_binding_click_type(name))
                 .or_else(|| self.contract_expression_click_type(argument, typing))
                 .or_else(|| {
-                    if !self.declarations.is_rust_slice_parameter(name) {
+                    // A Rust slice parameter's type is its declared slice
+                    // type (`design/rust-slice-values.md`, step 3b).
+                    let slice @ ProgramType::SlicePointer(_) =
+                        self.declarations.c_variable_type(name.as_str())?
+                    else {
                         return None;
-                    }
-                    self.element_pointer_click_type(argument, typing)
+                    };
+                    Some(ClickType::Program(
+                        crate::surface::generics::interface_type_from_program_type(slice),
+                    ))
                 })),
             SyntaxTerm::Call { name, arguments } => {
                 let definition = self

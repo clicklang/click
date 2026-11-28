@@ -831,9 +831,6 @@ pub(super) fn syntactic_expression_type(
         | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => variables.get(name).cloned(),
-        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-            crate::kernel::BindingName::SliceLength(_),
-        )) => Some(ClickType::Program(InterfaceType::UInt64(LongRank::Long))),
         SyntaxTerm::Old(inner)
         | SyntaxTerm::Exact(inner)
         | SyntaxTerm::At {
@@ -1377,7 +1374,6 @@ fn instantiate_parameter(
         _ => parameter.struct_name.clone(),
     };
     Ok(FunctionParameter {
-        slice_length: parameter.slice_length.clone(),
         click_type,
         name: parameter.name.clone(),
         struct_name,

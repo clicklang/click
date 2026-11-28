@@ -17,7 +17,7 @@ fn nested(bytes: &[u8]) -> usize {
         invariant tail.len() == 0u64;
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= 8u64;
-        invariant iter.v == bytes + (8u64 - iter.v.len());
+        invariant iter.v == bytes.as_ptr() + (8u64 - iter.v.len());
         maintain by {
             if 4u64 <= iter.v.len() {
                 have to_integer(8u64 - iter.v.len()) + 4 <= 8;
@@ -28,15 +28,15 @@ fn nested(bytes: &[u8]) -> usize {
                     to_integer(8u64 - iter.v.len()) + 4 <= 8;
                 };
                 have to_integer(8u64 - iter.v.len()) < 8;
-                have (bytes + (8u64 - iter.v.len())) + 4u64 == bytes + ((8u64 - iter.v.len()) + 4u64);
+                have (bytes.as_ptr() + (8u64 - iter.v.len())) + 4u64 == bytes.as_ptr() + ((8u64 - iter.v.len()) + 4u64);
                 mark taken;
                 step_until(loop(1).entry);
-                have chunk == bytes + (8u64 - at(taken, iter.v.len()));
+                have chunk.as_ptr() == bytes.as_ptr() + (8u64 - at(taken, iter.v.len()));
                 have chunk.len() == 4u64;
                 have 4u64 <= at(taken, iter.v.len());
                 have to_integer(loop(0).iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                 have 8u64 - at(taken, iter.v.len()) == 4u64 - loop(0).iter.v.len();
-                have chunk == bytes + (4u64 - loop(0).iter.v.len());
+                have chunk.as_ptr() == bytes.as_ptr() + (4u64 - loop(0).iter.v.len());
                 have loop(0).iter.v.len() <= 4u64;
                 have (4u64 - loop(0).iter.v.len()) + (4u64 - 4u64) == (4u64 - loop(0).iter.v.len());
                 loop {
@@ -45,21 +45,21 @@ fn nested(bytes: &[u8]) -> usize {
                     invariant bytes.len() == 8u64;
                     invariant chunk.len() == 4u64;
                     invariant loop(0).iter.v.len() <= 4u64;
-                    invariant chunk == bytes + (4u64 - loop(0).iter.v.len());
+                    invariant chunk.as_ptr() == bytes.as_ptr() + (4u64 - loop(0).iter.v.len());
                     invariant iter.chunk_size == 2u64;
                     invariant iter.v.len() <= 4u64;
-                    invariant iter.v == bytes + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()));
+                    invariant iter.v == bytes.as_ptr() + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()));
                     maintain by {
                         if 2u64 <= iter.v.len() {
                             have to_integer((4u64 - loop(0).iter.v.len())) + to_integer(4u64 - iter.v.len()) + 2 <= 8;
                             have to_integer(((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 2u64) <= 8;
                             have to_integer((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) < 8;
                             have to_integer((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 2 <= 18446744073709551615;
-                            have (bytes + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()))) + 2u64 == bytes + (((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 2u64);
+                            have (bytes.as_ptr() + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()))) + 2u64 == bytes.as_ptr() + (((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 2u64);
                             have to_integer((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 1 < 8;
                             have to_integer(((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 1u64) < 8;
                             have to_integer((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 1 <= 18446744073709551615;
-                            have (bytes + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()))) + 1u64 == bytes + (((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 1u64);
+                            have (bytes.as_ptr() + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()))) + 1u64 == bytes.as_ptr() + (((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 1u64);
                             mark took;
                             step_until(loop(1).back_edge);
                             have 2u64 <= at(took, iter.v.len());
@@ -74,7 +74,7 @@ fn nested(bytes: &[u8]) -> usize {
                                 to_integer(iter.v.len()) == to_integer(at(took, iter.v.len())) - 2;
                             };
                             have ((4u64 - loop(0).iter.v.len()) + (4u64 - at(took, iter.v.len()))) + 2u64 == (4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len());
-                            have iter.v == bytes + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()));
+                            have iter.v == bytes.as_ptr() + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()));
                         } else {
                             step(); step(); step();
                         }
@@ -92,7 +92,7 @@ fn nested(bytes: &[u8]) -> usize {
                     to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                 };
                 have (8u64 - at(taken, iter.v.len())) + 4u64 == 8u64 - iter.v.len();
-                have iter.v == bytes + (8u64 - iter.v.len());
+                have iter.v == bytes.as_ptr() + (8u64 - iter.v.len());
             } else {
                 step(); step(); step();
             }

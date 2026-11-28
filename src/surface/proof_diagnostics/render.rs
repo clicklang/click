@@ -192,11 +192,19 @@ impl MemoryStateLabels {
                 continue;
             };
             if let crate::kernel::ProgramValue::Pointer(pointer) = value {
-                labels.immutable_pointer_name(
-                    pointer.address(),
-                    &crate::surface::surface_parameter_binding(parameter.binding_name())
-                        .to_string(),
-                );
+                let name =
+                    crate::surface::surface_parameter_binding(parameter.binding_name()).to_string();
+                // A Rust slice parameter is one slice: its data pointer is
+                // `bytes.as_ptr()`, and the variable naming its count names
+                // the slice (`design/rust-slice-values.md`, step 3b).
+                if let Some(OldMachineTerm::Variable(counted)) = pointer.len()
+                    && let Some(slice) = counted.counted_slice()
+                {
+                    labels.immutable_pointer_name(pointer.address(), &format!("{name}.as_ptr()"));
+                    labels.immutable_pointer_name(&Address::symbolic(slice), &name);
+                } else {
+                    labels.immutable_pointer_name(pointer.address(), &name);
+                }
             }
             let term = match value.numeric_value() {
                 crate::kernel::ProgramValue::Bool(term)
@@ -2673,7 +2681,6 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.base {
-            crate::kernel::AddressBase::SliceLength { .. } => self.fmt(format_args!("{}", p.base)),
             crate::kernel::AddressBase::ReferenceCarrier { referent, instance } => self.fmt(
                 format_args!("reference carrier of {referent} [{instance:?}]"),
             ),

@@ -873,7 +873,6 @@ fn parses_checked_signature_and_contract_clauses() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
@@ -978,7 +977,6 @@ fn parses_pure_theorem_definition() {
     assert_eq!(
         theorem.parameters(),
         &[FunctionParameter {
-            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32),
             name: "x".to_string(),
             struct_name: None,
@@ -2765,7 +2763,6 @@ fn parses_array_parameter_signature_as_pointer() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
@@ -2795,7 +2792,6 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "obj".to_string(),
             struct_name: Some("json_object".to_string()),
@@ -4176,7 +4172,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     // A character literal is still one byte between quotes.
     let byte = parser::parse("verifying \"c.rs\"; fn f(x: u8) -> u8 { ensures result == 'a'; }");
     assert!(byte.is_ok(), "{byte:?}");
-    // A slice is one name over the pointer and length Rust passes.
+    // A slice is one value, as Rust passes it: its pointer and its length.
     let slices = parser::parse(
         "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
          ensures result == bytes.len() + out.len(); }",
@@ -4184,13 +4180,44 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     .expect("the Rust spelling parses");
     let parameters = slices.function_blocks()[0].signature().parameters();
     assert_eq!(
-        parameters[1].binding_name(),
-        crate::kernel::BindingName::slice_length("bytes"),
+        parameters
+            .iter()
+            .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "bytes".to_string(),
+                InterfaceType::Slice(crate::kernel::SliceElement::UInt8)
+            ),
+            (
+                "out".to_string(),
+                InterfaceType::Slice(crate::kernel::SliceElement::UInt32)
+            ),
+        ],
     );
-    assert_eq!(
-        parameters[3].binding_name(),
-        crate::kernel::BindingName::slice_length("out"),
-    );
+    // The slice is one value, so pointer arithmetic on its bare name is
+    // refused, naming its data pointer `.as_ptr()`, at either side and at
+    // another point; on the data pointer it parses.
+    for written in [
+        "result == bytes + 1u64",
+        "result == 1u64 + bytes",
+        "result == old(bytes) - 1u64",
+    ] {
+        let error = parser::parse(&format!(
+            "verifying \"bytes.rs\"; fn step(bytes: &[u8]) -> usize {{ ensures {written}; }}"
+        ))
+        .expect_err("pointer arithmetic on a slice is refused");
+        assert!(
+            error.message().contains("is a slice, not a pointer")
+                && error.message().contains("bytes.as_ptr() + k"),
+            "{written}: {error:?}"
+        );
+    }
+    parser::parse(
+        "verifying \"bytes.rs\"; fn step(bytes: &[u8]) -> usize { \
+         ensures result == bytes.as_ptr() + 1u64; }",
+    )
+    .expect("arithmetic on the data pointer parses");
     // `*bytes` is the whole slice, and a `usize` parameter written alone
     // as an index is the 32-bit index a place takes. The importer test
     // verifies what these mean; here they parse.

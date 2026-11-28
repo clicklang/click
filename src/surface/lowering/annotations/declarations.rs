@@ -133,16 +133,6 @@ impl Declarations<'_> {
             })
     }
 
-    /// Whether `name` is a Rust slice parameter, a pointer and the length
-    /// beside it (`design/rust-slice-values.md`, until step 3).
-    pub(super) fn is_rust_slice_parameter(&self, name: &str) -> bool {
-        let length = crate::kernel::BindingName::slice_length(name);
-        length
-            .metadata_in(self.program_parameter_types.as_ref())
-            .is_some()
-            || length.metadata_in(self.entry_values.as_ref()).is_some()
-    }
-
     /// The declared C type of a parameter or local named in a clause, from
     /// its typed entry value or the live declaration state.
     pub(super) fn c_variable_type(
@@ -237,6 +227,41 @@ impl Declarations<'_> {
         }
     }
 
+    /// The declared slice type of the slice `slice` names: a Rust slice
+    /// parameter or local, or a slice value (`design/rust-slice-values.md`,
+    /// step 3b).
+    pub(super) fn slice_expression_type(
+        &self,
+        slice: &ProgramExpression,
+        typing: &TypingEnvironment<'_>,
+    ) -> Option<ProgramType> {
+        let slice_type = match slice {
+            ProgramExpression::Variable(name) => {
+                let binding = self.source_binding(name.clone());
+                binding
+                    .program_type()
+                    .or_else(|| {
+                        name.metadata_in(self.program_parameter_types.as_ref())
+                            .copied()
+                    })
+                    .or_else(|| {
+                        name.metadata_in(self.entry_values.as_ref())
+                            .map(ProgramValue::program_type)
+                    })
+                    .or_else(|| {
+                        self.local_type_state
+                            .and_then(|state| state.local_object_type(&binding))
+                    })
+                    .or_else(|| self.program_name_type(name.clone(), typing))
+            }
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                Some(pointer.program_type())
+            }
+            _ => None,
+        }?;
+        slice_type.is_slice_pointer().then_some(slice_type)
+    }
+
     pub(super) fn program_expression_array_element_type(
         &self,
         expression: &ProgramExpression,
@@ -266,6 +291,14 @@ impl Declarations<'_> {
                 _ => None,
             },
             ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
+            // A slice's data pointer, `s.as_ptr()`, points at its element
+            // (`design/rust-slice-values.md`, step 3b).
+            ProgramExpression::SliceData(slice) => match self
+                .slice_expression_type(slice, typing)?
+            {
+                ProgramType::SlicePointer(element) => element.thin_pointer_type().pointee_type(),
+                _ => None,
+            },
             ProgramExpression::Variable(name) => typing
                 .bound_array_element_type(name)
                 .or_else(|| self.declared_pointer_element_type(name))

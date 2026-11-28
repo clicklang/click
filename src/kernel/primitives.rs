@@ -17,8 +17,7 @@ mod bindings;
 pub(crate) use bindings::GeneratedBinderSpellingScope;
 pub use bindings::{
     BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
-    LocalStorageInstance, SliceLengthBinding, StaticBindingId, StaticBindingMetadata,
-    StaticBindingOwner,
+    LocalStorageInstance, StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
 };
 
 /// Opaque creation identity carried by a modeled `pthread_t` word. Its ID is
@@ -2711,7 +2710,6 @@ impl Pointer {
                     | AddressBase::ContractException
                     | AddressBase::StaticObject { .. }
                     | AddressBase::AutomaticLocal { .. }
-                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
                     | AddressBase::Concrete(_)
                     | AddressBase::Heap(_)
@@ -3189,11 +3187,6 @@ pub enum AddressBase {
         referent: Arc<BindingName>,
         instance: LocalStorageInstance,
     },
-    /// Internal storage of the length component of a slice.
-    SliceLength {
-        slice: SliceLengthBinding,
-        instance: LocalStorageInstance,
-    },
     StaticObject {
         binding: StaticBindingId,
     },
@@ -3220,11 +3213,6 @@ impl std::hash::Hash for AddressBase {
             }
             Self::ContractResult => 13u64.hash(state),
             Self::ContractException => 15u64.hash(state),
-            Self::SliceLength { slice, instance } => {
-                17u64.hash(state);
-                slice.hash(state);
-                instance.hash(state);
-            }
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
@@ -3362,9 +3350,7 @@ impl AddressBase {
 
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         match self {
-            Self::AutomaticLocal { instance, .. }
-            | Self::ReferenceCarrier { instance, .. }
-            | Self::SliceLength { instance, .. } => {
+            Self::AutomaticLocal { instance, .. } | Self::ReferenceCarrier { instance, .. } => {
                 prefix == "local:"
                     || match instance {
                         LocalStorageInstance::ValueParameter => prefix == "local:value-parameter:",
@@ -3389,7 +3375,6 @@ impl AddressBase {
             | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
-            | Self::SliceLength { .. }
             | Self::ReferenceCarrier { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
@@ -3502,7 +3487,6 @@ impl AddressBase {
                         | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
-                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::Concrete(_)
                         | Self::Function(_)
@@ -3528,7 +3512,6 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
-                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
@@ -3537,7 +3520,6 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
-                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
@@ -3548,7 +3530,6 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
-                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
@@ -3612,9 +3593,6 @@ impl std::fmt::Display for AddressBase {
             Self::AggregateReturn { frame } => write!(formatter, "result.storage(frame, {frame})"),
             Self::ContractResult => formatter.write_str("result.storage()"),
             Self::ContractException => formatter.write_str("exception.storage()"),
-            Self::SliceLength { slice, instance } => {
-                write!(formatter, "{slice}.storage({instance})")
-            }
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::ReferenceCarrier { referent, instance } => {
                 write!(
@@ -6537,10 +6515,6 @@ pub struct ProgramParameter {
     /// The class of the object a pointer parameter's declaration says it
     /// designates, when the frontend supplied one.
     pub(super) pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
-    /// Relative index of a Rust slice's adjacent length argument. Its valid
-    /// length grants formation bounds across argument/value-parameter splits,
-    /// independently of byte access authority. C pointers have none.
-    pub(super) slice_length_parameter: Option<usize>,
     /// Byte width of the bounds of a valid fixed-size Rust array reference. This grants
     /// pointer formation bounds, independently of byte access authority.
     /// The bytes a Rust array or struct reference designates: a number,
@@ -11129,7 +11103,6 @@ impl StaticBlockVersions {
             | AddressBase::Temporary(_)
             | AddressBase::AutomaticLocal { .. }
             | AddressBase::ReferenceCarrier { .. }
-            | AddressBase::SliceLength { .. }
             | AddressBase::AggregateReturn { .. }
             | AddressBase::ContractResult
             | AddressBase::ContractException => {}

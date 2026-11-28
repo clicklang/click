@@ -11,8 +11,10 @@ from that variable, a slice-valued pure application names its count from
 the application, the spec language reads a slice's components and builds
 one from raw parts, the Surface `Slice<T>` is the built-in type, with
 every wide pointer raising to it, and `Str` is its string slice type, with
-`str`'s operations. Rust `fn` slice parameters are still a pointer and a
-length (step 3).
+`str`'s operations. Steps 3a and 3b are done: a program reads and builds a
+wide value through three program operations, and a Rust `fn`'s slice
+parameters and locals are one wide value. Returns and `as_bytes` in imported
+Rust remain (step 3c).
 
 ## Requirements
 
@@ -814,17 +816,55 @@ construct.
      `program_slice_operations_raise_as_methods_and_construction`; scaling
      tests `program_slice_component_reads_ignore_unrelated_slices_and_facts`
      and `nested_program_slice_constructions_grow_linearly`.
-   - **3b. Wide parameters and locals.** Rust `fn` slice parameters and
-     locals become one wide value. Retires `BindingName::SliceLength`,
+   - **3b. Wide parameters and locals.** Done. A Rust `fn`'s `&[T]`,
+     `&mut [T]` and `&str` parameter is one parameter of slice type
+     (`ProgramType::SlicePointer`, `InterfaceType::Slice`). At a proof's
+     entry its argument's data pointer is the external argument a thin
+     parameter of its element type receives, and its count is the counted
+     variable of the same input variable, so one name gives both; the
+     entry facts (span and coverage) are stated over its components, chosen
+     by its type (`contract_certification`). A slice local is one local of
+     slice type. Rust lowering reads a slice through the 3a operations:
+     `slice_parts` returns `(SliceData(v), SliceLength(v))`, and every
+     assignment, reborrow, `split_at` half and chunk payload builds
+     `SliceFromRawParts`. A join or loop abstraction gives a slice local the
+     arms or iterations disagree on a fresh variable-named slice, and the
+     address-taken summary reads a slice local as the value it is. Since
+     the callee's parameter is now one value, a call passes one wide
+     argument built from the captured data pointer and count; this much of
+     3c lands here, returns do not. Charon marks a `&str` parameter
+     `Type::StrSlice`, lowered at `SlicePointer(Str)` while its body reads
+     it as bytes, and a `&str` argument is cast to `str`, so a `fn`'s
+     `&str` parameter passed to a pure function's `&str` parameter is a
+     `Str`. In a sidecar, `s.len()` and `s.as_ptr()` of a slice parameter or
+     a slice local parse to the program operations, read where they are
+     written; `s[i]`, a resource range `s[a..b]` and `*s` read through
+     `s.as_ptr()`, and a range in a value is the subslice. A slice
+     parameter's bare name is the slice, so pointer arithmetic and pointer
+     comparisons write `s.as_ptr()`: every sidecar in the repository that
+     did (`design/charon-trial/chunk-proof`, `borrowed-chunks`,
+     `chunk-lane-results`, `chunks`, `nested`, `slice-iter`, `enumerate`,
+     `into-slices`, `loop-headers`, `scalar-slices`, the iterator proofs,
+     `examples/rust-*` and `design/adler32`) is migrated, and a slice local
+     compared with a pointer writes `chunk.as_ptr()`. Raising names a slice
+     parameter by its argument: the slice as `s`, its count as `s.len()`,
+     its data pointer as `s.as_ptr() + k`; a range or an index on
+     `s.as_ptr()` prints on `s`. Retired: `BindingName::SliceLength`,
      `AddressBase::SliceLength`, `slice_length_parameter`,
-     `declare_slice_length`, Charon `MirLocalId::SliceComponent`,
-     `spread_slice_arguments` and `slice_parameter_value`, and closes the
-     `&str` parameter gap. Sidecars that do pointer arithmetic on a slice's
-     bare name (`bytes + k`, as in `design/charon-trial/chunk-proof`,
-     `borrowed-chunks` and `chunk-lane-results`) move to
-     `bytes.as_ptr() + k`.
-   - **3c. Wide arguments and returns.** Call arguments and returns carry
-     the wide value, and Rust `s.as_bytes()` gets a name-table entry
+     `declare_slice_length`, `FunctionParameter::slice_length`, the
+     parser's bare-slice-argument shim (`slice_arguments`,
+     `slice_parameter_value`, `pure_function_slices`) and its printing
+     counterpart (`slice_call_arguments`), and the length half of
+     `LocalBindingKind::SliceComponent`. `MirLocalId::SliceComponent`
+     stays: it names the two slices of a `split_at` pair (step 4), each now
+     one wide local, not a pointer and a length. The chunk iterator's own
+     fields stay pointer-shaped until step 4 (`iter.v == bytes.as_ptr() +
+     k`). Tests: `slice_entry_bounds_allow_formation_without_read_authority`,
+     `a_slice_argument_must_be_a_slice`; scaling test
+     `charon_slice_into_iter_many_slice_parameters_lower_with_linear_charged_work`
+     counts one parameter per slice.
+   - **3c. Wide returns.** Returns carry the wide value, and Rust
+     `s.as_bytes()` gets a name-table entry
      (2b-iii-d-ii).
 4. **split_at, iterators, chunks.** Their inputs and the slices they yield
    are wide pointers; their internal fields stay.

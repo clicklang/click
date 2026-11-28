@@ -38,7 +38,8 @@ fn a_pure_function_slice_parameter_is_one_slice() {
         }}"
     ))
     .unwrap();
-    // Passing the pointer and the length as two arguments is refused.
+    // Passing the pointer and the length as two arguments is refused: the
+    // pointer is not a slice.
     let error = prove(&format!(
         "{SIZES}
         theorem spread(p: *const u8, n: usize) {{
@@ -47,7 +48,7 @@ fn a_pure_function_slice_parameter_is_one_slice() {
     ))
     .unwrap_err();
     assert!(
-        error.message().contains("each slice is one argument"),
+        error.message().contains("expects Slice<uint8>, got uint8*"),
         "{error:?}"
     );
     let file = parse(&format!("verifying \"slices.rs\"; {SIZES}")).unwrap();
@@ -71,7 +72,7 @@ fn a_pure_function_slice_parameter_is_one_slice() {
 }
 
 #[test]
-fn a_slice_argument_must_be_a_slice_parameter() {
+fn a_slice_argument_must_be_a_slice() {
     let error = prove(&format!(
         "{SIZES}
         theorem pointer(p: *const u8) {{
@@ -80,7 +81,9 @@ fn a_slice_argument_must_be_a_slice_parameter() {
     ))
     .unwrap_err();
     assert!(
-        error.message().contains("`p` is not a slice parameter"),
+        error
+            .message()
+            .contains("argument 0 expects Slice<uint8>, got uint8*"),
         "{error:?}"
     );
 }

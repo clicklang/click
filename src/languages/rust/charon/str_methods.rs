@@ -61,7 +61,7 @@ impl Adapter<'_> {
                 return_type: result,
                 parameters: vec![out::Place {
                     name: "s".into(),
-                    value_type: shared,
+                    value_type: Type::StrSlice,
                     span: span(callee.item_meta.span),
                 }],
                 body: vec![],

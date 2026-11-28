@@ -4366,11 +4366,11 @@ pub(in crate::surface) fn termination_measure_source(expression: &SyntaxTerm) ->
         }
         SyntaxTerm::Call { name, arguments } => format!(
             "{name}({})",
-            crate::surface::diagnostics::slice_call_arguments(
-                name,
-                arguments.iter().map(termination_measure_source).collect()
-            )
-            .join(", ")
+            arguments
+                .iter()
+                .map(termination_measure_source)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         SyntaxTerm::ResourceField(access) => {
             format!("{}.{}", access.owner, access.field)
@@ -4845,7 +4845,6 @@ impl parser::ProgramLayouts {
                     captures
                         .iter()
                         .map(|capture| FunctionParameter {
-                            slice_length: None,
                             click_type: ClickType::Program(capture.interface_type()),
                             name: capture.name().to_string(),
                             struct_name: None,
@@ -7690,7 +7689,6 @@ pub(in crate::surface) fn check_signature(
             || expected.pointee_is_constant() != actual.pointee_is_constant()
             || expected.is_reference() != actual.is_reference()
             || expected.name() != actual.name()
-            || expected.binding_name().slice_length_of() != actual.binding_name().slice_length_of()
             || expected.struct_name() != actual.struct_name()
             || expected.function_pointer_signature() != actual.function_pointer_signature()
         {

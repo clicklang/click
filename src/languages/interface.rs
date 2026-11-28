@@ -174,7 +174,6 @@ pub struct ImportedParameter {
     /// Whether the source declares a reference, as C++ `int&` does. The
     /// parameter's type is the pointer that carries it.
     pub(super) reference: bool,
-    pub(super) slice_length_parameter: Option<usize>,
     pub(super) fixed_reference_bounds: Option<crate::kernel::LayoutSize>,
     pub(super) struct_name: Option<String>,
     pub(super) union_name: Option<String>,
@@ -785,13 +784,9 @@ impl ImportedFunction {
             return None;
         }
         let mut named = self.clone();
-        for (parameter, (name, binding)) in named.parameters.iter_mut().zip(names) {
+        for (parameter, (name, _)) in named.parameters.iter_mut().zip(names) {
             parameter.name = if parameter.name.reference_referent().is_some() {
                 crate::kernel::BindingName::reference_carrier(name)
-            } else if parameter.name.slice_length_of().is_some() {
-                // A slice's length keeps the head's binding, which names the
-                // slice it measures, `s.len()` of `s: &[u8]`.
-                binding
             } else {
                 name.to_string().into()
             };
@@ -1858,11 +1853,6 @@ impl ImportedParameter {
         self
     }
 
-    pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
-        self.slice_length_parameter = Some(parameter);
-        self
-    }
-
     pub(crate) fn with_fixed_reference_bounds(
         mut self,
         bytes: impl Into<crate::kernel::LayoutSize>,
@@ -1908,7 +1898,6 @@ impl ImportedParameter {
             function_pointer_signature: None,
             array_element_width: None,
             pointee_struct_class: None,
-            slice_length_parameter: None,
             fixed_reference_bounds: None,
         }
     }
@@ -1936,9 +1925,7 @@ impl ImportedParameter {
                 binding.reference_referent(),
             ) {
                 (Some(actual), Some(written)) => written.is_named(actual.source_name()),
-                (None, None) if self.binding_name().slice_length_of().is_none() => {
-                    binding.is_named(self.name())
-                }
+                (None, None) => binding.is_named(self.name()),
                 _ => false,
             }
     }

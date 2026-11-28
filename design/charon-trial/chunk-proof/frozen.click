@@ -37,11 +37,11 @@ fn cover(bytes: &[u8]) -> usize {
         invariant chunks_size == 4u64;
         invariant chunks_tail_len == bytes.len() % 4u64;
         invariant tail_len == chunks_tail_len;
-        invariant chunks_tail == bytes + (((bytes.len() - bytes.len() % 4u64) as uint32) as int32);
+        invariant chunks_tail == bytes.as_ptr() + (((bytes.len() - bytes.len() % 4u64) as uint32) as int32);
         invariant tail == chunks_tail;
         invariant 0 <= chunks_remaining and chunks_remaining <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32);
         invariant chunks_remaining % 4 == 0;
-        invariant chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining);
+        invariant chunks_cursor == bytes.as_ptr() + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining);
         invariant 0 <= ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) and ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) <= 1000;
         maintain by {
             have 4 <= chunks_remaining by { close(); }
@@ -89,14 +89,14 @@ fn cover(bytes: &[u8]) -> usize {
                     ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= 1000;
                 }
             }
-            have at(iteration, chunks_cursor) + 4 == bytes + (at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4) by {
+            have at(iteration, chunks_cursor) + 4 == bytes.as_ptr() + (at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4) by {
                 close() using {
-                    at(iteration, chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining));
+                    at(iteration, chunks_cursor == bytes.as_ptr() + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining));
                     at(iteration, 0 <= ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining));
                     at(iteration, ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) <= 1000);
                 }
             }
-            have chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) by {
+            have chunks_cursor == bytes.as_ptr() + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) by {
                 rewrite(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining), at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4); close();
             }
             have ((((bytes.len() as uint32)) as int32)) <= 1000;

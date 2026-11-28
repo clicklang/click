@@ -309,43 +309,18 @@ pub(super) fn lower(
                     )
                 }
             }
+            // A slice local is one wide value (`design/rust-slice-values.md`,
+            // step 3b).
             Type::ScalarSlice { element, mutable } => {
-                let element_type = scalar_type(element)?.to_kernel_type();
-                let pointer_type = scalar_type(&Type::Reference {
-                    mutable: *mutable,
-                    pointee: element.clone(),
-                })?
-                .to_kernel_type();
-                let length = cx.declare_slice_length(&local.name)?;
                 cx.shared_scalar_slices
-                    .insert(local.name.clone(), (length.clone(), element_type));
-                program_seq(
-                    program_declare_with_all_qualifiers(
-                        cx.binding(&local.name)?,
-                        pointer_type,
-                        false,
-                        false,
-                        false,
-                        !mutable,
-                    ),
-                    program_declare(length, ProgramType::UInt64),
-                )
+                    .insert(local.name.clone(), scalar_type(element)?.to_kernel_type());
+                let slice_type = super::slice_program_type(&local.value_type)?
+                    .ok_or("a slice local has a slice type")?;
+                cx.declare_slice(&local.name, slice_type, !mutable)?
             }
             Type::ByteSlice { mutable } => {
-                let length = cx.declare_slice_length(&local.name)?;
-                cx.slices
-                    .insert(local.name.clone(), (length.clone(), !mutable));
-                program_seq(
-                    program_declare_with_all_qualifiers(
-                        cx.binding(&local.name)?,
-                        ProgramType::UInt8Pointer,
-                        false,
-                        false,
-                        false,
-                        !mutable,
-                    ),
-                    program_declare(length, ProgramType::UInt64),
-                )
+                cx.slices.insert(local.name.clone(), !mutable);
+                cx.declare_slice(&local.name, super::BYTE_SLICE, !mutable)?
             }
             Type::Reference { mutable, pointee }
                 if matches!(pointee.as_ref(), Type::Array { .. }) =>
@@ -2071,8 +2046,6 @@ mod tests {
                 import_identity: None,
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
-                slice_local_owner: LocalFunctionId::new(None, "test".into()),
-                next_slice_local: 0,
                 next_result_step: std::cell::Cell::new(0),
                 step_pointee_layouts: std::cell::RefCell::new(BTreeMap::new()),
                 loop_iterators: Vec::new(),

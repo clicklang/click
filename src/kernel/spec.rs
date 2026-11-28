@@ -9756,6 +9756,12 @@ pub(in crate::kernel) fn slice_from_raw_parts_outcome(
     data: ProgramValue,
     count: ProgramValue,
 ) -> ExpressionOutcome {
+    // A count is a `u64` read as its number, as an argument word that
+    // carries its integer value and an address is.
+    let count = match count {
+        ProgramValue::PointerInteger(_) => count.numeric_value().clone(),
+        count => count,
+    };
     match (data, count) {
         (ProgramValue::Pointer(data), _) if data.is_wide() => {
             ExpressionOutcome::RuntimeError(RuntimeError::ThinPointerRequired {

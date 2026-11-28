@@ -8,7 +8,9 @@ use crate::kernel::{
 };
 
 fn declare(summary: &mut AddressTakenSummary, name: &crate::kernel::BindingName, ty: ProgramType) {
+    // A slice is one value, as a pointer is (`design/rust-slice-values.md`).
     if ty.is_pointer()
+        || ty.is_slice_pointer()
         || matches!(
             ty,
             ProgramType::Bool

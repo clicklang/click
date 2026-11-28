@@ -58,9 +58,8 @@ pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
     LoopPhaseSpelling, enter_rust_spelling, has_surface_iterator_binding,
-    record_pure_function_slices, record_slice_result_function, rust_binding_spelling,
-    rust_spelling, rust_variable_spelling, slice_call_arguments, slice_call_spelling,
-    slice_result_element, subslice_spelling,
+    record_slice_result_function, rust_binding_spelling, rust_spelling, rust_variable_spelling,
+    slice_call_spelling, slice_result_element, subslice_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -5406,7 +5405,6 @@ pub(in crate::surface) fn describe_pointer(
             | AddressBase::ContractException
             | AddressBase::AggregateReturn { .. }
             | AddressBase::AutomaticLocal { .. }
-            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::StaticObject { .. }
     ) {
@@ -5832,7 +5830,18 @@ pub(super) fn diagnostic_parameter_element_width(
         | InterfaceType::Float64PointerPointer => 8,
         InterfaceType::FunctionPointer(_) => 8,
         InterfaceType::PointerArray(_, _, _) => 8,
-        InterfaceType::Slice(_) => 16,
+        // A slice is indexed by its element: `&bytes[k]`.
+        InterfaceType::Slice(element) => {
+            use crate::kernel::SliceElement;
+            match element {
+                SliceElement::Int8 | SliceElement::UInt8 | SliceElement::Str => 1,
+                SliceElement::Int16 | SliceElement::UInt16 => 2,
+                SliceElement::Int32 | SliceElement::UInt32 | SliceElement::Float32 => 4,
+                SliceElement::Int64 | SliceElement::UInt64 | SliceElement::Float64 => 8,
+                SliceElement::Int128 | SliceElement::UInt128 => 16,
+                SliceElement::Parameter(_) => 0,
+            }
+        }
     }
 }
 
@@ -6128,7 +6137,6 @@ pub(super) fn describe_program_value(
                     | AddressBase::AggregateReturn { .. }
                     | AddressBase::StringLiteral { .. }
                     | AddressBase::AutomaticLocal { .. }
-                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
                     | AddressBase::StaticObject { .. }
             ) =>
@@ -6231,6 +6239,17 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             base, start, end, ..
         } => {
             let rendered_base = describe_contract_expression(base);
+            // A Rust slice's range is written on the slice, whose data
+            // pointer it ranges over, as an element is.
+            let rendered_base = match rendered_base.strip_suffix(".as_ptr()") {
+                Some(slice)
+                    if !slice.is_empty()
+                        && slice.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') =>
+                {
+                    slice.to_string()
+                }
+                _ => rendered_base,
+            };
             let (start, end) = (
                 describe_contract_expression(start),
                 describe_contract_expression(end),
@@ -8122,10 +8141,10 @@ fn describe_contract_expression_grouping_casts(
             }
         }
         SyntaxTerm::Call { name, arguments } => {
-            let arguments = slice_call_arguments(
-                name,
-                arguments.iter().map(describe_contract_expression).collect(),
-            );
+            let arguments = arguments
+                .iter()
+                .map(describe_contract_expression)
+                .collect::<Vec<_>>();
             slice_call_spelling(name, &arguments)
                 .unwrap_or_else(|| format!("{name}({})", arguments.join(", ")))
         }

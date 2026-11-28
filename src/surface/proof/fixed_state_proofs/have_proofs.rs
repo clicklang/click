@@ -1132,11 +1132,6 @@ fn evaluate_program_expression_with_binding_policy(
             {
                 states.entry_values.insert(name.to_owned(), value.clone());
                 states.current_values.insert(name.to_owned(), value.clone());
-            } else if binding.slice_length_of().is_some()
-                && let Some(value) = contract_environment.parameter_value(&binding)
-            {
-                states.entry_state = states.entry_state.with_local(&binding, value.clone());
-                states.lowering_state = states.lowering_state.with_local(binding, value.clone());
             }
         }
     }
@@ -1393,10 +1388,7 @@ impl FixedStateLowering {
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
             if name.named().is_none() {
-                let parameter = name
-                    .unresolved_slice_length()
-                    .map(crate::kernel::BindingName::slice_length)
-                    .unwrap_or(name);
+                let parameter = name;
                 if let Some(value) = contract_environment.parameter_value(&parameter) {
                     if !entry_state.locals().contains_name(&parameter) {
                         entry_state = entry_state.with_local(parameter.clone(), value.clone());

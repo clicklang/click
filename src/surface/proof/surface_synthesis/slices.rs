@@ -108,6 +108,18 @@ fn named_slice(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<Named> {
+    // A Rust `fn`'s slice parameter is its argument, whose data pointer is
+    // the external argument a thin parameter would have
+    // (`design/rust-slice-values.md`, step 3b).
+    if let Some(parameter) = slice_parameter_with(address, count, parameter_binding) {
+        return Some(Named {
+            slice: parameter_slice(parameter),
+            string: parameter.interface_type()
+                == crate::languages::interface::InterfaceType::Slice(
+                    crate::kernel::SliceElement::Str,
+                ),
+        });
+    }
     if !matches!(address.offset.view(), OffsetView::Constant(0)) {
         return None;
     }
@@ -178,6 +190,85 @@ fn slice_variable(
     )
 }
 
+/// The slice parameter `parameter` as Surface: its name.
+fn parameter_slice(parameter: &crate::languages::interface::ImportedParameter) -> SyntaxTerm {
+    SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+        crate::surface::surface_parameter_binding(parameter.binding_name()),
+    ))
+}
+
+/// The parameter whose argument is the slice with data pointer `address`
+/// and count `count`.
+fn slice_parameter_with<'a>(
+    address: &Address,
+    count: &OldMachineTerm,
+    parameter_binding: ParameterBinding<'a>,
+) -> Option<&'a crate::languages::interface::ImportedParameter> {
+    parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find_map(|(parameter, argument)| {
+            crate::instrumentation::record_deterministic_work(1);
+            let ProgramExpression::Value(ProgramValue::Pointer(value)) = argument else {
+                return None;
+            };
+            (value.len() == Some(count) && value.address() == address).then_some(parameter)
+        })
+}
+
+/// The slice parameter whose argument's count is `count`.
+fn slice_parameter_counted<'a>(
+    count: &OldMachineTerm,
+    parameter_binding: ParameterBinding<'a>,
+) -> Option<&'a crate::languages::interface::ImportedParameter> {
+    parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find_map(|(parameter, argument)| {
+            crate::instrumentation::record_deterministic_work(1);
+            let ProgramExpression::Value(ProgramValue::Pointer(value)) = argument else {
+                return None;
+            };
+            (value.len() == Some(count)).then_some(parameter)
+        })
+}
+
+/// The slice parameter whose argument's data pointer is the base of
+/// `address`, displaced by whole elements of its slice.
+fn slice_parameter_data<'a>(
+    address: &Address,
+    parameter_binding: ParameterBinding<'a>,
+) -> Option<(
+    &'a crate::languages::interface::ImportedParameter,
+    pointer_indices::SourceIndex,
+)> {
+    parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find_map(|(parameter, argument)| {
+            crate::instrumentation::record_deterministic_work(1);
+            let ProgramExpression::Value(ProgramValue::Pointer(value)) = argument else {
+                return None;
+            };
+            let crate::languages::interface::InterfaceType::Slice(element) =
+                parameter.interface_type()
+            else {
+                return None;
+            };
+            if !value.is_wide() || value.address().base != address.base {
+                return None;
+            }
+            let width = element.thin_pointer_type().pointee_type()?.byte_width();
+            Some((
+                parameter,
+                synthesis_element_index(address, value.address(), width)?,
+            ))
+        })
+}
+
 /// The parameter whose argument is the slice `variable` names.
 fn slice_parameter_of<'a>(
     variable: Variable,
@@ -229,6 +320,14 @@ pub(super) fn raise_slice_count(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
     let (slice, string) = match count {
+        // A Rust `fn`'s slice parameter's count.
+        _ if let Some(parameter) = slice_parameter_counted(count, parameter_binding) => (
+            parameter_slice(parameter),
+            parameter.interface_type()
+                == crate::languages::interface::InterfaceType::Slice(
+                    crate::kernel::SliceElement::Str,
+                ),
+        ),
         OldMachineTerm::Variable(counted) => {
             let variable = counted.counted_slice()?;
             (
@@ -299,6 +398,30 @@ pub(super) fn slice_data_pointer(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
+    // A Rust `fn`'s slice parameter's data pointer, displaced by `k`
+    // elements: `bytes.as_ptr() + k`.
+    if address.base == AddressBase::ExternalArgument
+        && let Some((parameter, index)) = slice_parameter_data(address, parameter_binding)
+    {
+        // The program's own component read, `bytes.as_ptr()`, which lowers
+        // to the data pointer of the parameter's value and is a C
+        // expression a range or an index is written on.
+        let data = SyntaxTerm::ProgramExpression(ProgramExpression::SliceData(Box::new(
+            ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+                parameter.binding_name(),
+            )),
+        )));
+        if pointer_indices::literal(index.operand_view()) == Some(OldMachineTerm::constant(0)) {
+            return Some(data);
+        }
+        let index = pointer_indices::raise(
+            index.operand_view(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        return Some(SyntaxTerm::Add(Box::new(data), Box::new(index)));
+    }
     let (slice, element) = match &address.base {
         AddressBase::SliceData(load) => {
             let read = slice_read(

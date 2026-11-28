@@ -329,9 +329,13 @@ fn shared_field(parent: &mut Pair) -> i32 {
 }
 ```
 
-A slice parameter, `&[T]` or `&mut [T]` with a scalar element, is one name.
-`bytes.len()` is its length, `*bytes` is the whole slice, and its elements
-and ranges are indexed as a pointer's are. An index or a range bound keeps
+A slice parameter, `&[T]` or `&mut [T]` with a scalar element, is one
+value: its data pointer and its length. `bytes.len()` is its length,
+`bytes.as_ptr()` its data pointer, `*bytes` is the whole slice, and its
+elements and ranges are indexed through its data pointer, `bytes[i]` and
+`bytes[a..b]`. Pointer arithmetic and pointer comparisons are written on the
+data pointer, `bytes.as_ptr() + k`; on the bare name, which is the slice,
+they are refused. An index or a range bound keeps
 its `usize` type, so nothing is cast and the contract states no bound on the
 length:
 
@@ -461,8 +465,7 @@ theorem over `p: *const u8` and `n: usize` writes it. Passing the pointer and
 the length as two arguments is refused. Printed proofs write a call the same
 way, `size(old(bytes))`. The library's `Slice<T>`
 (`library/rust/slice.click`) is the slice as one value, with `slice::len` and
-`slice::as_ptr`; a slice parameter is lowered as its pointer and its length,
-and the two forms are the same slice.
+`slice::as_ptr`; a `fn`'s slice parameter is that one value.
 
 A slice in a value position is one `Slice<T>` value: the result of a pure
 function, `fn half(bytes: &[u8]) -> &[u8]`, a type argument, `Option<&[u8]>`,
@@ -1156,8 +1159,9 @@ the operands themselves
 
 Shared `&[u8]` and mutable `&mut [u8]` parameters, local copies and reborrows,
 builtin `.len()`, indexed reads and writes, and direct slice calls are supported.
-Slice references pass a pointer and a length. A shared slice has a shared
-pointer and a mutable slice has a mutable pointer. Proofs use `bytes.len()`
+A slice reference is one value, its data pointer and its length, as Rust
+passes it. A shared slice has a shared data pointer and a mutable slice has a
+mutable one. Proofs use `bytes.len()`
 for a slice parameter or local named `bytes`. After a local is reassigned,
 `at(point, bytes.len())` reads the length it held at the selected point.
 On the pinned target, `usize` is a 64-bit unsigned value, including lengths,
@@ -1187,8 +1191,9 @@ addition guards, for example `(x as i64 + y as i64) <= 4294967295i64`.
 
 ## String slices
 
-A `&str` parameter is a shared slice of the UTF-8 bytes it refers to,
-passed as a byte slice is: a pointer and a length in bytes. A sidecar
+A `&str` parameter is a shared slice of the UTF-8 bytes it refers to: one
+string slice value of type `Str`, its data pointer and its length in bytes.
+A pure function's `&str` parameter takes it as that value. A sidecar
 writes its type `&str` and reads its length as `s.len()`; the type grants
 the same authority a `&[u8]` does. A reborrow `&*s` and a call passing a
 `&str` on are supported. `s.len()` and `s.is_empty()` call `str::len` and
@@ -1252,7 +1257,7 @@ and `split_at_mut` remain unsupported.
 The receiver's pointer and length are captured before evaluating the midpoint,
 which is evaluated once. Execution checks `mid <= bytes.len()` at the full
 64-bit `usize` width. The left slice keeps the original pointer and length
-`mid`; the right starts at `bytes + mid` and has length `bytes.len() - mid`.
+`mid`; the right starts at `bytes.as_ptr() + mid` and has length `bytes.len() - mid`.
 No bytes are copied and no write authority is created. Subsequent reads use
 the original input's `views` authority; the compiler rejects writes through
 either shared result. Both results work with existing slice aliases,
@@ -1482,16 +1487,16 @@ loop {
     decreases iter.len();
     views bytes[0..bytes.len()];
     invariant iter.len() <= bytes.len();
-    invariant iter.as_slice() == bytes + (bytes.len() - iter.len());
+    invariant iter.as_slice() == bytes.as_ptr() + (bytes.len() - iter.len());
     ...
 }
 ```
 
-Moving the slice on from `bytes + k` to `bytes + k + 1` owes the offset's
+Moving the slice on from `bytes.as_ptr() + k` to `bytes.as_ptr() + k + 1` owes the offset's
 bound in the forms the step reads, `to_integer(k) + 1 <=
 to_integer(bytes.len())` and `to_integer(k + 1u64) <= to_integer(bytes.len())`,
-and the invariant is carried by regrouping `(bytes + k) + 1u64` as
-`bytes + (k + 1u64)` from `to_integer(k) + 1 <= 18446744073709551615`
+and the invariant is carried by regrouping `(bytes.as_ptr() + k) + 1u64` as
+`bytes.as_ptr() + (k + 1u64)` from `to_integer(k) + 1 <= 18446744073709551615`
 ([full-width pointer association](tactics/index.md#simplification-with-selected-premises)).
 A `maintain` script splits on `0u64 < iter.len()` with a proof `if`; the
 empty arm steps to the exit
@@ -1645,15 +1650,15 @@ loop {
     views bytes[0..bytes.len()];
     invariant iter.chunk_size == 4u64;
     invariant iter.v.len() <= bytes.len() - bytes.len() % 4u64;
-    invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+    invariant iter.v == bytes.as_ptr() + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
     ...
 }
 ```
 
-A pass moves `v` from `bytes + k` to `bytes + k + 4`. The proof states the
+A pass moves `v` from `bytes.as_ptr() + k` to `bytes.as_ptr() + k + 4`. The proof states the
 offset's bounds in the forms the step owes, `to_integer(k) + 4 <=
 to_integer(bytes.len())` and `to_integer(k + 4u64) <= to_integer(bytes.len())`,
-and regroups `(bytes + k) + 4u64` as `bytes + (k + 4u64)` from
+and regroups `(bytes.as_ptr() + k) + 4u64` as `bytes.as_ptr() + (k + 4u64)` from
 `to_integer(k) + 4 <= 18446744073709551615`
 ([full-width pointer association](tactics/index.md#simplification-with-selected-premises),
 [proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).

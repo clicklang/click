@@ -70,7 +70,7 @@ fn guarded_read(value: &mut i32, bytes: &[u8], index: usize) -> u32 {
         close();
     }
     have contains(memory(bytes[0..bytes.len()]), memory(bytes[index])) by {
-        apply(separation::contains_element(bytes, 0u64, bytes.len(), index));
+        apply(separation::contains_element(bytes.as_ptr(), 0u64, bytes.len(), index));
     }
     have separate(memory(value[0..1]), memory(bytes[index])) by {
         apply(separation::contains_refl(memory(value[0..1])));

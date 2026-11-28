@@ -114,3 +114,63 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         );
     }
 }
+
+/// A slice parameter's entry facts, its span and its coverage, are read off
+/// its own wide argument (`design/rust-slice-values.md`, step 3b): the
+/// entry's work grows linearly with the slice parameters, and the first
+/// slice's formation bounds stay one selected fact beside them.
+#[test]
+fn slice_entry_facts_grow_linearly_with_slice_parameters() {
+    let sizes = [8u64, 32, 128];
+    let mut samples = Vec::new();
+    for size in sizes {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slices = (0..size)
+            .map(|index| {
+                pointer(933_000 + index).with_element_count(OldMachineTerm::uint64_constant(2))
+            })
+            .collect::<Vec<_>>();
+        let function = program_function(
+            ProgramType::Void,
+            "many_slices",
+            (0..size)
+                .map(|index| {
+                    program_parameter(
+                        format!("s{index}"),
+                        ProgramType::SlicePointer(crate::kernel::SliceElement::Int32),
+                    )
+                })
+                .collect(),
+            program_skip(),
+        );
+        let arguments = slices
+            .iter()
+            .map(|slice| ProgramExpression::Value(ProgramValue::Pointer(slice.clone())))
+            .collect::<Vec<_>>();
+        let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::program_function_contract_entry(
+                &ExecutionState::new(),
+                &function,
+                &arguments,
+            )
+        });
+        let entry = entry.unwrap();
+        let context = entry
+            .facts()
+            .iter()
+            .fold(PureFactContext::new(), |facts, fact| {
+                facts.assume_proposition(fact.proposition().clone())
+            });
+        let first = slices[0].as_ptr();
+        let resources = ResourceContext::new();
+        assert!(permits(&first, 8, &context, &resources));
+        assert!(!permits(&first, 12, &context, &resources));
+        samples.push(work);
+    }
+    for (size, work) in sizes.iter().zip(&samples) {
+        assert!(
+            *work as u64 <= samples[0] as u64 * size / sizes[0] + 1_000,
+            "slice entry work is not linear in its slice parameters: {samples:?}"
+        );
+    }
+}
