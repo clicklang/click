@@ -86,6 +86,12 @@ pub(crate) struct MemoryStateLabels {
     /// Addresses no structural spelling names, spelled as the pointer local
     /// that held them at a recorded state: `at(region(2).exit, p)`.
     recorded_pointers: HashMap<Address, String>,
+    /// Slices no current name holds, by their count, spelled as the slice
+    /// local or call result that held them at a recorded state:
+    /// `at(statement(0).exit, view)`. Its data pointer is in
+    /// `recorded_pointers` as `at(statement(0).exit, view.as_ptr())`.
+    /// The flag is whether the slice is a string slice.
+    recorded_slices: Vec<(OldMachineTerm, String, bool)>,
     /// Typed values a recorded state names that the current state no
     /// longer holds: a call's result, `<region>.result`. A range over one is
     /// spelled from that name.
@@ -677,6 +683,33 @@ impl MemoryStateLabels {
                 .entry(pointer.clone())
                 .or_insert(name);
         }
+    }
+
+    /// Spells the slice whose count is `count` as `name`, when nothing named
+    /// it that way yet.
+    pub(crate) fn fallback_slice_name(&mut self, slice: &crate::kernel::Pointer, name: String) {
+        let Some(count) = slice.len() else {
+            return;
+        };
+        let string = slice.program_type()
+            == crate::kernel::ProgramType::SlicePointer(crate::kernel::SliceElement::Str);
+        if self.recorded_slices.len() < 128
+            && !self
+                .recorded_slices
+                .iter()
+                .any(|(known, _, _)| known == count)
+        {
+            self.recorded_slices.push((count.clone(), name, string));
+        }
+    }
+
+    /// The name [`Self::fallback_slice_name`] gave the slice counted by
+    /// `count`, and whether that slice is a string slice.
+    pub(crate) fn recorded_slice_name(&self, count: &OldMachineTerm) -> Option<(&str, bool)> {
+        self.recorded_slices
+            .iter()
+            .find(|(known, _, _)| known == count)
+            .map(|(_, name, string)| (name.as_str(), *string))
     }
 
     /// Records `value` under `name` for spellings that need a typed value,

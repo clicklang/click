@@ -2754,6 +2754,17 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     {
         return Some(value.into());
     }
+    // A C read whose address a checked alias selected (a call's slice
+    // result read through its data pointer, `view[0]` for `let view =
+    // whole(bytes);`) reads the selected cell, and is named at that cell's
+    // version where its site names one, as a read written with that
+    // address is; a memory-named read of the same cell would be a second
+    // name for one version (`design/rust-slice-values.md`, step 3c-i).
+    if address != *pointer
+        && let Some(value) = point_named_symbolic_read(site, &address, value_type)
+    {
+        return Some(value.into());
+    }
     let value = if names_version {
         record_load_access_width(memory, &address, value_type.byte_width());
         memory.symbolic_pointer_version_load(site, &address, value_type)
