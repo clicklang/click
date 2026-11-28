@@ -654,53 +654,49 @@ fn fold_constructor_reborrow(
 }
 
 /// A borrow consumed by the adjacent slice operation is the operation's
-/// input. Skipping only source markers preserves the borrowed place and,
-/// for an array coercion, its reference view and mutability.
+/// input. Array coercions and split receivers can skip source markers. The
+/// borrow still cannot cross a statement that changes its place.
 fn fold_adjacent_slice_borrows(
-    statements: &mut [S],
+    statements: &mut Vec<S>,
     substitutable: &impl Fn(&MirLocalId) -> bool,
     removed: &mut BTreeSet<MirLocalId>,
 ) {
-    let mut previous = None;
-    for position in 0..statements.len() {
-        let (earlier, later) = statements.split_at_mut(position);
-        let consumer = &mut later[0];
-        // A source marker changes the diagnostic location, not the receiver.
-        if matches!(consumer, S::Site { .. }) {
-            continue;
-        }
-        if let Some(producer) = previous
-            && let S::Assign {
-                target: E::Local { name },
-                value: borrow @ E::Borrow { place, value_type },
-            } = &earlier[producer]
+    let mut statements_iter = std::mem::take(statements).into_iter().peekable();
+    while let Some(statement) = statements_iter.next() {
+        let mut source_markers = Vec::new();
+        if let S::Assign {
+            target: E::Local { name },
+            value: borrow @ E::Borrow { place, value_type },
+        } = &statement
             && substitutable(name)
             && pure(place)
             && !checked(place)
         {
-            let operand = match value_type {
-                Type::Reference { pointee, .. }
-                    if matches!(pointee.as_ref(), Type::Array { .. }) =>
-                {
-                    match consumer {
-                        S::Assign {
-                            target: E::Local { .. },
-                            value: E::ArrayToSlice { array, .. },
-                        } => Some(array.as_mut()),
-                        _ => None,
-                    }
+            while matches!(statements_iter.peek(), Some(S::Site { .. })) {
+                source_markers.push(statements_iter.next().expect("source marker"));
+            }
+            let operand = match (value_type, statements_iter.peek_mut()) {
+                (
+                    Type::Reference { pointee, .. },
+                    Some(S::Assign {
+                        target: E::Local { .. },
+                        value: E::ArrayToSlice { array, .. },
+                    }),
+                ) if matches!(pointee.as_ref(), Type::Array { .. }) => Some(array.as_mut()),
+                (Type::ByteSlice { mutable: false }, Some(S::SliceSplit { slice, .. })) => {
+                    Some(slice)
                 }
-                Type::ByteSlice { mutable: false } | Type::ScalarSlice { mutable: false, .. } => {
-                    match consumer {
-                        S::Assign {
-                            target: E::Local { .. },
-                            value: E::SliceLength { slice },
-                        } => Some(slice.as_mut()),
-                        S::SharedArrayInitialize { source, .. }
-                        | S::SliceSplit { slice: source, .. } => Some(source),
-                        _ => None,
-                    }
-                }
+                (
+                    Type::ByteSlice { mutable: false } | Type::ScalarSlice { mutable: false, .. },
+                    Some(S::Assign {
+                        target: E::Local { .. },
+                        value: E::SliceLength { slice },
+                    }),
+                ) if source_markers.is_empty() => Some(slice.as_mut()),
+                (
+                    Type::ByteSlice { mutable: false } | Type::ScalarSlice { mutable: false, .. },
+                    Some(S::SharedArrayInitialize { source, .. }),
+                ) if source_markers.is_empty() => Some(source),
                 _ => None,
             };
             if let Some(operand) = operand
@@ -708,9 +704,12 @@ fn fold_adjacent_slice_borrows(
             {
                 *operand = borrow.clone();
                 removed.insert(name.clone());
+                statements.extend(source_markers);
+                continue;
             }
         }
-        previous = Some(position);
+        statements.push(statement);
+        statements.extend(source_markers);
     }
 }
 
