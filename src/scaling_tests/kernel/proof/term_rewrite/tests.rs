@@ -1453,6 +1453,23 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn shared_boolean_carrier_collection_visits_each_connective_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::Bool, Variable(982802));
+        for _ in 0..depth {
+            root = KernelTerm::boolean_equal_raw([root.clone(), root]);
+        }
+        let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+        let mut variables = CarrierVariables::for_rewrite(true);
+        collect_stored_condition_carriers(&condition, &mut variables);
+        assert_eq!(variables.nodes, depth + 1);
+        assert!(!variables.exhausted());
+        assert!(!root.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
     let mut samples = Vec::new();
     for size in [8usize, 32, 96] {
