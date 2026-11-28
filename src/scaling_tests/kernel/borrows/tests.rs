@@ -800,8 +800,9 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
         let mut chain_requirements = Vec::with_capacity(size * 3);
         let mut equal_requirements = Vec::with_capacity(size * 3);
         for index in 0..size {
+            // Keep lexicographic address order stable as the fixture grows.
             let base = Address::new(
-                crate::kernel::AddressBase::Concrete(format!("overlap-{index}")),
+                crate::kernel::AddressBase::Concrete(format!("overlap-{index:02}")),
                 AddressOffset::constant(0),
             );
             let owner = ResourceFact::own_memory(MemoryRange::new(
