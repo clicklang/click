@@ -1223,9 +1223,16 @@ fn lower_function(
                         let ordinal = u32::try_from(ordinal).ok()?;
                         LocalBindingId::slice_component(owner.clone(), ordinal)
                     } else {
-                        let spelling = mir.spellings.get(&local.name)?;
+                        let spelling = mir.spellings.get(&local.name).cloned();
+                        // A compiler flag can be assigned and tested in
+                        // different MIR blocks without a source name.
+                        let compiler_flag = matches!(local.name, MirLocalId::Compiler(_))
+                            && matches!(local.value_type, Type::Bool);
+                        if spelling.is_none() && !compiler_flag {
+                            return None;
+                        }
                         let ordinal = u32::try_from(ordinal).ok()?;
-                        LocalBindingId::new(owner.clone(), false, ordinal, Some(spelling.clone()))
+                        LocalBindingId::new(owner.clone(), false, ordinal, spelling)
                     };
                     Some((local.name.clone(), BindingName::from(id)))
                 })
