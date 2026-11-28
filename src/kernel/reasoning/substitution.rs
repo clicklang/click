@@ -20,6 +20,7 @@ trait VariableSubstitution {
 
     fn from(&self) -> Variable;
     fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm;
+    fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm;
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
     fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm;
 
@@ -100,6 +101,27 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     }
     fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm {
         substitute_bitvector_variable(term, self.from, self.to)
+    }
+    fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm {
+        if let Some(root) = word.root() {
+            match root.node() {
+                KernelTermNode::MachineLiteral(_) | KernelTermNode::ThreadHandle(_) => {
+                    return word.clone();
+                }
+                KernelTermNode::Variable(var) => {
+                    let source = OldMachineTerm::Variable(*var);
+                    let next = self.bitvector(&source);
+                    if next == source {
+                        return word.clone();
+                    }
+                    let format = MachineIntegerType::from_program_type(word.value().program_type())
+                        .expect("stored word format");
+                    return StoredMachineTerm::new(format, next);
+                }
+                _ => {}
+            }
+        }
+        word.map_native(|term| self.bitvector(term))
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         substitute_bitvector_variable_in_integer(term, self.from, self.to)
@@ -188,6 +210,9 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm {
         term.clone()
+    }
+    fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm {
+        word.clone()
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         term.clone()
@@ -1567,7 +1592,12 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             after: s.memory(after),
             blocks: blocks
                 .iter()
-                .map(|(base, bytes)| (s.pointer(base), bytes.map_bytes(|bytes| s.bitvector(bytes))))
+                .map(|(base, bytes)| {
+                    (
+                        s.pointer(base),
+                        bytes.map_stored_bytes(|word| s.stored_word(word)),
+                    )
+                })
                 .collect(),
             mutable_ranges: mutable_ranges
                 .iter()
@@ -1856,11 +1886,8 @@ fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &
 
 fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &S) -> MemoryRange {
     let mut result = range
-        .with_bounds(
-            s.pointer(&range.base),
-            s.bitvector(range.bound_terms().0),
-            s.bitvector(range.bound_terms().1),
-        )
+        .with_base(s.pointer(&range.base))
+        .map_stored_bounds(|bound| s.stored_word(bound))
         .with_provenance(s.pointer(&range.provenance))
         .with_bounds_owner(
             range.carrier_owner().map(|origin| s.pointer(origin)),
@@ -1879,6 +1906,82 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
 #[cfg(test)]
 mod resource_frame_substitution_tests {
     use super::*;
+
+    #[test]
+    fn heap_substitution_preserves_range_holes_and_shared_machine_operands() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(10998580);
+        let base = Address::symbolic(from);
+        let pointer = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+        let layout = crate::kernel::SymbolicLayoutName::intern(
+            "range_substitution",
+            vec![("member".into(), ProgramType::Int32)],
+        );
+        let mut import = KernelTermImport::default();
+        let format = MachineIntegerType::UInt64;
+        let start = import.machine(format, &OldMachineTerm::uint64_constant(0));
+        let end = import.machine(format, &layout.size_term());
+        let size = import.machine(format, &OldMachineTerm::Variable(from));
+        let range = MemoryRange::from_retained_bounds(
+            &pointer,
+            ExecutionValue::Shared(start.clone()),
+            ExecutionValue::Shared(end.clone()),
+            1,
+        )
+        .unwrap()
+        .with_holes(vec![0]);
+        let fact = Proposition::HeapAllocationFreed {
+            before: SymbolicMemory::new(),
+            after: SymbolicMemory::new(),
+            before_point: Default::default(),
+            after_point: Default::default(),
+            blocks: vec![(
+                base.clone(),
+                AllocationSize::from_value(ExecutionValue::Shared(size.clone())).unwrap(),
+            )],
+            mutable_ranges: vec![range],
+        };
+
+        let target = SymbolicMemory::global_pointer("substituted");
+        let Proposition::HeapAllocationFreed {
+            blocks,
+            mutable_ranges,
+            ..
+        } = substitute_pointer_variable_in_proposition(&fact, from, &target)
+        else {
+            unreachable!()
+        };
+        let range = &mutable_ranges[0];
+        assert_eq!(range.base(), &target);
+        assert_eq!(blocks[0].0, target);
+        assert!(
+            matches!(blocks[0].1.byte_operand(), MachineOperandView::Shared(root) if root == &size)
+        );
+        assert_eq!(range.holes(), &[0]);
+        assert_eq!(range.retained_bounds().0.root(), Some(&start));
+        assert_eq!(range.retained_bounds().1.root(), Some(&end));
+        assert!(
+            [&start, &end, &size]
+                .iter()
+                .all(|root| !root.has_cached_native_argument())
+        );
+
+        let replacement = OldMachineTerm::constant(19);
+        let Proposition::HeapAllocationFreed {
+            blocks,
+            mutable_ranges,
+            ..
+        } = substitute_bitvector_variable_in_proposition(&fact, from, &replacement)
+        else {
+            unreachable!()
+        };
+        assert_eq!(blocks[0].1.bytes(), &replacement);
+        assert_eq!(blocks[0].1.kind(), AllocationSizeKind::UInt64);
+        assert_eq!(mutable_ranges[0].retained_bounds().0.root(), Some(&start));
+        assert_eq!(mutable_ranges[0].holes(), &[0]);
+        assert_eq!(mutable_ranges[0].symbolic_object(), Some(layout));
+        assert!(!size.has_cached_native_argument());
+    }
 
     #[test]
     fn pointer_substitution_in_condition_terms_preserves_each_declaration() {
@@ -3835,7 +3938,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             Term::Condition(BitvectorSubstitution::new(from, to).stored_condition(condition))
         }
         Term::Bitvector32(bits) => {
-            Term::Bitvector32(bits.map_native(|word| substitute_bitvector_variable(word, from, to)))
+            Term::Bitvector32(BitvectorSubstitution::new(from, to).stored_word(bits))
         }
         // Variable identities are shared by all logical sorts, but a
         // machine substitution must never rewrite an Integer variable with a
