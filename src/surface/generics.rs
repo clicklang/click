@@ -947,6 +947,7 @@ pub(super) fn instantiate_theorem_statement(
                 .ensures
                 .iter()
                 .map(|ensure| EnsureClause {
+                    refinement: ensure.refinement.clone(),
                     proof_bindings: ensure.proof_bindings.clone(),
                     name: ensure.name.clone(),
                     ensure: ensure.ensure.clone(),
@@ -1058,6 +1059,7 @@ fn instantiate_ensure_clause(
         resource @ Ensure::Resource(_) => resource.clone(),
     };
     Ok(EnsureClause {
+        refinement: ensure.refinement.clone(),
         proof_bindings: ensure
             .proof_bindings
             .iter()
@@ -1340,24 +1342,7 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        ProofTactic::CompatibilityNormalize(premises) => ProofTactic::CompatibilityNormalize(
-            premises
-                .as_ref()
-                .map(|premises| {
-                    premises
-                        .iter()
-                        .map(proposition)
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
-        ),
         ProofTactic::CloseBounds(premises) => ProofTactic::CloseBounds(
-            premises
-                .iter()
-                .map(proposition)
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        ProofTactic::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(
             premises
                 .iter()
                 .map(proposition)

@@ -121,10 +121,6 @@ pub enum ProofStep {
     CheckTerminationCallbacks,
     Known,
     CloseBounds(Vec<SyntaxProposition>),
-    Normalize,
-    NormalizeUsing(Vec<SyntaxProposition>),
-    /// A compatibility check used in verification. It has no expansion spelling.
-    CompatibilityNormalize(Option<Vec<SyntaxProposition>>),
     ArithmeticUsing(Vec<SyntaxProposition>),
 
     Intro,
@@ -799,11 +795,6 @@ impl ProofStep {
             ProofTactic::Known => Self::Known,
             ProofTactic::CloseUnreachable => Self::CloseUnreachable,
             ProofTactic::CloseBounds(premises) => Self::CloseBounds(premises.clone()),
-            ProofTactic::Normalize => Self::Normalize,
-            ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
-            ProofTactic::CompatibilityNormalize(premises) => {
-                Self::CompatibilityNormalize(premises.clone())
-            }
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
 
             ProofTactic::Intro => Self::Intro,
@@ -983,11 +974,6 @@ impl ProofStep {
             Self::Known => ProofTactic::Known,
             Self::CloseUnreachable => ProofTactic::CloseUnreachable,
             Self::CloseBounds(premises) => ProofTactic::CloseBounds(premises.clone()),
-            Self::Normalize => ProofTactic::Normalize,
-            Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
-            Self::CompatibilityNormalize(premises) => {
-                ProofTactic::CompatibilityNormalize(premises.clone())
-            }
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
 
             Self::IntroBlock { binder, body } => ProofTactic::IntroBlock {
@@ -1229,9 +1215,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Known | ProofStep::CloseUnreachable | ProofStep::CloseBounds(_) => {
             TacticClass::Simple(SimpleTactic::Known)
         }
-        ProofStep::Normalize
-        | ProofStep::NormalizeUsing(_)
-        | ProofStep::CompatibilityNormalize(_) => TacticClass::Simple(SimpleTactic::Normalize),
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
         ProofStep::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),

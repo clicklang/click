@@ -153,7 +153,7 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
         );
         // Even the same exact goal and premises in a fresh root are not this scope.
         let unrelated = TestProof::root((), body.state.open_branches.root_branch().clone())
-            .apply_normalize()
+            .apply_known(PropositionKnownContext::Exact)
             .ok()
             .unwrap();
         assert!(
@@ -161,7 +161,10 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
                 .retain_invariant_body(scope.clone(), &unrelated)
                 .is_err()
         );
-        let complete = body.apply_normalize().ok().unwrap();
+        let complete = body
+            .apply_known(PropositionKnownContext::Exact)
+            .ok()
+            .unwrap();
         let (closed, closing_work) = crate::instrumentation::measure_deterministic_work(|| {
             let closed = frontier
                 .retain_invariant_body(scope.clone(), &complete)
@@ -331,7 +334,10 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
                 |_, _| (),
             )
             .unwrap();
-        let completed = body.apply_normalize().ok().unwrap();
+        let completed = body
+            .apply_known(PropositionKnownContext::Exact)
+            .ok()
+            .unwrap();
         let prepared = unprepared.retain_invariant_body(scope, &completed).unwrap();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             prepared.validate_checked_invariant_lowerings(&checks, &[])
@@ -489,7 +495,7 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
                 let field = refined.apply_intro(|_, _, _| ()).ok().unwrap();
                 let case = field.apply_intro(|_, _, _| ()).ok().unwrap();
                 assert_eq!(case.state.added_facts.len(), 1);
-                assert!(case.apply_normalize().is_ok());
+                assert!(case.apply_known(PropositionKnownContext::Exact).is_ok());
             })
         });
         costs.push((work, map_work));

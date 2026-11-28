@@ -77,29 +77,42 @@ fn collect_machine_operand_carriers(
     }
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
-            if let KernelTermNode::Match(matched) = leaf.node() {
-                retained_matches::collect_match_carriers(matched, variables);
-                continue;
-            }
-            if let KernelTermNode::Fold(fold) = leaf.node() {
-                variables.program_values.insert(fold.accumulator);
-                variables.program_values.insert(fold.item);
-                for child in &fold.arguments {
-                    collect_machine_operand_carriers(MachineOperandView::Shared(child), variables);
+            match leaf.node() {
+                KernelTermNode::IntegerToMachine { operand, .. }
+                    if operand.is_mathematical_integer() =>
+                {
+                    collect_mathematical_integer_carriers(operand, variables);
                 }
-                continue;
-            }
-            if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
-                collect_bitvector_carriers(
-                    &KernelTermExport::machine(leaf).expect("float conversion"),
+                KernelTermNode::IntegerAddress { address, .. } => {
+                    collect_shared_address_carriers(address, variables);
+                }
+                KernelTermNode::BoolCast { operand, .. } => {
+                    collect_shared_condition_carriers(operand, variables, None);
+                }
+                KernelTermNode::Match(matched) => {
+                    retained_matches::collect_match_carriers(matched, variables)
+                }
+                KernelTermNode::Fold(fold) => {
+                    variables.program_values.insert(fold.accumulator);
+                    variables.program_values.insert(fold.item);
+                    for child in &fold.arguments {
+                        collect_machine_operand_carriers(
+                            MachineOperandView::Shared(child),
+                            variables,
+                        );
+                    }
+                }
+                KernelTermNode::FloatConvert { operand, .. } => {
+                    collect_numeric_carriers(std::slice::from_ref(operand), variables);
+                }
+                _ => collect_bitvector_carriers(
+                    leaf.machine_conversion_leaf().expect("conversion leaf"),
                     variables,
-                );
-                continue;
+                ),
             }
-            collect_bitvector_carriers(
-                leaf.machine_conversion_leaf().expect("conversion leaf"),
-                variables,
-            );
+            if variables.exhausted() {
+                return;
+            }
         }
     }
     if let Some(reads) = shared_machine_read_leaves(root, || variables.visit()) {
@@ -595,34 +608,291 @@ fn restore_mapping(
     }
 }
 
-pub(crate) fn mathematical_comparison(
-    condition: &StoredConditionTerm,
-) -> Option<(IntegerComparisonOperator, &[KernelTerm; 2])> {
-    let KernelTermNode::IntegerCompare {
-        operator,
-        arguments,
-    } = condition.root()?.node()
-    else {
-        return None;
-    };
-    arguments
-        .iter()
-        .all(KernelTerm::is_mathematical_integer)
-        .then_some((*operator, arguments))
-}
-
 fn collect_stored_condition_carriers(
     condition: &StoredConditionTerm,
     variables: &mut CarrierVariables,
 ) {
-    if let Some((_, arguments)) = mathematical_comparison(condition) {
-        if variables.visit() {
-            for argument in arguments {
-                collect_mathematical_integer_carriers(argument, variables);
+    let Some(root) = condition.root() else {
+        return collect_condition_carriers(condition.old_form(), variables);
+    };
+    collect_shared_condition_carriers(root, variables, root.cached_condition_output());
+}
+
+fn collect_shared_condition_carriers(
+    root: &KernelTerm,
+    variables: &mut CarrierVariables,
+    cached_root: Option<&OldConditionTerm>,
+) {
+    let mut seen = std::collections::HashSet::new();
+    let mut pending = vec![root];
+    while let Some(term) = pending.pop() {
+        // Pointer queries return an ordered list of occurrences. Variable and
+        // read queries can reuse a shared Boolean subtree after its first visit.
+        if variables.pointer_terms.is_none() && !seen.insert(term.id()) {
+            continue;
+        }
+        if !variables.visit() {
+            return;
+        }
+        match term.node() {
+            KernelTermNode::BoolIf { arguments } => pending.extend(arguments.iter().rev()),
+            KernelTermNode::BoolEqual { arguments } => pending.extend(arguments.iter().rev()),
+            KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => {}
+            KernelTermNode::IntegerCompare { arguments, .. } => {
+                let mut seen = BTreeSet::new();
+                for argument in arguments {
+                    if argument.is_mathematical_integer() {
+                        collect_mathematical_integer_carriers(argument, variables);
+                    } else {
+                        // Integer export returns the shared handle, including the
+                        // producer's handle for an explicitly written argument.
+                        let integer = KernelTermExport::default()
+                            .integer(argument)
+                            .expect("Integer comparison operand");
+                        collect_integer_shared_carriers(&integer, variables, &mut seen);
+                    }
+                    if variables.exhausted() {
+                        return;
+                    }
+                }
+            }
+            KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
+            | KernelTermNode::FloatCompare { arguments, .. } => {
+                collect_numeric_carriers(arguments, variables)
+            }
+            KernelTermNode::FloatClassify { operand, .. } => {
+                collect_numeric_carriers(std::slice::from_ref(operand), variables);
+            }
+            KernelTermNode::PointerEqual(pair) => {
+                for pointer in pair.arguments() {
+                    collect_complete_pointer_carriers(pointer, variables);
+                    if variables.exhausted() {
+                        return;
+                    }
+                }
+            }
+            KernelTermNode::AddressEqual { arguments, .. } => {
+                for address in arguments {
+                    collect_shared_address_carriers(address, variables);
+                    if variables.exhausted() {
+                        return;
+                    }
+                }
+            }
+            KernelTermNode::AddressOffsetEqual { arguments } => {
+                for offset in arguments {
+                    if variables.pointer_terms.is_some() {
+                        let written = AddressOffset::try_from_shared(offset.clone())
+                            .expect("offset equality operand");
+                        collect_pointer_offset_carriers(&written, variables);
+                    } else {
+                        collect_retained_offset_carriers(offset, variables);
+                    }
+                    if variables.exhausted() {
+                        return;
+                    }
+                }
+            }
+            KernelTermNode::Call { arguments, .. } => {
+                let at_root = term == root;
+                let cached = if at_root {
+                    cached_root
+                } else {
+                    term.cached_condition_output()
+                };
+                if let Some(condition) = cached {
+                    collect_condition_node_carriers(condition, variables);
+                } else {
+                    collect_boolean_call_carriers(arguments, at_root, variables);
+                }
+            }
+            _ => collect_condition_node_carriers(
+                &BooleanOperandView::Shared(term).native(),
+                variables,
+            ),
+        }
+    }
+}
+
+fn collect_boolean_call_carriers(
+    arguments: &[KernelTerm],
+    retain_machine_arguments: bool,
+    variables: &mut CarrierVariables,
+) {
+    let mut seen = BTreeSet::new();
+    for argument in arguments {
+        if !variables.visit() {
+            return;
+        }
+        // A call read as the condition root uses its machine observations.
+        // A nested call exposes written program values, including repeated reads.
+        if retain_machine_arguments && let Some(machine) = argument.boolean_call_machine_argument()
+        {
+            collect_machine_carriers(&machine, variables);
+        } else if let Some(written) = argument.written_argument() {
+            collect_argument_carriers(written, variables, &mut seen);
+        } else if is_numeric_carrier_root(argument) {
+            collect_numeric_program_carriers(argument, variables);
+        } else {
+            let value = KernelTermExport::default()
+                .argument(argument)
+                .expect("Boolean call argument");
+            collect_argument_carriers(&value, variables, &mut seen);
+        }
+    }
+}
+
+fn is_numeric_carrier_root(root: &KernelTerm) -> bool {
+    let KernelType::Program(ty) = root.ty() else {
+        return false;
+    };
+    if MachineIntegerType::from_program_type(*ty).is_none()
+        && KernelFloatType::from_program_type(*ty).is_none()
+    {
+        return false;
+    }
+    matches!(
+        root.node(),
+        KernelTermNode::MachineBinary { .. }
+            | KernelTermNode::MachineUnary { .. }
+            | KernelTermNode::MachineCast { .. }
+            | KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::Variable(_)
+            | KernelTermNode::ThreadHandle(_)
+            | KernelTermNode::MemoryLoad { .. }
+            | KernelTermNode::IntegerAddress { .. }
+            | KernelTermNode::FloatConvert { .. }
+            | KernelTermNode::FloatBinary { .. }
+            | KernelTermNode::FloatNegate { .. }
+            | KernelTermNode::FloatLiteral { .. }
+            | KernelTermNode::FloatRead(_)
+            | KernelTermNode::FloatCall(_)
+    )
+}
+
+fn stored_numeric_root(value: &ExecutionValue) -> Option<&KernelTerm> {
+    value.shared().filter(|root| is_numeric_carrier_root(root))
+}
+
+fn collect_numeric_program_carriers(root: &KernelTerm, variables: &mut CarrierVariables) {
+    if variables.visit() {
+        collect_numeric_carriers(std::slice::from_ref(root), variables);
+    }
+}
+
+fn collect_stored_program_carriers(value: &StoredProgramValue, variables: &mut CarrierVariables) {
+    if let Some(root) = stored_numeric_root(value.value()) {
+        collect_numeric_program_carriers(root, variables);
+    } else {
+        collect_program_value_carriers(value.old_form(), variables);
+    }
+}
+
+fn collect_stored_machine_carriers(value: &StoredMachineTerm, variables: &mut CarrierVariables) {
+    if let Some(root) = stored_numeric_root(value.value()) {
+        collect_numeric_carriers(std::slice::from_ref(root), variables);
+    } else {
+        // Other stored roots retain their producer's reading. In particular a
+        // top-level machine call keeps its shared machine argument carriers.
+        collect_bitvector_carriers(value.old_form(), variables);
+    }
+}
+
+fn collect_numeric_carriers(operands: &[KernelTerm], variables: &mut CarrierVariables) {
+    struct CallArguments<'a> {
+        machine_carriers: std::slice::Iter<'a, Option<SharedMachineIntegerTerm>>,
+        seen: BTreeSet<u64>,
+    }
+
+    // Each frame advances left to right, including when a float argument
+    // opens a nested call. Only the active calls retain argument state.
+    let mut pending = vec![(operands.iter(), None::<CallArguments>)];
+    let mut seen = std::collections::HashSet::new();
+    while let Some((children, call)) = pending.last_mut() {
+        let Some(term) = children.next() else {
+            pending.pop();
+            continue;
+        };
+        if let Some(call) = call {
+            if !variables.visit() {
+                return;
+            }
+            if let Some(machine) = call
+                .machine_carriers
+                .next()
+                .expect("carrier per float call argument")
+            {
+                collect_machine_carriers(machine, variables);
+                continue;
+            }
+            if FloatOperandView::from_shared(term).is_none() {
+                let argument = KernelTermExport::default()
+                    .argument(term)
+                    .expect("float call argument");
+                collect_argument_carriers(&argument, variables, &mut call.seen);
+                continue;
             }
         }
-    } else {
-        collect_condition_carriers(condition.old_form(), variables);
+        if variables.pointer_terms.is_none() && !seen.insert(term.id()) {
+            continue;
+        }
+        if !variables.visit() {
+            return;
+        }
+        match term.node() {
+            KernelTermNode::FloatBinary { arguments, .. }
+            | KernelTermNode::MachineBinary { arguments, .. } => {
+                pending.push((arguments.iter(), None))
+            }
+            KernelTermNode::FloatNegate { operand }
+            | KernelTermNode::FloatConvert { operand, .. }
+            | KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => {
+                pending.push((std::slice::from_ref(operand).iter(), None));
+            }
+            KernelTermNode::FloatLiteral { .. }
+            | KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::ThreadHandle(_) => {}
+            KernelTermNode::IntegerAddress { address, .. } => {
+                collect_shared_address_carriers(address, variables)
+            }
+            KernelTermNode::MemoryLoad { address, .. } => {
+                if variables.read_terms.is_some() {
+                    collect_bitvector_carriers(
+                        term.machine_read_leaf().expect("machine read"),
+                        variables,
+                    );
+                } else {
+                    collect_shared_address_carriers(address, variables);
+                }
+            }
+            KernelTermNode::Variable(variable) => {
+                collect_machine_variable_carriers(*variable, variables)
+            }
+            KernelTermNode::FloatRead(read) if variables.read_terms.is_none() => {
+                collect_shared_address_carriers(read.parts().1, variables);
+            }
+            KernelTermNode::FloatCall(call) => {
+                pending.push((
+                    call.arguments.iter(),
+                    Some(CallArguments {
+                        machine_carriers: call.shared_machine_arguments.iter(),
+                        seen: BTreeSet::new(),
+                    }),
+                ));
+            }
+            _ => {
+                if let Some(float) = FloatOperandView::from_shared(term) {
+                    collect_bitvector_carriers(float.old_form().expect("float atom"), variables);
+                } else {
+                    collect_bitvector_carriers(
+                        &KernelTermExport::machine(term).expect("machine conversion input"),
+                        variables,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -657,7 +927,19 @@ fn collect_integer_shared_carriers(
     variables: &mut CarrierVariables,
     seen: &mut BTreeSet<u64>,
 ) {
-    if seen.insert(term.id()) {
+    if let Some(root) = term.mathematical_root() {
+        return collect_mathematical_integer_carriers(root, variables);
+    }
+    if !seen.insert(term.id()) {
+        return;
+    }
+    if term.root().is_integer_observation_arithmetic()
+        && let Some(machine) = term.root().exact_shared_integer_observation()
+    {
+        if variables.visit() {
+            collect_machine_carriers(&machine, variables);
+        }
+    } else {
         collect_integer_carriers(term, variables, seen);
     }
 }
@@ -933,6 +1215,36 @@ fn collect_algebraic_carriers_seen(
     }
 }
 
+fn collect_complete_pointer_carriers(pointer: &SharedPointer, variables: &mut CarrierVariables) {
+    for address in pointer.addresses() {
+        collect_shared_address_carriers(address, variables);
+        if variables.exhausted() {
+            return;
+        }
+    }
+    match pointer.element_count_operand() {
+        Some(MachineOperandView::Old(count)) => collect_bitvector_carriers(count, variables),
+        Some(MachineOperandView::Shared(count)) => {
+            collect_numeric_carriers(std::slice::from_ref(count), variables)
+        }
+        None => {}
+    }
+}
+
+fn collect_shared_address_carriers(address: &SharedAddress, variables: &mut CarrierVariables) {
+    if variables.pointer_terms.is_some() {
+        let written = address.export().expect("written pointer occurrence");
+        collect_pointer_carriers(&written, variables);
+        return;
+    }
+    if variables.visit() {
+        collect_address_base_carriers(address.atom(), variables);
+        if !variables.exhausted() {
+            collect_retained_offset_carriers(address.offset(), variables);
+        }
+    }
+}
+
 fn collect_pointer_carriers(pointer: &Address, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
@@ -980,10 +1292,16 @@ fn collect_condition_carriers(condition: &OldConditionTerm, variables: &mut Carr
     if !variables.visit() {
         return;
     }
+    collect_condition_node_carriers(condition, variables);
+}
+
+fn collect_condition_node_carriers(condition: &OldConditionTerm, variables: &mut CarrierVariables) {
     match condition {
         OldConditionTerm::PointerEqual(left, right) => {
-            collect_program_value_carriers(&ProgramValue::Pointer((**left).clone()), variables);
-            collect_program_value_carriers(&ProgramValue::Pointer((**right).clone()), variables);
+            collect_complete_pointer_carriers(left.shared(), variables);
+            if !variables.exhausted() {
+                collect_complete_pointer_carriers(right.shared(), variables);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -1062,6 +1380,15 @@ fn collect_condition_carriers(condition: &OldConditionTerm, variables: &mut Carr
     }
 }
 
+fn collect_machine_variable_carriers(variable: Variable, variables: &mut CarrierVariables) {
+    variables.program_values.insert(variable);
+    // A binder of the slice would capture its count.
+    if let Some(slice) = variable.counted_slice() {
+        variables.program_values.insert(slice);
+    }
+    collect_registered_load_carriers(variable, variables);
+}
+
 fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
@@ -1070,13 +1397,7 @@ fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVari
         OldMachineTerm::ThreadHandle(_) => {}
         OldMachineTerm::Constant { .. } => {}
         OldMachineTerm::Variable(variable) => {
-            variables.program_values.insert(*variable);
-            // A slice's count mentions its slice: a binder of that slice
-            // would capture it.
-            if let Some(slice) = variable.counted_slice() {
-                variables.program_values.insert(slice);
-            }
-            collect_registered_load_carriers(*variable, variables);
+            collect_machine_variable_carriers(*variable, variables)
         }
         crate::kernel::binary_machine_term!(left, right) => {
             collect_bitvector_carriers(left, variables);
@@ -1420,24 +1741,37 @@ fn collect_offset_node_carriers(
 }
 
 fn collect_sequence_carriers(term: &SequenceTerm, variables: &mut CarrierVariables) {
-    if !variables.visit() {
-        return;
-    }
-    match term.node.as_ref() {
-        SequenceTermNode::Literal(values) => {
-            for value in values.iter() {
-                collect_program_value_carriers(value, variables);
-                if variables.exhausted() {
-                    return;
+    let mut pending = vec![term];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(term) = pending.pop() {
+        // The sequence owns these immutable nodes for the whole walk.
+        // Pointer queries return occurrences, including repeated concatenands.
+        if variables.pointer_terms.is_none() && !seen.insert(std::sync::Arc::as_ptr(&term.node)) {
+            continue;
+        }
+        if !variables.visit() {
+            return;
+        }
+        match term.node.as_ref() {
+            SequenceTermNode::Literal(values) => {
+                for index in 0..values.len() {
+                    if let Some(root) = values
+                        .retained_value_ref(index)
+                        .and_then(stored_numeric_root)
+                    {
+                        collect_numeric_program_carriers(root, variables);
+                    } else {
+                        collect_program_value_carriers(
+                            values.get(index).expect("sequence element"),
+                            variables,
+                        );
+                    }
+                    if variables.exhausted() {
+                        return;
+                    }
                 }
             }
-        }
-        SequenceTermNode::Concat(left, right) => {
-            collect_sequence_carriers(left, variables);
-            if variables.exhausted() {
-                return;
-            }
-            collect_sequence_carriers(right, variables);
+            SequenceTermNode::Concat(left, right) => pending.extend([right, left]),
         }
     }
 }
@@ -1522,7 +1856,7 @@ fn collect_integer_substitution_variables_with_carriers(
         match proposition {
             Proposition::VolatileAccess(event) => {
                 collect_pointer_carriers(&event.pointer, carriers);
-                collect_program_value_carriers(event.value.old_form(), carriers);
+                collect_stored_program_carriers(&event.value, carriers);
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
@@ -1540,7 +1874,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 collect_integer_substitution_term_variables(right, carriers);
             }
             Proposition::SequenceMembership { element, sequence } => {
-                collect_program_value_carriers(element.old_form(), carriers);
+                collect_stored_program_carriers(element, carriers);
                 collect_sequence_carriers(sequence, carriers);
             }
             Proposition::ConditionIs(condition, _) => {
@@ -1558,7 +1892,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 if carriers.exhausted() {
                     return;
                 }
-                collect_bitvector_carriers(bytes.old_form(), carriers);
+                collect_stored_machine_carriers(bytes, carriers);
             }
             Proposition::ResourceViewable { resource, .. } => {
                 collect_resource_carriers(resource, carriers)
@@ -1648,8 +1982,8 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
                 collect_integer_carriers(value.old_form(), variables, &mut BTreeSet::new());
             }
         }
-        Term::Bitvector32(value) => collect_bitvector_carriers(value.old_form(), variables),
-        Term::ProgramValue(value) => collect_program_value_carriers(value.old_form(), variables),
+        Term::Bitvector32(value) => collect_stored_machine_carriers(value, variables),
+        Term::ProgramValue(value) => collect_stored_program_carriers(value, variables),
         Term::Condition(value) => collect_stored_condition_carriers(value, variables),
         Term::PointerOffset(value) => {
             collect_retained_offset_carriers(value.root(), variables);
@@ -3385,9 +3719,7 @@ impl<'a> TermRewrite<'a> {
                 Term::Condition(condition) => {
                     collect_stored_condition_carriers(condition, &mut variables)
                 }
-                Term::Bitvector32(value) => {
-                    collect_bitvector_carriers(value.old_form(), &mut variables)
-                }
+                Term::Bitvector32(value) => collect_stored_machine_carriers(value, &mut variables),
                 // This exact rewrite does not enter binders or freshen names.
                 Term::Integer(value)
                     if value
@@ -3409,7 +3741,7 @@ impl<'a> TermRewrite<'a> {
                     collect_retained_offset_carriers(root, &mut variables);
                 }
                 Term::ProgramValue(value) => {
-                    collect_program_value_carriers(value.old_form(), &mut variables);
+                    collect_stored_program_carriers(value, &mut variables);
                 }
                 Term::Sequence(value) => collect_sequence_carriers(value, &mut variables),
                 Term::Algebraic(value) => {
@@ -3697,7 +4029,7 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(&event.pointer, &mut variables);
-                    collect_program_value_carriers(event.value.old_form(), &mut variables);
+                    collect_stored_program_carriers(&event.value, &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
@@ -3773,7 +4105,7 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(base, &mut variables);
-                    collect_bitvector_carriers(bytes.old_form(), &mut variables);
+                    collect_stored_machine_carriers(bytes, &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 let base = self.pointer(base);
@@ -8402,6 +8734,368 @@ mod tests {
             malformed_rewrite.bits(&goal),
             OldMachineTerm::AlgebraicMatch { .. }
         ));
+    }
+
+    #[test]
+    fn stored_boolean_carriers_share_variable_work_and_keep_pointer_occurrences() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let integer = Variable(9905);
+        let comparison = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::LessThan,
+            [
+                KernelTerm::variable(KernelType::Integer, integer),
+                KernelTerm::integer_literal(7.into()),
+            ],
+        )
+        .unwrap();
+        let a = Address::symbolic(Variable(9906));
+        let b = Address::symbolic(Variable(9907));
+        let pointers = KernelTerm::address_equal_raw([a.shared().clone(), b.shared().clone()]);
+        let root = KernelTerm::boolean_if_raw([comparison, pointers.clone(), pointers]);
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(root.clone()).unwrap(), true);
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(collector.carriers.integer, BTreeSet::from([integer]));
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([Variable(9906), Variable(9907)])
+        );
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            vec![a.clone(), b.clone(), a, b]
+        );
+        assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn sequence_carriers_preserve_read_order_across_native_and_retained_literals() {
+        let _session = VerificationSession::enter();
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let a = Address::symbolic(Variable(9916));
+        let b = Address::symbolic(Variable(9917));
+        let read_a = OldMachineTerm::read_named(point.clone(), a.clone(), LoadKind::Int32);
+        let read_b = KernelTerm::shared_scalar_read_descriptor(
+            MachineIntegerType::Int32,
+            &point,
+            b.shared(),
+            LoadKind::Int32,
+        );
+        let sequence = |node| SequenceTerm {
+            element_type: Some(ProgramType::Int32),
+            node: std::sync::Arc::new(node),
+        };
+        let native = sequence(SequenceTermNode::Literal(
+            [ProgramValue::Int32(read_a.clone())].into(),
+        ));
+        let retained = sequence(SequenceTermNode::Literal(SequenceValues::from_values([
+            ExecutionValue::Shared(read_b.clone()),
+        ])));
+        let pair = sequence(SequenceTermNode::Concat(native, retained));
+        let fact = Proposition::Predicate {
+            name: "mixed_sequence".into(),
+            arguments: vec![Term::Sequence(sequence(SequenceTermNode::Concat(
+                pair.clone(),
+                pair,
+            )))],
+        };
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            [a.clone(), b.clone(), a, b.clone()]
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        let reads = collector.take_read_terms().collect::<Vec<_>>();
+        assert_eq!(reads.len(), 2);
+        assert!(reads.contains(&read_a));
+        assert!(reads.contains(&OldMachineTerm::read_named(point, b, LoadKind::Int32)));
+        assert!(!read_b.has_cached_native_argument());
+    }
+
+    #[test]
+    fn stored_machine_carriers_keep_call_argument_read_occurrences() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let address = Address::symbolic(Variable(9915));
+        let read = KernelTerm::shared_scalar_read_descriptor(
+            format,
+            &point,
+            address.shared(),
+            LoadKind::Int32,
+        );
+        let sum =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [read.clone(), read]);
+        let call = KernelTerm::checked_call(
+            KernelType::Program(ProgramType::Int32),
+            "sample".into(),
+            vec![sum.clone()],
+        );
+        for (root, expected) in [
+            (sum, vec![address.clone(), address.clone()]),
+            (call, vec![address.clone()]),
+        ] {
+            let term = StoredMachineTerm::from_value(ExecutionValue::Shared(root)).unwrap();
+            let fact = Proposition::Predicate {
+                name: "word".into(),
+                arguments: vec![Term::Bitvector32(term)],
+            };
+            assert_eq!(proposition_pointer_terms(&fact), expected);
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect_read_terms();
+            collector.collect(&fact);
+            assert_eq!(
+                collector.take_read_terms().collect::<Vec<_>>(),
+                [OldMachineTerm::read_named(
+                    point.clone(),
+                    address.clone(),
+                    LoadKind::Int32
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn boolean_call_pointer_queries_preserve_the_selected_argument_reading() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::UInt32;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let address = Address::symbolic(Variable(9930));
+        let word = KernelTerm::shared_scalar_read_descriptor(
+            format,
+            &point,
+            address.shared(),
+            LoadKind::UInt32,
+        );
+        let call = KernelTerm::checked_call(
+            KernelType::Bool,
+            "same_reads".into(),
+            vec![word.clone(), word],
+        );
+        let nested =
+            KernelTerm::boolean_equal_raw([call.clone(), KernelTerm::boolean_literal(true)]);
+        let pointers = |root| {
+            proposition_pointer_terms(&Proposition::condition_is(
+                StoredConditionTerm::from_root(root).unwrap(),
+                true,
+            ))
+        };
+        assert_eq!(pointers(call.clone()), [address.clone()]);
+        assert_eq!(pointers(nested.clone()), [address.clone(), address.clone()]);
+
+        let written = PureFunctionArgument::Value(ProgramValue::UInt32(
+            OldMachineTerm::read_named(point, address.clone(), LoadKind::UInt32),
+        ));
+        call.retain_old_condition_output(OldConditionTerm::BoolApplication(
+            SharedPureApplication::intern("same_reads".into(), vec![written.clone(), written]),
+        ));
+        assert_eq!(pointers(call), [address.clone(), address.clone()]);
+        assert_eq!(pointers(nested), [address.clone(), address]);
+    }
+
+    #[test]
+    fn pointer_equality_visits_address_roles_then_each_element_count() {
+        let _session = VerificationSession::enter();
+        let [data, provenance, owner, start, cell] =
+            [9920, 9921, 9922, 9923, 9924].map(|id| Address::symbolic(Variable(id)));
+        let thin = Pointer::from_parts(
+            data.clone(),
+            provenance.clone(),
+            ArrayObject::from_parts(
+                true,
+                Some(SubobjectBounds::new(
+                    start.clone(),
+                    OldMachineTerm::Variable(Variable(9925)),
+                )),
+                Some(owner.clone()),
+            ),
+            ProgramType::Int32Pointer,
+        );
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let read = OldMachineTerm::read_named(point.clone(), cell.clone(), LoadKind::Bits64);
+        let written = thin.clone().with_element_count(read.clone());
+        let root = KernelTerm::shared_scalar_read_descriptor(
+            MachineIntegerType::UInt64,
+            &point,
+            cell.shared(),
+            LoadKind::Bits64,
+        );
+        let shared = thin.shared().with_element_count(root);
+        let condition = KernelTerm::pointer_equal_raw([written.shared().clone(), shared]);
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(condition).unwrap(), true);
+        let roles = [data, provenance, owner, start, cell];
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            roles.iter().chain(&roles).cloned().collect::<Vec<_>>()
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([9920, 9921, 9922, 9923, 9924].map(Variable))
+        );
+        assert_eq!(collector.take_read_terms().collect::<Vec<_>>(), vec![read]);
+    }
+
+    #[test]
+    fn numeric_predicate_carriers_keep_machine_read_occurrences_and_identity() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::UInt32;
+        let float = KernelFloatType::Float32;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let a = Address::symbolic(Variable(9913));
+        let b = Address::symbolic(Variable(9914));
+        let read = |address: &Address| {
+            KernelTerm::shared_scalar_read_descriptor(
+                format,
+                &point,
+                address.shared(),
+                LoadKind::UInt32,
+            )
+        };
+        let left = read(&a);
+        let pair = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Subtract,
+            [left.clone(), read(&b)],
+        );
+        let sum = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [pair.clone(), left.clone()],
+        );
+        let converted = KernelTerm::float_convert(float, format.program_type(), sum).unwrap();
+        let predicate =
+            KernelTerm::float_classify(float, FloatClassification::Finite, converted).unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        for predicate in [
+            predicate,
+            KernelTerm::boolean_comparison_raw(
+                format,
+                CompareRelation::LessThan,
+                [pair.clone(), left.clone()],
+            ),
+            KernelTerm::boolean_overflow_raw(
+                format,
+                crate::kernel::OverflowOperation::Add,
+                [pair, left],
+            ),
+        ] {
+            let fact =
+                Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
+            assert_eq!(
+                proposition_pointer_terms(&fact),
+                [a.clone(), b.clone(), a.clone()]
+            );
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect_read_terms();
+            collector.collect(&fact);
+            let reads = collector.take_read_terms().collect::<Vec<_>>();
+            assert_eq!(reads.len(), 2);
+            for address in [&a, &b] {
+                assert!(reads.contains(&OldMachineTerm::read_named(
+                    point.clone(),
+                    address.clone(),
+                    LoadKind::UInt32
+                )));
+            }
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn float_call_pointer_occurrences_follow_mixed_argument_order() {
+        let _session = VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let a = Address::symbolic(Variable(9911));
+        let b = Address::symbolic(Variable(9912));
+        let read = KernelTerm::float_read(format, point.clone(), a.shared().clone());
+        let word = PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::read_named(
+            point,
+            b.clone(),
+            LoadKind::Int32,
+        )));
+        let nested = KernelTerm::float_call(
+            format,
+            "inner".into(),
+            vec![
+                (KernelTermImport::default().argument(&word), None),
+                (read.clone(), None),
+            ],
+        );
+        let root = KernelTerm::float_call(
+            format,
+            "outer".into(),
+            vec![(read.clone(), None), (nested, None), (read, None)],
+        );
+        let predicate =
+            KernelTerm::float_classify(format, FloatClassification::Finite, root).unwrap();
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
+        let exports = KernelTermExport::float_export_count();
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            [a.clone(), b, a.clone(), a]
+        );
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_float_read_carriers_preserve_read_kind_and_pointer_occurrences() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let address = Address::symbolic(Variable(9910));
+        let point = ProgramPoint::at(&memory);
+        let read = KernelTerm::float_read(format, point.clone(), address.shared().clone());
+        let predicate =
+            KernelTerm::float_compare(format, ComparisonOperator::Equal, [read.clone(), read])
+                .unwrap();
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            [address.clone(), address.clone()]
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.take_read_terms().collect::<Vec<_>>(),
+            [OldMachineTerm::read_named(
+                point,
+                address,
+                LoadKind::Float64
+            )]
+        );
+    }
+
+    #[test]
+    fn stored_offset_comparison_returns_load_addresses_in_operand_order() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let addresses = [
+            Address::symbolic(Variable(9908)),
+            Address::symbolic(Variable(9909)),
+        ];
+        let offsets = addresses.each_ref().map(|address| {
+            let load = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                address,
+                crate::kernel::LoadKind::Int32,
+                4,
+            );
+            AddressOffset::variable(load).into_shared()
+        });
+        let root = KernelTerm::address_offset_equal_raw(offsets);
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(root.clone()).unwrap(), true);
+        assert_eq!(proposition_pointer_terms(&fact), addresses);
+        assert!(!root.has_cached_native_argument());
     }
 
     /// A loaded pointer names its read, and its read's address can mention a

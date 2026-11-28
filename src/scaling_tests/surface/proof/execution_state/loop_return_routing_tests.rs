@@ -66,7 +66,7 @@ fn surface_suffix_append_borrows_steps_on_a_small_stack() {
                     // shared lists directly so this test isolates appending.
                     let certificate = ProofCertificate::from_validated_steps;
                     let mut existing = certificate(vec![ProofStep::Step]);
-                    let mut suffix = certificate(vec![ProofStep::Normalize]);
+                    let mut suffix = certificate(vec![ProofStep::Known]);
                     for index in 0..depth {
                         let condition = SyntaxProposition::Comparison {
                             left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
@@ -88,7 +88,7 @@ fn surface_suffix_append_borrows_steps_on_a_small_stack() {
                                 condition,
                                 ensuring: None,
                                 then_proof: Box::new(suffix),
-                                else_proof: Box::new(certificate(vec![ProofStep::Normalize])),
+                                else_proof: Box::new(certificate(vec![ProofStep::Known])),
                             }]);
                         }
                     }
@@ -112,7 +112,7 @@ fn surface_suffix_append_borrows_steps_on_a_small_stack() {
                                 pending.push(then_proof.steps());
                                 pending.push(else_proof.steps());
                             }
-                            [ProofStep::Step, ProofStep::Normalize] => leaves += 1,
+                            [ProofStep::Step, ProofStep::Known] => leaves += 1,
                             _ => panic!("unexpected appended leaf"),
                         }
                     }

@@ -597,8 +597,8 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// finalization; joins carry each arm's suffix.
     pub(in crate::surface::proof) post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
-    /// Names introduced by obtains scheduled directly on this frontier.
-    pub(in crate::surface::proof) deferred_obtain_names: PersistentBinderMap<()>,
+    /// Value names introduced by tactics scheduled directly on this frontier.
+    pub(in crate::surface::proof) deferred_value_bindings: DeferredValueBindings,
     /// Deferred source prefix already visited while preparing case obligations.
     pub(in crate::surface::proof) partitioned_post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
@@ -873,7 +873,7 @@ impl ExecutionProofState {
                 path_branch_premises: PersistentSequence::default(),
                 frontier_loop_clauses: FrontierLoopClauses::default(),
                 post_execution_tactics: PersistentSequence::default(),
-                deferred_obtain_names: PersistentBinderMap::default(),
+                deferred_value_bindings: DeferredValueBindings::default(),
                 partitioned_post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
                 surface_record: SurfaceRecord::default(),
@@ -1131,7 +1131,6 @@ impl ExecutionBranchDecisions {
 /// checks its typed outcome goals.
 pub(super) struct ProofExecutionView<'p> {
     pub(super) state: &'p ExecutionState,
-    pub(super) facts: &'p PureFactStore,
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,
@@ -3526,13 +3525,6 @@ impl<'a> Proof<'a> {
         self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
     }
 
-    pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
-        matches!(
-            self.node.step.as_deref(),
-            Some(ProofStep::CompatibilityNormalize(Some(premises))) if premises.is_empty()
-        )
-    }
-
     pub(super) fn is_complete(&self) -> bool {
         self.state.is_complete()
     }
@@ -3922,8 +3914,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "close()",
         ProofStep::CloseBounds(_) => "close() using bounds",
-        ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
-        ProofStep::CompatibilityNormalize(_) => "compatibility normalization",
         ProofStep::ArithmeticUsing(_) => "close() using",
         ProofStep::Preserve(_) => "preserve",
 
@@ -4068,16 +4058,14 @@ impl ExecutionProofPresentation {
         tactic: PostExecutionTactic,
         lexical_bindings: Option<PersistentBinderMap<SyntaxTerm>>,
     ) {
-        let reads_deferred_obtain = tactic.reads_deferred_obtain(&self.deferred_obtain_names);
-        if let PostExecutionTactic::Leaf(ProofTactic::LetSatisfy(binding)) = &tactic {
-            for (name, _) in &binding.bindings {
-                self.deferred_obtain_names.insert(name.clone(), ());
-            }
+        let reads_deferred_binding = tactic.reads_deferred_binding(&self.deferred_value_bindings);
+        if let PostExecutionTactic::Leaf(leaf) = &tactic {
+            self.deferred_value_bindings.record(leaf);
         }
         self.post_execution_tactics
             .push(DeferredPostExecutionTactic {
                 lexical_bindings,
-                reads_deferred_obtain,
+                reads_deferred_binding,
                 tactic_index,
                 source_index,
                 tactic,

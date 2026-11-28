@@ -1838,6 +1838,7 @@ pub(in crate::surface) fn apply_contract_lets_to_ensure_clause(
     bindings: &[ContractLetBinding],
 ) -> Result<EnsureClause, String> {
     let EnsureClause {
+        refinement,
         proof_bindings: _,
         name,
         ensure,
@@ -1855,6 +1856,7 @@ pub(in crate::surface) fn apply_contract_lets_to_ensure_clause(
         }
     };
     Ok(EnsureClause {
+        refinement,
         proof_bindings: bindings
             .iter()
             .filter_map(|binding| {
@@ -4747,6 +4749,18 @@ pub(in crate::surface) fn substitute_program_expression_in(
             value: Box::new(substitute_program_expression_in(value, substitutions)?),
             variant: variant.clone(),
         }),
+        ProgramExpression::SliceLength(slice) => Ok(ProgramExpression::SliceLength(Box::new(
+            substitute_program_expression_in(slice, substitutions)?,
+        ))),
+        ProgramExpression::SliceData(slice) => Ok(ProgramExpression::SliceData(Box::new(
+            substitute_program_expression_in(slice, substitutions)?,
+        ))),
+        ProgramExpression::SliceFromRawParts { data, count } => {
+            Ok(ProgramExpression::SliceFromRawParts {
+                data: Box::new(substitute_program_expression_in(data, substitutions)?),
+                count: Box::new(substitute_program_expression_in(count, substitutions)?),
+            })
+        }
         ProgramExpression::FloatClassification {
             expression,
             classification,

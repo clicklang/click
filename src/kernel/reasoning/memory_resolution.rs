@@ -5809,7 +5809,7 @@ mod retained_wide_offset_tests {
         let exports = KernelTermExport::machine_export_count();
         for (left, right) in [(&stepped, &whole), (&whole, &stepped)] {
             assert_eq!(
-                pointer_offsets_equal_for_memory_resolution(&left, &right, &bounded),
+                pointer_offsets_equal_for_memory_resolution(left, right, &bounded),
                 Some(true)
             );
         }
@@ -5861,7 +5861,7 @@ mod retained_wide_offset_tests {
                 (&AddressOffset::constant(offset), &scaled),
             ] {
                 assert_eq!(
-                    pointer_offsets_equal_for_memory_resolution(&left, &right, &facts),
+                    pointer_offsets_equal_for_memory_resolution(left, right, &facts),
                     Some(expected)
                 );
             }

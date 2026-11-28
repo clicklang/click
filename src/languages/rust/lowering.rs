@@ -1223,9 +1223,16 @@ fn lower_function(
                         let ordinal = u32::try_from(ordinal).ok()?;
                         LocalBindingId::slice_component(owner.clone(), ordinal)
                     } else {
-                        let spelling = mir.spellings.get(&local.name)?;
+                        let spelling = mir.spellings.get(&local.name).cloned();
+                        // A compiler flag can be assigned and tested in
+                        // different MIR blocks without a source name.
+                        let compiler_flag = matches!(local.name, MirLocalId::Compiler(_))
+                            && matches!(local.value_type, Type::Bool);
+                        if spelling.is_none() && !compiler_flag {
+                            return None;
+                        }
                         let ordinal = u32::try_from(ordinal).ok()?;
-                        LocalBindingId::new(owner.clone(), false, ordinal, Some(spelling.clone()))
+                        LocalBindingId::new(owner.clone(), false, ordinal, spelling)
                     };
                     Some((local.name.clone(), BindingName::from(id)))
                 })
@@ -1786,7 +1793,9 @@ impl Context<'_> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
-        if !self.shared_byte_slice(slice) {
+        let shared_reborrow = matches!(slice, E::Borrow { .. })
+            && shared_slice_local(slice).is_some_and(|name| self.slices.contains_key(name));
+        if !self.shared_byte_slice(slice) && !shared_reborrow {
             return Err("split_at requires a shared byte-slice local".into());
         }
         let (pointer, length) = self.slice_parts(slice)?;

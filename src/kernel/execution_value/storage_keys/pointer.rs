@@ -61,8 +61,8 @@ impl PointerStorageKey {
                 .flatten(),
             bounds: value.bounds().map(|e| {
                 (
-                    AddressKey::native(&e.start()),
-                    ScalarStorageKey::native(&e.width()),
+                    AddressKey::native(e.start()),
+                    ScalarStorageKey::native(e.width()),
                 )
             }),
             count: crate::kernel::PointerMetadataKey(value.len().map(ScalarStorageKey::native)),

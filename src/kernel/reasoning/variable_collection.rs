@@ -805,7 +805,6 @@ fn collect_proposition_bitvector_variables_one(
             memory,
             base,
             bytes,
-            wide: _,
             ..
         } => {
             collect_memory_bitvector_variables(memory, variables);
@@ -864,7 +863,7 @@ fn collect_proposition_bitvector_variables_one(
             collect_memory_bitvector_variables(after, variables);
             for (base, bytes) in blocks {
                 collect_pointer_bitvector_variables(base, variables);
-                collect_bitvector_variables(bytes.bytes(), variables);
+                collect_machine_term_variables(bytes.byte_operand(), false, variables);
             }
             for range in mutable_ranges {
                 collect_memory_range_bitvector_variables(range, variables);
@@ -1149,7 +1148,11 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => collect_program_expression_bitvector_variables(expression, variables),
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
+            collect_program_expression_bitvector_variables(expression, variables)
+        }
         ProgramExpression::AddressOf(body)
         | ProgramExpression::CheckedObjectAddress(body)
         | ProgramExpression::Not(body)
@@ -1163,7 +1166,11 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
         ProgramExpression::TypedLoad { pointer, .. } => {
             collect_program_expression_bitvector_variables(pointer, variables);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_bitvector_variables(left, variables);
             collect_program_expression_bitvector_variables(right, variables);
         }
@@ -1678,6 +1685,8 @@ fn collect_program_expression_bound_identities(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
         | ProgramExpression::Not(expression)
@@ -1707,7 +1716,11 @@ fn collect_program_expression_bound_identities(
         | ProgramExpression::Subobject { pointer, .. } => {
             collect_program_expression_bound_identities(pointer, variables, integer_seen);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_bound_identities(left, variables, integer_seen);
             collect_program_expression_bound_identities(right, variables, integer_seen);
         }
@@ -2334,8 +2347,9 @@ pub(in crate::kernel) fn collect_memory_range_bitvector_variables(
         collect_proposition_bitvector_variables(fact, variables);
     }
     collect_pointer_bitvector_variables(&range.base, variables);
-    collect_bitvector_variables(range.bound_terms().0, variables);
-    collect_bitvector_variables(range.bound_terms().1, variables);
+    let (start, end) = range.retained_bounds();
+    collect_machine_term_variables(start.operand_view(), false, variables);
+    collect_machine_term_variables(end.operand_view(), false, variables);
 }
 
 pub(crate) fn resource_context_has_read(
@@ -2361,7 +2375,7 @@ pub(crate) fn resource_context_has_read(
 /// accounting while the checked constructors can stop before descending into
 /// another payload.
 #[inline]
-fn checked_collection_checkpoint() -> bool {
+pub(super) fn checked_collection_checkpoint() -> bool {
     #[cfg(test)]
     crate::instrumentation::record_checked_collection_attempt();
     crate::instrumentation::record_deterministic_work(1);
@@ -6813,7 +6827,11 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
             variables.insert(Variable(index));
         }
     }
-    collect_bitvector_variables(contents.size(), &mut variables);
+    collect_machine_term_variables(
+        contents.allocation_size().byte_operand(),
+        false,
+        &mut variables,
+    );
     variables
 }
 
@@ -7174,7 +7192,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
                 variables.insert(Variable(index));
             }
         }
-        collect_bitvector_variables(contents.size(), variables);
+        collect_machine_term_variables(contents.allocation_size().byte_operand(), false, variables);
     }
     for pointer in memory
         .heap

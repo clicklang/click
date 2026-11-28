@@ -4834,9 +4834,34 @@ fn a_rust_trait_implementation_inherits_its_interface() {
         );
         assert_eq!(
             crate::languages::rust::names::display_rust_names(&circle.ensure_claim_label(1)),
-            "<shapes::Circle as shapes::Shape>::area.interface_ensures_0"
+            "<shapes::Circle as shapes::Shape>::area.contract"
+        );
+        let inherited = circle.ensures()[1].refinement.as_ref().unwrap();
+        assert!(matches!(
+            inherited.as_ref(),
+            RefinementClaimOrigin::Interface { method, position: Some(_), .. }
+                if crate::languages::display_source_names(method) == "shapes::Shape::area"
+        ));
+        assert_eq!(
+            circle.claim_by_label(&circle.contract_claim_label()),
+            Some(crate::surface::expansion::ContractProofClaim::Grouped)
         );
     }
+    let inherited_only = implementation.replace("ensures result == scale + scale + 1;", "");
+    let file = parser::parse(&format!(
+        "verifying \"shapes.rs\"; {interface} {inherited_only}"
+    ))
+    .expect("an implementation can leave its inherited guarantee to its covering proof");
+    let implementation_block = file
+        .function_blocks()
+        .iter()
+        .find(|block| !block.is_external())
+        .unwrap();
+    assert_eq!(implementation_block.ensures().len(), 1);
+    assert_eq!(
+        implementation_block.claim_by_label(&implementation_block.contract_claim_label()),
+        Some(crate::surface::expansion::ContractProofClaim::Grouped)
+    );
     // An implementation naming its parameters otherwise reads the
     // interface's clauses with its own names.
     let renamed = implementation.replace("scale", "s");
@@ -5064,7 +5089,7 @@ fn a_rust_trait_function_is_its_object_field() {
         );
     }
     // The implementation renames `scale` and reads `size(self)` as
-    // `self.side`, with the interface's guarantee labeled as the interface's.
+    // `self.side`, with the interface's guarantee in the implementation's proof.
     let area = file
         .function_blocks()
         .iter()
@@ -5083,7 +5108,7 @@ fn a_rust_trait_function_is_its_object_field() {
     assert!(
         labels
             .iter()
-            .any(|label| label == "<shapes::Square as shapes::Shape>::area.interface_ensures_0"),
+            .any(|label| label == "<shapes::Square as shapes::Shape>::area.contract"),
         "{labels:?}"
     );
     assert!(file.contract_definitions().is_empty());

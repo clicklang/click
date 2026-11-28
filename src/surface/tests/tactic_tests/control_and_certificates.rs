@@ -924,12 +924,12 @@ fn proof_certificate_round_trips_nested_surface_steps() {
         ProofTactic::Mark("entry".to_string()),
         ProofTactic::Have(ProofHave {
             proposition: reflexive.clone(),
-            proof: SourceProof::Script(vec![ProofTactic::Normalize]),
+            proof: SourceProof::Script(vec![ProofTactic::Known]),
         }),
         ProofTactic::Branch(ProofBranch {
             ensuring: Some(vec![ProofAssertion::Fact(reflexive)]),
             then_tactics: vec![ProofTactic::Known],
-            else_tactics: vec![ProofTactic::Normalize],
+            else_tactics: vec![ProofTactic::Known],
         }),
     ];
 
@@ -967,7 +967,7 @@ fn tactic_certificate_accepts_only_simple_tactics() {
             operator: ComparisonOperator::Equal,
             right: current_var("y"),
         }),
-        ProofTactic::Normalize,
+        ProofTactic::Known,
     ];
 
     let certificate =
@@ -1010,9 +1010,9 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
                 },
                 proof: SourceProof::Script(vec![ProofTactic::Solve]),
             })],
-            else_tactics: vec![ProofTactic::Normalize],
+            else_tactics: vec![ProofTactic::Known],
         })],
-        else_tactics: vec![ProofTactic::Normalize],
+        else_tactics: vec![ProofTactic::Known],
     })];
 
     let error = ProofCertificate::from_proof_tactics(&tactics)
@@ -1131,7 +1131,7 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
         items: Vec::new(),
         resources: Vec::new(),
         initialize_proof: Some(Box::new(
-            ProofCertificate::from_steps(vec![ProofStep::Normalize])
+            ProofCertificate::from_steps(vec![ProofStep::Known])
                 .expect("a simple step is a certificate"),
         )),
         otherwise_proof: None,

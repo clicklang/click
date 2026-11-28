@@ -3867,13 +3867,6 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
     let mut steps = vec![ProofStep::Known];
-    // Keep the existing certificate for retained constructor reduction.
-    if matches!(
-        goal,
-        Some(Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_)))
-    ) {
-        steps.push(ProofStep::CompatibilityNormalize(None));
-    }
     // Without a proposition goal, keep both candidate refusals in the trace.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
         steps.push(ProofStep::Enumerate);
@@ -4041,6 +4034,11 @@ fn asserted_condition_proposition(condition: &ProgramExpression) -> SyntaxPropos
         }
     };
     match condition {
+        ProgramExpression::Cast {
+            expression,
+            integer_mode: crate::kernel::IntegerCastMode::BoolValue,
+            ..
+        } => asserted_condition_proposition(expression),
         ProgramExpression::And(left, right) => SyntaxProposition::And(
             Box::new(asserted_condition_proposition(left)),
             Box::new(asserted_condition_proposition(right)),

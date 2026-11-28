@@ -503,7 +503,7 @@ pub(super) struct SurfacePathChoice {
 pub(super) struct SurfaceIfArmEnd {
     pub(super) step_offset: usize,
     pub(super) nested_choices: usize,
-    pub(super) binds_obtain: bool,
+    pub(super) binds_locals: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -1369,7 +1369,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     // Retain the splits that bind names used by the arm's tactics.
     if paths.len() == 1
         && !paths[0].choices().iter().any(|choice| {
-            choice.if_arm_end.is_some_and(|end| end.binds_obtain)
+            choice.if_arm_end.is_some_and(|end| end.binds_locals)
                 || matches!(
                     &choice.selector,
                     SurfacePathSelector::MatchArm(..) | SurfacePathSelector::IfEnsuring(..)
@@ -1497,7 +1497,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         && then_paths.iter().chain(&else_paths).any(|path| {
             path.choices[path.choice - 1]
                 .if_arm_end
-                .is_some_and(|end| end.binds_obtain)
+                .is_some_and(|end| end.binds_locals)
         })
     {
         return synthesize_scoped_if(prefix, condition, None, then_paths, else_paths);
@@ -1693,9 +1693,37 @@ pub(super) enum PostExecutionTactic {
 /// instead of copying every deeper join's arms again.
 pub(super) type DeferredArm = Arc<Vec<DeferredPostExecutionTactic>>;
 
+/// Value names introduced by a source tactic applied during outcome checking.
+pub(super) fn deferred_value_binders(tactic: &ProofTactic) -> impl Iterator<Item = &String> {
+    let (obtains, witnesses) = match tactic {
+        ProofTactic::LetSatisfy(binding) => (binding.bindings.as_slice(), &[][..]),
+        ProofTactic::UnfoldWitnesses { names, .. } => (&[][..], names.as_slice()),
+        _ => (&[][..], &[][..]),
+    };
+    obtains
+        .iter()
+        .map(|(name, _)| name)
+        .chain(witnesses.iter().map(|(_, name)| name))
+}
+
+#[derive(Clone, Default)]
+pub(super) struct DeferredValueBindings {
+    names: PersistentBinderMap<()>,
+    has_unfold_witnesses: bool,
+}
+
+impl DeferredValueBindings {
+    pub(super) fn record(&mut self, tactic: &ProofTactic) {
+        for name in deferred_value_binders(tactic) {
+            self.names.insert(name.clone(), ());
+        }
+        self.has_unfold_witnesses |= matches!(tactic, ProofTactic::UnfoldWitnesses { .. });
+    }
+}
+
 impl PostExecutionTactic {
-    pub(super) fn reads_deferred_obtain(&self, obtains: &PersistentBinderMap<()>) -> bool {
-        if obtains.is_empty() {
+    pub(super) fn reads_deferred_binding(&self, bindings: &DeferredValueBindings) -> bool {
+        if bindings.names.is_empty() {
             return false;
         }
         let proposition = match self {
@@ -1705,6 +1733,15 @@ impl PostExecutionTactic {
                 execution_route: None,
                 ..
             } => condition,
+            // The stated goal can be independent of the witness even
+            // when its written proof uses it. Check that proof after the
+            // return-time resource rewrite has produced the binding.
+            Self::Have(have)
+                if bindings.has_unfold_witnesses
+                    && matches!(have.proof, SourceProof::Script(_)) =>
+            {
+                return true;
+            }
             Self::Have(have) => &have.proposition,
             _ => return false,
         };
@@ -1713,7 +1750,7 @@ impl PostExecutionTactic {
             proposition,
             &mut names,
         );
-        names.iter().any(|name| obtains.contains_key(name))
+        names.iter().any(|name| bindings.names.contains_key(name))
     }
 
     /// The deferred tactics written in this control tactic's arms, every
@@ -1760,7 +1797,7 @@ pub(super) struct DeferredPostExecutionTactic {
     pub(super) lexical_bindings: Option<PersistentBinderMap<SyntaxTerm>>,
     /// Whether case preparation must leave this proposition for the ordered
     /// outcome checker, which has the bindings produced by earlier obtains.
-    pub(super) reads_deferred_obtain: bool,
+    pub(super) reads_deferred_binding: bool,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
@@ -1774,7 +1811,7 @@ impl DeferredPostExecutionTactic {
         let assertions = assertions?;
         Some(Arc::new(Self {
             lexical_bindings: None,
-            reads_deferred_obtain: false,
+            reads_deferred_binding: false,
             tactic_index,
             source_index: usize::MAX,
             tactic: PostExecutionTactic::Ensuring(Arc::from(assertions)),
@@ -1875,7 +1912,7 @@ mod proof_fact_store_tests {
         }];
         append_surface_tactics_by_leaf(
             &mut steps,
-            &[vec![ProofTactic::Known], vec![ProofTactic::Normalize]],
+            &[vec![ProofTactic::Known], vec![ProofTactic::Enumerate]],
             Some(&[false, true]),
         )
         .unwrap();
@@ -1889,7 +1926,7 @@ mod proof_fact_store_tests {
         else {
             panic!("distinct call edges must retain the existing call split");
         };
-        assert_eq!(returned_proof.steps(), &[ProofStep::Normalize]);
+        assert_eq!(returned_proof.steps(), &[ProofStep::Enumerate]);
         assert_eq!(threw_proof.steps(), &[ProofStep::Known]);
     }
 

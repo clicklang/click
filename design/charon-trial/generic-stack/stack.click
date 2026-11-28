@@ -209,11 +209,11 @@ fn generic_stack::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
     step_until(statement(0).call(0).entry);
-    let { after: empty } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I3_new);
+    let { after: empty } = step(generic_stack::Stack::<u32>::new);
     step_until(statement(1).call(0).entry);
-    let { after: pushed } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I4_push, { before: empty });
+    let { after: pushed } = step(generic_stack::Stack::<u32>::push, { before: empty });
     step_until(statement(2).call(0).entry);
-    let { after: remaining } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I3_pop, { before: pushed });
+    let { after: remaining } = step(generic_stack::Stack::<u32>::pop, { before: pushed });
     step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
 }

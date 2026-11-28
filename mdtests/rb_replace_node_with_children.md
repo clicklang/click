@@ -400,7 +400,17 @@ void rb_replace_node(struct rb_node* victim, struct rb_node* new,
     have new->rb_right == at(reparented, new->rb_right) by close();
     have new->__rb_parent_color == at(reparented, new->__rb_parent_color) by close();
     have new->rb_left->__rb_parent_color == at(reparented, new->rb_left->__rb_parent_color) by close();
-    have new->rb_right->__rb_parent_color == at(reparented, new->rb_right->__rb_parent_color) by close();
+    have at(reparented, new->rb_right) == at(reparented, victim->rb_right) by close();
+    have victim->rb_right == at(reparented, victim->rb_right) by close();
+    have new->rb_right == victim->rb_right by {
+        rewrite(new->rb_right, at(reparented, new->rb_right));
+        rewrite(victim->rb_right, at(reparented, victim->rb_right));
+        close();
+    }
+    have new->rb_right->__rb_parent_color == at(reparented, new->rb_right->__rb_parent_color) by {
+        rewrite(new->rb_right, victim->rb_right);
+        close();
+    }
     have victim->rb_left->__rb_parent_color == at(statement(2).statement(0).exit, victim->rb_left->__rb_parent_color) by close();
     have ((victim->rb_left->__rb_parent_color & ~3u64) as (struct rb_node *)) == new by {
         rewrite(victim->rb_left->__rb_parent_color, at(statement(2).statement(0).exit, victim->rb_left->__rb_parent_color));

@@ -8263,21 +8263,6 @@ fn validate_checked_event_shapes_after<'e>(
 }
 
 impl ExecutionProofCore {
-    pub(crate) fn register_current_call_views(&self, assumptions: &PureFactContext) {
-        let Some(evidence_state) = &self.evidence_state else {
-            return;
-        };
-        if evidence_state.memory() == self.state.memory() {
-            return;
-        }
-        register_recomputed_call_views(
-            &self.checked_call_events,
-            evidence_state.memory(),
-            self.state.memory(),
-            assumptions,
-        );
-    }
-
     pub(crate) fn checked_call_events(&self) -> CheckedCallEvents {
         self.checked_call_events.clone()
     }
@@ -9390,6 +9375,28 @@ impl ExecutionProofCore {
         self.frontier.entry_member_prefix = true;
         self.evidence_source = Some(source);
         Ok(())
+    }
+
+    /// A proof at its original checked entry already owns the argument-bound
+    /// state. Begin the retained trace there before checking an observation.
+    pub(crate) fn materialize_observation_entry(&mut self) {
+        if !self.frontier.is_at_function_entry()
+            || self.frontier.entry_member_prefix
+            || self.evidence_state.is_some()
+            || self.execution_evidence.len() != 1
+            || !self.execution_evidence[0].is_empty()
+            || !self.state.shares_storage_with(&self.initial_match_scope)
+        {
+            return;
+        }
+        let Some(entry) = &self.function_entry else {
+            return;
+        };
+        self.state = entry.entry_state.clone().into();
+        self.evidence_state = Some(entry.entry_state.clone());
+        self.frontier.execution_start_state = Some(entry.caller_state.clone());
+        self.frontier.entry_member_prefix = true;
+        self.evidence_source = Some(Arc::new(entry.function.body().clone()));
     }
 
     /// Enter the same test/body/update pass for every structured loop.

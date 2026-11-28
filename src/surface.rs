@@ -115,8 +115,8 @@ pub use expansion::{
     expand_claim_by_label, expand_program_prepared_claim_source_by_label,
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
-    expand_verified_function_claim_source_by_label, first_normalize_in_claim,
-    project_select_smart_tactic, project_smart_tactic_source_sites, project_tactic_source_position,
+    expand_verified_function_claim_source_by_label, project_select_smart_tactic,
+    project_smart_tactic_source_sites, project_tactic_source_position,
     project_tactic_source_positions, select_smart_tactic, selected_c_target,
     selected_project_c_target, selected_project_thread_runtime, selected_thread_runtime,
     smart_tactic_source_sites, tactic_source_position, verifying_source_paths,
@@ -1570,6 +1570,8 @@ impl CallBinderBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallBinderTransport {
     callee: String,
+    /// The source spelling of a qualified callee, for diagnostics and replay.
+    source_callee: Option<String>,
     /// The written source region when the proof steps a reference binding.
     source_binding: Option<CodeRegionRef>,
     /// Select this named interface at the current C call; arguments come from C.
@@ -1718,7 +1720,10 @@ impl std::fmt::Display for CallBinderTransport {
                 .source_binding
                 .as_ref()
                 .map(diagnostics::describe_code_region_ref);
-            let callee = target.as_deref().unwrap_or(&self.callee);
+            let callee = target
+                .as_deref()
+                .or(self.source_callee.as_deref())
+                .unwrap_or(&self.callee);
             let entries = self.map_entries();
             return if entries.is_empty() {
                 write!(f, "step({})", callee)
@@ -2136,8 +2141,49 @@ pub enum Requirement {
     Proposition(SyntaxProposition),
 }
 
+/// An implementation obligation whose source is an interface or a model
+/// member's definition. The implementation's covering proof proves it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::surface) enum RefinementClaimOrigin {
+    Interface {
+        method: String,
+        name: Option<String>,
+        position: Option<SourcePosition>,
+    },
+    Preserves {
+        member: String,
+        position: SourcePosition,
+    },
+}
+
+impl RefinementClaimOrigin {
+    pub(in crate::surface) fn describe(&self) -> String {
+        match self {
+            Self::Interface {
+                method,
+                name,
+                position,
+            } => {
+                let method = crate::languages::display_source_names(method);
+                let mut description = match name {
+                    Some(name) => format!("inherited clause `{name}` from `{method}`"),
+                    None => format!("inherited ensures clause from `{method}`"),
+                };
+                if let Some(position) = position {
+                    description.push_str(&format!(" at {position}"));
+                }
+                description
+            }
+            Self::Preserves { member, position } => {
+                format!("shared receiver must preserve `{member}` (defined at {position})")
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnsureClause {
+    refinement: Option<std::sync::Arc<RefinementClaimOrigin>>,
     /// Value aliases visible where this claim and its proof were written.
     proof_bindings: Vec<(String, Option<ClickType>, SyntaxTerm)>,
     name: Option<String>,
@@ -2985,6 +3031,7 @@ fn clone_requirement_iteratively(requirement: &Requirement) -> Requirement {
 
 fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
     EnsureClause {
+        refinement: clause.refinement.clone(),
         proof_bindings: clause.proof_bindings.clone(),
         name: clause.name.clone(),
         ensure: match &clause.ensure {
@@ -3039,7 +3086,9 @@ pub(crate) fn collect_program_expression_variables(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => {
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
             collect_program_expression_variables(expression, names);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
@@ -3066,7 +3115,11 @@ pub(crate) fn collect_program_expression_variables(
         | ProgramExpression::TypedLoad { pointer: inner, .. } => {
             collect_program_expression_variables(inner, names);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_variables(left, names);
             collect_program_expression_variables(right, names);
         }
@@ -6486,10 +6539,6 @@ pub enum ProofTactic {
     CloseUnreachable,
     Known,
     CloseBounds(Vec<SyntaxProposition>),
-    Normalize,
-    NormalizeUsing(Vec<SyntaxProposition>),
-    /// A compatibility check used in verification. It has no expansion spelling.
-    CompatibilityNormalize(Option<Vec<SyntaxProposition>>),
     ArithmeticUsing(Vec<SyntaxProposition>),
     /// An internal introduction step used while building a checked scope.
     Intro,
@@ -6591,7 +6640,6 @@ pub enum SimpleTactic {
     Choose,
     Termination,
     Known,
-    Normalize,
     Intro,
     Enumerate,
     Rewrite,
@@ -7047,9 +7095,6 @@ impl ProofTactic {
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known | Self::CloseUnreachable | Self::CloseBounds(_) => {
                 TacticClass::Simple(SimpleTactic::Known)
-            }
-            Self::Normalize | Self::NormalizeUsing(_) | Self::CompatibilityNormalize(_) => {
-                TacticClass::Simple(SimpleTactic::Normalize)
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
@@ -9833,7 +9878,7 @@ impl FunctionBlock {
 
     /// Adds a crate trait method's interface to this implementation's
     /// contract: its `ensures`, which the implementation's proof establishes
-    /// with its own, each named `interface_ensures_<i>`, and its `requires`
+    /// with its own, retaining the interface each came from, and its `requires`
     /// when the implementation writes none. A clause the implementation
     /// already states is not repeated. The interface's clauses are read with
     /// the implementation's names for its parameters.
@@ -9887,10 +9932,6 @@ impl FunctionBlock {
             self.requirement_source_clauses = interface.requirement_source_clauses.clone();
         }
         let written = self.ensures.len();
-        let mut next_source = (0..written)
-            .map(|index| self.ensure_source_clause(index) + 1)
-            .max()
-            .unwrap_or(0);
         for (index, clause) in interface.ensures.iter().enumerate() {
             if self.ensures[..written]
                 .iter()
@@ -9898,18 +9939,21 @@ impl FunctionBlock {
             {
                 continue;
             }
-            if self.ensure_claim_ids.len() == self.ensures.len() {
-                self.ensure_claim_ids.push(claim_labels::ClaimClauseId {
-                    kind: claim_labels::ClaimClauseKind::Ensures,
-                    index: self.ensures.len(),
-                });
-            }
-            if self.ensure_source_clauses.len() == self.ensures.len() {
-                self.ensure_source_clauses.push(next_source);
-                next_source += 1;
-            }
             let mut inherited = clause.clone();
-            inherited.name = Some(format!("interface_ensures_{index}"));
+            if inherited.refinement.is_none() {
+                inherited.refinement =
+                    Some(std::sync::Arc::new(RefinementClaimOrigin::Interface {
+                        method: interface.signature.name().to_owned(),
+                        name: inherited.name.take(),
+                        position: interface
+                            .body
+                            .clauses
+                            .get(interface.ensure_source_clause(index))
+                            .cloned()
+                            .flatten(),
+                    }));
+            }
+            inherited.proof = SourceProof::Default;
             self.ensures.push(inherited);
         }
         Ok(())
@@ -10055,6 +10099,13 @@ impl FunctionBlock {
     /// `f.produces_0`). An index past the ensures (the implicit body-safety
     /// claim of a contract without any) is `f.ensures_<index>`.
     pub fn ensure_claim_label(&self, index: usize) -> String {
+        if self
+            .ensures
+            .get(index)
+            .is_some_and(|clause| clause.refinement.is_some())
+        {
+            return self.contract_claim_label();
+        }
         let id = self
             .ensure_claim_ids
             .get(index)
@@ -10183,8 +10234,14 @@ impl FunctionBlock {
         if let Some(proof) = &self.grouped_proof {
             return Some(proof);
         }
-        (!self.external && !self.tactic_procedure && self.claims_without_proof() >= 2)
+        (!self.external && !self.tactic_procedure && self.claims_need_covering_proof())
             .then_some(&IMPLICIT_SOLVE)
+    }
+
+    pub(in crate::surface) fn has_refinement_claims(&self) -> bool {
+        self.ensures
+            .iter()
+            .any(|clause| clause.refinement.is_some())
     }
 
     /// Whether `claim_proof`, a claim's own `by` clause, leaves that claim to
@@ -10193,12 +10250,20 @@ impl FunctionBlock {
         matches!(claim_proof, SourceProof::Default) && self.covering_proof().is_some()
     }
 
-    fn claims_without_proof(&self) -> usize {
-        self.ensures
-            .iter()
-            .chain(&self.exceptional_ensures)
-            .filter(|clause| matches!(clause.proof, SourceProof::Default))
-            .count()
+    fn claims_need_covering_proof(&self) -> bool {
+        let mut has_omitted_proof = false;
+        for clause in self.ensures.iter().chain(&self.exceptional_ensures) {
+            if clause.refinement.is_some() {
+                return true;
+            }
+            if matches!(clause.proof, SourceProof::Default) {
+                if has_omitted_proof {
+                    return true;
+                }
+                has_omitted_proof = true;
+            }
+        }
+        false
     }
 
     fn with_frontier_loop_clause(&self, clause: &StructuralClause, loop_index: usize) -> Self {
@@ -10855,7 +10920,7 @@ impl VerifiedProgramTheorem {
             self.function_block.signature().returns_reference(),
         );
         let _reference_carriers = diagnostics::ParameterPlaceScope::enter(&self.function_block);
-        expansion::require_surface_expansion(format_proof_certificate(
+        Ok(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))
     }
@@ -10905,7 +10970,7 @@ impl VerifiedPureTheorem {
             .contract_value_parameters
             .as_ref()
             .map(printing::ContractValueParameterScope::enter);
-        expansion::require_surface_expansion(format_proof_certificate(&self.proof_certificate()?))
+        Ok(format_proof_certificate(&self.proof_certificate()?))
     }
 }
 

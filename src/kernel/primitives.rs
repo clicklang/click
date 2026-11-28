@@ -4250,6 +4250,22 @@ pub enum ProgramExpression {
         value: Box<ProgramExpression>,
         variant: String,
     },
+    /// `s.len()`: the element count of the slice `s` evaluates to, read in
+    /// place as [`SpecExpression::SliceLength`] reads it, Rust MIR's
+    /// `PtrMetadata` (`design/rust-slice-values.md`, step 3). A thin operand
+    /// is refused with [`RuntimeError::SliceTypeMismatch`].
+    SliceLength(Box<ProgramExpression>),
+    /// `s.as_ptr()`: the thin data pointer of the slice `s` evaluates to,
+    /// as [`SpecExpression::SliceData`] reads it.
+    SliceData(Box<ProgramExpression>),
+    /// `slice::from_raw_parts(data, count)`: the slice whose thin part is
+    /// `data` and whose element count is the `u64` `count`, built directly
+    /// as [`SpecExpression::SliceFromRawParts`] builds it. A wide `data` is
+    /// refused with [`RuntimeError::ThinPointerRequired`].
+    SliceFromRawParts {
+        data: Box<ProgramExpression>,
+        count: Box<ProgramExpression>,
+    },
 }
 
 /// Optional source origin attached to a typed load. Two expressions that
@@ -8532,6 +8548,11 @@ pub enum RuntimeError {
     ThinPointerRequired {
         operation: &'static str,
     },
+    /// A slice operation (`s.len()`, `s.as_ptr()`) given an operand that
+    /// is not a slice: a thin pointer or a scalar. `operation` names it.
+    SliceTypeMismatch {
+        operation: &'static str,
+    },
     IndeterminatePointeeType,
     UnsupportedPointerSubtractionOffsets,
     UnsupportedPointerComparisonOffsets,
@@ -8924,6 +8945,11 @@ impl RuntimeError {
             "{operation} takes a thin pointer, not a slice: use the slice's data pointer \
              `.as_ptr()`, or its length `.len()`"
         )
+    }
+
+    /// The sentence a [`Self::SliceTypeMismatch`] refusal says.
+    pub fn slice_type_mismatch_message(operation: &str) -> String {
+        format!("type mismatch: {operation} takes a slice, not a thin pointer or a scalar")
     }
 
     pub fn kernel_summary(&self) -> String {
@@ -9794,18 +9820,22 @@ impl AllocationSize {
         self.bytes.old_form()
     }
 
+    pub(crate) fn byte_operand(&self) -> MachineOperandView<'_> {
+        self.bytes.operand_view()
+    }
+
     pub fn kind(&self) -> AllocationSizeKind {
         self.kind
     }
 
-    /// The same kind of size over rewritten bytes.
-    pub(crate) fn map_bytes(
+    pub(crate) fn map_stored_bytes(
         &self,
-        rewrite: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+        rewrite: impl FnOnce(&StoredMachineTerm) -> StoredMachineTerm,
     ) -> Self {
-        // Equal observations may have different producer payloads. Keep the
-        // native mapper's exact result at this compatibility boundary.
-        Self::new(rewrite(self.bytes.old_form()), self.kind)
+        Self {
+            bytes: rewrite(&self.bytes),
+            kind: self.kind,
+        }
     }
 
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
@@ -11959,6 +11989,8 @@ impl ProgramExpression {
             | ProgramExpression::EnumIs {
                 value: expression, ..
             }
+            | ProgramExpression::SliceLength(expression)
+            | ProgramExpression::SliceData(expression)
             | ProgramExpression::BitwiseNot(expression)
             | ProgramExpression::AddressOf(expression)
             | ProgramExpression::CheckedObjectAddress(expression)
@@ -11976,7 +12008,11 @@ impl ProgramExpression {
                 pointer: expression,
                 ..
             } => expression.collect_step_results_read(steps),
-            crate::kernel::binary_c_expression!(left, right) => {
+            crate::kernel::binary_c_expression!(left, right)
+            | ProgramExpression::SliceFromRawParts {
+                data: left,
+                count: right,
+            } => {
                 left.collect_step_results_read(steps);
                 right.collect_step_results_read(steps);
             }

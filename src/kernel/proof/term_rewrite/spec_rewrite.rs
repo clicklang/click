@@ -450,6 +450,8 @@ fn collect_spec_program_expression_carriers(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
         | ProgramExpression::Not(expression)
@@ -484,7 +486,11 @@ fn collect_spec_program_expression_carriers(
             }
             collect_spec_program_expression_carriers(else_branch, variables);
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_spec_program_expression_carriers(left, variables);
             if variables.exhausted() {
                 return;
@@ -1831,6 +1837,18 @@ impl<'a> TermRewrite<'a> {
                 value: Box::new(self.rewrite_program_expression(value)?),
                 variant: variant.clone(),
             },
+            ProgramExpression::SliceLength(slice) => {
+                ProgramExpression::SliceLength(Box::new(self.rewrite_program_expression(slice)?))
+            }
+            ProgramExpression::SliceData(slice) => {
+                ProgramExpression::SliceData(Box::new(self.rewrite_program_expression(slice)?))
+            }
+            ProgramExpression::SliceFromRawParts { data, count } => {
+                ProgramExpression::SliceFromRawParts {
+                    data: Box::new(self.rewrite_program_expression(data)?),
+                    count: Box::new(self.rewrite_program_expression(count)?),
+                }
+            }
             ProgramExpression::FloatClassification {
                 expression,
                 classification,

@@ -184,7 +184,9 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             | ProgramExpression::Load(value)
             | ProgramExpression::TypedLoad { pointer: value, .. }
             | ProgramExpression::EnumField { value, .. }
-            | ProgramExpression::EnumIs { value, .. } => expressions.push((value, addressed)),
+            | ProgramExpression::EnumIs { value, .. }
+            | ProgramExpression::SliceLength(value)
+            | ProgramExpression::SliceData(value) => expressions.push((value, addressed)),
             ProgramExpression::EnumConstruct { fields, .. } => {
                 expressions.extend(fields.iter().map(|field| (field, addressed)))
             }
@@ -199,7 +201,11 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                     (else_branch.as_ref(), addressed),
                 ]);
             }
-            crate::kernel::binary_c_expression!(left, right) => {
+            crate::kernel::binary_c_expression!(left, right)
+            | ProgramExpression::SliceFromRawParts {
+                data: left,
+                count: right,
+            } => {
                 expressions.extend([(left.as_ref(), addressed), (right.as_ref(), addressed)]);
             }
         }

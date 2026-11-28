@@ -163,6 +163,7 @@ mod contract_execution_tests;
 mod execution_tests;
 mod expression_tests;
 mod memory_reasoning_tests;
+mod program_slice_operation_tests;
 mod proof_reasoning_tests;
 mod representation_copy_tests;
 mod resource_tests;

@@ -126,9 +126,8 @@ fn have(claim: SyntaxProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
 fn computational_fact(claim: SyntaxProposition) -> ProofStep {
-    // Let run_scope prefer known and explicit algebra for goal-local
-    // identities. Other identities still use the existing checked rule.
-    have(claim, vec![ProofStep::CompatibilityNormalize(None)])
+    // An empty generated body asks run_scope to build a goal-local proof.
+    have(claim, Vec::new())
 }
 
 fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> SyntaxTerm {
@@ -812,6 +811,20 @@ fn run_scope<'a>(
     mut scope: super::super::proof_object::ProofScope<'a>,
     steps: &[ProofStep],
 ) -> Result<super::super::proof_object::ProofScope<'a>, ClickError> {
+    if steps.is_empty() && !scope.is_complete() {
+        if scope
+            .body()
+            .goal()
+            .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
+        {
+            return scope.driver().apply_step(ProofStep::Known);
+        }
+        return scope.driver().try_integer_algebra()?.ok_or_else(|| {
+            scope
+                .body()
+                .step_error("integer composition could not prove a local identity")
+        });
+    }
     for step in steps {
         if scope.is_complete() {
             break;
@@ -821,23 +834,6 @@ fn run_scope<'a>(
                 let nested = scope.driver().open_have(proposition.clone())?;
                 let closed = run_scope(nested, proof.steps())?;
                 scope = scope.join_nested(closed)?;
-            }
-            ProofStep::CompatibilityNormalize(None) => {
-                if scope
-                    .body()
-                    .goal()
-                    .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
-                {
-                    scope = scope.driver().apply_step(ProofStep::Known)?;
-                } else if let Some(closed) =
-                    attempt::candidate_outcome(scope.driver().try_integer_algebra())?.flatten()
-                {
-                    scope = closed;
-                } else {
-                    scope = scope
-                        .driver()
-                        .apply_step(ProofStep::CompatibilityNormalize(None))?;
-                }
             }
             step => scope = scope.driver().apply_step(step.clone())?,
         }

@@ -442,7 +442,9 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
             }
             | ProgramExpression::EnumIs {
                 value: expression, ..
-            } => pending.push(expression),
+            }
+            | ProgramExpression::SliceLength(expression)
+            | ProgramExpression::SliceData(expression) => pending.push(expression),
             ProgramExpression::EnumConstruct { fields, .. } => pending.extend(fields.iter().rev()),
             ProgramExpression::Ternary {
                 condition,
@@ -453,7 +455,11 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            crate::kernel::binary_c_expression!(left, right) => {
+            crate::kernel::binary_c_expression!(left, right)
+            | ProgramExpression::SliceFromRawParts {
+                data: left,
+                count: right,
+            } => {
                 pending.push(right);
                 pending.push(left);
             }

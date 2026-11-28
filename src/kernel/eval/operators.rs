@@ -6444,7 +6444,7 @@ fn subobject_bounds_guards(
     bounds: &SubobjectBounds,
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
-    let offset = shared_pointer_byte_offset_from_base(pointer, &bounds.start())?;
+    let offset = shared_pointer_byte_offset_from_base(pointer, bounds.start())?;
     Some(vec![
         PointerFormationGuard {
             condition: crate::kernel::assumptions::index_comparison(
@@ -6463,7 +6463,7 @@ fn subobject_bounds_guards(
                     MachineOperandView::Old(&OldMachineTerm::constant(bytes)),
                 )
                 .operand_view(),
-                MachineOperandView::Old(&bounds.width()),
+                MachineOperandView::Old(bounds.width()),
             ),
             value: true,
         },
@@ -6491,9 +6491,9 @@ fn subobject_bounds_proven(
     assumptions_with_path_context(assumptions, facts, obligations).pointer_access_in_range(
         pointer,
         bytes,
-        &bounds.start(),
+        bounds.start(),
         &OldMachineTerm::constant(0),
-        &bounds.width(),
+        bounds.width(),
         1,
     )
 }

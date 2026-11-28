@@ -2,7 +2,6 @@ use super::*;
 use crate::kernel::CompareRelation;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::proof::term_rewrite::mathematical_comparison;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
@@ -20,6 +19,10 @@ trait VariableSubstitution {
 
     fn from(&self) -> Variable;
     fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm;
+    fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm;
+    fn allocation_size(&self, size: &AllocationSize) -> AllocationSize {
+        size.map_stored_bytes(|word| self.stored_word(word))
+    }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
     fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm;
 
@@ -100,6 +103,49 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     }
     fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm {
         substitute_bitvector_variable(term, self.from, self.to)
+    }
+    fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm {
+        let Some(root) = word.root() else {
+            return word.map_native(|term| self.bitvector(term));
+        };
+        let format = MachineIntegerType::from_program_type(word.value().program_type())
+            .expect("stored word format");
+        let rewritten = match root.node() {
+            KernelTermNode::MachineLiteral(_) | KernelTermNode::ThreadHandle(_) => {
+                return word.clone();
+            }
+            KernelTermNode::Variable(var) => {
+                let source = OldMachineTerm::Variable(*var);
+                let next = self.bitvector(&source);
+                return if next == source {
+                    word.clone()
+                } else {
+                    StoredMachineTerm::new(format, next)
+                };
+            }
+            KernelTermNode::IntegerToMachine {
+                destination,
+                operand,
+            } => KernelTerm::integer_to_machine(
+                *destination,
+                self.stored_integer_root(operand.clone()),
+            )
+            .expect("mathematical integer operand"),
+            // Renaming preserves written comparisons, including reflexive ones.
+            KernelTermNode::BoolCast {
+                destination,
+                operand,
+            } if !crate::kernel::proof::term_rewrite::renaming()
+                && let Some(condition) = self.condition_root(operand) =>
+            {
+                KernelTerm::boolean_cast(*destination, condition)
+            }
+            _ => return word.map_native(|term| self.bitvector(term)),
+        };
+        StoredMachineTerm::from_value(ExecutionValue::Shared(
+            rewritten.with_machine_observation_type(format),
+        ))
+        .expect("stored machine conversion")
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         substitute_bitvector_variable_in_integer(term, self.from, self.to)
@@ -188,6 +234,9 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm {
         term.clone()
+    }
+    fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm {
+        word.clone()
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         term.clone()
@@ -1567,7 +1616,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             after: s.memory(after),
             blocks: blocks
                 .iter()
-                .map(|(base, bytes)| (s.pointer(base), bytes.map_bytes(|bytes| s.bitvector(bytes))))
+                .map(|(base, bytes)| (s.pointer(base), s.allocation_size(bytes)))
                 .collect(),
             mutable_ranges: mutable_ranges
                 .iter()
@@ -1856,11 +1905,8 @@ fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &
 
 fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &S) -> MemoryRange {
     let mut result = range
-        .with_bounds(
-            s.pointer(&range.base),
-            s.bitvector(range.bound_terms().0),
-            s.bitvector(range.bound_terms().1),
-        )
+        .with_base(s.pointer(&range.base))
+        .map_stored_bounds(|bound| s.stored_word(bound))
         .with_provenance(s.pointer(&range.provenance))
         .with_bounds_owner(
             range.carrier_owner().map(|origin| s.pointer(origin)),
@@ -1879,6 +1925,82 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
 #[cfg(test)]
 mod resource_frame_substitution_tests {
     use super::*;
+
+    #[test]
+    fn heap_substitution_preserves_range_holes_and_shared_machine_operands() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(10998580);
+        let base = Address::symbolic(from);
+        let pointer = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+        let layout = crate::kernel::SymbolicLayoutName::intern(
+            "range_substitution",
+            vec![("member".into(), ProgramType::Int32)],
+        );
+        let mut import = KernelTermImport::default();
+        let format = MachineIntegerType::UInt64;
+        let start = import.machine(format, &OldMachineTerm::uint64_constant(0));
+        let end = import.machine(format, &layout.size_term());
+        let size = import.machine(format, &OldMachineTerm::Variable(from));
+        let range = MemoryRange::from_retained_bounds(
+            &pointer,
+            ExecutionValue::Shared(start.clone()),
+            ExecutionValue::Shared(end.clone()),
+            1,
+        )
+        .unwrap()
+        .with_holes(vec![0]);
+        let fact = Proposition::HeapAllocationFreed {
+            before: SymbolicMemory::new(),
+            after: SymbolicMemory::new(),
+            before_point: Default::default(),
+            after_point: Default::default(),
+            blocks: vec![(
+                base.clone(),
+                AllocationSize::from_value(ExecutionValue::Shared(size.clone())).unwrap(),
+            )],
+            mutable_ranges: vec![range],
+        };
+
+        let target = SymbolicMemory::global_pointer("substituted");
+        let Proposition::HeapAllocationFreed {
+            blocks,
+            mutable_ranges,
+            ..
+        } = substitute_pointer_variable_in_proposition(&fact, from, &target)
+        else {
+            unreachable!()
+        };
+        let range = &mutable_ranges[0];
+        assert_eq!(range.base(), &target);
+        assert_eq!(blocks[0].0, target);
+        assert!(
+            matches!(blocks[0].1.byte_operand(), MachineOperandView::Shared(root) if root == &size)
+        );
+        assert_eq!(range.holes(), &[0]);
+        assert_eq!(range.retained_bounds().0.root(), Some(&start));
+        assert_eq!(range.retained_bounds().1.root(), Some(&end));
+        assert!(
+            [&start, &end, &size]
+                .iter()
+                .all(|root| !root.has_cached_native_argument())
+        );
+
+        let replacement = OldMachineTerm::constant(19);
+        let Proposition::HeapAllocationFreed {
+            blocks,
+            mutable_ranges,
+            ..
+        } = substitute_bitvector_variable_in_proposition(&fact, from, &replacement)
+        else {
+            unreachable!()
+        };
+        assert_eq!(blocks[0].1.bytes(), &replacement);
+        assert_eq!(blocks[0].1.kind(), AllocationSizeKind::UInt64);
+        assert_eq!(mutable_ranges[0].retained_bounds().0.root(), Some(&start));
+        assert_eq!(mutable_ranges[0].holes(), &[0]);
+        assert_eq!(mutable_ranges[0].symbolic_object(), Some(layout));
+        assert!(!size.has_cached_native_argument());
+    }
 
     #[test]
     fn pointer_substitution_in_condition_terms_preserves_each_declaration() {
@@ -2484,7 +2606,7 @@ fn collect_proposition_bound_variables_one(
             collect_sequence_bound_variables(sequence, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bound_variables(condition.old_form(), variables);
+            collect_stored_condition_bound_variables(condition, variables);
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -2558,7 +2680,6 @@ fn collect_proposition_bound_variables_one(
             memory,
             base,
             bytes,
-            wide: _,
             ..
         } => {
             collect_memory_bound_variables(memory, variables);
@@ -2605,9 +2726,7 @@ fn collect_proposition_bound_variables_one(
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
             for range in mutable_ranges {
-                collect_pointer_bound_variables(&range.base, variables);
-                collect_bitvector_bound_variables(range.bound_terms().0, variables);
-                collect_bitvector_bound_variables(range.bound_terms().1, variables);
+                collect_memory_range_bound_variables(range, variables);
             }
         }
         Proposition::HeapAllocationFreed {
@@ -2621,12 +2740,10 @@ fn collect_proposition_bound_variables_one(
             collect_memory_bound_variables(after, variables);
             for (base, bytes) in blocks {
                 collect_pointer_bound_variables(base, variables);
-                collect_bitvector_bound_variables(bytes.bytes(), variables);
+                collect_machine_bound_variables(bytes.byte_operand(), variables);
             }
             for range in mutable_ranges {
-                collect_pointer_bound_variables(&range.base, variables);
-                collect_bitvector_bound_variables(range.bound_terms().0, variables);
-                collect_bitvector_bound_variables(range.bound_terms().1, variables);
+                collect_memory_range_bound_variables(range, variables);
             }
         }
         Proposition::And(left, right)
@@ -2646,9 +2763,9 @@ fn collect_proposition_bound_variables_one(
 fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>) {
     match term {
         Term::Condition(condition) => {
-            collect_condition_bound_variables(condition.old_form(), variables)
+            collect_stored_condition_bound_variables(condition, variables)
         }
-        Term::Bitvector32(bits) => collect_bitvector_bound_variables(bits.old_form(), variables),
+        Term::Bitvector32(bits) => collect_machine_bound_variables(bits.operand_view(), variables),
         Term::Integer(integer) => {
             if integer
                 .root()
@@ -2665,15 +2782,19 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
             let root = offset.root();
             root.visit_root_in_order(false, |node| {
                 if let Some(index) = node.index() {
-                    collect_offset_index_bound_variables(
-                        MachineOperandView::Shared(index),
-                        variables,
-                    );
+                    collect_machine_bound_variables(MachineOperandView::Shared(index), variables);
                 }
             });
         }
         Term::ProgramValue(value) => {
-            collect_program_value_bound_variables(value.old_form(), variables);
+            if let Some(root) = value.root()
+                && root.is_shared_machine_operand()
+                && value.value().machine().is_some()
+            {
+                collect_shared_bound_variables(root, variables);
+            } else {
+                collect_program_value_bound_variables(value.old_form(), variables);
+            }
         }
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term.old_form(), variables),
@@ -2704,10 +2825,10 @@ fn collect_expression_value_bound_variables(
     value: &ExecutionValue,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if let Some((_, view @ MachineOperandView::Shared(_))) = value.machine() {
-        visit_machine_operand_scoped_leaves(view, |leaf| {
-            collect_scoped_leaf_bound_variables(leaf, variables)
-        });
+    if let Some((_, MachineOperandView::Shared(root))) = value.machine()
+        && root.is_shared_machine_operand()
+    {
+        collect_shared_bound_variables(root, variables);
     } else {
         collect_program_value_bound_variables(&value.native(), variables);
     }
@@ -2791,7 +2912,9 @@ fn collect_program_expression_bound_variables(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => {
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
             collect_program_expression_bound_variables(expression, variables);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
@@ -2811,7 +2934,11 @@ fn collect_program_expression_bound_variables(
         | ProgramExpression::TypedLoad { pointer, .. } => {
             collect_program_expression_bound_variables(pointer, variables)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_bound_variables(left, variables);
             collect_program_expression_bound_variables(right, variables);
         }
@@ -3295,7 +3422,7 @@ fn collect_memory_bound_variables(memory: &SymbolicMemory, variables: &mut BTree
         }
     }
     for contents in memory.blocks.values() {
-        collect_bitvector_bound_variables(contents.size(), variables);
+        collect_machine_bound_variables(contents.allocation_size().byte_operand(), variables);
     }
     for (pointer, value) in memory.cells.concrete().iter() {
         #[cfg(test)]
@@ -3355,7 +3482,7 @@ fn collect_memory_bound_variables_entering(
     }
     for change in base.blocks.diff(&memory.blocks) {
         if let Some(contents) = memory.blocks.get(change.key()) {
-            collect_bitvector_bound_variables(contents.size(), variables);
+            collect_machine_bound_variables(contents.allocation_size().byte_operand(), variables);
         }
     }
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
@@ -3443,9 +3570,7 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
         }
 
         Resource::Memory(range) => {
-            collect_pointer_bound_variables(&range.base, variables);
-            collect_bitvector_bound_variables(range.bound_terms().0, variables);
-            collect_bitvector_bound_variables(range.bound_terms().1, variables);
+            collect_memory_range_bound_variables(range, variables);
         }
         Resource::Iterated(iterated) => {
             for pointer in iterated.pointers() {
@@ -3463,64 +3588,137 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
     }
 }
 
+fn collect_memory_range_bound_variables(range: &MemoryRange, variables: &mut BTreeSet<Variable>) {
+    collect_pointer_bound_variables(&range.base, variables);
+    let (start, end) = range.retained_bounds();
+    collect_machine_bound_variables(start.operand_view(), variables);
+    collect_machine_bound_variables(end.operand_view(), variables);
+}
+
 /// Collects identities introduced by `RangeFold` binders inside a term.
 /// `collect_bitvector_variables` intentionally removes those identities from
 /// its result because they are not free; freshness construction needs the
 /// bound identities as well so a logical or fold binder cannot reuse one.
-fn collect_scoped_leaf_bound_variables(
-    leaf: MachineOperandView<'_>,
+fn collect_machine_bound_variables(
+    operand: MachineOperandView<'_>,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if let MachineOperandView::Shared(root) = leaf
-        && matches!(root.node(), KernelTermNode::FloatConvert { .. })
-    {
-        // This freshness policy includes state contents as well as binders.
-        // Keep its selected native boundary; the ordinary free-variable reader
-        // intentionally has different scope and memory rules.
-        collect_bitvector_bound_variables(
-            &crate::kernel::KernelTermExport::machine(root).expect("float conversion"),
-            variables,
-        );
-        return;
+    match operand {
+        MachineOperandView::Old(word) => collect_bitvector_bound_variables(word, variables),
+        MachineOperandView::Shared(root) => collect_shared_bound_variables(root, variables),
     }
-    if let MachineOperandView::Shared(root) = leaf
-        && let KernelTermNode::Fold(fold) = root.node()
-    {
-        variables.insert(fold.accumulator);
-        variables.insert(fold.item);
-        for child in &fold.arguments {
-            visit_machine_operand_scoped_leaves(MachineOperandView::Shared(child), |leaf| {
-                collect_scoped_leaf_bound_variables(leaf, variables)
-            });
+}
+
+fn collect_stored_condition_bound_variables(
+    condition: &StoredConditionTerm,
+    variables: &mut BTreeSet<Variable>,
+) {
+    match condition.operand_view() {
+        BooleanOperandView::Shared(root) => collect_shared_bound_variables(root, variables),
+        BooleanOperandView::Native(value) => collect_condition_bound_variables(value, variables),
+    }
+}
+
+fn push_offset_indices<'a>(
+    offset: &'a crate::kernel::SharedAddressOffset,
+    pending: &mut Vec<&'a KernelTerm>,
+) {
+    offset.visit_root_while(|node| {
+        if super::variable_collection::checked_collection_checkpoint() {
+            return false;
         }
-    } else if let MachineOperandView::Shared(root) = leaf
-        && let KernelTermNode::Match(matched) = root.node()
-    {
-        let mut export = crate::kernel::KernelTermExport::default();
-        if let PureFunctionArgument::Algebraic(scrutinee) = export
-            .argument(&matched.arguments[0])
-            .expect("match scrutinee")
+        pending.extend(node.index());
+        true
+    });
+}
+
+fn collect_shared_bound_variables(root: &KernelTerm, variables: &mut BTreeSet<Variable>) {
+    let mut pending = vec![root];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(root) = pending.pop() {
+        if super::variable_collection::checked_collection_checkpoint() {
+            return;
+        }
+        if root.is_shared_machine_operand()
+            && !root.has_machine_reads()
+            && !root.has_machine_conversions()
         {
-            collect_algebraic_bound_variables(&scrutinee, variables);
+            continue;
         }
-        for arm in &matched.arms {
-            for binding in arm
-                .export_bindings(&mut export)
-                .expect("match declarations")
-            {
-                collect_algebraic_value_bound_variables(&binding, variables);
+        if !seen.insert(root.id()) {
+            continue;
+        }
+        match root.node() {
+            KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => {}
+            KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
+            | KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::BoolEqual { arguments } => pending.extend(arguments),
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. }
+            | KernelTermNode::BoolCast { operand, .. } => pending.push(operand),
+            KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
+                pending.extend(arguments)
+            }
+            KernelTermNode::AddressEqual { arguments, .. } => {
+                for address in arguments {
+                    push_offset_indices(address.offset(), &mut pending);
+                }
+            }
+            KernelTermNode::AddressOffsetEqual { arguments } => {
+                for offset in arguments {
+                    push_offset_indices(offset, &mut pending);
+                }
+            }
+            KernelTermNode::PointerEqual(pair) => {
+                for pointer in pair.arguments() {
+                    pending.extend(pointer.len());
+                    for address in pointer.addresses() {
+                        push_offset_indices(address.offset(), &mut pending);
+                    }
+                }
+            }
+            _ if root.ty() == &crate::kernel::KernelType::Bool => {
+                collect_condition_bound_variables(
+                    &BooleanOperandView::Shared(root).native(),
+                    variables,
+                );
+            }
+            KernelTermNode::Fold(fold) => {
+                variables.extend([fold.accumulator, fold.item]);
+                pending.extend(&fold.arguments);
+            }
+            KernelTermNode::Match(matched) => {
+                let mut export = crate::kernel::KernelTermExport::default();
+                if let PureFunctionArgument::Algebraic(scrutinee) = export
+                    .argument(&matched.arguments[0])
+                    .expect("match scrutinee")
+                {
+                    collect_algebraic_bound_variables(&scrutinee, variables);
+                }
+                for arm in &matched.arms {
+                    for binding in arm
+                        .export_bindings(&mut export)
+                        .expect("match declarations")
+                    {
+                        collect_algebraic_value_bound_variables(&binding, variables);
+                    }
+                }
+                pending.extend(&matched.arguments[1..]);
+            }
+            _ => {
+                // Freshness also reserves identities inside states and declarations.
+                // Apply the native policy only to this selected payload.
+                if let Some(word) = MachineOperandView::Shared(root).read_source() {
+                    collect_bitvector_bound_variables(&word, variables);
+                } else {
+                    collect_bitvector_bound_variables(
+                        &crate::kernel::KernelTermExport::machine(root).expect("machine payload"),
+                        variables,
+                    );
+                }
             }
         }
-        for body in &matched.arguments[1..] {
-            visit_machine_operand_scoped_leaves(MachineOperandView::Shared(body), |leaf| {
-                collect_scoped_leaf_bound_variables(leaf, variables)
-            });
-        }
-    } else {
-        collect_bitvector_bound_variables(
-            &leaf.read_source().expect("native scoped leaf"),
-            variables,
-        );
     }
 }
 
@@ -3573,9 +3771,7 @@ fn collect_bitvector_bound_variables(term: &OldMachineTerm, variables: &mut BTre
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
-                            collect_scoped_leaf_bound_variables(leaf, variables);
-                        });
+                        collect_machine_bound_variables(value.operand_view(), variables);
                     }
                     PureFunctionArgument::Value(value) => {
                         collect_program_value_bound_variables(value, variables)
@@ -3678,9 +3874,7 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
-                            collect_scoped_leaf_bound_variables(leaf, variables);
-                        });
+                        collect_machine_bound_variables(value.operand_view(), variables);
                     }
                     PureFunctionArgument::Value(value) => {
                         collect_program_value_bound_variables(value, variables)
@@ -3723,16 +3917,8 @@ fn collect_condition_bound_variables(
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
-            left.for_each_machine_operand(|view| {
-                visit_machine_operand_scoped_leaves(view, |term| {
-                    collect_scoped_leaf_bound_variables(term, variables)
-                })
-            });
-            right.for_each_machine_operand(|view| {
-                visit_machine_operand_scoped_leaves(view, |term| {
-                    collect_scoped_leaf_bound_variables(term, variables)
-                })
-            });
+            left.for_each_machine_operand(|view| collect_machine_bound_variables(view, variables));
+            right.for_each_machine_operand(|view| collect_machine_bound_variables(view, variables));
         }
         OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
@@ -3759,9 +3945,7 @@ fn collect_condition_bound_variables(
             for argument in application.arguments() {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
-                        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
-                            collect_scoped_leaf_bound_variables(leaf, variables);
-                        });
+                        collect_machine_bound_variables(value.operand_view(), variables);
                     }
                     PureFunctionArgument::Value(value) => {
                         collect_program_value_bound_variables(value, variables)
@@ -3798,16 +3982,7 @@ fn collect_pointer_offset_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     offset.for_each_scaled_operand(|value| {
-        collect_offset_index_bound_variables(value.operand_view(), variables);
-    });
-}
-
-fn collect_offset_index_bound_variables(
-    view: MachineOperandView<'_>,
-    variables: &mut BTreeSet<Variable>,
-) {
-    visit_machine_operand_scoped_leaves(view, |leaf| {
-        collect_scoped_leaf_bound_variables(leaf, variables)
+        collect_machine_bound_variables(value.operand_view(), variables);
     });
 }
 
@@ -3821,7 +3996,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             Term::Condition(BitvectorSubstitution::new(from, to).stored_condition(condition))
         }
         Term::Bitvector32(bits) => {
-            Term::Bitvector32(bits.map_native(|word| substitute_bitvector_variable(word, from, to)))
+            Term::Bitvector32(BitvectorSubstitution::new(from, to).stored_word(bits))
         }
         // Variable identities are shared by all logical sorts, but a
         // machine substitution must never rewrite an Integer variable with a
@@ -4232,6 +4407,28 @@ fn checked_integer_substitution_rewrites_retained_comparison_without_export() {
     assert!(!root.has_cached_native_argument());
 }
 
+#[cfg(test)]
+#[test]
+fn checked_integer_substitution_keeps_the_polarity_of_a_negated_comparison() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let from = Variable(87654004);
+    let replacement = IntegerTerm::Variable(Variable(87654005));
+    let comparison =
+        |value| OldConditionTerm::integer_less_than(value, IntegerTerm::constant_i64(7));
+    let negation = OldConditionTerm::bool_not(comparison(IntegerTerm::Variable(from)));
+    let root = KernelTermImport::default().condition(&negation);
+    let stored = StoredConditionTerm::from_root(root).unwrap();
+    for truth in [false, true] {
+        let input = Proposition::condition_is(stored.clone(), truth);
+        let result =
+            substitute_integer_variable_in_pure_proposition(&input, from, &replacement).unwrap();
+        assert_eq!(
+            result,
+            Proposition::condition_is(comparison(replacement.clone()), !truth)
+        );
+    }
+}
+
 fn integer_substitution_refusal(
     refusal: Option<crate::kernel::proof::term_rewrite::RewriteRefusal>,
 ) -> Result<(), IntegerPureSubstitutionError> {
@@ -4265,15 +4462,8 @@ fn validate_integer_pure_proposition(
         {
             validate_integer_atomic_proposition(proposition, collector)
         }
-        Proposition::SequenceMembership { .. } => {
+        Proposition::SequenceMembership { .. } | Proposition::ConditionIs(..) => {
             validate_integer_atomic_proposition(proposition, collector)
-        }
-        Proposition::ConditionIs(condition, _) => {
-            if mathematical_comparison(condition).is_some() {
-                validate_integer_atomic_proposition(proposition, collector)
-            } else {
-                validate_integer_pure_condition(condition.old_form(), collector)
-            }
         }
         Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
             // A symbolic array read contributes this obligation to the
@@ -4332,16 +4522,6 @@ fn validate_integer_pure_proposition(
         }
         _ => Err(IntegerPureSubstitutionError::UnsupportedCarrier),
     }
-}
-
-fn validate_integer_pure_condition(
-    condition: &OldConditionTerm,
-    collector: &mut crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector,
-) -> Result<(), IntegerPureSubstitutionError> {
-    validate_integer_atomic_proposition(
-        &Proposition::condition_is(condition.clone(), true),
-        collector,
-    )
 }
 
 fn validate_integer_pure_term(
@@ -4482,28 +4662,11 @@ fn substitute_pure_proposition_with_walker(
                             walker,
                         )?);
                     }
-                    Proposition::SequenceMembership { .. } => {
+                    Proposition::SequenceMembership { .. } | Proposition::ConditionIs(..) => {
                         rewritten.push(rewrite_integer_atomic_proposition_with_walker(
                             proposition,
                             walker,
                         )?);
-                    }
-                    Proposition::ConditionIs(condition, _)
-                        if mathematical_comparison(condition).is_some() =>
-                    {
-                        rewritten.push(rewrite_integer_atomic_proposition_with_walker(
-                            proposition,
-                            walker,
-                        )?);
-                    }
-                    Proposition::ConditionIs(condition, value) => {
-                        rewritten.push(Proposition::condition_is(
-                            substitute_integer_pure_condition_with_walker(
-                                condition.old_form(),
-                                walker,
-                            )?,
-                            *value,
-                        ));
                     }
                     Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
                         rewritten.push(rewrite_integer_memory_loadable_with_walker(
@@ -4730,20 +4893,6 @@ fn queue_integer_quantifier_rewrite<'a>(
         shadowed: child_shadowed,
     });
     Ok(())
-}
-
-fn substitute_integer_pure_condition_with_walker(
-    condition: &OldConditionTerm,
-    walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
-) -> Result<OldConditionTerm, IntegerPureSubstitutionError> {
-    let Proposition::ConditionIs(result, _) = rewrite_integer_atomic_proposition_with_walker(
-        &Proposition::condition_is(condition.clone(), true),
-        walker,
-    )?
-    else {
-        unreachable!()
-    };
-    Ok(result.old_form().clone())
 }
 
 fn rewrite_integer_memory_loadable_with_walker(
@@ -5094,6 +5243,22 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
             )),
             variant: variant.clone(),
         },
+        ProgramExpression::SliceLength(slice) => ProgramExpression::SliceLength(Box::new(
+            substitute_bitvector_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceData(slice) => ProgramExpression::SliceData(Box::new(
+            substitute_bitvector_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceFromRawParts { data, count } => {
+            ProgramExpression::SliceFromRawParts {
+                data: Box::new(substitute_bitvector_variable_in_program_expression(
+                    data, from, to,
+                )),
+                count: Box::new(substitute_bitvector_variable_in_program_expression(
+                    count, from, to,
+                )),
+            }
+        }
         ProgramExpression::AddressOf(body) => ProgramExpression::AddressOf(Box::new(
             substitute_bitvector_variable_in_program_expression(body, from, to),
         )),
@@ -6802,6 +6967,7 @@ fn record_memory_lacks_variable(identity: (u32, u32), from: Variable) {
 #[cfg(test)]
 #[test]
 fn state_size_substitution_preserves_declared_types_and_write_protection() {
+    let _session = crate::kernel::VerificationSession::enter();
     let from = Variable(84001);
     let mut memory = SymbolicMemory::new().with_declared_scalar_block(
         "local:word".into(),
@@ -6811,6 +6977,16 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
     let mut read_only = MemoryBlock::read_only(4);
     read_only.size = AllocationSize::int32(OldMachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
+    let pending = Address::symbolic(Variable(84002));
+    let wide = KernelTermImport::default().machine(
+        MachineIntegerType::UInt64,
+        &OldMachineTerm::uint64_constant(1 << 40),
+    );
+    memory = memory.with_pending_heap_allocation(
+        pending.clone(),
+        AllocationSize::from_value(ExecutionValue::Shared(wide.clone())).unwrap(),
+        false,
+    );
     let rewritten = substitute_bitvector_variable_in_memory_contents(
         &memory,
         from,
@@ -6824,6 +7000,11 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
         .blocks
         .get(&AddressBase::from("global:protected"))
         .unwrap();
+    let pending_size = rewritten.heap.pending_allocations.get(&pending).unwrap();
+    assert_eq!(pending_size.kind(), AllocationSizeKind::UInt64);
+    assert!(
+        matches!(pending_size.byte_operand(), MachineOperandView::Shared(root) if root == &wide)
+    );
     assert!(protected.read_only);
     assert_eq!(protected.size, AllocationSize::int32(16));
 }
@@ -6836,6 +7017,7 @@ fn substitute_bitvector_variable_in_memory_contents(
     crate::instrumentation::record_deterministic_work(
         memory.cells.representation_len() + memory.union_cells.len() + memory.blocks.len(),
     );
+    let substitution = BitvectorSubstitution::new(from, to);
     let cells = std::sync::Arc::new(memory.cells.map_cells(
         |pointer, value| {
             (
@@ -6857,9 +7039,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                     // declaration or its write protection. Rebuilding a bare
                     // block erased these properties, even for a constant size.
                     let mut rewritten = contents.clone();
-                    rewritten.size = contents
-                        .allocation_size()
-                        .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to));
+                    rewritten.size = substitution.allocation_size(contents.allocation_size());
                     (block.clone(), rewritten)
                 })
                 .collect(),
@@ -6896,7 +7076,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                        substitution.allocation_size(bytes),
                     )
                 })
                 .collect(),
@@ -6907,7 +7087,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                        substitution.allocation_size(bytes),
                     )
                 })
                 .collect(),
@@ -6929,7 +7109,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                        substitution.allocation_size(bytes),
                     )
                 })
                 .collect(),
@@ -6990,9 +7170,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                                 from,
                                 to,
                             ),
-                            old_bytes: pending
-                                .old_bytes
-                                .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                            old_bytes: substitution.allocation_size(&pending.old_bytes),
                             zeroed_prefix: pending
                                 .zeroed_prefix
                                 .as_ref()
@@ -7419,6 +7597,22 @@ fn substitute_pointer_variable_in_program_expression(
             )),
             variant: variant.clone(),
         },
+        ProgramExpression::SliceLength(slice) => ProgramExpression::SliceLength(Box::new(
+            substitute_pointer_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceData(slice) => ProgramExpression::SliceData(Box::new(
+            substitute_pointer_variable_in_program_expression(slice, from, to),
+        )),
+        ProgramExpression::SliceFromRawParts { data, count } => {
+            ProgramExpression::SliceFromRawParts {
+                data: Box::new(substitute_pointer_variable_in_program_expression(
+                    data, from, to,
+                )),
+                count: Box::new(substitute_pointer_variable_in_program_expression(
+                    count, from, to,
+                )),
+            }
+        }
         ProgramExpression::AddressOf(body) => ProgramExpression::AddressOf(Box::new(
             substitute_pointer_variable_in_program_expression(body, from, to),
         )),
@@ -8668,6 +8862,55 @@ mod pointee_const_return_tests {
 #[cfg(test)]
 mod integer_to_machine_substitution_tests {
     use super::*;
+
+    #[test]
+    fn stored_conversion_substitution_preserves_destination_and_observation_widths() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(709);
+        let destination = MachineIntegerType::UInt8;
+        let observation = MachineIntegerType::Int64;
+        let integer = OldMachineTerm::IntegerToMachine {
+            value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                OldMachineTerm::Variable(from),
+            ))
+            .into(),
+            destination,
+        };
+        let boolean = OldMachineTerm::BoolCast {
+            to: destination,
+            value: Box::new(OldConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(OldMachineTerm::Variable(from)),
+                right: Box::new(OldMachineTerm::constant(7)),
+            }),
+        };
+        for native in [integer, boolean] {
+            let root = KernelTermImport::default().machine(observation, &native);
+            let term = Term::Bitvector32(
+                StoredMachineTerm::from_value(ExecutionValue::Shared(root.clone())).unwrap(),
+            );
+            for to in [
+                OldMachineTerm::Variable(Variable(710)),
+                OldMachineTerm::constant(7),
+            ] {
+                let expected = substitute_bitvector_variable(&native, from, &to);
+                let Term::Bitvector32(result) =
+                    substitute_bitvector_variable_in_term(&term, from, &to)
+                else {
+                    unreachable!()
+                };
+                let shared = result.root().expect("retained result");
+                assert_eq!(shared.ty(), root.ty());
+                assert_eq!(
+                    crate::kernel::KernelTermExport::machine(shared).unwrap(),
+                    expected
+                );
+                assert!(!root.has_cached_native_argument());
+            }
+        }
+    }
 
     #[test]
     fn integer_to_machine_substitution_descends_math_payload_and_keeps_destination() {
@@ -10647,9 +10890,161 @@ mod float_conversion_freshness_tests {
         let mut expected = BTreeSet::new();
         collect_bitvector_bound_variables(&native, &mut expected);
         let mut actual = BTreeSet::new();
-        collect_scoped_leaf_bound_variables(MachineOperandView::Shared(&root), &mut actual);
+        collect_machine_bound_variables(MachineOperandView::Shared(&root), &mut actual);
         assert!(expected.contains(&Variable(999983)) && expected.contains(&Variable(999984)));
         assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn stored_machine_freshness_collects_binders_in_guards_and_arms() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let fold = |id| OldMachineTerm::RangeFold {
+        start: Box::new(OldMachineTerm::constant(0)),
+        end: Box::new(OldMachineTerm::Variable(Variable(999970))),
+        initial: Box::new(OldMachineTerm::constant(0)),
+        accumulator: Variable(id),
+        item: Variable(id + 1),
+        body: Box::new(OldMachineTerm::Variable(Variable(id))),
+    };
+    let native = OldMachineTerm::If {
+        condition: Box::new(OldConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessThan,
+            left: Box::new(fold(999971)),
+            right: Box::new(OldMachineTerm::constant(1)),
+        }),
+        then_term: Box::new(fold(999973)),
+        else_term: Box::new(fold(999975)),
+    };
+    let root =
+        crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+    let value = ExecutionValue::Shared(root.clone());
+    let expected = (999971..=999976).map(Variable).collect::<BTreeSet<_>>();
+    let KernelTermNode::MachineIf { arguments } = root.node() else {
+        panic!("expected a shared machine conditional");
+    };
+    let guard = StoredConditionTerm::from_root(arguments[0].clone()).unwrap();
+    let before = crate::kernel::KernelTermExport::machine_export_count();
+    for (term, binders) in [
+        (
+            Term::Bitvector32(StoredMachineTerm::from_value(value.clone()).unwrap()),
+            expected.clone(),
+        ),
+        (Term::ProgramValue(value.into()), expected),
+        (
+            Term::Condition(guard),
+            BTreeSet::from([Variable(999971), Variable(999972)]),
+        ),
+    ] {
+        let mut actual = BTreeSet::new();
+        collect_term_bound_variables(&term, &mut actual);
+        assert_eq!(actual, binders);
+    }
+    assert_eq!(
+        crate::kernel::KernelTermExport::machine_export_count(),
+        before
+    );
+    assert!(!root.has_cached_native_argument());
+}
+
+#[cfg(test)]
+#[test]
+fn pointer_condition_freshness_reads_offsets_and_slice_counts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let fold = |id| OldMachineTerm::RangeFold {
+        start: Box::new(OldMachineTerm::constant(0)),
+        end: Box::new(OldMachineTerm::Variable(Variable(50))),
+        initial: Box::new(OldMachineTerm::constant(0)),
+        accumulator: Variable(id),
+        item: Variable(id + 1),
+        body: Box::new(OldMachineTerm::Variable(Variable(id))),
+    };
+    let offset = AddressOffset::scaled_int32_node(fold(51), 4);
+    let address = Address::symbolic(Variable(56)).with_offset(offset.clone());
+    let pointer =
+        Pointer::new(address.clone(), ProgramType::Int32Pointer).with_element_count(fold(53));
+    let null = Address::null();
+    let empty = Pointer::new(null.clone(), ProgramType::Int32Pointer)
+        .with_element_count(OldMachineTerm::uint64_constant(0));
+    for (condition, expected) in [
+        (
+            OldConditionTerm::PointerEqual(Box::new(pointer), Box::new(empty)),
+            vec![51, 52, 53, 54],
+        ),
+        (
+            OldConditionTerm::AddressEqual(Box::new(address), Box::new(null)),
+            vec![51, 52],
+        ),
+        (
+            OldConditionTerm::AddressOffsetEqual(
+                Box::new(offset),
+                Box::new(AddressOffset::constant(0)),
+            ),
+            vec![51, 52],
+        ),
+    ] {
+        let leaf = KernelTermImport::default().condition(&condition);
+        let root = KernelTerm::boolean_equal_raw([leaf.clone(), leaf]);
+        let proposition =
+            Proposition::ConditionIs(StoredConditionTerm::from_root(root.clone()).unwrap(), true);
+        let mut actual = BTreeSet::new();
+        collect_proposition_bound_variables(&proposition, &mut actual);
+        assert_eq!(actual, expected.into_iter().map(Variable).collect());
+        assert!(root.cached_condition_output().is_none());
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn heap_free_variables_read_stored_sizes_and_range_bounds() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = SymbolicMemory::global_pointer("shared-size");
+    let pointer = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+    let fold = |id, format| {
+        crate::kernel::KernelTermImport::default().machine(
+            format,
+            &OldMachineTerm::RangeFold {
+                start: Box::new(OldMachineTerm::constant(0)),
+                end: Box::new(OldMachineTerm::Variable(Variable(id))),
+                initial: Box::new(OldMachineTerm::constant(0)),
+                accumulator: Variable(id + 1),
+                item: Variable(id + 2),
+                body: Box::new(OldMachineTerm::Variable(Variable(id + 1))),
+            },
+        )
+    };
+    let size = fold(100, MachineIntegerType::Int32);
+    let start = fold(200, MachineIntegerType::UInt64);
+    let end = fold(300, MachineIntegerType::UInt64);
+    let fact = Proposition::HeapAllocationFreed {
+        before: SymbolicMemory::new(),
+        before_point: Default::default(),
+        after: SymbolicMemory::new(),
+        after_point: Default::default(),
+        blocks: vec![(
+            base,
+            AllocationSize::from_value(ExecutionValue::Shared(size.clone())).unwrap(),
+        )],
+        mutable_ranges: vec![
+            MemoryRange::from_retained_bounds(
+                &pointer,
+                ExecutionValue::Shared(start.clone()),
+                ExecutionValue::Shared(end.clone()),
+                4,
+            )
+            .unwrap(),
+        ],
+    };
+    let mut free = BTreeSet::new();
+    collect_proposition_bitvector_variables(&fact, &mut free);
+    assert_eq!(free, [100, 200, 300].map(Variable).into());
+    let mut bound = BTreeSet::new();
+    collect_proposition_bound_variables(&fact, &mut bound);
+    assert_eq!(bound, [101, 102, 201, 202, 301, 302].map(Variable).into());
+    for root in [size, start, end] {
+        assert!(!root.has_cached_native_argument());
     }
 }
 

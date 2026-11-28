@@ -847,6 +847,7 @@ pub(super) enum Token {
     /// Frontend-only marker for a C++ method’s virtual interface.
     CppVirtualInterface,
     OverrideContract,
+    RefinementClaim(std::sync::Arc<RefinementClaimOrigin>),
     ReferenceBindingContract(std::sync::Arc<crate::kernel::ReferenceBindingContract>),
     Ident(String),
     Number(u32),
@@ -958,6 +959,7 @@ impl Token {
             Self::RustSharedReferenceLoan(_) => "Rust shared reference loan",
             Self::CppVirtualInterface => "virtual method interface",
             Self::OverrideContract => "implementation interface",
+            Self::RefinementClaim(_) => "inherited contract clause",
             Self::ReferenceBindingContract(_) => "reference binding contract",
             Self::LBrace => "{",
             Self::RBrace => "}",
@@ -1170,6 +1172,8 @@ struct Parser {
     /// The module of the `impl` block being read, as the importer names
     /// it, when the block is an inherent one for a type named by a path.
     rust_impl_module: Option<String>,
+    /// Qualified inherent methods indexed without the module of their impl.
+    rust_inherent_methods: std::cell::OnceCell<BTreeMap<String, Option<String>>>,
     /// The crate trait the `impl` block being read implements, as the
     /// importer names it: its methods are `<Type as Trait>::name`.
     rust_impl_trait: Option<String>,
@@ -2315,6 +2319,7 @@ impl Parser {
             rust_impl_type: None,
             rust_impl_method_suffix: None,
             rust_impl_module: None,
+            rust_inherent_methods: std::cell::OnceCell::new(),
             rust_impl_trait: None,
             rust_impl_destruct: false,
             rust_trait_interface: None,
@@ -4156,8 +4161,8 @@ impl Parser {
         {
             return Err(self.error("a resource's type parameters are abstract types"));
         }
-        // A C++ generic resource's instance at abstract arguments binds them,
-        // `resource nodes_A1_T<T>(...)`.
+        // A C++ generic resource's instance at abstract arguments binds them
+        // after the token naming the instance.
         if self.verifies_cpp() && self.peek() == Some(&Token::LessThan) {
             self.position += 1;
             loop {
@@ -5176,6 +5181,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -5222,6 +5228,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -5860,6 +5867,7 @@ impl Parser {
                         ensures.push(
                             apply_contract_lets_to_ensure_clause(
                                 EnsureClause {
+                                    refinement: None,
                                     proof_bindings: Vec::new(),
                                     name: None,
                                     ensure: Ensure::Resource(resource),
@@ -5955,6 +5963,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -6078,6 +6087,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -6122,6 +6132,7 @@ impl Parser {
                             ensures.push(
                                 apply_contract_lets_to_ensure_clause(
                                     EnsureClause {
+                                        refinement: None,
                                         proof_bindings: Vec::new(),
                                         name: None,
                                         ensure: Ensure::Resource(resource),
@@ -6164,6 +6175,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                refinement: None,
                                 proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
@@ -6198,7 +6210,11 @@ impl Parser {
                         }
                     }
                     ensure_kinds.push(ClaimClauseKind::Ensures);
-                    clause_positions.push(clause_start.clone());
+                    clause_positions.push(if ensure.refinement.is_some() {
+                        None
+                    } else {
+                        clause_start.clone()
+                    });
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -8598,11 +8614,9 @@ impl Parser {
                 "call step callee"
             })?
         };
+        let mut source_callee = None;
         if !tactic && source_binding.is_none() && self.verifies_rust() {
-            // A Rust callee is named as its function head is: its path, and a
-            // generic function's instance its type arguments,
-            // `cells::write<u32>(...)`.
-            callee = self.rust_step_callee(callee)?;
+            (callee, source_callee) = self.rust_step_callee(callee)?;
         } else if !tactic {
             while self.peek() == Some(&Token::ColonColon) {
                 self.position += 1;
@@ -8613,10 +8627,10 @@ impl Parser {
                 }
             }
         }
-        let callee_spelling = source_binding
-            .as_ref()
-            .map(super::diagnostics::describe_code_region_ref)
-            .unwrap_or_else(|| callee.clone());
+        if !tactic && self.verifies_cpp() && source_binding.is_none() {
+            source_callee = crate::languages::source_display_name(&callee);
+        }
+        let callee_spelling = source_callee.as_deref().unwrap_or(&callee);
         let form = if tactic { "name(...)" } else { "step(...)" };
         // Select the declared named contract when present. Otherwise the name
         // must match the call at the frontier, which supplies the arguments.
@@ -8963,7 +8977,8 @@ impl Parser {
             }
         }
         Ok(CallBinderTransport {
-            callee: callee_spelling,
+            callee,
+            source_callee,
             source_binding,
             named_contract,
             // A named function's arguments are the frontier call's.
@@ -9573,6 +9588,13 @@ impl Parser {
         &mut self,
         execution_names: Option<&BTreeSet<String>>,
     ) -> Result<(EnsureClause, Vec<(String, String)>), ClickError> {
+        let refinement = match self.peek().cloned() {
+            Some(Token::RefinementClaim(origin)) => {
+                self.position += 1;
+                Some(origin)
+            }
+            _ => None,
+        };
         let name = if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_next() == Some(&Token::Colon)
         {
@@ -9604,6 +9626,7 @@ impl Parser {
 
         Ok((
             EnsureClause {
+                refinement,
                 proof_bindings: Vec::new(),
                 name,
                 ensure,
@@ -19224,6 +19247,7 @@ fn expand_aggregate_requirement(requirement: Requirement) -> Vec<Requirement> {
 
 fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
     let EnsureClause {
+        refinement,
         proof_bindings,
         name,
         ensure,
@@ -19236,6 +19260,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
         Ensure::Resource(resource) => expand_aggregate_resource_clause(resource)
             .into_iter()
             .map(|resource| EnsureClause {
+                refinement: refinement.clone(),
                 proof_bindings: proof_bindings.clone(),
                 name: name.clone(),
                 ensure: Ensure::Resource(resource),
@@ -19246,6 +19271,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
             })
             .collect(),
         ensure => vec![EnsureClause {
+            refinement,
             proof_bindings,
             name,
             ensure,

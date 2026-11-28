@@ -1,8 +1,6 @@
 use super::primitives::*;
 use super::reasoning::*;
 use super::resource_tracker::cell_source::*;
-use crate::kernel::binary_node;
-use crate::kernel::binary_term;
 use crate::kernel::{BitvectorUnaryOp, MachineCastSpelling, cast_term};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionValue};
@@ -1092,6 +1090,7 @@ impl CheckedCallEventScope {
         Self::start_with_registration(call_events, false)
     }
 
+    #[cfg(test)]
     pub(crate) fn start_registering_views(
         call_events: &crate::kernel::proof::CheckedCallEvents,
     ) -> Self {
@@ -3316,7 +3315,7 @@ pub(in crate::kernel) fn complete_pointer_carrier_read_retained_value(
     (matches!(
         native,
         ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_)
-    ) && !stored_slice(&native))
+    ) && !stored_slice(native))
     .then(|| value.into_value())
 }
 
@@ -4870,158 +4869,6 @@ fn prove_program_condition_fact_transport_with_assumptions(
     }
 }
 
-/// Rewrites subterms of a condition fact that equal a certified store's
-/// value into loads from that store's post-memory, so a fact written in
-/// pre-store terms can be transported across the store. The rewriting is
-/// definitional: a certified store guarantees `load(after, pointer)` equals
-/// the stored value.
-pub(crate) fn rewrite_condition_through_certified_stores(
-    fact: &Proposition,
-    transitions: &(impl ExecutionFactSource + ?Sized),
-) -> Proposition {
-    let mut equations = Vec::new();
-    for transition in transitions.fact_iter() {
-        let Some(store) = &transition.certified_store else {
-            continue;
-        };
-        let value_term = match &store.value {
-            ProgramValue::Int8(term) => term.clone(),
-            ProgramValue::Int16(term)
-            | ProgramValue::Int32(term)
-            | ProgramValue::UInt8(term)
-            | ProgramValue::UInt16(term)
-            | ProgramValue::UInt32(term) => term.clone(),
-            _ => continue,
-        };
-        // The store's value is the read of its own kind at its own address.
-        let Some(kind) = LoadKind::of_value(&store.value) else {
-            continue;
-        };
-        equations.push((
-            canonicalize_atomic_loads(&value_term),
-            OldMachineTerm::read_named(store.after_point.clone(), store.pointer.clone(), kind),
-        ));
-    }
-    if equations.is_empty() {
-        return fact.clone();
-    }
-    fn rewrite_term(
-        term: &OldMachineTerm,
-        equations: &[(OldMachineTerm, OldMachineTerm)],
-    ) -> OldMachineTerm {
-        let canonical = canonicalize_atomic_loads(term);
-        for (value, load) in equations {
-            if &canonical == value {
-                return load.clone();
-            }
-        }
-        match term {
-            binary_term!(Bits32 @ format32, Add, left, right) => binary_node!(
-                @ *format32,
-                Add,
-                Box::new(rewrite_term(left, equations)),
-                Box::new(rewrite_term(right, equations)),
-            ),
-            binary_term!(Bits32 @ format32, Subtract, left, right) => binary_node!(
-                @ *format32,
-                Subtract,
-                Box::new(rewrite_term(left, equations)),
-                Box::new(rewrite_term(right, equations)),
-            ),
-            binary_term!(Bits32 @ format32, Multiply, left, right) => binary_node!(
-                @ *format32,
-                Multiply,
-                Box::new(rewrite_term(left, equations)),
-                Box::new(rewrite_term(right, equations)),
-            ),
-            other => other.clone(),
-        }
-    }
-    let Proposition::ConditionIs(condition, value) = fact else {
-        return fact.clone();
-    };
-    let binary = |left: &OldMachineTerm, right: &OldMachineTerm| {
-        (
-            Box::new(rewrite_term(left, &equations)),
-            Box::new(rewrite_term(right, &equations)),
-        )
-    };
-    let rewritten = match condition.old_form() {
-        OldConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        } => {
-            let (left, right) = binary(left, right);
-            OldConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            }
-        }
-        OldConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        } => {
-            let (left, right) = binary(left, right);
-            OldConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            }
-        }
-        OldConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        } => {
-            let (left, right) = binary(left, right);
-            OldConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            }
-        }
-        OldConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        } => {
-            let (left, right) = binary(left, right);
-            OldConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            }
-        }
-        OldConditionTerm::Compare {
-            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => {
-            let (left, right) = binary(left, right);
-            OldConditionTerm::Compare {
-                format: *format,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            }
-        }
-        _ => return fact.clone(),
-    };
-    Proposition::condition_is(rewritten, *value)
-}
-
 /// Canonicalizes every load in a term for structural comparison: cached
 /// cells resolve to their values and remaining loads use the canonical
 /// memory for their pointer.
@@ -6437,6 +6284,7 @@ pub(crate) fn certified_store_loadability_facts(
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn program_condition_fact_memories(fact: &Proposition) -> Vec<SymbolicMemory> {
     let Proposition::ConditionIs(condition, _) = fact else {
         return Vec::new();

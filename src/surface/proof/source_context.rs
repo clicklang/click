@@ -51,12 +51,9 @@ impl SourceContext {
                     | ProofTactic::CheckTerminationComponent { .. }
                     | ProofTactic::CheckTerminationCallbacks
                     | ProofTactic::Known
-                    | ProofTactic::Normalize
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::CloseBounds(_)
-                    | ProofTactic::NormalizeUsing(_)
-                    | ProofTactic::CompatibilityNormalize(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
@@ -89,6 +86,10 @@ impl SourceContext {
                 ProofTactic::UserTactic(_)
                     | ProofTactic::FoldResource(_)
                     | ProofTactic::UnfoldResource(_)
+                    | ProofTactic::UnfoldWitnesses {
+                        resource: ResourceClause::Named { .. },
+                        ..
+                    }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::ApplyFactUsing { .. }
@@ -102,10 +103,7 @@ impl SourceContext {
                     | ProofTactic::IntroBinder(_)
                     | ProofTactic::Known
                     | ProofTactic::Enumerate
-                    | ProofTactic::Normalize
                     | ProofTactic::CloseBounds(_)
-                    | ProofTactic::NormalizeUsing(_)
-                    | ProofTactic::CompatibilityNormalize(_)
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::Rewrite(_)

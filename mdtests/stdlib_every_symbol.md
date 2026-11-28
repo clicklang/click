@@ -1187,6 +1187,10 @@ theorem use_format_decimal_digit_of_length(v: uint64) {
     }
 }
 
+theorem uses_decimal_remainder_byte_lower_bound(q: uint64) {
+    ensures 48u8 <= ((48u64 + q % 10u64) as uint8) by apply(stdio::decimal_remainder_byte_lower_bound(q));
+}
+
 theorem use_format_decimal_digit_lower_bound(v: uint64) {
     ensures 48u8 <= stdio::decimal_digit(v, 0u64) by apply(stdio::decimal_digit_lower_bound(v, 0u64));
 }

@@ -138,7 +138,7 @@ fn flat_haves_before_a_case_use_linear_work_and_constant_traversal_stack() {
         };
         let source = DeferredPostExecutionTactic {
             lexical_bindings: None,
-            reads_deferred_obtain: false,
+            reads_deferred_binding: false,
             tactic_index: 0,
             source_index: 0,
             tactic: PostExecutionTactic::Have(have),

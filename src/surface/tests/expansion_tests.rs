@@ -268,6 +268,66 @@ fn mixed_unfold_outputs_survive_expansion_replay() {
 }
 
 #[test]
+fn returned_unfold_witnesses_replay_in_their_written_scope() {
+    let source = r#"
+        verifying "id.c";
+        resource box(p: int32*) {
+            field marker: int32;
+            owns p[0..1];
+            let base: int32* where base == p;
+        }
+
+        int32 id(int32* p, int32 x) {
+            owns r: box(p);
+            ensures result == 0;
+        } by {
+            step_until(function.exit);
+            BODY
+            TAIL
+        }
+    "#;
+    let open_and_restore = r#"
+        let { base: q } = unfold(r);
+        have q == p by close();
+        fold(r);
+    "#;
+    let sources = [("id.c", "int32 id(int32* p, int32 x) { return 0; }")];
+    let before_split = r#"
+        let { base: q } = unfold(r);
+        have p == p by {
+            have q == p by close();
+            close();
+        }
+        if x > 0 {
+            fold(r);
+            close();
+        } else {
+            fold(r);
+            close();
+        }
+    "#;
+    for (body, tail) in [
+        (open_and_restore.to_owned(), "close();"),
+        (
+            format!(
+                "if result == 0 {{ {open_and_restore} }} else {{ }}
+                 if result == 0 {{ {open_and_restore} }} else {{ }}"
+            ),
+            "close();",
+        ),
+        (before_split.to_owned(), ""),
+    ] {
+        let source = source.replace("BODY", &body).replace("TAIL", tail);
+        let expanded = expand_function_proof_source(&source, &sources, "id")
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.report()));
+        assert!(expanded.contains("base: q"), "{expanded}");
+        assert!(expanded.contains("have q == p"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn outcome_if_keeps_its_obtain_scopes_in_expansion() {
@@ -3594,10 +3654,13 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         .join("mdtests/bubble_sort3_loop_permutation.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
     let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
-    let source_with_suffix = fixture.click_source.as_deref().unwrap().replace(
-        "        close();",
-        "        close();\n        have 0 == 0 by { close(); }",
-    );
+    let selected = "have p[0] <= p[2] by { close(); }";
+    let suffix = "unfold(permutation::permutation(p, old(p), 0, 3));";
+    let source_with_suffix = fixture
+        .click_source
+        .as_deref()
+        .unwrap()
+        .replace(suffix, &format!("{selected}\n        {suffix}"));
     let source = source_with_suffix.as_str();
     let sources = fixture
         .c_sources
@@ -3605,21 +3668,32 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c_sources(source, &sources).unwrap();
-    let position = expansion::position_at_offset(
-        source,
-        source.rfind("close();\n        have 0 == 0").unwrap(),
-    );
+    let position = expansion::position_at_offset(source, source.find(selected).unwrap());
     let expanded =
         expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap();
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
-        expanded.contains("have 0 == 0 by { close(); }"),
+        expanded.contains(suffix),
         "the unselected suffix stays written"
     );
+    let guard_count = |proof: &str| {
+        proof
+            .lines()
+            .filter(|line| {
+                line.trim_start().starts_with("if ")
+                    && line.contains("p[(j + 1)]")
+                    && line.contains("p[j]")
+            })
+            .count()
+    };
+    let guards = guard_count(source);
+    assert!(guards > 1);
+    assert_eq!(guard_count(&expanded), guards);
     assert_eq!(
-        expanded.matches("if ").count(),
-        source.matches("if ").count()
+        expanded.matches("have p[0] <= p[2] by {").count(),
+        guards + 1
     );
+    assert!(!expanded.contains(selected));
     verify_c_sources(&expanded, &sources).unwrap();
     let claim =
         expansion::position_at_offset(&expanded, expanded.find("ensures permutation:").unwrap());
@@ -25320,11 +25394,13 @@ fn replacement_with_children_preserves_pointer_values_across_stores() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let expanded =
-        expand_c_claim_source_by_label(&source, &sources, "replace_node_with_children.contract")
-            .expect("the source pointer values must remain framed across the helper stores");
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
-        .expect("the original replacement must cold verify after expansion");
+    let claim = "replace_node_with_children.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .expect("the source pointer values must remain framed across the helper stores");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the original replacement must cold verify after expansion");
     let wrong_identity = source.replacen(
         "ensures u.model == rb_substitute(old(t.model), new_node);",
         "ensures u.model == rb_substitute(old(t.model), victim);",

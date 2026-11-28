@@ -32,7 +32,7 @@ int Shape::twice(int scale) const {
     ensures 0 < result;
 }
 int Square::area(int scale) const {
-    ensures to_integer(result) == to_integer(scale + 1);
+    ensures exact_result: to_integer(result) == to_integer(scale + 1);
 }
 int Tile::area(int scale) const {
 }
@@ -47,5 +47,5 @@ int caller(const Square& square, int scale) {
 ```
 
 ```expect
-fail: Tile::area.interface_ensures_0
+fail: inherited clause `exact_result` from `Square::area` at cpp_virtual_override_keeps_the_inherited_guarantee.md:35
 ```

@@ -1889,6 +1889,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::RuntimeError::ThinPointerRequired { operation } => {
             crate::kernel::RuntimeError::thin_pointer_required_message(operation)
         }
+        crate::kernel::RuntimeError::SliceTypeMismatch { operation } => {
+            crate::kernel::RuntimeError::slice_type_mismatch_message(operation)
+        }
         crate::kernel::RuntimeError::UnsupportedPointerSubtractionOffsets
         | crate::kernel::RuntimeError::UnsupportedPointerComparisonOffsets
         | crate::kernel::RuntimeError::UnsupportedFunctionPointerOffset => error.kernel_summary(),
@@ -6619,6 +6622,12 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
         ProgramExpression::EnumIs { value, variant } => {
             format!("{} is {variant}", describe_program_expression(value))
         }
+        ProgramExpression::SliceLength(_)
+        | ProgramExpression::SliceData(_)
+        | ProgramExpression::SliceFromRawParts { .. } => describe_contract_expression(
+            &crate::surface::proof::raise_program_slice_operation(expression)
+                .expect("a program slice operation raises"),
+        ),
         ProgramExpression::FloatClassification {
             expression,
             classification,
@@ -9309,5 +9318,44 @@ mod wide_pointer_description_tests {
         let refusal =
             crate::kernel::RuntimeError::thin_pointer_required_message("pointer arithmetic");
         assert!(refusal.contains("`.as_ptr()`"), "{refusal}");
+    }
+
+    /// The program slice operations (`design/rust-slice-values.md`, step 3a)
+    /// raise as the methods `s.len()` and `s.as_ptr()` of their operand,
+    /// resolved by its type, and as the library's `from_raw_parts`; a
+    /// construction shaped like a subslice is not spelled `s[a..b]`, whose
+    /// lowering owes bounds the program construction does not.
+    #[test]
+    fn program_slice_operations_raise_as_methods_and_construction() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |name: &str| Box::new(ProgramExpression::Variable(name.into()));
+        let length = ProgramExpression::SliceLength(variable("s"));
+        let data = ProgramExpression::SliceData(variable("s"));
+        assert!(matches!(
+            crate::surface::proof::raise_program_slice_operation(&length),
+            Some(SyntaxTerm::MethodCall { ref method, ref arguments, .. })
+                if method == "len" && arguments.is_empty()
+        ));
+        assert_eq!(describe_program_expression(&length), "s.len()");
+        assert_eq!(describe_program_expression(&data), "s.as_ptr()");
+        let start = variable("a");
+        let subslice_shape = ProgramExpression::SliceFromRawParts {
+            data: Box::new(ProgramExpression::Add(Box::new(data), start.clone())),
+            count: Box::new(ProgramExpression::Subtract(variable("b"), start)),
+        };
+        let raised = crate::surface::proof::raise_program_slice_operation(&subslice_shape);
+        assert!(matches!(
+            raised,
+            Some(SyntaxTerm::Call { ref name, ref arguments })
+                if name == crate::surface::RUST_SLICE_FROM_RAW_PARTS && arguments.len() == 2
+        ));
+        let described = describe_program_expression(&subslice_shape);
+        assert!(
+            described == "click::rust::slice::from_raw_parts((s.as_ptr() + a), (b - a))",
+            "{described}"
+        );
+        assert!(!described.contains('['), "{described}");
+        let refusal = crate::kernel::RuntimeError::slice_type_mismatch_message("`.len()`");
+        assert!(refusal.contains("takes a slice"), "{refusal}");
     }
 }

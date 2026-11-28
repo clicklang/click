@@ -1982,7 +1982,9 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
             }
             | ProgramExpression::EnumIs {
                 value: expression, ..
-            } => pending.push((expression, false)),
+            }
+            | ProgramExpression::SliceLength(expression)
+            | ProgramExpression::SliceData(expression) => pending.push((expression, false)),
             ProgramExpression::EnumConstruct { fields, .. } => {
                 pending.extend(fields.iter().map(|field| (field, false)))
             }
@@ -1996,7 +1998,11 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
             | ProgramExpression::Subobject { pointer, .. }
             | ProgramExpression::Not(pointer)
             | ProgramExpression::BitwiseNot(pointer) => pending.push((pointer, false)),
-            crate::kernel::binary_c_operation!(left, right) => {
+            crate::kernel::binary_c_operation!(left, right)
+            | ProgramExpression::SliceFromRawParts {
+                data: left,
+                count: right,
+            } => {
                 pending.push((left, false));
                 pending.push((right, false));
             }

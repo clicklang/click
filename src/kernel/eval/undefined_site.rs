@@ -199,6 +199,8 @@ fn unconditional_operands<'a>(
         | ProgramExpression::EnumIs {
             value: expression, ..
         }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression)
         | ProgramExpression::Not(expression)
         | ProgramExpression::BitwiseNot(expression)
         | ProgramExpression::Load(expression)
@@ -238,7 +240,11 @@ fn unconditional_operands<'a>(
         | ProgramExpression::BitwiseAnd(left, right)
         | ProgramExpression::BitwiseOr(left, right)
         | ProgramExpression::BitwiseXor(left, right)
-        | ProgramExpression::Index(left, right) => {
+        | ProgramExpression::Index(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             operands.push(left);
             operands.push(right);
         }

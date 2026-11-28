@@ -1652,7 +1652,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::SolveUsing(_)
-        | ProofTactic::NormalizeUsing(_)
         | ProofTactic::CloseBounds(_)) => {
             expand_declared_resource_tactic_with_propositions(tactic, resource_definitions)
         }
@@ -1984,12 +1983,6 @@ fn expand_declared_resource_tactic_with_propositions(
                 .collect::<Result<Vec<_>, _>>()?,
         })),
         ProofTactic::CloseBounds(premises) => Ok(ProofTactic::CloseBounds(
-            premises
-                .into_iter()
-                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
-                .collect::<Result<_, _>>()?,
-        )),
-        ProofTactic::NormalizeUsing(premises) => Ok(ProofTactic::NormalizeUsing(
             premises
                 .into_iter()
                 .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))

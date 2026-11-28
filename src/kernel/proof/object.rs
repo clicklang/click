@@ -66,7 +66,6 @@ pub(crate) struct ProofObject<L, O, E> {
 /// Borrowed authority that the focused goal is an execution frontier owning
 /// checked execution state. Only the kernel can construct this view.
 pub(crate) struct ProofExecutionView<'a, S> {
-    facts: &'a PureFactStore,
     execution: &'a ProofExecutionState<S>,
 }
 
@@ -106,6 +105,66 @@ impl PreparedLoopInvariantEdge {
     pub(crate) fn obligations(&self) -> &[crate::kernel::ProofObligation] {
         &self.obligations
     }
+}
+
+fn balanced_invariant_conjunction(mut members: Vec<Proposition>) -> Option<Proposition> {
+    while members.len() > 1 {
+        let mut level = Vec::with_capacity(members.len().div_ceil(2));
+        let mut pairs = members.into_iter();
+        while let Some(left) = pairs.next() {
+            level.push(match pairs.next() {
+                Some(right) => Proposition::And(Box::new(left), Box::new(right)),
+                None => left,
+            });
+        }
+        members = level;
+    }
+    members.pop()
+}
+
+/// Combine the obligation-guard prefix only when constructing the checked
+/// proof root. The executable loop keeps the original indexed obligations.
+fn group_wide_invariant_guards(
+    proposition: &Proposition,
+    introductions: &crate::kernel::LoweringIntroductions,
+) -> Option<(Proposition, Arc<crate::kernel::LoweringIntroductions>)> {
+    use crate::kernel::LoweringIntroduction::{ObligationGuard, PathFactGuard};
+
+    let leading_facts = introductions
+        .iter()
+        .take_while(|kind| **kind == PathFactGuard)
+        .count();
+    let guard_count = introductions[leading_facts..]
+        .iter()
+        .take_while(|kind| **kind == ObligationGuard)
+        .count();
+    if guard_count < 2 {
+        return None;
+    }
+    let mut body = proposition;
+    let mut heads = Vec::with_capacity(leading_facts + guard_count);
+    for _ in 0..(leading_facts + guard_count) {
+        let Proposition::Implies(antecedent, consequent) = body else {
+            return None;
+        };
+        heads.push(antecedent.as_ref());
+        body = consequent;
+    }
+    let mut guards = heads.split_off(leading_facts);
+    // The same antecedent can be used for every repeated guard.
+    guards.dedup();
+    let combined = balanced_invariant_conjunction(guards.into_iter().cloned().collect())?;
+    let goal = heads.into_iter().rev().fold(
+        Proposition::Implies(Box::new(combined), Box::new(body.clone())),
+        |body, fact| Proposition::Implies(Box::new(fact.clone()), Box::new(body)),
+    );
+    let adjusted = introductions[..leading_facts]
+        .iter()
+        .cloned()
+        .chain(std::iter::once(ObligationGuard))
+        .chain(introductions[leading_facts + guard_count..].iter().cloned())
+        .collect();
+    Some((goal, Arc::new(adjusted)))
 }
 
 #[derive(Clone)]
@@ -168,8 +227,6 @@ pub(crate) enum PropositionKnownContext {
 pub(crate) enum PropositionCloseError {
     NotProposition,
     Unavailable,
-    DoesNotNormalize,
-    ConditionalNormalization(super::fact_reasoning::ConditionalNormalizationError),
 
     ExpectedIntroduction(Proposition),
     IntegerFresheningExhausted,
@@ -209,10 +266,6 @@ pub(crate) enum PropositionIntroduction {
 }
 
 impl<'a, S> ProofExecutionView<'a, S> {
-    pub(crate) fn facts(&self) -> &'a PureFactStore {
-        self.facts
-    }
-
     pub(crate) fn execution(&self) -> &'a ProofExecutionState<S> {
         self.execution
     }
@@ -566,10 +619,7 @@ impl<L, P: Clone, O: Clone, S: Clone>
             return None;
         }
         let execution = branch.state.execution.as_deref()?;
-        Some(ProofExecutionView {
-            facts: &branch.state.facts,
-            execution,
-        })
+        Some(ProofExecutionView { execution })
     }
 
     pub(crate) fn finalization(&self) -> Option<ProofExecutionView<'_, S>> {
@@ -1202,15 +1252,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         .then(|| self.closed_focused())
     }
 
-    pub(crate) fn apply_normalize(&self) -> Result<Self, PropositionCloseError> {
-        let (goal, _) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        super::fact_reasoning::normalizes_context_free_leaf(goal.proposition())
-            .then(|| self.closed_focused())
-            .ok_or(PropositionCloseError::DoesNotNormalize)
-    }
-
     /// Allocate a logical choice witness outside every execution, load and
     /// binder producer's namespace. Facts reserve earlier witnesses; the
     /// current goal and source body can also name witnesses not yet facts.
@@ -1408,18 +1449,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 return Err(format!("selected bound {index} is not exactly available"));
             }
         }
-        Ok(self.closed_focused())
-    }
-
-    pub(crate) fn apply_normalize_using(
-        &self,
-        premises: &[Proposition],
-    ) -> Result<Self, PropositionCloseError> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        super::fact_reasoning::normalize_using_conditions(goal.proposition(), premises, facts)
-            .map_err(PropositionCloseError::ConditionalNormalization)?;
         Ok(self.closed_focused())
     }
 
@@ -2221,40 +2250,39 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         .map_err(|reason| {
             format!("could not read the loop's declared ranking measure: {reason}")
         })?;
-        let obligations = || edge.obligations.iter().chain(&ranking);
-        let mut members: Vec<_> = obligations()
-            .map(|obligation| obligation.proposition().clone())
-            .collect();
+        let wide = edge.obligations.len() + ranking.len() > 24;
+        let (members, introductions): (Vec<_>, Vec<_>) = edge
+            .obligations
+            .iter()
+            .chain(&ranking)
+            .map(|obligation| {
+                let introductions = obligation.shared_introductions();
+                if wide
+                    && let Some(introductions) = introductions
+                    && let Some((goal, adjusted)) =
+                        group_wide_invariant_guards(obligation.proposition(), introductions)
+                {
+                    return (goal, Some(adjusted));
+                }
+                (obligation.proposition().clone(), introductions.cloned())
+            })
+            .unzip();
         // Preserve the established shape of short bundles. Wide generated
         // bundles need logarithmic conjunction depth so their explicit
         // certificates fit the unchanged source parser's structural limit.
         // Pair adjacent members only: every obligation and its order remain.
-        let goal = if members.len() <= 24 {
+        let goal = if wide {
+            balanced_invariant_conjunction(members)
+        } else {
             members
                 .into_iter()
                 .rev()
                 .reduce(|right, left| Proposition::And(Box::new(left), Box::new(right)))
-        } else {
-            while members.len() > 1 {
-                let mut level = Vec::with_capacity(members.len().div_ceil(2));
-                let mut pairs = members.into_iter();
-                while let Some(left) = pairs.next() {
-                    level.push(match pairs.next() {
-                        Some(right) => Proposition::And(Box::new(left), Box::new(right)),
-                        None => left,
-                    });
-                }
-                members = level;
-            }
-            members.pop()
         }
         .unwrap_or(Proposition::condition_is(
             crate::kernel::OldConditionTerm::Constant(true),
             true,
         ));
-        let introductions = obligations()
-            .map(|obligation| obligation.shared_introductions().cloned())
-            .collect::<Vec<_>>();
         let display = presentation(&goal, &introductions);
         let root = Self::root(
             self.state.locals.clone(),
@@ -3748,7 +3776,6 @@ mod tests {
                 |_, _| (),
             )
             .unwrap();
-        assert!(body.apply_normalize().is_err());
         assert!(body.apply_known(PropositionKnownContext::Pure).is_err());
         assert!(
             frontier
@@ -3787,7 +3814,7 @@ mod tests {
             let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
                 ProofObject::root((), branch);
             let checked = proof
-                .apply_normalize()
+                .apply_known(PropositionKnownContext::Exact)
                 .ok()
                 .unwrap()
                 .completed_proposition()

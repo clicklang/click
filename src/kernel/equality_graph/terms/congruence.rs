@@ -1887,7 +1887,7 @@ impl TermClasses {
     fn bounds_node(&mut self, value: &crate::kernel::Pointer) -> u64 {
         let node = if let Some(bounds) = value.bounds() {
             let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectBounds));
-            let width = self.intern_int32(&bounds.width());
+            let width = self.intern_int32(bounds.width());
             let head = self.intern_node(Node::Apply(head, width));
             let start = self
                 .address(bounds.start().base.clone(), bounds.start().offset.clone())

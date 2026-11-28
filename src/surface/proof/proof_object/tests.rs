@@ -184,10 +184,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
-            ProofStep::NormalizeUsing(premises)
-            | ProofStep::CompatibilityNormalize(Some(premises)) => {
-                count += premises.len();
-            }
+            ProofStep::CloseBounds(premises) => count += premises.len(),
             ProofStep::ApplyTheorem(application) => count += application.arguments.len(),
             ProofStep::ApplyTheoremUsing {
                 application,
@@ -198,8 +195,6 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 premises,
             } => count += application.arguments.len() + premises.len(),
             ProofStep::Known
-            | ProofStep::Normalize
-            | ProofStep::CompatibilityNormalize(None)
             | ProofStep::Rewrite(_)
             | ProofStep::Intro
             | ProofStep::CloseUnreachable => {}
@@ -1219,13 +1214,13 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         .focus_branch(ids[0])
         .unwrap()
         .driver()
-        .apply_step(ProofStep::Normalize)
+        .apply_step(ProofStep::Known)
         .expect("the required guard remains a checked obligation");
     let joined = left
         .focus_branch(ids[1])
         .unwrap()
         .driver()
-        .apply_step(ProofStep::Normalize)
+        .apply_step(ProofStep::Known)
         .expect("the written body should retain its Surface spelling")
         .join_focused_both(&marker, split_id, ids)
         .expect("both checked children should join");
@@ -1240,7 +1235,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     let missing_guard = ProofCertificate::from_steps(vec![ProofStep::Both {
         conjuncts: [None, None],
         left_proof: Box::new(ProofCertificate::from_steps(Vec::new()).unwrap()),
-        right_proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
+        right_proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
     }])
     .unwrap();
     assert!(
@@ -1527,8 +1522,10 @@ fn proof_failure_preserves_ancestor_and_selected_lineage() {
     assert!(Arc::ptr_eq(&root.node, &fork.node));
 
     assert!(
-        fork.driver().apply_step(ProofStep::Normalize).is_err(),
-        "a symbolic comparison must not normalize to true"
+        fork.driver()
+            .apply_step(ProofStep::CloseBounds(Vec::new()))
+            .is_err(),
+        "the cited bounds do not establish the comparison"
     );
     assert!(!root.is_complete());
     assert!(root.certificate().steps().is_empty());
@@ -1724,7 +1721,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
 
     let scope = scope
         .driver()
-        .apply_step(ProofStep::Normalize)
+        .apply_step(ProofStep::Known)
         .expect("constant equality should normalize inside the body");
     let enclosing = scope.join().expect("completed body should close the scope");
     assert!(!enclosing.is_complete());
@@ -1738,7 +1735,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         &[
             ProofStep::Have {
                 proposition: proposition.clone(),
-                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
             },
             ProofStep::Known,
         ]
@@ -1763,7 +1760,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         .driver()
         .apply_step(ProofStep::Have {
             proposition: proposition.clone(),
-            proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
+            proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
         })
         .expect("an explicit Have step should use the owned checked scope");
     let complete = checked_have
@@ -1775,7 +1772,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         &[
             ProofStep::Have {
                 proposition,
-                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
             },
             ProofStep::Known,
         ]
@@ -1905,7 +1902,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
         .expect("recorded universal should consume through checked intro");
     let completed = introduced
         .driver()
-        .apply_step(ProofStep::Normalize)
+        .apply_step(ProofStep::Known)
         .expect("the renamed universal body should normalize");
     let enclosing = completed
         .join()
@@ -2228,7 +2225,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             .driver()
             .apply_step(ProofStep::Have {
                 proposition: proposition.clone(),
-                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
             })
             .expect("the explicit Have should check through its owned scope")
             .driver()
@@ -2244,9 +2241,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             &[
                 ProofStep::Have {
                     proposition: proposition.clone(),
-                    proof: Box::new(
-                        ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()
-                    ),
+                    proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
                 },
                 ProofStep::Known,
             ]
@@ -2302,7 +2297,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         operator: ComparisonOperator::Equal,
         right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(value))),
     };
-    let explicit = [ProofTactic::Normalize];
+    let explicit = [ProofTactic::Known];
     let mut prefix_baseline = None;
     for size in [8_u32, 16, 32, 64] {
         let root = make_root(size);
@@ -2379,12 +2374,12 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         .expect("nested have joins its parent");
     let outer = outer
         .driver()
-        .apply_step(ProofStep::Normalize)
+        .apply_step(ProofStep::Known)
         .expect("outer goal still closes independently");
     let joined = outer.join().expect("outer have joins execution");
     assert!(
         matches!(joined.certificate().steps(), [ProofStep::Have { proof, .. }]
-        if matches!(proof.steps(), [ProofStep::Have { .. }, ProofStep::Normalize]))
+        if matches!(proof.steps(), [ProofStep::Have { .. }, ProofStep::Known]))
     );
     assert!(root.certificate().steps().is_empty());
 }
@@ -3072,7 +3067,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             scope.clone().join().is_err(),
             "an unfinished entry cannot publish its guard"
         );
-        let checked_scope = scope.driver().apply_step(ProofStep::Normalize).unwrap();
+        let checked_scope = scope.driver().apply_step(ProofStep::Known).unwrap();
         let completion = checked_scope.completed_loop_entry_goal().unwrap();
         assert!(
             completion
@@ -3108,7 +3103,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             assert_eq!(scope.goal(), Some(&entry_kernel));
             phase = scope
                 .driver()
-                .apply_step(ProofStep::Normalize)
+                .apply_step(ProofStep::Known)
                 .unwrap()
                 .join()
                 .unwrap();
@@ -3123,7 +3118,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             .open_have(proposition.clone())
             .expect("a fixed-state proof context should open a checked have scope")
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .expect("the first scope should prove the concrete equality")
             .join()
             .expect("a completed fixed-state scope should publish its fact");
@@ -3148,7 +3143,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             [
                 ProofStep::Have { proof: first, .. },
                 ProofStep::Have { proof: second, .. }
-            ] if first.steps() == [ProofStep::Normalize]
+            ] if first.steps() == [ProofStep::Known]
                 && second.steps() == [ProofStep::Known]
         ));
         let completed = second
@@ -3315,7 +3310,7 @@ fn execution_frontier_rejects_proposition_closers_transactionally() {
     assert!(root.goal().is_none());
     assert!(root.state.shares_state_with(&fork.state));
     assert!(Arc::ptr_eq(&root.node, &fork.node));
-    for closer in [ProofStep::Known, ProofStep::Normalize] {
+    for closer in [ProofStep::Known, ProofStep::CloseBounds(Vec::new())] {
         let error = fork
             .driver()
             .apply_step(closer)
@@ -3429,12 +3424,12 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         assert!(!refined.is_complete());
         let completed = refined
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .expect("the instantiated constant equality should normalize");
         assert!(completed.is_complete());
         assert_eq!(
             completed.certificate().steps(),
-            &[ProofStep::Witness(witness.clone()), ProofStep::Normalize,]
+            &[ProofStep::Witness(witness.clone()), ProofStep::Known,]
         );
         assert!(root.certificate().steps().is_empty());
     }
@@ -3926,12 +3921,12 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         assert!(!rewritten.is_complete());
         let complete = rewritten
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .expect("the rewritten constant equality should normalize");
         assert!(complete.is_complete());
         assert_eq!(
             complete.certificate().steps(),
-            &[step.clone(), ProofStep::Normalize]
+            &[step.clone(), ProofStep::Known]
         );
         let alternative = root
             .driver()
@@ -11114,7 +11109,10 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
                 },
             )
             .unwrap();
-        let completed = body.apply_normalize().ok().unwrap();
+        let completed = body
+            .apply_known(crate::kernel::proof::PropositionKnownContext::Exact)
+            .ok()
+            .unwrap();
         let retained =
             root.with_kernel_state(root.state.retain_invariant_body(scope, &completed).unwrap());
         let retained_core = &retained.execution().unwrap().core;
@@ -13843,7 +13841,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 lexical_bindings: None,
                 tactic_index: 0,
                 source_index: 0,
-                reads_deferred_obtain: false,
+                reads_deferred_binding: false,
                 tactic: PostExecutionTactic::If {
                     condition: unknown.clone(),
                     disjunction: false,
@@ -14075,7 +14073,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             &[],
         );
         for root in [root, fixed] {
-            let completed = root.driver().apply_step(ProofStep::Normalize).unwrap();
+            let completed = root.driver().apply_step(ProofStep::Known).unwrap();
             take_checked_have_operations();
             let before = fact_node_allocations();
             let retained = root.retain_completed_goal(&completed, &[]).unwrap();
@@ -14089,7 +14087,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             assert!(retained.facts().contains(&goal));
             assert!(root.certificate().steps().is_empty());
             assert!(
-                matches!(retained.certificate().steps(), [ProofStep::Have { proof, .. }] if matches!(proof.steps(), [ProofStep::Normalize]))
+                matches!(retained.certificate().steps(), [ProofStep::Have { proof, .. }] if matches!(proof.steps(), [ProofStep::Known]))
             );
             retained
                 .driver()
@@ -14107,7 +14105,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
                 &theorems,
             )
             .driver()
-            .apply_step(ProofStep::Normalize)
+            .apply_step(ProofStep::Known)
             .unwrap();
             assert!(root.retain_completed_goal(&other, &[]).is_err());
             assert!(root.retain_completed_goal(&root, &[]).is_err());
@@ -14153,13 +14151,13 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
         &[],
     );
     let retained = root.clone();
-    let script = [ProofTactic::Normalize, ProofTactic::Known];
+    let script = [ProofTactic::CloseBounds(Vec::new()), ProofTactic::Known];
     let error = root
         .driver()
         .try_authoritative_linear_script(&script)
         .err()
-        .expect("a named normalization must fail even though known could close the goal");
-    assert!(error.message().contains("`normalize`"), "{error:?}");
+        .expect("the written bound check must fail even though known could close the goal");
+    assert!(error.message().contains("checked bound rule"), "{error:?}");
     assert!(error.message().contains("tactic 1"), "{error:?}");
     assert!(
         attempt::candidate_outcome(root.driver().try_authoritative_linear_script(&script))
@@ -14297,7 +14295,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
                     .open_have(proposition)
                     .unwrap()
                     .driver()
-                    .try_authoritative_linear_script(&[ProofTactic::Normalize])
+                    .try_authoritative_linear_script(&[ProofTactic::Known])
                     .unwrap()
                     .unwrap()
                     .join()

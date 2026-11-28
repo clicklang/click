@@ -9858,7 +9858,11 @@ pub(super) fn collect_address_taken_in_expression(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => collect_address_taken_in_expression(expression, names),
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
+            collect_address_taken_in_expression(expression, names)
+        }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_address_taken_in_expression(field, names);
@@ -9874,7 +9878,11 @@ pub(super) fn collect_address_taken_in_expression(
         ProgramExpression::TypedLoad { pointer, .. } => {
             collect_address_taken_in_expression(pointer, names)
         }
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_address_taken_in_expression(left, names);
             collect_address_taken_in_expression(right, names);
         }
@@ -9914,7 +9922,9 @@ pub(super) fn collect_variable_names(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => collect_variable_names(expression, names),
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => collect_variable_names(expression, names),
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_variable_names(field, names);
@@ -9927,7 +9937,11 @@ pub(super) fn collect_variable_names(
         | ProgramExpression::Not(inner)
         | ProgramExpression::Load(inner) => collect_variable_names(inner, names),
         ProgramExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_variable_names(left, names);
             collect_variable_names(right, names);
         }
@@ -10053,7 +10067,7 @@ fn range_bounds_refusal(
     // The domain witness can use another equal pointer's coordinates.
     // Resolve only the checked address; the clause's base value stays intact.
     let respelled = assumptions
-        .pointer_at_known_base(base.address(), &bounds.start())
+        .pointer_at_known_base(base.address(), bounds.start())
         .filter(|respelled| {
             respelled != base.address()
                 && assumptions.pointers_known_equal(base.address(), respelled)
@@ -10063,13 +10077,13 @@ fn range_bounds_refusal(
         .and_then(|respelled| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
                 respelled,
-                &bounds.start(),
+                bounds.start(),
             )
         })
         .or_else(|| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
                 base.address(),
-                &bounds.start(),
+                bounds.start(),
             )
         })
     else {

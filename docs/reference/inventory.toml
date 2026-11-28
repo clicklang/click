@@ -1661,10 +1661,6 @@ id = "cli.expand.--claim"
 path = "reference/cli/expand.md#options"
 
 [[item]]
-id = "cli.expand.--check-normalize-removal"
-path = "reference/cli/expand.md#options"
-
-[[item]]
 id = "cli.expand.--help"
 path = "reference/cli/expand.md#options"
 
@@ -4216,6 +4212,10 @@ path = "reference/library/index.md#stdiodecimal_digit_power_nonzero"
 [[item]]
 id = "library.theorem.stdio::decimal_digit_of_length"
 path = "reference/library/index.md#stdiodecimal_digit_of_length"
+
+[[item]]
+id = "library.theorem.stdio::decimal_remainder_byte_lower_bound"
+path = "reference/library/index.md#stdiodecimal_remainder_byte_lower_bound"
 
 [[item]]
 id = "library.theorem.stdio::decimal_digit_lower_bound"

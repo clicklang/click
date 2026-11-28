@@ -146,6 +146,12 @@ fn substitute_program_expression_variables(
             value: unary(value),
             variant: variant.clone(),
         },
+        SliceLength(slice) => SliceLength(unary(slice)),
+        SliceData(slice) => SliceData(unary(slice)),
+        SliceFromRawParts { data, count } => {
+            let (data, count) = binary(data, count);
+            SliceFromRawParts { data, count }
+        }
         Ternary {
             condition,
             then_branch,
@@ -1244,7 +1250,9 @@ fn expression_address_taken_locals(
         }
         | EnumIs {
             value: expression, ..
-        } => inner(expression),
+        }
+        | SliceLength(expression)
+        | SliceData(expression) => inner(expression),
         EnumConstruct { fields, .. } => {
             for field in fields {
                 inner(field);
@@ -1290,7 +1298,11 @@ fn expression_address_taken_locals(
         | BitwiseAnd(left, right)
         | BitwiseOr(left, right)
         | BitwiseXor(left, right)
-        | Index(left, right) => {
+        | Index(left, right)
+        | SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             inner(left);
             inner(right);
         }
@@ -1317,6 +1329,8 @@ pub(in crate::kernel) fn collect_program_expression_variables(
         | EnumIs {
             value: expression, ..
         }
+        | SliceLength(expression)
+        | SliceData(expression)
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
@@ -1364,7 +1378,11 @@ pub(in crate::kernel) fn collect_program_expression_variables(
         | BitwiseAnd(left, right)
         | BitwiseOr(left, right)
         | BitwiseXor(left, right)
-        | Index(left, right) => {
+        | Index(left, right)
+        | SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             collect_program_expression_variables(left, names);
             collect_program_expression_variables(right, names);
         }
@@ -2508,6 +2526,13 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
             termination_measure_display(base),
             termination_measure_display(index)
         ),
+        SliceLength(slice) => format!("{}.len()", termination_measure_display(slice)),
+        SliceData(slice) => format!("{}.as_ptr()", termination_measure_display(slice)),
+        SliceFromRawParts { data, count } => format!(
+            "slice::from_raw_parts({}, {})",
+            termination_measure_display(data),
+            termination_measure_display(count)
+        ),
         Cast { expression, .. } => termination_measure_display(expression),
         Ternary { .. }
         | FloatNegate(_)
@@ -3209,6 +3234,11 @@ fn ranking_measure_term_unfolded(
             "termination measures may only use scalar int32 or unsigned integer expressions".into(),
         ),
         Load(_) | TypedLoad { .. } | Index(_, _) => ranking_measure_read(expression, state, reader),
+        // A slice's length is a `u64` the evaluator reads in place.
+        SliceLength(_) => ranking_measure_read(expression, state, reader),
+        SliceData(_) | SliceFromRawParts { .. } => Err(
+            "termination measures may only use scalar int32 or unsigned integer expressions".into(),
+        ),
         LessThan(_, _)
         | LessEqual(_, _)
         | GreaterThan(_, _)
@@ -4495,6 +4525,8 @@ fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTr
         | EnumIs {
             value: expression, ..
         }
+        | SliceLength(expression)
+        | SliceData(expression)
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
@@ -4546,7 +4578,11 @@ fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTr
         | BitwiseAnd(left, right)
         | BitwiseOr(left, right)
         | BitwiseXor(left, right)
-        | Index(left, right) => {
+        | Index(left, right)
+        | SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             expression_function_addresses(left, taken);
             expression_function_addresses(right, taken);
         }

@@ -63,7 +63,7 @@ fn outcome_case_region_in_scope<'a>(
     scope: Option<usize>,
 ) -> Option<usize> {
     for tactic in tactics.iter().rev() {
-        if tactic.reads_deferred_obtain {
+        if tactic.reads_deferred_binding {
             continue;
         }
         match &tactic.tactic {

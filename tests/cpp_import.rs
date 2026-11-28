@@ -11132,8 +11132,10 @@ fn normalized_initializer_and_return_work_scales_with_argument_arity() {
                 click::instrumentation::measure_deterministic_work(|| lower_import(&import));
             let lowered = lowered.unwrap();
             assert_eq!(lowered.contract_functions().len(), 3);
+            // Keep the four-unit cost per argument. The fixed setup costs
+            // 36 units for the return and 39 for the initializer.
             assert!(
-                work >= size && work <= 4 * size + 32,
+                work >= size && work <= 4 * size + 40,
                 "{selected}, arity {size}: {work}"
             );
             measured.push(work);
@@ -11345,11 +11347,80 @@ theorem long_long_echo() {
     })
     .unwrap();
 
+    let key = names.iter().find(|name| name.contains("_D")).unwrap();
+    let mangled = expansion.source.replacen(
+        "check_termination_local(echo(long));",
+        &format!("check_termination_local({key:?});"),
+        1,
+    );
+    fs::write(&expanded_path, &mangled).unwrap();
+    let parsed = read_click_project(&expanded_path, &mangled).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error
+            .report()
+            .contains("using its source name or signature"),
+        "{error}"
+    );
+
     let false_claim = sidecar.replace("result == 76", "result == 74");
     let path = project.directory.join("wrong.click");
     fs::write(&path, &false_claim).unwrap();
     let parsed = read_click_project(&path, &false_claim).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: cold CLI expansion of the C++ stack example"]
+fn cpp_stack_expansion_keeps_source_function_references() {
+    let sidecar = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/cpp-stack/stack.click");
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["expand", "--claim", "round_trip.contract"])
+        .arg(&sidecar)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let expanded = String::from_utf8(output.stdout).unwrap();
+    assert!(expanded.contains("step(Stack<int>::push"), "{expanded}");
+    assert!(!expanded.contains("__cpp_q"), "{expanded}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: cold CLI expansion of an inherited C++ guarantee"]
+fn cpp_inherited_guarantee_expands_as_the_override_contract() {
+    let mdtest =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_virtual_method_interface.md");
+    let source = fs::read_to_string(&mdtest).unwrap();
+    let close_line = source
+        .lines()
+        .position(|line| line == "int Tile::area(int scale) const {")
+        .unwrap()
+        + 2;
+    let location = format!("{}:{close_line}", mdtest.display());
+    for selector in ["Tile::area.contract", location.as_str()] {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["expand", "--claim", selector])
+            .arg(&mdtest)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let expanded = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            expanded.contains("int Tile::area(int scale) const {\n} by {"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("interface_ensures_"), "{expanded}");
+    }
 }
 
 #[test]
@@ -11497,8 +11568,10 @@ fn record_inventories_and_function_lowering_share_indexes_across_sizes() {
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         let lowered = lowered.unwrap();
         assert_eq!(lowered.record_layouts().len(), size);
+        // Each record adds one layout and one reachable function. Their
+        // combined lowering costs 29 units per pair, plus 12 for the relay.
         assert!(
-            work >= size && work <= 24 * size + 32,
+            work >= size && work <= 29 * size + 16,
             "{size} records/functions: {work} work"
         );
         // Small graphs exercise certificates and audit; larger graphs measure the

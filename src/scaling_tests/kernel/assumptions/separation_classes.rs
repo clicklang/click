@@ -12,7 +12,7 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
             let node = pointer(9_884_002);
             let program = Address::new(
                 AddressBase::ExternalArgument,
-                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_884_003)), 4).into(),
+                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_884_003)), 4),
             );
             let separation = |left, right| Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(

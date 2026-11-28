@@ -317,6 +317,17 @@ pub(crate) fn inherent_method_name(
     }
 }
 
+/// The encoded receiver and method of a qualified impl item, after the
+/// module's path segments. An inherent method lookup includes the receiver.
+pub(crate) fn impl_item_suffix(name: &str) -> Option<&str> {
+    let mut rest = name.strip_prefix(PREFIX)?;
+    while let Some(segment) = rest.strip_prefix("_I") {
+        let (length, tail) = segment.split_once('_')?;
+        rest = tail.get(length.parse::<usize>().ok()?..)?;
+    }
+    rest.starts_with("_T").then_some(rest)
+}
+
 /// A method's name as written in an `impl` block, `compute` or
 /// `compute::LIMIT`: the method's own name, then each further segment as
 /// the importer writes a path segment.

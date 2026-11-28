@@ -533,7 +533,6 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                     &(driver_proof.body),
                     true,
                 )?
-            && !checkable.ends_in_empty_normalize_using()
         {
             body = checkable;
         }

@@ -77,174 +77,6 @@ fn normalize(
     interface
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn interface(
-        parameter: &str,
-        local: impl Into<BindingName>,
-        body: impl Into<BindingName>,
-    ) -> ProgramFunction {
-        program_function(
-            ProgramType::Void,
-            "interface",
-            vec![program_parameter(parameter, ProgramType::Int32)],
-            ProgramStatement::Skip,
-        )
-        .with_contract(
-            vec![],
-            vec![SpecProposition::Comparison {
-                left: SpecExpression::Let {
-                    name: local.into(),
-                    value: Box::new(SpecExpression::ProgramExpression(
-                        crate::kernel::program_expression::variable(parameter),
-                    )),
-                    body: Box::new(SpecExpression::ProgramExpression(
-                        crate::kernel::program_expression::variable(body),
-                    )),
-                },
-                operator: ComparisonOperator::Equal,
-                right: SpecExpression::ProgramExpression(
-                    crate::kernel::program_expression::variable(parameter),
-                ),
-            }],
-            vec![],
-            vec![],
-            true,
-        )
-    }
-
-    #[test]
-    fn lexical_identity_preserves_shadowing_and_free_names() {
-        let target = FunctionContract::new("Target", interface("x", "x", "x")).unwrap();
-        assert!(same_interface(&target, &interface("p", "q", "q")));
-        assert!(!same_interface(&target, &interface("p", "q", "p")));
-        assert!(!same_interface(&target, &interface("p", "q", "bound:1")));
-        let free = FunctionContract::new("Free", interface("p", "q", "global")).unwrap();
-        assert!(same_interface(&free, &interface("x", "y", "global")));
-        assert!(!same_interface(&free, &interface("x", "y", "different")));
-    }
-
-    #[test]
-    fn lexical_identity_distinguishes_free_and_bound_generated_ids() {
-        let original = GeneratedBinderId::fresh().binding_name();
-        let renamed = GeneratedBinderId::fresh().binding_name();
-        let bound =
-            FunctionContract::new("Bound", interface("x", original.clone(), original.clone()))
-                .unwrap();
-        assert!(same_interface(
-            &bound,
-            &interface("y", renamed.clone(), renamed.clone())
-        ));
-        assert!(!same_interface(
-            &bound,
-            &interface("y", renamed.clone(), original.clone())
-        ));
-
-        let free =
-            FunctionContract::new("Free", interface("x", "local", original.clone())).unwrap();
-        assert!(same_interface(&free, &interface("y", "renamed", original)));
-        assert!(!same_interface(&free, &interface("y", "renamed", renamed)));
-    }
-
-    #[test]
-    fn integer_conversions_preserve_lexical_interface_identity() {
-        let interface = |parameter: &str, referenced: &str| {
-            let observation =
-                SpecIntegerExpression::FromMachine(Box::new(SpecExpression::IntegerToMachine {
-                    value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                        SpecExpression::ProgramExpression(
-                            crate::kernel::program_expression::variable(referenced),
-                        ),
-                    ))),
-                    destination: MachineIntegerType::Int32,
-                }));
-            program_function(
-                ProgramType::Void,
-                "interface",
-                vec![program_parameter(parameter, ProgramType::Int32)],
-                ProgramStatement::Skip,
-            )
-            .with_contract(
-                vec![],
-                vec![SpecProposition::IntegerComparison {
-                    left: observation,
-                    operator: IntegerComparisonOperator::Equal,
-                    right: SpecIntegerExpression::Term(IntegerTerm::constant_i64(0)),
-                }],
-                vec![],
-                vec![],
-                true,
-            )
-        };
-        let target = FunctionContract::new("Target", interface("x", "x")).unwrap();
-        assert!(same_interface(&target, &interface("y", "y")));
-        assert!(!same_interface(&target, &interface("y", "x")));
-    }
-
-    #[test]
-    fn interface_visits_scale_with_explicit_specification_nodes() {
-        for size in [1, 16, 64, 256] {
-            let mut canonical_binders = Vec::new();
-            let mut names = Names::new(&mut canonical_binders);
-            for index in 0..size {
-                names.bind_program(&mut BindingName::from(format!("argument{index}")));
-            }
-            for index in 0..size {
-                let mut proposition = SpecProposition::Comparison {
-                    left: SpecExpression::CountedResourceCount {
-                        name: "Token".into(),
-                        arguments: vec![Some(SpecExpression::ProgramExpression(
-                            crate::kernel::program_expression::variable(format!("argument{index}")),
-                        ))],
-                    },
-                    operator: ComparisonOperator::Equal,
-                    right: SpecExpression::Value(int32(1)),
-                };
-                names.proposition(&mut proposition);
-            }
-            assert_eq!(names.visits, 5 * size);
-        }
-    }
-
-    #[test]
-    fn lexical_identity_preserves_resource_projection_identity_and_state() {
-        let interface = |identity, at_entry| {
-            program_function(
-                ProgramType::Void,
-                "interface",
-                vec![],
-                ProgramStatement::Skip,
-            )
-            .with_contract(
-                vec![],
-                vec![SpecProposition::Comparison {
-                    left: SpecExpression::ResourceField {
-                        projection: ResourceFieldProjection {
-                            identity: InstanceId::from_variable(Variable(identity)).into(),
-                            children: vec![],
-                            field_name: None,
-                            field_index: 0,
-                            at_entry,
-                        },
-                        program_type: ProgramType::Int32,
-                    },
-                    operator: ComparisonOperator::Equal,
-                    right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
-                }],
-                vec![],
-                vec![],
-                true,
-            )
-        };
-        let target = FunctionContract::new("Target", interface(1, false)).unwrap();
-        assert!(same_interface(&target, &interface(1, false)));
-        assert!(!same_interface(&target, &interface(2, false)));
-        assert!(!same_interface(&target, &interface(1, true)));
-    }
-}
-
 struct Names<'a> {
     canonical_binders: &'a mut Vec<GeneratedBinderId>,
     bindings: BTreeMap<BindingName, BindingName>,
@@ -328,6 +160,8 @@ impl<'a> Names<'a> {
             | EnumIs {
                 value: expression, ..
             }
+            | SliceLength(expression)
+            | SliceData(expression)
             | AddressOf(expression)
             | CheckedObjectAddress(expression)
             | Not(expression)
@@ -367,7 +201,8 @@ impl<'a> Names<'a> {
             | BitwiseAnd(a, b)
             | BitwiseOr(a, b)
             | BitwiseXor(a, b)
-            | Index(a, b) => {
+            | Index(a, b)
+            | SliceFromRawParts { data: a, count: b } => {
                 self.c(a);
                 self.c(b);
             }
@@ -771,5 +606,173 @@ impl<'a> Names<'a> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn interface(
+        parameter: &str,
+        local: impl Into<BindingName>,
+        body: impl Into<BindingName>,
+    ) -> ProgramFunction {
+        program_function(
+            ProgramType::Void,
+            "interface",
+            vec![program_parameter(parameter, ProgramType::Int32)],
+            ProgramStatement::Skip,
+        )
+        .with_contract(
+            vec![],
+            vec![SpecProposition::Comparison {
+                left: SpecExpression::Let {
+                    name: local.into(),
+                    value: Box::new(SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(parameter),
+                    )),
+                    body: Box::new(SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(body),
+                    )),
+                },
+                operator: ComparisonOperator::Equal,
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable(parameter),
+                ),
+            }],
+            vec![],
+            vec![],
+            true,
+        )
+    }
+
+    #[test]
+    fn lexical_identity_preserves_shadowing_and_free_names() {
+        let target = FunctionContract::new("Target", interface("x", "x", "x")).unwrap();
+        assert!(same_interface(&target, &interface("p", "q", "q")));
+        assert!(!same_interface(&target, &interface("p", "q", "p")));
+        assert!(!same_interface(&target, &interface("p", "q", "bound:1")));
+        let free = FunctionContract::new("Free", interface("p", "q", "global")).unwrap();
+        assert!(same_interface(&free, &interface("x", "y", "global")));
+        assert!(!same_interface(&free, &interface("x", "y", "different")));
+    }
+
+    #[test]
+    fn lexical_identity_distinguishes_free_and_bound_generated_ids() {
+        let original = GeneratedBinderId::fresh().binding_name();
+        let renamed = GeneratedBinderId::fresh().binding_name();
+        let bound =
+            FunctionContract::new("Bound", interface("x", original.clone(), original.clone()))
+                .unwrap();
+        assert!(same_interface(
+            &bound,
+            &interface("y", renamed.clone(), renamed.clone())
+        ));
+        assert!(!same_interface(
+            &bound,
+            &interface("y", renamed.clone(), original.clone())
+        ));
+
+        let free =
+            FunctionContract::new("Free", interface("x", "local", original.clone())).unwrap();
+        assert!(same_interface(&free, &interface("y", "renamed", original)));
+        assert!(!same_interface(&free, &interface("y", "renamed", renamed)));
+    }
+
+    #[test]
+    fn integer_conversions_preserve_lexical_interface_identity() {
+        let interface = |parameter: &str, referenced: &str| {
+            let observation =
+                SpecIntegerExpression::FromMachine(Box::new(SpecExpression::IntegerToMachine {
+                    value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
+                        SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable(referenced),
+                        ),
+                    ))),
+                    destination: MachineIntegerType::Int32,
+                }));
+            program_function(
+                ProgramType::Void,
+                "interface",
+                vec![program_parameter(parameter, ProgramType::Int32)],
+                ProgramStatement::Skip,
+            )
+            .with_contract(
+                vec![],
+                vec![SpecProposition::IntegerComparison {
+                    left: observation,
+                    operator: IntegerComparisonOperator::Equal,
+                    right: SpecIntegerExpression::Term(IntegerTerm::constant_i64(0)),
+                }],
+                vec![],
+                vec![],
+                true,
+            )
+        };
+        let target = FunctionContract::new("Target", interface("x", "x")).unwrap();
+        assert!(same_interface(&target, &interface("y", "y")));
+        assert!(!same_interface(&target, &interface("y", "x")));
+    }
+
+    #[test]
+    fn interface_visits_scale_with_explicit_specification_nodes() {
+        for size in [1, 16, 64, 256] {
+            let mut canonical_binders = Vec::new();
+            let mut names = Names::new(&mut canonical_binders);
+            for index in 0..size {
+                names.bind_program(&mut BindingName::from(format!("argument{index}")));
+            }
+            for index in 0..size {
+                let mut proposition = SpecProposition::Comparison {
+                    left: SpecExpression::CountedResourceCount {
+                        name: "Token".into(),
+                        arguments: vec![Some(SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable(format!("argument{index}")),
+                        ))],
+                    },
+                    operator: ComparisonOperator::Equal,
+                    right: SpecExpression::Value(int32(1)),
+                };
+                names.proposition(&mut proposition);
+            }
+            assert_eq!(names.visits, 5 * size);
+        }
+    }
+
+    #[test]
+    fn lexical_identity_preserves_resource_projection_identity_and_state() {
+        let interface = |identity, at_entry| {
+            program_function(
+                ProgramType::Void,
+                "interface",
+                vec![],
+                ProgramStatement::Skip,
+            )
+            .with_contract(
+                vec![],
+                vec![SpecProposition::Comparison {
+                    left: SpecExpression::ResourceField {
+                        projection: ResourceFieldProjection {
+                            identity: InstanceId::from_variable(Variable(identity)).into(),
+                            children: vec![],
+                            field_name: None,
+                            field_index: 0,
+                            at_entry,
+                        },
+                        program_type: ProgramType::Int32,
+                    },
+                    operator: ComparisonOperator::Equal,
+                    right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
+                }],
+                vec![],
+                vec![],
+                true,
+            )
+        };
+        let target = FunctionContract::new("Target", interface(1, false)).unwrap();
+        assert!(same_interface(&target, &interface(1, false)));
+        assert!(!same_interface(&target, &interface(2, false)));
+        assert!(!same_interface(&target, &interface(1, true)));
     }
 }

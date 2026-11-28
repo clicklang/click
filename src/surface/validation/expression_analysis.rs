@@ -34,7 +34,11 @@ pub(in crate::surface) fn program_expression_uses_variable(
         }
         | ProgramExpression::EnumIs {
             value: expression, ..
-        } => program_expression_uses_variable(expression, variable),
+        }
+        | ProgramExpression::SliceLength(expression)
+        | ProgramExpression::SliceData(expression) => {
+            program_expression_uses_variable(expression, variable)
+        }
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .any(|field| program_expression_uses_variable(field, variable)),
@@ -64,7 +68,11 @@ pub(in crate::surface) fn program_expression_uses_variable(
             pointer: expression,
             ..
         } => program_expression_uses_variable(expression, variable),
-        crate::kernel::binary_c_expression!(left, right) => {
+        crate::kernel::binary_c_expression!(left, right)
+        | ProgramExpression::SliceFromRawParts {
+            data: left,
+            count: right,
+        } => {
             program_expression_uses_variable(left, variable)
                 || program_expression_uses_variable(right, variable)
         }

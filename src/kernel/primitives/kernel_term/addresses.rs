@@ -339,6 +339,10 @@ impl Hash for AddressBlock {
 
 /// An address's block and displacement, read through [`Address`] (and
 /// [`SharedAddress`]); never a value of its own.
+#[expect(
+    clippy::manual_non_exhaustive,
+    reason = "only the defining module may construct the address handle parts"
+)]
 pub struct AddressParts {
     pub base: AddressBase,
     pub offset: AddressOffset,
@@ -763,6 +767,17 @@ mod tests {
                 roots.map(crate::kernel::primitives::integer::observation_identity::normalize);
             assert_eq!(observations[0], observations[1]);
             for (term, (name, ty)) in stored.iter().zip(declarations) {
+                let fact = crate::kernel::Proposition::condition_is(term.clone(), true);
+                let pointers = crate::kernel::proof::term_rewrite::proposition_pointer_terms(&fact);
+                let [local, right] = pointers.as_slice() else {
+                    panic!("expected both address equality operands");
+                };
+                assert_eq!(right, &other);
+                let AddressBase::AutomaticLocal { binding, .. } = &local.base else {
+                    panic!("expected local block");
+                };
+                assert_eq!(binding.spelling(), Some(name));
+                assert_eq!(binding.program_type(), Some(ty));
                 let exported = KernelTermExport::condition(term.root().unwrap()).unwrap();
                 for written in [term.old_form(), &exported] {
                     let OldConditionTerm::AddressEqual(local, _) = written else {

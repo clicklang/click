@@ -275,17 +275,6 @@ pub fn expand_c_claim_source(
     })
 }
 
-// The proof checker can use its compatibility rules without a Surface replay.
-// The formatter keeps that provenance even in nested or flattened proof edits.
-pub(super) fn require_surface_expansion(rendered: String) -> Result<String, ClickError> {
-    if rendered.contains(printing::COMPATIBILITY_NORMALIZATION) {
-        return Err(ClickError::new(
-            "proof expansion is unavailable: verification used legacy normalization and no ordinary proof was recorded",
-        ).with_kind(ClickErrorKind::Unsupported));
-    }
-    Ok(rendered)
-}
-
 /// Formats a function claim's already-checked certificate into its source.
 /// Returns `None` for claims not represented in `verified` or not declared in
 /// this source module. The caller must verify the rewritten source, and must
@@ -775,10 +764,10 @@ pub fn expand_claim_by_label(
         result?;
         let (certificate, names) =
             certificate.expect("successful program verification publishes its proof certificate");
-        let replacement = require_surface_expansion(format!(
+        let replacement = format!(
             "termination {}\n",
             printing::format_termination_certificate(&certificate, names)?
-        ))?;
+        );
         let source = if let Some((start, end)) = &file.termination_span {
             let first = offset_at_position(click_source, start.line, start.column)?;
             let last = offset_at_position(click_source, end.line, end.column)? + 1;
@@ -1154,53 +1143,6 @@ pub struct SmartTacticSourceSite {
     pub tactic_name: String,
     /// Exact source position, including tactics nested inside a `have` body.
     pub position: SourcePosition,
-}
-
-/// Find a legacy call anywhere in the proof unit's source, including
-/// generated proof bodies whose tactics are not individually indexed.
-pub fn first_normalize_in_claim(
-    project: Option<&ClickProject>,
-    source: &str,
-    inputs: &ProgramInputs<'_>,
-    claim: &str,
-) -> Result<Option<SourcePosition>, ClickError> {
-    if !source.contains("normalize") {
-        return Ok(None);
-    }
-    let file = normalize_source_file(project, source, inputs)?;
-    let mut regions = claim_source_regions(source, &file, ClaimLocationScope::ProofUnit)?;
-    regions.retain(|region| region.label == claim);
-    if regions.is_empty() {
-        return Err(ClickError::new(format!(
-            "could not locate proof unit `{claim}`"
-        )));
-    }
-    let site = plain_source_tokens(source)?
-        .windows(3)
-        .find(|tokens| {
-            tokens[0].text == "normalize"
-                && tokens[1].text == "("
-                && tokens[2].text == ")"
-                && regions
-                    .iter()
-                    .any(|region| region.span.contains(&tokens[0].span.start))
-        })
-        .map(|tokens| tokens[0].start.clone());
-    Ok(site)
-}
-
-fn normalize_source_file(
-    project: Option<&ClickProject>,
-    source: &str,
-    inputs: &ProgramInputs<'_>,
-) -> Result<ClickFile, ClickError> {
-    let sources = ProgramSourceContext::of(inputs)?;
-    match project {
-        Some(project) => {
-            resolve_click_project_context(project, &sources.with_click_project(project))
-        }
-        None => parse_source_with_program_layouts_context(source, &sources),
-    }
 }
 
 pub fn c_smart_tactic_source_sites(
@@ -2594,7 +2536,7 @@ fn splice_source_with_span(
     span: &Range<usize>,
     replacement: &str,
 ) -> Result<(String, Range<usize>), ClickError> {
-    let replacement = require_surface_expansion(printing::spell_source_names(source, replacement))?;
+    let replacement = printing::spell_source_names(source, replacement);
     let replacement = replacement.as_str();
     let mut open_blocks = Vec::new();
     let mut enclosing: Option<Range<usize>> = None;
@@ -3827,7 +3769,6 @@ fn expand_selected_tactics_context(
     let mut cursor = 0;
     let mut replacement_spans = Vec::new();
     for (span, replacement) in retained {
-        let replacement = require_surface_expansion(replacement)?;
         rewritten.push_str(&source[cursor..span.start]);
         let replacement_start = rewritten.len();
         rewritten.push_str(&replacement);
@@ -4276,9 +4217,14 @@ fn claim_source_regions(
             continue;
         };
         let owner = function_name.to_string();
-        if function_block.grouped_proof().is_some()
-            && let Ok(span) = find_grouped_proof_span(&tokens, &function)
-        {
+        let grouped_span = if function_block.grouped_proof().is_some() {
+            find_grouped_proof_span(&tokens, &function).ok()
+        } else if function_block.has_refinement_claims() {
+            Some(tokens[function.body_close].span.clone())
+        } else {
+            None
+        };
+        if let Some(span) = grouped_span {
             regions.push(ClaimRegion {
                 anchor: span.start,
                 span,
@@ -4293,7 +4239,10 @@ fn claim_source_regions(
             function_block.claim_label(covering_claim(function_block, claim))
         };
         let mut written = None;
-        for index in 0..function_block.ensures().len() {
+        for (index, ensure) in function_block.ensures().iter().enumerate() {
+            if ensure.refinement.is_some() {
+                continue;
+            }
             // The members of a flattened aggregate clause share their
             // written clause, its label, and its proof.
             let source = function_block.ensure_source_clause(index);

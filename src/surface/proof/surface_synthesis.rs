@@ -18,6 +18,7 @@ mod matches;
 mod pointer_indices;
 mod pointer_names;
 mod slices;
+pub(in crate::surface) use slices::raise_program_slice_operation;
 
 use crate::kernel::program_local_source_name as surface_local_name;
 use crate::surface::diagnostics::has_surface_iterator_binding;
@@ -5634,14 +5635,15 @@ pub(super) fn synthesize_surface_pointer_offset(
                 .or_else(|| dynamically_indexed_pointer(left, right))
                 .or_else(|| dynamically_indexed_pointer(right, left))
         }
-        OffsetView::Int32Scaled { index, byte_width } if matches!(byte_width, 1 | 4) => {
-            synthesize_surface_bitvector(
-                index.structural_value(),
-                parameter_binding,
-                state,
-                bound_variables,
-            )
-        }
+        OffsetView::Int32Scaled {
+            index,
+            byte_width: 1 | 4,
+        } => synthesize_surface_bitvector(
+            index.structural_value(),
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
         OffsetView::Constant(_)
         | OffsetView::Variable(_)
         | OffsetView::Int32Scaled { .. }

@@ -2659,6 +2659,7 @@ fn verify_program_in_context(
                 verification_function_environment.with_conditional_resource_cases();
         }
         let implicit_safety_clause = EnsureClause {
+            refinement: None,
             proof_bindings: Vec::new(),
             name: None,
             ensure: Ensure::Proposition(SyntaxProposition::Comparison {
@@ -7844,10 +7845,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::Have(_)
             | ProofTactic::Known
             | ProofTactic::Close
-            | ProofTactic::Normalize
-            | ProofTactic::NormalizeUsing(_)
             | ProofTactic::CloseBounds(_)
-            | ProofTactic::CompatibilityNormalize(_)
             | ProofTactic::Rewrite(_)
             | ProofTactic::Solve => {}
             ProofTactic::If(proof_if) => {

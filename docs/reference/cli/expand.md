@@ -20,7 +20,7 @@ the same premise, including inside address casts and `at(...)` expressions.
 
 ```text
 usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]
-       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--check-normalize-removal] [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>
+       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>
 ```
 
 Replace the following:
@@ -135,7 +135,7 @@ theorem, or user-defined tactic name before the dot.
 
 | Label | Claim |
 | --- | --- |
-| `f.contract` | The grouped proof of function `f` (`{ ... } by { ... }`), which proves every clause without its own `by`; also a tactic's proof. |
+| `f.contract` | The grouped proof of function `f` (`{ ... } by { ... }`), which proves every clause without its own `by` and any inherited guarantees; also a tactic's proof. |
 | `f.name` | The clause the author named, `ensures name: P`. |
 | `f.ensures_N` | The `N`th written `ensures` clause of `f`, counted from 0 among its `ensures` clauses only. |
 | `f.exceptional_ensures_N` | The `N`th `exceptional ensures` clause. |
@@ -143,6 +143,12 @@ theorem, or user-defined tactic name before the dot.
 | `f.produces_N` | The `N`th `produces` clause, counting those inside a contract `if`. |
 | `f.loop(N).initialize`, `f.loop(N).maintain` | A loop phase's proof: the `initialize` or `maintain` proof, written or left to automation, of the `loop` tactic that proves C loop `N` of `f`, counting its loops from 0 in source order. |
 | `f.body_safety` | The body-safety obligation of a contract that states no claim, as diagnostics name it. |
+
+An inherited guarantee belongs to the implementation's `.contract` proof,
+including when the implementation leaves that proof implicit. Select an
+implicit refinement proof by its label or by the closing brace of the
+implementation's contract. A failure reports the interface clause that
+supplied the guarantee.
 
 Each clause kind counts separately, so adding an `owns` clause does not
 renumber the `ensures` clauses: in `owns p[0..1]; ensures p[0] == 1;` the
@@ -185,7 +191,6 @@ selected type instance; expansion preserves the generic declaration.
 | Option | Meaning |
 | --- | --- |
 | `--claim LABEL` | Expand all smart tactics in one named claim, including one loop phase, instead of selecting a tactic by location. `--claim PATH:LINE[:COLUMN]` names the innermost claim whose clause or proof covers that line of the target. |
-| `--check-normalize-removal` | Require `--claim` and reject `normalize()` or `normalize() using` in the selected proof or its expansion. Expansion also fails if the selected proof needs a verification-only normalization fallback. A passing rewrite still has to replay with proof search disabled. |
 | `--work-limit UNITS` | Set the deterministic work budget of the whole command, generating the expansion and checking it. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound of the whole command. The default is `10m`. It stops a hung or CPU-starved run and is not a verdict about the proof; smart search inside the expansion is bounded by its deterministic smart work budget, not by a clock. |
 | `--output PATH` | Write the complete verified rewrite in the input's directory. |
@@ -220,10 +225,6 @@ reporting a missing source occurrence.
 Arithmetic expansion writes each intermediate derivation once as an ordinary
 `have`, then reuses the established fact through explicit premises. A grouped closure proves each open claim in a `have` and
 then closes each goal in contract order.
-
-If verification uses legacy normalization internally and has
-no ordinary certificate for a selected proof, expansion reports that
-limitation without rewriting the source.
 
 The command exits with status 1 and writes no requested artifact when
 selection, expansion extraction, or rewritten proof verification fails, a

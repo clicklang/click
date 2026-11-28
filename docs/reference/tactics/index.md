@@ -3288,7 +3288,8 @@ resource definition determines what each label names. A child slot binds
 the opened child instance, a C-typed field binds its folded value, and a
 `let ... where` witness binds the value used to open the body. One pattern
 can mix these labels whether the resource is selected by name or by a family
-call. Witness bindings need a live execution frontier before function exit.
+call. After function exit, a named resource also supports witness bindings.
+Each binding stays local to its written block on the selected return path.
 See [`unfold_binds_witness_and_child.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_binds_witness_and_child.md).
 
 After `unfold(r)`, a child from slot `child` is held under `r.child`. An alias

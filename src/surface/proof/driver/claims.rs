@@ -188,27 +188,27 @@ enum PendingPostExecutionTactic<'a> {
     ),
     EndIfArm {
         choice: usize,
-        obtains_before_arm: usize,
+        bindings_before_arm: usize,
     },
 }
 
-/// The end of the written block containing each obtain, using the same
+/// The end of the written block containing each deferred binding, using the same
 /// source positions as the deferred program. Nested proposition proofs
 /// are checked separately and use their own locals.
-fn obtain_scope_ends(tactics: &[ProofTactic]) -> BTreeMap<usize, usize> {
+fn deferred_binding_scope_ends(tactics: &[ProofTactic]) -> BTreeMap<usize, usize> {
     fn visit(
         tactics: &[ProofTactic],
         position: &mut usize,
         ends: &mut BTreeMap<usize, usize>,
         outermost: bool,
     ) {
-        let mut obtains = Vec::new();
+        let mut bindings = Vec::new();
         for tactic in tactics {
             if matches!(tactic, ProofTactic::Synthetic(_)) {
                 continue;
             }
-            if matches!(tactic, ProofTactic::LetSatisfy(_)) {
-                obtains.push(*position);
+            if deferred_value_binders(tactic).next().is_some() {
+                bindings.push(*position);
             }
             *position += 1;
             if matches!(
@@ -238,7 +238,7 @@ fn obtain_scope_ends(tactics: &[ProofTactic]) -> BTreeMap<usize, usize> {
             }
         }
         let end = if outermost { usize::MAX } else { *position };
-        ends.extend(obtains.into_iter().map(|start| (start, end)));
+        ends.extend(bindings.into_iter().map(|start| (start, end)));
     }
 
     let mut ends = BTreeMap::new();
@@ -247,14 +247,13 @@ fn obtain_scope_ends(tactics: &[ProofTactic]) -> BTreeMap<usize, usize> {
 }
 
 /// Source scopes contain the lexical snapshots recorded during execution.
-/// An ambient obtain adds checked bindings during finalization, so those
-/// outputs also have to survive until their source block ends.
+/// Value binders checked during finalization survive until their source block ends.
 #[derive(Default)]
 struct DeferredOutcomeLocals {
     source: Option<PersistentBinderMap<SyntaxTerm>>,
-    obtained: PersistentBinderMap<SyntaxTerm>,
+    bindings: PersistentBinderMap<SyntaxTerm>,
     ends: BTreeMap<usize, Vec<String>>,
-    checked_obtains: usize,
+    checked_bindings: usize,
 }
 
 impl DeferredOutcomeLocals {
@@ -274,7 +273,7 @@ impl DeferredOutcomeLocals {
             {
                 let (_, names) = self.ends.pop_first().expect("scope end was just inspected");
                 for name in &names {
-                    self.obtained.remove(name);
+                    self.bindings.remove(name);
                 }
                 expired.extend(names);
             }
@@ -287,7 +286,7 @@ impl DeferredOutcomeLocals {
             *proof = Some(root.update_deferred_outcome_locals(
                 self.source.as_ref(),
                 scope,
-                &self.obtained,
+                &self.bindings,
                 &expired,
             ));
         }
@@ -296,23 +295,24 @@ impl DeferredOutcomeLocals {
         }
     }
 
-    fn record(
+    fn record<'names>(
         &mut self,
         before: &Proof<'_>,
         after: &Proof<'_>,
-        binding: &ProofLetSatisfy,
+        names: impl Iterator<Item = &'names String>,
         end: usize,
     ) {
         if self.source.is_none() {
             self.source = Some(before.surface_local_scope());
         }
-        let names = self.ends.entry(end).or_default();
-        for (name, _) in &binding.bindings {
+        let ending = self.ends.entry(end).or_default();
+        for name in names {
             if let Some(value) = after.local_binding(name) {
-                self.obtained.insert(name.clone(), value.clone());
+                self.bindings.insert(name.clone(), value.clone());
             }
-            names.push(name.clone());
+            ending.push(name.clone());
         }
+        self.checked_bindings += 1;
     }
 }
 
@@ -334,12 +334,12 @@ fn next_checked_post_execution_tactic<'a>(
             }
             PendingPostExecutionTactic::EndIfArm {
                 choice,
-                obtains_before_arm,
+                bindings_before_arm,
             } => {
                 let arm_end = SurfaceIfArmEnd {
                     step_offset: surface_tactics.len(),
                     nested_choices: choices.len() - choice - 1,
-                    binds_obtain: locals.checked_obtains != obtains_before_arm,
+                    binds_locals: locals.checked_bindings != bindings_before_arm,
                 };
                 choices[choice].if_arm_end = Some(arm_end);
                 continue;
@@ -384,8 +384,8 @@ fn next_checked_post_execution_tactic<'a>(
                 then_tactics,
                 else_tactics,
             } => {
-                let has_obtains = !locals.ends.is_empty();
-                if has_obtains {
+                let has_bindings = !locals.ends.is_empty();
+                if has_bindings {
                     locals.enter(proof, deferred.source_index, scope.as_ref());
                 }
                 let mut scoped = proof
@@ -395,7 +395,7 @@ fn next_checked_post_execution_tactic<'a>(
                     })?
                     .clone()
                     .at_source_tactic(deferred.source_index);
-                if !has_obtains && let Some(bindings) = &scope {
+                if !has_bindings && let Some(bindings) = &scope {
                     scoped = scoped.with_surface_local_scope(bindings);
                 }
                 if *disjunction
@@ -409,7 +409,7 @@ fn next_checked_post_execution_tactic<'a>(
                 }
                 let value = if *disjunction {
                     scoped.checked_outcome_cases_value(condition, *execution_route)
-                } else if deferred.reads_deferred_obtain {
+                } else if deferred.reads_deferred_binding {
                     scoped.decide_outcome_if_from_facts(condition)
                 } else {
                     scoped.checked_outcome_if_value(condition, *execution_route)
@@ -461,7 +461,7 @@ fn next_checked_post_execution_tactic<'a>(
         ) {
             pending.push(PendingPostExecutionTactic::EndIfArm {
                 choice: choices.len(),
-                obtains_before_arm: locals.checked_obtains,
+                bindings_before_arm: locals.checked_bindings,
             });
         }
         choices.push(SurfacePathChoice {
@@ -574,7 +574,7 @@ fn append_post_execution_paths_by_surface_leaf(
         } else {
             select(terminal_choices, &members)
         };
-        let keep_scopes = outcome_paths_bind_obtain(&choices);
+        let keep_scopes = outcome_paths_bind_locals(&choices);
         let suffix = synthesize_post_execution_paths(
             &select(tactics, &members),
             &select(closers, &members),
@@ -587,16 +587,27 @@ fn append_post_execution_paths_by_surface_leaf(
     Ok(())
 }
 
-fn outcome_paths_bind_obtain(choices: &[Vec<SurfacePathChoice>]) -> bool {
+fn outcome_paths_bind_locals(choices: &[Vec<SurfacePathChoice>]) -> bool {
     choices
         .iter()
         .flatten()
-        .any(|choice| choice.if_arm_end.is_some_and(|end| end.binds_obtain))
+        .any(|choice| choice.if_arm_end.is_some_and(|end| end.binds_locals))
 }
 
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
     let label = function_claim_label(function_block, claim);
-    format!("{label}: {}", diagnostic_claim_statement(claim))
+    let statement = diagnostic_claim_statement(claim);
+    match &claim.clause().refinement {
+        Some(origin) => format!("{label} ({}): {statement}", origin.describe()),
+        None => format!("{label}: {statement}"),
+    }
+}
+
+fn claim_failure_subject(claim: &FunctionClaimRef<'_>, label: &str) -> String {
+    match &claim.clause().refinement {
+        Some(origin) => format!("`{label}` ({})", origin.describe()),
+        None => format!("`{label}`"),
+    }
 }
 
 fn diagnostic_claim_statement(claim: &FunctionClaimRef<'_>) -> String {
@@ -1896,9 +1907,11 @@ fn close_claim_directly_from_outcome<'a>(
     failed_attempt: Option<&Proof<'a>>,
 ) -> Result<Result<Proof<'a>, ClickError>, ClickError> {
     let surface = describe_click_proposition(surface_goal);
+    let subject = || claim_failure_subject(claim, claim_label);
     let failure = |reason: String| {
         Ok(Err(ClickError::new(format!(
-            "`ensures {surface}` failed for `{claim_label}` path {path_index}: {reason}"
+            "`ensures {surface}` failed for {} path {path_index}: {reason}",
+            subject()
         ))))
     };
     if !claim.applies_to(outcome) {
@@ -1945,7 +1958,8 @@ fn close_claim_directly_from_outcome<'a>(
                 };
                 return Ok(Err(error
                     .with_context(format!(
-                        "`ensures {surface}` failed for `{claim_label}` path {path_index}: {reason}"
+                        "`ensures {surface}` failed for {} path {path_index}: {reason}",
+                        subject()
                     ))
                     .with_failing_path(path_index)));
             }
@@ -2216,7 +2230,7 @@ fn close_claim_directly_from_outcome<'a>(
         })
         .unwrap_or_default();
     let error = proof.step_error(format!(
-        "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}"
+        "`ensures {surface}` failed for {} path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}", subject()
     ));
     let refusal = match closure_search {
         ClaimClosureSearch::None => crate::surface::ProofRefusal::IncompleteProof,
@@ -3701,7 +3715,7 @@ pub(super) fn finish_ordered_proof<'a>(
     claim_surface_builders: &mut Vec<(VerifiedClaim, std::sync::Arc<ProofCertificateBuilder>)>,
 ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
-    let obtain_ends = std::cell::OnceCell::new();
+    let binding_ends = std::cell::OnceCell::new();
     let proof_label = if require_explicit_closers {
         function_block.contract_claim_label()
     } else {
@@ -4292,7 +4306,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         .unwrap_or(0);
                     let implicit_closer = DeferredPostExecutionTactic {
                         lexical_bindings: None,
-                        reads_deferred_obtain: false,
+                        reads_deferred_binding: false,
                         tactic_index: implicit_closer_index,
                         source_index: usize::MAX,
                         tactic: PostExecutionTactic::ImplicitSolve,
@@ -4315,6 +4329,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::Leaf(
                                     ProofTactic::FoldResource(_)
                                         | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::UnfoldWitnesses { .. }
                                         | ProofTactic::UserTactic(_)
                                 )
                                 | PostExecutionTactic::ResourceStepProved(_)
@@ -4447,10 +4462,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                     | ProofTactic::Close
                                     | ProofTactic::Enumerate
-                                    | ProofTactic::Normalize
                                     | ProofTactic::CloseBounds(_)
-                                    | ProofTactic::NormalizeUsing(_)
-                                    | ProofTactic::CompatibilityNormalize(_)
                                     | ProofTactic::ArithmeticUsing(_)
                                     | ProofTactic::Preserve(_)
                             ) | PostExecutionTactic::Both(_)
@@ -4460,12 +4472,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         let tactic_index = &deferred.tactic_index;
                         let source_index = &deferred.source_index;
                         let post_tactic = &deferred.tactic;
-                        if matches!(
-                            post_tactic,
-                            PostExecutionTactic::Leaf(ProofTactic::LetSatisfy(_))
-                        ) {
-                            deferred_locals.checked_obtains += 1;
-                        }
                         post_return_facts.push((*source_index, path_requirements.clone()));
                         if path_capture.is_some_and(|capture| {
                             capture.tactic_index == *tactic_index
@@ -4539,6 +4545,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::Leaf(
                                     ProofTactic::FoldResource(_)
                                         | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::UnfoldWitnesses { .. }
                                         | ProofTactic::UserTactic(_)
                                 )
                         ) {
@@ -4547,10 +4554,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         let proposition_closer = match post_tactic {
                             PostExecutionTactic::SolveUsing(_) => Some("close() using"),
                             PostExecutionTactic::Leaf(
-                                tactic @ (ProofTactic::Normalize
-                                | ProofTactic::CloseBounds(_)
-                                | ProofTactic::NormalizeUsing(_)
-                                | ProofTactic::CompatibilityNormalize(_)
+                                tactic @ (ProofTactic::CloseBounds(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
@@ -5078,17 +5082,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                 | ProofTactic::Close
                                 | ProofTactic::Enumerate
-                                | ProofTactic::Normalize
                                 | ProofTactic::CloseBounds(_)
-                                | ProofTactic::NormalizeUsing(_)
-                                | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_),
                             )
                             | PostExecutionTactic::Both(_) => {
                                 // The written closers that apply one step to
-                                // the main goal: `known`, the normalizing
-                                // closers and `both`. Only `known` reads
+                                // the main goal. Only `known` reads
                                 // a resource claim and the outcome's recorded
                                 // lowerings.
                                 let is_close = matches!(
@@ -5117,9 +5117,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                             "a post-execution leaf converts to its checked step",
                                         )
                                     }
-                                    PostExecutionTactic::Both(_) => {
-                                        ProofStep::CompatibilityNormalize(None)
-                                    }
+                                    // The conjunction path applies its written arms.
+                                    PostExecutionTactic::Both(_) => ProofStep::Known,
                                     _ => unreachable!("matched a closer above"),
                                 };
                                 if let Some(certificate) = continue_outcome_claim_proof(
@@ -5231,15 +5230,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Postconditions are conditional on return.
                                         // The checked execution outcome supplies
                                         // vacuity without a return value or state.
-                                        if matches!(
-                                            closer_step,
-                                            ProofStep::NormalizeUsing(_)
-                                                | ProofStep::CompatibilityNormalize(Some(_))
-                                        ) {
-                                            return Err(ClickError::new(
-                                                "`normalize using` requires a return-state proposition; use `close()` for a divergent path",
-                                            ));
-                                        }
                                         // Same rule for the explicit arithmetic
                                         // closer: its premises are cited against
                                         // a return state this path does not have.
@@ -5614,6 +5604,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     tactic,
                                     ProofTactic::FoldResource(_)
                                         | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::UnfoldWitnesses { .. }
                                         | ProofTactic::UserTactic(_)
                                 ) {
                                     has_return_resource_rewrite |=
@@ -5622,15 +5613,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 .core
                                                 .has_checked_return_resource_rewrite(path_index)
                                         });
-                                }
-                                // A resource operation changes the outcome's
-                                // resources; the other leaves only add facts.
-                                if matches!(
-                                    tactic,
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::UserTactic(_)
-                                ) {
                                     outcome = applied.focused_outcome_state()?;
                                 }
 
@@ -5643,13 +5625,16 @@ pub(super) fn finish_ordered_proof<'a>(
                                     } else {
                                         applied.certificate_since(&before)?.to_proof_tactics()
                                     };
-                                if let ProofTactic::LetSatisfy(binding) = tactic {
-                                    let end = obtain_ends
-                                        .get_or_init(|| obtain_scope_ends(certificate_tactics))
+                                let mut names = deferred_value_binders(tactic).peekable();
+                                if names.peek().is_some() {
+                                    let end = binding_ends
+                                        .get_or_init(|| {
+                                            deferred_binding_scope_ends(certificate_tactics)
+                                        })
                                         .get(source_index)
                                         .copied()
                                         .unwrap_or(usize::MAX);
-                                    deferred_locals.record(&evolving, &applied, binding, end);
+                                    deferred_locals.record(&evolving, &applied, names, end);
                                 }
                                 if matches!(tactic, ProofTactic::Instantiate { .. })
                                     && !applied.added_facts().is_empty()
@@ -5881,8 +5866,9 @@ pub(super) fn finish_ordered_proof<'a>(
                         .map(|claim_index| (claim_index, &claims[claim_index]))
                     {
                         let claim_label = function_claim_label(function_block, claim);
+                        let subject = claim_failure_subject(claim, &claim_label);
                         let summary = format!(
-                            "`{proof_label}` path {path_index} left `{claim_label}` unproved: the implicit closer could not close it at the end of the proof; establish the facts and resources it needs before then (claim index {claim_index})"
+                            "`{proof_label}` path {path_index} left {subject} unproved: the implicit closer could not close it at the end of the proof; establish the facts and resources it needs before then (claim index {claim_index})"
                         );
                         if let Some(error) = closures[claim_index].last_error() {
                             return Err(error.clone().with_context(summary));
@@ -6150,7 +6136,7 @@ pub(super) fn finish_ordered_proof<'a>(
             }
             Ok(())
         };
-        let keep_post_execution_scopes = outcome_paths_bind_obtain(&surface_post_choices_by_path);
+        let keep_post_execution_scopes = outcome_paths_bind_locals(&surface_post_choices_by_path);
         let append_paths_by_leaf = |steps: &mut Vec<ProofStep>, closers: &[Vec<ProofTactic>]| {
             append_post_execution_paths_by_surface_leaf(
                 steps,
@@ -6637,11 +6623,11 @@ mod tests {
                 if value {
                     ProofTactic::Known
                 } else {
-                    ProofTactic::Normalize
+                    ProofTactic::Enumerate
                 },
             ]
         });
-        let closers = vec![vec![ProofTactic::Normalize]; 4];
+        let closers = vec![vec![ProofTactic::Enumerate]; 4];
         let steps =
             synthesize_post_execution_paths(&tactics, &closers, &choices, &[], &[]).unwrap();
         let [
@@ -6659,14 +6645,14 @@ mod tests {
         assert_eq!(actual, &condition);
         assert_eq!(
             then_proof.steps(),
-            &[ProofStep::Known, ProofStep::Normalize]
+            &[ProofStep::Known, ProofStep::Enumerate]
         );
         assert_eq!(
             else_proof.steps(),
-            &[ProofStep::Normalize, ProofStep::Normalize]
+            &[ProofStep::Enumerate, ProofStep::Enumerate]
         );
         let mut mismatched = tactics;
-        mismatched[1][0] = ProofTactic::Normalize;
+        mismatched[1][0] = ProofTactic::Enumerate;
         assert!(
             synthesize_post_execution_paths(&mismatched, &closers, &choices, &[], &[]).is_err()
         );

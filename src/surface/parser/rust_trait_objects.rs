@@ -458,6 +458,42 @@ pub(super) fn rewrite_calls(
     output
 }
 
+/// Carry the written interface clause alongside its specialization on the
+/// implementation's memory. The copied condition has no independent proof.
+pub(super) fn inherited_ensure(
+    mut clause: Vec<Spanned>,
+    original: &[Spanned],
+    method: String,
+) -> Vec<Spanned> {
+    let name = match original.get(1..3) {
+        Some([(Token::Ident(name), _), (Token::Colon, _)]) => {
+            clause.drain(1..3);
+            Some(name.clone())
+        }
+        _ => None,
+    };
+    let position = original[0].1.clone();
+    mark_refinement(
+        &mut clause,
+        RefinementClaimOrigin::Interface {
+            method,
+            name,
+            position: Some(position),
+        },
+    );
+    clause
+}
+
+pub(super) fn mark_refinement(clause: &mut Vec<Spanned>, origin: RefinementClaimOrigin) {
+    clause.insert(
+        1,
+        (
+            Token::RefinementClaim(std::sync::Arc::new(origin)),
+            clause[0].1.clone(),
+        ),
+    );
+}
+
 /// Each identifier of `map` not after a `.`, renamed.
 pub(super) fn rename(clause: &[Spanned], map: &BTreeMap<String, String>) -> Vec<Spanned> {
     clause
@@ -1215,45 +1251,23 @@ fn rewrite_implementation(
         // The interface read on this object's memory: its own clauses, then
         // that a shared receiver keeps the functions' values.
         let mut interface_clauses = Vec::new();
-        let mut ensures = 0usize;
-        for clause in interface.map_or(&[][..], |interface| &interface.clauses) {
-            let clause = on_memory(&rename(clause, &renames), receiver == Some(false));
-            if is_ident(clause.first(), "ensures") {
-                let named = matches!(clause.get(1), Some((Token::Ident(_), _)))
-                    && clause.get(2).map(|(token, _)| token) == Some(&Token::Colon);
-                let mut labeled = vec![clause[0].clone()];
-                if named {
-                    let Some((Token::Ident(name), label_position)) = clause.get(1) else {
-                        unreachable!()
-                    };
-                    labeled.push((ident(&format!("interface_{name}")), label_position.clone()));
-                    labeled.extend(clause[2..].iter().cloned());
-                } else {
-                    labeled.push((
-                        ident(&format!("interface_ensures_{ensures}")),
-                        clause[0].1.clone(),
-                    ));
-                    labeled.push((Token::Colon, clause[0].1.clone()));
-                    labeled.extend(clause[1..].iter().cloned());
-                }
-                ensures += 1;
-                interface_clauses.push((clause, labeled));
+        for original in interface.map_or(&[][..], |interface| &interface.clauses) {
+            let clause = on_memory(&rename(original, &renames), receiver == Some(false));
+            let inherited = if is_ident(clause.first(), "ensures") {
+                inherited_ensure(
+                    clause.clone(),
+                    original,
+                    format!("{}::{method}", trait_segments.join("::")),
+                )
             } else {
-                interface_clauses.push((clause.clone(), clause));
-            }
+                clause.clone()
+            };
+            interface_clauses.push((clause, inherited));
         }
         if receiver == Some(false) {
             for (function, _) in &object.functions {
                 let definition = &definitions[function];
-                let mut clause = at(
-                    &position,
-                    vec![
-                        ident("ensures"),
-                        ident(&format!("interface_keeps_{function}")),
-                        Token::Colon,
-                        Token::LParen,
-                    ],
-                );
+                let mut clause = at(&position, vec![ident("ensures"), Token::LParen]);
                 clause.extend(definition.iter().cloned());
                 clause.extend(at(
                     &position,
@@ -1267,7 +1281,17 @@ fn rewrite_implementation(
                 ));
                 clause.extend(definition.iter().cloned());
                 clause.extend(at(&position, vec![Token::RParen, Token::RParen]));
-                interface_clauses.push((clause.clone(), clause));
+                let mut inherited = clause.clone();
+                mark_refinement(
+                    &mut inherited,
+                    RefinementClaimOrigin::Preserves {
+                        member: function.clone(),
+                        position: definition
+                            .first()
+                            .map_or_else(|| position.clone(), |(_, source)| source.clone()),
+                    },
+                );
+                interface_clauses.push((clause, inherited));
             }
         }
         // The method's own contract on the object's memory, with the

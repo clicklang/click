@@ -3007,6 +3007,15 @@ impl MemoryRange {
         (self.start_bound.old_form(), self.end_bound.old_form())
     }
 
+    pub(crate) fn map_stored_bounds(
+        mut self,
+        mut rewrite: impl FnMut(&StoredMachineTerm) -> StoredMachineTerm,
+    ) -> Self {
+        self.start_bound = rewrite(&self.start_bound);
+        self.end_bound = rewrite(&self.end_bound);
+        self
+    }
+
     /// The bounds of a wide range, which no signed 32-bit reader may take.
     pub(crate) fn wide_bounds(&self) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
         (self.kind == RangeIndexKind::UInt64)

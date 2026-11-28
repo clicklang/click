@@ -165,42 +165,6 @@ impl<'a> Proof<'a> {
         self.proof_execution_view(false)
     }
 
-    /// Borrows the execution frontier for premise planning. At a frontier
-    /// this is [`Self::execution_view`]. A `have` opened on an execution
-    /// frontier keeps that frontier's checked execution state on its
-    /// proposition branch; planning reads it with the scope's own facts.
-    /// The view grants nothing: the planned step is still checked by this
-    /// proof's `apply_step`.
-    pub(in crate::surface::proof) fn planning_execution_view(
-        &self,
-    ) -> Result<ProofExecutionView<'_>, ClickError> {
-        let in_frontier_scope = matches!(
-            self.focused_obligation(),
-            Some(Obligation::Proposition(goal)) if goal.outcome.is_none()
-        );
-        let (true, ProofContext::Execution(context), Some(branch)) = (
-            in_frontier_scope,
-            self.context.as_ref(),
-            self.focused_branch(),
-        ) else {
-            return self.execution_view();
-        };
-        let execution = branch
-            .state
-            .execution
-            .as_deref()
-            .ok_or_else(|| self.step_error("execution proof lost its checked frontier"))?;
-        Ok(ProofExecutionView {
-            state: &execution.core.state,
-            facts: &branch.state.facts,
-            frontier: &execution.core.frontier,
-            execution,
-            context,
-            branch_path: &execution.presentation.branch_path,
-            outcome_evidence: &execution.presentation.outcome_evidence,
-        })
-    }
-
     /// Borrows the function-exit frontier accepted by claim finalization.
     pub(in crate::surface::proof) fn finalization_view(
         &self,
@@ -232,7 +196,6 @@ impl<'a> Proof<'a> {
         let execution = checked.execution();
         Ok(ProofExecutionView {
             state: &execution.core.state,
-            facts: checked.facts(),
             frontier: &execution.core.frontier,
             execution,
             context,

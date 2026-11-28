@@ -7234,6 +7234,7 @@ impl PureFactContext {
             .contains(ReasoningPolicy::PREFER_SYMBOLIC_EXTERNAL_LOADS)
     }
 
+    #[cfg(test)]
     pub(crate) fn force_symbolic_external_loads(self) -> Self {
         self.with_reasoning_policy(ReasoningPolicy::FORCE_SYMBOLIC_EXTERNAL_LOADS)
     }

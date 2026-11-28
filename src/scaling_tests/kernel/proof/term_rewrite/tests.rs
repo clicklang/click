@@ -1453,6 +1453,591 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn stored_word_substitution_and_reservation_visit_shared_arithmetic_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let slice = Variable(982814);
+        let count = slice.element_count();
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::Program(format.program_type()), count);
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let word = Term::Bitvector32(
+            StoredMachineTerm::from_value(ExecutionValue::Shared(root.clone())).unwrap(),
+        );
+        let fact = Proposition::Predicate {
+            name: "word".into(),
+            arguments: vec![word.clone()],
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([slice, count])
+        );
+        assert!(!collector.exhausted());
+        assert!(collector.carriers.nodes <= depth + 4);
+
+        let from = OldMachineTerm::constant(0);
+        let to = OldMachineTerm::constant(1);
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        let before = rewrite.collector_visits;
+        rewrite.reserve_term_variables_once(&word);
+        assert!(rewrite.reserved_variables.contains(&slice));
+        assert!(rewrite.reserved_variables.contains(&count));
+        assert_eq!(rewrite.collector_visits - before, depth + 1);
+        assert_eq!(rewrite.refusal(), None);
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
+fn sequence_carriers_visit_shared_concatenations_and_numeric_elements_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let input = Variable(982816);
+        let mut word = KernelTerm::variable(KernelType::Program(ProgramType::Int32), input);
+        for _ in 0..depth {
+            word = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [word.clone(), word],
+            );
+        }
+        let element_type = Some(ProgramType::Int32);
+        let mut sequence = SequenceTerm {
+            element_type,
+            node: std::sync::Arc::new(SequenceTermNode::Literal(SequenceValues::from_values([
+                ExecutionValue::Shared(word.clone()),
+            ]))),
+        };
+        for _ in 0..depth {
+            sequence = SequenceTerm {
+                element_type,
+                node: std::sync::Arc::new(SequenceTermNode::Concat(sequence.clone(), sequence)),
+            };
+        }
+        let term = Term::Sequence(sequence);
+        let fact = Proposition::Predicate {
+            name: "sequence".into(),
+            arguments: vec![term.clone()],
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(collector.carriers.program_values, BTreeSet::from([input]));
+        assert!(!collector.exhausted());
+        assert!(collector.carriers.nodes <= 2 * depth + 8);
+
+        let from = OldMachineTerm::constant(0);
+        let to = OldMachineTerm::constant(1);
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        rewrite.reserve_term_variables_once(&term);
+        assert!(rewrite.reserved_variables.contains(&input));
+        assert_eq!(rewrite.refusal(), None);
+        assert!(!word.has_cached_native_argument());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
+fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let input = Variable(982815);
+        let mut bytes = KernelTerm::variable(KernelType::Program(ProgramType::Int32), input);
+        for _ in 0..depth {
+            bytes = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [bytes.clone(), bytes],
+            );
+        }
+        let float =
+            KernelTerm::float_convert(KernelFloatType::Float64, ProgramType::Int32, bytes.clone())
+                .unwrap();
+        let stored = StoredProgramValue::from(ExecutionValue::Shared(float.clone()));
+        let term = Term::ProgramValue(stored.clone());
+        let exports = (
+            KernelTermExport::machine_export_count(),
+            KernelTermExport::float_export_count(),
+        );
+        for fact in [
+            Proposition::Predicate {
+                name: "numeric".into(),
+                arguments: vec![
+                    term.clone(),
+                    Term::ProgramValue(ExecutionValue::Shared(bytes.clone()).into()),
+                ],
+            },
+            Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
+                id: VolatileEventId(1),
+                kind: VolatileAccessKind::Read,
+                pointer: Address::null(),
+                value_type: ProgramType::Float64,
+                value: stored.clone(),
+            })),
+            Proposition::SequenceMembership {
+                element: stored,
+                sequence: SequenceTerm {
+                    element_type: Some(ProgramType::Float64),
+                    node: std::sync::Arc::new(SequenceTermNode::Literal(
+                        SequenceValues::from_values([]),
+                    )),
+                },
+            },
+            Proposition::MemoryLoadable {
+                point: Default::default(),
+                memory: SymbolicMemory::new(),
+                base: Address::null(),
+                bytes: StoredMachineTerm::from_value(ExecutionValue::Shared(bytes.clone()))
+                    .unwrap(),
+                wide: false,
+            },
+        ] {
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect(&fact);
+            assert_eq!(collector.carriers.program_values, BTreeSet::from([input]));
+            assert!(!collector.exhausted());
+            assert!(collector.carriers.nodes <= 2 * depth + 12);
+        }
+        let from = OldMachineTerm::constant(0);
+        let to = OldMachineTerm::constant(1);
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        rewrite.reserve_term_variables_once(&term);
+        assert!(rewrite.reserved_variables.contains(&input));
+        assert_eq!(rewrite.refusal(), None);
+        assert_eq!(
+            (
+                KernelTermExport::machine_export_count(),
+                KernelTermExport::float_export_count()
+            ),
+            exports
+        );
+        assert!(!float.has_cached_native_argument());
+        assert!(!bytes.has_cached_native_argument());
+    }
+}
+
+#[test]
+fn boolean_calls_collect_shared_arithmetic_without_building_a_native_call() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let variable = Variable(982824);
+        let mut sum = KernelTerm::variable(KernelType::Program(format.program_type()), variable);
+        for _ in 0..depth {
+            sum =
+                KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [sum.clone(), sum]);
+        }
+        let call = KernelTerm::checked_call(KernelType::Bool, "has_sum".into(), vec![sum]);
+        let nested = KernelTerm::boolean_equal_raw([call.clone(), call.clone()]);
+        let exports = KernelTermExport::machine_export_count();
+        for condition in [call.clone(), nested] {
+            let mut vars = CarrierVariables::for_rewrite(true);
+            collect_stored_condition_carriers(
+                &StoredConditionTerm::from_root(condition).unwrap(),
+                &mut vars,
+            );
+            assert_eq!(vars.program_values, BTreeSet::from([variable]));
+            assert!(!vars.exhausted());
+            assert!(
+                vars.nodes <= 4 * depth + 32,
+                "depth {depth}, visits {}",
+                vars.nodes
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!call.has_cached_native_argument());
+        assert!(!call.has_cached_machine_leaf());
+    }
+}
+
+#[test]
+fn mixed_integer_comparisons_collect_shared_arithmetic_and_the_exact_read() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let integer = Variable(982822);
+        let base = Variable(982823);
+        let mut sum = KernelTerm::variable(KernelType::Integer, integer);
+        for _ in 0..depth {
+            sum = KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![sum.clone(), sum])
+                .unwrap();
+        }
+        let address = Address::symbolic(base);
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let format = MachineIntegerType::UInt32;
+        let read = KernelTerm::shared_scalar_read_descriptor(
+            format,
+            &point,
+            address.shared(),
+            LoadKind::UInt32,
+        );
+        let observed = SharedIntegerTerm::from(IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(format, read).unwrap(),
+        ));
+        let condition = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::LessThan,
+            [observed.root().clone(), sum.clone()],
+        )
+        .unwrap();
+        let fact = Proposition::condition_is(
+            StoredConditionTerm::from_root(condition.clone()).unwrap(),
+            true,
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        assert!(!collector.exhausted());
+        assert_eq!(collector.carriers.integer, BTreeSet::from([integer]));
+        assert_eq!(collector.carriers.program_values, BTreeSet::from([base]));
+        assert_eq!(
+            collector.take_read_terms().collect::<Vec<_>>(),
+            vec![OldMachineTerm::read_named(point, address, LoadKind::UInt32)]
+        );
+        assert!(collector.carriers.nodes <= depth + 24);
+        for root in [&sum, observed.root(), &condition] {
+            assert!(!root.has_cached_native_argument());
+        }
+    }
+}
+
+#[test]
+fn complete_pointer_equality_collects_shared_slice_count_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let address = Variable(982820);
+        let slice = Variable(982821);
+        let count = slice.element_count();
+        let mut sum = KernelTerm::variable(KernelType::Program(ProgramType::UInt64), count);
+        for _ in 0..depth {
+            sum = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                [sum.clone(), sum],
+            );
+        }
+        let thin = Pointer::new(Address::symbolic(address), ProgramType::Int32Pointer);
+        let wide = thin.shared().with_element_count(sum);
+        let condition = KernelTerm::pointer_equal_raw([wide.clone(), wide]);
+        let fact = Proposition::condition_is(
+            StoredConditionTerm::from_root(condition.clone()).unwrap(),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([address, slice, count])
+        );
+        assert!(!collector.exhausted());
+        assert!(collector.carriers.nodes <= 2 * depth + 24);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!condition.has_cached_native_argument());
+    }
+}
+
+#[test]
+fn numeric_predicates_visit_shared_machine_arithmetic_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let slice = Variable(982813);
+        let count = slice.element_count();
+        let format = MachineIntegerType::Int32;
+        let mut sum = KernelTerm::variable(KernelType::Program(format.program_type()), count);
+        for _ in 0..depth {
+            sum =
+                KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [sum.clone(), sum]);
+        }
+        let float = KernelFloatType::Float64;
+        let converted =
+            KernelTerm::float_convert(float, format.program_type(), sum.clone()).unwrap();
+        let condition =
+            KernelTerm::float_classify(float, FloatClassification::Finite, converted).unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        for condition in [
+            condition,
+            KernelTerm::boolean_comparison_raw(
+                format,
+                CompareRelation::LessThan,
+                [sum.clone(), sum.clone()],
+            ),
+            KernelTerm::boolean_overflow_raw(
+                format,
+                crate::kernel::OverflowOperation::Add,
+                [sum.clone(), sum],
+            ),
+        ] {
+            let fact = Proposition::condition_is(
+                StoredConditionTerm::from_root(condition.clone()).unwrap(),
+                true,
+            );
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect(&fact);
+            assert_eq!(
+                collector.carriers.program_values,
+                BTreeSet::from([count, slice])
+            );
+            assert!(!collector.exhausted());
+            assert!(
+                collector.carriers.nodes <= depth + 8,
+                "depth {depth}, visits {}",
+                collector.carriers.nodes
+            );
+            assert!(!condition.has_cached_native_argument());
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
+fn nested_float_call_carriers_keep_shared_arguments_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let word = Variable(982811);
+        let integer = Variable(982812);
+        let machine = SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            OldMachineTerm::Variable(word),
+        );
+        let argument = PureFunctionArgument::SharedMachine(machine.clone());
+        let mut root = KernelTerm::float_call(
+            format,
+            "mixed".into(),
+            vec![
+                (
+                    KernelTermImport::default().argument(&argument),
+                    Some(machine),
+                ),
+                (KernelTerm::variable(KernelType::Integer, integer), None),
+            ],
+        );
+        for _ in 0..depth {
+            root = KernelTerm::float_call(
+                format,
+                "twice".into(),
+                vec![(root.clone(), None), (root, None)],
+            );
+        }
+        let predicate =
+            KernelTerm::float_classify(format, FloatClassification::Finite, root).unwrap();
+        let exports = KernelTermExport::float_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&Proposition::condition_is(
+            StoredConditionTerm::from_root(predicate).unwrap(),
+            true,
+        ));
+        assert_eq!(collector.carriers.program_values, BTreeSet::from([word]));
+        assert_eq!(collector.carriers.integer, BTreeSet::from([integer]));
+        assert!(!collector.exhausted());
+        assert!(
+            collector.carriers.nodes <= 3 * depth + 24,
+            "depth {depth}, visits {}",
+            collector.carriers.nodes
+        );
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+    }
+}
+
+#[test]
+fn float_predicates_and_machine_casts_share_arithmetic_carrier_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let format = KernelFloatType::Float32;
+        let variable = Variable(982810);
+        let mut sum = KernelTerm::variable(KernelType::Program(ProgramType::Float32), variable);
+        for _ in 0..depth {
+            sum = KernelTerm::float_binary(format, FloatBinaryOperator::Add, [sum.clone(), sum])
+                .unwrap();
+        }
+        let wide =
+            KernelTerm::float_convert(KernelFloatType::Float64, ProgramType::Float32, sum.clone())
+                .unwrap();
+        let cast =
+            KernelTerm::numeric_float_convert(ProgramType::Int32, ProgramType::Float64, wide)
+                .unwrap();
+        let exports = KernelTermExport::float_export_count();
+        let mut vars = CarrierVariables::for_rewrite(true);
+        collect_machine_operand_carriers(MachineOperandView::Shared(&cast), &mut vars);
+        assert_eq!(vars.program_values, BTreeSet::from([variable]));
+        assert!(!vars.exhausted());
+        assert!(
+            vars.nodes <= depth + 24,
+            "depth {depth}, visits {}",
+            vars.nodes
+        );
+        for predicate in [
+            KernelTerm::float_compare(
+                format,
+                ComparisonOperator::Equal,
+                [sum.clone(), sum.clone()],
+            )
+            .unwrap(),
+            KernelTerm::float_classify(format, FloatClassification::Finite, sum).unwrap(),
+        ] {
+            let condition = StoredConditionTerm::from_root(predicate.clone()).unwrap();
+            let mut vars = CarrierVariables::for_rewrite(true);
+            collect_stored_condition_carriers(&condition, &mut vars);
+            assert_eq!(vars.program_values, BTreeSet::from([variable]));
+            assert!(!vars.exhausted());
+            assert_eq!(vars.nodes, depth + 2);
+            assert!(!predicate.has_cached_native_argument());
+        }
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+    }
+}
+
+#[test]
+fn machine_conversions_collect_shared_integers_and_numeric_addresses() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let integer = Variable(982808);
+        let base = Variable(982809);
+        let mut sum = KernelTerm::variable(KernelType::Integer, integer);
+        for _ in 0..depth {
+            sum = KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![sum.clone(), sum])
+                .unwrap();
+        }
+        let format = MachineIntegerType::UInt64;
+        let cast = KernelTerm::integer_to_machine(format, sum).unwrap();
+        let address = Address::symbolic(base);
+        let numeric = KernelTerm::shared_pointer_address_observation(
+            format,
+            address.shared().clone(),
+            AddressObjectClass::NONE,
+        );
+        let machine = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [cast.clone(), numeric.clone()],
+        );
+        let mut variables = CarrierVariables::for_rewrite(true);
+        collect_machine_operand_carriers(MachineOperandView::Shared(&machine), &mut variables);
+        assert_eq!(variables.integer, BTreeSet::from([integer]));
+        assert_eq!(variables.program_values, BTreeSet::from([base]));
+        assert!(!variables.exhausted());
+        assert!(
+            variables.nodes <= depth + 32,
+            "depth {depth}, visits {}",
+            variables.nodes
+        );
+        let mut occurrences = CarrierVariables {
+            pointer_terms: Some(Vec::new()),
+            ..Default::default()
+        };
+        collect_machine_operand_carriers(MachineOperandView::Shared(&machine), &mut occurrences);
+        assert_eq!(occurrences.pointer_terms.unwrap(), [address]);
+        assert!(!cast.has_cached_machine_leaf());
+        assert!(!numeric.has_cached_machine_leaf());
+    }
+}
+
+#[test]
+fn machine_conditional_carriers_visit_each_shared_guard_node_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let integer = Variable(982803);
+        let mut guard = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::LessThan,
+            [
+                KernelTerm::variable(KernelType::Integer, integer),
+                KernelTerm::integer_literal(0.into()),
+            ],
+        )
+        .unwrap();
+        for _ in 0..depth {
+            guard = KernelTerm::boolean_equal_raw([guard.clone(), guard]);
+        }
+        let format = MachineIntegerType::Int32;
+        let word =
+            |n| KernelTerm::variable(KernelType::Program(format.program_type()), Variable(n));
+        let machine =
+            KernelTerm::machine_if_shared(format, [guard.clone(), word(982804), word(982805)]);
+        let mut variables = CarrierVariables::for_rewrite(true);
+        collect_machine_operand_carriers(MachineOperandView::Shared(&machine), &mut variables);
+        assert_eq!(variables.integer, BTreeSet::from([integer]));
+        assert_eq!(
+            variables.program_values,
+            BTreeSet::from([Variable(982804), Variable(982805)])
+        );
+        assert!(!variables.exhausted());
+        assert!(
+            variables.nodes <= depth + 40,
+            "depth {depth}, visits {}",
+            variables.nodes
+        );
+        assert!(!guard.has_cached_native_argument());
+    }
+}
+
+#[test]
+fn stored_address_comparisons_collect_shared_offset_carriers_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let displacement = Variable(982806);
+        let mut offset = KernelAddressOffset::Variable(displacement)
+            .into_shared()
+            .unwrap();
+        for _ in 0..depth {
+            offset = KernelAddressOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        let base = Variable(982807);
+        let address = SharedAddress::new(Address::symbolic(base).shared().block(), offset.clone());
+        let null = Address::null();
+        for (root, expected) in [
+            (
+                KernelTerm::address_equal_raw([address, null.shared().clone()]),
+                BTreeSet::from([displacement, base]),
+            ),
+            (
+                KernelTerm::address_offset_equal_raw([offset, null.shared().offset().clone()]),
+                BTreeSet::from([displacement]),
+            ),
+        ] {
+            let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+            let mut variables = CarrierVariables::for_rewrite(true);
+            collect_stored_condition_carriers(&condition, &mut variables);
+            assert_eq!(variables.program_values, expected);
+            assert!(!variables.exhausted());
+            assert!(
+                variables.nodes <= depth + 6,
+                "depth {depth}, visits {}",
+                variables.nodes
+            );
+            assert!(!root.has_cached_native_argument());
+        }
+    }
+}
+
+#[test]
+fn shared_boolean_carrier_collection_visits_each_connective_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::Bool, Variable(982802));
+        for _ in 0..depth {
+            root = KernelTerm::boolean_equal_raw([root.clone(), root]);
+        }
+        let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+        let mut variables = CarrierVariables::for_rewrite(true);
+        collect_stored_condition_carriers(&condition, &mut variables);
+        assert_eq!(variables.nodes, depth + 1);
+        assert!(!variables.exhausted());
+        assert!(!root.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
     let mut samples = Vec::new();
     for size in [8usize, 32, 96] {
