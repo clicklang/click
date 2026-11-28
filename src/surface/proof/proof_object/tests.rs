@@ -1522,8 +1522,10 @@ fn proof_failure_preserves_ancestor_and_selected_lineage() {
     assert!(Arc::ptr_eq(&root.node, &fork.node));
 
     assert!(
-        fork.driver().apply_step(ProofStep::Known).is_err(),
-        "a symbolic comparison must not normalize to true"
+        fork.driver()
+            .apply_step(ProofStep::CloseBounds(Vec::new()))
+            .is_err(),
+        "the cited bounds do not establish the comparison"
     );
     assert!(!root.is_complete());
     assert!(root.certificate().steps().is_empty());
