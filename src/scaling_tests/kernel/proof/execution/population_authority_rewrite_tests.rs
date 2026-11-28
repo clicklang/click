@@ -159,6 +159,7 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
             facts.assumptions(),
         )
         .unwrap();
+        assert!(matches!(&bound, Proposition::ConditionIs(condition, true) if condition.root().is_some()));
         let after_facts = facts.with_fact(bound);
         let (_, work) = crate::persistent::measure_persistent_work(|| {
             let observation = CheckedResourceObservation::check(

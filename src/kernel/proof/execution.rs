@@ -19,7 +19,7 @@ use crate::kernel::{
     ResourceFact, ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, SymbolicMemory,
     Theorem, Variable, VerifiedLoopRule,
 };
-use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType};
+use crate::kernel::{BindingName, InstanceId};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
@@ -2826,20 +2826,8 @@ impl CheckedResourceObservation {
                 before_facts.assumptions(),
             )
             .ok_or("count observation lacks member ownership or count authority")?;
-            let quantity = observed
-                .owned_quantity_term()
+            let nonnegative = crate::kernel::api::owned_quantity_nonnegative_claim(observed)
                 .ok_or("count observation requires owned member quantity")?;
-            let nonnegative = Proposition::condition_is(
-                crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
-                    MachineIntegerType::Int32,
-                    CompareRelation::LessEqual,
-                    [
-                        crate::kernel::MachineOperandView::Old(&OldMachineTerm::constant(0)),
-                        crate::kernel::MachineOperandView::Old(quantity),
-                    ],
-                ),
-                true,
-            );
             let introduced = after_facts
                 .introduced_since(before_facts)
                 .ok_or("count observation facts do not descend from input facts")?;
