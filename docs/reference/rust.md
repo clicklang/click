@@ -1250,11 +1250,39 @@ makes a string slice of a byte slice `v`. A string slice is no byte slice:
 type. Failures print a string slice in these spellings.
 
 A function may return a `&str`, as one string slice, and its contract reads
-`result.len()` and `result.as_ptr()`. In imported Rust code, `&mut str`,
-`String`, string literals, `as_bytes`, `==` and the other `str` methods are
-refused with their names (`as_bytes` is
-[step 3c](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)).
-The UTF-8 validity of a `&str`'s bytes is not modeled.
+`result.len()` and `result.as_ptr()`. In imported Rust code, `s.as_bytes()`
+calls `str::as_bytes`, whose one-line contract gives the same data pointer
+and length as a `&[u8]`, reported as an assumption. The code reads the
+result with the byte slice's methods, so its length is the string's and an
+index into it is checked against that length:
+
+<!-- verified-example: tests/fixtures/rust-verification/str-bytes/bytes.click -->
+```click
+verifying "bytes.rs";
+
+// `s.as_bytes()` calls the library's `str::as_bytes`, whose contract gives
+// the string's bytes as a byte slice: the same data pointer and length.
+fn str_bytes::byte_count(s: &str) -> usize {
+    ensures result == s.len();
+}
+
+// The byte view has the string's length, so its first byte is in bounds
+// whenever the string is not empty.
+fn str_bytes::first_byte(s: &str) -> u8 {
+    requires 0u64 < s.len();
+    views *s;
+}
+```
+
+The result must be bound to a local first: `s.as_bytes().len()` is refused as
+an unnamed compiler local, as any call's slice result read in place is. A
+byte read through the result is not yet related to the same byte read
+through `s` (the [known limit of step 3c-i](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)),
+so `ensures result == click::rust::str::as_bytes(s)[0];` is not proved. A
+contract spells the byte view of a `fn`'s `&str` parameter that way: the
+parameter's methods there are `s.len()` and `s.as_ptr()`. `&mut str`,
+`String`, string literals, `==` and the other `str` methods are refused with
+their names. The UTF-8 validity of a `&str`'s bytes is not modeled.
 
 ## Shared slice splitting
 

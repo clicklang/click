@@ -4311,6 +4311,43 @@ fn charon_slice_returns_are_one_slice() {
     }
 }
 
+const STR_BYTES_SIDECAR: &str = include_str!("fixtures/rust-verification/str-bytes/bytes.click");
+
+// `s.as_bytes()` calls the library's `str::as_bytes`, whose contract gives
+// the string's bytes as one byte slice with the same data pointer and
+// length: the code reads its length, and indexes it in bounds. A claim
+// about a length the view does not have fails, and so does an index into
+// a string that may be empty.
+#[test]
+fn charon_str_as_bytes_reads_the_same_bytes() {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/str-bytes");
+    fs::write(p.root.join("borrow.click"), STR_BYTES_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(STR_BYTES_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (function, before, after) in [
+        (
+            "str_bytes::byte_count",
+            "    ensures result == s.len();",
+            "    ensures result == s.len() + 1;",
+        ),
+        (
+            "str_bytes::first_byte",
+            "    requires 0u64 < s.len();\n",
+            "",
+        ),
+    ] {
+        assert!(STR_BYTES_SIDECAR.contains(before), "{before}");
+        let invalid = STR_BYTES_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
+            .expect_err("a claim the byte view does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(function), "{rendered}");
+    }
+}
+
 const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
 
 // `o.take()` moves the option out and leaves `None`, for an option of a box,

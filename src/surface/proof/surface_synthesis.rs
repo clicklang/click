@@ -5588,8 +5588,8 @@ pub(super) fn synthesize_surface_pointer_offset(
                 state,
             )
         {
-            return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-                crate::surface::surface_parameter_binding(parameter.binding_name()),
+            return Some(SyntaxTerm::ProgramExpression(parameter_pointer_name(
+                parameter, argument,
             )));
         }
     }
@@ -6844,12 +6844,19 @@ fn synthesize_surface_bitvector(
                         let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                             return None;
                         };
-                        let element_type = parameter.interface_type().pointee_type()?;
-                        kernel_pointer.element_index_from_base_with_width(
-                            base,
-                            element_type.to_kernel_type().byte_width(),
-                        )?;
-                        Some(element_type.to_kernel_type())
+                        // A slice parameter reads its element type through
+                        // its data pointer, `bytes.as_ptr()`.
+                        let element_type = match parameter.interface_type() {
+                            crate::languages::interface::InterfaceType::Slice(element)
+                                if base.is_wide() =>
+                            {
+                                element.thin_pointer_type().pointee_type()?
+                            }
+                            interface => interface.pointee_type()?.to_kernel_type(),
+                        };
+                        kernel_pointer
+                            .element_index_from_base_with_width(base, element_type.byte_width())?;
+                        Some(element_type)
                     });
                 // A read through a pointer a pure function returns is a typed
                 // read through that call, at the load's own width.
@@ -8184,6 +8191,25 @@ fn synthesis_element_index(
     }
 }
 
+/// The parameter whose argument is a pointer, naming that pointer's
+/// address: the parameter itself, or `s.as_ptr()` when the argument is a
+/// slice `s`, whose name is the slice and not its data pointer
+/// (`design/rust-slice-values.md`, step 3b).
+fn parameter_pointer_name(
+    parameter: &crate::languages::interface::ImportedParameter,
+    argument: &ProgramExpression,
+) -> ProgramExpression {
+    let name = ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+        parameter.binding_name(),
+    ));
+    if matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(passed)) if passed.is_wide())
+    {
+        ProgramExpression::SliceData(Box::new(name))
+    } else {
+        name
+    }
+}
+
 fn synthesize_surface_pointer(
     pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
@@ -8239,9 +8265,7 @@ fn synthesize_surface_pointer(
             state,
         )
     {
-        return Some(ProgramExpression::Variable(
-            crate::surface::surface_parameter_binding(parameter.binding_name()),
-        ));
+        return Some(parameter_pointer_name(parameter, argument));
     }
     if let Some(expression) = parameter_binding
         .parameters
@@ -8263,9 +8287,7 @@ fn synthesize_surface_pointer(
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            let name = ProgramExpression::Variable(crate::surface::surface_parameter_binding(
-                parameter.binding_name(),
-            ));
+            let name = parameter_pointer_name(parameter, argument);
             let element_width = match parameter
                 .pointee_struct_layout()
                 .or_else(|| parameter.struct_layout())

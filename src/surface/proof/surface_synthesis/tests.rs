@@ -10514,3 +10514,84 @@ fn a_string_slice_raises_with_its_own_operations() {
         "{arguments:?}"
     );
 }
+
+/// A read through a Rust slice parameter's data pointer names that pointer
+/// as `bytes.as_ptr()`, never the slice's own name
+/// (`design/rust-slice-values.md`, step 3c-i's known limit): the parameter is
+/// the one wide value, so `*(bytes as (uint8 *))` reads through no pointer
+/// and does not lower. The read raises as `*bytes.as_ptr()`, a byte read at
+/// the slice's element type, and lowers back to the same read.
+#[test]
+fn a_read_through_a_slice_parameter_names_its_data_pointer() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let data = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
+    let ProgramValue::Pointer(thin) =
+        ProgramValue::typed_pointer(data.clone(), ProgramType::UInt8Pointer)
+    else {
+        unreachable!("a typed pointer is a pointer")
+    };
+    let slice = ProgramValue::Pointer(thin.with_element_count(OldMachineTerm::uint64_constant(4)));
+    let parameters = [crate::languages::interface::ImportedParameter::new(
+        InterfaceType::Slice(crate::kernel::SliceElement::UInt8),
+        "bytes".into(),
+        None,
+    )];
+    let arguments = [ProgramExpression::Value(slice.clone())];
+    let state = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block(AddressBase::ExternalArgument, 4))
+        .with_local("bytes", slice);
+    let naming = std::sync::Arc::new(crate::surface::ParameterNaming::new(
+        &parameters,
+        &arguments,
+    ));
+    let data_pointer =
+        ProgramExpression::SliceData(Box::new(ProgramExpression::Variable("bytes".into())));
+    for binding in [
+        ParameterBinding::new(&parameters, &arguments),
+        ParameterBinding::new(&parameters, &arguments).with_naming(&naming),
+    ] {
+        assert_eq!(
+            synthesize_surface_pointer(&data, binding, &state, &BTreeMap::new()),
+            Some(data_pointer.clone())
+        );
+    }
+    let load = OldMachineTerm::read_named(
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
+        Box::new(data),
+        crate::kernel::LoadKind::UInt8,
+    );
+    let binding = ParameterBinding::new(&parameters, &arguments).with_naming(&naming);
+    let raised = synthesize_surface_bitvector(&load, binding, &state, &BTreeMap::new());
+    assert!(
+        matches!(&raised, Some(SyntaxTerm::ProgramExpression(ProgramExpression::TypedLoad {
+            pointer,
+            value_type: ProgramType::UInt8,
+            ..
+        })) if **pointer == data_pointer),
+        "{raised:?}"
+    );
+    let OldMachineTerm::MemoryLoad(memory, address, kind) = load else {
+        unreachable!("a named read is a load")
+    };
+    let read = crate::kernel::canonical_form_of_load(
+        crate::kernel::ProgramPoint::from(memory).into_shared_memory(),
+        address.into(),
+        kind,
+    );
+    let requirement = Proposition::condition_is(
+        OldConditionTerm::Compare {
+            format: MachineIntegerType::UInt8,
+            relation: CompareRelation::Equal,
+            left: Box::new(read.clone()),
+            right: Box::new(read),
+        },
+        true,
+    );
+    let spelled = synthesize_surface_proposition(&requirement, binding, &state)
+        .expect("a read through a slice parameter has a Click spelling");
+    assert_eq!(
+        relower_written_proposition(&spelled, &state)
+            .map(|fact| crate::kernel::canonical_condition_fact(&fact)),
+        Ok(crate::kernel::canonical_condition_fact(&requirement)),
+    );
+}
