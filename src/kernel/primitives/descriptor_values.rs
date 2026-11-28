@@ -358,7 +358,75 @@ pub(crate) enum PointerEquality<'a> {
     Pointer(&'a [SharedPointer; 2]),
 }
 
+// A borrowed lookup in the existing native fact map. Both the stored key
+// and the query hash and compare through OldConditionTerm's written identity.
+trait BorrowedConditionKey {
+    fn written_identity(&self) -> ConditionIdentity<'_>;
+}
+impl BorrowedConditionKey for OldConditionTerm {
+    fn written_identity(&self) -> ConditionIdentity<'_> {
+        self.identity()
+    }
+}
+impl BorrowedConditionKey for ConditionIdentity<'_> {
+    fn written_identity(&self) -> ConditionIdentity<'_> {
+        *self
+    }
+}
+impl PartialEq for dyn BorrowedConditionKey + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.written_identity() == other.written_identity()
+    }
+}
+impl Eq for dyn BorrowedConditionKey + '_ {}
+impl std::hash::Hash for dyn BorrowedConditionKey + '_ {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.written_identity().hash(state);
+    }
+}
+impl<'a> std::borrow::Borrow<dyn BorrowedConditionKey + 'a> for OldConditionTerm {
+    fn borrow(&self) -> &(dyn BorrowedConditionKey + 'a) {
+        self
+    }
+}
+
 impl PointerEquality<'_> {
+    pub(crate) fn cited_value(
+        &self,
+        facts: &std::collections::HashMap<OldConditionTerm, bool>,
+    ) -> Option<bool> {
+        fn lookup<'a, T>(
+            facts: &std::collections::HashMap<OldConditionTerm, bool>,
+            [a, b]: [&'a T; 2],
+            identity: impl Fn(&'a T, &'a T) -> ConditionIdentity<'a>,
+        ) -> Option<bool> {
+            facts
+                .get(&identity(a, b) as &dyn BorrowedConditionKey)
+                .or_else(|| facts.get(&identity(b, a) as &dyn BorrowedConditionKey))
+                .copied()
+        }
+        match self {
+            Self::Address(pair) => lookup(
+                facts,
+                pair.each_ref()
+                    .map(|a| a.written().expect("written address")),
+                ConditionIdentity::AddressEqual,
+            ),
+            Self::Offset(pair) => lookup(
+                facts,
+                pair.each_ref()
+                    .map(|a| AddressOffset::try_from_ref(a).expect("written offset")),
+                ConditionIdentity::AddressOffsetEqual,
+            ),
+            Self::Pointer(pair) => {
+                let pointers = pair
+                    .each_ref()
+                    .map(|p| p.export().expect("written pointer"));
+                lookup(facts, pointers.each_ref(), ConditionIdentity::PointerEqual)
+            }
+        }
+    }
+
     pub(crate) fn is_reflexive(&self) -> bool {
         match self {
             Self::Address([a, b]) => a.syntax_equal(b),
