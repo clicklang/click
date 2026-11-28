@@ -107,6 +107,66 @@ impl PreparedLoopInvariantEdge {
     }
 }
 
+fn balanced_invariant_conjunction(mut members: Vec<Proposition>) -> Option<Proposition> {
+    while members.len() > 1 {
+        let mut level = Vec::with_capacity(members.len().div_ceil(2));
+        let mut pairs = members.into_iter();
+        while let Some(left) = pairs.next() {
+            level.push(match pairs.next() {
+                Some(right) => Proposition::And(Box::new(left), Box::new(right)),
+                None => left,
+            });
+        }
+        members = level;
+    }
+    members.pop()
+}
+
+/// Combine the obligation-guard prefix only when constructing the checked
+/// proof root. The executable loop keeps the original indexed obligations.
+fn group_wide_invariant_guards(
+    proposition: &Proposition,
+    introductions: &crate::kernel::LoweringIntroductions,
+) -> Option<(Proposition, Arc<crate::kernel::LoweringIntroductions>)> {
+    use crate::kernel::LoweringIntroduction::{ObligationGuard, PathFactGuard};
+
+    let leading_facts = introductions
+        .iter()
+        .take_while(|kind| **kind == PathFactGuard)
+        .count();
+    let guard_count = introductions[leading_facts..]
+        .iter()
+        .take_while(|kind| **kind == ObligationGuard)
+        .count();
+    if guard_count < 2 {
+        return None;
+    }
+    let mut body = proposition;
+    let mut heads = Vec::with_capacity(leading_facts + guard_count);
+    for _ in 0..(leading_facts + guard_count) {
+        let Proposition::Implies(antecedent, consequent) = body else {
+            return None;
+        };
+        heads.push(antecedent.as_ref());
+        body = consequent;
+    }
+    let mut guards = heads.split_off(leading_facts);
+    // The same antecedent can be used for every repeated guard.
+    guards.dedup();
+    let combined = balanced_invariant_conjunction(guards.into_iter().cloned().collect())?;
+    let goal = heads.into_iter().rev().fold(
+        Proposition::Implies(Box::new(combined), Box::new(body.clone())),
+        |body, fact| Proposition::Implies(Box::new(fact.clone()), Box::new(body)),
+    );
+    let adjusted = introductions[..leading_facts]
+        .iter()
+        .cloned()
+        .chain(std::iter::once(ObligationGuard))
+        .chain(introductions[leading_facts + guard_count..].iter().cloned())
+        .collect();
+    Some((goal, Arc::new(adjusted)))
+}
+
 #[derive(Clone)]
 pub(super) struct CheckedInvariantBody {
     goal: Proposition,
@@ -2190,40 +2250,39 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         .map_err(|reason| {
             format!("could not read the loop's declared ranking measure: {reason}")
         })?;
-        let obligations = || edge.obligations.iter().chain(&ranking);
-        let mut members: Vec<_> = obligations()
-            .map(|obligation| obligation.proposition().clone())
-            .collect();
+        let wide = edge.obligations.len() + ranking.len() > 24;
+        let (members, introductions): (Vec<_>, Vec<_>) = edge
+            .obligations
+            .iter()
+            .chain(&ranking)
+            .map(|obligation| {
+                let introductions = obligation.shared_introductions();
+                if wide
+                    && let Some(introductions) = introductions
+                    && let Some((goal, adjusted)) =
+                        group_wide_invariant_guards(obligation.proposition(), introductions)
+                {
+                    return (goal, Some(adjusted));
+                }
+                (obligation.proposition().clone(), introductions.cloned())
+            })
+            .unzip();
         // Preserve the established shape of short bundles. Wide generated
         // bundles need logarithmic conjunction depth so their explicit
         // certificates fit the unchanged source parser's structural limit.
         // Pair adjacent members only: every obligation and its order remain.
-        let goal = if members.len() <= 24 {
+        let goal = if wide {
+            balanced_invariant_conjunction(members)
+        } else {
             members
                 .into_iter()
                 .rev()
                 .reduce(|right, left| Proposition::And(Box::new(left), Box::new(right)))
-        } else {
-            while members.len() > 1 {
-                let mut level = Vec::with_capacity(members.len().div_ceil(2));
-                let mut pairs = members.into_iter();
-                while let Some(left) = pairs.next() {
-                    level.push(match pairs.next() {
-                        Some(right) => Proposition::And(Box::new(left), Box::new(right)),
-                        None => left,
-                    });
-                }
-                members = level;
-            }
-            members.pop()
         }
         .unwrap_or(Proposition::condition_is(
             crate::kernel::OldConditionTerm::Constant(true),
             true,
         ));
-        let introductions = obligations()
-            .map(|obligation| obligation.shared_introductions().cloned())
-            .collect::<Vec<_>>();
         let display = presentation(&goal, &introductions);
         let root = Self::root(
             self.state.locals.clone(),
