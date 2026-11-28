@@ -2,6 +2,7 @@
 //! No history, read reconstruction, or premise discovery belongs here.
 use crate::kernel::eval::typed_reads::{self, ReadType};
 use crate::kernel::prelude::*;
+use crate::kernel::{KernelTerm, KernelTermImport, StoredConditionTerm};
 
 pub(crate) fn apply(
     separation: &Proposition,
@@ -282,14 +283,14 @@ fn preserve_field(
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
         ) if a.algebraic_type == b.algebraic_type => {
-            OldConditionTerm::AlgebraicEqual(a.clone(), b.clone())
+            return Some(Proposition::condition_is(algebraic_equality(a, b), true));
         }
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
         ) => {
             return Some(Proposition::condition_is(
-                crate::kernel::StoredConditionTerm::logical_pointer_equal(a, b),
+                StoredConditionTerm::logical_pointer_equal(a, b),
                 true,
             ));
         }
@@ -361,34 +362,36 @@ fn observation_equality(
     }
     let condition = match (kind, after, before) {
         (ReadType::Boolean, ProgramValue::Bool(a), ProgramValue::Bool(b)) => {
-            OldConditionTerm::bool_equal(
-                OldConditionTerm::truth_of_bool_word(&a),
-                OldConditionTerm::truth_of_bool_word(&b),
-            )
+            let mut import = KernelTermImport::for_exact_field_inputs();
+            let root = KernelTerm::boolean_equal([
+                import.truth_of_bool_word(&a),
+                import.truth_of_bool_word(&b),
+            ]);
+            StoredConditionTerm::from_root(root).expect("Boolean equality")
         }
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            return Some(Proposition::condition_is(
-                crate::kernel::StoredConditionTerm::logical_pointer_equal(&a, &b),
-                true,
-            ));
+            StoredConditionTerm::logical_pointer_equal(&a, &b)
         }
         (ReadType::IntegerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            return Some(Proposition::condition_is(
-                crate::kernel::StoredConditionTerm::address_equal(a.address(), b.address()),
-                true,
-            ));
+            StoredConditionTerm::address_equal(a.address(), b.address())
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
         {
-            OldConditionTerm::AlgebraicEqual(a, b)
+            algebraic_equality(&a, &b)
         }
         (ReadType::Integer(format), a, b) => {
-            integer_equality(format, integer_bits(a)?, integer_bits(b)?)?
+            integer_equality(format, integer_bits(a)?, integer_bits(b)?)?.into()
         }
         _ => return None,
     };
     Some(Proposition::condition_is(condition, true))
+}
+
+fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> StoredConditionTerm {
+    let mut import = KernelTermImport::for_exact_field_inputs();
+    let root = KernelTerm::algebraic_equal_raw([import.algebraic(left), import.algebraic(right)]);
+    StoredConditionTerm::from_root(root).expect("algebraic equality")
 }
 
 fn integer_bits(value: ProgramValue) -> Option<OldMachineTerm> {
@@ -448,7 +451,6 @@ mod tests {
 
     #[test]
     fn promoted_preservation_reads_exact_widenings_without_exporting_the_goal() {
-        use crate::kernel::{KernelTermImport, StoredConditionTerm};
         use MachineIntegerType as T;
         let _session = crate::kernel::VerificationSession::enter();
         let widen = |source, variable| {
@@ -1004,6 +1006,49 @@ mod tests {
         let result = &mut preservation.result;
         *result = goal.clone();
         (preservation, goal)
+    }
+
+    #[test]
+    fn boolean_preservation_compares_the_truth_of_each_recorded_word() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _reads = typed_reads::ReadScope::enter();
+        let (preservation, _) = fixture(0, false);
+        let Proposition::ResourceSeparate { left, .. } = &preservation.separation else {
+            unreachable!()
+        };
+        let Resource::Footprint(footprint) = left.as_ref() else {
+            unreachable!()
+        };
+        let address = Address::symbolic(Variable(983421));
+        let word = OldMachineTerm::Variable(Variable(983422));
+        let cast = OldMachineTerm::bool_cast(
+            MachineIntegerType::UInt8,
+            OldConditionTerm::Variable(Variable(983423)),
+        );
+        for before in [cast, word.clone()] {
+            typed_reads::record_at(
+                &footprint.before_point,
+                &address,
+                &ProgramValue::Bool(before.clone()),
+            );
+            typed_reads::record_at(
+                &footprint.after_point,
+                &address,
+                &ProgramValue::Bool(word.clone()),
+            );
+            let kind = ReadType::Boolean;
+            let Some(Proposition::ConditionIs(condition, true)) =
+                observation_equality(footprint, address.clone(), kind, kind)
+            else {
+                panic!("expected Boolean observation equality");
+            };
+            let expected = OldConditionTerm::bool_equal(
+                OldConditionTerm::truth_of_bool_word(&word),
+                OldConditionTerm::truth_of_bool_word(&before),
+            );
+            assert_eq!(condition, StoredConditionTerm::from(expected));
+            assert!(!condition.root().unwrap().has_cached_native_argument());
+        }
     }
 
     #[test]
