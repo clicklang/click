@@ -2605,9 +2605,7 @@ fn collect_proposition_bound_variables_one(
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
             for range in mutable_ranges {
-                collect_pointer_bound_variables(&range.base, variables);
-                collect_bitvector_bound_variables(range.bound_terms().0, variables);
-                collect_bitvector_bound_variables(range.bound_terms().1, variables);
+                collect_memory_range_bound_variables(range, variables);
             }
         }
         Proposition::HeapAllocationFreed {
@@ -2621,12 +2619,10 @@ fn collect_proposition_bound_variables_one(
             collect_memory_bound_variables(after, variables);
             for (base, bytes) in blocks {
                 collect_pointer_bound_variables(base, variables);
-                collect_bitvector_bound_variables(bytes.bytes(), variables);
+                collect_machine_bound_variables(bytes.byte_operand(), variables);
             }
             for range in mutable_ranges {
-                collect_pointer_bound_variables(&range.base, variables);
-                collect_bitvector_bound_variables(range.bound_terms().0, variables);
-                collect_bitvector_bound_variables(range.bound_terms().1, variables);
+                collect_memory_range_bound_variables(range, variables);
             }
         }
         Proposition::And(left, right)
@@ -3306,7 +3302,7 @@ fn collect_memory_bound_variables(memory: &SymbolicMemory, variables: &mut BTree
         }
     }
     for contents in memory.blocks.values() {
-        collect_bitvector_bound_variables(contents.size(), variables);
+        collect_machine_bound_variables(contents.allocation_size().byte_operand(), variables);
     }
     for (pointer, value) in memory.cells.concrete().iter() {
         #[cfg(test)]
@@ -3366,7 +3362,7 @@ fn collect_memory_bound_variables_entering(
     }
     for change in base.blocks.diff(&memory.blocks) {
         if let Some(contents) = memory.blocks.get(change.key()) {
-            collect_bitvector_bound_variables(contents.size(), variables);
+            collect_machine_bound_variables(contents.allocation_size().byte_operand(), variables);
         }
     }
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
@@ -3454,9 +3450,7 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
         }
 
         Resource::Memory(range) => {
-            collect_pointer_bound_variables(&range.base, variables);
-            collect_bitvector_bound_variables(range.bound_terms().0, variables);
-            collect_bitvector_bound_variables(range.bound_terms().1, variables);
+            collect_memory_range_bound_variables(range, variables);
         }
         Resource::Iterated(iterated) => {
             for pointer in iterated.pointers() {
@@ -3472,6 +3466,13 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
             }
         }
     }
+}
+
+fn collect_memory_range_bound_variables(range: &MemoryRange, variables: &mut BTreeSet<Variable>) {
+    collect_pointer_bound_variables(&range.base, variables);
+    let (start, end) = range.retained_bounds();
+    collect_machine_bound_variables(start.operand_view(), variables);
+    collect_machine_bound_variables(end.operand_view(), variables);
 }
 
 /// Collects identities introduced by `RangeFold` binders inside a term.
@@ -10749,6 +10750,58 @@ fn stored_machine_freshness_collects_binders_in_guards_and_arms() {
         before
     );
     assert!(!root.has_cached_native_argument());
+}
+
+#[cfg(test)]
+#[test]
+fn heap_free_variables_read_stored_sizes_and_range_bounds() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = SymbolicMemory::global_pointer("shared-size");
+    let pointer = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+    let fold = |id, format| {
+        crate::kernel::KernelTermImport::default().machine(
+            format,
+            &OldMachineTerm::RangeFold {
+                start: Box::new(OldMachineTerm::constant(0)),
+                end: Box::new(OldMachineTerm::Variable(Variable(id))),
+                initial: Box::new(OldMachineTerm::constant(0)),
+                accumulator: Variable(id + 1),
+                item: Variable(id + 2),
+                body: Box::new(OldMachineTerm::Variable(Variable(id + 1))),
+            },
+        )
+    };
+    let size = fold(100, MachineIntegerType::Int32);
+    let start = fold(200, MachineIntegerType::UInt64);
+    let end = fold(300, MachineIntegerType::UInt64);
+    let fact = Proposition::HeapAllocationFreed {
+        before: SymbolicMemory::new(),
+        before_point: Default::default(),
+        after: SymbolicMemory::new(),
+        after_point: Default::default(),
+        blocks: vec![(
+            base,
+            AllocationSize::from_value(ExecutionValue::Shared(size.clone())).unwrap(),
+        )],
+        mutable_ranges: vec![
+            MemoryRange::from_retained_bounds(
+                &pointer,
+                ExecutionValue::Shared(start.clone()),
+                ExecutionValue::Shared(end.clone()),
+                4,
+            )
+            .unwrap(),
+        ],
+    };
+    let mut free = BTreeSet::new();
+    collect_proposition_bitvector_variables(&fact, &mut free);
+    assert_eq!(free, [100, 200, 300].map(Variable).into());
+    let mut bound = BTreeSet::new();
+    collect_proposition_bound_variables(&fact, &mut bound);
+    assert_eq!(bound, [101, 102, 201, 202, 301, 302].map(Variable).into());
+    for root in [size, start, end] {
+        assert!(!root.has_cached_native_argument());
+    }
 }
 
 #[cfg(test)]
