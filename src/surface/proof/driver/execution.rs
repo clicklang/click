@@ -546,9 +546,6 @@ fn checked_execution_region_end_at(
             InternalProofNode::Open {
                 body, continuation, ..
             } => {
-                if initial == CheckedExecutionRegionEnd::FunctionExit {
-                    return Err(Decline::Shape);
-                }
                 initial = checked_execution_region_end_at(body, depth + 1, initial)?;
                 node = continuation;
             }
@@ -1058,11 +1055,81 @@ fn deferred_region_with_bindings(
                 )?);
                 continuation
             }
-            InternalProofNode::Open { .. } | InternalProofNode::Branch { .. } => {
-                return Err(Decline::Shape);
+            InternalProofNode::Open {
+                index,
+                source_index,
+                resource,
+                body,
+                continuation,
+            } => {
+                deferred.push(deferred_post_execution_open(
+                    *index,
+                    *source_index,
+                    resource,
+                    body,
+                    &bindings,
+                )?);
+                continuation
             }
+            InternalProofNode::Branch { .. } => return Err(Decline::Shape),
         };
     }
+}
+
+fn deferred_post_execution_open(
+    index: usize,
+    source_index: usize,
+    resource: &ResourceClause,
+    body: &InternalProofNode,
+    bindings: &DeferredValueBindings,
+) -> Result<DeferredPostExecutionTactic, Decline> {
+    let close = DeferredPostExecutionTactic {
+        lexical_bindings: None,
+        reads_deferred_binding: false,
+        tactic_index: index,
+        source_index,
+        tactic: PostExecutionTactic::CloseOpen {
+            resource: resource.clone(),
+            restoration: None,
+            retain_deferred_body: false,
+        },
+    };
+    Ok(DeferredPostExecutionTactic {
+        lexical_bindings: None,
+        reads_deferred_binding: false,
+        tactic_index: index,
+        source_index,
+        tactic: PostExecutionTactic::Open {
+            resource: Arc::new(resource.clone()),
+            body: deferred_region_with_bindings(body, bindings)?,
+            close: Arc::new(close),
+        },
+    })
+}
+
+fn post_execution_open(
+    proof: &Proof<'_>,
+    index: usize,
+    source_index: usize,
+    resource: &ResourceClause,
+    body: &InternalProofNode,
+) -> Result<PostExecutionTactic, ClickError> {
+    let execution = proof
+        .execution()
+        .expect("a terminal frontier retains execution");
+    deferred_post_execution_open(
+        index,
+        source_index,
+        resource,
+        body,
+        &execution.presentation.deferred_value_bindings,
+    )
+    .map(|open| open.tactic)
+    .map_err(|_| {
+        proof
+            .at_source_tactic(source_index)
+            .step_error("unsupported proof structure inside a `with` block after function exit")
+    })
 }
 
 /// A proof `match` after execution, deferred so that each outcome path
@@ -1104,6 +1171,7 @@ fn deferred_post_execution_if_is_explicit_path_cursor(
                 PostExecutionTactic::Solve
                 | PostExecutionTactic::ImplicitSolve
                 | PostExecutionTactic::Match { .. } => false,
+                PostExecutionTactic::Open { body, .. } => explicit_tree(body, depth + 1),
                 PostExecutionTactic::If {
                     condition,
                     then_tactics,
@@ -1982,10 +2050,18 @@ fn try_check_structural_function_proof_inner<'a>(
                 body,
                 continuation,
             } => {
-                if proof.is_at_function_exit() {
-                    return decline();
-                }
                 saw_structure = true;
+                if proof.is_at_function_exit() {
+                    let open = post_execution_open(&proof, *index, *source_index, resource, body)?;
+                    proof = proof.defer_post_execution_source_tactic(
+                        *index,
+                        *source_index,
+                        open,
+                        staged_expansion_capture.as_mut(),
+                    )?;
+                    current = continuation;
+                    continue;
+                }
                 proof = proof.with_execution_tactic_index(*index)?;
                 let scope = proof.begin_open(resource.clone(), *source_index)?;
                 let scope = driven!(advance_checked_open_scope(
@@ -4217,6 +4293,18 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 body,
                 continuation,
             } => {
+                if proof.is_at_function_exit() {
+                    let open = post_execution_open(&proof, *index, *source_index, resource, body)?;
+                    proof = proof.defer_post_execution_source_tactic(
+                        *index,
+                        *source_index,
+                        open,
+                        expansion_capture.as_deref_mut(),
+                    )?;
+                    region = continuation;
+                    branch_continuation = None;
+                    continue;
+                }
                 let owner = proof.clone();
                 let opened = proof.with_execution_tactic_index(*index)?;
                 let scope = opened.begin_open(resource.clone(), *source_index)?;
@@ -5315,6 +5403,23 @@ fn advance_checked_open_scope<'a>(
         continuation,
     } = body
     {
+        if scope.is_at_function_exit() {
+            let open =
+                post_execution_open(scope.body(), *index, *source_index, resource, nested_body)?;
+            let scope = scope.defer_post_execution_source_tactic(
+                *index,
+                *source_index,
+                open,
+                expansion_capture.as_deref_mut(),
+            )?;
+            return advance_checked_open_scope(
+                scope,
+                continuation,
+                expansion_capture,
+                proof_site,
+                owning_source_index,
+            );
+        }
         let scope = scope.with_execution_tactic_index(*index)?;
         let nested = scope.begin_open(resource.clone(), *source_index)?;
         let nested = driven!(advance_checked_open_scope(

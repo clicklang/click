@@ -336,12 +336,12 @@ fn next_checked_post_execution_tactic<'a>(
                 choice,
                 bindings_before_arm,
             } => {
-                let arm_end = SurfaceIfArmEnd {
+                let arm_end = SurfaceScopeEnd {
                     step_offset: surface_tactics.len(),
                     nested_choices: choices.len() - choice - 1,
                     binds_locals: locals.checked_bindings != bindings_before_arm,
                 };
-                choices[choice].if_arm_end = Some(arm_end);
+                choices[choice].scope_end = Some(arm_end);
                 continue;
             }
         };
@@ -361,7 +361,7 @@ fn next_checked_post_execution_tactic<'a>(
                 selector: SurfacePathSelector::MatchArm(Arc::clone(source), arm),
                 value: true,
                 tactic_offset: surface_tactics.len(),
-                if_arm_end: None,
+                scope_end: None,
             });
             let tactics = arms.get(arm).ok_or_else(|| {
                 ClickError::new("a post-execution `match` path names an arm it does not have")
@@ -375,6 +375,18 @@ fn next_checked_post_execution_tactic<'a>(
             .lexical_bindings
             .clone()
             .or_else(|| arm_scope.clone());
+        if let PostExecutionTactic::Open { body, close, .. } = &deferred.tactic {
+            pending.push(PendingPostExecutionTactic::Tactic(
+                close,
+                call_depth,
+                scope.clone(),
+            ));
+            pending.extend(body.iter().rev().map(|tactic| {
+                PendingPostExecutionTactic::Tactic(tactic, call_depth, scope.clone())
+            }));
+            locals.enter(proof, deferred.source_index, scope.as_ref());
+            return Ok(Some(deferred));
+        }
         let (selector, value, arm, child_depth) = match &deferred.tactic {
             PostExecutionTactic::If {
                 condition,
@@ -469,7 +481,7 @@ fn next_checked_post_execution_tactic<'a>(
             selector,
             value,
             tactic_offset: surface_tactics.len(),
-            if_arm_end: None,
+            scope_end: None,
         });
         if let PostExecutionTactic::If {
             ensuring: Some(check),
@@ -574,7 +586,7 @@ fn append_post_execution_paths_by_surface_leaf(
         } else {
             select(terminal_choices, &members)
         };
-        let keep_scopes = outcome_paths_bind_locals(&choices);
+        let keep_scopes = outcome_paths_require_scopes(&choices);
         let suffix = synthesize_post_execution_paths(
             &select(tactics, &members),
             &select(closers, &members),
@@ -587,11 +599,11 @@ fn append_post_execution_paths_by_surface_leaf(
     Ok(())
 }
 
-fn outcome_paths_bind_locals(choices: &[Vec<SurfacePathChoice>]) -> bool {
-    choices
-        .iter()
-        .flatten()
-        .any(|choice| choice.if_arm_end.is_some_and(|end| end.binds_locals))
+fn outcome_paths_require_scopes(choices: &[Vec<SurfacePathChoice>]) -> bool {
+    choices.iter().flatten().any(|choice| {
+        matches!(choice.selector, SurfacePathSelector::Open(..))
+            || choice.scope_end.is_some_and(|end| end.binds_locals)
+    })
 }
 
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
@@ -4333,6 +4345,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         | ProofTactic::UserTactic(_)
                                 )
                                 | PostExecutionTactic::ResourceStepProved(_)
+                                | PostExecutionTactic::Open { .. }
                                 | PostExecutionTactic::CloseOpen { .. }
                                 | PostExecutionTactic::Ensuring(_)
                         )
@@ -4373,7 +4386,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     for deferred in post_execution_tactics.iter() {
                         if let PostExecutionTactic::CloseOpen {
                             resource: ResourceClause::Named { binding, .. },
-                            restoration: OpenResourceRestoration::Named(instance),
+                            restoration: Some(OpenResourceRestoration::Named(instance)),
                             ..
                         } = &deferred.tactic
                         {
@@ -4415,6 +4428,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut post_return_facts = Vec::new();
                     let mut post_execution_count = 0;
                     let mut deferred_locals = DeferredOutcomeLocals::default();
+                    let mut outcome_open_scopes = Vec::new();
                     while let Some(deferred) = {
                         // A checked closer belongs at its source occurrence,
                         // before the next post-return tactic. Include it in
@@ -4541,6 +4555,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         if matches!(
                             post_tactic,
                             PostExecutionTactic::ResourceStepProved(_)
+                                | PostExecutionTactic::Open { .. }
                                 | PostExecutionTactic::CloseOpen { .. }
                                 | PostExecutionTactic::Leaf(
                                     ProofTactic::FoldResource(_)
@@ -4805,14 +4820,46 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
+                            PostExecutionTactic::Open { resource, .. } => {
+                                let evolving = required_outcome(&outcome_proof)?;
+                                let (opened, restoration) =
+                                    evolving.open_outcome_resource_scope(resource)?;
+                                outcome_open_scopes.push((restoration, surface_post_choices.len()));
+                                surface_post_choices.push(SurfacePathChoice {
+                                    occurrence: *source_index,
+                                    selector: SurfacePathSelector::Open(Arc::clone(resource)),
+                                    value: true,
+                                    tactic_offset: path_surface_post_tactics.len(),
+                                    scope_end: None,
+                                });
+                                has_return_resource_rewrite |=
+                                    opened.execution().is_some_and(|execution| {
+                                        execution
+                                            .core
+                                            .has_checked_return_resource_rewrite(path_index)
+                                    });
+                                outcome = opened.focused_outcome_state()?;
+                                outcome_proof = Some(opened);
+                            }
                             PostExecutionTactic::CloseOpen {
                                 resource,
                                 restoration,
                                 retain_deferred_body,
                             } => {
-                                if let ResourceClause::Named { binding, .. } = resource {
-                                    named_open_templates.remove(&binding.instance()?);
-                                }
+                                let outcome_scope;
+                                let (restoration, scope_choice) =
+                                    if let Some(restoration) = restoration {
+                                        if let ResourceClause::Named { binding, .. } = resource {
+                                            named_open_templates.remove(&binding.instance()?);
+                                        }
+                                        (restoration, None)
+                                    } else {
+                                        let (template, choice) = outcome_open_scopes.pop().expect(
+                                            "a deferred outcome scope closes after it opens",
+                                        );
+                                        outcome_scope = template;
+                                        (&outcome_scope, Some(choice))
+                                    };
                                 let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
                                     format!("`{proof_label}` path {path_index}: resource scope has no outcome Proof")
                                 ))?;
@@ -4847,7 +4894,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                     });
                                 outcome = closed.focused_outcome_state()?;
                                 outcome_proof = Some(closed);
-                                if tail.is_some() || named || *retain_deferred_body {
+                                if let Some(choice) = scope_choice {
+                                    if let Some(tail) = tail {
+                                        path_surface_post_tactics.extend(tail.to_proof_tactics());
+                                    }
+                                    let scope_end = SurfaceScopeEnd {
+                                        step_offset: path_surface_post_tactics.len(),
+                                        nested_choices: surface_post_choices.len() - choice - 1,
+                                        binds_locals: false,
+                                    };
+                                    surface_post_choices[choice].scope_end = Some(scope_end);
+                                } else if tail.is_some() || named || *retain_deferred_body {
                                     let deferred = ProofOpen::deferred_block_tail(
                                         resource.clone(),
                                         tail.map_or_else(Vec::new, |proof| {
@@ -6072,7 +6129,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         selector: SurfacePathSelector::Proposition(condition.clone()),
                         value,
                         tactic_offset: 0,
-                        if_arm_end: None,
+                        scope_end: None,
                     },
                 );
             }
@@ -6090,7 +6147,8 @@ pub(super) fn finish_ordered_proof<'a>(
         };
         let has_written_choices = surface_post_choices_by_path
             .iter()
-            .any(|choices| !choices.is_empty());
+            .flatten()
+            .any(|choice| !matches!(choice.selector, SurfacePathSelector::Open(..)));
         // Let written cases use their existing routes first. If a leaf
         // still needs a split, its outcomes can use their return values or
         // their retained return-expression guards.
@@ -6136,7 +6194,8 @@ pub(super) fn finish_ordered_proof<'a>(
             }
             Ok(())
         };
-        let keep_post_execution_scopes = outcome_paths_bind_locals(&surface_post_choices_by_path);
+        let keep_post_execution_scopes =
+            outcome_paths_require_scopes(&surface_post_choices_by_path);
         let append_paths_by_leaf = |steps: &mut Vec<ProofStep>, closers: &[Vec<ProofTactic>]| {
             append_post_execution_paths_by_surface_leaf(
                 steps,
@@ -6614,7 +6673,7 @@ mod tests {
                 selector: SurfacePathSelector::Proposition(condition.clone()),
                 value,
                 tactic_offset: 1,
-                if_arm_end: None,
+                scope_end: None,
             }]
         });
         let tactics = [true, true, false, false].map(|value| {
