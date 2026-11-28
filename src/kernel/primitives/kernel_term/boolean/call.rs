@@ -33,6 +33,17 @@ impl KernelTermImport {
     }
 }
 impl KernelTerm {
+    pub(crate) fn boolean_call_machine_argument(&self) -> Option<SharedMachineIntegerTerm> {
+        let KernelType::Program(ty) = self.ty() else {
+            return None;
+        };
+        let format = MachineIntegerType::from_program_type(*ty)?;
+        if self.requires_native_argument_input() || self.written_argument().is_some() {
+            return None;
+        }
+        Some(MachineOperandView::Shared(self).retain(format))
+    }
+
     pub(crate) fn old_boolean_call(&self) -> Option<&OldConditionTerm> {
         if self.ty() != &KernelType::Bool {
             return None;
@@ -45,14 +56,8 @@ impl KernelTerm {
             let arguments = arguments
                 .iter()
                 .map(|argument| {
-                    if let KernelType::Program(ty) = argument.ty()
-                        && let Some(format) = MachineIntegerType::from_program_type(*ty)
-                        && !argument.requires_native_argument_input()
-                        && argument.written_argument().is_none()
-                    {
-                        PureFunctionArgument::SharedMachine(
-                            MachineOperandView::Shared(argument).retain(format),
-                        )
+                    if let Some(machine) = argument.boolean_call_machine_argument() {
+                        PureFunctionArgument::SharedMachine(machine)
                     } else {
                         export.argument(argument).expect("Boolean call argument")
                     }

@@ -1627,6 +1627,40 @@ fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() 
 }
 
 #[test]
+fn boolean_calls_collect_shared_arithmetic_without_building_a_native_call() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let variable = Variable(982824);
+        let mut sum = KernelTerm::variable(KernelType::Program(format.program_type()), variable);
+        for _ in 0..depth {
+            sum =
+                KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [sum.clone(), sum]);
+        }
+        let call = KernelTerm::checked_call(KernelType::Bool, "has_sum".into(), vec![sum]);
+        let nested = KernelTerm::boolean_equal_raw([call.clone(), call.clone()]);
+        let exports = KernelTermExport::machine_export_count();
+        for condition in [call.clone(), nested] {
+            let mut vars = CarrierVariables::for_rewrite(true);
+            collect_stored_condition_carriers(
+                &StoredConditionTerm::from_root(condition).unwrap(),
+                &mut vars,
+            );
+            assert_eq!(vars.program_values, BTreeSet::from([variable]));
+            assert!(!vars.exhausted());
+            assert!(
+                vars.nodes <= 4 * depth + 32,
+                "depth {depth}, visits {}",
+                vars.nodes
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!call.has_cached_native_argument());
+        assert!(!call.has_cached_machine_leaf());
+    }
+}
+
+#[test]
 fn mixed_integer_comparisons_collect_shared_arithmetic_and_the_exact_read() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
