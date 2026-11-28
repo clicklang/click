@@ -1284,6 +1284,73 @@ impl Elaborator<'_> {
     }
 }
 
+#[cfg(debug_assertions)]
+thread_local! {
+    /// The front end's declarations for the proof clause being lowered:
+    /// its function's, with the C names in scope at the clause's statement.
+    /// A debug-only scaffold for `check_front_end_scope`, set by the proof
+    /// driver, which knows the clause's position, until the driver
+    /// elaborates proof clauses itself (`design/typed-surface.md`).
+    static PROOF_CLAUSE_SCOPE: std::cell::RefCell<Option<Declarations<'static>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Debug builds: while this lives, the first clause lowered from Syntax is
+/// checked to elaborate the same from the front end's declarations at its
+/// position as from its lowering context (`check_front_end_scope`).
+#[cfg(debug_assertions)]
+pub(in crate::surface) struct ProofClauseScope(());
+
+#[cfg(debug_assertions)]
+impl ProofClauseScope {
+    /// The scope of a proof clause in `function` at the statement whose
+    /// source bindings, the C names in scope there, are `site_bindings`.
+    pub(in crate::surface) fn enter(
+        function: &crate::languages::interface::ImportedFunction,
+        site_bindings: Option<&syntax::CSourceBindings>,
+    ) -> Self {
+        let mut declarations = Declarations::of_function(function);
+        declarations.source_bindings = site_bindings.cloned();
+        PROOF_CLAUSE_SCOPE.with(|scope| *scope.borrow_mut() = Some(declarations));
+        Self(())
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Drop for ProofClauseScope {
+    fn drop(&mut self) {
+        PROOF_CLAUSE_SCOPE.with(|scope| scope.borrow_mut().take());
+    }
+}
+
+/// Debug builds: the first clause lowered under a `ProofClauseScope`
+/// elaborates from the front end's declarations at its position (with its
+/// Click names still read from the lowering context) to the Surface its
+/// lowering context gave it. Only the first: a clause lowered inside it,
+/// such as an unfolded predicate's body, has a scope of its own.
+#[cfg(debug_assertions)]
+pub(super) fn check_front_end_scope(
+    lowerer: &AnnotationLowerer<'_>,
+    elaborated: &SurfaceProposition<'_>,
+    proposition: &SyntaxProposition,
+    context: &SpecElaborationContext,
+) {
+    let Some(declarations) = PROOF_CLAUSE_SCOPE.with(|scope| scope.borrow_mut().take()) else {
+        return;
+    };
+    crate::instrumentation::uncharged_debug_check(|| {
+        let front_end = Elaborator {
+            declarations,
+            ..lowerer.elaborator()
+        };
+        assert_eq!(
+            &front_end.elaborate_clause(proposition, &TypingEnvironment::of(context)),
+            elaborated,
+            "proof clause `{proposition:?}` elaborates differently from the front end's declarations at its position"
+        );
+    });
+}
+
 /// The type a range item of `item_type` has, as lowering binds it: the
 /// click type of a value of that type.
 pub(super) fn range_item_click_type(item_type: ProgramType) -> ClickType {

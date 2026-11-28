@@ -239,6 +239,8 @@ mod elaborator;
 mod typing_environment;
 use declarations::Declarations;
 use elaborator::Elaborator;
+#[cfg(debug_assertions)]
+pub(in crate::surface) use elaborator::ProofClauseScope;
 use typing_environment::{PointInputs, TypingEnvironment};
 #[cfg(test)]
 mod elaboration_tests;
@@ -4846,6 +4848,8 @@ impl AnnotationLowerer<'_> {
         let surface = self.with_elaborator(|elaborator| {
             elaborator.elaborate_clause(proposition, &TypingEnvironment::of(environment))
         });
+        #[cfg(debug_assertions)]
+        elaborator::check_front_end_scope(self, &surface, proposition, environment);
         self.lower_surface_proposition(&surface, environment)
     }
 
