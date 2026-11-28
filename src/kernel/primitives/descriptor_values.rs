@@ -230,6 +230,13 @@ impl StoredIntegerTerm {
             StoredInteger::Shared(root) => Some(root),
         }
     }
+    pub(crate) fn into_shared(self) -> SharedIntegerTerm {
+        match self.0 {
+            StoredInteger::Shared(root) => SharedIntegerTerm::from_root(root),
+            StoredInteger::Input(value) => Arc::unwrap_or_clone(value).into(),
+        }
+    }
+
     fn exact_key(&self) -> super::integer::IntegerShallowKey {
         self.root()
             .and_then(KernelTerm::integer_exact_key)
