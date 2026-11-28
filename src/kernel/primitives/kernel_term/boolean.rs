@@ -723,7 +723,9 @@ impl KernelTermExport {
         })
     }
 
-    fn condition_machine_operand(term: &KernelTerm) -> Result<OldMachineTerm, &'static str> {
+    pub(in crate::kernel) fn condition_machine_operand(
+        term: &KernelTerm,
+    ) -> Result<OldMachineTerm, &'static str> {
         // Fixed-size atoms have their exact written form already. Only a
         // compound guard operand needs the remaining Boolean export boundary.
         match term.node() {
