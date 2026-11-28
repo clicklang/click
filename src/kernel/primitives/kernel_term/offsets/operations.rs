@@ -146,14 +146,17 @@ impl SharedAddressOffset {
         });
     }
 
-    pub(crate) fn visit_root_while(&self, visit: impl FnMut(&KernelAddressOffset) -> bool) -> bool {
+    pub(crate) fn visit_root_while<'a>(
+        &'a self,
+        visit: impl FnMut(&'a KernelAddressOffset) -> bool,
+    ) -> bool {
         Self::visit_roots_while(std::slice::from_ref(self), false, visit)
     }
 
-    fn visit_roots_while(
-        roots: &[Self],
+    fn visit_roots_while<'a>(
+        roots: &'a [Self],
         right_first: bool,
-        mut visit: impl FnMut(&KernelAddressOffset) -> bool,
+        mut visit: impl FnMut(&'a KernelAddressOffset) -> bool,
     ) -> bool {
         let mut pending: Vec<_> = roots.iter().rev().collect();
         let mut seen = std::collections::HashSet::new();

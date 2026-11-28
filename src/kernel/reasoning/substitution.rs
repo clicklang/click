@@ -2607,7 +2607,7 @@ fn collect_proposition_bound_variables_one(
             collect_sequence_bound_variables(sequence, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bound_variables(condition.old_form(), variables);
+            collect_stored_condition_bound_variables(condition, variables);
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -2764,10 +2764,9 @@ fn collect_proposition_bound_variables_one(
 
 fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>) {
     match term {
-        Term::Condition(condition) => match condition.root() {
-            Some(root) => collect_shared_bound_variables(root, variables),
-            None => collect_condition_bound_variables(condition.old_form(), variables),
-        },
+        Term::Condition(condition) => {
+            collect_stored_condition_bound_variables(condition, variables)
+        }
         Term::Bitvector32(bits) => collect_machine_bound_variables(bits.operand_view(), variables),
         Term::Integer(integer) => {
             if integer
@@ -3612,6 +3611,29 @@ fn collect_machine_bound_variables(
     }
 }
 
+fn collect_stored_condition_bound_variables(
+    condition: &StoredConditionTerm,
+    variables: &mut BTreeSet<Variable>,
+) {
+    match condition.operand_view() {
+        BooleanOperandView::Shared(root) => collect_shared_bound_variables(root, variables),
+        BooleanOperandView::Native(value) => collect_condition_bound_variables(value, variables),
+    }
+}
+
+fn push_offset_indices<'a>(
+    offset: &'a crate::kernel::SharedAddressOffset,
+    pending: &mut Vec<&'a KernelTerm>,
+) {
+    offset.visit_root_while(|node| {
+        if super::variable_collection::checked_collection_checkpoint() {
+            return false;
+        }
+        pending.extend(node.index());
+        true
+    });
+}
+
 fn collect_shared_bound_variables(root: &KernelTerm, variables: &mut BTreeSet<Variable>) {
     let mut pending = vec![root];
     let mut seen = std::collections::HashSet::new();
@@ -3639,6 +3661,24 @@ fn collect_shared_bound_variables(root: &KernelTerm, variables: &mut BTreeSet<Va
             | KernelTermNode::BoolCast { operand, .. } => pending.push(operand),
             KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
                 pending.extend(arguments)
+            }
+            KernelTermNode::AddressEqual { arguments, .. } => {
+                for address in arguments {
+                    push_offset_indices(address.offset(), &mut pending);
+                }
+            }
+            KernelTermNode::AddressOffsetEqual { arguments } => {
+                for offset in arguments {
+                    push_offset_indices(offset, &mut pending);
+                }
+            }
+            KernelTermNode::PointerEqual(pair) => {
+                for pointer in pair.arguments() {
+                    pending.extend(pointer.len());
+                    for address in pointer.addresses() {
+                        push_offset_indices(address.offset(), &mut pending);
+                    }
+                }
             }
             _ if root.ty() == &crate::kernel::KernelType::Bool => {
                 collect_condition_bound_variables(
@@ -10935,6 +10975,53 @@ fn stored_machine_freshness_collects_binders_in_guards_and_arms() {
         before
     );
     assert!(!root.has_cached_native_argument());
+}
+
+#[cfg(test)]
+#[test]
+fn pointer_condition_freshness_reads_offsets_and_slice_counts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let fold = |id| OldMachineTerm::RangeFold {
+        start: Box::new(OldMachineTerm::constant(0)),
+        end: Box::new(OldMachineTerm::Variable(Variable(50))),
+        initial: Box::new(OldMachineTerm::constant(0)),
+        accumulator: Variable(id),
+        item: Variable(id + 1),
+        body: Box::new(OldMachineTerm::Variable(Variable(id))),
+    };
+    let offset = AddressOffset::scaled_int32_node(fold(51), 4);
+    let address = Address::symbolic(Variable(56)).with_offset(offset.clone());
+    let pointer =
+        Pointer::new(address.clone(), ProgramType::Int32Pointer).with_element_count(fold(53));
+    let null = Address::null();
+    let empty = Pointer::new(null.clone(), ProgramType::Int32Pointer)
+        .with_element_count(OldMachineTerm::uint64_constant(0));
+    for (condition, expected) in [
+        (
+            OldConditionTerm::PointerEqual(Box::new(pointer), Box::new(empty)),
+            vec![51, 52, 53, 54],
+        ),
+        (
+            OldConditionTerm::AddressEqual(Box::new(address), Box::new(null)),
+            vec![51, 52],
+        ),
+        (
+            OldConditionTerm::AddressOffsetEqual(
+                Box::new(offset),
+                Box::new(AddressOffset::constant(0)),
+            ),
+            vec![51, 52],
+        ),
+    ] {
+        let leaf = KernelTermImport::default().condition(&condition);
+        let root = KernelTerm::boolean_equal_raw([leaf.clone(), leaf]);
+        let proposition =
+            Proposition::ConditionIs(StoredConditionTerm::from_root(root.clone()).unwrap(), true);
+        let mut actual = BTreeSet::new();
+        collect_proposition_bound_variables(&proposition, &mut actual);
+        assert_eq!(actual, expected.into_iter().map(Variable).collect());
+        assert!(root.cached_condition_output().is_none());
+    }
 }
 
 #[cfg(test)]
