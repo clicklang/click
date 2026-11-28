@@ -1627,6 +1627,34 @@ fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() 
 }
 
 #[test]
+fn algebraic_equalities_visit_shared_constructor_fields_once_for_variable_queries() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let ty = algebraic_match_tests::tree_type();
+        let variable = Variable(982825);
+        let mut tree = KernelTerm::variable(KernelType::Algebraic(ty.clone()), variable);
+        for _ in 0..depth {
+            tree = KernelConstructor {
+                algebraic_type: ty.clone(),
+                variant: "Pair".into(),
+                fields: vec![tree.clone(), tree],
+            }
+            .into_term();
+        }
+        let equality = KernelTerm::algebraic_equal_raw([tree.clone(), tree]);
+        let exports = KernelTermExport::algebraic_export_count();
+        let condition = StoredConditionTerm::from_root(equality.clone()).unwrap();
+        let mut vars = CarrierVariables::for_rewrite(true);
+        collect_stored_condition_carriers(&condition, &mut vars);
+        assert!(!vars.exhausted());
+        assert_eq!(vars.algebraic, BTreeSet::from([variable]));
+        assert_eq!(vars.nodes, depth + 2);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(!equality.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn boolean_calls_collect_shared_arithmetic_without_building_a_native_call() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();

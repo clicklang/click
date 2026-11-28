@@ -664,6 +664,11 @@ fn collect_shared_condition_carriers(
             KernelTermNode::FloatClassify { operand, .. } => {
                 collect_numeric_carriers(std::slice::from_ref(operand), variables);
             }
+            KernelTermNode::AlgebraicEqual { arguments }
+                if term.cached_condition_output().is_none() =>
+            {
+                collect_algebraic_equality_carriers(arguments, variables);
+            }
             KernelTermNode::PointerEqual(pair) => {
                 for pointer in pair.arguments() {
                     collect_complete_pointer_carriers(pointer, variables);
@@ -1129,6 +1134,72 @@ fn collect_program_value_carriers(value: &ProgramValue, variables: &mut CarrierV
             for count in pointer.metadata_terms() {
                 collect_bitvector_carriers(count, variables);
             }
+        }
+    }
+}
+
+fn collect_algebraic_equality_carriers(
+    operands: &[KernelTerm; 2],
+    variables: &mut CarrierVariables,
+) {
+    let mut pending = vec![operands.iter()];
+    let mut visited = std::collections::HashSet::new();
+    let mut seen_integers = BTreeSet::new();
+    while let Some(fields) = pending.last_mut() {
+        let Some(term) = fields.next() else {
+            pending.pop();
+            continue;
+        };
+        if variables.pointer_terms.is_none() && !visited.insert(term.id()) {
+            continue;
+        }
+        if !variables.visit() {
+            return;
+        }
+        match (term.ty(), term.node()) {
+            (_, KernelTermNode::Constructor(constructor)) => {
+                pending.push(constructor.fields.iter())
+            }
+            (KernelType::Algebraic(_), KernelTermNode::Variable(variable)) => {
+                variables.algebraic.insert(*variable);
+            }
+            (KernelType::Algebraic(ty), KernelTermNode::AlgebraicRead(read)) => {
+                let (point, address) = read.parts();
+                if variables.read_terms.is_some() {
+                    let address = address.export().expect("algebraic read address");
+                    collect_bitvector_carriers(
+                        &AlgebraicTermNode::memory_load_carrier(point, &address, ty),
+                        variables,
+                    );
+                } else {
+                    collect_shared_address_carriers(address, variables);
+                }
+            }
+            _ if term.is_mathematical_integer() => {
+                collect_mathematical_integer_carriers(term, variables)
+            }
+            _ if is_numeric_carrier_root(term) => collect_numeric_program_carriers(term, variables),
+            _ => {
+                let owned;
+                let argument = if let Some(argument) = term.written_argument() {
+                    argument
+                } else {
+                    owned = KernelTermExport::default()
+                        .argument(term)
+                        .expect("algebraic operand or field");
+                    &owned
+                };
+                // A constructor stores an Integer value at the field root. Only
+                // its shared children participate in native Integer deduplication.
+                if let PureFunctionArgument::Integer(integer) = argument {
+                    collect_integer_carriers(integer, variables, &mut seen_integers);
+                } else {
+                    collect_argument_carriers(argument, variables, &mut seen_integers);
+                }
+            }
+        }
+        if variables.exhausted() {
+            return;
         }
     }
 }
