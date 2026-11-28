@@ -5747,6 +5747,11 @@ mod shift_overflow_refusal_tests {
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
         p if let Some((actual, expected)) = p.literal_condition() => actual == expected,
+        Proposition::ConditionIs(condition, value)
+            if let Some(pair) = condition.pointer_equality() =>
+        {
+            *value && pair.is_reflexive()
+        }
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((
                 condition @ OldConditionTerm::Compare {
@@ -5785,6 +5790,9 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
+    if condition.pointer_equality().is_some() {
+        return false;
+    }
     // The range of a machine operand read at `format`.
     fn machine_range(
         term: MachineOperandView<'_>,
@@ -5893,6 +5901,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    if let Some(pair) = condition.pointer_equality() {
+        return Some(Proposition::condition_is(pair.mirrored(), *value));
+    }
     let mirrored = match condition.old_form() {
         OldConditionTerm::IntegerEqual(left, right) => {
             OldConditionTerm::IntegerEqual(right.clone(), left.clone())
@@ -5925,15 +5936,6 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
             left: right.clone(),
             right: left.clone(),
         },
-        OldConditionTerm::AddressOffsetEqual(left, right) => {
-            OldConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
-        }
-        OldConditionTerm::AddressEqual(left, right) => {
-            OldConditionTerm::AddressEqual(right.clone(), left.clone())
-        }
-        OldConditionTerm::PointerEqual(left, right) => {
-            OldConditionTerm::PointerEqual(right.clone(), left.clone())
-        }
         _ => return None,
     };
     Some(Proposition::condition_is(mirrored, *value))
@@ -5984,6 +5986,54 @@ fn listed_premise_holds_with(
 #[cfg(test)]
 mod integer_equality_citation_tests {
     use super::*;
+
+    #[test]
+    fn listed_pointer_equalities_use_stored_operands_in_both_orders() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let addresses = [Variable(709421), Variable(709422)].map(Address::symbolic);
+        let offsets = [Variable(709423), Variable(709424)].map(AddressOffset::variable);
+        let pointers = [3, 7].map(|count| {
+            Pointer::new(addresses[0].clone(), ProgramType::Int32Pointer)
+                .with_element_count(OldMachineTerm::uint64_constant(count))
+        });
+        let roots = |i: usize, j: usize| {
+            [
+                KernelTerm::address_equal_raw([
+                    addresses[i].shared().clone(),
+                    addresses[j].shared().clone(),
+                ]),
+                KernelTerm::address_offset_equal_raw([
+                    offsets[i].shared().clone(),
+                    offsets[j].shared().clone(),
+                ]),
+                KernelTerm::pointer_equal_raw([
+                    pointers[i].shared().clone(),
+                    pointers[j].shared().clone(),
+                ]),
+            ]
+        };
+        for ((root, reverse), reflexive) in
+            roots(0, 1).into_iter().zip(roots(1, 0)).zip(roots(0, 0))
+        {
+            for truth in [true, false] {
+                let premise = |term: &KernelTerm| {
+                    Proposition::condition_is(
+                        StoredConditionTerm::from_root(term.clone()).unwrap(),
+                        truth,
+                    )
+                };
+                assert_eq!(proposition_holds_without_facts(&premise(&reflexive)), truth);
+                assert!(!proposition_holds_without_facts(&premise(&root)));
+                assert!(listed_premise_holds(&premise(&root), |fact| matches!(fact,
+                    Proposition::ConditionIs(term, polarity) if *polarity == truth && term.root() == Some(&reverse))));
+            }
+            assert!(
+                [root, reverse, reflexive]
+                    .iter()
+                    .all(|term| !term.has_cached_native_argument())
+            );
+        }
+    }
 
     #[test]
     fn listed_closed_native_order_is_checked_without_facts() {
