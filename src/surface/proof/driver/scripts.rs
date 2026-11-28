@@ -926,7 +926,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .join_focused_both(&marker, split, ids)?
                         .at_site(&sites[index]);
                 }
-                ProofTactic::Match(source) if pure_source => {
+                ProofTactic::Match(source)
+                    if pure_source
+                        || proof.focused_outcome_data().is_some()
+                        || matches!(proof.context.as_ref(), ProofContext::FixedState(context)
+                            if context.fixed_state.result.is_some()) =>
+                {
                     let (prepared, plan) = proof.prepare_pure_match(source)?;
                     let marker = prepared.checkpoint();
                     let bodies = source

@@ -134,6 +134,126 @@ fn ends_after_split(continuation: &InternalProofNode) -> bool {
     }
 }
 
+/// A fact interface on an unchanged return state is a single proposition
+/// proof by cases. Proving it leaves the continuation on the incoming path
+/// and gives it only the interface facts, with the arm binders scoped away.
+fn return_interface_facts(assertions: &[ProofAssertion]) -> SyntaxProposition {
+    assertions
+        .iter()
+        .filter_map(|assertion| match assertion {
+            ProofAssertion::Fact(fact) => Some(fact.clone()),
+            ProofAssertion::Resource(_) => None,
+        })
+        .reduce(|left, right| SyntaxProposition::And(Box::new(left), Box::new(right)))
+        .unwrap_or_else(|| crate::surface::bool_truth(crate::surface::bool_literal(true)))
+}
+
+fn return_interface_resource_check(assertions: &[ProofAssertion]) -> Option<PostExecutionTactic> {
+    let resources: Vec<_> = assertions
+        .iter()
+        .filter(|assertion| matches!(assertion, ProofAssertion::Resource(_)))
+        .cloned()
+        .collect();
+    (!resources.is_empty()).then(|| PostExecutionTactic::Ensuring(Arc::from(resources)))
+}
+
+fn push_deferred_return_interface(
+    deferred: &mut Vec<DeferredPostExecutionTactic>,
+    index: usize,
+    source_index: usize,
+    join: PostExecutionTactic,
+    assertions: &[ProofAssertion],
+    bindings: &DeferredValueBindings,
+) {
+    deferred.push(DeferredPostExecutionTactic {
+        lexical_bindings: None,
+        reads_deferred_binding: join.reads_deferred_binding(bindings),
+        tactic_index: index,
+        source_index,
+        tactic: join,
+    });
+    if let Some(check) = return_interface_resource_check(assertions) {
+        deferred.push(DeferredPostExecutionTactic {
+            lexical_bindings: None,
+            reads_deferred_binding: false,
+            tactic_index: index,
+            source_index: usize::MAX,
+            tactic: check,
+        });
+    }
+}
+
+fn defer_return_interface_join<'a>(
+    proof: &Proof<'a>,
+    index: usize,
+    source_index: usize,
+    join: PostExecutionTactic,
+    assertions: &[ProofAssertion],
+    capture: Option<&mut ExpansionCapture>,
+) -> Result<Proof<'a>, ClickError> {
+    let proof = proof.defer_post_execution_source_tactic(index, source_index, join, capture)?;
+    // Only proposition proofs ran in the arms. Every arm has the same
+    // returned resource state, so check its interface once in the successor.
+    if let Some(check) = return_interface_resource_check(assertions) {
+        return proof.defer_post_execution_source_tactic(index, usize::MAX, check, None);
+    }
+    Ok(proof)
+}
+
+fn return_fact_interface_arm(body: &InternalProofNode) -> Option<Vec<ProofTactic>> {
+    let steps = linear_execution_tactics(body)?;
+    if steps.iter().any(|step| {
+        !matches!(
+            step.tactic,
+            ProofTactic::Have(_)
+                | ProofTactic::ApplyFact(_)
+                | ProofTactic::ApplyTheorem(_)
+                | ProofTactic::Close
+                | ProofTactic::Known
+        )
+    }) {
+        return None;
+    }
+    let mut body: Vec<_> = steps.iter().map(|step| step.tactic.clone()).collect();
+    body.push(ProofTactic::Known);
+    Some(body)
+}
+
+fn return_if_fact_join(
+    condition: &SyntaxProposition,
+    ensuring: &[ProofAssertion],
+    then_branch: &InternalProofNode,
+    else_branch: &InternalProofNode,
+) -> Option<PostExecutionTactic> {
+    let proposition = return_interface_facts(ensuring);
+    let split = ProofTactic::If(ProofIf {
+        condition: condition.clone(),
+        ensuring: None,
+        then_tactics: return_fact_interface_arm(then_branch)?,
+        else_tactics: return_fact_interface_arm(else_branch)?,
+    });
+    Some(PostExecutionTactic::Have(ProofHave {
+        proposition,
+        proof: SourceProof::Script(vec![split]),
+    }))
+}
+
+fn return_match_fact_join(
+    source: &ProofMatch,
+    arms: &[InternalProofNode],
+) -> Option<PostExecutionTactic> {
+    let proposition = return_interface_facts(source.ensuring.as_deref()?);
+    let mut split = source.clone();
+    split.ensuring = None;
+    for (arm, body) in split.arms.iter_mut().zip(arms) {
+        arm.tactics = return_fact_interface_arm(body)?;
+    }
+    Some(PostExecutionTactic::Have(ProofHave {
+        proposition,
+        proof: SourceProof::Script(vec![ProofTactic::Match(Arc::new(split))]),
+    }))
+}
+
 /// Defers a proof `if` or `cases` reached at function exit onto the outcome
 /// paths. Where its case is open on some path, the paths fork, one per arm;
 /// a fork with tactics written after the split is refused, since they would
@@ -151,6 +271,18 @@ fn defer_post_execution_case_split<'a>(
     continuation: &InternalProofNode,
     expansion_capture: Option<&mut ExpansionCapture>,
 ) -> Driven<Proof<'a>> {
+    if let Some(assertions) = ensuring
+        && let Some(join) = return_if_fact_join(condition, assertions, then_branch, else_branch)
+    {
+        return Ok(Ok(defer_return_interface_join(
+            &proof,
+            index,
+            source_index,
+            join,
+            assertions,
+            expansion_capture,
+        )?));
+    }
     let mut proof = proof;
     let bindings = &proof
         .execution()
@@ -248,6 +380,18 @@ fn defer_post_execution_match<'a>(
     continuation: &InternalProofNode,
     expansion_capture: Option<&mut ExpansionCapture>,
 ) -> Driven<Proof<'a>> {
+    if let Some(assertions) = proof_match.ensuring.as_deref()
+        && let Some(join) = return_match_fact_join(proof_match, arms)
+    {
+        return Ok(Ok(defer_return_interface_join(
+            &proof,
+            index,
+            source_index,
+            join,
+            assertions,
+            expansion_capture,
+        )?));
+    }
     let bindings = &proof
         .execution()
         .expect("the match is deferred on a terminal frontier")
@@ -994,6 +1138,21 @@ fn deferred_region_with_bindings(
                 continuation,
                 ..
             } => {
+                if let Some(assertions) = ensuring.as_deref()
+                    && let Some(join) =
+                        return_if_fact_join(condition, assertions, then_branch, else_branch)
+                {
+                    push_deferred_return_interface(
+                        &mut deferred,
+                        *index,
+                        *source_index,
+                        join,
+                        assertions,
+                        &bindings,
+                    );
+                    node = continuation;
+                    continue;
+                }
                 let tactic = PostExecutionTactic::If {
                     condition: condition.clone(),
                     disjunction: false,
@@ -1046,6 +1205,20 @@ fn deferred_region_with_bindings(
                 arms,
                 continuation,
             } => {
+                if let Some(assertions) = proof_match.ensuring.as_deref()
+                    && let Some(join) = return_match_fact_join(proof_match, arms)
+                {
+                    push_deferred_return_interface(
+                        &mut deferred,
+                        *index,
+                        *source_index,
+                        join,
+                        assertions,
+                        &bindings,
+                    );
+                    node = continuation;
+                    continue;
+                }
                 deferred.push(deferred_post_execution_match(
                     *index,
                     *source_index,

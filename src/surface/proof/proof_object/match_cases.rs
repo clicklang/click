@@ -402,11 +402,27 @@ impl<'a> Proof<'a> {
         query: &PureFactStore,
         retained_states: &RecordedStates,
     ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {
-        let execution = self
-            .execution()
-            .ok_or_else(|| self.step_error("a `match` after execution lost its execution"))?;
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("a `match` after execution requires a C execution proof"));
+        let (parameters, pre_state, definitions) = match self.context.as_ref() {
+            ProofContext::Execution(context) => {
+                let execution = self.execution().ok_or_else(|| {
+                    self.step_error("a `match` after execution lost its execution")
+                })?;
+                (
+                    context.parameter_binding(),
+                    context.old_reference_state(&execution.core.frontier, state),
+                    context.spec_definitions,
+                )
+            }
+            ProofContext::FixedState(context) => (
+                context.parameter_binding,
+                context.fixed_state.pre_state,
+                context.spec_definitions,
+            ),
+            _ => {
+                return Err(
+                    self.step_error("a `match` after execution requires a C execution proof")
+                );
+            }
         };
         let equation = SyntaxProposition::Comparison {
             left: source.scrutinee.clone(),
@@ -419,23 +435,19 @@ impl<'a> Proof<'a> {
         else {
             unreachable!()
         };
-        let values = parameter_values(context.parameter_binding())
-            .map_err(|error| self.step_error(error.message))?;
-        let array_refs = array_refs_for_parameters(
-            context.parsed_function.parameters(),
-            &values,
-            &state.program_point(),
-        );
+        let values =
+            parameter_values(parameters).map_err(|error| self.step_error(error.message))?;
+        let array_refs =
+            array_refs_for_parameters(parameters.parameters, &values, &state.program_point());
         capture_fixed_state_algebraic_value(
             &expression,
             query.assumptions(),
-            ContractEnvironment::new(&values, &array_refs)
-                .with_parameters(context.parameter_binding()),
+            ContractEnvironment::new(&values, &array_refs).with_parameters(parameters),
             BTreeMap::new(),
-            context.old_reference_state(&execution.core.frontier, state),
+            pre_state,
             state,
             retained_states,
-            context.spec_definitions,
+            definitions,
         )
         .map_err(|message| {
             self.step_error(format!(
@@ -1085,57 +1097,89 @@ impl<'a> Proof<'a> {
                 "pure proof `match` proves the current goal and does not take `ensuring`",
             ));
         }
-        let ProofContext::Pure(context) = self.context.as_ref() else {
-            return Err(self.step_error("this match requires a pure proposition proof"));
-        };
-        let value = self.capture_pure_algebraic_witness(&source.scrutinee)?;
-        let variants = &value.algebraic_type.variants;
-        let indices: BTreeMap<_, _> = variants
-            .iter()
-            .enumerate()
-            .map(|(index, variant)| (variant.name.as_str(), index))
-            .collect();
-        let mut seen = BTreeSet::new();
-        let mut order = Vec::new();
-        for arm in &source.arms {
-            if arm.type_name != value.algebraic_type.name {
-                return Err(self.step_error("proof `match` pattern has the wrong datatype"));
-            }
-            let Some(&index) = indices.get(arm.variant.as_str()) else {
-                return Err(self.step_error("proof `match` names an unknown constructor"));
+        let (value, order, induction_case) = if let Some(outcome) = self.focused_outcome_data() {
+            let execution = self.execution().ok_or_else(|| {
+                self.step_error("a proposition match at return lost its execution state")
+            })?;
+            let value = self.outcome_match_scrutinee(
+                source,
+                &outcome.core.state,
+                self.facts(),
+                &execution.presentation.recorded_states,
+            )?;
+            let order = self.match_case_indices(source, &value, outcome.core.state.locals())?;
+            (value, order, false)
+        } else if let ProofContext::FixedState(context) = self.context.as_ref() {
+            let frame = context.fixed_state;
+            let value = self.outcome_match_scrutinee(
+                source,
+                frame.state,
+                self.facts(),
+                frame.recorded_states,
+            )?;
+            let order = self.match_case_indices(source, &value, frame.state.locals())?;
+            (value, order, false)
+        } else {
+            let ProofContext::Pure(context) = self.context.as_ref() else {
+                return Err(self.step_error("this match requires a pure proposition proof"));
             };
-            if !seen.insert(index) {
-                return Err(self.step_error("proof `match` repeats a constructor"));
-            }
-            if arm.bindings.len() != variants[index].fields.len() {
-                return Err(self.step_error("proof `match` pattern has the wrong number of fields"));
-            }
-            let mut bindings = BTreeSet::new();
-            for name in &arm.bindings {
-                if !bindings.insert(name)
-                    || (self.state().locals().induction_active
-                        && context
-                            .induction_setup
-                            .as_ref()
-                            .is_some_and(|setup| setup.hypothesis == *name))
-                    || self.state.locals().values.contains_key(name)
-                    || context.theorem_context.values.contains_key(name)
-                    || context.theorem_context.integer_values.contains_key(name)
-                    || context
-                        .theorem_context
-                        .declaration_bindings
-                        .contains_key(name)
-                    || self
-                        .structural_induction_setup()
-                        .is_some_and(|setup| setup.algebraic_values.contains_key(name))
-                {
+            let value = self.capture_pure_algebraic_witness(&source.scrutinee)?;
+            let variants = &value.algebraic_type.variants;
+            let indices: BTreeMap<_, _> = variants
+                .iter()
+                .enumerate()
+                .map(|(index, variant)| (variant.name.as_str(), index))
+                .collect();
+            let mut seen = BTreeSet::new();
+            let mut order = Vec::new();
+            for arm in &source.arms {
+                if arm.type_name != value.algebraic_type.name {
+                    return Err(self.step_error("proof `match` pattern has the wrong datatype"));
+                }
+                let Some(&index) = indices.get(arm.variant.as_str()) else {
+                    return Err(self.step_error("proof `match` names an unknown constructor"));
+                };
+                if !seen.insert(index) {
+                    return Err(self.step_error("proof `match` repeats a constructor"));
+                }
+                if arm.bindings.len() != variants[index].fields.len() {
                     return Err(
-                        self.step_error(format!("match binding `{name}` is already in scope"))
+                        self.step_error("proof `match` pattern has the wrong number of fields")
                     );
                 }
+                let mut bindings = BTreeSet::new();
+                for name in &arm.bindings {
+                    if !bindings.insert(name)
+                        || (self.state().locals().induction_active
+                            && context
+                                .induction_setup
+                                .as_ref()
+                                .is_some_and(|setup| setup.hypothesis == *name))
+                        || self.state.locals().values.contains_key(name)
+                        || context.theorem_context.values.contains_key(name)
+                        || context.theorem_context.integer_values.contains_key(name)
+                        || context
+                            .theorem_context
+                            .declaration_bindings
+                            .contains_key(name)
+                        || self
+                            .structural_induction_setup()
+                            .is_some_and(|setup| setup.algebraic_values.contains_key(name))
+                    {
+                        return Err(
+                            self.step_error(format!("match binding `{name}` is already in scope"))
+                        );
+                    }
+                }
+                order.push(index);
             }
-            order.push(index);
-        }
+            let induction_case = self.state().locals().induction_active
+                && context
+                    .induction_setup
+                    .as_ref()
+                    .is_some_and(|setup| setup.structural_root.as_ref() == Some(&value));
+            (value, order, induction_case)
+        };
         let presentation = self
             .focused_branch()
             .and_then(|branch| match &branch.obligation {
@@ -1157,11 +1201,7 @@ impl<'a> Proof<'a> {
                 presentation,
                 locals: self.state.locals().clone(),
                 site: self.site.clone(),
-                induction_case: self.state().locals().induction_active
-                    && context
-                        .induction_setup
-                        .as_ref()
-                        .is_some_and(|setup| setup.structural_root.as_ref() == Some(&value)),
+                induction_case,
             },
         ))
     }

@@ -2721,9 +2721,12 @@ decided the same way, with the arm's field bindings
 Tactics written after it in the same arm are part of that arm, so they
 continue each of its cases, as after a nested `if`
 (`mdtests/tactics_after_a_nested_post_execution_match_continue_each_path.md`).
-A `match` with `ensuring` splits once at the exit frontier on the path's
-facts, and so does a
-`match` whose scrutinee has no checked value there.
+At a returned outcome, a `match ... ensuring` can join arms written with
+`have`, `apply`, and `close()` over the same returned resource state. Each case
+proves the interface facts. The continuation keeps those facts and the
+shared returned state, which must hold any resources listed in the interface.
+Expansion writes the joined fact proof as a `have`.
+See [the checked return example](https://github.com/clicklang/click/blob/master/mdtests/match_ensuring_after_return.md).
 
 Tactics written after a `match` in a `maintain` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two
@@ -3006,9 +3009,16 @@ In a loop's `maintain` body the rule is the same, except that arms reaching
 those tactics at different points are different paths of the C and each
 is finished its own way.
 
-At function exit the C state is fixed. When the path's facts already decide
-`P`, only the matching arm runs and it must establish its written `ensuring`
-interface. When `P` is open and tactics follow the `if`,
+At a returned outcome, `if ... ensuring` can join arms written with `have`,
+`apply`, and `close()` over the same returned resource state. Each arm proves the
+interface facts and the shared state supplies any listed resources. Click
+continues once on that outcome.
+See [the checked return example](https://github.com/clicklang/click/blob/master/mdtests/if_ensuring_after_return.md).
+
+At function exit, an `if` without a supported join is checked on separate
+outcome paths. When the path's facts decide `P`, only the matching arm runs
+and establishes any written `ensuring` interface. When `P` is open and tactics
+follow the `if`,
 the `if` is refused, because its arms would not rejoin and what follows would
 be checked once per arm (`mdtests/a_proof_if_after_execution_that_would_fork_is_refused.md`).
 Write those tactics inside the arms instead
