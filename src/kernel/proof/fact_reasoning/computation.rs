@@ -568,7 +568,7 @@ fn condition_value(condition: &OldConditionTerm) -> Option<bool> {
                 || matches!(right.as_ref(), OldMachineTerm::IntegerToMachine { .. }))
                 && let Some(value) =
                     crate::kernel::machine_integer::comparison::literal_native_comparison_value(
-                        condition,
+                        BooleanOperandView::Native(condition),
                     )
             {
                 return Some(value);

@@ -7513,8 +7513,9 @@ impl PureFactContext {
             proposition,
             true,
             |condition, value| {
-                crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                    == Some(value)
+                crate::kernel::machine_integer::comparison::closed_condition_value(
+                    crate::kernel::BooleanOperandView::Native(condition),
+                ) == Some(value)
                     || self.knows_condition_or_stated_separation(condition, value)
             },
         ) {

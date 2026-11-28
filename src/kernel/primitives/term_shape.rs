@@ -420,7 +420,7 @@ impl OldConditionTerm {
 }
 
 impl CompareRelation {
-    pub(super) fn holds<T: Ord>(self, left: T, right: T) -> bool {
+    pub(in crate::kernel) fn holds<T: Ord>(self, left: T, right: T) -> bool {
         match self {
             Self::LessThan => left < right,
             Self::LessEqual => left <= right,
