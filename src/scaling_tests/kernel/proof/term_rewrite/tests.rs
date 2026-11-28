@@ -1453,6 +1453,54 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn float_predicates_and_machine_casts_share_arithmetic_carrier_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let format = KernelFloatType::Float32;
+        let variable = Variable(982810);
+        let mut sum = KernelTerm::variable(KernelType::Program(ProgramType::Float32), variable);
+        for _ in 0..depth {
+            sum = KernelTerm::float_binary(format, FloatBinaryOperator::Add, [sum.clone(), sum])
+                .unwrap();
+        }
+        let wide =
+            KernelTerm::float_convert(KernelFloatType::Float64, ProgramType::Float32, sum.clone())
+                .unwrap();
+        let cast =
+            KernelTerm::numeric_float_convert(ProgramType::Int32, ProgramType::Float64, wide)
+                .unwrap();
+        let exports = KernelTermExport::float_export_count();
+        let mut vars = CarrierVariables::for_rewrite(true);
+        collect_machine_operand_carriers(MachineOperandView::Shared(&cast), &mut vars);
+        assert_eq!(vars.program_values, BTreeSet::from([variable]));
+        assert!(!vars.exhausted());
+        assert!(
+            vars.nodes <= depth + 24,
+            "depth {depth}, visits {}",
+            vars.nodes
+        );
+        for predicate in [
+            KernelTerm::float_compare(
+                format,
+                ComparisonOperator::Equal,
+                [sum.clone(), sum.clone()],
+            )
+            .unwrap(),
+            KernelTerm::float_classify(format, FloatClassification::Finite, sum).unwrap(),
+        ] {
+            let condition = StoredConditionTerm::from_root(predicate.clone()).unwrap();
+            let mut vars = CarrierVariables::for_rewrite(true);
+            collect_stored_condition_carriers(&condition, &mut vars);
+            assert_eq!(vars.program_values, BTreeSet::from([variable]));
+            assert!(!vars.exhausted());
+            assert_eq!(vars.nodes, depth + 2);
+            assert!(!predicate.has_cached_native_argument());
+        }
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+    }
+}
+
+#[test]
 fn machine_conversions_collect_shared_integers_and_numeric_addresses() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();

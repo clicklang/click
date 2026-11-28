@@ -104,10 +104,9 @@ fn collect_machine_operand_carriers(
                         );
                     }
                 }
-                KernelTermNode::FloatConvert { .. } => collect_bitvector_carriers(
-                    &KernelTermExport::machine(leaf).expect("float conversion"),
-                    variables,
-                ),
+                KernelTermNode::FloatConvert { operand, .. } => {
+                    collect_float_carriers(std::slice::from_ref(operand), variables);
+                }
                 _ => collect_bitvector_carriers(
                     leaf.machine_conversion_leaf().expect("conversion leaf"),
                     variables,
@@ -650,6 +649,12 @@ fn collect_shared_condition_carriers<'a>(
                     collect_mathematical_integer_carriers(argument, variables);
                 }
             }
+            KernelTermNode::FloatCompare { arguments, .. } => {
+                collect_float_carriers(arguments, variables)
+            }
+            KernelTermNode::FloatClassify { operand, .. } => {
+                collect_float_carriers(std::slice::from_ref(operand), variables);
+            }
             KernelTermNode::AddressEqual { arguments, .. } => {
                 for address in arguments {
                     collect_shared_address_carriers(address, variables);
@@ -676,6 +681,56 @@ fn collect_shared_condition_carriers<'a>(
             _ if term == root => collect_condition_node_carriers(&native_root(), variables),
             _ => collect_condition_node_carriers(
                 &BooleanOperandView::Shared(term).native(),
+                variables,
+            ),
+        }
+    }
+}
+
+fn collect_float_carriers(operands: &[KernelTerm], variables: &mut CarrierVariables) {
+    let mut pending: Vec<_> = operands.iter().rev().collect();
+    let mut seen = std::collections::HashSet::new();
+    while let Some(term) = pending.pop() {
+        if variables.pointer_terms.is_none() && !seen.insert(term.id()) {
+            continue;
+        }
+        if !variables.visit() {
+            return;
+        }
+        match term.node() {
+            KernelTermNode::FloatBinary { arguments, .. } => pending.extend(arguments.iter().rev()),
+            KernelTermNode::FloatNegate { operand } => pending.push(operand),
+            KernelTermNode::FloatConvert {
+                source, operand, ..
+            } => {
+                if KernelFloatType::from_program_type(*source).is_some() {
+                    pending.push(operand);
+                } else {
+                    // Preserve the written machine input, including repeated read occurrences.
+                    collect_bitvector_carriers(
+                        &KernelTermExport::machine(operand).expect("machine conversion input"),
+                        variables,
+                    );
+                }
+            }
+            KernelTermNode::FloatLiteral { .. } => {}
+            KernelTermNode::Variable(variable) => {
+                collect_machine_variable_carriers(*variable, variables)
+            }
+            KernelTermNode::FloatRead(read) if variables.read_terms.is_none() => {
+                collect_shared_address_carriers(read.parts().1, variables);
+            }
+            KernelTermNode::FloatCall(_) => {
+                // Call arguments can retain producer-specific machine carriers.
+                collect_program_value_carriers(
+                    &KernelTermExport::float(term).expect("float call"),
+                    variables,
+                );
+            }
+            _ => collect_bitvector_carriers(
+                FloatOperandView::Shared(term)
+                    .old_form()
+                    .expect("float atom"),
                 variables,
             ),
         }
@@ -1136,6 +1191,15 @@ fn collect_condition_node_carriers(condition: &OldConditionTerm, variables: &mut
     }
 }
 
+fn collect_machine_variable_carriers(variable: Variable, variables: &mut CarrierVariables) {
+    variables.program_values.insert(variable);
+    // A binder of the slice would capture its count.
+    if let Some(slice) = variable.counted_slice() {
+        variables.program_values.insert(slice);
+    }
+    collect_registered_load_carriers(variable, variables);
+}
+
 fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
@@ -1144,13 +1208,7 @@ fn collect_bitvector_carriers(term: &OldMachineTerm, variables: &mut CarrierVari
         OldMachineTerm::ThreadHandle(_) => {}
         OldMachineTerm::Constant { .. } => {}
         OldMachineTerm::Variable(variable) => {
-            variables.program_values.insert(*variable);
-            // A slice's count mentions its slice: a binder of that slice
-            // would capture it.
-            if let Some(slice) = variable.counted_slice() {
-                variables.program_values.insert(slice);
-            }
-            collect_registered_load_carriers(*variable, variables);
+            collect_machine_variable_carriers(*variable, variables)
         }
         crate::kernel::binary_machine_term!(left, right) => {
             collect_bitvector_carriers(left, variables);
@@ -8508,6 +8566,36 @@ mod tests {
             vec![a.clone(), b.clone(), a, b]
         );
         assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn shared_float_read_carriers_preserve_read_kind_and_pointer_occurrences() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let address = Address::symbolic(Variable(9910));
+        let point = ProgramPoint::at(&memory);
+        let read = KernelTerm::float_read(format, point.clone(), address.shared().clone());
+        let predicate =
+            KernelTerm::float_compare(format, ComparisonOperator::Equal, [read.clone(), read])
+                .unwrap();
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            [address.clone(), address.clone()]
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.take_read_terms().collect::<Vec<_>>(),
+            [OldMachineTerm::read_named(
+                point,
+                address,
+                LoadKind::Float64
+            )]
+        );
     }
 
     #[test]
