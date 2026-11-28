@@ -2561,6 +2561,7 @@ impl<'a> Proof<'a> {
             );
         }
         let before_facts = self.facts().clone();
+        execution.core.materialize_observation_entry();
         let checked = observe_composite_resource_for_proof(
             context.function,
             context.resource_environment,

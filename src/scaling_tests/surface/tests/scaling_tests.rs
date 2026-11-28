@@ -5799,25 +5799,28 @@ fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     let c_source = "int32 put(int32 *a) {\n    a[3] = 5;\n    return a[3];\n}\n\nvoid put_pointer(int32 **p, int32 *q) {\n    p[1] = q;\n}\n";
-    let click_source = |length: u64| {
+    let click_source = |length: u64, wide: bool| {
+        let bounds = if wide {
+            format!("0u64..{length}u64")
+        } else {
+            format!("0..{length}")
+        };
         format!(
-            "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[0..{length}]; }}\nresource pointers(p: int32**) {{ owns p[0..{length}]; }}\n\nint32 put(int32 *a) {{\n    owns block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    step_until(function.exit);\n    fold(block(a));\n    close();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    owns pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    step_until(function.exit);\n    fold(pointers(p));\n    close();\n}}\n"
+            "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[{bounds}]; }}\nresource pointers(p: int32**) {{ owns p[{bounds}]; }}\n\nint32 put(int32 *a) {{\n    owns block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    step_until(function.exit);\n    fold(block(a));\n    close();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    owns pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    step_until(function.exit);\n    fold(pointers(p));\n    close();\n}}\n"
         )
     };
-    verify_c_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
-    // A byte-count overflow makes the entry assumptions inconsistent. Its
-    // contradiction certificate has a different fixed cost from the ordinary
-    // store proof. Compare lengths within each proof shape, retaining the
-    // billion-element case and the same 64-unit flatness tolerance for both.
-    for lengths in [
-        &[64u64, 268_435_455][..],
-        &[600_000_000u64, 1_000_000_000][..],
+    verify_c_sources(&click_source(8, false), &[("put.c", c_source)]).expect("warm-up verifies");
+    // The large pointer arrays need a 64-bit byte span. Compare lengths
+    // within each index format so both groups exercise actual stores.
+    for (wide, lengths) in [
+        (false, [64, 268_435_455]),
+        (true, [600_000_000, 1_000_000_000]),
     ] {
         let samples = lengths
             .iter()
             .map(|&length| {
                 let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    verify_c_sources(&click_source(length), &[("put.c", c_source)])
+                    verify_c_sources(&click_source(length, wide), &[("put.c", c_source)])
                 });
                 verified.unwrap_or_else(|error| {
                     panic!(
@@ -6119,11 +6122,18 @@ fn owned_size_t_window_calls(calls: usize) -> (String, String) {
     );
     let steps = "    step();\n".repeat(calls);
     let click_source = format!(
-        "verifying \"write.c\";\n\n\
+        "import click::integer;\nverifying \"write.c\";\n\n\
          void set_four(uint8* chunk) {{\n    owns chunk[0..4];\n}}\n\n\
          void write(uint8* bytes, uint64 length, uint64 index) {{\n    \
          requires index <= length;\n    requires 4u64 <= length - index;\n    \
-         owns bytes[0..length];\n}} by {{\n{steps}    step_until(function.exit);\n    close();\n}}\n"
+         owns bytes[0..length];\n}} by {{\n{steps}\
+             have to_integer(index + 4u64) == to_integer(index) + 4 by {{\n\
+                 apply(integer::uint64_add_to_integer(index, 4u64));\n\
+                 close();\n\
+             }}\n\
+             have to_integer(index + 4u64) <= to_integer(length) by close();\n\
+             step_until(function.exit);\n\
+             close();\n}}\n"
     );
     (c_source, click_source)
 }
