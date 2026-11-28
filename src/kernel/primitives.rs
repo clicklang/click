@@ -9838,16 +9838,6 @@ impl AllocationSize {
         }
     }
 
-    /// The same kind of size over rewritten bytes.
-    pub(crate) fn map_bytes(
-        &self,
-        rewrite: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
-    ) -> Self {
-        // Equal observations may have different producer payloads. Keep the
-        // native mapper's exact result at this compatibility boundary.
-        Self::new(rewrite(self.bytes.old_form()), self.kind)
-    }
-
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
     pub(crate) fn token_value(&self) -> ProgramValue {
         match self.kind {

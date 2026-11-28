@@ -21,6 +21,9 @@ trait VariableSubstitution {
     fn from(&self) -> Variable;
     fn bitvector(&self, term: &OldMachineTerm) -> OldMachineTerm;
     fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm;
+    fn allocation_size(&self, size: &AllocationSize) -> AllocationSize {
+        size.map_stored_bytes(|word| self.stored_word(word))
+    }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
     fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm;
 
@@ -1592,12 +1595,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             after: s.memory(after),
             blocks: blocks
                 .iter()
-                .map(|(base, bytes)| {
-                    (
-                        s.pointer(base),
-                        bytes.map_stored_bytes(|word| s.stored_word(word)),
-                    )
-                })
+                .map(|(base, bytes)| (s.pointer(base), s.allocation_size(bytes)))
                 .collect(),
             mutable_ranges: mutable_ranges
                 .iter()
@@ -6935,6 +6933,7 @@ fn record_memory_lacks_variable(identity: (u32, u32), from: Variable) {
 #[cfg(test)]
 #[test]
 fn state_size_substitution_preserves_declared_types_and_write_protection() {
+    let _session = crate::kernel::VerificationSession::enter();
     let from = Variable(84001);
     let mut memory = SymbolicMemory::new().with_declared_scalar_block(
         "local:word".into(),
@@ -6944,6 +6943,16 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
     let mut read_only = MemoryBlock::read_only(4);
     read_only.size = AllocationSize::int32(OldMachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
+    let pending = Address::symbolic(Variable(84002));
+    let wide = KernelTermImport::default().machine(
+        MachineIntegerType::UInt64,
+        &OldMachineTerm::uint64_constant(1 << 40),
+    );
+    memory = memory.with_pending_heap_allocation(
+        pending.clone(),
+        AllocationSize::from_value(ExecutionValue::Shared(wide.clone())).unwrap(),
+        false,
+    );
     let rewritten = substitute_bitvector_variable_in_memory_contents(
         &memory,
         from,
@@ -6957,6 +6966,11 @@ fn state_size_substitution_preserves_declared_types_and_write_protection() {
         .blocks
         .get(&AddressBase::from("global:protected"))
         .unwrap();
+    let pending_size = rewritten.heap.pending_allocations.get(&pending).unwrap();
+    assert_eq!(pending_size.kind(), AllocationSizeKind::UInt64);
+    assert!(
+        matches!(pending_size.byte_operand(), MachineOperandView::Shared(root) if root == &wide)
+    );
     assert!(protected.read_only);
     assert_eq!(protected.size, AllocationSize::int32(16));
 }
@@ -6969,6 +6983,7 @@ fn substitute_bitvector_variable_in_memory_contents(
     crate::instrumentation::record_deterministic_work(
         memory.cells.representation_len() + memory.union_cells.len() + memory.blocks.len(),
     );
+    let substitution = BitvectorSubstitution::new(from, to);
     let cells = std::sync::Arc::new(memory.cells.map_cells(
         |pointer, value| {
             (
@@ -6990,9 +7005,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                     // declaration or its write protection. Rebuilding a bare
                     // block erased these properties, even for a constant size.
                     let mut rewritten = contents.clone();
-                    rewritten.size = contents
-                        .allocation_size()
-                        .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to));
+                    rewritten.size = substitution.allocation_size(contents.allocation_size());
                     (block.clone(), rewritten)
                 })
                 .collect(),
@@ -7029,7 +7042,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                        substitution.allocation_size(bytes),
                     )
                 })
                 .collect(),
@@ -7040,7 +7053,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                        substitution.allocation_size(bytes),
                     )
                 })
                 .collect(),
@@ -7062,7 +7075,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                        substitution.allocation_size(bytes),
                     )
                 })
                 .collect(),
@@ -7123,9 +7136,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                                 from,
                                 to,
                             ),
-                            old_bytes: pending
-                                .old_bytes
-                                .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
+                            old_bytes: substitution.allocation_size(&pending.old_bytes),
                             zeroed_prefix: pending
                                 .zeroed_prefix
                                 .as_ref()
