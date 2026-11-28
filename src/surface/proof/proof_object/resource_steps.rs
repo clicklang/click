@@ -1073,7 +1073,7 @@ impl<'a> Proof<'a> {
         if !witness_names.is_empty() {
             self.bind_unfold_witness_outputs(
                 &mut locals,
-                &execution,
+                outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state),
                 witness_names,
                 definition
                     .witnesses()
@@ -2612,20 +2612,18 @@ impl<'a> Proof<'a> {
         names: &[(String, String)],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error(
-                "`let { ... } = unfold(...)` names witnesses only at an execution frontier",
-            ));
+            return Err(self.step_error("`let { ... } = unfold(...)` requires an execution proof"));
         };
         let execution = self
             .execution()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        if self.focused_outcome_data().is_some() {
-            return Err(self.step_error(
-                "`let { ... } = unfold(...)` names witnesses only before execution reaches function exit",
-            ));
-        }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, true, None, names);
+        }
+        if self.focused_outcome_data().is_some() {
+            return Err(
+                self.step_error("naming witnesses at function exit requires a named resource")
+            );
         }
         let witnesses = super::super::resources::declared_resource_witness_values(
             context.resource_environment,
@@ -2642,7 +2640,7 @@ impl<'a> Proof<'a> {
         })?;
         self.bind_unfold_witness_outputs(
             &mut transition.locals,
-            execution,
+            &execution.core.state,
             names,
             witnesses.iter().map(|(slot, value)| (slot.as_str(), value)),
         )?;
@@ -2652,13 +2650,13 @@ impl<'a> Proof<'a> {
     fn bind_unfold_witness_outputs<'w>(
         &self,
         locals: &mut ProofLocals,
-        execution: &ExecutionProofState,
+        state: &ExecutionState,
         names: &[(String, String)],
         witnesses: impl IntoIterator<Item = (&'w str, &'w ProgramValue)>,
     ) -> Result<(), ClickError> {
         let witnesses = witnesses.into_iter().collect::<BTreeMap<_, _>>();
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            unreachable!("resource witnesses are bound at an execution frontier");
+            unreachable!("resource witnesses require an execution proof");
         };
         for (slot, name) in names {
             let Some(&value) = witnesses.get(slot.as_str()) else {
@@ -2678,7 +2676,7 @@ impl<'a> Proof<'a> {
             if name == "result"
                 || locals.values.contains_key(name)
                 || locals.integer_values.contains_key(name)
-                || execution.core.state.locals().contains_name(name)
+                || state.locals().contains_name(name)
                 || context
                     .parsed_function
                     .parameters()

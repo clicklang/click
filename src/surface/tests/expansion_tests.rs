@@ -268,6 +268,48 @@ fn mixed_unfold_outputs_survive_expansion_replay() {
 }
 
 #[test]
+fn returned_unfold_witnesses_replay_in_their_written_scope() {
+    let source = r#"
+        verifying "id.c";
+        resource box(p: int32*) {
+            field marker: int32;
+            owns p[0..1];
+            let base: int32* where base == p;
+        }
+
+        int32 id(int32* p) {
+            owns r: box(p);
+            ensures result == 0;
+        } by {
+            step_until(function.exit);
+            BODY
+            close();
+        }
+    "#;
+    let open_and_restore = r#"
+        let { base: q } = unfold(r);
+        have q == p by close();
+        fold(r);
+    "#;
+    let sources = [("id.c", "int32 id(int32* p) { return 0; }")];
+    for body in [
+        open_and_restore.to_owned(),
+        format!(
+            "if result == 0 {{ {open_and_restore} }} else {{ }}
+             if result == 0 {{ {open_and_restore} }} else {{ }}"
+        ),
+    ] {
+        let source = source.replace("BODY", &body);
+        let expanded = expand_function_proof_source(&source, &sources, "id")
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.report()));
+        assert!(expanded.contains("base: q"), "{expanded}");
+        assert!(expanded.contains("have q == p"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn outcome_if_keeps_its_obtain_scopes_in_expansion() {

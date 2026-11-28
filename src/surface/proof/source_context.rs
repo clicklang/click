@@ -86,6 +86,10 @@ impl SourceContext {
                 ProofTactic::UserTactic(_)
                     | ProofTactic::FoldResource(_)
                     | ProofTactic::UnfoldResource(_)
+                    | ProofTactic::UnfoldWitnesses {
+                        resource: ResourceClause::Named { .. },
+                        ..
+                    }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::ApplyFactUsing { .. }

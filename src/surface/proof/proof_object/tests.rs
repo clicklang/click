@@ -13841,7 +13841,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 lexical_bindings: None,
                 tactic_index: 0,
                 source_index: 0,
-                reads_deferred_obtain: false,
+                reads_deferred_binding: false,
                 tactic: PostExecutionTactic::If {
                     condition: unknown.clone(),
                     disjunction: false,

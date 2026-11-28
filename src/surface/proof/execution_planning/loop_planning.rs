@@ -1910,7 +1910,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 if tactics.is_empty() {
                     tactics.push(DeferredPostExecutionTactic {
                         lexical_bindings: None,
-                        reads_deferred_obtain: false,
+                        reads_deferred_binding: false,
                         tactic_index: environment.frontier_loop_source.loop_tactic_index,
                         source_index: environment.frontier_loop_source.loop_source_index,
                         tactic: PostExecutionTactic::Solve,

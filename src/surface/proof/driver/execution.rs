@@ -152,18 +152,18 @@ fn defer_post_execution_case_split<'a>(
     expansion_capture: Option<&mut ExpansionCapture>,
 ) -> Driven<Proof<'a>> {
     let mut proof = proof;
-    let obtains = &proof
+    let bindings = &proof
         .execution()
         .expect("the case is deferred on a terminal frontier")
         .presentation
-        .deferred_obtain_names;
-    let then_tactics = driven!(Ok::<_, ClickError>(deferred_region_with_obtains(
+        .deferred_binding_names;
+    let then_tactics = driven!(Ok::<_, ClickError>(deferred_region_with_bindings(
         then_branch,
-        obtains
+        bindings
     )));
-    let else_tactics = driven!(Ok::<_, ClickError>(deferred_region_with_obtains(
+    let else_tactics = driven!(Ok::<_, ClickError>(deferred_region_with_bindings(
         else_branch,
-        obtains
+        bindings
     )));
     let nested = then_tactics
         .iter()
@@ -190,12 +190,12 @@ fn defer_post_execution_case_split<'a>(
     };
     let deferred = DeferredPostExecutionTactic {
         lexical_bindings: None,
-        reads_deferred_obtain: tactic.reads_deferred_obtain(obtains),
+        reads_deferred_binding: tactic.reads_deferred_binding(bindings),
         tactic_index: index,
         source_index,
         tactic,
     };
-    if !deferred.reads_deferred_obtain
+    if !deferred.reads_deferred_binding
         && (nested
             || !explicit_cursor
                 && !proof.post_execution_if_is_path_decided(condition, disjunction)?)
@@ -248,17 +248,17 @@ fn defer_post_execution_match<'a>(
     continuation: &InternalProofNode,
     expansion_capture: Option<&mut ExpansionCapture>,
 ) -> Driven<Proof<'a>> {
-    let obtains = &proof
+    let bindings = &proof
         .execution()
         .expect("the match is deferred on a terminal frontier")
         .presentation
-        .deferred_obtain_names;
+        .deferred_binding_names;
     let deferred = driven!(Ok::<_, ClickError>(deferred_post_execution_match(
         index,
         source_index,
         proof_match,
         arms,
-        obtains,
+        bindings,
     )));
     let before = outcome_path_count(&proof);
     let proof = match proof.driver().split_outcome_paths(&deferred) {
@@ -952,18 +952,18 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
 }
 
 fn deferred_post_execution_region(node: &InternalProofNode) -> Result<DeferredArm, Decline> {
-    deferred_region_with_obtains(node, &PersistentBinderMap::default())
+    deferred_region_with_bindings(node, &PersistentBinderMap::default())
 }
 
 /// Converts a supported post-execution syntax region into cursor metadata.
 /// This performs no proof transition and stores no semantic state; each leaf
 /// operation is checked later against the focused outcome `Proof`. A region's
 /// sequential nodes are walked in a loop; only written nesting recurses.
-fn deferred_region_with_obtains(
+fn deferred_region_with_bindings(
     node: &InternalProofNode,
-    obtains: &PersistentBinderMap<()>,
+    bindings: &PersistentBinderMap<()>,
 ) -> Result<DeferredArm, Decline> {
-    let mut obtains = obtains.clone();
+    let mut bindings = bindings.clone();
     let mut deferred = Vec::new();
     let mut node = node;
     loop {
@@ -978,15 +978,13 @@ fn deferred_region_with_obtains(
                         flat_post_execution_tactic(&indexed.tactic).ok_or(Decline::Shape)?;
                     deferred.push(DeferredPostExecutionTactic {
                         lexical_bindings: None,
-                        reads_deferred_obtain: tactic.reads_deferred_obtain(&obtains),
+                        reads_deferred_binding: tactic.reads_deferred_binding(&bindings),
                         tactic_index: indexed.index,
                         source_index: indexed.source_index,
                         tactic,
                     });
-                    if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
-                        for (name, _) in &binding.bindings {
-                            obtains.insert(name.clone(), ());
-                        }
+                    for name in deferred_value_binders(&indexed.tactic) {
+                        bindings.insert(name.clone(), ());
                     }
                 }
                 continuation
@@ -1009,12 +1007,12 @@ fn deferred_region_with_obtains(
                         ensuring.as_deref(),
                         *index,
                     ),
-                    then_tactics: deferred_region_with_obtains(then_branch, &obtains)?,
-                    else_tactics: deferred_region_with_obtains(else_branch, &obtains)?,
+                    then_tactics: deferred_region_with_bindings(then_branch, &bindings)?,
+                    else_tactics: deferred_region_with_bindings(else_branch, &bindings)?,
                 };
                 deferred.push(DeferredPostExecutionTactic {
                     lexical_bindings: None,
-                    reads_deferred_obtain: tactic.reads_deferred_obtain(&obtains),
+                    reads_deferred_binding: tactic.reads_deferred_binding(&bindings),
                     tactic_index: *index,
                     source_index: *source_index,
                     tactic,
@@ -1032,7 +1030,7 @@ fn deferred_region_with_obtains(
             } => {
                 deferred.push(DeferredPostExecutionTactic {
                     lexical_bindings: None,
-                    reads_deferred_obtain: false,
+                    reads_deferred_binding: false,
                     tactic_index: *index,
                     source_index: *source_index,
                     tactic: PostExecutionTactic::If {
@@ -1040,8 +1038,8 @@ fn deferred_region_with_obtains(
                         disjunction: true,
                         execution_route: None,
                         ensuring: None,
-                        then_tactics: deferred_region_with_obtains(then_branch, &obtains)?,
-                        else_tactics: deferred_region_with_obtains(else_branch, &obtains)?,
+                        then_tactics: deferred_region_with_bindings(then_branch, &bindings)?,
+                        else_tactics: deferred_region_with_bindings(else_branch, &bindings)?,
                     },
                 });
                 continuation
@@ -1058,7 +1056,7 @@ fn deferred_region_with_obtains(
                     *source_index,
                     proof_match,
                     arms,
-                    &obtains,
+                    &bindings,
                 )?);
                 continuation
             }
@@ -1077,21 +1075,21 @@ fn deferred_post_execution_match(
     source_index: usize,
     proof_match: &Arc<ProofMatch>,
     arms: &[InternalProofNode],
-    obtains: &PersistentBinderMap<()>,
+    bindings: &PersistentBinderMap<()>,
 ) -> Result<DeferredPostExecutionTactic, Decline> {
     if proof_match.ensuring.is_some() {
         return Err(Decline::Shape);
     }
     Ok(DeferredPostExecutionTactic {
         lexical_bindings: None,
-        reads_deferred_obtain: false,
+        reads_deferred_binding: false,
         tactic_index,
         source_index,
         tactic: PostExecutionTactic::Match {
             source: Arc::clone(proof_match),
             arms: arms
                 .iter()
-                .map(|arm| deferred_region_with_obtains(arm, obtains))
+                .map(|arm| deferred_region_with_bindings(arm, bindings))
                 .collect::<Result<_, _>>()?,
         },
     })
