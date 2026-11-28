@@ -640,9 +640,16 @@ fn collect_shared_condition_carriers<'a>(
                     collect_mathematical_integer_carriers(argument, variables);
                 }
             }
-            // Pointer occurrence queries need the ordered written operands.
-            KernelTermNode::AddressEqual { arguments, .. } if variables.pointer_terms.is_none() => {
+            KernelTermNode::AddressEqual { arguments, .. } => {
                 for address in arguments {
+                    if variables.pointer_terms.is_some() {
+                        let written = address.export().expect("address equality operand");
+                        collect_pointer_carriers(&written, variables);
+                        if variables.exhausted() {
+                            return;
+                        }
+                        continue;
+                    }
                     if !variables.visit() {
                         return;
                     }
@@ -653,11 +660,15 @@ fn collect_shared_condition_carriers<'a>(
                     collect_retained_offset_carriers(address.offset(), variables);
                 }
             }
-            KernelTermNode::AddressOffsetEqual { arguments }
-                if variables.pointer_terms.is_none() =>
-            {
+            KernelTermNode::AddressOffsetEqual { arguments } => {
                 for offset in arguments {
-                    collect_retained_offset_carriers(offset, variables);
+                    if variables.pointer_terms.is_some() {
+                        let written = AddressOffset::try_from_shared(offset.clone())
+                            .expect("offset equality operand");
+                        collect_pointer_offset_carriers(&written, variables);
+                    } else {
+                        collect_retained_offset_carriers(offset, variables);
+                    }
                     if variables.exhausted() {
                         return;
                     }
@@ -8484,6 +8495,30 @@ mod tests {
             proposition_pointer_terms(&fact),
             vec![a.clone(), b.clone(), a, b]
         );
+        assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn stored_offset_comparison_returns_load_addresses_in_operand_order() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let addresses = [
+            Address::symbolic(Variable(9908)),
+            Address::symbolic(Variable(9909)),
+        ];
+        let offsets = addresses.each_ref().map(|address| {
+            let load = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                address,
+                crate::kernel::LoadKind::Int32,
+                4,
+            );
+            AddressOffset::variable(load).into_shared()
+        });
+        let root = KernelTerm::address_offset_equal_raw(offsets);
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(root.clone()).unwrap(), true);
+        assert_eq!(proposition_pointer_terms(&fact), addresses);
         assert!(!root.has_cached_native_argument());
     }
 
