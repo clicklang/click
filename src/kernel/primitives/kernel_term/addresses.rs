@@ -762,10 +762,15 @@ mod tests {
                 assert_eq!(binding.spelling(), Some(name));
                 assert_eq!(binding.program_type(), Some(ty));
                 numeric_roots.push(numeric);
-                StoredConditionTerm::from(OldConditionTerm::AddressEqual(
+                let stored = StoredConditionTerm::address_equal(&local, &other);
+                let root = stored.root().unwrap();
+                assert!(!root.has_cached_native_argument());
+                let native = StoredConditionTerm::from(OldConditionTerm::AddressEqual(
                     Box::new(local),
                     Box::new(other.clone()),
-                ))
+                ));
+                assert_eq!(native.root(), Some(root));
+                stored
             });
             assert_ne!(numeric_roots[0], numeric_roots[1]);
             let roots = stored.each_ref().map(|term| term.root().unwrap());

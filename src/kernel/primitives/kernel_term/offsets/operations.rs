@@ -242,9 +242,22 @@ impl SharedAddressOffset {
             .expect("typed shared offset index")
     }
 
+    /// Both constructors use the constants of their own operand view.
+    pub(in crate::kernel::primitives) fn equality_value(
+        &self,
+        other: &Self,
+        constant: impl Fn(&Self) -> Option<i64>,
+    ) -> Option<bool> {
+        match (constant(self), constant(other)) {
+            (Some(a), Some(b)) => Some(a == b),
+            _ if self.differs_by_residue(other) => Some(false),
+            _ => None,
+        }
+    }
+
     /// Every scaled index contributes a multiple of its stride. Distinct
     /// constant residues modulo their common divisor rule out equality.
-    pub(in crate::kernel::primitives) fn differs_by_residue(&self, other: &Self) -> bool {
+    fn differs_by_residue(&self, other: &Self) -> bool {
         let Some((a, left)) = self.residue_summary() else {
             return false;
         };
@@ -299,13 +312,8 @@ impl KernelTerm {
     }
     pub(crate) fn address_offset_equal(arguments: [SharedAddressOffset; 2]) -> Self {
         let [a, b] = &arguments;
-        let constant = match (a.as_const(), b.as_const()) {
-            (Some(a), Some(b)) => Some(a == b),
-            _ if a.differs_by_residue(b) => Some(false),
-            _ => None,
-        };
-        match constant {
-            Some(value) => Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value)),
+        match a.equality_value(b, SharedAddressOffset::as_const) {
+            Some(value) => Self::boolean_literal(value),
             None => Self::address_offset_equal_raw(arguments),
         }
     }

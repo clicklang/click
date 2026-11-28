@@ -3659,10 +3659,12 @@ impl OldConditionTerm {
         left: AddressOffset,
         right: AddressOffset,
     ) -> Self {
-        match (left.as_const(), right.as_const()) {
-            (Some(left), Some(right)) => Self::Constant(left == right),
-            _ if left.shared().differs_by_residue(right.shared()) => Self::Constant(false),
-            _ => Self::AddressOffsetEqual(Box::new(left), Box::new(right)),
+        match left
+            .shared()
+            .equality_value(right.shared(), SharedAddressOffset::written_constant)
+        {
+            Some(value) => Self::Constant(value),
+            None => Self::AddressOffsetEqual(Box::new(left), Box::new(right)),
         }
     }
 
@@ -3715,25 +3717,12 @@ impl OldConditionTerm {
     }
 
     pub fn address_equal(left: Address, right: Address) -> Self {
-        if left.blocks_proven_distinct(&right) {
-            Self::Constant(false)
-        } else {
-            // Keep the common base as evidence: a later equal pointer may use
-            // another base spelling. The graph derives the offset comparison
-            // without discarding the original address comparison.
-            // Preserve symbolic reflexive comparisons as well: exact fact
-            // checking must still see the comparison after a stored pointer
-            // resolves to the same symbolic value on both sides.
-            // A loaded pointer's block names an unknown address, so equal
-            // displacements in it are a symbolic reflexive comparison too.
-            if left.base == right.base
-                && let Self::Constant(value) =
-                    Self::address_offset_equal(left.offset.clone(), right.offset.clone())
-                && !(value && matches!(left.base, AddressBase::Load(_) | AddressBase::SliceData(_)))
-            {
-                return Self::Constant(value);
-            }
-            Self::AddressEqual(Box::new(left), Box::new(right))
+        match left
+            .shared()
+            .equality_value(right.shared(), SharedAddressOffset::written_constant)
+        {
+            Some(value) => Self::Constant(value),
+            None => Self::AddressEqual(Box::new(left), Box::new(right)),
         }
     }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{CompareRelation, MachineIntegerType, StoredConditionTerm};
 use crate::kernel::{binary_node, unary_node};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
@@ -48,7 +48,7 @@ pub(in crate::surface) fn comparison_proposition(
             }
         };
         return Ok(Proposition::condition_is(
-            OldConditionTerm::address_equal(left, right),
+            StoredConditionTerm::address_equal(&left, &right),
             value,
         ));
     }
@@ -75,7 +75,7 @@ pub(in crate::surface) fn comparison_proposition(
             ));
         }
         return Ok(Proposition::condition_is(
-            OldConditionTerm::address_equal(left.address().clone(), right.address().clone()),
+            StoredConditionTerm::address_equal(left.address(), right.address()),
             value,
         ));
     }

@@ -488,6 +488,15 @@ impl StoredConditionTerm {
         }
     }
 
+    /// Construct an address comparison from written operands, preserving the
+    /// producer's block payloads when the comparison stays symbolic.
+    pub(crate) fn address_equal(left: &Address, right: &Address) -> Self {
+        Self(StoredCondition::Shared(KernelTerm::address_equal_with(
+            [left.shared().clone(), right.shared().clone()],
+            SharedAddressOffset::written_constant,
+        )))
+    }
+
     pub(crate) fn constant(value: bool) -> Self {
         Self(StoredCondition::Shared(KernelTerm::boolean_literal(value)))
     }
