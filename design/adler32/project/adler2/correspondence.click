@@ -47,9 +47,15 @@ theorem adler_c_rust_reset(c_result: uint64, rust_a: uint32, rust_b: uint32) {
  requires rust_a == 1u32;
  requires rust_b == 0u32;
  ensures c_result == (rust_a | (rust_b << 16)) as uint64 by {
+  have rust_b << 16 == 0u32 by { rewrite(rust_b, 0u32); close(); }
+  have (rust_a | (rust_b << 16)) == 1u32 by {
+   rewrite(rust_b << 16, 0u32);
+   rewrite(rust_a, 1u32);
+   close();
+  }
   rewrite(c_result, 1u64);
-  rewrite(rust_a, 1u32);
-  rewrite(rust_b, 0u32);
+  rewrite(rust_a | (rust_b << 16), 1u32);
+  apply(adler_result_widen(1u32));
   close();
  }
 }

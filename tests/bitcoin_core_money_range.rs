@@ -3668,7 +3668,8 @@ int32& {pop_back}(std::span<int>& span) {{
     step_until(assignment(size, 0).entry);
     step();
     have size - 1u64 <= std_span_size(span) by {{
-        close() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+        rewrite(size, std_span_size(span));
+        close();
     }}
     have to_integer(size - 1u64) == to_integer(size) - 1;
     step_until(function.exit);
