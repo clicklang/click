@@ -1,6 +1,6 @@
 use super::*;
-use crate::kernel::CompareRelation;
 use crate::kernel::MachineCastSpelling;
+use crate::kernel::{BooleanOperandView, CompareRelation};
 use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
@@ -4882,18 +4882,36 @@ pub(crate) fn is_store_fact(condition: &OldConditionTerm, value: bool) -> bool {
     )
 }
 
+/// Memory canonicalization treats these logical values as written, including
+/// any reads inside their operands.
+fn keeps_written_condition(view: BooleanOperandView<'_>) -> bool {
+    view.is_bool_value_form()
+        || view.is_integer_comparison()
+        || match view {
+            BooleanOperandView::Shared(root) => matches!(
+                root.node(),
+                KernelTermNode::BoolLiteral(_)
+                    | KernelTermNode::Variable(_)
+                    | KernelTermNode::AlgebraicEqual { .. }
+                    | KernelTermNode::PointerEqual(_)
+            ),
+            BooleanOperandView::Native(condition) => matches!(
+                condition,
+                OldConditionTerm::Constant(_)
+                    | OldConditionTerm::Variable(_)
+                    | OldConditionTerm::AlgebraicEqual(..)
+                    | OldConditionTerm::PointerEqual(..)
+            ),
+        }
+}
+
 /// The canonical form for a condition: every operand takes its
 /// [`canonical_term`] form, so terms that are equal by definition compare
 /// identically. The comparison direction of the canonical model for
 /// whole facts.
 pub(crate) fn canonical_condition(condition: &OldConditionTerm) -> OldConditionTerm {
     match condition {
-        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => condition.clone(),
-        OldConditionTerm::AlgebraicEqual(_, _) | OldConditionTerm::PointerEqual(..) => {
-            condition.clone()
-        }
-        // `Bool` values are kept as built, as algebraic equalities are.
-        condition if condition.is_bool_value_form() => condition.clone(),
+        _ if keeps_written_condition(BooleanOperandView::Native(condition)) => condition.clone(),
         OldConditionTerm::Float32(float_condition) => {
             OldConditionTerm::Float32(float_condition.map_bitvector_terms(canonical_term))
         }
@@ -4908,7 +4926,6 @@ pub(crate) fn canonical_condition(condition: &OldConditionTerm) -> OldConditionT
             Box::new(left.with_offset(canonical_offset_term(&left.offset))),
             Box::new(right.with_offset(canonical_offset_term(&right.offset))),
         ),
-        crate::kernel::integer_comparison_condition!(_, _) => condition.clone(),
         condition => {
             let (op, left, right) = condition
                 .as_bitvector_comparison()
@@ -4924,6 +4941,9 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
     let Proposition::ConditionIs(condition, value) = fact else {
         return fact.clone();
     };
+    if keeps_written_condition(condition.operand_view()) {
+        return fact.clone();
+    }
     Proposition::condition_is(canonical_condition(condition.old_form()), *value)
 }
 
@@ -5044,17 +5064,7 @@ fn select_scalar_reads_impl(term: &OldMachineTerm, retain_selected: bool) -> Old
                 }
             }
             Task::VisitCondition(condition) => match condition {
-                OldConditionTerm::AlgebraicEqual(_, _) | OldConditionTerm::PointerEqual(..) => {
-                    condition_results.push(condition.clone())
-                }
-                // `Bool` values keep their reads, as algebraic equalities do.
-                condition if condition.is_bool_value_form() => {
-                    condition_results.push(condition.clone())
-                }
-                crate::kernel::integer_comparison_condition!(_, _) => {
-                    condition_results.push(condition.clone())
-                }
-                OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {
+                _ if keeps_written_condition(BooleanOperandView::Native(condition)) => {
                     condition_results.push(condition.clone())
                 }
                 OldConditionTerm::Float32(float_condition) => {
@@ -11003,6 +11013,56 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
 mod structural_read_connective_tests {
     use super::*;
     use crate::kernel::VerificationSession;
+
+    #[test]
+    fn canonical_facts_retain_written_logical_roots_and_polarity() {
+        use crate::kernel::{
+            AlgebraicType, IntegerComparisonOperator, KernelType, StoredConditionTerm,
+        };
+        let _session = VerificationSession::enter();
+        let variable = KernelTerm::variable(KernelType::Bool, Variable(982211));
+        let literal = KernelTerm::boolean_literal(false);
+        let algebraic = KernelTerm::variable(
+            KernelType::Algebraic(AlgebraicType::parameter("T".into())),
+            Variable(982212),
+        );
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(982213)),
+            ProgramType::UInt8Pointer,
+        );
+        let integer = KernelTerm::variable(KernelType::Integer, Variable(982214));
+        let equality = KernelTerm::boolean_equal_raw([variable.clone(), literal.clone()]);
+        let conditional =
+            KernelTerm::boolean_if_raw([variable.clone(), equality.clone(), literal.clone()]);
+        let call = OldConditionTerm::bool_application("canonical_fact_predicate", vec![]);
+        let roots = [
+            variable,
+            literal,
+            equality,
+            conditional,
+            KernelTermImport::default().condition(&call),
+            KernelTerm::integer_comparison(
+                IntegerComparisonOperator::LessEqual,
+                [integer.clone(), integer],
+            )
+            .unwrap(),
+            KernelTerm::algebraic_equal_raw([algebraic.clone(), algebraic]),
+            KernelTerm::pointer_equal_raw([pointer.shared().clone(), pointer.shared().clone()]),
+        ];
+        for root in roots {
+            let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+            for truth in [false, true] {
+                let fact = Proposition::condition_is(condition.clone(), truth);
+                let Proposition::ConditionIs(result, polarity) = canonical_condition_fact(&fact)
+                else {
+                    unreachable!()
+                };
+                assert_eq!(result.root(), Some(&root));
+                assert_eq!(polarity, truth);
+                assert!(!root.has_cached_native_argument());
+            }
+        }
+    }
 
     #[test]
     fn exact_read_occurrences_match_names_before_stored_value_folding() {
