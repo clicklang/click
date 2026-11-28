@@ -1453,6 +1453,41 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
 }
 
 #[test]
+fn integer_to_float_carriers_visit_shared_machine_arithmetic_once() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let slice = Variable(982813);
+        let count = slice.element_count();
+        let format = MachineIntegerType::Int32;
+        let mut sum = KernelTerm::variable(KernelType::Program(format.program_type()), count);
+        for _ in 0..depth {
+            sum =
+                KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [sum.clone(), sum]);
+        }
+        let float = KernelFloatType::Float64;
+        let converted = KernelTerm::float_convert(float, format.program_type(), sum).unwrap();
+        let condition =
+            KernelTerm::float_classify(float, FloatClassification::Finite, converted).unwrap();
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(condition).unwrap(), true);
+        let exports = KernelTermExport::machine_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([count, slice])
+        );
+        assert!(!collector.exhausted());
+        assert!(
+            collector.carriers.nodes <= depth + 8,
+            "depth {depth}, visits {}",
+            collector.carriers.nodes
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
 fn nested_float_call_carriers_keep_shared_arguments_in_linear_work() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
