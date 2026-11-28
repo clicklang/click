@@ -7365,7 +7365,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     let load = |offset: AddressOffset| {
         OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-            Box::new(Address::new("data".into(), offset.into())),
+            Box::new(Address::new("data".into(), offset)),
             crate::kernel::LoadKind::Int32,
         )
     };

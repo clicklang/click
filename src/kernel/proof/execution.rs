@@ -8263,21 +8263,6 @@ fn validate_checked_event_shapes_after<'e>(
 }
 
 impl ExecutionProofCore {
-    pub(crate) fn register_current_call_views(&self, assumptions: &PureFactContext) {
-        let Some(evidence_state) = &self.evidence_state else {
-            return;
-        };
-        if evidence_state.memory() == self.state.memory() {
-            return;
-        }
-        register_recomputed_call_views(
-            &self.checked_call_events,
-            evidence_state.memory(),
-            self.state.memory(),
-            assumptions,
-        );
-    }
-
     pub(crate) fn checked_call_events(&self) -> CheckedCallEvents {
         self.checked_call_events.clone()
     }

@@ -10067,7 +10067,7 @@ fn range_bounds_refusal(
     // The domain witness can use another equal pointer's coordinates.
     // Resolve only the checked address; the clause's base value stays intact.
     let respelled = assumptions
-        .pointer_at_known_base(base.address(), &bounds.start())
+        .pointer_at_known_base(base.address(), bounds.start())
         .filter(|respelled| {
             respelled != base.address()
                 && assumptions.pointers_known_equal(base.address(), respelled)
@@ -10077,13 +10077,13 @@ fn range_bounds_refusal(
         .and_then(|respelled| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
                 respelled,
-                &bounds.start(),
+                bounds.start(),
             )
         })
         .or_else(|| {
             crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
                 base.address(),
-                &bounds.start(),
+                bounds.start(),
             )
         })
     else {

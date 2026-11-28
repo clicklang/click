@@ -57,7 +57,7 @@ impl KernelPointerEquality {
                 bounds: p
                     .array
                     .bounds()
-                    .map(|e| (address(&e.start), numeric(&e.width()))),
+                    .map(|e| (address(&e.start), numeric(e.width()))),
                 count: PointerMetadataKey(value.len().map(&mut numeric)),
             }
         });
@@ -100,8 +100,8 @@ impl SharedPointer {
             (Some(a), Some(b)) => {
                 a.start.syntax_equal(&b.start)
                     && crate::kernel::machine_operand_syntax_cmp(
-                        MachineOperandView::Shared(&a.width()),
-                        MachineOperandView::Shared(&b.width()),
+                        MachineOperandView::Shared(a.width()),
+                        MachineOperandView::Shared(b.width()),
                     )
                     .is_eq()
             }

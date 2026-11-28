@@ -66,7 +66,6 @@ pub(crate) struct ProofObject<L, O, E> {
 /// Borrowed authority that the focused goal is an execution frontier owning
 /// checked execution state. Only the kernel can construct this view.
 pub(crate) struct ProofExecutionView<'a, S> {
-    facts: &'a PureFactStore,
     execution: &'a ProofExecutionState<S>,
 }
 
@@ -207,10 +206,6 @@ pub(crate) enum PropositionIntroduction {
 }
 
 impl<'a, S> ProofExecutionView<'a, S> {
-    pub(crate) fn facts(&self) -> &'a PureFactStore {
-        self.facts
-    }
-
     pub(crate) fn execution(&self) -> &'a ProofExecutionState<S> {
         self.execution
     }
@@ -564,10 +559,7 @@ impl<L, P: Clone, O: Clone, S: Clone>
             return None;
         }
         let execution = branch.state.execution.as_deref()?;
-        Some(ProofExecutionView {
-            facts: &branch.state.facts,
-            execution,
-        })
+        Some(ProofExecutionView { execution })
     }
 
     pub(crate) fn finalization(&self) -> Option<ProofExecutionView<'_, S>> {

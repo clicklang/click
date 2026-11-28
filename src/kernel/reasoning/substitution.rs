@@ -2680,7 +2680,6 @@ fn collect_proposition_bound_variables_one(
             memory,
             base,
             bytes,
-            wide: _,
             ..
         } => {
             collect_memory_bound_variables(memory, variables);

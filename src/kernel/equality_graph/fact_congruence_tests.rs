@@ -665,24 +665,21 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
         at_first.address().offset.clone(),
         AddressOffset::scale_int64(second.clone(), 1, true),
     ));
-    let target = original.clone().with_address(
-        original.address().with_offset(
-            AddressOffset::add(
-                original.address().offset.clone(),
-                AddressOffset::scale_int64(
-                    OldMachineTerm::Binary {
-                        format: MachineIntegerType::UInt64,
-                        op: MachineBinaryOp::Add,
-                        left: Box::new(first),
-                        right: Box::new(second),
-                    },
-                    1,
-                    true,
-                ),
-            )
-            .into(),
-        ),
-    );
+    let target = original
+        .clone()
+        .with_address(original.address().with_offset(AddressOffset::add(
+            original.address().offset.clone(),
+            AddressOffset::scale_int64(
+                OldMachineTerm::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(first),
+                    right: Box::new(second),
+                },
+                1,
+                true,
+            ),
+        )));
     let full = |left: Pointer, right: Pointer| {
         Proposition::condition_is(
             OldConditionTerm::PointerEqual(Box::new(left), Box::new(right)),

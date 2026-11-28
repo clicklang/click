@@ -639,17 +639,6 @@ impl MemoryStateLabels {
         }
     }
 
-    pub(crate) fn naming_tables(
-        &self,
-    ) -> Option<(
-        &[crate::languages::interface::ImportedParameter],
-        &[crate::kernel::ProgramExpression],
-    )> {
-        self.naming
-            .as_ref()
-            .map(|tables| (tables.0.as_slice(), tables.1.as_slice()))
-    }
-
     pub(crate) fn source_name(&mut self, variable: Variable, name: String) {
         self.source_names.entry(variable).or_insert(name);
     }

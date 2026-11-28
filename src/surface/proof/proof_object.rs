@@ -1131,7 +1131,6 @@ impl ExecutionBranchDecisions {
 /// checks its typed outcome goals.
 pub(super) struct ProofExecutionView<'p> {
     pub(super) state: &'p ExecutionState,
-    pub(super) facts: &'p PureFactStore,
     pub(super) frontier: &'p ExecutionFrontier,
     pub(super) execution: &'p ExecutionProofState,
     pub(super) context: &'p ExecutionProofContext<'p>,

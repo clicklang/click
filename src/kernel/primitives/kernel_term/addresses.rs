@@ -339,6 +339,10 @@ impl Hash for AddressBlock {
 
 /// An address's block and displacement, read through [`Address`] (and
 /// [`SharedAddress`]); never a value of its own.
+#[expect(
+    clippy::manual_non_exhaustive,
+    reason = "only the defining module may construct the address handle parts"
+)]
 pub struct AddressParts {
     pub base: AddressBase,
     pub offset: AddressOffset,

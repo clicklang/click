@@ -1487,6 +1487,7 @@ impl PureFactStore {
             || self.quantified_fact_available(required)
     }
 
+    #[cfg(test)]
     pub(crate) fn implicit_transport_assumptions(&self) -> &PureFactContext {
         &self.implicit_transport_assumptions
     }

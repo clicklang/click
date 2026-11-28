@@ -522,8 +522,8 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             }
         }
 
-        refuse_a_place_returned_twice(&function)?;
-        refuse_a_borrow_spelled_as_two_transfers(&function)?;
+        refuse_a_place_returned_twice(function)?;
+        refuse_a_borrow_spelled_as_two_transfers(function)?;
 
         if function.ensures().is_empty()
             && function.exceptional_ensures().is_empty()

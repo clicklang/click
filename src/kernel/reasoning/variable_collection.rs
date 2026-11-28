@@ -805,7 +805,6 @@ fn collect_proposition_bitvector_variables_one(
             memory,
             base,
             bytes,
-            wide: _,
             ..
         } => {
             collect_memory_bitvector_variables(memory, variables);

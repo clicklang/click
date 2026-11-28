@@ -4,7 +4,6 @@
 //! produce fresh folded state; releases consume an owned instance of that type
 //! while retaining the caller's lifetime obligation.
 
-use super::ProtocolSite;
 use super::*;
 use crate::kernel::borrows::{
     BorrowRefusal, CheckedBorrowCallEvidence, CheckedBorrowCallEvidenceSequence,

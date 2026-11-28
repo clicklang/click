@@ -62,7 +62,7 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
         (&AddressOffset::constant(0).clone(), &right.clone()),
     ] {
         assert_eq!(
-            wide_element_offsets_proven_distinct(a, &b, &context),
+            wide_element_offsets_proven_distinct(a, b, &context),
             Some(true)
         );
     }

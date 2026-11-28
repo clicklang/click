@@ -862,8 +862,8 @@ enum ConstantComparisonSubject {
 
 #[derive(Debug)]
 pub(crate) enum ConditionalNormalizationError {
-    UnavailablePremise(usize),
-    UnsupportedPremise(usize),
+    UnavailablePremise(#[cfg_attr(not(test), allow(dead_code))] usize),
+    UnsupportedPremise(#[cfg_attr(not(test), allow(dead_code))] usize),
     DoesNotNormalize,
 }
 

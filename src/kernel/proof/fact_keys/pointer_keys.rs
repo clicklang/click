@@ -329,7 +329,7 @@ pub(super) fn recorded_value(pointer: &SharedPointer) -> MemoryErasedPointerKey 
         bounds: p.array.bounds().map(|e| {
             (
                 state_address(&e.start),
-                memory_operands::operand(V::Shared(&e.width())),
+                memory_operands::operand(V::Shared(e.width())),
             )
         }),
         bounds_known: known,
@@ -360,7 +360,7 @@ pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
         bounds: match p.array.bounds() {
             Some(e) => Some((
                 alpha_address::<ALLOW_LOADS>(&e.start, bindings, next)?,
-                alpha_machine_key::<ALLOW_LOADS>(V::Shared(&e.width()), bindings, next)?,
+                alpha_machine_key::<ALLOW_LOADS>(V::Shared(e.width()), bindings, next)?,
             )),
             None => None,
         },
