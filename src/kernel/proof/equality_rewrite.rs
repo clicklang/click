@@ -560,6 +560,7 @@ fn rewrite_with_admitted_equality_reading(
                                         | KernelTermNode::IntegerCompare { .. }
                                         | KernelTermNode::AddressEqual { .. }
                                         | KernelTermNode::AddressOffsetEqual { .. }
+                                        | KernelTermNode::PointerEqual(_)
                                 )
                             ) {
                                 results.push((Proposition::ConditionIs(condition, value), true));
@@ -2240,22 +2241,27 @@ fn rewrite_atomic_proposition_by_exact_equality(
             {
                 rewrite_address_goal(addresses, *expected, rewrite_pointer)?
             }
-            condition_source_0 @ Proposition::ConditionIs(_, expected)
-                if let Some((OldConditionTerm::PointerEqual(goal_left, goal_right), _)) =
-                    condition_source_0.old_condition() =>
+            Proposition::ConditionIs(condition, expected)
+                if let Some([left, right]) = condition.operand_view().pointer_values() =>
             {
-                // A wide pointer's count is respelled as the condition's
-                // other machine terms are below: its reads at the rewritten
-                // addresses.
-                let rewrite_count =
-                    |term: &OldMachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
-                Proposition::condition_is(
-                    OldConditionTerm::PointerEqual(
-                        Box::new(goal_left.map_addresses(&rewrite_pointer, rewrite_count)),
-                        Box::new(goal_right.map_addresses(&rewrite_pointer, rewrite_count)),
-                    ),
-                    *expected,
-                )
+                let (left, right) = (left.export()?, right.export()?);
+                let map = |pointer: &Pointer| {
+                    pointer.map_addresses(&rewrite_pointer, |term| {
+                        rewrite_load_pointers(term, &rewrite_pointer)
+                    })
+                };
+                let (new_left, new_right) = (map(&left), map(&right));
+                if left != new_left || right != new_right {
+                    let root = KernelTerm::pointer_equal_raw([
+                        new_left.into_shared(),
+                        new_right.into_shared(),
+                    ]);
+                    return Ok(Proposition::condition_is(
+                        StoredConditionTerm::from_root(root).expect("pointer equality is Boolean"),
+                        *expected,
+                    ));
+                }
+                goal.clone()
             }
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term =
@@ -3423,6 +3429,66 @@ mod tests {
                 assert_eq!(right.as_const(), Some(255));
             }
             assert!(!root.has_cached_native_argument());
+        }
+    }
+
+    #[test]
+    fn address_rewrite_of_pointer_goal_preserves_owner_and_rewrites_count_read() {
+        let _session = VerificationSession::enter();
+        let from = Address::symbolic(Variable(982891));
+        let to = Address::symbolic(Variable(982892));
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let count =
+            crate::kernel::eval::scalar_read_for_exact_cell_at(&point, &from, LoadKind::Bits64, 8);
+        let wide = Pointer::new(from.clone(), ProgramType::Int32Pointer)
+            .with_provenance(from.clone())
+            .with_bounds(Some(SubobjectBounds::constant(from.clone(), 32)))
+            .with_bounds_owner(Some(from.clone()))
+            .with_element_count(count);
+        let other = Pointer::new(
+            Address::symbolic(Variable(982893)),
+            ProgramType::Int32Pointer,
+        );
+        let root = KernelTerm::pointer_equal_raw([wide.into_shared(), other.clone().into_shared()]);
+        let premise = Proposition::condition_is(
+            StoredConditionTerm::from_root(KernelTerm::address_equal_raw([
+                from.shared().clone(),
+                to.shared().clone(),
+            ]))
+            .unwrap(),
+            true,
+        );
+        for polarity in [false, true] {
+            let goal = Proposition::condition_is(
+                StoredConditionTerm::from_root(root.clone()).unwrap(),
+                polarity,
+            );
+            let Proposition::ConditionIs(result, truth) = rewrite_proposition_by_exact_equality(
+                &goal,
+                &premise,
+                std::slice::from_ref(&premise),
+            )
+            .unwrap() else {
+                panic!("expected pointer equality")
+            };
+            assert_eq!(truth, polarity);
+            let [left, right] = result.operand_view().pointer_values().unwrap();
+            let left = left.export().unwrap();
+            assert_eq!(left.address(), &to);
+            assert_eq!(left.provenance(), &from);
+            assert_eq!(left.bounds_owner(), Some(&from));
+            assert_eq!(left.bounds().unwrap().start(), &to);
+            assert_eq!(
+                left.len(),
+                Some(&OldMachineTerm::read_named(
+                    point.clone(),
+                    to.clone(),
+                    LoadKind::Bits64
+                ))
+            );
+            assert_eq!(right.export().unwrap(), other);
+            assert!(!root.has_cached_native_argument());
+            assert!(!result.root().unwrap().has_cached_native_argument());
         }
     }
 
