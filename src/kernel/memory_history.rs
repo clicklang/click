@@ -4428,12 +4428,23 @@ impl RecordedWrites {
                 writes.accesses.insert((pointer.clone(), extent));
             }
             match step {
-                MemoryDerivation::CellsSeeded { .. } => {
-                    for (pointer, value) in step.seeded_stores().expect("a CellsSeeded edge") {
-                        writes
-                            .accesses
-                            .insert((pointer, AccessExtent::Bytes(value.byte_width())));
-                    }
+                // A seeded run writes its slots: one range for the run,
+                // whatever its length. Caching bytes the base already holds
+                // writes nothing.
+                MemoryDerivation::CellsSeeded { base, run }
+                    if !crate::kernel::resource_tracker::step_effect::seeded_loads_preserve_base(
+                        step,
+                    ) =>
+                {
+                    writes.ranges.push((
+                        MemoryRange::new_with_element_width(
+                            run.base().clone(),
+                            0u32.into(),
+                            run.count().into(),
+                            run.element_width(),
+                        ),
+                        base.clone(),
+                    ));
                 }
                 MemoryDerivation::CallHavoc {
                     base,
@@ -9036,6 +9047,40 @@ mod direct_unchanged_scaling_tests {
     /// two points: unrelated stores keep a block live, the block's own
     /// lifetime ending does not, and the work grows with the steps walked,
     /// never with facts or other paths.
+    #[test]
+    fn recorded_writes_take_a_seeded_run_as_one_range_whatever_its_length() {
+        let mut samples = Vec::new();
+        for size in [16u32, 256, 4096] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Address::symbolic(Variable(98_700));
+            let source = intern_memory(SymbolicMemory::new().store(base.clone(), value(1)));
+            let start = ExecutionState::new()
+                .with_memory(SymbolicMemory::new())
+                .begin_function_entry_memory();
+            let seeded = start.memory().clone().with_seeded_cells(
+                base.clone(),
+                4,
+                ProgramType::Int32,
+                0,
+                size,
+                source,
+            );
+            let state = start.clone().with_memory(seeded);
+            let (writes, work) = crate::instrumentation::measure_deterministic_work(|| {
+                RecordedWrites::between(start.path_link(), state.path_link())
+            });
+            let writes = writes.expect("the seeded state is reached from the start");
+            assert!(writes.accesses.is_empty());
+            assert_eq!(writes.ranges.len(), 1, "the run is one range");
+            assert_eq!(writes.ranges[0].0.base(), &base);
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "recording a seeded run walked its slots: {samples:?}"
+        );
+    }
+
     #[test]
     fn liveness_walks_only_the_steps_between_its_points() {
         let block: AddressBase = "local:kept".into();
