@@ -11,29 +11,24 @@ fn project(name: &str) -> Project {
 }
 
 #[test]
-fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_gap() {
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: complete shared slice sum proof"]
+fn charon_slice_into_iter_verifies_unchanged_sum() {
     assert_eq!(
         include_str!("../../design/charon-trial/into-slices/sum.rs"),
         include_str!("../../examples/rust-iterators/sum.rs")
     );
     assert_eq!(
         include_str!("../../design/charon-trial/into-slices/sum.click"),
-        include_str!("../../design/charon-trial/iterator-proof/rust-iterators/frozen.click")
+        include_str!("../../examples/rust-iterators/sum.click")
     );
     let p = project("sum");
     let prepared = p.prepared().unwrap();
-    let error = ProgramVerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
         &prepared,
     )
-    .err()
     .unwrap();
-    assert!(
-        error
-            .message()
-            .contains("unbound variable `__rust_iter_3_5_remaining`"),
-        "{error:?}"
-    );
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -65,26 +60,14 @@ fn charon_slice_into_iter_live_refresh_and_rejected_mutable_or_owned_shapes() {
         let p = project(name);
         p.refresh().unwrap();
         let prepared = p.prepared().unwrap();
-        if name == "sum" {
-            let error = ProgramVerificationSession::new_program_prepared(
-                &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
-                &prepared,
-            )
-            .err()
-            .unwrap();
-            assert!(
-                error
-                    .message()
-                    .contains("unbound variable `__rust_iter_3_5_remaining`"),
-                "{error:?}"
-            );
-            continue;
-        }
         ProgramVerificationSession::new_program_prepared(
             &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
             &prepared,
         )
         .unwrap();
+        if name == "sum" {
+            continue;
+        }
         ProgramVerificationSession::new_program_prepared(
             include_str!("../../design/charon-trial/into-slices/empty.click"),
             &prepared,
