@@ -590,3 +590,47 @@ fn builtin_machine_order_rejects_a_shared_sum_at_its_root() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn shared_wide_equality_reads_constant_arithmetic_at_the_root() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp, StoredConditionTerm};
+    let format = MachineIntegerType::Int64;
+    let mut samples = Vec::new();
+    for depth in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut import = KernelTermImport::default();
+        let mut word = import.machine(format, &OldMachineTerm::int64_constant(-1));
+        for _ in 0..depth {
+            word = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::BitwiseOr,
+                [word.clone(), word],
+            );
+        }
+        let mut work = 0;
+        for (n, expected) in [(u64::MAX, true), (0, false)] {
+            let other = import.machine(
+                MachineIntegerType::UInt64,
+                &OldMachineTerm::uint64_constant(n),
+            );
+            let root = KernelTerm::boolean_comparison_raw(format, R::Equal, [word.clone(), other]);
+            let claim = Proposition::condition_is(
+                StoredConditionTerm::from_root(root.clone()).unwrap(),
+                expected,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (proved, cost) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::reasoning::path_facts::solve_builtin_prop(&claim)
+            });
+            assert!(proved);
+            assert!(!root.has_cached_native_argument());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            work += cost;
+        }
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|work| work[0] == work[1]),
+        "{samples:?}"
+    );
+}

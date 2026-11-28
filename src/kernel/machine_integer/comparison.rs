@@ -222,17 +222,14 @@ pub(crate) fn literal_native_comparison_value(condition: BooleanOperandView<'_>)
         }
     };
     if format == MachineIntegerType::Int64 && relation == crate::kernel::CompareRelation::Equal {
-        // Wide equality also reads constant arithmetic and integer addresses
-        // of null. Keep that evaluator for compound operands.
+        // Wide equality accepts the bits of either signedness, including
+        // constant arithmetic. A top-level Integer conversion must be in range.
         let bits = |operand: MachineOperandView<'_>| {
-            if let MachineOperandView::Old(term) = operand
-                && operand.integer_conversion_destination().is_none()
-            {
-                return term.bitvector64_as_const();
+            if operand.integer_conversion_destination().is_some() {
+                let (destination, value) = operand.checked_literal_integer_conversion()?;
+                return (destination.format().bits() == 64).then_some(value.bits() as u64);
             }
-            literal_at(operand, MachineIntegerType::UInt64)
-                .or_else(|| literal_at(operand, MachineIntegerType::Int64))
-                .map(|value| value.bits() as u64)
+            operand.int64_constant().map(|n| n as u64)
         };
         if let (Some(a), Some(b)) = (bits(left), bits(right)) {
             return Some(a == b);
@@ -1792,6 +1789,7 @@ mod borrowed_comparison_tests {
             closed_condition_value(BooleanOperandView::Shared(&root)),
             Some(true)
         );
+        assert!(!root.has_cached_native_argument());
     }
 
     #[test]

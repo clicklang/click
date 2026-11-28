@@ -482,6 +482,14 @@ impl KernelMachineLiteral {
 pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
     match node {
         KernelTermNode::MachineLiteral(value) => Some(value.clone()),
+        // The native word reader recognizes the exact null address. Keep
+        // the written zero offset distinct from an expression that evaluates to zero.
+        KernelTermNode::IntegerAddress { address, .. }
+            if matches!(address.atom(), AddressBase::Concrete(name) if name == "null")
+                && matches!(address.offset().node(), KernelAddressOffset::Constant(0)) =>
+        {
+            Some(KernelMachineLiteral::UInt64(0))
+        }
         KernelTermNode::MachineIf { arguments } => {
             let KernelTermNode::BoolLiteral(value) = arguments[0].node() else {
                 return None;
@@ -1082,6 +1090,33 @@ mod tests {
             drop(source);
             let restored = KernelTermExport::default().argument(&common).unwrap();
             assert_eq!(KernelTermImport::default().argument(&restored), common);
+        }
+    }
+
+    #[test]
+    fn only_the_exact_null_address_has_a_constant_word_reading() {
+        let zero = KernelAddressOffset::Constant(0).into_shared().unwrap();
+        let sum = KernelAddressOffset::Add([zero.clone(), zero])
+            .into_shared()
+            .unwrap();
+        let null = Address::null();
+        for (address, expected) in [
+            (null.clone(), Some(0)),
+            (null.offset_by_bytes(1), None),
+            (
+                null.with_offset(AddressOffset::try_from_shared(sum).unwrap()),
+                None,
+            ),
+            (Address::symbolic(Variable(982815)), None),
+        ] {
+            let native =
+                OldMachineTerm::IntegerAddress(Box::new(address), AddressObjectClass::NONE);
+            assert_eq!(native.bitvector64_as_const(), expected);
+            let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+            assert_eq!(
+                MachineOperandView::Shared(&root).uint64_constant(),
+                expected
+            );
         }
     }
 
