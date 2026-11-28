@@ -146,21 +146,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 return proof.driver().apply_step(ProofStep::Known).map(Some);
             }
-            if let Some(closed) = attempt::candidate_outcome(
-                Self::try_bounded_observation_identity_using(proof, &premises),
-            )?
-            .flatten()
-            {
-                return Ok(Some(closed));
-            }
-            // Read-over-write cast identities still use the read adapter.
-            if !super::signed_intervals::has_retained_read_source(result)
-                && !premises
-                    .iter()
-                    .any(super::signed_intervals::has_retained_read_source)
-            {
-                return Ok(None);
-            }
+            return attempt::candidate_outcome(Self::try_bounded_observation_identity_using(
+                proof, &premises,
+            ))
+            .map(Option::flatten);
         }
         let scope = proof.driver().open_have(result.clone())?;
         if matches!(node, FloatReflexive { .. }) {
@@ -181,37 +170,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(closed) = scope.driver().try_integer_algebra()? else {
                 return Ok(None);
             };
-            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
-        }
-
-        if !polynomial {
-            // Select a rule using only its explicit inputs. Ordinary normalize
-            // may use the ambient equality graph; restricted solve must not
-            // turn an inapplicable rule candidate into an ambient proof.
-            let selected = premises
-                .iter()
-                .map(|premise| {
-                    proof.lower_cited_surface_proposition(premise, "specialized arithmetic input")
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let Some(goal) = scope.body().goal() else {
-                return Ok(None);
-            };
-            if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-                goal,
-                &selected,
-                &crate::kernel::proof::PureFactStore::from_ordered(&selected),
-            )
-            .is_err()
-            {
-                return Ok(None);
-            }
-        }
-        if let Ok(closed) = scope
-            .driver()
-            .apply_step(ProofStep::CompatibilityNormalize(Some(premises)))
-            && closed.is_complete()
-        {
             return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
         }
 

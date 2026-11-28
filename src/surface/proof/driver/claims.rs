@@ -4447,10 +4447,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                     | ProofTactic::Close
                                     | ProofTactic::Enumerate
-                                    | ProofTactic::Normalize
                                     | ProofTactic::CloseBounds(_)
-                                    | ProofTactic::NormalizeUsing(_)
-                                    | ProofTactic::CompatibilityNormalize(_)
                                     | ProofTactic::ArithmeticUsing(_)
                                     | ProofTactic::Preserve(_)
                             ) | PostExecutionTactic::Both(_)
@@ -4547,10 +4544,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         let proposition_closer = match post_tactic {
                             PostExecutionTactic::SolveUsing(_) => Some("close() using"),
                             PostExecutionTactic::Leaf(
-                                tactic @ (ProofTactic::Normalize
-                                | ProofTactic::CloseBounds(_)
-                                | ProofTactic::NormalizeUsing(_)
-                                | ProofTactic::CompatibilityNormalize(_)
+                                tactic @ (ProofTactic::CloseBounds(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
@@ -5078,17 +5072,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                 | ProofTactic::Close
                                 | ProofTactic::Enumerate
-                                | ProofTactic::Normalize
                                 | ProofTactic::CloseBounds(_)
-                                | ProofTactic::NormalizeUsing(_)
-                                | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_),
                             )
                             | PostExecutionTactic::Both(_) => {
                                 // The written closers that apply one step to
-                                // the main goal: `known`, the normalizing
-                                // closers and `both`. Only `known` reads
+                                // the main goal. Only `known` reads
                                 // a resource claim and the outcome's recorded
                                 // lowerings.
                                 let is_close = matches!(
@@ -5117,9 +5107,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                             "a post-execution leaf converts to its checked step",
                                         )
                                     }
-                                    PostExecutionTactic::Both(_) => {
-                                        ProofStep::CompatibilityNormalize(None)
-                                    }
+                                    // The conjunction path applies its written arms.
+                                    PostExecutionTactic::Both(_) => ProofStep::Known,
                                     _ => unreachable!("matched a closer above"),
                                 };
                                 if let Some(certificate) = continue_outcome_claim_proof(
@@ -5231,15 +5220,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Postconditions are conditional on return.
                                         // The checked execution outcome supplies
                                         // vacuity without a return value or state.
-                                        if matches!(
-                                            closer_step,
-                                            ProofStep::NormalizeUsing(_)
-                                                | ProofStep::CompatibilityNormalize(Some(_))
-                                        ) {
-                                            return Err(ClickError::new(
-                                                "`normalize using` requires a return-state proposition; use `close()` for a divergent path",
-                                            ));
-                                        }
                                         // Same rule for the explicit arithmetic
                                         // closer: its premises are cited against
                                         // a return state this path does not have.
@@ -6637,11 +6617,11 @@ mod tests {
                 if value {
                     ProofTactic::Known
                 } else {
-                    ProofTactic::Normalize
+                    ProofTactic::Enumerate
                 },
             ]
         });
-        let closers = vec![vec![ProofTactic::Normalize]; 4];
+        let closers = vec![vec![ProofTactic::Enumerate]; 4];
         let steps =
             synthesize_post_execution_paths(&tactics, &closers, &choices, &[], &[]).unwrap();
         let [
@@ -6659,14 +6639,14 @@ mod tests {
         assert_eq!(actual, &condition);
         assert_eq!(
             then_proof.steps(),
-            &[ProofStep::Known, ProofStep::Normalize]
+            &[ProofStep::Known, ProofStep::Enumerate]
         );
         assert_eq!(
             else_proof.steps(),
-            &[ProofStep::Normalize, ProofStep::Normalize]
+            &[ProofStep::Enumerate, ProofStep::Enumerate]
         );
         let mut mismatched = tactics;
-        mismatched[1][0] = ProofTactic::Normalize;
+        mismatched[1][0] = ProofTactic::Enumerate;
         assert!(
             synthesize_post_execution_paths(&mismatched, &closers, &choices, &[], &[]).is_err()
         );

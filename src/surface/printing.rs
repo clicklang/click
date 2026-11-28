@@ -111,7 +111,6 @@ fn source_contract_application(name: &str, arguments: &[SyntaxTerm]) -> Option<S
     })
 }
 
-pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
 /// Diagnostic spelling for a kernel conjunction without complete Surface labels.
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
@@ -1387,11 +1386,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ),
         ProofTactic::Close | ProofTactic::CloseUnreachable | ProofTactic::Known => {
             line(output, &prefix, CLOSE_CALL)
-        }
-        ProofTactic::Normalize
-        | ProofTactic::NormalizeUsing(_)
-        | ProofTactic::CompatibilityNormalize(_) => {
-            line(output, &prefix, COMPATIBILITY_NORMALIZATION)
         }
         ProofTactic::CloseBounds(premises) => write_selected_bounds(output, premises, indent),
         ProofTactic::ArithmeticUsing(premises) => {

@@ -3526,13 +3526,6 @@ impl<'a> Proof<'a> {
         self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
     }
 
-    pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
-        matches!(
-            self.node.step.as_deref(),
-            Some(ProofStep::CompatibilityNormalize(Some(premises))) if premises.is_empty()
-        )
-    }
-
     pub(super) fn is_complete(&self) -> bool {
         self.state.is_complete()
     }
@@ -3922,8 +3915,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "close()",
         ProofStep::CloseBounds(_) => "close() using bounds",
-        ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
-        ProofStep::CompatibilityNormalize(_) => "compatibility normalization",
         ProofStep::ArithmeticUsing(_) => "close() using",
         ProofStep::Preserve(_) => "preserve",
 

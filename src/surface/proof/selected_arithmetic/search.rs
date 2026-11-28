@@ -1604,23 +1604,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let branch = differs.join()?;
                     Self::close_refuted_fact(&branch, &refutation.fact)
                 })();
-                if let Some(closed) =
-                    attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged)
-                {
-                    return Ok(Some(closed));
-                }
-
-                // Some unfolds expose constructor matches as well as conditionals.
-                // Keep the checked route when arm equations cannot express the
-                // whole reduction.
-                let mut steps = vec![ProofStep::UnfoldFunction(refutation.application.clone())];
-                steps.extend(unfolds.iter().cloned().map(ProofStep::UnfoldFunction));
-                steps.push(ProofStep::CompatibilityNormalize(Some(taken.to_vec())));
-                let checked = search_input
-                    .driver()
-                    .apply_step(have(refutation.differs.clone(), steps))
-                    .and_then(|next| Self::close_refuted_fact(&next, &refutation.fact));
-                Ok(attempt::candidate_outcome(checked)?.filter(Proof::focused_discharged))
+                Ok(attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged))
             }
             DefinitionPlan::Split {
                 condition,
@@ -1776,8 +1760,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter(closes));
         }
         if let RewriteClosers::Listed(premise_pairs) = closers {
-            if let Ok(closed) =
-                crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
+            if let Ok(Some(closed)) =
+                crate::kernel::search::ProofSearch::try_local_checked_closure(search_input, None)
                 && closes(&closed)
             {
                 return Ok(Some(closed));
@@ -1802,11 +1786,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )
                     })
                     .or_else(|| {
-                        crate::kernel::search::ProofSearch::apply_normalization_closure(
+                        crate::kernel::search::ProofSearch::try_local_checked_closure(
                             search_input,
                             None,
                         )
                         .ok()
+                        .flatten()
                         .filter(closes)
                     })
             {
@@ -1830,11 +1815,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )
                     })
                     .or_else(|| {
-                        crate::kernel::search::ProofSearch::apply_normalization_closure(
+                        crate::kernel::search::ProofSearch::try_local_checked_closure(
                             search_input,
                             None,
                         )
                         .ok()
+                        .flatten()
                         .filter(closes)
                     });
             return Ok(closed.filter(closes));
@@ -1844,8 +1830,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        if let Ok(closed) =
-            crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
+        if let Ok(Some(closed)) =
+            crate::kernel::search::ProofSearch::try_local_checked_closure(search_input, None)
             && closes(&closed)
         {
             return Ok(Some(closed));
@@ -1923,11 +1909,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     base.lower_cited_surface_proposition(&defined, "signed read domain")?;
                 if matches!(kernel, Proposition::MemoryReadDefined { .. }) {
                     let scope = base.driver().open_have(defined)?;
-                    let closed = scope.driver().apply_step(ProofStep::Known).or_else(|_| {
-                        scope
-                            .driver()
-                            .apply_step(ProofStep::CompatibilityNormalize(None))
-                    })?;
+                    let closed = scope.driver().apply_step(ProofStep::Known)?;
                     base = closed.join()?;
                 }
             }

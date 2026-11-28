@@ -342,11 +342,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("prepare_integer_read_domain");
         let scope = proof.driver().open_have(domain)?;
-        if let Ok(closed) = scope.driver().apply_step(ProofStep::Known).or_else(|_| {
-            scope
-                .driver()
-                .apply_step(ProofStep::CompatibilityNormalize(Some(Vec::new())))
-        }) {
+        if let Ok(closed) = scope.driver().apply_step(ProofStep::Known) {
             return Ok(Some(closed.join()?));
         }
         Ok(None)
@@ -1064,12 +1060,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         }
                     }
                 }
-                let step = if all_available && known {
-                    ProofStep::Known
+                if all_available && known {
+                    attempt::candidate_outcome(driver.apply_step(ProofStep::Known))?
                 } else {
-                    ProofStep::CompatibilityNormalize(Some(premises.to_vec()))
-                };
-                attempt::candidate_outcome(driver.apply_step(step))?
+                    None
+                }
             }
             && closed.is_complete()
         {

@@ -168,8 +168,6 @@ pub(crate) enum PropositionKnownContext {
 pub(crate) enum PropositionCloseError {
     NotProposition,
     Unavailable,
-    DoesNotNormalize,
-    ConditionalNormalization(super::fact_reasoning::ConditionalNormalizationError),
 
     ExpectedIntroduction(Proposition),
     IntegerFresheningExhausted,
@@ -1202,15 +1200,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         .then(|| self.closed_focused())
     }
 
-    pub(crate) fn apply_normalize(&self) -> Result<Self, PropositionCloseError> {
-        let (goal, _) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        super::fact_reasoning::normalizes_context_free_leaf(goal.proposition())
-            .then(|| self.closed_focused())
-            .ok_or(PropositionCloseError::DoesNotNormalize)
-    }
-
     /// Allocate a logical choice witness outside every execution, load and
     /// binder producer's namespace. Facts reserve earlier witnesses; the
     /// current goal and source body can also name witnesses not yet facts.
@@ -1408,18 +1397,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 return Err(format!("selected bound {index} is not exactly available"));
             }
         }
-        Ok(self.closed_focused())
-    }
-
-    pub(crate) fn apply_normalize_using(
-        &self,
-        premises: &[Proposition],
-    ) -> Result<Self, PropositionCloseError> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        super::fact_reasoning::normalize_using_conditions(goal.proposition(), premises, facts)
-            .map_err(PropositionCloseError::ConditionalNormalization)?;
         Ok(self.closed_focused())
     }
 
@@ -3748,7 +3725,6 @@ mod tests {
                 |_, _| (),
             )
             .unwrap();
-        assert!(body.apply_normalize().is_err());
         assert!(body.apply_known(PropositionKnownContext::Pure).is_err());
         assert!(
             frontier
@@ -3787,7 +3763,7 @@ mod tests {
             let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
                 ProofObject::root((), branch);
             let checked = proof
-                .apply_normalize()
+                .apply_known(PropositionKnownContext::Exact)
                 .ok()
                 .unwrap()
                 .completed_proposition()

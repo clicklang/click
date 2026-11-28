@@ -44,12 +44,6 @@ fn common_fold_alpha_keys_scale_with_selected_shared_bodies_without_exports() {
 
 #[test]
 fn retained_integer_fold_keys_scale_without_native_exports() {
-    use crate::kernel::proof::{
-        OutcomeProofState, ProofBranch, ProofBranchState, ProofObject, ProofObligation,
-        PropositionObligation, PureFactStore,
-    };
-
-    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let fold = |accumulator| {
@@ -87,41 +81,14 @@ fn retained_integer_fold_keys_scale_without_native_exports() {
             crate::kernel::StoredConditionTerm::from_root(root.clone()).unwrap(),
             true,
         );
-        let samples = [0, 16, 64, 256].map(|unrelated| {
-            let facts = PureFactStore::from_ordered(
-                &(0..unrelated)
-                    .map(|index| Proposition::Predicate {
-                        name: format!("unrelated_{index}"),
-                        arguments: vec![],
-                    })
-                    .collect::<Vec<_>>(),
-            );
-            let proof = TestProof::root(
-                (),
-                ProofBranch::new(
-                    ProofObligation::Proposition(PropositionObligation::new(goal.clone(), ())),
-                    ProofBranchState {
-                        facts,
-                        execution: None,
-                    },
-                ),
-            );
-            let exports = KernelTermExport::integer_export_count();
-            let (closed, work) =
-                crate::instrumentation::measure_deterministic_work(|| proof.apply_normalize());
-            assert!(closed.is_ok());
-            assert!(!root.has_cached_native_argument());
-            assert_eq!(KernelTermExport::integer_export_count(), exports);
-            work
+        let exports = KernelTermExport::integer_export_count();
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(&goal)
         });
-        assert!(
-            samples.iter().all(|work| *work == samples[0]),
-            "{samples:?}"
-        );
-        assert!(
-            samples[0] <= 40 * size + 200,
-            "size={size}, work={samples:?}"
-        );
+        assert!(holds);
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(work <= 40 * size + 200, "size={size}, work={work}");
     }
 }
 

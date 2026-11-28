@@ -6497,10 +6497,6 @@ pub enum ProofTactic {
     CloseUnreachable,
     Known,
     CloseBounds(Vec<SyntaxProposition>),
-    Normalize,
-    NormalizeUsing(Vec<SyntaxProposition>),
-    /// A compatibility check used in verification. It has no expansion spelling.
-    CompatibilityNormalize(Option<Vec<SyntaxProposition>>),
     ArithmeticUsing(Vec<SyntaxProposition>),
     /// An internal introduction step used while building a checked scope.
     Intro,
@@ -6602,7 +6598,6 @@ pub enum SimpleTactic {
     Choose,
     Termination,
     Known,
-    Normalize,
     Intro,
     Enumerate,
     Rewrite,
@@ -7058,9 +7053,6 @@ impl ProofTactic {
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known | Self::CloseUnreachable | Self::CloseBounds(_) => {
                 TacticClass::Simple(SimpleTactic::Known)
-            }
-            Self::Normalize | Self::NormalizeUsing(_) | Self::CompatibilityNormalize(_) => {
-                TacticClass::Simple(SimpleTactic::Normalize)
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
@@ -10866,7 +10858,7 @@ impl VerifiedProgramTheorem {
             self.function_block.signature().returns_reference(),
         );
         let _reference_carriers = diagnostics::ParameterPlaceScope::enter(&self.function_block);
-        expansion::require_surface_expansion(format_proof_certificate(
+        Ok(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))
     }
@@ -10916,7 +10908,7 @@ impl VerifiedPureTheorem {
             .contract_value_parameters
             .as_ref()
             .map(printing::ContractValueParameterScope::enter);
-        expansion::require_surface_expansion(format_proof_certificate(&self.proof_certificate()?))
+        Ok(format_proof_certificate(&self.proof_certificate()?))
     }
 }
 

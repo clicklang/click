@@ -827,61 +827,6 @@ impl<'a> Proof<'a> {
             .map_err(|message| self.step_error(message))
     }
 
-    // Preserve the rule/dispatcher frame boundary described above.
-    #[inline(never)]
-    pub(super) fn apply_normalize(&self) -> Result<KernelProofHandle, ClickError> {
-        self.state.apply_normalize().map_err(|error| match error {
-            PropositionCloseError::NotProposition => {
-                self.step_error("`normalize` requires a proposition goal")
-            }
-            PropositionCloseError::DoesNotNormalize => {
-                self.step_error("`normalize` goal did not normalize to true")
-            }
-            _ => unreachable!("kernel returned an unrelated normalize error"),
-        })
-    }
-
-    #[inline(never)]
-    pub(super) fn apply_normalize_using(
-        &self,
-        surface_premises: &[SyntaxProposition],
-    ) -> Result<KernelProofHandle, ClickError> {
-        use crate::kernel::proof::fact_reasoning::ConditionalNormalizationError;
-        let premises = surface_premises
-            .iter()
-            .map(|premise| {
-                self.lower_cited_surface_proposition(premise, "`normalize using` premise")
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let (result, read_resolutions) =
-            crate::kernel::capture_read_resolutions(|| self.state.apply_normalize_using(&premises));
-        result.map_err(|error| match error {
-            PropositionCloseError::NotProposition => {
-                self.step_error("`normalize` requires a proposition goal")
-            }
-            PropositionCloseError::ConditionalNormalization(
-                ConditionalNormalizationError::UnavailablePremise(index),
-            ) => self.step_error(format!(
-                "`normalize using` premise {index} is not exactly available"
-            )),
-            PropositionCloseError::ConditionalNormalization(
-                ConditionalNormalizationError::UnsupportedPremise(index),
-            ) => self.step_error(format!(
-                "`normalize using` premise {index} must be a consistent single condition"
-            )),
-            PropositionCloseError::ConditionalNormalization(
-                ConditionalNormalizationError::DoesNotNormalize,
-            ) => self.step_error_with_details(
-                "`normalize using` goal did not normalize to true using the listed conditions",
-                None,
-                None,
-                None,
-                read_resolutions,
-            ),
-            _ => unreachable!("kernel returned an unrelated normalize-using error"),
-        })
-    }
-
     pub(in crate::surface::proof) fn arithmetic_refusal(
         &self,
         surface_premises: &[SyntaxProposition],
