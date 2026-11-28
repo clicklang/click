@@ -1425,7 +1425,8 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let bound_of = |condition: &OldConditionTerm| {
         Proposition::condition_is(
             condition
-                .pointer_offset_uint64_association_guard()
+                .pointer_offset_sides()
+                .and_then(|(left, right)| left.uint64_association_guard(right))
                 .expect("a full-width association has a guard"),
             true,
         )
