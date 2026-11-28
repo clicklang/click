@@ -211,13 +211,15 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         let view = condition.operand_view();
         let reversed = if let Some([left, right]) = view.pointer_addresses() {
             Some(KernelTerm::address_equal_raw([right, left]))
+        } else if let Some([left, right]) = view.pointer_values() {
+            Some(KernelTerm::pointer_equal_raw([right, left]))
         } else {
             view.pointer_offsets()
                 .map(|[left, right]| KernelTerm::address_offset_equal_raw([right, left]))
         };
         if let Some(root) = reversed {
             return Some(Proposition::condition_is(
-                StoredConditionTerm::from_root(root).expect("address equality is Boolean"),
+                StoredConditionTerm::from_root(root).expect("pointer comparison is Boolean"),
                 true,
             ));
         }
@@ -299,12 +301,6 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
                 condition_source_0.old_condition() =>
         {
             OldConditionTerm::IntegerEqual(b.clone(), a.clone())
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
-                condition_source_0.old_condition() =>
-        {
-            OldConditionTerm::PointerEqual(b.clone(), a.clone())
         }
         _ => return None,
     };
@@ -739,6 +735,9 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
         }
         if let Some([left, right]) = view.pointer_offsets() {
             return left.syntax_equal(&right);
+        }
+        if view.comparison().is_none() && !view.is_integer_comparison() {
+            return false;
         }
     }
     match equality {
@@ -1374,6 +1373,31 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 &AddressOffset::try_from_shared(right)?,
             );
         }
+        if let Some([left, right]) = view.pointer_values() {
+            let (left, right) = (left.export()?, right.export()?);
+            let mut rewrite =
+                super::term_rewrite::TermRewrite::for_pointer_value_exact(&left, &right);
+            let rewritten = rewrite.proposition(goal);
+            if rewrite.refusal().is_some() {
+                return Err(AtomicRewriteRefusal::Refused(
+                    "pointer value rewrite exceeded its supported scope".into(),
+                ));
+            }
+            if rewritten != *goal {
+                return Ok(rewritten);
+            }
+            let addresses = KernelTerm::address_equal([
+                left.address().shared().clone(),
+                right.address().shared().clone(),
+            ]);
+            return rewrite_atomic_proposition_by_exact_equality(
+                goal,
+                &Proposition::condition_is(
+                    StoredConditionTerm::from_root(addresses).expect("address equality is Boolean"),
+                    true,
+                ),
+            );
+        }
     }
     // A `Bool` equality (Stage 5, rule L-Eq) replaces its left operand by
     // its right wherever a `Bool` is read. A `Bool` value's equality with a
@@ -1407,25 +1431,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 "the `Bool` equality's left side does not occur".into(),
             ))
         };
-    }
-    if let Some((OldConditionTerm::PointerEqual(left, right), true)) = (equality).old_condition() {
-        let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
-        let rewritten = rewrite.proposition(goal);
-        if rewrite.refusal().is_some() {
-            return Err(AtomicRewriteRefusal::Refused(
-                "pointer value rewrite exceeded its supported scope".into(),
-            ));
-        }
-        if rewritten != *goal {
-            return Ok(rewritten);
-        }
-        return rewrite_atomic_proposition_by_exact_equality(
-            goal,
-            &Proposition::condition_is(
-                OldConditionTerm::address_equal(left.address().clone(), right.address().clone()),
-                true,
-            ),
-        );
     }
     if let Some((OldConditionTerm::IntegerEqual(left, right), true)) = (equality).old_condition() {
         let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
@@ -3419,6 +3424,39 @@ mod tests {
             }
             assert!(!root.has_cached_native_argument());
         }
+    }
+
+    #[test]
+    fn full_pointer_premise_preserves_provenance_and_count() {
+        let _session = VerificationSession::enter();
+        let wide = |id, count| {
+            Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+                .with_provenance(Address::symbolic(Variable(id + 1)))
+                .with_element_count(OldMachineTerm::uint64_constant(count))
+        };
+        let left = wide(982881, 3);
+        let right = wide(982883, 7);
+        let root = KernelTerm::pointer_equal_raw([left.shared().clone(), right.shared().clone()]);
+        let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+        let premise = Proposition::condition_is(condition.clone(), true);
+        let reversed = reverse_equality(&premise).unwrap();
+        let Proposition::ConditionIs(reverse, true) = &reversed else {
+            panic!("expected a pointer equality");
+        };
+        assert_eq!(
+            reverse.operand_view().pointer_values().unwrap(),
+            [right.shared().clone(), left.shared().clone()]
+        );
+        assert!(reverse_equality(&Proposition::condition_is(condition, false)).is_none());
+        let term = |p: &Pointer| Term::ProgramValue(ProgramValue::Pointer(p.clone()).into());
+        let goal = Proposition::Equal(term(&left), term(&right));
+        assert!(rewrite_proposition_by_exact_equality(&goal, &premise, &[]).is_err());
+        let rewritten =
+            rewrite_proposition_by_exact_equality(&goal, &premise, std::slice::from_ref(&premise))
+                .unwrap();
+        assert_eq!(rewritten, Proposition::Equal(term(&right), term(&right)));
+        assert!(!root.has_cached_native_argument());
+        assert!(!reverse.root().unwrap().has_cached_native_argument());
     }
 
     #[test]
