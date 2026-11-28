@@ -1661,10 +1661,6 @@ id = "cli.expand.--claim"
 path = "reference/cli/expand.md#options"
 
 [[item]]
-id = "cli.expand.--check-normalize-removal"
-path = "reference/cli/expand.md#options"
-
-[[item]]
 id = "cli.expand.--help"
 path = "reference/cli/expand.md#options"
 
