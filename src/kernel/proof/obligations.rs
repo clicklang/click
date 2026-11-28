@@ -1018,7 +1018,7 @@ mod outcome_claim_goal_tests {
     fn closing_execution() -> crate::kernel::CheckedFunctionExecution {
         use crate::kernel::*;
         prove_checked_program_function_execution_with_environment(
-            ExecutionState::new(),
+            ExecutionState::new().begin_function_entry_memory(),
             program_function(
                 ProgramType::Int32,
                 "closing_goals",
@@ -1192,7 +1192,12 @@ mod outcome_claim_goal_tests {
     #[test]
     fn outcome_completion_requires_opened_claims_and_all_closing_goals() {
         let execution = closing_execution();
-        let core = outcome();
+        // The write-footprint goal reads the history from the caller's
+        // point: this exit is that point, a body that wrote nothing.
+        let core = OutcomeProofCore {
+            state: execution.allocation_entry_state().clone().into(),
+            ..outcome()
+        };
         let data = Arc::new(OutcomeProofState::new(core.clone(), ()));
         let mut goal = FunctionOutcomeObligation::new(0, data);
         assert!(

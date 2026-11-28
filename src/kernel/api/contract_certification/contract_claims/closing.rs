@@ -523,7 +523,7 @@ impl ContractExitObligations {
                         )?;
                     }
                 }
-                self.prove_footprint(path, facts.assumptions())?;
+                self.prove_footprint(outcome, facts.assumptions())?;
             }
         }
         proved.goals = proved.goals.close(kind);
@@ -832,27 +832,53 @@ impl ContractExitObligations {
 
     fn prove_footprint(
         &self,
-        path: &SymbolicExecutionPath,
+        outcome: &OutcomeProofCore,
         assumptions: &PureFactContext,
     ) -> Result<(), ContractClosingRefusal> {
         let context = &self.context;
         let function = &context.function;
-        let effects = &path.effect_facts;
-        if function.contract_mutable().is_empty() && !function.resource_derived_mutable_frame() {
-            check_empty_footprint(&context.caller, effects, assumptions)?;
-        }
-        if !function.contract_mutable().is_empty()
+        let empty =
+            function.contract_mutable().is_empty() && !function.resource_derived_mutable_frame();
+        let framed = !function.contract_mutable().is_empty()
             || !function.resource_requires().is_empty()
-            || function.resource_derived_mutable_frame()
-        {
-            let has_storage_write = crate::kernel::memory_effect_write_pointers(effects).iter().any(|pointer| pointer.base.is_static_storage_block())
-                || effects.iter().any(|fact| matches!(fact.proposition(), Proposition::MemoryEffectSummary { mutable_ranges, .. } if mutable_ranges.iter().any(|range| range.base().base.is_static_storage_block())));
+            || function.resource_derived_mutable_frame();
+        if !empty && !framed {
+            return Ok(());
+        }
+        // What the function wrote is what the memory history records from
+        // the caller's point to this exit, argument binding included.
+        //
+        // Known gap: a loop whose head records no checked footprint
+        // (`writes.unbounded_loop`) keeps the writes of its continuing
+        // iterations off every exit's history, so they are not checked here.
+        // The summary facts this replaced did not cover them either.
+        let writes = crate::kernel::RecordedWrites::between(
+            context.caller.path_link(),
+            outcome.state.path_link(),
+        )
+        .ok_or_else(|| {
+            ContractClosingRefusal::Incomplete(
+                "the exit is not reached from the function's entry".into(),
+            )
+        })?;
+        if empty {
+            check_empty_footprint(&context.caller, &writes, assumptions)?;
+        }
+        if framed {
+            let has_storage_write = writes
+                .accesses
+                .iter()
+                .any(|(pointer, _)| pointer.base.is_static_storage_block())
+                || writes
+                    .ranges
+                    .iter()
+                    .any(|(range, _)| range.base().base.is_static_storage_block());
             if has_storage_write {
                 let entry = context.entry()?;
                 match storage_writes_outside_owned_footprint(
                     function,
                     &entry.state,
-                    effects,
+                    &writes,
                     assumptions,
                     entry.resources.as_deref(),
                     Some(
@@ -877,37 +903,27 @@ impl ContractExitObligations {
     }
 }
 
-/// The empty footprint is a resource/effect goal over the body's retained
-/// effects. Proof-local facts cannot introduce additional program writes.
+/// The empty footprint: no write the history records reaches memory that
+/// existed before the call. Storage the function created is its own.
 pub(crate) fn check_empty_footprint(
     caller: &ExecutionState,
-    effects: &ExecutionFacts,
+    writes: &crate::kernel::RecordedWrites,
     assumptions: &PureFactContext,
 ) -> Result<(), ContractClosingRefusal> {
-    for pointer in crate::kernel::memory_effect_write_pointers(effects) {
-        if preexisting_write(&pointer, caller, assumptions) {
-            return Err(ContractClosingRefusal::Write(pointer));
+    for (pointer, _) in &writes.accesses {
+        if !writes.created.contains(&pointer.base)
+            && preexisting_write(pointer, caller, assumptions)
+        {
+            return Err(ContractClosingRefusal::Write(pointer.clone()));
         }
     }
-    for fact in effects {
-        if let Proposition::MemoryEffectSummary {
-            before,
-            mutable_ranges,
-            ..
-        } = fact.proposition()
+    for (range, before) in &writes.ranges {
+        if !writes.created.contains(&range.base().base)
+            && preexisting_write(range.base(), caller, assumptions)
+            && (!memory_holds_live_heap_allocation_at(before, range.base(), assumptions)
+                || memory_holds_live_heap_allocation_at(caller.memory(), range.base(), assumptions))
         {
-            for range in mutable_ranges {
-                if preexisting_write(range.base(), caller, assumptions)
-                    && (!memory_holds_live_heap_allocation_at(before, range.base(), assumptions)
-                        || memory_holds_live_heap_allocation_at(
-                            caller.memory(),
-                            range.base(),
-                            assumptions,
-                        ))
-                {
-                    return Err(ContractClosingRefusal::Range(range.clone()));
-                }
-            }
+            return Err(ContractClosingRefusal::Range(range.clone()));
         }
     }
     Ok(())
@@ -970,7 +986,11 @@ mod tests {
     fn aliased_write_fixture(
         local: bool,
         size: u32,
-    ) -> (ExecutionState, ExecutionFacts, PureFactContext) {
+    ) -> (
+        ExecutionState,
+        crate::kernel::RecordedWrites,
+        PureFactContext,
+    ) {
         let anchor = if local {
             SymbolicMemory::local_pointer("private-output")
         } else {
@@ -994,23 +1014,16 @@ mod tests {
         }
         assumptions =
             assumptions.assume_condition(OldConditionTerm::address_equal(previous, anchor), true);
-        let effects = vec![crate::kernel::ExecutionPureFact::certified(
-            Proposition::MemoryEffectSummary {
-                before_point: Default::default(),
-                after_point: Default::default(),
-                before: memory.clone(),
-                after: memory.clone(),
-                mutable_ranges: vec![MemoryRange::new_with_element_width(
-                    alias,
-                    0u32.into(),
-                    4u32.into(),
-                    1,
-                )],
-            },
-        )];
+        let writes = crate::kernel::RecordedWrites {
+            ranges: vec![(
+                MemoryRange::new_with_element_width(alias, 0u32.into(), 4u32.into(), 1),
+                crate::kernel::intern_memory(memory.clone()),
+            )],
+            ..Default::default()
+        };
         (
             ExecutionState::new().with_memory(memory),
-            effects.into(),
+            writes,
             assumptions,
         )
     }

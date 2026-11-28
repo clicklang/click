@@ -8095,8 +8095,9 @@ pub(crate) enum StorageWriteOutsideFootprint {
 }
 
 /// Writes to file-scope or static storage that a checked path performs outside
-/// the contract's owned footprint, for diagnostics. The caller
-/// passes the checked resource facts and, for resource-derived contracts, the
+/// the contract's owned footprint, for diagnostics. The caller passes the
+/// writes the memory history records on the path, the checked resource facts
+/// and, for resource-derived contracts, the
 /// already prepared projection from certification; this keeps the storage
 /// decision on the same transition artifact as modular effects. `None` is
 /// retained for explicit-effect callers. Caller memory reached through a
@@ -8107,24 +8108,21 @@ pub(crate) enum StorageWriteOutsideFootprint {
 pub(crate) fn storage_writes_outside_owned_footprint(
     contract: &ProgramFunction,
     entry: &ExecutionState,
-    facts: &(impl ExecutionFactSource + ?Sized),
+    writes: &crate::kernel::RecordedWrites,
     assumptions: &PureFactContext,
     transition_resources: Option<&[CheckedResourceFact]>,
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
     let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
-    let storage_writes: Vec<(Address, crate::kernel::AccessExtent)> =
-        crate::kernel::reasoning::memory_effect_write_accesses(facts)
-            .into_iter()
-            .filter(|(pointer, _)| is_storage(pointer))
-            .collect();
-    let storage_summaries: Vec<&MemoryRange> = facts
-        .fact_iter()
-        .filter_map(|fact| match fact.proposition() {
-            Proposition::MemoryEffectSummary { mutable_ranges, .. } => Some(mutable_ranges),
-            _ => None,
-        })
-        .flatten()
+    let storage_writes: Vec<&(Address, crate::kernel::AccessExtent)> = writes
+        .accesses
+        .iter()
+        .filter(|(pointer, _)| is_storage(pointer))
+        .collect();
+    let storage_summaries: Vec<&MemoryRange> = writes
+        .ranges
+        .iter()
+        .map(|(range, _)| range)
         .filter(|range| is_storage(range.base()))
         .collect();
     // Most contracts never touch storage; do not evaluate their owned
@@ -8148,7 +8146,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
         }
     };
     let mut outside = Vec::new();
-    for (pointer, write_extent) in &storage_writes {
+    for (pointer, write_extent) in storage_writes {
         let within = match write_extent {
             crate::kernel::AccessExtent::Bytes(write_bytes) => {
                 storage_write_within_owned_footprint(pointer, *write_bytes, &owned, assumptions)

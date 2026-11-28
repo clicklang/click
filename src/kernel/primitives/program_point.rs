@@ -774,6 +774,51 @@ impl PathLink {
         }
     }
 
+    /// Visits every recorded step on every path from `from` to this point,
+    /// each point once: the memory history of a region whose paths may
+    /// branch and join. `None` when some path into this point does not
+    /// start at `from`.
+    pub(crate) fn visit_region_steps_since(
+        &self,
+        from: &PathLink,
+        mut visit: impl FnMut(&MemoryDerivation),
+    ) -> Option<()> {
+        let target = from.id()?;
+        let target_depth = from.0.as_ref()?.depth;
+        let mut seen = std::collections::HashSet::new();
+        let mut pending = vec![self];
+        while let Some(link) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if link.id() == Some(target) {
+                continue;
+            }
+            let node = link.0.as_ref()?;
+            if node.depth <= target_depth || node.predecessors.is_empty() {
+                return None;
+            }
+            if !seen.insert(node.id) {
+                continue;
+            }
+            let starts: Vec<_> = node
+                .predecessors
+                .iter()
+                .filter_map(|predecessor| predecessor.0.as_ref())
+                .map(|node| node.memory.arena_id())
+                .collect();
+            let mut steps = node.steps.as_deref();
+            while let Some(log) = steps {
+                crate::instrumentation::record_deterministic_work(1);
+                visit(&log.step);
+                if starts.contains(&log.step.base().arena_id()) {
+                    break;
+                }
+                steps = log.previous.as_deref();
+            }
+            pending.extend(node.predecessors.iter());
+        }
+        Some(())
+    }
+
     pub(in crate::kernel) fn shares_point_and_view(&self, other: &Self) -> bool {
         self.id() == other.id() && self.1 == other.1
     }

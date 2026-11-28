@@ -1585,41 +1585,36 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         AddressOffset::constant(0),
     );
     let before = SymbolicMemory::new().with_block(global.base.clone(), 4);
-    let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
         Proposition::condition_is(OldConditionTerm::address_equal(alias.clone(), global), true);
-    let facts = [
-        ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
-            before_point: Default::default(),
-            after_point: Default::default(),
-            before: before.clone(),
-            after: after.clone(),
-            writes: vec![(alias.clone(), crate::kernel::AccessExtent::from(4))],
-        }),
-        ExecutionPureFact::new(Proposition::MemoryEffectSummary {
-            before_point: Default::default(),
-            after_point: Default::default(),
-            before,
-            after,
-            mutable_ranges: vec![MemoryRange::new(
-                alias,
-                OldMachineTerm::constant(0),
-                OldMachineTerm::constant(1),
+    let recorded = [
+        crate::kernel::RecordedWrites {
+            accesses: [(alias.clone(), crate::kernel::AccessExtent::from(4))].into(),
+            ..Default::default()
+        },
+        crate::kernel::RecordedWrites {
+            ranges: vec![(
+                MemoryRange::new(
+                    alias,
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
+                ),
+                crate::kernel::intern_memory(before),
             )],
-        }),
+            ..Default::default()
+        },
     ];
-    for fact in &facts {
-        let effects = crate::kernel::ExecutionFacts::from(vec![fact.clone()]);
+    for writes in &recorded {
         crate::kernel::check_empty_contract_write_footprint(
             &pre_state,
-            &effects,
+            writes,
             &PureFactContext::new(),
         )
         .expect("the symbolic spelling alone does not name preexisting storage");
         let error = crate::kernel::check_empty_contract_write_footprint(
             &pre_state,
-            &effects,
+            writes,
             &PureFactContext::new().assume_proposition(aliases_global.clone()),
         )
         .expect_err("a fact-aliased write reaches the preexisting global");

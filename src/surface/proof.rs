@@ -1891,8 +1891,10 @@ pub(super) fn initial_claim_context_with_caller_owner(
             &startup.as_ref().clone().with_population_creation_tracking(),
             &parsed_function.to_kernel_function(),
         );
+        // Program startup is where this proof's memory history begins.
         (
-            bind_hosted_startup(state, function_block, parsed_function)?,
+            bind_hosted_startup(state, function_block, parsed_function)?
+                .begin_function_entry_memory(),
             vec![],
             PureFactContext::new(),
         )
