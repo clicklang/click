@@ -4905,6 +4905,10 @@ fn keeps_written_condition(view: BooleanOperandView<'_>) -> bool {
         }
 }
 
+fn canonical_address(address: &Address) -> Address {
+    address.with_offset(canonical_offset_term(&address.offset))
+}
+
 /// The canonical form for a condition: every operand takes its
 /// [`canonical_term`] form, so terms that are equal by definition compare
 /// identically. The comparison direction of the canonical model for
@@ -4923,8 +4927,8 @@ pub(crate) fn canonical_condition(condition: &OldConditionTerm) -> OldConditionT
             Box::new(canonical_offset_term(right)),
         ),
         OldConditionTerm::AddressEqual(left, right) => OldConditionTerm::AddressEqual(
-            Box::new(left.with_offset(canonical_offset_term(&left.offset))),
-            Box::new(right.with_offset(canonical_offset_term(&right.offset))),
+            Box::new(canonical_address(left)),
+            Box::new(canonical_address(right)),
         ),
         condition => {
             let (op, left, right) = condition
@@ -4944,7 +4948,27 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
     if keeps_written_condition(condition.operand_view()) {
         return fact.clone();
     }
-    Proposition::condition_is(canonical_condition(condition.old_form()), *value)
+    // Canonicalize the written displacements, keeping the producer's block
+    // payload and the raw equality even when both operands become identical.
+    use crate::kernel::{PointerEquality, StoredConditionTerm};
+    let root = match condition.pointer_equality() {
+        Some(PointerEquality::Address(pair)) => {
+            KernelTerm::address_equal_raw(pair.each_ref().map(|address| {
+                canonical_address(address.written().expect("written address")).into_shared()
+            }))
+        }
+        Some(PointerEquality::Offset(pair)) => {
+            KernelTerm::address_offset_equal_raw(pair.each_ref().map(|offset| {
+                canonical_offset_term(AddressOffset::try_from_ref(offset).expect("written offset"))
+                    .into_shared()
+            }))
+        }
+        _ => return Proposition::condition_is(canonical_condition(condition.old_form()), *value),
+    };
+    Proposition::condition_is(
+        StoredConditionTerm::from_root(root).expect("logical equality"),
+        *value,
+    )
 }
 
 /// Select unresolved read descriptors with an explicit worklist. Range-fold
