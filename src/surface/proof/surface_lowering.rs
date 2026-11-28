@@ -221,6 +221,40 @@ fn algebraic_values_for_surface_proposition(
 }
 
 impl<'a> Proof<'a> {
+    /// A proof clause elaborated at the frontier of this execution proof
+    /// whose next statement is `next_statement_index`, from the front end's
+    /// declarations there: the C names in scope at that statement, or past
+    /// the last statement the body's end scope (`design/typed-surface.md`).
+    #[allow(clippy::too_many_arguments)]
+    fn elaborate_clause_at_frontier<'s>(
+        &self,
+        context: &ExecutionProofContext<'_>,
+        next_statement_index: usize,
+        surface: &'s SyntaxProposition,
+        algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+        result_in_scope: bool,
+        recorded_states: &RecordedStates,
+        spec_definitions: SpecDefinitions<'_>,
+    ) -> Option<crate::surface::lowering::ElaboratedProofClause<'s>> {
+        crate::surface::lowering::elaborate_proof_clause(
+            surface,
+            context.parsed_function,
+            context
+                .constants
+                .source_layout
+                .site(next_statement_index)
+                .map_or_else(
+                    || context.parsed_function.body_end_scope(),
+                    |site| site.scope(),
+                ),
+            &self.local_integer_values(),
+            algebraic_values,
+            result_in_scope,
+            recorded_states,
+            spec_definitions,
+        )
+    }
+
     pub(in crate::surface::proof) fn lower_surface_proposition(
         &self,
         surface: &SyntaxProposition,
@@ -313,7 +347,7 @@ impl<'a> Proof<'a> {
             // A judgment carrying outcome proof data lowers result-aware:
             // `result` and outcome-anchored forms resolve against the
             // outcome's own state, recorded lowerings, and return value.
-            ProofContext::Execution(_) if self.focused_outcome_data().is_some() => {
+            ProofContext::Execution(context) if self.focused_outcome_data().is_some() => {
                 let view = self
                     .outcome_fixed_state_view()
                     .expect("a focused outcome judgment resolves its fixed-state view");
@@ -323,6 +357,18 @@ impl<'a> Proof<'a> {
                     &BTreeMap::new(),
                     self.local_algebraic_values(),
                     self.retained_match_algebraic_values(),
+                );
+                // A returned outcome's locals have left scope: only the
+                // parameters remain.
+                let elaborated = crate::surface::lowering::elaborate_proof_clause(
+                    &surface,
+                    context.parsed_function,
+                    context.parsed_function.parameter_scope(),
+                    &self.local_integer_values(),
+                    &algebraic_values,
+                    view.fixed_state.result.is_some(),
+                    view.fixed_state.recorded_states,
+                    view.spec_definitions,
                 );
                 // An available historical fact is not the meaning of a
                 // current-state expression with the same spelling: an entry
@@ -357,7 +403,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     view.spec_definitions,
-                    None,
+                    elaborated.as_ref(),
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -376,20 +422,10 @@ impl<'a> Proof<'a> {
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
-                let integer_values = self.local_integer_values();
-                let elaborated = crate::surface::lowering::elaborate_proof_clause(
+                let elaborated = self.elaborate_clause_at_frontier(
+                    context,
+                    execution.core.frontier.next_statement_index,
                     &surface,
-                    context.parsed_function,
-                    context
-                        .constants
-                        .source_layout
-                        .site(execution.core.frontier.next_statement_index)
-                        // Past the last statement, the body's end scope.
-                        .map_or_else(
-                            || context.parsed_function.body_end_scope(),
-                            |site| site.scope(),
-                        ),
-                    &integer_values,
                     &algebraic_values,
                     false,
                     &execution.presentation.recorded_states,
@@ -524,7 +560,7 @@ impl<'a> Proof<'a> {
                     self.step_error(format!("could not lower {description}: {message}"))
                 })
             }
-            ProofContext::Execution(_) if self.focused_outcome_data().is_some() => {
+            ProofContext::Execution(context) if self.focused_outcome_data().is_some() => {
                 let view = self
                     .outcome_fixed_state_view()
                     .expect("a focused outcome judgment resolves its fixed-state view");
@@ -535,6 +571,18 @@ impl<'a> Proof<'a> {
                     self.local_algebraic_values(),
                     self.retained_match_algebraic_values(),
                 );
+                // A returned outcome's locals have left scope: only the
+                // parameters remain.
+                let elaborated = crate::surface::lowering::elaborate_proof_clause(
+                    &surface,
+                    context.parsed_function,
+                    context.parsed_function.parameter_scope(),
+                    &self.local_integer_values(),
+                    &algebraic_values,
+                    view.fixed_state.result.is_some(),
+                    view.fixed_state.recorded_states,
+                    view.spec_definitions,
+                );
                 lower_fixed_state_proposition_with_proof_locals(
                     &surface,
                     self.facts().assumptions(),
@@ -544,7 +592,7 @@ impl<'a> Proof<'a> {
                     &self.local_integer_values(),
                     view.spec_definitions,
                     is_conjunct_label,
-                    None,
+                    elaborated.as_ref(),
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -563,20 +611,10 @@ impl<'a> Proof<'a> {
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
-                let integer_values = self.local_integer_values();
-                let elaborated = crate::surface::lowering::elaborate_proof_clause(
+                let elaborated = self.elaborate_clause_at_frontier(
+                    context,
+                    execution.core.frontier.next_statement_index,
                     &surface,
-                    context.parsed_function,
-                    context
-                        .constants
-                        .source_layout
-                        .site(execution.core.frontier.next_statement_index)
-                        // Past the last statement, the body's end scope.
-                        .map_or_else(
-                            || context.parsed_function.body_end_scope(),
-                            |site| site.scope(),
-                        ),
-                    &integer_values,
                     &algebraic_values,
                     false,
                     &execution.presentation.recorded_states,

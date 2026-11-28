@@ -9781,6 +9781,7 @@ impl Parser {
         let previous_goto_scope_start =
             std::mem::replace(&mut self.goto_scope_start, function_body_scope);
         let previous_bit_field_flag = std::mem::replace(&mut self.function_has_bit_fields, false);
+        let parameter_scope = self.visible_bindings.clone();
         let body_result = self.parse_block_statement_with_end_scope();
         self.function_has_compound_literals = previous_literal_flag;
         self.function_has_goto = previous_goto_flag;
@@ -9917,6 +9918,7 @@ impl Parser {
             string_literals,
             loop_iterators: Vec::new(),
             body_end_scope: Some(body_end_scope),
+            parameter_scope: Some(parameter_scope),
         })
     }
 
