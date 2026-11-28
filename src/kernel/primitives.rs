@@ -9820,6 +9820,10 @@ impl AllocationSize {
         self.bytes.old_form()
     }
 
+    pub(crate) fn byte_operand(&self) -> MachineOperandView<'_> {
+        self.bytes.operand_view()
+    }
+
     pub fn kind(&self) -> AllocationSizeKind {
         self.kind
     }

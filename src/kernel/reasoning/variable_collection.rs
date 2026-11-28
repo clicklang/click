@@ -864,7 +864,7 @@ fn collect_proposition_bitvector_variables_one(
             collect_memory_bitvector_variables(after, variables);
             for (base, bytes) in blocks {
                 collect_pointer_bitvector_variables(base, variables);
-                collect_bitvector_variables(bytes.bytes(), variables);
+                collect_machine_term_variables(bytes.byte_operand(), false, variables);
             }
             for range in mutable_ranges {
                 collect_memory_range_bitvector_variables(range, variables);
@@ -2348,8 +2348,9 @@ pub(in crate::kernel) fn collect_memory_range_bitvector_variables(
         collect_proposition_bitvector_variables(fact, variables);
     }
     collect_pointer_bitvector_variables(&range.base, variables);
-    collect_bitvector_variables(range.bound_terms().0, variables);
-    collect_bitvector_variables(range.bound_terms().1, variables);
+    let (start, end) = range.retained_bounds();
+    collect_machine_term_variables(start.operand_view(), false, variables);
+    collect_machine_term_variables(end.operand_view(), false, variables);
 }
 
 pub(crate) fn resource_context_has_read(
@@ -6827,7 +6828,11 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
             variables.insert(Variable(index));
         }
     }
-    collect_bitvector_variables(contents.size(), &mut variables);
+    collect_machine_term_variables(
+        contents.allocation_size().byte_operand(),
+        false,
+        &mut variables,
+    );
     variables
 }
 
@@ -7188,7 +7193,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
                 variables.insert(Variable(index));
             }
         }
-        collect_bitvector_variables(contents.size(), variables);
+        collect_machine_term_variables(contents.allocation_size().byte_operand(), false, variables);
     }
     for pointer in memory
         .heap
