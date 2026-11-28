@@ -8968,7 +8968,22 @@ resource callbacks0(cb: const struct callbacks*) {
         for layer in (1..=depth).rev() {
             source.push_str(&format!("unfold(node{layer}(p)); observe(callbacks{layer}(cb));\n"));
         }
-        source.push_str("unfold(node0(p)); with(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
+        source.push_str(r#"
+unfold(node0(p));
+with(callbacks0(cb)) {
+    have separate(memory(cb->invoke), memory(p->value));
+    mark before;
+    step();
+    have separate(statement(0).footprint, memory(cb->invoke)) by {
+        close() using { separate(memory(cb->invoke), memory(p->value)); };
+    }
+    have cb->invoke == at(before, cb->invoke) by {
+        preserve(memory(cb->invoke), statement(0));
+    }
+    step_until(function.exit);
+}
+fold(node0(p));
+"#);
         for layer in 1..=depth {
             source.push_str(&format!("fold(node{layer}(p));\n"));
         }
