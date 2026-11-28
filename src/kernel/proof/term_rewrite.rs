@@ -687,6 +687,29 @@ fn collect_shared_condition_carriers<'a>(
     }
 }
 
+fn collect_stored_machine_carriers(value: &StoredMachineTerm, variables: &mut CarrierVariables) {
+    if let Some(root) = value.root()
+        && matches!(
+            root.node(),
+            KernelTermNode::MachineBinary { .. }
+                | KernelTermNode::MachineUnary { .. }
+                | KernelTermNode::MachineCast { .. }
+                | KernelTermNode::MachineLiteral(_)
+                | KernelTermNode::Variable(_)
+                | KernelTermNode::ThreadHandle(_)
+                | KernelTermNode::MemoryLoad { .. }
+                | KernelTermNode::IntegerAddress { .. }
+                | KernelTermNode::FloatConvert { .. }
+        )
+    {
+        collect_numeric_carriers(std::slice::from_ref(root), variables);
+    } else {
+        // Other stored roots retain their producer's reading. In particular a
+        // top-level machine call keeps its shared machine argument carriers.
+        collect_bitvector_carriers(value.old_form(), variables);
+    }
+}
+
 fn collect_numeric_carriers(operands: &[KernelTerm], variables: &mut CarrierVariables) {
     struct CallArguments<'a> {
         machine_carriers: std::slice::Iter<'a, Option<SharedMachineIntegerTerm>>,
@@ -1827,7 +1850,7 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
                 collect_integer_carriers(value.old_form(), variables, &mut BTreeSet::new());
             }
         }
-        Term::Bitvector32(value) => collect_bitvector_carriers(value.old_form(), variables),
+        Term::Bitvector32(value) => collect_stored_machine_carriers(value, variables),
         Term::ProgramValue(value) => collect_program_value_carriers(value.old_form(), variables),
         Term::Condition(value) => collect_stored_condition_carriers(value, variables),
         Term::PointerOffset(value) => {
@@ -3564,9 +3587,7 @@ impl<'a> TermRewrite<'a> {
                 Term::Condition(condition) => {
                     collect_stored_condition_carriers(condition, &mut variables)
                 }
-                Term::Bitvector32(value) => {
-                    collect_bitvector_carriers(value.old_form(), &mut variables)
-                }
+                Term::Bitvector32(value) => collect_stored_machine_carriers(value, &mut variables),
                 // This exact rewrite does not enter binders or freshen names.
                 Term::Integer(value)
                     if value
@@ -8613,6 +8634,49 @@ mod tests {
             vec![a.clone(), b.clone(), a, b]
         );
         assert!(!root.has_cached_native_argument());
+    }
+
+    #[test]
+    fn stored_machine_carriers_keep_call_argument_read_occurrences() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let address = Address::symbolic(Variable(9915));
+        let read = KernelTerm::shared_scalar_read_descriptor(
+            format,
+            &point,
+            address.shared(),
+            LoadKind::Int32,
+        );
+        let sum =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [read.clone(), read]);
+        let call = KernelTerm::checked_call(
+            KernelType::Program(ProgramType::Int32),
+            "sample".into(),
+            vec![sum.clone()],
+        );
+        for (root, expected) in [
+            (sum, vec![address.clone(), address.clone()]),
+            (call, vec![address.clone()]),
+        ] {
+            let term = StoredMachineTerm::from_value(ExecutionValue::Shared(root)).unwrap();
+            let fact = Proposition::Predicate {
+                name: "word".into(),
+                arguments: vec![Term::Bitvector32(term)],
+            };
+            assert_eq!(proposition_pointer_terms(&fact), expected);
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect_read_terms();
+            collector.collect(&fact);
+            assert_eq!(
+                collector.take_read_terms().collect::<Vec<_>>(),
+                [OldMachineTerm::read_named(
+                    point.clone(),
+                    address.clone(),
+                    LoadKind::Int32
+                )]
+            );
+        }
     }
 
     #[test]
