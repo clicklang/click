@@ -16,28 +16,9 @@ pub(super) fn clear() {
 // are numeric observation leaves here, without changing the producer's node
 // or admitting arbitrary legacy payloads into the machine operand API.
 fn machine_payload(term: &KernelTerm) -> Option<&OldMachineTerm> {
-    if let KernelTermNode::ImportedScalar(input) = term.node() {
-        return match term.ty() {
-            KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some() => {
-                Some(input.value())
-            }
-            _ => None,
-        };
-    }
-    if let Some(PureFunctionArgument::Value(value)) = term.written_argument() {
-        return match value {
-            ProgramValue::Int8(value)
-            | ProgramValue::UInt8(value)
-            | ProgramValue::Int16(value)
-            | ProgramValue::UInt16(value)
-            | ProgramValue::Int32(value)
-            | ProgramValue::UInt32(value)
-            | ProgramValue::Int64(value)
-            | ProgramValue::UInt64(value)
-            | ProgramValue::Int128(value)
-            | ProgramValue::UInt128(value) => Some(value),
-            _ => None,
-        };
+    if matches!(term.node(), KernelTermNode::ImportedScalar(_)) || term.written_argument().is_some()
+    {
+        return term.written_machine_input();
     }
     term.machine_conversion_leaf()
 }

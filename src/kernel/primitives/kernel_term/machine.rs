@@ -28,7 +28,7 @@ impl KernelTerm {
     }
 
     /// Read only literal roots, including a selected native compatibility input.
-    pub(super) fn machine_literal(&self) -> Option<KernelMachineLiteral> {
+    pub(in crate::kernel) fn machine_literal(&self) -> Option<KernelMachineLiteral> {
         match self.node() {
             KernelTermNode::MachineLiteral(value) => Some(value.clone()),
             _ => {
@@ -44,6 +44,18 @@ impl KernelTerm {
     /// Borrow a selected operand already owned by its machine input.
     pub(crate) fn retained_machine_input(&self) -> Option<&OldMachineTerm> {
         retained_machine_input(self.node())
+    }
+
+    /// Borrow a machine operand inside a generic scalar or argument descriptor.
+    pub(in crate::kernel) fn written_machine_input(&self) -> Option<&OldMachineTerm> {
+        if let KernelTermNode::ImportedScalar(input) = self.node() {
+            MachineIntegerType::from_program_type(input.carrier())?;
+            return Some(input.value());
+        }
+        let PureFunctionArgument::Value(integer_c_value!(value)) = self.written_argument()? else {
+            return None;
+        };
+        Some(value)
     }
 
     pub(crate) fn machine_if_shared(format: MachineIntegerType, arguments: [Self; 3]) -> Self {
@@ -377,7 +389,7 @@ impl KernelMachineLiteral {
             .or_else(|| u32::try_from(self.signed64()?).ok())
     }
 
-    fn from_term_bits(format: MachineIntegerType, bits: u128) -> Self {
+    pub(in crate::kernel) fn from_term_bits(format: MachineIntegerType, bits: u128) -> Self {
         match format {
             MachineIntegerType::Int32 => Self::Word32(bits as u32),
             MachineIntegerType::UInt32 => Self::UInt32(bits as u32),
@@ -470,6 +482,14 @@ impl KernelMachineLiteral {
 pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
     match node {
         KernelTermNode::MachineLiteral(value) => Some(value.clone()),
+        // The native word reader recognizes the exact null address. Keep
+        // the written zero offset distinct from an expression that evaluates to zero.
+        KernelTermNode::IntegerAddress { address, .. }
+            if matches!(address.atom(), AddressBase::Concrete(name) if name == "null")
+                && matches!(address.offset().node(), KernelAddressOffset::Constant(0)) =>
+        {
+            Some(KernelMachineLiteral::UInt64(0))
+        }
         KernelTermNode::MachineIf { arguments } => {
             let KernelTermNode::BoolLiteral(value) = arguments[0].node() else {
                 return None;
@@ -1021,20 +1041,10 @@ impl KernelTermExport {
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::MachineObservationInput { observation, .. } => observation.value().clone(),
             Node::WrittenMachine(value) => value.value().clone(),
-            Node::ImportedScalar(input)
-                if MachineIntegerType::from_program_type(input.carrier()).is_some() =>
-            {
-                input.value().clone()
-            }
-            Node::ObservedArgument(_) | Node::CallArgument(_) => {
-                let Some(PureFunctionArgument::Value(value)) = term.written_argument() else {
-                    return Err("expected a machine value legacy payload");
-                };
-                let (integer_c_value!(bits)) = value else {
-                    return Err("expected a machine integer legacy payload");
-                };
-                bits.clone()
-            }
+            Node::ImportedScalar(_) | Node::ObservedArgument(_) | Node::CallArgument(_) => term
+                .written_machine_input()
+                .ok_or("expected a machine integer payload")?
+                .clone(),
             _ => return Err("expected a machine kernel term"),
         })
     }
@@ -1080,6 +1090,33 @@ mod tests {
             drop(source);
             let restored = KernelTermExport::default().argument(&common).unwrap();
             assert_eq!(KernelTermImport::default().argument(&restored), common);
+        }
+    }
+
+    #[test]
+    fn only_the_exact_null_address_has_a_constant_word_reading() {
+        let zero = KernelAddressOffset::Constant(0).into_shared().unwrap();
+        let sum = KernelAddressOffset::Add([zero.clone(), zero])
+            .into_shared()
+            .unwrap();
+        let null = Address::null();
+        for (address, expected) in [
+            (null.clone(), Some(0)),
+            (null.offset_by_bytes(1), None),
+            (
+                null.with_offset(AddressOffset::try_from_shared(sum).unwrap()),
+                None,
+            ),
+            (Address::symbolic(Variable(982815)), None),
+        ] {
+            let native =
+                OldMachineTerm::IntegerAddress(Box::new(address), AddressObjectClass::NONE);
+            assert_eq!(native.bitvector64_as_const(), expected);
+            let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+            assert_eq!(
+                MachineOperandView::Shared(&root).uint64_constant(),
+                expected
+            );
         }
     }
 

@@ -223,7 +223,7 @@ fn builtin_condition_value(condition: &crate::kernel::StoredConditionTerm) -> Op
         return crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(view);
     }
     view.closed_float_predicate_value().or_else(|| {
-        crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
+        crate::kernel::machine_integer::comparison::closed_condition_value(condition.operand_view())
     })
 }
 
