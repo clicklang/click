@@ -203,7 +203,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                                 .and_then(|source| source.lexical_bindings.as_ref())
                                 .or(bindings)
                                 .unwrap_or(&driver_proof.state.locals().values),
-                        );
+                        )
+                        // A returned outcome's locals have left scope: only
+                        // the parameters remain.
+                        .with_clause_scope(ClauseScope {
+                            function: context.parsed_function,
+                            bindings: context.parsed_function.parameter_scope(),
+                        });
                         let kernel =
                             fixed.lower_surface_proposition(surface, "`cases` obligation")?;
                         let proved = if let Some(source) = written {

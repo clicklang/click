@@ -442,6 +442,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         &[],
     )
     .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_clause_scope(loop_clause_scope(environment, loop_index))
     // The entry checks the invariants before the first pass.
     .with_loop_iterations(&crate::kernel::IntegerTerm::constant(0.into()))
     .with_nested_tactic_capture(
@@ -802,7 +803,25 @@ fn loop_exit_recorded_states(
     recorded_states
 }
 
+/// Where a loop's clauses are written: its head, with the C names in scope
+/// there, a `for` loop's own declarations among them.
+fn loop_clause_scope<'a>(
+    environment: &ExecutionProofEnvironment<'a>,
+    loop_index: usize,
+) -> ClauseScope<'a> {
+    let layout = environment.source_layout;
+    ClauseScope {
+        function: environment.parsed_function,
+        bindings: layout
+            .execution_region_entry(CodeRegion::Loop(loop_index))
+            .ok()
+            .and_then(|head| layout.site(head))
+            .and_then(|site| site.source_bindings()),
+    }
+}
+
 fn loop_exit_scope<'a>(
+    loop_index: usize,
     state: &'a ExecutionState,
     iterations: &crate::kernel::IntegerTerm,
     recorded_states: &'a RecordedStates,
@@ -822,6 +841,7 @@ fn loop_exit_scope<'a>(
         &[],
     )
     .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_clause_scope(loop_clause_scope(environment, loop_index))
     .with_loop_iterations(iterations)
 }
 
@@ -841,6 +861,7 @@ pub(super) fn scoped_loop_exit_facts(
     let recorded_states =
         loop_exit_recorded_states(loop_index, state, iterations, context, environment);
     let outer = loop_exit_scope(
+        loop_index,
         state,
         iterations,
         &recorded_states,
@@ -883,7 +904,15 @@ pub(super) fn scoped_loop_exit_facts(
             .iter()
             .zip(&exit_inputs)
             .map(|((state, _), (records, available))| {
-                loop_exit_scope(state, iterations, records, available, context, environment)
+                loop_exit_scope(
+                    loop_index,
+                    state,
+                    iterations,
+                    records,
+                    available,
+                    context,
+                    environment,
+                )
             })
             .collect::<Vec<_>>();
         let lower = |scope: &Proof<'_>, claim| {
@@ -975,6 +1004,7 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
         &[],
     )
     .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_clause_scope(loop_clause_scope(environment, loop_index))
     .with_nested_tactic_capture(
         expansion_capture
             .as_deref()

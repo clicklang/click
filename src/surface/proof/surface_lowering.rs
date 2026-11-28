@@ -221,6 +221,27 @@ fn algebraic_values_for_surface_proposition(
 }
 
 impl<'a> Proof<'a> {
+    /// A proof clause of the fixed-state proof `context`, elaborated where
+    /// its clauses are written, when the front end records that.
+    fn elaborate_fixed_state_clause<'s>(
+        &self,
+        context: &FixedStateProofContext<'_>,
+        surface: &'s SyntaxProposition,
+        algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    ) -> Option<crate::surface::lowering::ElaboratedProofClause<'s>> {
+        let scope = context.clause_scope?;
+        crate::surface::lowering::elaborate_proof_clause(
+            surface,
+            scope.function,
+            scope.bindings,
+            &self.local_integer_values(),
+            algebraic_values,
+            context.fixed_state.result.is_some(),
+            context.fixed_state.recorded_states,
+            context.spec_definitions,
+        )
+    }
+
     /// A proof clause elaborated at the frontier of this execution proof
     /// whose next statement is `next_statement_index`, from the front end's
     /// declarations there: the C names in scope at that statement, or past
@@ -330,6 +351,8 @@ impl<'a> Proof<'a> {
                 {
                     return Ok(recorded.clone());
                 }
+                let elaborated =
+                    self.elaborate_fixed_state_clause(context, &surface, &algebraic_values);
                 lower_fixed_state_proposition_with_algebraic_values(
                     &surface,
                     self.facts().assumptions(),
@@ -338,7 +361,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     context.spec_definitions,
-                    None,
+                    elaborated.as_ref(),
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -545,6 +568,8 @@ impl<'a> Proof<'a> {
                     self.local_algebraic_values(),
                     self.retained_match_algebraic_values(),
                 );
+                let elaborated =
+                    self.elaborate_fixed_state_clause(context, &surface, &algebraic_values);
                 lower_fixed_state_proposition_with_proof_locals(
                     &surface,
                     self.facts().assumptions(),
@@ -554,7 +579,7 @@ impl<'a> Proof<'a> {
                     &self.local_integer_values(),
                     context.spec_definitions,
                     is_conjunct_label,
-                    None,
+                    elaborated.as_ref(),
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))

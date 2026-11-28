@@ -3812,6 +3812,21 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// The same fixed-state proof with its clauses written at `scope`.
+    pub(in crate::surface::proof) fn with_clause_scope(self, scope: ClauseScope<'a>) -> Self {
+        let ProofContext::FixedState(context) = self.context.as_ref() else {
+            return self;
+        };
+        let context = FixedStateProofContext {
+            clause_scope: Some(scope),
+            ..context.clone()
+        };
+        Self {
+            context: Arc::new(ProofContext::FixedState(context)),
+            ..self
+        }
+    }
+
     /// The same fixed-state proof carrying `capture`, the recorder for a
     /// selected expansion target written inside a `have` body that this
     /// phase checks. The caller installs it only for the recorder's own

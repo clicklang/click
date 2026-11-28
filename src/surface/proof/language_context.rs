@@ -103,6 +103,19 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     /// Presentation metadata only; it grants no authority and changes no
     /// check.
     pub(in crate::surface::proof) nested_tactic_capture: Option<Arc<NestedTacticCapture>>,
+    /// Where this proof's clauses are written, when the front end records
+    /// it: the proof driver elaborates them there before lowering.
+    pub(in crate::surface::proof) clause_scope: Option<ClauseScope<'a>>,
+}
+
+/// Where a proof's clauses are written: the function, and the C names in
+/// scope at that position, which the proof driver elaborates the clauses
+/// against (`design/typed-surface.md`).
+#[derive(Clone, Copy)]
+pub(in crate::surface::proof) struct ClauseScope<'a> {
+    pub(in crate::surface::proof) function: &'a crate::languages::interface::ImportedFunction,
+    pub(in crate::surface::proof) bindings:
+        Option<&'a crate::languages::c::syntax::CSourceBindings>,
 }
 
 /// The exact loop context whose back-edge obligations an explicit closure
