@@ -582,15 +582,14 @@ pub(super) fn fold_constructor_reborrows(
         terminator_uses(&block.terminator, &mut reads, &mut named);
         named.extend(call_destination(&block.terminator).cloned());
     }
+    let unaddressed_temporary =
+        |name: &MirLocalId| temporaries.contains(name) && !named.contains(name);
     let substitutable = |name: &MirLocalId| {
-        temporaries.contains(name)
-            && !named.contains(name)
-            && reads.get(name) == Some(&1)
-            && writes.get(name) == Some(&1)
+        unaddressed_temporary(name) && reads.get(name) == Some(&1) && writes.get(name) == Some(&1)
     };
     let mut removed = BTreeSet::new();
     for block in blocks.iter_mut() {
-        fold_constructor_reborrow(block, &substitutable, &mut removed);
+        fold_constructor_reborrow(block, &substitutable, &unaddressed_temporary, &mut removed);
     }
     if removed.is_empty() {
         return;
@@ -611,10 +610,12 @@ pub(super) fn fold_constructor_reborrows(
 
 /// A constructor can take a reborrow in its first field directly. A local
 /// copy for another field can sit between them, but it cannot rebind the
-/// reference used by the borrow.
+/// reference used by the borrow. Setting a Boolean drop flag leaves the
+/// borrowed place unchanged.
 fn fold_constructor_reborrow(
     block: &mut MirBlock,
     substitutable: &impl Fn(&MirLocalId) -> bool,
+    unaddressed_temporary: &impl Fn(&MirLocalId) -> bool,
     removed: &mut BTreeSet<MirLocalId>,
 ) {
     let mut previous = None;
@@ -648,8 +649,16 @@ fn fold_constructor_reborrow(
                 fields[0] = borrow.clone();
             }
         }
-        before_previous = previous;
-        previous = Some(position);
+        if !matches!(
+            statement,
+            S::Assign {
+                target: E::Local { name },
+                value: E::Boolean { .. },
+            } if unaddressed_temporary(name)
+        ) {
+            before_previous = previous;
+            previous = Some(position);
+        }
     }
 }
 
