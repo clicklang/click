@@ -488,6 +488,19 @@ impl StoredConditionTerm {
         }
     }
 
+    /// Logical lowering keeps a reflexive thin, non-null pointer comparison
+    /// as written evidence. Both address operands carry the left declaration.
+    pub(crate) fn logical_pointer_equal(left: &Pointer, right: &Pointer) -> Self {
+        if left == right && !left.is_null() && !left.is_wide() {
+            let address = left.address().shared();
+            return Self(StoredCondition::Shared(KernelTerm::address_equal_raw([
+                address.clone(),
+                address.clone(),
+            ])));
+        }
+        Self::pointer_equal(left, right)
+    }
+
     pub(crate) fn pointer_equal(left: &Pointer, right: &Pointer) -> Self {
         let root = match left.equality_kind(right) {
             PointerEqualityKind::Complete => {

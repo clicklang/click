@@ -62,8 +62,11 @@ fn assumed_wide_pointer_equality_gives_count_equality() {
         OldConditionTerm::PointerEqual(..)
     ));
     assert!(matches!(
-        OldConditionTerm::logical_pointer_equal(s.clone(), s.clone()),
-        OldConditionTerm::PointerEqual(..)
+        crate::kernel::StoredConditionTerm::logical_pointer_equal(&s, &s)
+            .root()
+            .unwrap()
+            .node(),
+        crate::kernel::KernelTermNode::PointerEqual(_)
     ));
     assert!(condition.pointer_offset_sides().is_none());
     let kernel = crate::kernel::KernelTerm::pointer_equal([s.shared().clone(), t.shared().clone()]);
