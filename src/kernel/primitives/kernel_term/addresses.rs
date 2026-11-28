@@ -797,6 +797,29 @@ mod tests {
                     reversed.operand_view().pointer_addresses().unwrap(),
                     [right, left]
                 );
+                let premise = crate::kernel::Proposition::condition_is(reversed, true);
+                let loadable = crate::kernel::Proposition::MemoryLoadable {
+                    point: Default::default(),
+                    memory: crate::kernel::SymbolicMemory::new(),
+                    base: other.clone(),
+                    bytes: OldMachineTerm::constant(1).into(),
+                    wide: false,
+                };
+                let crate::kernel::Proposition::MemoryLoadable { base, .. } =
+                    crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
+                        &loadable,
+                        &premise,
+                        std::slice::from_ref(&premise),
+                    )
+                    .unwrap()
+                else {
+                    panic!("expected rewritten loadability claim");
+                };
+                let AddressBase::AutomaticLocal { binding, .. } = &base.base else {
+                    panic!("expected rewritten local block");
+                };
+                assert_eq!(binding.spelling(), Some(name));
+                assert_eq!(binding.program_type(), Some(ty));
                 let pointers = crate::kernel::proof::term_rewrite::proposition_pointer_terms(&fact);
                 let [local, right] = pointers.as_slice() else {
                     panic!("expected both address equality operands");
