@@ -4154,17 +4154,24 @@ impl<'a> TermRewrite<'a> {
                 {
                     return proposition.clone();
                 }
-                if self.cited_conditions.is_none()
-                    && self.condition_exact.is_none()
+                if self.condition_exact.is_none()
                     && let Some(pair) = condition.pointer_equality()
                 {
                     if !self.begin_stored_condition_visit(condition) {
                         return exhausted_proposition();
                     }
-                    if let Some(decided) = self
-                        .conditions
-                        .filter(|facts| !facts.is_empty())
-                        .and_then(|facts| pair.cited_value(facts))
+                    let facts = self.conditions.filter(|facts| !facts.is_empty());
+                    if (facts.is_some() || self.cited_conditions.is_some())
+                        && let Some(decided) = pair.with_written(|written| {
+                            facts
+                                .and_then(|facts| written.cited_value(facts))
+                                .or_else(|| {
+                                    let graph = self.cited_conditions?;
+                                    [true, false]
+                                        .into_iter()
+                                        .find(|truth| graph.knows_pointer_equation(written, *truth))
+                                })
+                        })
                     {
                         return Proposition::condition_is(
                             StoredConditionTerm::constant(decided),

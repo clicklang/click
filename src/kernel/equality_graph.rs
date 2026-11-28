@@ -53,7 +53,7 @@
 //! whole offsets in the term classes.
 
 use super::prelude::*;
-use crate::kernel::CompareRelation;
+use crate::kernel::{CompareRelation, WrittenPointerEquality};
 use crate::kernel::{OffsetTree, OffsetView};
 
 mod admitted;
@@ -2333,15 +2333,13 @@ impl EqualityGraph {
         changed
     }
 
-    fn prepare_condition(&self, state: &mut EqualityGraphState, condition: &OldConditionTerm) {
-        match condition {
-            crate::kernel::integer_comparison_condition!(a, b) => {
-                self.register_expression_operands(state, [], [], [a.as_ref(), b.as_ref()]);
-            }
-            OldConditionTerm::AlgebraicEqual(a, b) => {
-                self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()], []);
-            }
-            OldConditionTerm::PointerEqual(a, b) => {
+    fn prepare_pointer_equation(
+        &self,
+        state: &mut EqualityGraphState,
+        pair: WrittenPointerEquality<'_>,
+    ) {
+        match pair {
+            WrittenPointerEquality::Pointer([a, b]) => {
                 self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
                 state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.base.clone()));
                 // Late value queries need the current address-class bridges,
@@ -2361,12 +2359,53 @@ impl EqualityGraph {
                     );
                 }
             }
-            OldConditionTerm::AddressEqual(a, b) => {
-                self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
+            WrittenPointerEquality::Address([a, b]) => {
+                self.register_logical_read_values(state, [a, b]);
                 state.register_blocks([a.base.clone(), b.base.clone()]);
                 state.register_pointer_address(a);
                 state.register_pointer_address(b);
                 state.close(Vec::new());
+            }
+            WrittenPointerEquality::Offset(_) => {}
+        }
+    }
+
+    pub(in crate::kernel) fn knows_pointer_equation(
+        &self,
+        pair: WrittenPointerEquality<'_>,
+        value: bool,
+    ) -> bool {
+        if value {
+            return match pair {
+                WrittenPointerEquality::Address([a, b]) => self.are_equal(a, b),
+                WrittenPointerEquality::Offset([a, b]) => self.are_offsets_equal(a, b),
+                WrittenPointerEquality::Pointer([a, b]) => {
+                    let mut state = self.state.lock().expect("equality graph");
+                    self.prepare_pointer_equation(&mut state, pair);
+                    state.terms.pointer_values_equal(a, b)
+                }
+            };
+        }
+        let mut state = self.state.lock().expect("equality graph");
+        if !state.terms.may_know_pointer_equation(pair, value) {
+            return false;
+        }
+        self.prepare_pointer_equation(&mut state, pair);
+        let known = state.terms.knows_pointer_equation(pair, value);
+        state.close(Vec::new());
+        known
+    }
+
+    fn prepare_condition(&self, state: &mut EqualityGraphState, condition: &OldConditionTerm) {
+        if let Some(pair) = WrittenPointerEquality::from_condition(condition) {
+            return self.prepare_pointer_equation(state, pair);
+        }
+        match condition {
+            crate::kernel::integer_comparison_condition!(a, b) => {
+                self.register_expression_operands(state, [], [], [a.as_ref(), b.as_ref()]);
+            }
+            OldConditionTerm::AlgebraicEqual(a, b) => {
+                self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()], []);
             }
             _ => {
                 if let Some((a, b)) = condition.bitvector_sides_for_congruence() {
@@ -2492,13 +2531,11 @@ impl EqualityGraph {
     ) -> bool {
         // True equations are represented directly by classes, never truth
         // nodes. A miss must not register an unrelated condition application.
+        if let Some(pair) = WrittenPointerEquality::from_condition(condition) {
+            return self.knows_pointer_equation(pair, value);
+        }
         if value {
             match condition {
-                OldConditionTerm::PointerEqual(a, b) => {
-                    let mut state = self.state.lock().expect("equality graph");
-                    self.prepare_condition(&mut state, condition);
-                    return state.terms.pointer_values_equal(a, b);
-                }
                 OldConditionTerm::IntegerEqual(a, b) => return self.are_integer_equal(a, b),
                 OldConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
                 OldConditionTerm::Compare {
@@ -2513,8 +2550,6 @@ impl EqualityGraph {
                     left: a,
                     right: b,
                 } => return self.are_uint64_equal(a, b),
-                OldConditionTerm::AddressEqual(a, b) => return self.are_equal(a, b),
-                OldConditionTerm::AddressOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
                 _ => {}
             }
         }

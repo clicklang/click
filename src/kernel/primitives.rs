@@ -183,7 +183,7 @@ mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
-pub(crate) use descriptor_values::PointerEquality;
+pub(crate) use descriptor_values::{PointerEquality, WrittenPointerEquality};
 pub use descriptor_values::{
     StoredAlgebraicTerm, StoredConditionTerm, StoredIntegerTerm, StoredMachineTerm,
     StoredPointerOffset, StoredProgramValue,

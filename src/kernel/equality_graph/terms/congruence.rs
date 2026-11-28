@@ -4,6 +4,7 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
+use crate::kernel::WrittenPointerEquality;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{
     BitvectorUnaryOp as U, CarrierWidth as W, OldConditionTerm as C, OldMachineTerm as T,
@@ -2149,6 +2150,9 @@ impl TermClasses {
         condition: &C,
     ) -> Option<u64> {
         use ConditionKind::*;
+        if let Some(pair) = WrittenPointerEquality::from_condition(condition) {
+            return Some(self.pointer_equation_node(pair));
+        }
         if let C::Compare {
             format,
             relation,
@@ -2188,36 +2192,42 @@ impl TermClasses {
                 left: a,
                 right: b,
             } => (Int32AddOverflow, self.intern_int32(a), self.intern_int32(b)),
-            C::PointerEqual(a, b) => (
-                PointerEq,
-                self.intern_expression(
-                    None,
-                    None,
-                    None,
-                    Some(&ProgramValue::Pointer((**a).clone())),
-                    None,
-                ),
-                self.intern_expression(
-                    None,
-                    None,
-                    None,
-                    Some(&ProgramValue::Pointer((**b).clone())),
-                    None,
-                ),
-            ),
-            C::AddressEqual(a, b) => (
-                AddressEq,
-                self.address(a.base.clone(), a.offset.clone()).0,
-                self.address(b.base.clone(), b.offset.clone()).0,
-            ),
-            C::AddressOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
             C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) => {
                 return self.bool_node(condition);
             }
             _ => return None,
         };
+        Some(self.intern_node(Node::Condition(kind, left, right)))
+    }
+    fn pointer_equation_node(&mut self, pair: WrittenPointerEquality<'_>) -> u64 {
+        use ConditionKind::*;
+        let (kind, left, right) = match pair {
+            WrittenPointerEquality::Pointer([a, b]) => (
+                PointerEq,
+                self.intern_expression(
+                    None,
+                    None,
+                    None,
+                    Some(&ProgramValue::Pointer(a.clone())),
+                    None,
+                ),
+                self.intern_expression(
+                    None,
+                    None,
+                    None,
+                    Some(&ProgramValue::Pointer(b.clone())),
+                    None,
+                ),
+            ),
+            WrittenPointerEquality::Address([a, b]) => (
+                AddressEq,
+                self.address(a.base.clone(), a.offset.clone()).0,
+                self.address(b.base.clone(), b.offset.clone()).0,
+            ),
+            WrittenPointerEquality::Offset([a, b]) => (OffsetEq, self.intern(a), self.intern(b)),
+        };
         let node = self.intern_node(Node::Condition(kind, left, right));
-        if let C::AddressEqual(a, b) = condition
+        if let WrittenPointerEquality::Address([a, b]) = pair
             && a.base == b.base
         {
             // These are two views of the same predicate, not a new premise.
@@ -2228,7 +2238,7 @@ impl TermClasses {
             let offsets = self.intern_node(Node::Condition(OffsetEq, a, b));
             self.close(vec![(node, offsets)]);
         }
-        Some(node)
+        node
     }
 
     fn condition_kind(condition: &C) -> Option<ConditionKind> {
@@ -2399,27 +2409,44 @@ impl TermClasses {
         false
     }
 
+    fn may_know_kind(&self, kind: ConditionKind, value: bool) -> bool {
+        self.condition_kinds.contains(&(kind, value))
+            || (kind == ConditionKind::OffsetEq
+                && self
+                    .condition_kinds
+                    .contains(&(ConditionKind::AddressEq, value)))
+            || (kind == ConditionKind::AddressEq
+                && self
+                    .condition_kinds
+                    .contains(&(ConditionKind::OffsetEq, value)))
+    }
+
+    pub(in crate::kernel::equality_graph) fn may_know_pointer_equation(
+        &self,
+        pair: WrittenPointerEquality<'_>,
+        value: bool,
+    ) -> bool {
+        let kind = match pair {
+            WrittenPointerEquality::Address(_) => ConditionKind::AddressEq,
+            WrittenPointerEquality::Pointer(_) => ConditionKind::PointerEq,
+            WrittenPointerEquality::Offset(_) => ConditionKind::OffsetEq,
+        };
+        self.may_know_kind(kind, value)
+    }
+
     pub(in crate::kernel::equality_graph) fn may_know_condition(
         &self,
         condition: &C,
         value: bool,
     ) -> bool {
         Self::condition_kind(condition).is_some_and(|kind| {
-            self.condition_kinds.contains(&(kind, value))
+            self.may_know_kind(kind, value)
                 // A narrow equation is false when its sides' classes hold
                 // two constants (`knows_condition`).
                 || (!value
                     && kind == ConditionKind::Int32Eq
                     && !self.narrow_constants.is_empty()
                     && self.narrow_equation(condition))
-                || (kind == ConditionKind::OffsetEq
-                    && self
-                        .condition_kinds
-                        .contains(&(ConditionKind::AddressEq, value)))
-                || (kind == ConditionKind::AddressEq
-                    && self
-                        .condition_kinds
-                        .contains(&(ConditionKind::OffsetEq, value)))
         })
     }
 
@@ -2733,6 +2760,30 @@ impl TermClasses {
         let Some(node) = self.condition_node(condition) else {
             return false;
         };
+        let offsets = match condition {
+            C::AddressOffsetEqual(a, b) => Some([a.as_ref(), b.as_ref()]),
+            _ => None,
+        };
+        self.knows_condition_node(node, value, offsets)
+    }
+    pub(in crate::kernel::equality_graph) fn knows_pointer_equation(
+        &mut self,
+        pair: WrittenPointerEquality<'_>,
+        value: bool,
+    ) -> bool {
+        let node = self.pointer_equation_node(pair);
+        let offsets = match pair {
+            WrittenPointerEquality::Offset(pair) => Some(pair),
+            _ => None,
+        };
+        self.knows_condition_node(node, value, offsets)
+    }
+    fn knows_condition_node(
+        &mut self,
+        node: u64,
+        value: bool,
+        offsets: Option<[&AddressOffset; 2]>,
+    ) -> bool {
         self.register_pending_loads();
         let truth = if value { 1 } else { 2 };
         if self
@@ -2742,7 +2793,7 @@ impl TermClasses {
         {
             return true;
         }
-        let C::AddressOffsetEqual(a, b) = condition else {
+        let Some([a, b]) = offsets else {
             return false;
         };
         let left = self.intern(a);
