@@ -87,9 +87,7 @@ fn collect_machine_operand_carriers(
                     collect_shared_address_carriers(address, variables);
                 }
                 KernelTermNode::BoolCast { operand, .. } => {
-                    collect_shared_condition_carriers(operand, variables, || {
-                        BooleanOperandView::Shared(operand).identity_leaf()
-                    });
+                    collect_shared_condition_carriers(operand, variables, None);
                 }
                 KernelTermNode::Match(matched) => {
                     retained_matches::collect_match_carriers(matched, variables)
@@ -617,15 +615,13 @@ fn collect_stored_condition_carriers(
     let Some(root) = condition.root() else {
         return collect_condition_carriers(condition.old_form(), variables);
     };
-    collect_shared_condition_carriers(root, variables, || {
-        std::borrow::Cow::Borrowed(condition.old_form())
-    });
+    collect_shared_condition_carriers(root, variables, root.cached_condition_output());
 }
 
-fn collect_shared_condition_carriers<'a>(
-    root: &'a KernelTerm,
+fn collect_shared_condition_carriers(
+    root: &KernelTerm,
     variables: &mut CarrierVariables,
-    native_root: impl Fn() -> std::borrow::Cow<'a, OldConditionTerm>,
+    cached_root: Option<&OldConditionTerm>,
 ) {
     let mut seen = std::collections::HashSet::new();
     let mut pending = vec![root];
@@ -698,8 +694,19 @@ fn collect_shared_condition_carriers<'a>(
                     }
                 }
             }
-            // Preserve the caller’s reading of an opaque root, including call arguments.
-            _ if term == root => collect_condition_node_carriers(&native_root(), variables),
+            KernelTermNode::Call { arguments, .. } => {
+                let at_root = term == root;
+                let cached = if at_root {
+                    cached_root
+                } else {
+                    term.cached_condition_output()
+                };
+                if let Some(condition) = cached {
+                    collect_condition_node_carriers(condition, variables);
+                } else {
+                    collect_boolean_call_carriers(arguments, at_root, variables);
+                }
+            }
             _ => collect_condition_node_carriers(
                 &BooleanOperandView::Shared(term).native(),
                 variables,
@@ -708,15 +715,42 @@ fn collect_shared_condition_carriers<'a>(
     }
 }
 
-fn stored_numeric_root(value: &ExecutionValue) -> Option<&KernelTerm> {
-    let root = value.shared()?;
+fn collect_boolean_call_carriers(
+    arguments: &[KernelTerm],
+    retain_machine_arguments: bool,
+    variables: &mut CarrierVariables,
+) {
+    let mut seen = BTreeSet::new();
+    for argument in arguments {
+        if !variables.visit() {
+            return;
+        }
+        // A call read as the condition root uses its machine observations.
+        // A nested call exposes written program values, including repeated reads.
+        if retain_machine_arguments && let Some(machine) = argument.boolean_call_machine_argument()
+        {
+            collect_machine_carriers(&machine, variables);
+        } else if let Some(written) = argument.written_argument() {
+            collect_argument_carriers(written, variables, &mut seen);
+        } else if is_numeric_carrier_root(argument) {
+            collect_numeric_program_carriers(argument, variables);
+        } else {
+            let value = KernelTermExport::default()
+                .argument(argument)
+                .expect("Boolean call argument");
+            collect_argument_carriers(&value, variables, &mut seen);
+        }
+    }
+}
+
+fn is_numeric_carrier_root(root: &KernelTerm) -> bool {
     let KernelType::Program(ty) = root.ty() else {
-        return None;
+        return false;
     };
     if MachineIntegerType::from_program_type(*ty).is_none()
         && KernelFloatType::from_program_type(*ty).is_none()
     {
-        return None;
+        return false;
     }
     matches!(
         root.node(),
@@ -735,7 +769,10 @@ fn stored_numeric_root(value: &ExecutionValue) -> Option<&KernelTerm> {
             | KernelTermNode::FloatRead(_)
             | KernelTermNode::FloatCall(_)
     )
-    .then_some(root)
+}
+
+fn stored_numeric_root(value: &ExecutionValue) -> Option<&KernelTerm> {
+    value.shared().filter(|root| is_numeric_carrier_root(root))
 }
 
 fn collect_numeric_program_carriers(root: &KernelTerm, variables: &mut CarrierVariables) {
@@ -8817,6 +8854,44 @@ mod tests {
                 )]
             );
         }
+    }
+
+    #[test]
+    fn boolean_call_pointer_queries_preserve_the_selected_argument_reading() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::UInt32;
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let address = Address::symbolic(Variable(9930));
+        let word = KernelTerm::shared_scalar_read_descriptor(
+            format,
+            &point,
+            address.shared(),
+            LoadKind::UInt32,
+        );
+        let call = KernelTerm::checked_call(
+            KernelType::Bool,
+            "same_reads".into(),
+            vec![word.clone(), word],
+        );
+        let nested =
+            KernelTerm::boolean_equal_raw([call.clone(), KernelTerm::boolean_literal(true)]);
+        let pointers = |root| {
+            proposition_pointer_terms(&Proposition::condition_is(
+                StoredConditionTerm::from_root(root).unwrap(),
+                true,
+            ))
+        };
+        assert_eq!(pointers(call.clone()), [address.clone()]);
+        assert_eq!(pointers(nested.clone()), [address.clone(), address.clone()]);
+
+        let written = PureFunctionArgument::Value(ProgramValue::UInt32(
+            OldMachineTerm::read_named(point, address.clone(), LoadKind::UInt32),
+        ));
+        call.retain_old_condition_output(OldConditionTerm::BoolApplication(
+            SharedPureApplication::intern("same_reads".into(), vec![written.clone(), written]),
+        ));
+        assert_eq!(pointers(call), [address.clone(), address.clone()]);
+        assert_eq!(pointers(nested), [address.clone(), address]);
     }
 
     #[test]
