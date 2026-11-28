@@ -175,14 +175,14 @@ impl<'a> Value<'a> {
         match self {
             Self::Native(value) => value.bounds().map(|bounds| {
                 (
-                    BorrowedAddress::Native(&bounds.start()),
-                    Operand::Old(&bounds.width()),
+                    BorrowedAddress::Native(bounds.start()),
+                    Operand::Old(bounds.width()),
                 )
             }),
             Self::Shared(value) => value.node().array.bounds().map(|bounds| {
                 (
                     BorrowedAddress::Shared(&bounds.start),
-                    Operand::Shared(&bounds.width()),
+                    Operand::Shared(bounds.width()),
                 )
             }),
         }

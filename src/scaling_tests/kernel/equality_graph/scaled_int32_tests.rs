@@ -121,21 +121,21 @@ fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
             let id = 1_000 + i;
             graph.add_condition(&no_overflow(id, 4, true), false);
             graph.add_offset_equality(
-                &AddressOffset::from(byte_product(id, 8, true)),
-                &AddressOffset::from(offset(10_000 + i)),
+                &byte_product(id, 8, true),
+                &offset(10_000 + i),
             );
             graph.add_offset_equality(
-                &AddressOffset::from(scaled(id, 4)),
-                &AddressOffset::from(offset(20_000 + i)),
+                &scaled(id, 4),
+                &offset(20_000 + i),
             );
         }
-        let first = AddressOffset::from(offset(10));
-        let second = AddressOffset::from(offset(11));
+        let first = offset(10);
+        let second = offset(11);
         graph.add_offset_equality(
-            &AddressOffset::from(nested(byte_product(1, 4, true))),
+            &nested(byte_product(1, 4, true)),
             &first,
         );
-        graph.add_offset_equality(&AddressOffset::from(nested(scaled(1, 4))), &second);
+        graph.add_offset_equality(&nested(scaled(1, 4)), &second);
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_condition(&no_overflow(1, 4, true), false);
             assert!(graph.are_offsets_equal(&first, &second));
@@ -149,8 +149,8 @@ fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
                 &offset(40_000 + i),
             );
         }
-        let bytes = AddressOffset::from(byte_product(1, 4, true));
-        let elements = AddressOffset::from(scaled(1, 4));
+        let bytes = byte_product(1, 4, true);
+        let elements = scaled(1, 4);
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             related.add_condition(&no_overflow(1, 4, true), false);
             assert!(related.are_offsets_equal(&bytes, &elements));

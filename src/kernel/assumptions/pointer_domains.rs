@@ -124,9 +124,9 @@ impl PureFactContext {
             self.pointer_access_in_range(
                 pointer,
                 bytes,
-                &bounds.start(),
+                bounds.start(),
                 &0u32.into(),
-                &bounds.width(),
+                bounds.width(),
                 1,
             )
         }) || required.1.is_some_and(|owner| {
@@ -163,9 +163,9 @@ impl PureFactContext {
                 self.pointer_access_in_range(
                     &endpoint,
                     0,
-                    &bounds.start(),
+                    bounds.start(),
                     &0u32.into(),
-                    &bounds.width(),
+                    bounds.width(),
                     1,
                 )
             })

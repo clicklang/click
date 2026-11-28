@@ -240,9 +240,11 @@ pub(super) use statements::{
 pub(super) use statements::{sync_retained_stack_local, sync_stack_local};
 
 pub(crate) use memory_loads::{
-    pointer_read_over_immediate_store, pointer_read_over_write_program_value,
-    slice_read_over_write_value, stored_slice_of_load,
+    pointer_read_over_immediate_store, pointer_read_over_write_program_value, stored_slice_of_load,
 };
+
+#[cfg(test)]
+pub(crate) use memory_loads::slice_read_over_write_value;
 
 pub(crate) use memory_loads::loaded_pointer_stored_block;
 

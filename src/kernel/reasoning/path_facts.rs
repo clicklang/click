@@ -2379,16 +2379,6 @@ pub(crate) fn count_context_rebuild_entries(_entries: usize) {
     record_context_entries_for_tests(_entries);
 }
 
-/// Counts, in test builds, the entries of a context build that is charged
-/// nothing (`PureFactContext::assume_proposition_uncharged`): a known
-/// violation of the complexity contract, listed in
-/// `docs/internals/verification-efficiency.md`, whose charge would fail a
-/// scaling regression until its representation changes.
-pub(crate) fn count_uncharged_context_entries(_entries: usize) {
-    #[cfg(test)]
-    record_context_entries_for_tests(_entries);
-}
-
 #[cfg(test)]
 fn record_context_entries_for_tests(entries: usize) {
     CONTEXT_REBUILD_ENTRIES.with(|count| count.set(count.get() + entries));

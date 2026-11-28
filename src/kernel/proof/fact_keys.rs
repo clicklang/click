@@ -157,8 +157,8 @@ fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
         },
         bounds: pointer.bounds().map(|bounds| {
             (
-                memory_erased_address_key(&bounds.start()),
-                memory_erased_bitvector_key(&bounds.width()),
+                memory_erased_address_key(bounds.start()),
+                memory_erased_bitvector_key(bounds.width()),
             )
         }),
         bounds_known: pointer.bounds_are_known(),
@@ -2440,12 +2440,12 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             bounds: match pointer.bounds() {
                 Some(bounds) => Some((
                     alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                        &bounds.start(),
+                        bounds.start(),
                         bindings,
                         next_binder,
                     )?,
                     alpha_machine_key::<ALLOW_LOADS>(
-                        crate::kernel::MachineOperandView::Old(&bounds.width()),
+                        crate::kernel::MachineOperandView::Old(bounds.width()),
                         bindings,
                         next_binder,
                     )?,
