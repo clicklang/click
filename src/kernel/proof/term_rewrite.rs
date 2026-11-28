@@ -77,35 +77,45 @@ fn collect_machine_operand_carriers(
     }
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
-            if let KernelTermNode::BoolCast { operand, .. } = leaf.node() {
-                collect_shared_condition_carriers(operand, variables, || {
-                    BooleanOperandView::Shared(operand).identity_leaf()
-                });
-                continue;
-            }
-            if let KernelTermNode::Match(matched) = leaf.node() {
-                retained_matches::collect_match_carriers(matched, variables);
-                continue;
-            }
-            if let KernelTermNode::Fold(fold) = leaf.node() {
-                variables.program_values.insert(fold.accumulator);
-                variables.program_values.insert(fold.item);
-                for child in &fold.arguments {
-                    collect_machine_operand_carriers(MachineOperandView::Shared(child), variables);
+            match leaf.node() {
+                KernelTermNode::IntegerToMachine { operand, .. }
+                    if operand.is_mathematical_integer() =>
+                {
+                    collect_mathematical_integer_carriers(operand, variables);
                 }
-                continue;
-            }
-            if matches!(leaf.node(), KernelTermNode::FloatConvert { .. }) {
-                collect_bitvector_carriers(
+                KernelTermNode::IntegerAddress { address, .. } => {
+                    collect_shared_address_carriers(address, variables);
+                }
+                KernelTermNode::BoolCast { operand, .. } => {
+                    collect_shared_condition_carriers(operand, variables, || {
+                        BooleanOperandView::Shared(operand).identity_leaf()
+                    });
+                }
+                KernelTermNode::Match(matched) => {
+                    retained_matches::collect_match_carriers(matched, variables)
+                }
+                KernelTermNode::Fold(fold) => {
+                    variables.program_values.insert(fold.accumulator);
+                    variables.program_values.insert(fold.item);
+                    for child in &fold.arguments {
+                        collect_machine_operand_carriers(
+                            MachineOperandView::Shared(child),
+                            variables,
+                        );
+                    }
+                }
+                KernelTermNode::FloatConvert { .. } => collect_bitvector_carriers(
                     &KernelTermExport::machine(leaf).expect("float conversion"),
                     variables,
-                );
-                continue;
+                ),
+                _ => collect_bitvector_carriers(
+                    leaf.machine_conversion_leaf().expect("conversion leaf"),
+                    variables,
+                ),
             }
-            collect_bitvector_carriers(
-                leaf.machine_conversion_leaf().expect("conversion leaf"),
-                variables,
-            );
+            if variables.exhausted() {
+                return;
+            }
         }
     }
     if let Some(reads) = shared_machine_read_leaves(root, || variables.visit()) {
@@ -642,22 +652,10 @@ fn collect_shared_condition_carriers<'a>(
             }
             KernelTermNode::AddressEqual { arguments, .. } => {
                 for address in arguments {
-                    if variables.pointer_terms.is_some() {
-                        let written = address.export().expect("address equality operand");
-                        collect_pointer_carriers(&written, variables);
-                        if variables.exhausted() {
-                            return;
-                        }
-                        continue;
-                    }
-                    if !variables.visit() {
-                        return;
-                    }
-                    collect_address_base_carriers(address.atom(), variables);
+                    collect_shared_address_carriers(address, variables);
                     if variables.exhausted() {
                         return;
                     }
-                    collect_retained_offset_carriers(address.offset(), variables);
                 }
             }
             KernelTermNode::AddressOffsetEqual { arguments } => {
@@ -987,6 +985,20 @@ fn collect_algebraic_carriers_seen(
                 return;
             }
             collect_algebraic_carriers_seen(else_term, variables, seen);
+        }
+    }
+}
+
+fn collect_shared_address_carriers(address: &SharedAddress, variables: &mut CarrierVariables) {
+    if variables.pointer_terms.is_some() {
+        let written = address.export().expect("written pointer occurrence");
+        collect_pointer_carriers(&written, variables);
+        return;
+    }
+    if variables.visit() {
+        collect_address_base_carriers(address.atom(), variables);
+        if !variables.exhausted() {
+            collect_retained_offset_carriers(address.offset(), variables);
         }
     }
 }
