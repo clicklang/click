@@ -657,6 +657,14 @@ fn collect_shared_condition_carriers<'a>(
             KernelTermNode::FloatClassify { operand, .. } => {
                 collect_numeric_carriers(std::slice::from_ref(operand), variables);
             }
+            KernelTermNode::PointerEqual(pair) => {
+                for pointer in pair.arguments() {
+                    collect_complete_pointer_carriers(pointer, variables);
+                    if variables.exhausted() {
+                        return;
+                    }
+                }
+            }
             KernelTermNode::AddressEqual { arguments, .. } => {
                 for address in arguments {
                     collect_shared_address_carriers(address, variables);
@@ -1147,6 +1155,22 @@ fn collect_algebraic_carriers_seen(
     }
 }
 
+fn collect_complete_pointer_carriers(pointer: &SharedPointer, variables: &mut CarrierVariables) {
+    for address in pointer.addresses() {
+        collect_shared_address_carriers(address, variables);
+        if variables.exhausted() {
+            return;
+        }
+    }
+    match pointer.element_count_operand() {
+        Some(MachineOperandView::Old(count)) => collect_bitvector_carriers(count, variables),
+        Some(MachineOperandView::Shared(count)) => {
+            collect_numeric_carriers(std::slice::from_ref(count), variables)
+        }
+        None => {}
+    }
+}
+
 fn collect_shared_address_carriers(address: &SharedAddress, variables: &mut CarrierVariables) {
     if variables.pointer_terms.is_some() {
         let written = address.export().expect("written pointer occurrence");
@@ -1214,8 +1238,10 @@ fn collect_condition_carriers(condition: &OldConditionTerm, variables: &mut Carr
 fn collect_condition_node_carriers(condition: &OldConditionTerm, variables: &mut CarrierVariables) {
     match condition {
         OldConditionTerm::PointerEqual(left, right) => {
-            collect_program_value_carriers(&ProgramValue::Pointer((**left).clone()), variables);
-            collect_program_value_carriers(&ProgramValue::Pointer((**right).clone()), variables);
+            collect_complete_pointer_carriers(left.shared(), variables);
+            if !variables.exhausted() {
+                collect_complete_pointer_carriers(right.shared(), variables);
+            }
         }
 
         OldConditionTerm::AlgebraicEqual(left, right) => {
@@ -8768,6 +8794,52 @@ mod tests {
                 )]
             );
         }
+    }
+
+    #[test]
+    fn pointer_equality_visits_address_roles_then_each_element_count() {
+        let _session = VerificationSession::enter();
+        let [data, provenance, owner, start, cell] =
+            [9920, 9921, 9922, 9923, 9924].map(|id| Address::symbolic(Variable(id)));
+        let thin = Pointer::from_parts(
+            data.clone(),
+            provenance.clone(),
+            ArrayObject::from_parts(
+                true,
+                Some(SubobjectBounds::new(
+                    start.clone(),
+                    OldMachineTerm::Variable(Variable(9925)),
+                )),
+                Some(owner.clone()),
+            ),
+            ProgramType::Int32Pointer,
+        );
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let read = OldMachineTerm::read_named(point.clone(), cell.clone(), LoadKind::Bits64);
+        let written = thin.clone().with_element_count(read.clone());
+        let root = KernelTerm::shared_scalar_read_descriptor(
+            MachineIntegerType::UInt64,
+            &point,
+            cell.shared(),
+            LoadKind::Bits64,
+        );
+        let shared = thin.shared().with_element_count(root);
+        let condition = KernelTerm::pointer_equal_raw([written.shared().clone(), shared]);
+        let fact =
+            Proposition::condition_is(StoredConditionTerm::from_root(condition).unwrap(), true);
+        let roles = [data, provenance, owner, start, cell];
+        assert_eq!(
+            proposition_pointer_terms(&fact),
+            roles.iter().chain(&roles).cloned().collect::<Vec<_>>()
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([9920, 9921, 9922, 9923, 9924].map(Variable))
+        );
+        assert_eq!(collector.take_read_terms().collect::<Vec<_>>(), vec![read]);
     }
 
     #[test]

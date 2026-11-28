@@ -1627,6 +1627,42 @@ fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() 
 }
 
 #[test]
+fn complete_pointer_equality_collects_shared_slice_count_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let address = Variable(982820);
+        let slice = Variable(982821);
+        let count = slice.element_count();
+        let mut sum = KernelTerm::variable(KernelType::Program(ProgramType::UInt64), count);
+        for _ in 0..depth {
+            sum = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                [sum.clone(), sum],
+            );
+        }
+        let thin = Pointer::new(Address::symbolic(address), ProgramType::Int32Pointer);
+        let wide = thin.shared().with_element_count(sum);
+        let condition = KernelTerm::pointer_equal_raw([wide.clone(), wide]);
+        let fact = Proposition::condition_is(
+            StoredConditionTerm::from_root(condition.clone()).unwrap(),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&fact);
+        assert_eq!(
+            collector.carriers.program_values,
+            BTreeSet::from([address, slice, count])
+        );
+        assert!(!collector.exhausted());
+        assert!(collector.carriers.nodes <= 2 * depth + 24);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!condition.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn numeric_predicates_visit_shared_machine_arithmetic_once() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();

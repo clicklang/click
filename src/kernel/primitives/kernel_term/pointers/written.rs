@@ -729,6 +729,17 @@ impl std::ops::Deref for Pointer {
 }
 
 impl SharedPointer {
+    /// Borrow the count in an available representation without importing or exporting it.
+    pub(crate) fn element_count_operand(&self) -> Option<MachineOperandView<'_>> {
+        let KernelPointerMetadata::ElementCount(count) = self.node().metadata.as_deref()?;
+        Some(match count.written.get() {
+            Some(Ok(term)) => MachineOperandView::Old(term),
+            _ => MachineOperandView::Shared(
+                count.kernel.get().expect("a pointer component has a term"),
+            ),
+        })
+    }
+
     /// The written view of this handle, or why one of its parts has no
     /// written form. A handle whose parts are written is shared, not copied;
     /// otherwise an address whose block has an observation key's identity
