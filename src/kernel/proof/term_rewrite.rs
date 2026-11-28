@@ -4159,26 +4159,41 @@ impl<'a> TermRewrite<'a> {
                 if self.conditions.is_none_or(HashMap::is_empty)
                     && self.cited_conditions.is_none()
                     && self.condition_exact.is_none()
-                    && let Some(KernelTermNode::PointerEqual(pair)) =
-                        condition.root().map(KernelTerm::node)
                 {
-                    if !self.source_variables_reserved {
-                        let mut variables = self.new_carrier_variables();
-                        collect_stored_condition_carriers(condition, &mut variables);
-                        self.reserve_source_variables(variables);
+                    let root = match condition.root().map(KernelTerm::node) {
+                        Some(KernelTermNode::PointerEqual(pair)) => {
+                            if !self.begin_stored_condition_visit(condition) {
+                                return exhausted_proposition();
+                            }
+                            let [left, right] = pair.arguments();
+                            let [left, right] = self.rewrite_pointer_operands(
+                                left.export().expect("written pointer operand"),
+                                right.export().expect("written pointer operand"),
+                            );
+                            if self.checked_work_exhausted() {
+                                return exhausted_proposition();
+                            }
+                            Some(self.reduced_pointer_comparison(left, right))
+                        }
+                        Some(KernelTermNode::AddressEqual { arguments, .. }) => {
+                            if !self.begin_stored_condition_visit(condition) {
+                                return exhausted_proposition();
+                            }
+                            let addresses = arguments.each_ref().map(|address| {
+                                self.pointer(&address.export().expect("written address operand"))
+                                    .into_shared()
+                            });
+                            if self.checked_work_exhausted() {
+                                return exhausted_proposition();
+                            }
+                            // Written address equality keeps even a reflexive pair as evidence.
+                            Some(KernelTerm::address_equal_raw(addresses))
+                        }
+                        _ => None,
+                    };
+                    if let Some(root) = root {
+                        return self.pointer_comparison_claim(root, *value);
                     }
-                    if !self.begin_condition_visit() {
-                        return exhausted_proposition();
-                    }
-                    let [left, right] = pair.arguments();
-                    let [left, right] = self.rewrite_pointer_operands(
-                        left.export().expect("written pointer operand"),
-                        right.export().expect("written pointer operand"),
-                    );
-                    if self.checked_work_exhausted() {
-                        return exhausted_proposition();
-                    }
-                    return self.pointer_equality_claim(left, right, *value);
                 }
                 let condition = self.condition(condition.old_form());
                 if self.checked_work_exhausted() {
@@ -6509,6 +6524,15 @@ impl<'a> TermRewrite<'a> {
         [canonical(left), canonical(right)]
     }
 
+    fn begin_stored_condition_visit(&mut self, condition: &StoredConditionTerm) -> bool {
+        if !self.source_variables_reserved {
+            let mut variables = self.new_carrier_variables();
+            collect_stored_condition_carriers(condition, &mut variables);
+            self.reserve_source_variables(variables);
+        }
+        self.begin_condition_visit()
+    }
+
     fn begin_condition_visit(&mut self) -> bool {
         if self.checked_work_exhausted() {
             return false;
@@ -6741,13 +6765,8 @@ impl<'a> TermRewrite<'a> {
         self.finish_condition(result)
     }
 
-    fn pointer_equality_claim(
-        &mut self,
-        left: Pointer,
-        right: Pointer,
-        truth: bool,
-    ) -> Proposition {
-        let root = match left.equality_kind(&right) {
+    fn reduced_pointer_comparison(&mut self, left: Pointer, right: Pointer) -> KernelTerm {
+        match left.equality_kind(&right) {
             PointerEqualityKind::IntegerAddress => {
                 // Equality is filed at Int64 regardless of the word's signedness.
                 // Keep registered read names as written in this result.
@@ -6771,7 +6790,10 @@ impl<'a> TermRewrite<'a> {
                     KernelTerm::pointer_equal_raw([left.into_shared(), right.into_shared()])
                 }
             }
-        };
+        }
+    }
+
+    fn pointer_comparison_claim(&mut self, root: KernelTerm, truth: bool) -> Proposition {
         // The word constructor can itself reduce a comparison with zero to
         // address equality. Apply the evidence rules to the resulting shape.
         let proved = match root.node() {
@@ -9144,6 +9166,29 @@ mod tests {
                 assert_eq!(KernelTermExport::condition(root).unwrap(), expected);
                 assert!(!source.has_cached_native_argument());
             }
+        }
+    }
+
+    #[test]
+    fn rewriting_stored_addresses_preserves_the_reflexive_comparison() {
+        let _session = VerificationSession::enter();
+        let [from, to] = [99837, 99838].map(|id| Address::symbolic(Variable(id)));
+        let root = KernelTerm::address_equal_raw([from.shared().clone(), to.shared().clone()]);
+        let source = StoredConditionTerm::from_root(root.clone()).unwrap();
+        for truth in [false, true] {
+            let goal = Proposition::condition_is(source.clone(), truth);
+            let mut rewrite = TermRewrite::for_pointer_exact(&from, &to);
+            let Proposition::ConditionIs(result, polarity) = rewrite.proposition(&goal) else {
+                panic!("expected the rewritten address equality");
+            };
+            assert!(rewrite.changed);
+            assert_eq!(polarity, truth);
+            assert_eq!(
+                result.operand_view().pointer_addresses().unwrap(),
+                [to.shared().clone(), to.shared().clone()]
+            );
+            assert!(!root.has_cached_native_argument());
+            assert!(!result.root().unwrap().has_cached_native_argument());
         }
     }
 
