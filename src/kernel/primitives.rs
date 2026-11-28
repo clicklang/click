@@ -9828,6 +9828,16 @@ impl AllocationSize {
         self.kind
     }
 
+    pub(crate) fn map_stored_bytes(
+        &self,
+        rewrite: impl FnOnce(&StoredMachineTerm) -> StoredMachineTerm,
+    ) -> Self {
+        Self {
+            bytes: rewrite(&self.bytes),
+            kind: self.kind,
+        }
+    }
+
     /// The same kind of size over rewritten bytes.
     pub(crate) fn map_bytes(
         &self,
