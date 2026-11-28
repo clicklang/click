@@ -5150,6 +5150,24 @@ pub(super) fn collect_loop_entry_goals(
     )
 }
 
+fn grouped_invariant_guards(guards: &[ProofObligation]) -> ProofObligation {
+    fn conjunction(guards: &[&ProofObligation]) -> Proposition {
+        if let [guard] = guards {
+            return guard.proposition().clone();
+        }
+        let (left, right) = guards.split_at(guards.len() / 2);
+        Proposition::And(Box::new(conjunction(left)), Box::new(conjunction(right)))
+    }
+
+    // Repeating an antecedent adds no evidence. The declaration obligations
+    // remain separate, including repeated ones.
+    let distinct: Vec<_> = guards
+        .chunk_by(|left, right| left.proposition() == right.proposition())
+        .map(|run| &run[0])
+        .collect();
+    ProofObligation::new(conjunction(&distinct))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_invariant_check_obligations_with_mode(
     state: &ExecutionState,
@@ -5319,8 +5337,22 @@ fn collect_invariant_check_obligations_with_mode(
                 // obligation proposition, produced by the same wrap that
                 // built it, so a consumer introducing its head never pairs
                 // a hidden guard with a written connective.
-                let (proposition, guard_introductions) =
-                    wrap_path_context_with_introductions(path.proposition.clone(), &facts, &guards);
+                // A generated wide bundle already uses balanced conjunctions
+                // for its members. Group the preceding obligations as well, so
+                // an explicit member proof does not need one scope per earlier
+                // declaration. Introduction admits the same conjuncts.
+                let grouped_guards = (matches!(phase, InvariantPhase::Preservation)
+                    && invariant_checks.len() > 24
+                    && guards.len() > 1)
+                    .then(|| [grouped_invariant_guards(&guards)]);
+                let member_guards = grouped_guards
+                    .as_ref()
+                    .map_or(guards.as_slice(), |group| group.as_slice());
+                let (proposition, guard_introductions) = wrap_path_context_with_introductions(
+                    path.proposition.clone(),
+                    &facts,
+                    member_guards,
+                );
                 let mut introductions = guard_introductions;
                 introductions.extend(path.introductions.iter().cloned());
                 let introductions = std::sync::Arc::new(introductions);
