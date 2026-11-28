@@ -1,7 +1,10 @@
 use super::*;
-use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
+use crate::kernel::{
+    BooleanOperandView, CompareRelation, IntegerComparisonOperator, KernelTermNode,
+    StoredConditionTerm,
+};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
@@ -31,7 +34,7 @@ pub(in crate::surface) fn normalize_proposition(
             )),
         },
         Proposition::ConditionIs(condition, expected) => {
-            match normalize_condition_without_assumptions(condition.old_form()) {
+            match normalize_condition_without_assumptions(condition) {
                 Some(actual) if actual == *expected => NormalizedProposition::True,
                 Some(_) => NormalizedProposition::False,
                 None => NormalizedProposition::Proposition(proposition.clone()),
@@ -104,8 +107,8 @@ pub(in crate::surface) use crate::kernel::proof::equality_rewrite::rewrite_propo
 impl NormalizedProposition {
     fn into_proposition(self) -> Proposition {
         match self {
-            Self::True => Proposition::condition_is(OldConditionTerm::Constant(true), true),
-            Self::False => Proposition::condition_is(OldConditionTerm::Constant(false), true),
+            Self::True => Proposition::condition_is(StoredConditionTerm::constant(true), true),
+            Self::False => Proposition::condition_is(StoredConditionTerm::constant(false), true),
             Self::Proposition(proposition) => proposition,
         }
     }
@@ -123,8 +126,8 @@ pub(in crate::surface) fn normalized_terms_equal(left: &Term, right: &Term) -> O
                 == evaluate_bitvector_constant(&normalize_bitvector(right.old_form()))?,
         ),
         (Term::Condition(left), Term::Condition(right)) => Some(
-            normalize_condition_without_assumptions(left.old_form())?
-                == normalize_condition_without_assumptions(right.old_form())?,
+            normalize_condition_without_assumptions(left)?
+                == normalize_condition_without_assumptions(right)?,
         ),
         _ => None,
     }
@@ -138,12 +141,10 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
         {
             normalize_term(&Term::ProgramValue(value.numeric_value().clone().into()))
         }
-        Term::Condition(condition) => {
-            match normalize_condition_without_assumptions(condition.old_form()) {
-                Some(value) => Term::Condition(OldConditionTerm::Constant(value).into()),
-                None => term.clone(),
-            }
-        }
+        Term::Condition(condition) => match normalize_condition_without_assumptions(condition) {
+            Some(value) => Term::Condition(StoredConditionTerm::constant(value)),
+            None => term.clone(),
+        },
         Term::Bitvector32(term) => Term::Bitvector32(term.map_native(normalize_bitvector)),
         term_source_0 @ Term::ProgramValue(_)
             if let Some(ProgramValue::Int32(term)) = term_source_0.program_value_native() =>
@@ -165,8 +166,41 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
 }
 
 pub(in crate::surface) fn normalize_condition_without_assumptions(
-    condition: &OldConditionTerm,
+    condition: &StoredConditionTerm,
 ) -> Option<bool> {
+    let view = condition.operand_view();
+    if let Some(value) = view.constant() {
+        return Some(value);
+    }
+    if view.is_integer_comparison() {
+        return normalize_integer_comparison(view);
+    }
+    normalize_native_condition(condition.old_form())
+}
+
+fn normalize_integer_comparison(view: BooleanOperandView<'_>) -> Option<bool> {
+    use IntegerComparisonOperator as Op;
+    let (operator, [left, right]) =
+        crate::kernel::machine_integer::comparison::written_integer_comparison(view)?;
+    if matches!(operator, Op::Equal | Op::NotEqual) && left == right {
+        return Some(operator == Op::Equal);
+    }
+    let (KernelTermNode::IntegerLiteral(left), KernelTermNode::IntegerLiteral(right)) =
+        (left.root().node(), right.root().node())
+    else {
+        return None;
+    };
+    Some(match operator {
+        Op::Equal => left == right,
+        Op::NotEqual => left != right,
+        Op::LessThan => left < right,
+        Op::LessEqual => left <= right,
+        Op::GreaterThan => left > right,
+        Op::GreaterEqual => left >= right,
+    })
+}
+
+fn normalize_native_condition(condition: &OldConditionTerm) -> Option<bool> {
     match condition {
         OldConditionTerm::PointerEqual(_, _) => {
             crate::kernel::SelectedFacts::from_propositions(&[]).decide_selected_condition(condition)
@@ -175,27 +209,8 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
         OldConditionTerm::AlgebraicEqual(_, _) => {
             crate::kernel::SelectedFacts::from_propositions(&[]).decide_selected_condition(condition)
         }
-        OldConditionTerm::IntegerEqual(left, right) => {
-            if left == right {
-                Some(true)
-            } else {
-                Some(left.as_const()? == right.as_const()?)
-            }
-        }
-        OldConditionTerm::IntegerNotEqual(left, right) => {
-            if left == right {
-                Some(false)
-            } else {
-                Some(left.as_const()? != right.as_const()?)
-            }
-        }
-        OldConditionTerm::IntegerLessThan(left, right) => Some(left.as_const()? < right.as_const()?),
-        OldConditionTerm::IntegerLessEqual(left, right) => Some(left.as_const()? <= right.as_const()?),
-        OldConditionTerm::IntegerGreaterThan(left, right) => {
-            Some(left.as_const()? > right.as_const()?)
-        }
-        OldConditionTerm::IntegerGreaterEqual(left, right) => {
-            Some(left.as_const()? >= right.as_const()?)
+        crate::kernel::integer_comparison_condition!(_, _) => {
+            normalize_integer_comparison(BooleanOperandView::Native(condition))
         }
         OldConditionTerm::Constant(value) => Some(*value),
         // A closed comparison, native at any width or of two `bool`
@@ -362,7 +377,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &OldMachineTerm) -> 
         } => None,
         // Rule C1: a decided `Bool` casts to 1 or 0.
         OldMachineTerm::BoolCast { value, .. } => {
-            Some(u32::from(normalize_condition_without_assumptions(value)?))
+            Some(u32::from(normalize_native_condition(value)?))
         }
 
         bits32_constant!(value) => Some(constant_u32(*value)),
@@ -459,7 +474,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &OldMachineTerm) -> 
             condition,
             then_term,
             else_term,
-        } => match normalize_condition_without_assumptions(condition)? {
+        } => match normalize_native_condition(condition)? {
             true => evaluate_bitvector_constant(then_term),
             false => evaluate_bitvector_constant(else_term),
         },
@@ -472,12 +487,10 @@ pub(in crate::surface) fn normalize_bitvector(term: &OldMachineTerm) -> OldMachi
         OldMachineTerm::ThreadHandle(_) => term.clone(),
         OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => term.clone(),
         OldMachineTerm::IntegerToMachine { .. } => term.clone(),
-        OldMachineTerm::BoolCast { value, .. } => {
-            match normalize_condition_without_assumptions(value) {
-                Some(value) => OldMachineTerm::constant(u32::from(value)),
-                None => term.clone(),
-            }
-        }
+        OldMachineTerm::BoolCast { value, .. } => match normalize_native_condition(value) {
+            Some(value) => OldMachineTerm::constant(u32::from(value)),
+            None => term.clone(),
+        },
         binary_term!(Int32, Add, left, right) => {
             bitvector32_add(normalize_bitvector(left), normalize_bitvector(right))
         }
@@ -526,7 +539,7 @@ pub(in crate::surface) fn normalize_bitvector(term: &OldMachineTerm) -> OldMachi
             condition,
             then_term,
             else_term,
-        } => match normalize_condition_without_assumptions(condition) {
+        } => match normalize_native_condition(condition) {
             Some(true) => normalize_bitvector(then_term),
             Some(false) => normalize_bitvector(else_term),
             None => OldMachineTerm::if_then_else(
@@ -580,6 +593,33 @@ mod tests {
         IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, SharedIntegerRangeEndpoint,
         SharedMachineIntegerTerm,
     };
+
+    mod scaling_tests {
+        include!("../../scaling_tests/surface/checking/normalization/tests.rs");
+    }
+
+    #[test]
+    fn normalize_written_integer_literals_in_both_directions() {
+        use crate::kernel::{IntegerComparisonOperator as Op, KernelTerm};
+        for (operator, ascending, descending) in [
+            (Op::Equal, false, false),
+            (Op::NotEqual, true, true),
+            (Op::LessThan, true, false),
+            (Op::LessEqual, true, false),
+            (Op::GreaterThan, false, true),
+            (Op::GreaterEqual, false, true),
+        ] {
+            for (left, right, expected) in [(-3, 4, ascending), (4, -3, descending)] {
+                let operands = [left, right].map(|n| KernelTerm::integer_literal(n.into()));
+                let root = KernelTerm::integer_comparison(operator, operands).unwrap();
+                let condition = StoredConditionTerm::from_root(root).unwrap();
+                assert_eq!(
+                    normalize_term(&Term::Condition(condition)),
+                    Term::Condition(StoredConditionTerm::constant(expected))
+                );
+            }
+        }
+    }
 
     /// The equality-rewrite search visits premise orders depth first, and a
     /// goal it cannot close makes it visit all of them. Under an exhausted
