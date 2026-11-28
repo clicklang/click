@@ -2142,6 +2142,26 @@ mod tests {
         assert!(SharedMachineIntegerTerm::from_shared(format, root.clone()).is_none());
         assert!(importer.machine_arithmetic(format, &native).is_none());
         assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+
+        use crate::kernel::machine_integer::definedness::{
+            integer_bounds_of_definedness, range_domain_query,
+        };
+        let condition = OldConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(native),
+            right: Box::new(OldMachineTerm::constant(1)),
+        };
+        let shared = StoredConditionTerm::from_root(importer.condition(&condition)).unwrap();
+        let source = Proposition::condition_is(condition, false);
+        let shared = Proposition::condition_is(shared, false);
+        let bounds = integer_bounds_of_definedness(&source);
+        assert_eq!(bounds.len(), 2);
+        assert_eq!(integer_bounds_of_definedness(&shared), bounds);
+        assert_eq!(
+            range_domain_query(&shared).unwrap().bounds().as_slice(),
+            bounds
+        );
     }
 
     #[test]
