@@ -2,7 +2,6 @@ use super::*;
 use crate::kernel::CompareRelation;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::proof::term_rewrite::mathematical_comparison;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
@@ -4409,6 +4408,28 @@ fn checked_integer_substitution_rewrites_retained_comparison_without_export() {
     assert!(!root.has_cached_native_argument());
 }
 
+#[cfg(test)]
+#[test]
+fn checked_integer_substitution_keeps_the_polarity_of_a_negated_comparison() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let from = Variable(87654004);
+    let replacement = IntegerTerm::Variable(Variable(87654005));
+    let comparison =
+        |value| OldConditionTerm::integer_less_than(value, IntegerTerm::constant_i64(7));
+    let negation = OldConditionTerm::bool_not(comparison(IntegerTerm::Variable(from)));
+    let root = KernelTermImport::default().condition(&negation);
+    let stored = StoredConditionTerm::from_root(root).unwrap();
+    for truth in [false, true] {
+        let input = Proposition::condition_is(stored.clone(), truth);
+        let result =
+            substitute_integer_variable_in_pure_proposition(&input, from, &replacement).unwrap();
+        assert_eq!(
+            result,
+            Proposition::condition_is(comparison(replacement.clone()), !truth)
+        );
+    }
+}
+
 fn integer_substitution_refusal(
     refusal: Option<crate::kernel::proof::term_rewrite::RewriteRefusal>,
 ) -> Result<(), IntegerPureSubstitutionError> {
@@ -4442,15 +4463,8 @@ fn validate_integer_pure_proposition(
         {
             validate_integer_atomic_proposition(proposition, collector)
         }
-        Proposition::SequenceMembership { .. } => {
+        Proposition::SequenceMembership { .. } | Proposition::ConditionIs(..) => {
             validate_integer_atomic_proposition(proposition, collector)
-        }
-        Proposition::ConditionIs(condition, _) => {
-            if mathematical_comparison(condition).is_some() {
-                validate_integer_atomic_proposition(proposition, collector)
-            } else {
-                validate_integer_pure_condition(condition.old_form(), collector)
-            }
         }
         Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
             // A symbolic array read contributes this obligation to the
@@ -4509,16 +4523,6 @@ fn validate_integer_pure_proposition(
         }
         _ => Err(IntegerPureSubstitutionError::UnsupportedCarrier),
     }
-}
-
-fn validate_integer_pure_condition(
-    condition: &OldConditionTerm,
-    collector: &mut crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector,
-) -> Result<(), IntegerPureSubstitutionError> {
-    validate_integer_atomic_proposition(
-        &Proposition::condition_is(condition.clone(), true),
-        collector,
-    )
 }
 
 fn validate_integer_pure_term(
@@ -4659,28 +4663,11 @@ fn substitute_pure_proposition_with_walker(
                             walker,
                         )?);
                     }
-                    Proposition::SequenceMembership { .. } => {
+                    Proposition::SequenceMembership { .. } | Proposition::ConditionIs(..) => {
                         rewritten.push(rewrite_integer_atomic_proposition_with_walker(
                             proposition,
                             walker,
                         )?);
-                    }
-                    Proposition::ConditionIs(condition, _)
-                        if mathematical_comparison(condition).is_some() =>
-                    {
-                        rewritten.push(rewrite_integer_atomic_proposition_with_walker(
-                            proposition,
-                            walker,
-                        )?);
-                    }
-                    Proposition::ConditionIs(condition, value) => {
-                        rewritten.push(Proposition::condition_is(
-                            substitute_integer_pure_condition_with_walker(
-                                condition.old_form(),
-                                walker,
-                            )?,
-                            *value,
-                        ));
                     }
                     Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
                         rewritten.push(rewrite_integer_memory_loadable_with_walker(
@@ -4907,20 +4894,6 @@ fn queue_integer_quantifier_rewrite<'a>(
         shadowed: child_shadowed,
     });
     Ok(())
-}
-
-fn substitute_integer_pure_condition_with_walker(
-    condition: &OldConditionTerm,
-    walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
-) -> Result<OldConditionTerm, IntegerPureSubstitutionError> {
-    let Proposition::ConditionIs(result, _) = rewrite_integer_atomic_proposition_with_walker(
-        &Proposition::condition_is(condition.clone(), true),
-        walker,
-    )?
-    else {
-        unreachable!()
-    };
-    Ok(result.old_form().clone())
 }
 
 fn rewrite_integer_memory_loadable_with_walker(
