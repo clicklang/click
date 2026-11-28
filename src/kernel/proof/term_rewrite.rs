@@ -642,11 +642,22 @@ fn collect_shared_condition_carriers<'a>(
             KernelTermNode::BoolIf { arguments } => pending.extend(arguments.iter().rev()),
             KernelTermNode::BoolEqual { arguments } => pending.extend(arguments.iter().rev()),
             KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => {}
-            KernelTermNode::IntegerCompare { arguments, .. }
-                if arguments.iter().all(KernelTerm::is_mathematical_integer) =>
-            {
+            KernelTermNode::IntegerCompare { arguments, .. } => {
+                let mut seen = BTreeSet::new();
                 for argument in arguments {
-                    collect_mathematical_integer_carriers(argument, variables);
+                    if argument.is_mathematical_integer() {
+                        collect_mathematical_integer_carriers(argument, variables);
+                    } else {
+                        // Integer export returns the shared handle, including the
+                        // producer's handle for an explicitly written argument.
+                        let integer = KernelTermExport::default()
+                            .integer(argument)
+                            .expect("Integer comparison operand");
+                        collect_integer_shared_carriers(&integer, variables, &mut seen);
+                    }
+                    if variables.exhausted() {
+                        return;
+                    }
                 }
             }
             KernelTermNode::BoolCompare { arguments, .. }
@@ -879,7 +890,19 @@ fn collect_integer_shared_carriers(
     variables: &mut CarrierVariables,
     seen: &mut BTreeSet<u64>,
 ) {
-    if seen.insert(term.id()) {
+    if let Some(root) = term.mathematical_root() {
+        return collect_mathematical_integer_carriers(root, variables);
+    }
+    if !seen.insert(term.id()) {
+        return;
+    }
+    if term.root().is_integer_observation_arithmetic()
+        && let Some(machine) = term.root().exact_shared_integer_observation()
+    {
+        if variables.visit() {
+            collect_machine_carriers(&machine, variables);
+        }
+    } else {
         collect_integer_carriers(term, variables, seen);
     }
 }

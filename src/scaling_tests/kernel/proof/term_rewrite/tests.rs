@@ -1627,6 +1627,55 @@ fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() 
 }
 
 #[test]
+fn mixed_integer_comparisons_collect_shared_arithmetic_and_the_exact_read() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let integer = Variable(982822);
+        let base = Variable(982823);
+        let mut sum = KernelTerm::variable(KernelType::Integer, integer);
+        for _ in 0..depth {
+            sum = KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![sum.clone(), sum])
+                .unwrap();
+        }
+        let address = Address::symbolic(base);
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        let format = MachineIntegerType::UInt32;
+        let read = KernelTerm::shared_scalar_read_descriptor(
+            format,
+            &point,
+            address.shared(),
+            LoadKind::UInt32,
+        );
+        let observed = SharedIntegerTerm::from(IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(format, read).unwrap(),
+        ));
+        let condition = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::LessThan,
+            [observed.root().clone(), sum.clone()],
+        )
+        .unwrap();
+        let fact = Proposition::condition_is(
+            StoredConditionTerm::from_root(condition.clone()).unwrap(),
+            true,
+        );
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect_read_terms();
+        collector.collect(&fact);
+        assert!(!collector.exhausted());
+        assert_eq!(collector.carriers.integer, BTreeSet::from([integer]));
+        assert_eq!(collector.carriers.program_values, BTreeSet::from([base]));
+        assert_eq!(
+            collector.take_read_terms().collect::<Vec<_>>(),
+            vec![OldMachineTerm::read_named(point, address, LoadKind::UInt32)]
+        );
+        assert!(collector.carriers.nodes <= depth + 24);
+        for root in [&sum, observed.root(), &condition] {
+            assert!(!root.has_cached_native_argument());
+        }
+    }
+}
+
+#[test]
 fn complete_pointer_equality_collects_shared_slice_count_in_linear_work() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
