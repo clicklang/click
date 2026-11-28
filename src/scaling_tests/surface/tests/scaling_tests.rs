@@ -5065,8 +5065,12 @@ fn counter_call_chain(call_count: usize) -> (String, String) {
     click_source.push_str(&format!(
         "void drive(struct range* r) {{\n    owns *r;\n    requires r->end == 0;\n    ensures r->end == {call_count};\n}} by {{\n"
     ));
-    for _ in 0..call_count {
-        click_source.push_str("    step();\n");
+    for previous in 0..call_count {
+        // Check the call against the end value established by the preceding
+        // ensure (or the caller's entry fact for the first call).
+        click_source.push_str(&format!(
+            "    step() {{\n        requires r->end < 1000000 by close() using {{ r->end == {previous}; }};\n        requires aligned(r, 4) by close();\n    }}\n"
+        ));
     }
     click_source.push_str("    step_until(function.exit);\n    close();\n}\n");
     (c_source, click_source)
