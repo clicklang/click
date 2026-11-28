@@ -121,10 +121,8 @@ impl CheckedEqualityRewrite {
         if matches!(
             &self.proposition,
             Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-        ) && matches!(
-            proposed.old_condition(),
-            Some((OldConditionTerm::Constant(true), true))
-        ) && super::fact_reasoning::computes_leaf(&self.proposition)
+        ) && proposed.literal_condition() == Some((true, true))
+            && super::fact_reasoning::computes_leaf(&self.proposition)
         {
             self.proposition = proposed.clone();
             return true;
@@ -701,8 +699,7 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
 /// distinguishes. The step is then vacuous rather than wrong, so it must not
 /// be reported as a missing occurrence or an unsupported equality shape.
 fn equality_is_vacuous(equality: &Proposition) -> bool {
-    if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _))))
-    {
+    if equality.literal_condition() == Some((true, true)) {
         return true;
     }
     match equality {

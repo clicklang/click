@@ -3171,10 +3171,10 @@ fn synthesize_surface_atomic_proposition(
             defined
         });
     }
-    if let OldConditionTerm::Constant(condition) = condition.old_form() {
+    if let Some(condition) = condition.operand_view().constant() {
         // The `bool` literal lowers to exactly this constant condition. A
         // closed comparison such as `0 == 1` does not: lowering retains it.
-        let literal = SyntaxProposition::Value(crate::surface::bool_literal(*condition));
+        let literal = SyntaxProposition::Value(crate::surface::bool_literal(condition));
         return Some(if *value {
             literal
         } else {
