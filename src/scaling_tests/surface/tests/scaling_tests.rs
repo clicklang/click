@@ -3469,12 +3469,14 @@ fn assert_outcome_operations_do_not_reimport_ambient_facts(
             .collect::<String>();
         let mut baseline = None;
         for operations in [0_usize, 1, 4, 16] {
-            let body = (0..operations)
+            // Include one operation in every sample. The first retained
+            // operation starts the outcome proof, so use the next operation
+            // to measure the cost of extending that proof.
+            let body = (0..=operations)
                 .map(|i| {
                     format!(
-                        "have {} == {} by {{ close(); }} unfold(marker(x)); fold(marker(x));",
-                        1000 + i,
-                        1000 + i,
+                        "have to_integer(x) < {} by {{ close(); }} unfold(marker(x)); fold(marker(x));",
+                        2147483648_u64 + i as u64,
                     )
                 })
                 .collect::<String>();
