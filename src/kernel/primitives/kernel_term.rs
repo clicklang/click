@@ -564,7 +564,7 @@ struct NodeKeyData {
     machine_conditionals: bool,
     machine_folds: bool,
     machine_matches: bool,
-    machine_constant: Option<KernelMachineLiteral>,
+    machine_constant: OnceLock<Option<KernelMachineLiteral>>,
 }
 #[derive(Clone)]
 struct NodeKey(Arc<NodeKeyData>);
@@ -891,7 +891,14 @@ impl NodeKey {
                 .all(KernelTerm::is_literal_integer_arithmetic),
             _ => false,
         };
-        let machine_constant = machine::constant_reading(&node);
+        // Generic arguments can own a native tree. Read it only when this
+        // descriptor is actually used as a machine operand.
+        let machine_constant = match &node {
+            KernelTermNode::ImportedScalar(_)
+            | KernelTermNode::ObservedArgument(_)
+            | KernelTermNode::CallArgument(_) => OnceLock::new(),
+            _ => OnceLock::from(machine::constant_reading(&node)),
+        };
         Self(Arc::new(NodeKeyData {
             machine_constant,
             mathematical_integer,
@@ -1140,7 +1147,12 @@ impl KernelTerm {
     }
 
     pub(crate) fn machine_constant_reading(&self) -> Option<&KernelMachineLiteral> {
-        self.0.key.0.machine_constant.as_ref()
+        self.0
+            .key
+            .0
+            .machine_constant
+            .get_or_init(|| machine::native_constant_reading(self.written_machine_input()?))
+            .as_ref()
     }
 
     pub(crate) fn has_opaque_observation_boundary(&self) -> bool {
@@ -2194,6 +2206,58 @@ mod tests {
                 Some(true)
             );
             assert!(!comparison.has_cached_native_argument());
+        }
+    }
+
+    #[test]
+    fn wide_comparison_reads_wrapped_operands_with_their_written_literal_rules() {
+        use MachineIntegerType::{Int32, Int64};
+        let literal = OldMachineTerm::constant(2);
+        let computed = OldMachineTerm::Binary {
+            format: Int32,
+            op: MachineBinaryOp::Add,
+            left: Box::new(OldMachineTerm::constant(1)),
+            right: Box::new(OldMachineTerm::constant(1)),
+        };
+        let wide_sum = OldMachineTerm::Binary {
+            format: Int64,
+            op: MachineBinaryOp::Add,
+            left: Box::new(OldMachineTerm::int64_constant(1)),
+            right: Box::new(OldMachineTerm::int64_constant(1)),
+        };
+        let wide =
+            |n| KernelTermImport::default().machine(Int64, &OldMachineTerm::int64_constant(n));
+        for (ty, input, shifted, widened) in [
+            (Int32, literal, Some(true), Some(true)),
+            (Int32, computed, None, None),
+            (Int64, wide_sum, None, Some(true)),
+        ] {
+            let wrapped = KernelTerm::imported_scalar(ty.program_type(), &input);
+            let shift = KernelTerm::machine_binary_shared(
+                Int64,
+                MachineBinaryOp::ShiftLeft,
+                [wide(1), wrapped.clone()],
+            );
+            let cast = KernelTerm::machine_cast_shared(
+                MachineCastSpelling::Int64From32,
+                Int32,
+                Int64,
+                wrapped,
+            );
+            for (term, rhs, expected) in [(shift, 4, shifted), (cast, 2, widened)] {
+                let root = KernelTerm::boolean_comparison_raw(
+                    Int64,
+                    CompareRelation::Equal,
+                    [term, wide(rhs)],
+                );
+                assert_eq!(
+                    crate::kernel::machine_integer::comparison::closed_condition_value(
+                        BooleanOperandView::Shared(&root)
+                    ),
+                    expected
+                );
+                assert!(!root.has_cached_native_argument());
+            }
         }
     }
 

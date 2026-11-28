@@ -21,10 +21,7 @@ impl KernelTerm {
 
     /// Wide shifts accept a literal count at either word width.
     pub(super) fn literal_shift_count(&self) -> Option<u32> {
-        let KernelTermNode::MachineLiteral(value) = self.node() else {
-            return None;
-        };
-        value.shift_count()
+        self.machine_literal()?.shift_count()
     }
 
     /// Read only literal roots, including a selected native compatibility input.
@@ -32,7 +29,9 @@ impl KernelTerm {
         match self.node() {
             KernelTermNode::MachineLiteral(value) => Some(value.clone()),
             _ => {
-                let OldMachineTerm::Constant { format, bits } = self.retained_machine_input()?
+                let OldMachineTerm::Constant { format, bits } = self
+                    .retained_machine_input()
+                    .or_else(|| self.written_machine_input())?
                 else {
                     return None;
                 };
@@ -476,6 +475,14 @@ impl KernelMachineLiteral {
     }
 }
 
+pub(super) fn native_constant_reading(operand: &OldMachineTerm) -> Option<KernelMachineLiteral> {
+    operand
+        .uint64_as_const()
+        .map(KernelMachineLiteral::UInt64)
+        .or_else(|| operand.int64_as_const().map(KernelMachineLiteral::Int64))
+        .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32))
+}
+
 /// Cached checking metadata, never a replacement for the structural node.
 /// Apply the existing constant readers to one operator over literal children;
 /// signed overflow and undefined division/shift readings remain absent.
@@ -494,26 +501,18 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
             let KernelTermNode::BoolLiteral(value) = arguments[0].node() else {
                 return None;
             };
-            arguments[if *value { 1 } else { 2 }]
-                .machine_constant_reading()
-                .and_then(|value| match value {
-                    KernelMachineLiteral::UInt32(bits) => Some(KernelMachineLiteral::Word32(*bits)),
-                    KernelMachineLiteral::Word32(_)
-                    | KernelMachineLiteral::Int64(_)
-                    | KernelMachineLiteral::UInt64(_) => Some(value.clone()),
-                    _ => None,
-                })
+            let value = arguments[if *value { 1 } else { 2 }].machine_constant_reading()?;
+            value
+                .word32()
+                .map(KernelMachineLiteral::Word32)
+                .or_else(|| value.unsigned64().map(KernelMachineLiteral::UInt64))
+                .or_else(|| value.signed64().map(KernelMachineLiteral::Int64))
         }
         KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
             // native `If`, instead of exporting the enclosing DAG to read it.
-            let operand = retained_machine_input(node)?;
-            operand
-                .uint64_as_const()
-                .map(KernelMachineLiteral::UInt64)
-                .or_else(|| operand.int64_as_const().map(KernelMachineLiteral::Int64))
-                .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32))
+            native_constant_reading(retained_machine_input(node)?)
         }
         KernelTermNode::MachineBinary {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
@@ -575,18 +574,15 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
             })
         }
         KernelTermNode::MachineCast {
-            encoding,
-            destination,
-            operand,
-            ..
+            encoding, operand, ..
         } => {
             use MachineCastSpelling as Cast;
             let reading = operand.machine_constant_reading()?;
             // Extensions accept narrow constants only at a literal root.
             // Computed operands must already have a readable wide value.
-            let literal = matches!(operand.node(), KernelTermNode::MachineLiteral(_));
-            let word = if literal { reading.word32() } else { None };
-            let result = match encoding {
+            let literal = operand.machine_literal();
+            let word = literal.as_ref().and_then(KernelMachineLiteral::word32);
+            Some(match encoding {
                 Cast::Generic | Cast::UInt32From64 => return None,
                 Cast::Int64From32 | Cast::Int64FromUInt32 => {
                     let value = match word {
@@ -607,19 +603,14 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     KernelMachineLiteral::UInt64(bits)
                 }
                 Cast::UInt64FromInt64 => {
-                    let bits = if literal {
+                    let bits = if literal.is_some() {
                         reading.signed64()? as u64
                     } else {
                         reading.unsigned64()?
                     };
                     KernelMachineLiteral::UInt64(bits)
                 }
-            };
-            match destination {
-                MachineIntegerType::Int64 => result.signed64().map(KernelMachineLiteral::Int64),
-                MachineIntegerType::UInt64 => result.unsigned64().map(KernelMachineLiteral::UInt64),
-                _ => None,
-            }
+            })
         }
         _ => None,
     }
