@@ -106,25 +106,47 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
         substitute_bitvector_variable(term, self.from, self.to)
     }
     fn stored_word(&self, word: &StoredMachineTerm) -> StoredMachineTerm {
-        if let Some(root) = word.root() {
-            match root.node() {
-                KernelTermNode::MachineLiteral(_) | KernelTermNode::ThreadHandle(_) => {
-                    return word.clone();
-                }
-                KernelTermNode::Variable(var) => {
-                    let source = OldMachineTerm::Variable(*var);
-                    let next = self.bitvector(&source);
-                    if next == source {
-                        return word.clone();
-                    }
-                    let format = MachineIntegerType::from_program_type(word.value().program_type())
-                        .expect("stored word format");
-                    return StoredMachineTerm::new(format, next);
-                }
-                _ => {}
+        let Some(root) = word.root() else {
+            return word.map_native(|term| self.bitvector(term));
+        };
+        let format = MachineIntegerType::from_program_type(word.value().program_type())
+            .expect("stored word format");
+        let rewritten = match root.node() {
+            KernelTermNode::MachineLiteral(_) | KernelTermNode::ThreadHandle(_) => {
+                return word.clone();
             }
-        }
-        word.map_native(|term| self.bitvector(term))
+            KernelTermNode::Variable(var) => {
+                let source = OldMachineTerm::Variable(*var);
+                let next = self.bitvector(&source);
+                return if next == source {
+                    word.clone()
+                } else {
+                    StoredMachineTerm::new(format, next)
+                };
+            }
+            KernelTermNode::IntegerToMachine {
+                destination,
+                operand,
+            } => KernelTerm::integer_to_machine(
+                *destination,
+                self.stored_integer_root(operand.clone()),
+            )
+            .expect("mathematical integer operand"),
+            // Renaming preserves written comparisons, including reflexive ones.
+            KernelTermNode::BoolCast {
+                destination,
+                operand,
+            } if !crate::kernel::proof::term_rewrite::renaming()
+                && let Some(condition) = self.condition_root(operand) =>
+            {
+                KernelTerm::boolean_cast(*destination, condition)
+            }
+            _ => return word.map_native(|term| self.bitvector(term)),
+        };
+        StoredMachineTerm::from_value(ExecutionValue::Shared(
+            rewritten.with_machine_observation_type(format),
+        ))
+        .expect("stored machine conversion")
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         substitute_bitvector_variable_in_integer(term, self.from, self.to)
@@ -8828,6 +8850,55 @@ mod pointee_const_return_tests {
 #[cfg(test)]
 mod integer_to_machine_substitution_tests {
     use super::*;
+
+    #[test]
+    fn stored_conversion_substitution_preserves_destination_and_observation_widths() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(709);
+        let destination = MachineIntegerType::UInt8;
+        let observation = MachineIntegerType::Int64;
+        let integer = OldMachineTerm::IntegerToMachine {
+            value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                OldMachineTerm::Variable(from),
+            ))
+            .into(),
+            destination,
+        };
+        let boolean = OldMachineTerm::BoolCast {
+            to: destination,
+            value: Box::new(OldConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(OldMachineTerm::Variable(from)),
+                right: Box::new(OldMachineTerm::constant(7)),
+            }),
+        };
+        for native in [integer, boolean] {
+            let root = KernelTermImport::default().machine(observation, &native);
+            let term = Term::Bitvector32(
+                StoredMachineTerm::from_value(ExecutionValue::Shared(root.clone())).unwrap(),
+            );
+            for to in [
+                OldMachineTerm::Variable(Variable(710)),
+                OldMachineTerm::constant(7),
+            ] {
+                let expected = substitute_bitvector_variable(&native, from, &to);
+                let Term::Bitvector32(result) =
+                    substitute_bitvector_variable_in_term(&term, from, &to)
+                else {
+                    unreachable!()
+                };
+                let shared = result.root().expect("retained result");
+                assert_eq!(shared.ty(), root.ty());
+                assert_eq!(
+                    crate::kernel::KernelTermExport::machine(shared).unwrap(),
+                    expected
+                );
+                assert!(!root.has_cached_native_argument());
+            }
+        }
+    }
 
     #[test]
     fn integer_to_machine_substitution_descends_math_payload_and_keeps_destination() {
