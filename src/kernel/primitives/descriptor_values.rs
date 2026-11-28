@@ -488,6 +488,23 @@ impl StoredConditionTerm {
         }
     }
 
+    pub(crate) fn pointer_equal(left: &Pointer, right: &Pointer) -> Self {
+        let root = match left.equality_kind(right) {
+            PointerEqualityKind::Complete => {
+                KernelTerm::pointer_equal_raw([left.shared().clone(), right.shared().clone()])
+            }
+            PointerEqualityKind::Address => {
+                return Self::address_equal(left.address(), right.address());
+            }
+            PointerEqualityKind::IntegerAddress => KernelTermImport::for_exact_field_inputs()
+                .integer_address_equality(
+                    MachineIntegerType::Int64,
+                    [left.address().shared(), right.address().shared()],
+                ),
+        };
+        Self(StoredCondition::Shared(root))
+    }
+
     /// Construct an address comparison from written operands, preserving the
     /// producer's block payloads when the comparison stays symbolic.
     pub(crate) fn address_equal(left: &Address, right: &Address) -> Self {

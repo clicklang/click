@@ -3065,8 +3065,7 @@ impl Pointer {
     }
 
     pub(crate) fn is_null(&self) -> bool {
-        self.address().base == AddressBase::Concrete("null".to_string())
-            && self.address().offset == AddressOffset::constant(0)
+        self.address().shared().is_null()
     }
 }
 

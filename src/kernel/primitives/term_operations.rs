@@ -4587,26 +4587,8 @@ pub(crate) enum PointerEqualityKind {
 
 impl Pointer {
     pub(crate) fn equality_kind(&self, other: &Self) -> PointerEqualityKind {
-        // A wide pointer comparison includes its element count, even against null.
-        if self.is_wide() || other.is_wide() {
-            return PointerEqualityKind::Complete;
-        }
-        if self.is_null() || other.is_null() {
-            return PointerEqualityKind::Address;
-        }
-        if self.same_provenance_as(other)
-            || (matches!(self.program_type(), ProgramType::FunctionPointer(_))
-                && matches!(other.program_type(), ProgramType::FunctionPointer(_)))
-        {
-            // Once the domain agrees, use the original word of an integer cast.
-            if self.address().integer_address_bits().is_some()
-                || other.address().integer_address_bits().is_some()
-            {
-                return PointerEqualityKind::IntegerAddress;
-            }
-            return PointerEqualityKind::Address;
-        }
-        PointerEqualityKind::Complete
+        self.shared()
+            .equality_kind_with(other.shared(), || self.same_provenance_as(other))
     }
 
     /// Comparing offsets decides complete pointer equality only when the base,
