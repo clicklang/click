@@ -4470,9 +4470,32 @@ resource holder_state(h: struct holder*) {
         rewrite(h->start, s);
         close();
     }
-    step_until(function.exit);
+    step_until(assignment(b, 0).entry);
+    step();
+    mark box_loaded;
+    have b == h->box by close();
+    have b->len == l by {
+        rewrite(b, h->box);
+        close();
+    }
+    have separate(memory(b->len), memory(b->data[h->start + i])) by close();
+    have separate(memory(b->data), memory(b->data[h->start + i])) by close();
+    have separate(memory(*b), memory(b->data[0..b->len])) by {
+        rewrite(b, h->box);
+        close();
+    }
+    step();
+    have b->len == l by close();
+    have b->data == at(box_loaded, b->data) by close();
+    have b->len == at(box_loaded, b->len) by close();
+    have separate(memory(*b), memory(b->data[0..b->len])) by {
+        rewrite(b->data, at(box_loaded, b->data));
+        rewrite(b->len, at(box_loaded, b->len));
+        close();
+    }
+    let st = fold(box_state(b), { len: l });
     let r = fold(holder_state(h), { start: s });
-    let st = fold(box_state(h->box), { len: l });
+    step_until(function.exit);
     close();
 }
 ";
@@ -4504,12 +4527,31 @@ struct holder {
     ensures st.len == old(st.len);
 }} by {{
     let {{ len: l }} = unfold(st);
+    {steps}
     step_until(function.exit);
     let st = fold(box_state(b), {{ len: l }});
     close();
 }}
 
-"
+",
+                    steps = (0..stores)
+                        .map(|index| format!(
+                            r#"
+    mark store_{index};
+    have separate(memory(b->len), memory(b->data[{index}])) by close();
+    have separate(memory(b->data), memory(b->data[{index}])) by close();
+    step();
+    have b->len == l by close();
+    have b->data == at(store_{index}, b->data) by close();
+    have b->len == at(store_{index}, b->len) by close();
+    have separate(memory(*b), memory(b->data[0..b->len])) by {{
+        rewrite(b->data, at(store_{index}, b->data));
+        rewrite(b->len, at(store_{index}, b->len));
+        close();
+    }}
+"#
+                        ))
+                        .collect::<String>()
                 ),
             ),
         };
