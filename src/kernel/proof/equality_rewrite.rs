@@ -208,20 +208,8 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         if !truth {
             return None;
         }
-        let view = condition.operand_view();
-        let reversed = if let Some([left, right]) = view.pointer_addresses() {
-            Some(KernelTerm::address_equal_raw([right, left]))
-        } else if let Some([left, right]) = view.pointer_values() {
-            Some(KernelTerm::pointer_equal_raw([right, left]))
-        } else {
-            view.pointer_offsets()
-                .map(|[left, right]| KernelTerm::address_offset_equal_raw([right, left]))
-        };
-        if let Some(root) = reversed {
-            return Some(Proposition::condition_is(
-                StoredConditionTerm::from_root(root).expect("pointer comparison is Boolean"),
-                true,
-            ));
+        if let Some(pair) = condition.pointer_equality() {
+            return Some(Proposition::condition_is(pair.mirrored(), true));
         }
     }
     if let Some((OldConditionTerm::BoolEqual(a, b), true)) = (equality).old_condition() {

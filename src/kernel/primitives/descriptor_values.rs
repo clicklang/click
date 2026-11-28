@@ -351,7 +351,45 @@ impl From<OldConditionTerm> for StoredConditionTerm {
         Self(StoredCondition::Shared(root))
     }
 }
+/// Exact operands of a stored pointer-domain equality, in written order.
+pub(crate) enum PointerEquality<'a> {
+    Address(&'a [SharedAddress; 2]),
+    Offset(&'a [SharedAddressOffset; 2]),
+    Pointer(&'a [SharedPointer; 2]),
+}
+
+impl PointerEquality<'_> {
+    pub(crate) fn is_reflexive(&self) -> bool {
+        match self {
+            Self::Address([a, b]) => a.syntax_equal(b),
+            Self::Offset([a, b]) => a.syntax_equal(b),
+            Self::Pointer([a, b]) => a.condition_syntax_equal(b),
+        }
+    }
+
+    pub(crate) fn mirrored(&self) -> StoredConditionTerm {
+        let root = match self {
+            Self::Address([a, b]) => KernelTerm::address_equal_raw([b.clone(), a.clone()]),
+            Self::Offset([a, b]) => KernelTerm::address_offset_equal_raw([b.clone(), a.clone()]),
+            Self::Pointer([a, b]) => KernelTerm::pointer_equal_raw([b.clone(), a.clone()]),
+        };
+        StoredConditionTerm(StoredCondition::Shared(root))
+    }
+}
 impl StoredConditionTerm {
+    pub(crate) fn pointer_equality(&self) -> Option<PointerEquality<'_>> {
+        match self.root()?.node() {
+            KernelTermNode::AddressEqual { arguments, .. } => {
+                Some(PointerEquality::Address(arguments))
+            }
+            KernelTermNode::AddressOffsetEqual { arguments } => {
+                Some(PointerEquality::Offset(arguments))
+            }
+            KernelTermNode::PointerEqual(pair) => Some(PointerEquality::Pointer(pair.arguments())),
+            _ => None,
+        }
+    }
+
     pub(crate) fn constant(value: bool) -> Self {
         Self(StoredCondition::Shared(KernelTerm::boolean_literal(value)))
     }
