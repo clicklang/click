@@ -25,6 +25,58 @@ fn graph() -> EqualityGraph {
 }
 
 #[test]
+fn stored_pointer_words_supply_order_guards_and_graph_operands() {
+    let _session = VerificationSession::enter();
+    let pointer = Pointer::new(
+        Address::symbolic(Variable(99834)),
+        ProgramType::Int32Pointer,
+    );
+    let [a, b] = [99835, 99836].map(|id| OldMachineTerm::Variable(Variable(id)));
+    let source = KernelTerm::pointer_equal_raw([&a, &b].map(|word| {
+        pointer
+            .clone()
+            .with_address(Address::from_integer_address(word.clone()))
+            .into_shared()
+    }));
+    let goal = Proposition::condition_is(
+        StoredConditionTerm::from_root(source.clone()).unwrap(),
+        false,
+    );
+    assert_eq!(
+        TermRewrite::conditional_guards(&goal),
+        [
+            OldConditionTerm::uint64_less_equal(a.clone(), b.clone()),
+            OldConditionTerm::uint64_less_than(a.clone(), b.clone()),
+        ]
+    );
+    let conditions = HashMap::new();
+    let mut graph = EqualityGraph::default();
+    let Proposition::ConditionIs(symbolic, false) =
+        TermRewrite::for_conditions_with_graph(&conditions, &graph).proposition(&goal)
+    else {
+        panic!("expected the original truth polarity");
+    };
+    let root = symbolic.root().expect("stored word equality");
+    assert!(matches!(
+        root.node(),
+        KernelTermNode::BoolCompare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            ..
+        }
+    ));
+    assert!(!root.has_cached_native_argument());
+    graph.add_uint64_equality(&a, &b);
+    assert_eq!(
+        TermRewrite::for_conditions_with_graph(&conditions, &graph)
+            .proposition(&goal)
+            .literal_condition(),
+        Some((true, false))
+    );
+    assert!(!source.has_cached_native_argument());
+}
+
+#[test]
 fn graph_condition_reduction_keeps_unknown_equalities_and_branches_isolated() {
     let empty = HashMap::new();
     let parent = EqualityGraph::default();

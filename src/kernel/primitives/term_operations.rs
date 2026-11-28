@@ -3707,15 +3707,11 @@ impl OldConditionTerm {
             PointerEqualityKind::Address => {
                 Self::address_equal(left.address().clone(), right.address().clone())
             }
-            PointerEqualityKind::IntegerAddress => Self::integer_address_equality(&left, &right),
+            PointerEqualityKind::IntegerAddress => Self::uint64_equal(
+                OldMachineTerm::integer_address(left.into_pointer()),
+                OldMachineTerm::integer_address(right.into_pointer()),
+            ),
         }
-    }
-
-    pub(crate) fn integer_address_equality(left: &Pointer, right: &Pointer) -> Self {
-        Self::uint64_equal(
-            OldMachineTerm::integer_address(left.address().clone()),
-            OldMachineTerm::integer_address(right.address().clone()),
-        )
     }
 
     pub fn address_equal(left: Address, right: Address) -> Self {
