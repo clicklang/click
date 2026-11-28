@@ -195,7 +195,10 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             alias_address.clone(),
             ProgramValue::typed_pointer(replacement.clone(), ProgramType::Int32Pointer),
         );
-        assert_eq!(read(&later, &alias_address), replacement);
+        // A logical read can keep its recorded state even when its cell
+        // names a known stored pointer.
+        let later_read = read(&later, &alias_address);
+        assert!(context.pointers_known_equal(&later_read, &replacement));
         assert!(!context.pointers_known_equal(actual, &replacement));
         // A read created after the store must rewrite to the new pointer,
         // while the previously rewritten read above retains its state.
@@ -204,16 +207,17 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             true,
         );
         let stored_rewrite = facts.check_equality_rewrite(&stored_goal, &cited).unwrap();
-        assert_eq!(
-            stored_rewrite.proposition(),
-            &Proposition::condition_is(
-                OldConditionTerm::address_equal(replacement.clone(), replacement),
-                true,
-            )
-        );
-        // An unregistered scaled integer is still pointer arithmetic.
+        let Some((OldConditionTerm::AddressEqual(actual, rhs), true)) =
+            stored_rewrite.proposition().old_condition()
+        else {
+            panic!("the comparison keeps the typed read from the store's state");
+        };
+        assert_eq!(actual.as_ref(), &later_read);
+        assert_eq!(rhs.as_ref(), &replacement);
+        // Scaling an ordinary integer forms an offset without naming a read.
         let index = OldMachineTerm::Variable(Variable(211_005));
-        let indexed = Address::loaded(&index.clone()).unwrap();
+        assert!(Address::loaded(&index).is_none());
+        let indexed = owner.offset_by_int32_elements(index.clone());
         let arithmetic_goal =
             Proposition::condition_is(OldConditionTerm::address_equal(indexed, leaf.clone()), true);
         let arithmetic = facts
