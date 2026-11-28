@@ -1491,6 +1491,47 @@ fn machine_conditional_carriers_visit_each_shared_guard_node_once() {
 }
 
 #[test]
+fn stored_address_comparisons_collect_shared_offset_carriers_in_linear_work() {
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let displacement = Variable(982806);
+        let mut offset = KernelAddressOffset::Variable(displacement)
+            .into_shared()
+            .unwrap();
+        for _ in 0..depth {
+            offset = KernelAddressOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        let base = Variable(982807);
+        let address = SharedAddress::new(Address::symbolic(base).shared().block(), offset.clone());
+        let null = Address::null();
+        for (root, expected) in [
+            (
+                KernelTerm::address_equal_raw([address, null.shared().clone()]),
+                BTreeSet::from([displacement, base]),
+            ),
+            (
+                KernelTerm::address_offset_equal_raw([offset, null.shared().offset().clone()]),
+                BTreeSet::from([displacement]),
+            ),
+        ] {
+            let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+            let mut variables = CarrierVariables::for_rewrite(true);
+            collect_stored_condition_carriers(&condition, &mut variables);
+            assert_eq!(variables.program_values, expected);
+            assert!(!variables.exhausted());
+            assert!(
+                variables.nodes <= depth + 6,
+                "depth {depth}, visits {}",
+                variables.nodes
+            );
+            assert!(!root.has_cached_native_argument());
+        }
+    }
+}
+
+#[test]
 fn shared_boolean_carrier_collection_visits_each_connective_once() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();

@@ -640,6 +640,29 @@ fn collect_shared_condition_carriers<'a>(
                     collect_mathematical_integer_carriers(argument, variables);
                 }
             }
+            // Pointer occurrence queries need the ordered written operands.
+            KernelTermNode::AddressEqual { arguments, .. } if variables.pointer_terms.is_none() => {
+                for address in arguments {
+                    if !variables.visit() {
+                        return;
+                    }
+                    collect_address_base_carriers(address.atom(), variables);
+                    if variables.exhausted() {
+                        return;
+                    }
+                    collect_retained_offset_carriers(address.offset(), variables);
+                }
+            }
+            KernelTermNode::AddressOffsetEqual { arguments }
+                if variables.pointer_terms.is_none() =>
+            {
+                for offset in arguments {
+                    collect_retained_offset_carriers(offset, variables);
+                    if variables.exhausted() {
+                        return;
+                    }
+                }
+            }
             // Preserve the caller’s reading of an opaque root, including call arguments.
             _ if term == root => collect_condition_node_carriers(&native_root(), variables),
             _ => collect_condition_node_carriers(
