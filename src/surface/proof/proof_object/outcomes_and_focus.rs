@@ -140,8 +140,6 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn apply_outcome_contract_resources(
         &self,
-        pre_state: &ExecutionState,
-        _function: &ProgramFunction,
     ) -> Result<Self, ClickError> {
         let ProofContext::Execution(_) = self.context.as_ref() else {
             return Err(self.step_error("contract resource effects require an execution proof"));
@@ -168,11 +166,7 @@ impl<'a> Proof<'a> {
             .ok_or_else(|| {
                 self.step_error("contract closing has not generated its resource obligations")
             })?
-            .apply_resource_transition(
-                pre_state,
-                self.focused_outcome_state()?,
-                self.facts().assumptions(),
-            )
+            .apply_resource_transition(self.focused_outcome_state()?, self.facts().assumptions())
             .map_err(|message| {
                 self.step_error(format!(
                     "could not apply checked contract resource effect: {message}"

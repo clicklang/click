@@ -3242,7 +3242,7 @@ impl<'a> Proof<'a> {
         let Proposition::ConditionIs(condition, expected) = self.goal()? else {
             return None;
         };
-        (crate::surface::checking::normalize_condition_without_assumptions(condition.old_form())
+        (crate::surface::checking::normalize_condition_without_assumptions(condition)
             == Some(!*expected))
         .then(|| {
             "it is false at this point: the values its reads resolve to here refute it, so no \
@@ -4080,19 +4080,15 @@ fn asserted_condition_proposition(condition: &ProgramExpression) -> SyntaxPropos
 fn literal_requirement_spelling(
     requirement: &UnresolvedRequirement,
 ) -> Option<RequirementSpelling> {
-    let Some((OldConditionTerm::Constant(value), polarity)) =
-        requirement.proposition.old_condition()
-    else {
-        return None;
-    };
+    let (value, polarity) = requirement.proposition.literal_condition()?;
     if requirement.assertion_condition.is_some() {
         return None;
     }
     // The `bool` literal lowers to exactly this constant condition; a closed
     // comparison such as `0 == 1` is retained by lowering instead.
-    let literal = SyntaxProposition::Value(crate::surface::bool_literal(*value));
+    let literal = SyntaxProposition::Value(crate::surface::bool_literal(value));
     Some(RequirementSpelling {
-        surface: if *polarity {
+        surface: if polarity {
             literal
         } else {
             SyntaxProposition::Not(Box::new(literal))
@@ -4277,12 +4273,12 @@ pub(super) fn propositions_match_after_canonical_loads(
             // A constant condition and a closed literal comparison, which
             // lowering retains as written, match by the truth they state.
             (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
-                if closed_condition_value(left.old_form()).is_some()
-                    && closed_condition_value(right.old_form()).is_some() =>
+                if let (Some(left_value), Some(right_value)) = (
+                    closed_condition_value(left.operand_view()),
+                    closed_condition_value(right.operand_view()),
+                ) =>
             {
-                if (closed_condition_value(left.old_form()) == Some(*expected))
-                    != (closed_condition_value(right.old_form()) == Some(*other))
-                {
+                if (left_value == *expected) != (right_value == *other) {
                     return false;
                 }
             }

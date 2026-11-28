@@ -5742,12 +5742,7 @@ mod shift_overflow_refusal_tests {
 /// condition decision answers the same comparisons the same way.
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
-        condition_source_0 @ Proposition::ConditionIs(_, value)
-            if let Some((OldConditionTerm::Constant(constant), _)) =
-                condition_source_0.old_condition() =>
-        {
-            constant == value
-        }
+        p if let Some((actual, expected)) = p.literal_condition() => actual == expected,
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((
                 condition @ OldConditionTerm::Compare {
@@ -5968,7 +5963,7 @@ fn listed_premise_holds_with(
         // symbolic operands from cached shape flags and uses only the named
         // expression's shared DAG, never the available-fact collection.
         || matches!(premise, Proposition::ConditionIs(condition, expected)
-            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition.old_form())
+            if crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition.operand_view())
                 == Some(*expected))
         || holds_by_format_range(premise)
         || available(premise)

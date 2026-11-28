@@ -268,6 +268,28 @@ fn mixed_unfold_outputs_survive_expansion_replay() {
 }
 
 #[test]
+fn with_started_at_return_replays_in_its_written_scope() {
+    let (source, program) = mdtest_sources("mdtests/with_starts_at_return.md");
+    let program = crate::cli::source_refs(&program);
+    let crossing_return = source.replace(
+        "    step_until(function.exit);\n    with(r) {",
+        "    with(r) {\n        step_until(function.exit);",
+    );
+    for source in [source, crossing_return] {
+        let expanded = expand_function_proof_source(&source, &program, "read_tag")
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains("with(r) {"), "{expanded}");
+        assert!(expanded.contains("with(r.child) {"), "{expanded}");
+        assert!(
+            expanded.contains("have r.child.item.tag == old(r.child.item.tag)"),
+            "{expanded}"
+        );
+        without_implicit_solve(|| verify_c_sources(&expanded, &program))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}
+
+#[test]
 fn returned_unfold_witnesses_replay_in_their_written_scope() {
     let source = r#"
         verifying "id.c";

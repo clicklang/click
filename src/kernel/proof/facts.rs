@@ -927,7 +927,12 @@ impl PureFactStore {
     /// states it. This is one equivalent fact, one exact lookup, not a search
     /// for an arbitrary contradiction.
     fn contains_opposite_constant_polarity(&self, fact: &Proposition) -> bool {
-        matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, truth) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(value), _)) if (self.contains(&Proposition::condition_is(OldConditionTerm::Constant(!value), !truth)))))
+        fact.literal_condition().is_some_and(|(value, truth)| {
+            self.contains(&Proposition::condition_is(
+                crate::kernel::StoredConditionTerm::constant(!value),
+                !truth,
+            ))
+        })
     }
 
     pub(crate) fn contains_top_level(&self, fact: &Proposition) -> bool {
@@ -2757,8 +2762,8 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
 fn closed_condition_holds(fact: &Proposition) -> bool {
     matches!(fact, Proposition::ConditionIs(condition, value)
     if condition.operand_view().closed_float_predicate_value().map_or_else(
-        || !matches!(condition.old_form(), OldConditionTerm::Constant(_))
-            && crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form()) == Some(*value),
+        || condition.operand_view().constant().is_none()
+            && crate::kernel::machine_integer::comparison::closed_condition_value(condition.operand_view()) == Some(*value),
         |actual| actual == *value,
     ))
 }

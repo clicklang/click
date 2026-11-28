@@ -1180,6 +1180,63 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Select and open the exact written instance, retaining the template
+    /// needed to restore its identity and fields at scope exit.
+    pub(super) fn open_named_instance(
+        &self,
+        resource: &ResourceClause,
+        state: &ExecutionState,
+    ) -> Result<(CheckedFocusedTransition, OpenResourceRestoration), ClickError> {
+        let ResourceClause::Named {
+            binding,
+            resource: definition,
+        } = resource
+        else {
+            return Err(self.step_error("`with` after function exit requires a named resource"));
+        };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            unreachable!("a named resource scope requires an execution proof");
+        };
+        if let ResourceClause::Declared { name, .. } = definition.as_ref()
+            && context
+                .resource_environment
+                .get(name)
+                .is_some_and(ResourceDefinition::is_authorized)
+        {
+            return Err(self
+                .step_error("`with` on a named instance requires an ordinary composite resource"));
+        }
+        let instance = state
+            .resource_instance_at_path(binding.instance()?, &binding.children)
+            .ok_or_else(|| {
+                self.step_error(format!(
+                    "`with` requires a held instance `{}`",
+                    binding.name
+                ))
+            })?;
+        let transition =
+            self.apply_instance_rewrite(binding, resource, true, Some(instance), &[])?;
+        Ok((
+            transition,
+            OpenResourceRestoration::Named(Arc::new(instance.clone())),
+        ))
+    }
+
+    pub(in crate::surface::proof) fn open_outcome_resource_scope(
+        &self,
+        resource: &ResourceClause,
+    ) -> Result<(Self, OpenResourceRestoration), ClickError> {
+        let outcome = self.focused_outcome_data().ok_or_else(|| {
+            self.step_error("`with` after function exit requires a returned outcome")
+        })?;
+        let (transition, restoration) = self.open_named_instance(resource, &outcome.core.state)?;
+        let opened = Self {
+            state: self.publish_checked_transition(transition)?,
+            ..self.clone()
+        };
+        Ok((opened, restoration))
+    }
+
     /// Close an ordinary named scope using the instance selected at its entry.
     pub(in crate::surface::proof) fn restore_open_instance(
         &self,

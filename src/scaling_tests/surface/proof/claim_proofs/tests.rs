@@ -153,19 +153,22 @@ theorem equal_from_native_bounds(value: int32, bound: int32) {
 }
 "#;
     let mut last_works = Vec::new();
+    // Keep the selected parameter's spelling width fixed across the grid.
     for size in [4, 8, 12, 16] {
         let parameters = (1..=size)
-            .map(|i| format!(", int x{i}"))
+            .map(|i| format!(", int x{i:02}"))
             .collect::<String>();
         let click_parameters = (1..=size)
-            .map(|i| format!(", int32 x{i}"))
+            .map(|i| format!(", int32 x{i:02}"))
             .collect::<String>();
         let bounds = (1..=size)
-            .map(|i| format!("requires x{i} >= {i};\nrequires x{i} <= {i};\n"))
+            .map(|i| format!("requires x{i:02} >= {i};\nrequires x{i:02} <= {i};\n"))
             .collect::<String>();
         let haves = (1..=size)
             .map(|i| {
-                format!("have x{i} == {i} by {{ apply(equal_from_native_bounds(x{i}, {i})); }};\n")
+                format!(
+                    "have x{i:02} == {i} by {{ apply(equal_from_native_bounds(x{i:02}, {i})); }};\n"
+                )
             })
             .collect::<String>();
         let c = format!(

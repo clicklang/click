@@ -1628,7 +1628,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // proves it, which the strategies after this one search for.
         if !literal(left) && !literal(right)
             || crate::kernel::machine_integer::comparison::closed_condition_value(
-                condition.old_form(),
+                condition.operand_view(),
             )
             .is_some()
         {

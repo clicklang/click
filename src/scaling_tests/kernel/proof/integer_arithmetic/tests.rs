@@ -4,6 +4,44 @@
 
 use super::*;
 
+#[test]
+fn builtin_integer_comparisons_check_shared_literals_without_export() {
+    use crate::kernel::reasoning::path_facts::{disprove_builtin_prop, solve_builtin_prop};
+    use IntegerComparisonOperator as Op;
+    for depth in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut zero = KernelTerm::integer_literal(0.into());
+        for _ in 0..depth {
+            zero =
+                KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![zero.clone(), zero])
+                    .unwrap();
+        }
+        let one = KernelTerm::integer_literal(1.into());
+        for (operator, expected) in [
+            (Op::Equal, false),
+            (Op::NotEqual, true),
+            (Op::LessThan, true),
+            (Op::LessEqual, true),
+            (Op::GreaterThan, false),
+            (Op::GreaterEqual, false),
+        ] {
+            let root =
+                KernelTerm::integer_comparison(operator, [zero.clone(), one.clone()]).unwrap();
+            let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+            for truth in [false, true] {
+                let fact = Proposition::condition_is(condition.clone(), truth);
+                let ((solved, disproved), work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        (solve_builtin_prop(&fact), disprove_builtin_prop(&fact))
+                    });
+                assert_eq!((solved, disproved), (truth == expected, truth != expected));
+                assert!(work <= 16 * depth + 32, "depth {depth}, work {work}");
+            }
+            assert!(!root.has_cached_native_argument());
+        }
+    }
+}
+
 fn add_unrelated_constants(context: &mut IntegerAffineCollectionContext, count: u64) {
     context.constants.extend((0..count).map(|index| {
         let root =

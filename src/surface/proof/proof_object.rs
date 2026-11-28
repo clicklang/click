@@ -1174,7 +1174,7 @@ impl ProofExecutionView<'_> {
                         selector: SurfacePathSelector::Proposition(condition),
                         value: *value,
                         tactic_offset: 0,
-                        if_arm_end: None,
+                        scope_end: None,
                     })
                 })())
             })

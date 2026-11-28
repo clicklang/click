@@ -1182,7 +1182,9 @@ impl super::ProofSearch<PureFactContext> {
         // Unsigned arithmetic guards often lower to `false or bound`. Try
         // the bound before spending the context on contradiction search for
         // the false arm. Keep that arm as a fallback for inconsistent contexts.
-        if matches!(&left, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(actual), _)) if (actual != expected)))
+        if left
+            .literal_condition()
+            .is_some_and(|(actual, expected)| actual != expected)
         {
             return crate::kernel::search::ProofSearch::derive_proposition_using(
                 context,

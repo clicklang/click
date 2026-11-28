@@ -1,11 +1,10 @@
 # Shared slices through IntoIterator
 
-`sum.rs` is a byte-for-byte copy of the unchanged `rust-iterators` source, and
-`sum.click` equals its archived original sidecar, respelled once in today's
-syntax (`../README.md`, Complete canonical proof-port adoption). Its implicit `for &byte in bytes` now imports through
-Charon using the compiler-selected `IntoIterator for &[T]` implementation.
-Its original proof still fails on `__rust_iter_3_5_remaining`, a legacy proof
-observation; it remains a proof gap rather than a verified parity entry.
+`sum.rs` and `sum.click` mirror the canonical `examples/rust-iterators`
+source and proof. The implicit `for &byte in bytes` imports through Charon
+using the compiler-selected `IntoIterator for &[T]` implementation. The
+proof tracks progress through `iter.len()` and proves the sum for the
+original Rust body.
 
 `iteration.rs` proves first-element reads from shared u8/i32/u32 slices and
 passes an i32 slice through an ordinary source call. `iteration.click` covers
@@ -26,8 +25,7 @@ Regressions reject forged identities, signatures, mutability, instantiations,
 and mismatched pointer/length origins. Deterministic checks at slice lengths
 8/128/1024 confirm that initialization and first-read verification do not expand
 with the length. Verification, profiling, auditing, expansion and expanded
-rechecking agree. The live suite re-extracts both sources, rechecks the frozen
-proof gap, and retains compiler/borrow-checker and adapter rejections.
+rechecking agree. The live suite re-extracts both sources, rechecks the sum proof, and retains compiler/borrow-checker and adapter rejections.
 
 `shared-scalar-slice-into-iteration-v1` versions this added interpretation.
 Existing artifact bytes, extraction flags and compiler pins are unchanged;
