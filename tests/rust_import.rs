@@ -4299,6 +4299,11 @@ fn charon_slice_returns_are_one_slice() {
             "    ensures result.len() == s.len();",
             "    ensures result.len() == s.len() + 1;",
         ),
+        (
+            "slice_returns::first",
+            "    views *bytes;\n    ensures result == bytes[0];\n}\n",
+            "    views *bytes;\n    ensures result == bytes[0] + 1u8;\n}\n",
+        ),
     ] {
         assert!(SLICE_RETURNS_SIDECAR.contains(before), "{before}");
         let invalid = SLICE_RETURNS_SIDECAR.replacen(before, after, 1);
@@ -4308,6 +4313,18 @@ fn charon_slice_returns_are_one_slice() {
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(function), "{rendered}");
+        // The slice local a recorded state held spells its data pointer as
+        // `view.as_ptr()`, which lowers, and its count as `view.len()`.
+        if function == "slice_returns::first" {
+            assert!(
+                rendered.contains("at(statement(0).exit, view.as_ptr()) == bytes.as_ptr()"),
+                "{rendered}"
+            );
+            assert!(
+                rendered.contains("at(statement(0).exit, view).len() == bytes.len()"),
+                "{rendered}"
+            );
+        }
     }
 }
 
@@ -4336,6 +4353,11 @@ fn charon_str_as_bytes_reads_the_same_bytes() {
             "    requires 0u64 < s.len();\n",
             "",
         ),
+        (
+            "str_bytes::first_byte",
+            "    ensures result == click::rust::str::as_bytes(s)[0];",
+            "    ensures result == click::rust::str::as_bytes(s)[0] + 1u8;",
+        ),
     ] {
         assert!(STR_BYTES_SIDECAR.contains(before), "{before}");
         let invalid = STR_BYTES_SIDECAR.replacen(before, after, 1);
@@ -4348,7 +4370,7 @@ fn charon_str_as_bytes_reads_the_same_bytes() {
         // The refused index's condition counts the stored slice local by
         // its own name, a spelling that lowers, not through its data
         // pointer (`bytes.as_ptr().len()`).
-        if function == "str_bytes::first_byte" {
+        if after.is_empty() {
             assert!(
                 rendered.contains("could not show `0u64 < bytes.len()`"),
                 "{rendered}"

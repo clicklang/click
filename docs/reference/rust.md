@@ -342,10 +342,12 @@ one value too: the contract reads `result.len()`, `result.as_ptr()` and
 A proof reads a slice local where it was live,
 `at(statement(0).exit, view.as_ptr())`, and its elements there at the
 slice's element type: for `let view = bytes;`, `have
-at(statement(0).exit, view[0]) == bytes[0];` is proved. An element read
-through a slice a call returned is not yet related to the same element read
-through the argument, so a caller that indexes a returned slice is not
-proved
+at(statement(0).exit, view[0]) == bytes[0];` is proved. A caller that
+indexes a returned slice reads the argument's element: for `let view =
+whole(bytes); view[0]`, `ensures result == bytes[0]` is proved.
+A proof's own read through the returned slice at a recorded point, `have
+at(statement(0).exit, view[0]) == bytes[0]`, is not yet related to
+`bytes[0]`
 ([step 3c-i](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)).
 An index or a range bound keeps
 its `usize` type, so nothing is cast and the contract states no bound on the
@@ -1270,10 +1272,11 @@ fn str_bytes::byte_count(s: &str) -> usize {
 }
 
 // The byte view has the string's length, so its first byte is in bounds
-// whenever the string is not empty.
+// whenever the string is not empty, and it is the string's first byte.
 fn str_bytes::first_byte(s: &str) -> u8 {
     requires 0u64 < s.len();
     views *s;
+    ensures result == click::rust::str::as_bytes(s)[0];
 }
 ```
 
@@ -1281,9 +1284,8 @@ The result must be bound to a local first: `s.as_bytes().len()` is refused as
 an unnamed compiler local, as any call's slice result read in place is. An
 index into the bound local that may be out of bounds is refused with its
 condition over the local, `0u64 < bytes.len()`. A
-byte read through the result is not yet related to the same byte read
-through `s` (the [known limit of step 3c-i](https://github.com/clicklang/click/blob/master/design/rust-slice-values.md#plan)),
-so `ensures result == click::rust::str::as_bytes(s)[0];` is not proved. A
+byte read through the result is the string's byte, so
+`ensures result == click::rust::str::as_bytes(s)[0];` is proved. A
 contract spells the byte view of a `fn`'s `&str` parameter that way: the
 parameter's methods there are `s.len()` and `s.as_ptr()`. `&mut str`,
 `String`, string literals, `==` and the other `str` methods are refused with

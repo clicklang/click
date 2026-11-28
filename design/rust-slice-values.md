@@ -908,9 +908,8 @@ construct.
      proof reads `at(statement(0).exit, view.as_ptr())` and `.len()`. The
      raise-lower audit reports no failures on the fixture.
 
-     Known limit: an element read through a slice local at an earlier
-     point is not related to the same element read now, so a caller that
-     reads through a returned slice is not proved:
+     Fixed in `slice-reads-b`: a caller that reads through a returned
+     slice is proved:
 
      ```rust
      pub fn whole(bytes: &[u8]) -> &[u8] { bytes }
@@ -929,15 +928,54 @@ construct.
      }
      ```
 
-     The goal `at(statement(0).exit, bytes[0]) == bytes[0]` stays open
-     ("the two sides read the same address in different memory states"),
-     with `at(statement(0).exit, view.as_ptr()) == bytes.as_ptr()` proved.
-     It is specific to a read through a slice a call returned (the
-     no-call form below is now proved). In the caller of a returned slice the kernel goal is
-     `read<UInt8>(state#1, s.as_ptr()) == read<UInt8>(state#1, s.as_ptr())`
-     with the two loads at different memory versions, so "the two sides read
-     the same address in different memory states" is reported while both
-     sides print alike.
+     Before, the goal `result == bytes[0]` stayed open ("the two sides read
+     the same address in different memory states", both printing
+     `read<UInt8>(state#1, bytes.as_ptr())`), though the resource tracker
+     answers `Same` for the cell between the two reads. One unchanged cell
+     had two names. The claim's `bytes[0]` is a point-named read: its site's
+     `read_version` names the argument's cell at the function-entry point.
+     The program's `view[0]` is a C read through the call result's fresh
+     data pointer, which has no indexed version, so `point_named_symbolic_read`
+     declined it; `canonicalized_retained_symbolic_load_value_with_identity`
+     (`kernel/eval/memory_loads.rs`) then selected the argument's cell
+     through the checked address alias (`logical_memory_load_address`) and
+     built a memory-named read of it, which the legacy walk names at the
+     entry memory. Only a cross-state load equality could join the two, and
+     the kernel does not build one from facts
+     (`cross_state_load_equality_requires_a_supplied_conclusion`). Now a C
+     read whose address the alias selected is named at that cell's version
+     where its site names one, as a read written with that address is: it
+     is constructed at the site, by the same `point_named_symbolic_read`, and
+     nothing checks it afterwards. A read the site has no version for keeps
+     the memory-named read. The cost is one indexed `read_version` lookup,
+     only for a read whose address the alias changed. Classification: a bug
+     (one cell version had two names). Tests: `slice_returns::first` in
+     `charon_slice_returns_are_one_slice` and the element claim of
+     `str_bytes::first_byte` in `charon_str_as_bytes_reads_the_same_bytes`,
+     each with a refused `+ 1u8` variant.
+
+     Still open: a proof's logical read through the returned slice, `have
+     at(statement(0).exit, view[0]) == bytes[0];` in `first_of`, is not
+     proved. A logical read keeps the address it was written with (lowering
+     is fact-stable), so it reads the call result's data pointer, which has
+     no version point; it is a memory-named read at the entry memory, and
+     `bytes[0]` is point-named at the entry point. Joining those two forms
+     of an entry read is the memory-named/point-named read migration, not a
+     slice question. The contract claim above, over the program's read, is
+     proved.
+
+     Also fixed in `slice-reads-b`: the diagnostic renderer named a slice
+     local's data pointer at a recorded point by the local itself, so the
+     call's postcondition printed as `at(statement(0).exit, view) ==
+     bytes.as_ptr()`, which does not lower ("cannot compare `Slice<uint8>`
+     and `uint8*`"), and its count as `at(statement(0).exit,
+     view.as_ptr()).len()` once that was fixed. A recorded slice local's
+     data pointer is now `at(p, view.as_ptr())` and the slice, by its count,
+     is `at(p, view)` (`fallback_slice_name`, read by `slice_count` and
+     `slice_at_own_type`); a recorded call's slice result is `R.as_ptr()`
+     and `R` the same way. The facts print as `at(statement(0).exit,
+     view).len() == bytes.len()` and `at(statement(0).exit, view.as_ptr())
+     == bytes.as_ptr()`; the test asserts both.
 
      Fixed in `slice-reads`: with no call, in `let view = bytes; view[0]`,
      `have at(statement(0).exit, view[0]) == bytes[0];` was not proved
@@ -949,31 +987,6 @@ construct.
      value the recorded point's state binds `view` to, so the read is at the
      slice's element type and the `have` is proved. Test: the
      `slice_returns::copied` proof of `charon_slice_returns_are_one_slice`.
-
-     Investigated in `slice-reads`, not fixed: why the caller's two reads
-     are not related. The tracker answers `Same` for the cell between the
-     two reads' origins (`resource_tracker::explain` from the read after
-     `view = whole(bytes)` to the function exit), so no step in between
-     writes it; the call to a `views`-only callee is not the barrier
-     (`let v = whole(bytes); let n = v.len(); bytes[0]` is proved). The two
-     reads are named by two naming systems. The program read is made
-     through the call result's fresh data pointer, and the `result` it
-     yields is a read at an unplaced point (`ProgramPoint::unplaced`, no
-     path link) of the store's memory; the legacy snapshot walk
-     (`last_same_version_point`) names it at the function-entry memory, at
-     the argument's address. The claim's read of `bytes[0]` at the outcome
-     is placed and is named at a version point after the call
-     (`ProgramPointId(13)` in the reduction). One unchanged cell thus has
-     two names, which only a cross-state load equality could join, and the
-     kernel does not reconstruct frames for that from facts
-     (`cross_state_load_equality_requires_a_supplied_conclusion`). The
-     classification is a bug in read naming, on the unplaced-point
-     migration (`build_support/read_construction.rs` counts its remaining
-     uses): the read through the call result should be made at the placed
-     point its statement runs at, so both walks name the cell at one
-     version. `let view = whole(bytes); view[0] == bytes[0]` and
-     `ensures result == click::rust::str::as_bytes(s)[0]` for `let bytes =
-     s.as_bytes(); bytes[0]` fail the same way.
 
      Fixed in 3c-ii: the parameter routes of `synthesize_surface_pointer`
      and `synthesize_surface_pointer_offset` named a slice parameter's data
@@ -1003,8 +1016,12 @@ construct.
      result: `s.as_bytes().len()` is refused ("an unnamed compiler local
      requires storage with no supported identity"; so is `whole(bytes).len()`
      for a crate `fn`), and `result == click::rust::str::as_bytes(s)[0]` for
-     `let bytes = s.as_bytes(); bytes[0]` is not proved (the 3c-i element
-     read limit). The refused index printed its condition as `0u64 <
+     `let bytes = s.as_bytes(); bytes[0]` was not proved (the 3c-i element
+     read limit, fixed in `slice-reads-b`; it is proved now). Its expansion
+     raised the byte view as `s.as_bytes()`, which does not lower for a
+     `fn`'s `&str` parameter; the Rust spelling of `str::as_bytes` is now
+     the library call `click::rust::str::as_bytes(s)`
+     (`slice_call_spelling`), so the expansion audit passes. The refused index printed its condition as `0u64 <
      bytes.as_ptr().len()`, which does not lower: a call's slice result has
      its data pointer at the variable its count counts, so the diagnostic
      renderer (`slice_count`, `proof_diagnostics/render/surface.rs`) named

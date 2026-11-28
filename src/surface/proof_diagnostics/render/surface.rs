@@ -2905,6 +2905,11 @@ impl Printer<'_> {
                     let named = self.slice_bound.get(variable).map_or(string, |element| {
                         *element == crate::kernel::SliceElement::Str
                     });
+                    // A slice a recorded state held is that local, not its
+                    // data pointer's spelling.
+                    if let Some((name, _)) = self.labels.recorded_slice_name(count) {
+                        return Some((atom(name.to_owned()), named));
+                    }
                     return Some((self.pointer(address, depth)?, named));
                 }
                 (
@@ -2973,6 +2978,12 @@ impl Printer<'_> {
                     && let Some((name, element)) = counted_slice_name(count, &naming) =>
             {
                 (name, element == crate::kernel::SliceElement::Str)
+            }
+            // A slice a recorded state's local or call result held.
+            OldMachineTerm::Variable(_)
+                if let Some((name, string)) = self.labels.recorded_slice_name(count) =>
+            {
+                (name.to_owned(), string)
             }
             OldMachineTerm::Variable(counted) => {
                 let variable = counted.counted_slice()?;
