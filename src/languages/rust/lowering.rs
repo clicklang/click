@@ -1373,7 +1373,8 @@ fn lower_function(
         .with_prelowered_kernel_function(kernel)
         .with_closure_captures(f.captures)
         .with_trait_interface(f.implements.clone())
-        .with_loop_iterators(loop_iterators);
+        .with_loop_iterators(loop_iterators)
+        .with_spelled_local_types(spelled_local_types(f));
     // Only MIR lowering supplies a map from kernel regions to source sites.
     // A structured body must not claim to supply an empty map for its regions.
     if let Some((regions, object_bindings)) = source_sites {
@@ -1389,6 +1390,28 @@ fn lower_function(
     }
     Ok(lowered)
 }
+/// The declared type of each local the lowering binds by its spelling
+/// alone: a source name bound once, which is no repeated name's and no
+/// parameter's. A local of a type with no scalar form has none.
+fn spelled_local_types(f: &super::schema::Function) -> BTreeMap<String, ProgramType> {
+    let Some(mir) = &f.mir else {
+        return BTreeMap::new();
+    };
+    mir.locals
+        .iter()
+        .filter(|local| !mir.spellings.contains_key(&local.name) && local.name != mir.return_place)
+        .filter_map(|local| {
+            let MirLocalId::Source(name) = &local.name else {
+                return None;
+            };
+            Some((
+                name.clone(),
+                scalar_type(&local.value_type).ok()?.to_kernel_type(),
+            ))
+        })
+        .collect()
+}
+
 struct Context<'a> {
     /// The binding of each local whose source name is bound more than
     /// once, by its MIR key; every other local is bound by its name.
