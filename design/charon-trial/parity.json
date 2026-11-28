@@ -59,21 +59,13 @@
   },
   {
     "sidecar": "examples/rust-iter-references/sum.click",
-    "outcome": "proof-gap",
-    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
-    "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
-    "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
-    "frozen_sha256": "a9757b59c27c59f996803e8b64dcf7a83261c40d27a4747eb4cf01beed3ea458",
-    "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
+    "outcome": "verified",
+    "diagnostic": ""
   },
   {
     "sidecar": "examples/rust-iterators/sum.click",
-    "outcome": "proof-gap",
-    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
-    "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iterators/sum.click",
-    "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iterators/frozen.click",
-    "frozen_sha256": "6db8ccfdb6408efdecf3bd50159bcb3c30ee3b67d7c2ac33c6e51e3d3b9f7ea7",
-    "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
+    "outcome": "verified",
+    "diagnostic": ""
   },
   {
     "sidecar": "examples/rust-loops/loops.click",

@@ -761,6 +761,25 @@ mod tests {
             let roots = stored.each_ref().map(|term| term.root().unwrap());
             assert_ne!(roots[0], roots[1]);
             assert_eq!(stored[0], stored[1]);
+            let locals = stored.each_ref().map(|term| {
+                let [local, _] = term.operand_view().pointer_addresses().unwrap();
+                local
+            });
+            let reflexive = crate::kernel::Proposition::condition_is(
+                StoredConditionTerm::from_root(KernelTerm::address_equal_raw(locals)).unwrap(),
+                true,
+            );
+            let goal =
+                crate::kernel::Proposition::condition_is(StoredConditionTerm::constant(true), true);
+            assert_eq!(
+                crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
+                    &goal,
+                    &reflexive,
+                    &[],
+                )
+                .unwrap(),
+                goal
+            );
             let facts = std::collections::HashSet::from([stored[0].clone()]);
             assert!(facts.contains(&stored[1]));
             let observations =
@@ -768,6 +787,16 @@ mod tests {
             assert_eq!(observations[0], observations[1]);
             for (term, (name, ty)) in stored.iter().zip(declarations) {
                 let fact = crate::kernel::Proposition::condition_is(term.clone(), true);
+                let Some(crate::kernel::Proposition::ConditionIs(reversed, true)) =
+                    crate::kernel::proof::equality_rewrite::reverse_equality(&fact)
+                else {
+                    panic!("expected reversed address equality");
+                };
+                let [left, right] = term.operand_view().pointer_addresses().unwrap();
+                assert_eq!(
+                    reversed.operand_view().pointer_addresses().unwrap(),
+                    [right, left]
+                );
                 let pointers = crate::kernel::proof::term_rewrite::proposition_pointer_terms(&fact);
                 let [local, right] = pointers.as_slice() else {
                     panic!("expected both address equality operands");
