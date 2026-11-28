@@ -4154,11 +4154,31 @@ impl<'a> TermRewrite<'a> {
                 {
                     return proposition.clone();
                 }
-                self.reserve_condition_variables_once(condition.old_form());
-                if self.checked_work_exhausted() {
-                    return exhausted_proposition();
-                }
-                let condition = self.condition(condition.old_form());
+                // Cited facts and exact Bool replacements use the whole written
+                // condition as a key before descending into its operands.
+                let condition = if self.conditions.is_none()
+                    && self.cited_conditions.is_none()
+                    && self.condition_exact.is_none()
+                    && let Some(KernelTermNode::PointerEqual(pair)) =
+                        condition.root().map(KernelTerm::node)
+                {
+                    if !self.source_variables_reserved {
+                        let mut variables = self.new_carrier_variables();
+                        collect_stored_condition_carriers(condition, &mut variables);
+                        self.reserve_source_variables(variables);
+                    }
+                    if !self.begin_condition_visit() {
+                        return exhausted_proposition();
+                    }
+                    let [left, right] = pair.arguments();
+                    let result = self.rewrite_pointer_equality(
+                        left.export().expect("written pointer operand"),
+                        right.export().expect("written pointer operand"),
+                    );
+                    self.finish_condition(result)
+                } else {
+                    self.condition(condition.old_form())
+                };
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -6467,13 +6487,37 @@ impl<'a> TermRewrite<'a> {
             })
     }
 
-    pub(crate) fn condition(&mut self, v: &OldConditionTerm) -> OldConditionTerm {
-        self.reserve_condition_variables_once(v);
+    fn rewrite_pointer_equality(&mut self, left: Pointer, right: Pointer) -> OldConditionTerm {
+        let mut rewrite = |pointer| {
+            let ProgramValue::Pointer(value) = self.value(&ProgramValue::Pointer(pointer)) else {
+                unreachable!()
+            };
+            value
+        };
+        let left = rewrite(left);
+        let right = rewrite(right);
+        let canonical = |value: Pointer| {
+            // The value rewrite handles the count. Only the addresses need
+            // their offsets canonicalized here.
+            value.map_addresses(
+                |p| p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset)),
+                OldMachineTerm::clone,
+            )
+        };
+        OldConditionTerm::pointer_equal(canonical(left), canonical(right))
+    }
+
+    fn begin_condition_visit(&mut self) -> bool {
         if self.checked_work_exhausted() {
-            return OldConditionTerm::Constant(false);
+            return false;
         }
         self.visit();
-        if self.checked_work_exhausted() {
+        !self.checked_work_exhausted()
+    }
+
+    pub(crate) fn condition(&mut self, v: &OldConditionTerm) -> OldConditionTerm {
+        self.reserve_condition_variables_once(v);
+        if !self.begin_condition_visit() {
             return OldConditionTerm::Constant(false);
         }
         // Only the explicitly cited facts can refute a condition here. The
@@ -6584,23 +6628,7 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             OldConditionTerm::PointerEqual(a, b) => {
-                let ProgramValue::Pointer(a) = self.value(&ProgramValue::Pointer((**a).clone()))
-                else {
-                    unreachable!()
-                };
-                let ProgramValue::Pointer(b) = self.value(&ProgramValue::Pointer((**b).clone()))
-                else {
-                    unreachable!()
-                };
-                // The count was rewritten with the value above; offset
-                // canonicalization is an address normal form only.
-                let canonical = |value: Pointer| {
-                    value.map_addresses(
-                        |p| p.with_offset(crate::kernel::eval::canonical_offset_term(&p.offset)),
-                        OldMachineTerm::clone,
-                    )
-                };
-                OldConditionTerm::pointer_equal(canonical(a), canonical(b))
+                self.rewrite_pointer_equality((**a).clone(), (**b).clone())
             }
             OldConditionTerm::AddressEqual(a, b) => {
                 OldConditionTerm::AddressEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
@@ -6707,6 +6735,10 @@ impl<'a> TermRewrite<'a> {
                 )
             }
         };
+        self.finish_condition(result)
+    }
+
+    fn finish_condition(&mut self, result: OldConditionTerm) -> OldConditionTerm {
         // Comparison forms are lookup aids, not stored syntax. Replacing a
         // read can expose a literal machine comparison; preserve the old
         // substitution path's constant result without simplifying symbolic
@@ -8963,6 +8995,41 @@ mod tests {
         ));
         assert_eq!(pointers(call), [address.clone(), address.clone()]);
         assert_eq!(pointers(nested), [address.clone(), address]);
+    }
+
+    #[test]
+    fn general_rewrite_reads_stored_pointer_equality_operands() {
+        let _session = VerificationSession::enter();
+        let wide = |id, count| {
+            Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+                .with_provenance(Address::symbolic(Variable(id + 1)))
+                .with_element_count(OldMachineTerm::uint64_constant(count))
+        };
+        let from = wide(99821, 2);
+        let to = wide(99823, 3);
+        let other = wide(99825, 4);
+        let root = KernelTerm::pointer_equal_raw([from.shared().clone(), other.shared().clone()]);
+        let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+        for polarity in [false, true] {
+            let goal = Proposition::condition_is(condition.clone(), polarity);
+            let mut rewrite = TermRewrite::for_pointer_value_exact(&from, &to);
+            let Proposition::ConditionIs(result, truth) = rewrite.proposition(&goal) else {
+                panic!("expected a pointer equality")
+            };
+            assert!(rewrite.changed);
+            assert_eq!(truth, polarity);
+            let [left, right] = result.operand_view().pointer_values().unwrap();
+            assert_eq!(left.export().unwrap(), to);
+            assert_eq!(right.export().unwrap(), other);
+            assert!(!root.has_cached_native_argument());
+        }
+        let written = OldConditionTerm::pointer_equal(from, other);
+        let facts = HashMap::from([(written, false)]);
+        let goal = Proposition::condition_is(condition, true);
+        assert_eq!(
+            TermRewrite::for_conditions(&facts).proposition(&goal),
+            OldConditionTerm::Constant(false).truth_claim(true)
+        );
     }
 
     #[test]
