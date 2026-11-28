@@ -231,17 +231,7 @@ pub(crate) fn literal_native_comparison_value(condition: BooleanOperandView<'_>)
             }
             operand.int64_constant().map(|n| n as u64)
         };
-        if let (Some(a), Some(b)) = (bits(left), bits(right)) {
-            return Some(a == b);
-        }
-        let BooleanOperandView::Shared(root) = condition else {
-            return None;
-        };
-        if left.variable().is_some() || right.variable().is_some() {
-            return None;
-        }
-        let stored = crate::kernel::StoredConditionTerm::from_root(root.clone())?;
-        return literal_native_comparison_value(BooleanOperandView::Native(stored.old_form()));
+        return Some(bits(left)? == bits(right)?);
     }
     let left = literal_at(left, format)?;
     let right = literal_at(right, format)?;
