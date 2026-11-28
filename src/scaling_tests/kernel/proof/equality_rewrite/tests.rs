@@ -1373,3 +1373,44 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
     let second = rewrite_proposition_by_exact_equality(&first, &premises[1], &premises).unwrap();
     assert_eq!(second, eq(y, OldMachineTerm::constant(9)));
 }
+
+#[test]
+fn reflexive_address_rewrite_keeps_shared_offsets() {
+    let mut samples = Vec::new();
+    for depth in [8, 32, 96] {
+        let _session = VerificationSession::enter();
+        let mut offset = KernelAddressOffset::Variable(Variable(982817))
+            .into_shared()
+            .unwrap();
+        for _ in 0..depth {
+            offset = KernelAddressOffset::Add([offset.clone(), offset])
+                .into_shared()
+                .unwrap();
+        }
+        let base = Address::symbolic(Variable(982818));
+        let address = SharedAddress::new(base.shared().block(), offset.clone());
+        let goal = Proposition::condition_is(StoredConditionTerm::constant(true), true);
+        let mut sample = 0;
+        for root in [
+            KernelTerm::address_equal_raw([address.clone(), address]),
+            KernelTerm::address_offset_equal_raw([offset.clone(), offset]),
+        ] {
+            let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+            let premise = Proposition::condition_is(condition.clone(), true);
+            let negated = Proposition::condition_is(condition, false);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(
+                    rewrite_proposition_by_exact_equality(&goal, &premise, &[]).unwrap(),
+                    goal
+                );
+                assert_eq!(reverse_equality(&premise), Some(premise.clone()));
+                assert!(reverse_equality(&negated).is_none());
+                assert!(!equality_is_vacuous(&negated));
+            });
+            assert!(!root.has_cached_native_argument());
+            sample += work;
+        }
+        samples.push(sample);
+    }
+    assert!(samples.windows(2).all(|w| w[0] == w[1]), "{samples:?}");
+}
