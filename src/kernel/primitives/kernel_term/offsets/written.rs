@@ -166,7 +166,7 @@ impl SharedAddressOffset {
     /// The constant byte displacement the written offset folds to, read as
     /// the native offset tree read it: a sum of constants, or a scaled index
     /// whose written carrier is a constant. Cached per node.
-    fn written_constant(&self) -> Option<i64> {
+    pub(in crate::kernel::primitives) fn written_constant(&self) -> Option<i64> {
         *self.0.syntax_constant.get_or_init(|| match self.node() {
             KernelAddressOffset::Constant(value) => Some(*value),
             KernelAddressOffset::Variable(_) => None,

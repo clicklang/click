@@ -1,6 +1,30 @@
 //! Existing raw-address equality construction over retained address operands.
 use super::*;
 
+impl SharedAddress {
+    pub(in crate::kernel::primitives) fn equality_value(
+        &self,
+        other: &Self,
+        constant: impl Fn(&SharedAddressOffset) -> Option<i64>,
+    ) -> Option<bool> {
+        let left = self.atom();
+        let right = other.atom();
+        if left.proven_distinct(right) {
+            return Some(false);
+        }
+        if left != right {
+            return None;
+        }
+        // Preserve reflexive comparisons of loaded pointers and slice data as
+        // written evidence. The graph can still derive their offset equality.
+        self.offset()
+            .equality_value(other.offset(), constant)
+            .filter(|value| {
+                !(*value && matches!(left, AddressBase::Load(_) | AddressBase::SliceData(_)))
+            })
+    }
+}
+
 impl KernelTerm {
     pub(crate) fn address_equal_raw(arguments: [SharedAddress; 2]) -> Self {
         let block_payloads = arguments.each_ref().map(|a| a.atom().block_payload());
@@ -14,21 +38,18 @@ impl KernelTerm {
     }
 
     pub(crate) fn address_equal(arguments: [SharedAddress; 2]) -> Self {
+        Self::address_equal_with(arguments, SharedAddressOffset::as_const)
+    }
+
+    pub(in crate::kernel::primitives) fn address_equal_with(
+        arguments: [SharedAddress; 2],
+        constant: impl Fn(&SharedAddressOffset) -> Option<i64>,
+    ) -> Self {
         let [a, b] = &arguments;
-        let left = a.atom();
-        let right = b.atom();
-        if left.proven_distinct(right) {
-            return Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(false));
+        match a.equality_value(b, constant) {
+            Some(value) => Self::boolean_literal(value),
+            None => Self::address_equal_raw(arguments),
         }
-        if left == right {
-            let comparison = Self::address_offset_equal([a.offset().clone(), b.offset().clone()]);
-            if let KernelTermNode::BoolLiteral(value) = comparison.node()
-                && !(*value && matches!(left, AddressBase::Load(_) | AddressBase::SliceData(_)))
-            {
-                return comparison;
-            }
-        }
-        Self::address_equal_raw(arguments)
     }
 }
 

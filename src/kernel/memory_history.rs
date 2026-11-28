@@ -861,11 +861,11 @@ fn selected_pointer_alias_path(
     let equal = |first: &Address, second: &Address| {
         first == second
             || assumptions.proves_exact(&Proposition::condition_is(
-                OldConditionTerm::address_equal(first.clone(), second.clone()),
+                StoredConditionTerm::address_equal(first, second),
                 true,
             ))
             || assumptions.proves_exact(&Proposition::condition_is(
-                OldConditionTerm::address_equal(second.clone(), first.clone()),
+                StoredConditionTerm::address_equal(second, first),
                 true,
             ))
     };
@@ -1516,18 +1516,12 @@ impl CheckedLoadEquality {
                     && origin_load_width(&self.right) == Some(4)
                     && (alias.as_ref()
                         == &Proposition::condition_is(
-                            OldConditionTerm::address_equal(
-                                left.pointer.clone(),
-                                right.pointer.clone(),
-                            ),
+                            StoredConditionTerm::address_equal(&left.pointer, &right.pointer),
                             true,
                         )
                         || alias.as_ref()
                             == &Proposition::condition_is(
-                                OldConditionTerm::address_equal(
-                                    right.pointer.clone(),
-                                    left.pointer.clone(),
-                                ),
+                                StoredConditionTerm::address_equal(&right.pointer, &left.pointer),
                                 true,
                             ))
                     && match alias_path {
@@ -1538,16 +1532,10 @@ impl CheckedLoadEquality {
                                 && path.windows(2).all(|steps| steps[0].1 == steps[1].0)
                                 && path.iter().all(|step| {
                                     assumptions.proves_exact(&Proposition::condition_is(
-                                        OldConditionTerm::address_equal(
-                                            step.0.clone(),
-                                            step.1.clone(),
-                                        ),
+                                        StoredConditionTerm::address_equal(&step.0, &step.1),
                                         true,
                                     )) || assumptions.proves_exact(&Proposition::condition_is(
-                                        OldConditionTerm::address_equal(
-                                            step.1.clone(),
-                                            step.0.clone(),
-                                        ),
+                                        StoredConditionTerm::address_equal(&step.1, &step.0),
                                         true,
                                     ))
                                 })
@@ -1862,7 +1850,7 @@ pub(crate) fn checked_origin_load_equality(
                 (&right_endpoint.pointer, &left_endpoint.pointer),
             ] {
                 let alias = Proposition::condition_is(
-                    OldConditionTerm::address_equal(first.clone(), second.clone()),
+                    StoredConditionTerm::address_equal(first, second),
                     true,
                 );
                 let alias_path = if assumptions.proves_exact(&alias) {
