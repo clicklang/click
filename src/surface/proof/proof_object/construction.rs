@@ -555,6 +555,7 @@ impl<'a> Proof<'a> {
                 original_requirements,
                 requirement_facts: available,
                 nested_tactic_capture: None,
+                clause_scope: None,
             })),
             state: KernelProofObject::root(ProofLocals::default(), goal),
             node: Arc::new(ProofNode {

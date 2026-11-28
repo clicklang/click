@@ -356,27 +356,41 @@ statement annotations among them, is elaborated whole before any of it is
 lowered: `click_proposition_to_spec_proposition` elaborates the clause with
 `elaborate_clause` and lowers the stored Surface, and binder bodies lower
 from theirs. Its scope is still the lowering context the clause is lowered
-in, except for a proof clause at an execution frontier of a C function. The
-proof driver elaborates that clause itself (`elaborate_proof_clause`) and
-hands lowering the Surface (`ElaboratedProofClause`). Its scope is read from
-declarations alone (`DeclaredScope`):
+in, except for a proof clause of a C function written at a position the
+front end records. The proof driver elaborates that clause itself
+(`elaborate_proof_clause`) and hands lowering the Surface
+(`ElaboratedProofClause`). Its scope is read from declarations alone
+(`DeclaredScope`):
 - The Click names the proof binds, from its integer and algebraic values.
 - The C names in scope at that position, from the function's declarations
-  and the locals the C front end records on each statement's site.
+  and the locals the C front end records.
 
-The C front end records those locals in three places:
-- each statement's site, as the scope where the statement starts;
-- a `for` loop's head, for its test, step and body;
-- the end of the body, for a clause after the last statement.
+The positions, and the C names in scope at each:
+- **An execution frontier:** the frontier's next statement. The C front end
+  records a scope on each statement's site, where the statement starts. A
+  `for` loop's test, step and body take its head's. Past the last
+  statement, the scope is the end of the body.
+- **A returned outcome, focused or as a fixed-state outcome case:** the
+  parameters alone, recorded before the body opens. Once the function has
+  returned, its locals have left scope.
+- **A loop phase, its initialization or its exit:** the loop head's.
+
+A fixed-state proof carries its position as a `ClauseScope`.
 
 At a position, a C declaration has the type its value has in an expression:
-an array is a pointer to its first element, and a struct value has none. A
-binder the clause declares hides a C name of the same spelling. Debug builds
-check that the driver's Surface is what lowering's own elaboration gives
-(`lower_elaborated_proof_clause`).
+- An array is a pointer to its first element.
+- A struct-valued parameter or result is the pointer to its storage.
+- A struct-valued local has none.
 
-The Rust and C++ front ends record no scopes yet, so lowering still
-elaborates their proof clauses.
+A binder the clause declares hides a C name of the same spelling. Debug
+builds check that the driver's Surface is what lowering's own elaboration
+gives (`lower_elaborated_proof_clause`).
+
+Lowering still elaborates these clauses itself:
+- Rust and C++ proof clauses, since those front ends record no scopes yet.
+- A contract refinement's clauses, which name a contract definition's
+  parameters rather than a C position.
+- A fixed-state clause lowered while recording its goal's introductions.
 
 `Declarations` reads names' C types from kernel states (the entry state, the
 entry values, and the state that declares the clause's locals) for names that
