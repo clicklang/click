@@ -596,7 +596,18 @@ fn outcome_paths_bind_obtain(choices: &[Vec<SurfacePathChoice>]) -> bool {
 
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
     let label = function_claim_label(function_block, claim);
-    format!("{label}: {}", diagnostic_claim_statement(claim))
+    let statement = diagnostic_claim_statement(claim);
+    match &claim.clause().refinement {
+        Some(origin) => format!("{label} ({}): {statement}", origin.describe()),
+        None => format!("{label}: {statement}"),
+    }
+}
+
+fn claim_failure_subject(claim: &FunctionClaimRef<'_>, label: &str) -> String {
+    match &claim.clause().refinement {
+        Some(origin) => format!("`{label}` ({})", origin.describe()),
+        None => format!("`{label}`"),
+    }
 }
 
 fn diagnostic_claim_statement(claim: &FunctionClaimRef<'_>) -> String {
@@ -1896,9 +1907,11 @@ fn close_claim_directly_from_outcome<'a>(
     failed_attempt: Option<&Proof<'a>>,
 ) -> Result<Result<Proof<'a>, ClickError>, ClickError> {
     let surface = describe_click_proposition(surface_goal);
+    let subject = || claim_failure_subject(claim, claim_label);
     let failure = |reason: String| {
         Ok(Err(ClickError::new(format!(
-            "`ensures {surface}` failed for `{claim_label}` path {path_index}: {reason}"
+            "`ensures {surface}` failed for {} path {path_index}: {reason}",
+            subject()
         ))))
     };
     if !claim.applies_to(outcome) {
@@ -1945,7 +1958,8 @@ fn close_claim_directly_from_outcome<'a>(
                 };
                 return Ok(Err(error
                     .with_context(format!(
-                        "`ensures {surface}` failed for `{claim_label}` path {path_index}: {reason}"
+                        "`ensures {surface}` failed for {} path {path_index}: {reason}",
+                        subject()
                     ))
                     .with_failing_path(path_index)));
             }
@@ -2216,7 +2230,7 @@ fn close_claim_directly_from_outcome<'a>(
         })
         .unwrap_or_default();
     let error = proof.step_error(format!(
-        "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}"
+        "`ensures {surface}` failed for {} path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}", subject()
     ));
     let refusal = match closure_search {
         ClaimClosureSearch::None => crate::surface::ProofRefusal::IncompleteProof,
@@ -5861,8 +5875,9 @@ pub(super) fn finish_ordered_proof<'a>(
                         .map(|claim_index| (claim_index, &claims[claim_index]))
                     {
                         let claim_label = function_claim_label(function_block, claim);
+                        let subject = claim_failure_subject(claim, &claim_label);
                         let summary = format!(
-                            "`{proof_label}` path {path_index} left `{claim_label}` unproved: the implicit closer could not close it at the end of the proof; establish the facts and resources it needs before then (claim index {claim_index})"
+                            "`{proof_label}` path {path_index} left {subject} unproved: the implicit closer could not close it at the end of the proof; establish the facts and resources it needs before then (claim index {claim_index})"
                         );
                         if let Some(error) = closures[claim_index].last_error() {
                             return Err(error.clone().with_context(summary));

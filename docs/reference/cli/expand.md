@@ -135,7 +135,7 @@ theorem, or user-defined tactic name before the dot.
 
 | Label | Claim |
 | --- | --- |
-| `f.contract` | The grouped proof of function `f` (`{ ... } by { ... }`), which proves every clause without its own `by`; also a tactic's proof. |
+| `f.contract` | The grouped proof of function `f` (`{ ... } by { ... }`), which proves every clause without its own `by` and any inherited guarantees; also a tactic's proof. |
 | `f.name` | The clause the author named, `ensures name: P`. |
 | `f.ensures_N` | The `N`th written `ensures` clause of `f`, counted from 0 among its `ensures` clauses only. |
 | `f.exceptional_ensures_N` | The `N`th `exceptional ensures` clause. |
@@ -143,6 +143,12 @@ theorem, or user-defined tactic name before the dot.
 | `f.produces_N` | The `N`th `produces` clause, counting those inside a contract `if`. |
 | `f.loop(N).initialize`, `f.loop(N).maintain` | A loop phase's proof: the `initialize` or `maintain` proof, written or left to automation, of the `loop` tactic that proves C loop `N` of `f`, counting its loops from 0 in source order. |
 | `f.body_safety` | The body-safety obligation of a contract that states no claim, as diagnostics name it. |
+
+An inherited guarantee belongs to the implementation's `.contract` proof,
+including when the implementation leaves that proof implicit. Select an
+implicit refinement proof by its label or by the closing brace of the
+implementation's contract. A failure reports the interface clause that
+supplied the guarantee.
 
 Each clause kind counts separately, so adding an `owns` clause does not
 renumber the `ensures` clauses: in `owns p[0..1]; ensures p[0] == 1;` the

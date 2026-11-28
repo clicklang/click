@@ -11390,6 +11390,39 @@ fn cpp_stack_expansion_keeps_source_function_references() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: cold CLI expansion of an inherited C++ guarantee"]
+fn cpp_inherited_guarantee_expands_as_the_override_contract() {
+    let mdtest =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_virtual_method_interface.md");
+    let source = fs::read_to_string(&mdtest).unwrap();
+    let close_line = source
+        .lines()
+        .position(|line| line == "int Tile::area(int scale) const {")
+        .unwrap()
+        + 2;
+    let location = format!("{}:{close_line}", mdtest.display());
+    for selector in ["Tile::area.contract", location.as_str()] {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["expand", "--claim", selector])
+            .arg(&mdtest)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let expanded = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            expanded.contains("int Tile::area(int scale) const {\n} by {"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("interface_ensures_"), "{expanded}");
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn qualified_namespace_selection_has_an_ordinary_readable_contract_name() {
     let project = Project::with_fixture(

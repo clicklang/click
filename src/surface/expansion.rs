@@ -4264,9 +4264,14 @@ fn claim_source_regions(
             continue;
         };
         let owner = function_name.to_string();
-        if function_block.grouped_proof().is_some()
-            && let Ok(span) = find_grouped_proof_span(&tokens, &function)
-        {
+        let grouped_span = if function_block.grouped_proof().is_some() {
+            find_grouped_proof_span(&tokens, &function).ok()
+        } else if function_block.has_refinement_claims() {
+            Some(tokens[function.body_close].span.clone())
+        } else {
+            None
+        };
+        if let Some(span) = grouped_span {
             regions.push(ClaimRegion {
                 anchor: span.start,
                 span,
@@ -4281,7 +4286,10 @@ fn claim_source_regions(
             function_block.claim_label(covering_claim(function_block, claim))
         };
         let mut written = None;
-        for index in 0..function_block.ensures().len() {
+        for (index, ensure) in function_block.ensures().iter().enumerate() {
+            if ensure.refinement.is_some() {
+                continue;
+            }
             // The members of a flattened aggregate clause share their
             // written clause, its label, and its proof.
             let source = function_block.ensure_source_clause(index);

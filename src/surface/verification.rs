@@ -2659,6 +2659,7 @@ fn verify_program_in_context(
                 verification_function_environment.with_conditional_resource_cases();
         }
         let implicit_safety_clause = EnsureClause {
+            refinement: None,
             proof_bindings: Vec::new(),
             name: None,
             ensure: Ensure::Proposition(SyntaxProposition::Comparison {

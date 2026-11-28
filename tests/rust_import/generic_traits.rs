@@ -33,7 +33,7 @@ fn charon_generic_trait_instances_refine_their_interfaces() {
         (
             "        ensures x < result;\n    }\n}\n\ntrait generic_traits::Scale<u32>",
             "        ensures x + 1 < result;\n    }\n}\n\ntrait generic_traits::Scale<u32>",
-            "`<generic_traits::Square as generic_traits::Scale<i32>>::scale.interface_ensures_1`",
+            "`<generic_traits::Square as generic_traits::Scale<i32>>::scale.contract`",
         ),
         // A call through the `u32` instance knows the generic clauses and its
         // own, not the `i32` instance's.
@@ -79,7 +79,7 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
             Some("fn insert(&mut self, x: i32)"),
             "        ensures count(self) == old(count(self)) + 1;",
             "        ensures count(self) == old(count(self)) + 2;",
-            "`<bags::Counter as bags::Bag<i32>>::insert.interface_ensures_0`",
+            "`<bags::Counter as bags::Bag<i32>>::insert.contract`",
         ),
         // A call through the instance knows the interface's fields only.
         (
@@ -100,7 +100,7 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
             Some("fn put(&mut self, x: i32)"),
             "        List<i32>::Cons(self.value, List<i32>::Nil)",
             "        List<i32>::Nil",
-            "`<bags::Slot as bags::Holder<i32>>::put.interface_ensures_0`",
+            "`<bags::Slot as bags::Holder<i32>>::put.contract`",
         ),
     ] {
         assert!(OBJECT_SIDECAR.contains(before), "{before}");
@@ -141,7 +141,7 @@ fn charon_generic_object_state_is_verified_once_for_every_type() {
             "{\n    }\n    fn get(&self) -> T ",
             "        ensures result == held(self);\n    }\n}",
             "        ensures result != held(self);\n    }\n}",
-            "`<generic_state::Wrap<T> as generic_state::Holder<T>>::get.interface_ensures_0`",
+            "`<generic_state::Wrap<T> as generic_state::Holder<T>>::get.contract`",
         ),
         // A caller knows the packed struct's fields from the definitions.
         (
@@ -208,7 +208,7 @@ fn charon_generic_implementations_are_verified_once_for_every_type() {
         (
             "        ensures result == x;\n    }\n}\n\n// One",
             "        ensures result != x;\n    }\n}\n\n// One",
-            "<generic_impls::Echo as generic_impls::Keep<T>>::keep.interface_ensures_0",
+            "<generic_impls::Echo as generic_impls::Keep<T>>::keep.contract",
         ),
         // The generic function's body is checked once for every type.
         (

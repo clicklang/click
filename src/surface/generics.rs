@@ -947,6 +947,7 @@ pub(super) fn instantiate_theorem_statement(
                 .ensures
                 .iter()
                 .map(|ensure| EnsureClause {
+                    refinement: ensure.refinement.clone(),
                     proof_bindings: ensure.proof_bindings.clone(),
                     name: ensure.name.clone(),
                     ensure: ensure.ensure.clone(),
@@ -1058,6 +1059,7 @@ fn instantiate_ensure_clause(
         resource @ Ensure::Resource(_) => resource.clone(),
     };
     Ok(EnsureClause {
+        refinement: ensure.refinement.clone(),
         proof_bindings: ensure
             .proof_bindings
             .iter()

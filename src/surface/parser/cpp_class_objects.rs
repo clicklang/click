@@ -28,8 +28,8 @@
 //! Every other token is kept, with its position.
 
 use super::rust_trait_objects::{
-    Spanned, at, error_at, field_read, ident, is_ident, matching, object_resource, rename,
-    rewrite_calls, same_tokens, split_clauses,
+    Spanned, at, error_at, field_read, ident, inherited_ensure, is_ident, mark_refinement,
+    matching, object_resource, rename, rewrite_calls, same_tokens, split_clauses,
 };
 use super::*;
 
@@ -1387,49 +1387,27 @@ fn rewrite_function(
             })
             .unwrap_or_default();
         let mut interface_clauses = Vec::new();
-        let mut ensures = 0usize;
-        for clause in interface.map_or(&[][..], |interface| &interface.clauses) {
+        for original in interface.map_or(&[][..], |interface| &interface.clauses) {
             let clause = read_objects(on_memory(
-                &rename(clause, &renames),
+                &rename(original, &renames),
                 definer,
                 &functions,
                 head.is_const,
             ));
-            if is_ident(clause.first(), "ensures") {
-                let named = matches!(clause.get(1), Some((Token::Ident(_), _)))
-                    && clause.get(2).map(|(token, _)| token) == Some(&Token::Colon);
-                let mut labeled = vec![clause[0].clone()];
-                if named {
-                    let Some((Token::Ident(name), label_position)) = clause.get(1) else {
-                        unreachable!()
-                    };
-                    labeled.push((ident(&format!("interface_{name}")), label_position.clone()));
-                    labeled.extend(clause[2..].iter().cloned());
-                } else {
-                    labeled.push((
-                        ident(&format!("interface_ensures_{ensures}")),
-                        clause[0].1.clone(),
-                    ));
-                    labeled.push((Token::Colon, clause[0].1.clone()));
-                    labeled.extend(clause[1..].iter().cloned());
-                }
-                ensures += 1;
-                interface_clauses.push((clause, labeled));
+            let inherited = if is_ident(clause.first(), "ensures") {
+                inherited_ensure(
+                    clause.clone(),
+                    original,
+                    format!("{}::{}", definer.root, head.method),
+                )
             } else {
-                interface_clauses.push((clause.clone(), clause));
-            }
+                clause.clone()
+            };
+            interface_clauses.push((clause, inherited));
         }
         if head.is_const {
             for (function, definition) in &functions {
-                let mut clause = at(
-                    &position,
-                    vec![
-                        ident("ensures"),
-                        ident(&format!("interface_keeps_{function}")),
-                        Token::Colon,
-                        Token::LParen,
-                    ],
-                );
+                let mut clause = at(&position, vec![ident("ensures"), Token::LParen]);
                 clause.extend(definition.iter().cloned());
                 clause.extend(at(
                     &position,
@@ -1443,7 +1421,17 @@ fn rewrite_function(
                 ));
                 clause.extend(definition.iter().cloned());
                 clause.extend(at(&position, vec![Token::RParen, Token::RParen]));
-                interface_clauses.push((clause.clone(), clause));
+                let mut inherited = clause.clone();
+                mark_refinement(
+                    &mut inherited,
+                    RefinementClaimOrigin::Preserves {
+                        member: function.clone(),
+                        position: definition
+                            .first()
+                            .map_or_else(|| position.clone(), |(_, source)| source.clone()),
+                    },
+                );
+                interface_clauses.push((clause, inherited));
             }
         }
         // The resources holding the rest of the object's state are held

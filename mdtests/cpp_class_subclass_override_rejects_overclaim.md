@@ -51,5 +51,5 @@ int through_square(const Square& square, int scale) {
 ```
 
 ```expect
-fail: `ensures to_integer(result) == to_integer((old((this->base.side + this->extra)) + scale))` failed for `BigSquare::area.interface_ensures_0`
+fail: inherited ensures clause from `Shape::area`
 ```

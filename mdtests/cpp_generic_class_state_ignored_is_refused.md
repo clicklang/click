@@ -157,5 +157,5 @@ int caller(Stack<int>& stack, int x) {
 ```
 
 ```expect
-fail: `Stack<T>::push.interface_ensures_0`
+fail: inherited ensures clause from `Container<T>::push`
 ```
