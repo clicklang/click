@@ -1627,7 +1627,7 @@ fn stored_numeric_proposition_fields_collect_shared_arithmetic_in_linear_work() 
 }
 
 #[test]
-fn integer_to_float_carriers_visit_shared_machine_arithmetic_once() {
+fn numeric_predicates_visit_shared_machine_arithmetic_once() {
     for depth in [8, 32, 96] {
         let _session = VerificationSession::enter();
         let slice = Variable(982813);
@@ -1639,24 +1639,42 @@ fn integer_to_float_carriers_visit_shared_machine_arithmetic_once() {
                 KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [sum.clone(), sum]);
         }
         let float = KernelFloatType::Float64;
-        let converted = KernelTerm::float_convert(float, format.program_type(), sum).unwrap();
+        let converted =
+            KernelTerm::float_convert(float, format.program_type(), sum.clone()).unwrap();
         let condition =
             KernelTerm::float_classify(float, FloatClassification::Finite, converted).unwrap();
-        let fact =
-            Proposition::condition_is(StoredConditionTerm::from_root(condition).unwrap(), true);
         let exports = KernelTermExport::machine_export_count();
-        let mut collector = IntegerSubstitutionVariableCollector::checked();
-        collector.collect(&fact);
-        assert_eq!(
-            collector.carriers.program_values,
-            BTreeSet::from([count, slice])
-        );
-        assert!(!collector.exhausted());
-        assert!(
-            collector.carriers.nodes <= depth + 8,
-            "depth {depth}, visits {}",
-            collector.carriers.nodes
-        );
+        for condition in [
+            condition,
+            KernelTerm::boolean_comparison_raw(
+                format,
+                CompareRelation::LessThan,
+                [sum.clone(), sum.clone()],
+            ),
+            KernelTerm::boolean_overflow_raw(
+                format,
+                crate::kernel::OverflowOperation::Add,
+                [sum.clone(), sum],
+            ),
+        ] {
+            let fact = Proposition::condition_is(
+                StoredConditionTerm::from_root(condition.clone()).unwrap(),
+                true,
+            );
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect(&fact);
+            assert_eq!(
+                collector.carriers.program_values,
+                BTreeSet::from([count, slice])
+            );
+            assert!(!collector.exhausted());
+            assert!(
+                collector.carriers.nodes <= depth + 8,
+                "depth {depth}, visits {}",
+                collector.carriers.nodes
+            );
+            assert!(!condition.has_cached_native_argument());
+        }
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

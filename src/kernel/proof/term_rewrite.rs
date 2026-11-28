@@ -649,7 +649,9 @@ fn collect_shared_condition_carriers<'a>(
                     collect_mathematical_integer_carriers(argument, variables);
                 }
             }
-            KernelTermNode::FloatCompare { arguments, .. } => {
+            KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::BoolOverflow { arguments, .. }
+            | KernelTermNode::FloatCompare { arguments, .. } => {
                 collect_numeric_carriers(arguments, variables)
             }
             KernelTermNode::FloatClassify { operand, .. } => {
@@ -8769,7 +8771,7 @@ mod tests {
     }
 
     #[test]
-    fn integer_to_float_carriers_keep_machine_read_occurrences_and_identity() {
+    fn numeric_predicate_carriers_keep_machine_read_occurrences_and_identity() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
         let float = KernelFloatType::Float32;
@@ -8790,28 +8792,46 @@ mod tests {
             MachineBinaryOp::Subtract,
             [left.clone(), read(&b)],
         );
-        let sum = KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [pair, left]);
+        let sum = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [pair.clone(), left.clone()],
+        );
         let converted = KernelTerm::float_convert(float, format.program_type(), sum).unwrap();
         let predicate =
             KernelTerm::float_classify(float, FloatClassification::Finite, converted).unwrap();
-        let fact =
-            Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
         let exports = KernelTermExport::machine_export_count();
-        assert_eq!(
-            proposition_pointer_terms(&fact),
-            [a.clone(), b.clone(), a.clone()]
-        );
-        let mut collector = IntegerSubstitutionVariableCollector::checked();
-        collector.collect_read_terms();
-        collector.collect(&fact);
-        let reads = collector.take_read_terms().collect::<Vec<_>>();
-        assert_eq!(reads.len(), 2);
-        for address in [a, b] {
-            assert!(reads.contains(&OldMachineTerm::read_named(
-                point.clone(),
-                address,
-                LoadKind::UInt32
-            )));
+        for predicate in [
+            predicate,
+            KernelTerm::boolean_comparison_raw(
+                format,
+                CompareRelation::LessThan,
+                [pair.clone(), left.clone()],
+            ),
+            KernelTerm::boolean_overflow_raw(
+                format,
+                crate::kernel::OverflowOperation::Add,
+                [pair, left],
+            ),
+        ] {
+            let fact =
+                Proposition::condition_is(StoredConditionTerm::from_root(predicate).unwrap(), true);
+            assert_eq!(
+                proposition_pointer_terms(&fact),
+                [a.clone(), b.clone(), a.clone()]
+            );
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect_read_terms();
+            collector.collect(&fact);
+            let reads = collector.take_read_terms().collect::<Vec<_>>();
+            assert_eq!(reads.len(), 2);
+            for address in [&a, &b] {
+                assert!(reads.contains(&OldMachineTerm::read_named(
+                    point.clone(),
+                    address.clone(),
+                    LoadKind::UInt32
+                )));
+            }
         }
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
