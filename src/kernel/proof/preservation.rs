@@ -301,7 +301,12 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
-        ) => OldConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
+        ) => {
+            return Some(Proposition::condition_is(
+                crate::kernel::StoredConditionTerm::logical_pointer_equal(a, b),
+                true,
+            ));
+        }
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),
@@ -376,7 +381,10 @@ fn observation_equality(
             )
         }
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            OldConditionTerm::logical_pointer_equal(a, b)
+            return Some(Proposition::condition_is(
+                crate::kernel::StoredConditionTerm::logical_pointer_equal(&a, &b),
+                true,
+            ));
         }
         (ReadType::IntegerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             OldConditionTerm::address_equal(a.address().clone(), b.address().clone())

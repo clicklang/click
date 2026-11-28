@@ -370,7 +370,7 @@ impl SpecValue {
         {
             // Lowering is structural: `p == p` keeps its comparison.
             return Ok(Some(Proposition::condition_is(
-                OldConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
+                StoredConditionTerm::logical_pointer_equal(a, b),
                 held,
             )));
         }

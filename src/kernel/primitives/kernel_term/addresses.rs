@@ -724,6 +724,23 @@ mod tests {
             assert_eq!(binding.program_type(), Some(ProgramType::Int64));
             assert_eq!(binding.to_string(), "y");
         }
+        let first = crate::kernel::Pointer::new(retained, ProgramType::UInt8Pointer);
+        let second = crate::kernel::Pointer::new(produced, ProgramType::UInt8Pointer);
+        let forward = StoredConditionTerm::logical_pointer_equal(&first, &second);
+        let reverse = StoredConditionTerm::logical_pointer_equal(&second, &first);
+        for (comparison, name, ty) in [
+            (forward, "x", ProgramType::Int32),
+            (reverse, "y", ProgramType::Int64),
+        ] {
+            assert!(!comparison.root().unwrap().has_cached_native_argument());
+            for address in comparison.operand_view().pointer_addresses().unwrap() {
+                let AddressBase::AutomaticLocal { binding, .. } = address.atom() else {
+                    panic!("expected local block")
+                };
+                assert_eq!(binding.spelling(), Some(name));
+                assert_eq!(binding.program_type(), Some(ty));
+            }
+        }
     }
 
     #[test]

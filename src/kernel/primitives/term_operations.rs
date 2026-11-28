@@ -3689,20 +3689,6 @@ impl OldConditionTerm {
         }
     }
 
-    /// Pointer equality as logical lowering states it: a non-null pointer
-    /// value compared with itself keeps its `AddressEqual` node instead of
-    /// folding to `true`, so the fact raises to `p == p` and lowers back
-    /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
-    /// Producers whose result must match a lowered goal use it too; checking
-    /// decides the reflexive comparison (`OldConditionTerm::reflexive_value`).
-    pub(crate) fn logical_pointer_equal(left: Pointer, right: Pointer) -> Self {
-        if left == right && !left.is_null() && !left.is_wide() {
-            let address = left.address().clone();
-            return Self::AddressEqual(Box::new(address.clone()), Box::new(address));
-        }
-        Self::pointer_equal(left, right)
-    }
-
     pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
         match left.equality_kind(&right) {
             PointerEqualityKind::Complete => Self::PointerEqual(Box::new(left), Box::new(right)),
