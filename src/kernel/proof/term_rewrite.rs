@@ -77,6 +77,12 @@ fn collect_machine_operand_carriers(
     }
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
+            if let KernelTermNode::BoolCast { operand, .. } = leaf.node() {
+                collect_shared_condition_carriers(operand, variables, || {
+                    BooleanOperandView::Shared(operand).identity_leaf()
+                });
+                continue;
+            }
             if let KernelTermNode::Match(matched) = leaf.node() {
                 retained_matches::collect_match_carriers(matched, variables);
                 continue;
@@ -602,6 +608,16 @@ fn collect_stored_condition_carriers(
     let Some(root) = condition.root() else {
         return collect_condition_carriers(condition.old_form(), variables);
     };
+    collect_shared_condition_carriers(root, variables, || {
+        std::borrow::Cow::Borrowed(condition.old_form())
+    });
+}
+
+fn collect_shared_condition_carriers<'a>(
+    root: &'a KernelTerm,
+    variables: &mut CarrierVariables,
+    native_root: impl Fn() -> std::borrow::Cow<'a, OldConditionTerm>,
+) {
     let mut seen = std::collections::HashSet::new();
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
@@ -624,9 +640,8 @@ fn collect_stored_condition_carriers(
                     collect_mathematical_integer_carriers(argument, variables);
                 }
             }
-            // An opaque root keeps its stored reading, including the exact
-            // argument payload supplied by a Boolean call producer.
-            _ if term == root => collect_condition_node_carriers(condition.old_form(), variables),
+            // Preserve the caller’s reading of an opaque root, including call arguments.
+            _ if term == root => collect_condition_node_carriers(&native_root(), variables),
             _ => collect_condition_node_carriers(
                 &BooleanOperandView::Shared(term).native(),
                 variables,
