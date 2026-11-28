@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn tree_type() -> AlgebraicType {
+pub(super) fn tree_type() -> AlgebraicType {
     let key = AlgebraicValueType::Algebraic {
         name: "Tree".into(),
         arguments: vec![],
@@ -25,6 +25,41 @@ fn tree_type() -> AlgebraicType {
         schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(key, variants)]))),
     }
 }
+#[test]
+fn algebraic_equality_preserves_read_points_and_pointer_occurrences() {
+    let _session = VerificationSession::enter();
+    let ty = tree_type();
+    let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+    let a = Address::symbolic(Variable(9931));
+    let b = Address::symbolic(Variable(9932));
+    let read = |address: &Address| {
+        KernelTerm::algebraic_read(ty.clone(), point.clone(), address.shared().clone())
+    };
+    let left = read(&a);
+    let pair = KernelConstructor {
+        algebraic_type: ty.clone(),
+        variant: "Pair".into(),
+        fields: vec![left.clone(), read(&b)],
+    }
+    .into_term();
+    let equality = KernelTerm::algebraic_equal_raw([pair, left]);
+    let fact = Proposition::condition_is(StoredConditionTerm::from_root(equality).unwrap(), true);
+    assert_eq!(
+        proposition_pointer_terms(&fact),
+        [a.clone(), b.clone(), a.clone()]
+    );
+    let mut collector = IntegerSubstitutionVariableCollector::checked();
+    collector.collect_read_terms();
+    collector.collect(&fact);
+    let reads = collector.take_read_terms().collect::<Vec<_>>();
+    assert_eq!(reads.len(), 2);
+    for address in [&a, &b] {
+        assert!(reads.contains(&AlgebraicTermNode::memory_load_carrier(
+            &point, address, &ty
+        )));
+    }
+}
+
 fn value(node: AlgebraicTermNode) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: tree_type(),
