@@ -766,7 +766,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Rewrite the goal by the equality facts connected to it until
-    /// `known`, `normalize` or another direct closer finishes it: the
+    /// `known` or another checked closer finishes it: the
     /// congruence step `solve` takes only once its decider has selected the
     /// premises, here offered every connected equality, algebraic `==` facts
     /// included. Each rewrite is an ordinary checked step.
@@ -1118,8 +1118,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the goal's `then` arm ends in a constant other than `k`, the fact
     /// forces the goal. The proof is the one written by hand: `if` the goal
     /// holds, `known`; otherwise split on each condition met before the
-    /// goal's, and at each end `have f(args) != k` by `unfold` and
-    /// `normalize` using the conditions taken, then `contradiction`.
+    /// goal's. At each leaf, unfold to the known branch value and use it
+    /// to prove `f(args) != k` before applying `contradiction`.
     pub(in crate::surface::proof) fn try_definition_condition_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
@@ -1654,7 +1654,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// A bounded depth-first search over rewrite sequences: every applicable
     /// equality in either direction, each used at most once, closing after
-    /// every step by `known`, `normalize` or the direct logical closer.
+    /// every step using the caller's checked closers.
     /// An orientation whose left side does not occur in the goal costs no
     /// checked step. A goal already reached with at least as many rewrites
     /// left is not explored again, and the whole search tries at most

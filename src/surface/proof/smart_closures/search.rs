@@ -14119,10 +14119,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Some(closed);
         }
-        // Give memory-independent word observations the ordinary interval
-        // emitter before compatibility normalization. Keep retained reads and
-        // history on their existing paths, and do not broaden the speculative
-        // typed-derivation search along with this priority change.
+        // Try interval proofs early for scalar word observations. Retained
+        // reads and history use their own checked proofs.
         let scalar_observation = proof
             .surface_goal()
             .is_some_and(|surface| !signed_intervals::has_retained_read_source(surface))
@@ -14140,8 +14138,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Some(closed);
         }
         // A selected alias or index equality can expose the actual
-        // cited read. Try to retain those substitutions and the
-        // exact closing fact before using compatibility normalization.
+        // cited read. Retain those substitutions and the exact closing fact.
         if let Some(
             surface @ SyntaxProposition::Comparison {
                 operator: ComparisonOperator::Equal,
