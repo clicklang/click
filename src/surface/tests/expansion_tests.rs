@@ -3594,7 +3594,7 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         .join("mdtests/bubble_sort3_loop_permutation.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
     let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
-    let selected = "have result == 0 by { close(); }";
+    let selected = "have p[0] <= p[2] by { close(); }";
     let suffix = "unfold(permutation::permutation(p, old(p), 0, 3));";
     let source_with_suffix = fixture
         .click_source
@@ -3608,10 +3608,7 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c_sources(source, &sources).unwrap();
-    let position = expansion::position_at_offset(
-        source,
-        source.find(selected).unwrap() + selected.find("close").unwrap(),
-    );
+    let position = expansion::position_at_offset(source, source.find(selected).unwrap());
     let expanded =
         expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap();
     assert!(!expanded.contains("solve();"), "{expanded}");
@@ -3619,11 +3616,24 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
         expanded.contains(suffix),
         "the unselected suffix stays written"
     );
-    let guard = "if p[(j + 1)] < p[j] {";
+    let guard_count = |proof: &str| {
+        proof
+            .lines()
+            .filter(|line| {
+                line.trim_start().starts_with("if ")
+                    && line.contains("p[(j + 1)]")
+                    && line.contains("p[j]")
+            })
+            .count()
+    };
+    let guards = guard_count(source);
+    assert!(guards > 1);
+    assert_eq!(guard_count(&expanded), guards);
     assert_eq!(
-        expanded.matches(guard).count(),
-        source.matches(guard).count()
+        expanded.matches("have p[0] <= p[2] by {").count(),
+        guards + 1
     );
+    assert!(!expanded.contains(selected));
     verify_c_sources(&expanded, &sources).unwrap();
     let claim =
         expansion::position_at_offset(&expanded, expanded.find("ensures permutation:").unwrap());

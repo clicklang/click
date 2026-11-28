@@ -4041,6 +4041,11 @@ fn asserted_condition_proposition(condition: &ProgramExpression) -> SyntaxPropos
         }
     };
     match condition {
+        ProgramExpression::Cast {
+            expression,
+            integer_mode: crate::kernel::IntegerCastMode::BoolValue,
+            ..
+        } => asserted_condition_proposition(expression),
         ProgramExpression::And(left, right) => SyntaxProposition::And(
             Box::new(asserted_condition_proposition(left)),
             Box::new(asserted_condition_proposition(right)),

@@ -654,23 +654,29 @@ fn fold_constructor_reborrow(
 }
 
 /// A borrow consumed by the adjacent slice operation is the operation's
-/// input. Moving it across no statements preserves the borrowed place and,
+/// input. Skipping only source markers preserves the borrowed place and,
 /// for an array coercion, its reference view and mutability.
 fn fold_adjacent_slice_borrows(
-    statements: &mut Vec<S>,
+    statements: &mut [S],
     substitutable: &impl Fn(&MirLocalId) -> bool,
     removed: &mut BTreeSet<MirLocalId>,
 ) {
-    let mut statements_iter = std::mem::take(statements).into_iter().peekable();
-    while let Some(statement) = statements_iter.next() {
-        if let S::Assign {
-            target: E::Local { name },
-            value: borrow @ E::Borrow { place, value_type },
-        } = &statement
+    let mut previous = None;
+    for position in 0..statements.len() {
+        let (earlier, later) = statements.split_at_mut(position);
+        let consumer = &mut later[0];
+        // A source marker changes the diagnostic location, not the receiver.
+        if matches!(consumer, S::Site { .. }) {
+            continue;
+        }
+        if let Some(producer) = previous
+            && let S::Assign {
+                target: E::Local { name },
+                value: borrow @ E::Borrow { place, value_type },
+            } = &earlier[producer]
             && substitutable(name)
             && pure(place)
             && !checked(place)
-            && let Some(consumer) = statements_iter.peek_mut()
         {
             let operand = match value_type {
                 Type::Reference { pointee, .. }
@@ -690,7 +696,8 @@ fn fold_adjacent_slice_borrows(
                             target: E::Local { .. },
                             value: E::SliceLength { slice },
                         } => Some(slice.as_mut()),
-                        S::SharedArrayInitialize { source, .. } => Some(source),
+                        S::SharedArrayInitialize { source, .. }
+                        | S::SliceSplit { slice: source, .. } => Some(source),
                         _ => None,
                     }
                 }
@@ -701,10 +708,9 @@ fn fold_adjacent_slice_borrows(
             {
                 *operand = borrow.clone();
                 removed.insert(name.clone());
-                continue;
             }
         }
-        statements.push(statement);
+        previous = Some(position);
     }
 }
 
@@ -743,7 +749,7 @@ fn fold_closure_argument(
 }
 
 /// A fixed-array coercion can supply the pointer and length directly to its
-/// immediate consumer: a length read, iterator initialization, or sole call argument.
+/// immediate consumer: a length read, split, iterator initialization, or sole call argument.
 fn fold_slice_coercion_operands(
     block: &mut MirBlock,
     substitutable: &impl Fn(&MirLocalId) -> bool,
@@ -759,7 +765,9 @@ fn fold_slice_coercion_operands(
                 target: E::Local { .. },
                 value: E::SliceLength { slice },
             } => Some(slice.as_mut()),
-            S::SharedArrayInitialize { source, .. } => Some(source),
+            S::SharedArrayInitialize { source, .. } | S::SliceSplit { slice: source, .. } => {
+                Some(source)
+            }
             _ => None,
         };
         if let (Some(previous), Some(operand)) = (previous, operand) {
